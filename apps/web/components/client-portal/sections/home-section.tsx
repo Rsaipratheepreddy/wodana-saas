@@ -16,7 +16,7 @@ export function HomeSection({ project, format, open, go }: SectionProps) {
   };
   const stages = project.progress?.stages ?? [];
   const act = (step: PortalStep) => (step.kind === "invoice" ? go("payments") : open({ kind: step.kind, id: step.id }));
-  return <div className={styles.section}>
+  return <div className={styles.section} data-tour="portal-home">
     {project.stage ? <div className={styles.stage}>
       <p className={styles.itemTitle}>{project.stage.name
         ? t("Stage {number} of {total} · {name}", { number: project.stage.number, total: project.stage.total, name: project.stage.name })

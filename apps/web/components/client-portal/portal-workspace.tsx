@@ -65,7 +65,7 @@ export function PortalWorkspace({ view, site, api, reload }: { view: PortalView;
     </div>
     {project.paused ? <EmptyState illustration="locked" title={t("Your project page is paused")}
       description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
-      {tabs.length > 1 ? <div className={styles.nav}><PillTabs ariaLabel={t("Sections")} selectedKey={current} onSelectionChange={(key) => go(key as Tab)}
+      {tabs.length > 1 ? <div className={styles.nav}><PillTabs ariaLabel={t("Sections")} selectedKey={current} onSelectionChange={(key) => go(key as Tab)} tour="portal-tab"
         items={tabs.map((id) => ({ id, label: labels.sections[id] }))} /></div> : null}
       {notice ? <InlineNotice tone="success" message={notice} /> : null}
       <div role="tabpanel" aria-label={labels.sections[current]}><Section {...props} /></div>

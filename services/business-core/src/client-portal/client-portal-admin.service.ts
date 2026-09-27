@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
@@ -8,9 +8,11 @@ import { commercialRepository } from "../commercial/commercial-repository";
 import type { CommercialData } from "../commercial/commercial.types";
 import { canonicalHash } from "../crm/shared/crm-types";
 import { TransactionalEmailService } from "../email/transactional-email.service";
+import { PreProjectDefinitionService } from "../pre-projects/pre-project-definition.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { demoCodeInput, endSessions, mobileNumber, portalCodes, setDemoCode, type PortalCodes } from "./portal-auth";
+import { demoCodeInput, endSessions, mobileNumber, portalCodes, setDemoCode, type Grant, type PortalCodes, type PortalContact } from "./portal-auth";
 import { inviteClient, readClientAccess, revokeClient, type InviteDelivery } from "./portal-invitations";
+import { readView } from "./portal-read";
 import { optionalEmail, readPortalSettings, readProjectAccess, savePortalSettings, saveProjectAccess, SECTIONS } from "./portal-settings";
 import { portalUrl, readSite } from "./portal-site";
 
@@ -28,8 +30,41 @@ type Command = { id: string; version: number; hash: string };
 export class ClientPortalAdminService {
   private readonly codes: PortalCodes;
 
-  constructor(private readonly access: WorkspaceAccessService, private readonly config: ConfigService, private readonly mailer: TransactionalEmailService) {
+  constructor(private readonly access: WorkspaceAccessService, private readonly config: ConfigService, private readonly mailer: TransactionalEmailService,
+    @Optional() private readonly definitions?: PreProjectDefinitionService) {
     this.codes = portalCodes(config);
+  }
+
+  /**
+   * The portal exactly as this case's client sees it, for the team (a preview, and Woddy's tours): the site in the
+   * tenant's brand and the view read as the case's decision-maker (or its first contact; with none yet, as a
+   * viewer named after the client). Read-only: nothing is recorded, no session is opened and no one is told.
+   */
+  preview(actor: RequestActor, workspaceId: string, caseId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, ["portal.manage", "pre_projects.view", "projects.view"], async (client) => {
+      const id = this.caseId(caseId);
+      const grant = (await client.query<Grant>(
+        `SELECT id, case_id AS "caseId", coalesce(confirmed_name, name) AS name, role, email, name_confirmed_at IS NOT NULL AS confirmed,
+                demo_code_hash IS NOT NULL AS demo
+           FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND active
+          ORDER BY (role = 'approver') DESC, created_at LIMIT 1`, [workspaceId, id])).rows[0] ?? await this.previewGrant(client, workspaceId, id);
+      const settings = await readPortalSettings(client, workspaceId);
+      const contact: PortalContact = { sessionId: "preview", phone: "", name: grant.name, nameConfirmed: true, grants: [grant] };
+      const definitions = this.definitions ?? { portalData: async () => null };
+      return { site: await readSite(client, workspaceId, settings, this.demo), view: await readView(client, workspaceId, contact, settings, definitions), preview: true as const };
+    });
+  }
+
+  /** No contact yet: the client as a viewer, named as the team knows them. */
+  private async previewGrant(client: PoolClient, workspaceId: string, caseId: string): Promise<Grant> {
+    const found = (await client.query<{ name: string }>(
+      `SELECT coalesce(party.display_name, opportunity.title) AS name
+         FROM pre_project_cases pre_case
+         JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+         LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+        WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0];
+    if (!found) throw new NotFoundException("Project not found.");
+    return { id: "preview", caseId, name: found.name, role: "viewer", email: null, confirmed: true, demo: false };
   }
 
   private get demo() {

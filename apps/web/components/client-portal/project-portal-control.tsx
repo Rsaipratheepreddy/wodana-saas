@@ -100,6 +100,7 @@ export function ProjectPortalControl({ workspaceId, projectId, locale }: { works
       <span className={styles.clientName}>{name || t("No client")}</span>
       <ClientStatus client={client} locale={region.locale} timeZone={region.timeZone} />
       {client.demoCode ? <Badge tone="warning">{t("Demo access")}</Badge> : null}
+      {portal.enabled ? <Link className={styles.link} data-tour="portal-client-view" href={`/workspace/client-view/${portal.caseId}`}>{t("See it as the client")}</Link> : null}
     </div>
     {notice ? <InlineNotice className={styles.notice} tone={notice.tone} message={notice.message} /> : null}
     {open ? <ControlledModalDialog isOpen onOpenChange={setOpen} size="lg" title={t("Client portal")}

@@ -8,6 +8,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 2 && path[0] === "projects" && UUID.test(path[1])) return ["GET", "PUT"].includes(method);
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["invite", "revoke"].includes(path[2])) return method === "POST";
   if (path.length === 3 && path[0] === "cases" && UUID.test(path[1]) && path[2] === "contacts") return ["GET", "PUT"].includes(method);
+  if (path.length === 3 && path[0] === "cases" && UUID.test(path[1]) && path[2] === "preview") return method === "GET";
   if (path.length === 5 && path[0] === "cases" && UUID.test(path[1]) && path[2] === "contacts" && UUID.test(path[3]) && ["sign-out", "demo-code"].includes(path[4])) return method === "POST";
   return false;
 }

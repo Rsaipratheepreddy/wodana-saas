@@ -8,6 +8,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { WoddyProvider, useWoddy } from "@/components/crm/woddy-chat";
 import { TourProvider } from "@/components/tours/tour-provider";
 import { WoddyMenu } from "@/components/tours/woddy-menu";
+import { TourPersonaBadge } from "@/components/tours/tour-persona-badge";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import {
   findWorkspaceModule,
@@ -47,7 +48,7 @@ export type WorkspaceShellProps = {
 
 export function WorkspaceShell({ children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace }: WorkspaceShellProps) {
   const identity = workspaces[0] ? { name: workspaces[0].name, logoUrl: workspaces[0].imageUrl ?? null } : null;
-  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={workspacePrimaryColorStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name}><WorkspaceShellContent canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces}>{children}</WorkspaceShellContent></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
+  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={workspacePrimaryColorStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name} workspaceId={workspaces[0]?.id}><WorkspaceShellContent canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces}>{children}</WorkspaceShellContent></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
 }
 
 function WorkspaceShellContent({ children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace }: WorkspaceShellProps) {
@@ -96,7 +97,8 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
 
 
 
-  if (preProjectRoute?.section === "quotations" && builderSearch.has("quote")) {
+  // The quote builder and the client view take the whole screen: the client view shows the portal as the client does.
+  if (preProjectRoute?.section === "quotations" && builderSearch.has("quote") || pathname.startsWith("/workspace/client-view/")) {
     return <div className={styles.shell} data-workspace-theme={theme} style={{...workspacePrimaryColorStyle(workspaces[0]),display:"block",minHeight:"100dvh"}}><main data-tour="page-content">{children}</main></div>;
   }
 
@@ -159,6 +161,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
           </nav>
           {route.id === "home" || route.homeTab ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} /> : null}
           <div className={styles.globalUtilities}>
+            <TourPersonaBadge />
             <div className={styles.woddyControl}>
               <WoddyMenu avatarClassName={styles.woddyAvatar} className={styles.woddyButton} labelClassName={styles.woddyLabel} onChat={woddy?.open} />
             </div>

@@ -5,10 +5,310 @@
     "model": "eleven_multilingual_v2"
   },
   "characters": {
-    "en": 6655
+    "en": 11146
   },
   "note": "Record `voice` (name-free). `text` is the caption: {name}, {client} and {project} are filled from the screen, so recordings never say them. The player plays `audio` when the file exists and otherwise paces the caption on screen.",
   "lines": [
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 1,
+      "stepId": "greeting",
+      "language": "en",
+      "text": "Hi {name}! Let's follow one job from enquiry to handover.",
+      "voice": "Hi there! I'm Woddy. Let's follow one job from the first enquiry to the handover, and see who does what along the way. I'll do the clicking, and nothing gets saved.",
+      "audio": "public/tours/audio/en/full-journey/greeting.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 2,
+      "stepId": "enquiry",
+      "language": "en",
+      "text": "A new enquiry lands in one list.",
+      "voice": "It starts with a raw enquiry: a call, a WhatsApp message or a form on your website. Sales sees every one of them in this list, with where it came from and who is following up.",
+      "audio": "public/tours/audio/en/full-journey/enquiry.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 3,
+      "stepId": "qualify",
+      "language": "en",
+      "text": "Qualify it: a stage, an owner and a follow-up.",
+      "voice": "Sales qualifies it. The stage, the owner and the next follow-up sit at the top, so the job is assigned to someone and nobody forgets to call back.",
+      "audio": "public/tours/audio/en/full-journey/qualify.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 4,
+      "stepId": "convert",
+      "language": "en",
+      "text": "Convert it into an opportunity.",
+      "voice": "When the need is clear, Sales converts the enquiry into an opportunity, with a value and a next step, and planning can start. This is a demo, so I'll close it without saving.",
+      "audio": "public/tours/audio/en/full-journey/convert.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 5,
+      "stepId": "planning",
+      "language": "en",
+      "text": "Planning starts with the client's requirements.",
+      "voice": "Every job now has a planning case, in the order the work happens. Requirements come first: every room and every wish in the client's own words, so the designer and the estimator start from the same brief.",
+      "audio": "public/tours/audio/en/full-journey/planning.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 6,
+      "stepId": "site-visit",
+      "language": "en",
+      "text": "The site visit: measurements, photos and plans.",
+      "voice": "The designer visits the site. Measurements, photos and plans are kept here, so nobody prices a wall they haven't measured.",
+      "audio": "public/tours/audio/en/full-journey/site-visit.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 7,
+      "stepId": "moodboard",
+      "language": "en",
+      "text": "The moodboard sets the look.",
+      "voice": "The moodboard sets the look: the materials, colours and references the client likes, agreed before any drawing starts.",
+      "audio": "public/tours/audio/en/full-journey/moodboard.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 8,
+      "stepId": "design",
+      "language": "en",
+      "text": "Designs: an internal review, then the client's approval.",
+      "voice": "Designs get an internal review first, then go to the client for approval. Anything waiting for a review sits in Approvals, so nothing is left unseen.",
+      "audio": "public/tours/audio/en/full-journey/design.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 9,
+      "stepId": "quotes",
+      "language": "en",
+      "text": "Every quote for the job, in one list.",
+      "voice": "Now the job is priced. Every quote for it, the design fee, the fit-out and any later variation, lives in one list.",
+      "audio": "public/tours/audio/en/full-journey/quotes.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 10,
+      "stepId": "quote-lines",
+      "language": "en",
+      "text": "Lines from the catalog, room by room.",
+      "voice": "Lines come from your catalog, room by room, at the prices your firm has set, so one quote matches the next.",
+      "audio": "public/tours/audio/en/full-journey/quote-lines.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 11,
+      "stepId": "terms",
+      "language": "en",
+      "text": "What's included, what isn't, and how long it holds.",
+      "voice": "Terms say what's included, what isn't and how long the price holds.",
+      "audio": "public/tours/audio/en/full-journey/terms.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 12,
+      "stepId": "payments",
+      "language": "en",
+      "text": "The total, split into payment milestones.",
+      "voice": "Payments split the total into milestones, like a deposit, a payment before carpentry and one at handover.",
+      "audio": "public/tours/audio/en/full-journey/payments.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 13,
+      "stepId": "send-review",
+      "language": "en",
+      "text": "Send for review: the quote locks while it's checked.",
+      "voice": "When the quote is ready, Sales sends it for review. From that moment it's locked, so no price can change while it's being checked.",
+      "audio": "public/tours/audio/en/full-journey/send-review.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 14,
+      "stepId": "qs-review",
+      "language": "en",
+      "text": "A quantity surveyor or a manager reviews this exact revision.",
+      "voice": "This is where the job's approvals wait, and the reviewer also gets a notification and an email. Depending on your workflow, a quantity surveyor checks the cost estimate against the price, or a manager approves it, for this exact revision. If anything changes afterwards, it needs a fresh review.",
+      "audio": "public/tours/audio/en/full-journey/qs-review.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 15,
+      "stepId": "owner-check",
+      "language": "en",
+      "text": "Above the discount limit, a manager approves. Returns come with a note.",
+      "voice": "Some quotes need more. If the discount goes above the limit your firm sets, only a manager or an owner can approve it. And a reviewer who isn't happy returns the quote with a note: it goes back to draft for the changes, then comes back for a fresh review.",
+      "audio": "public/tours/audio/en/full-journey/owner-check.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 16,
+      "stepId": "send-client",
+      "language": "en",
+      "text": "Approved, it goes to the client's portal.",
+      "voice": "Once it's approved, Send to client puts this exact proposal in the client's portal, with an email. Every requirement has to be decided before it can go.",
+      "audio": "public/tours/audio/en/full-journey/send-client.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 17,
+      "stepId": "client-home",
+      "language": "en",
+      "text": "The client's own portal, in your brand.",
+      "voice": "Now we're the client. This is their own portal, in your brand and on any phone: where the job stands, what's needed from them, and the latest news from the team.",
+      "audio": "public/tours/audio/en/full-journey/client-home.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 18,
+      "stepId": "client-decisions",
+      "language": "en",
+      "text": "Everything waiting for the client's decision.",
+      "voice": "Decisions holds everything the client is asked to approve, each at the exact revision the team sent: quotations, designs and the material list.",
+      "audio": "public/tours/audio/en/full-journey/client-decisions.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 19,
+      "stepId": "client-quote",
+      "language": "en",
+      "text": "Accept with a one-time code. Materials are signed off item by item.",
+      "voice": "The client reads the quotation exactly as it was issued, picks any options and accepts it with a one-time code, or asks for changes. The material list is signed off the same way, item by item, before anything is ordered.",
+      "audio": "public/tours/audio/en/full-journey/client-quote.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 20,
+      "stepId": "deal",
+      "language": "en",
+      "text": "Finance verifies the payment, then an owner approves.",
+      "voice": "Back in the office. When the client accepts, Sales submits the deal with the signed agreement and the payment proof. Finance verifies the payment, then an owner approves, and nobody can approve their own submission.",
+      "audio": "public/tours/audio/en/full-journey/deal.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 21,
+      "stepId": "release",
+      "language": "en",
+      "text": "Released: the accepted quote becomes the project's baseline.",
+      "voice": "With the owner's approval, the project is released. The accepted quote becomes its baseline: the scope, the value and the payment plan.",
+      "audio": "public/tours/audio/en/full-journey/release.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 22,
+      "stepId": "plan",
+      "language": "en",
+      "text": "The plan: tasks, owners and dates.",
+      "voice": "The manager plans the work: tasks with owners and dates for every stage, so the office and the site see the same list.",
+      "audio": "public/tours/audio/en/full-journey/plan.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 23,
+      "stepId": "to-order",
+      "language": "en",
+      "text": "What the projects still need to order.",
+      "voice": "The buyer sees every material the projects still need, how much is left to order and when the site needs it.",
+      "audio": "public/tours/audio/en/full-journey/to-order.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 24,
+      "stepId": "orders",
+      "language": "en",
+      "text": "Orders to suppliers, approved when they're big.",
+      "voice": "Purchase orders go to suppliers, with an approval for the bigger amounts, and each one shows whether the supplier has confirmed it.",
+      "audio": "public/tours/audio/en/full-journey/orders.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 25,
+      "stepId": "receipt",
+      "language": "en",
+      "text": "Deliveries checked against the order.",
+      "voice": "Deliveries are received against their order, so short or damaged items are caught at the door, not on site.",
+      "audio": "public/tours/audio/en/full-journey/receipt.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 26,
+      "stepId": "factory",
+      "language": "en",
+      "text": "The factory: what to make, and when.",
+      "voice": "Joinery is made in your own factory: what's left to make, the work orders, the schedule and the batches on the shop floor.",
+      "audio": "public/tours/audio/en/full-journey/factory.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 27,
+      "stepId": "site",
+      "language": "en",
+      "text": "Daily reports, photos and snags from site.",
+      "voice": "On site, the supervisor posts daily reports and photos and logs the snags to fix, so a client's question is answered with a picture.",
+      "audio": "public/tours/audio/en/full-journey/site.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 28,
+      "stepId": "handover",
+      "language": "en",
+      "text": "Handover: final checks, documents and sign-off.",
+      "voice": "Handover gathers the final checks, the documents and the client's acceptance, so the keys go over with everything in order.",
+      "audio": "public/tours/audio/en/full-journey/handover.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 29,
+      "stepId": "warranty",
+      "language": "en",
+      "text": "Warranty claims, tracked until they're fixed.",
+      "voice": "The warranty starts when the client accepts the handover. Their claims come in through the portal and are tracked here until they're fixed.",
+      "audio": "public/tours/audio/en/full-journey/warranty.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 30,
+      "stepId": "recap",
+      "language": "en",
+      "text": "From the first enquiry to the handover, one connected flow.",
+      "voice": "That's the whole journey: an enquiry, a plan, an approved quote, the client's yes, and a project delivered and handed over, with the right person at every step.",
+      "audio": "public/tours/audio/en/full-journey/recap.mp3"
+    },
     {
       "tour": "home",
       "tourTitle": "Home at a glance",

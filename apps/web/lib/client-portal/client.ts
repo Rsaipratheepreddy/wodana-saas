@@ -51,6 +51,8 @@ export function staffPortalApi(workspaceId: string, t: Translate = untranslated)
     inviteClient: (projectId: string, input: { commandId: string; version: number }) => call<ProjectPortal>(t, at(`projects/${projectId}/invite`), "POST", input),
     revokeClient: (projectId: string, input: { commandId: string; version: number }) => call<ProjectPortal>(t, at(`projects/${projectId}/revoke`), "POST", input),
     contacts: (caseId: string) => call<Contacts>(t, at(`cases/${caseId}/contacts`)),
+    /** The portal exactly as this case's client sees it (read-only). */
+    preview: (caseId: string) => call<{ site: PortalSite; view: PortalView; preview: true }>(t, at(`cases/${caseId}/preview`)),
     saveContact: (caseId: string, input: Record<string, unknown>) => call<Contacts>(t, at(`cases/${caseId}/contacts`), "PUT", input),
     signOut: (caseId: string, contactId: string) => call<Contacts>(t, at(`cases/${caseId}/contacts/${contactId}/sign-out`), "POST", {}),
     /** Sets (six digits) or clears (null) one contact's demonstration sign-in code; the command id makes a retry safe. */

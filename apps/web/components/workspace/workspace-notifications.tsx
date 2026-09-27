@@ -86,7 +86,7 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
   const filters = [{ id: 'all', label: t('View all'), count: items.length }, { id: 'unread', label: t('Unread'), count: unread }, { id: 'crm', label: t('CRM'), count: items.filter(item => category(item) === 'crm').length }, { id: 'projects', label: t('Projects'), count: items.filter(item => category(item) === 'projects').length }];
   const visible = items.filter(item => filter === 'all' || (filter === 'unread' ? !item.readAt : category(item) === filter));
   return <div className={styles.wrap} data-notifications="" ref={wrapper}>
-    <button ref={trigger} type="button" className={styles.trigger} aria-label={unread ? t("Notifications, {count} unread", { count: unread }) : t("Notifications")} aria-expanded={open} aria-haspopup="dialog" onClick={() => { setOpen(value => !value); void load(); }}>
+    <button ref={trigger} type="button" className={styles.trigger} data-tour="notifications" aria-label={unread ? t("Notifications, {count} unread", { count: unread }) : t("Notifications")} aria-expanded={open} aria-haspopup="dialog" onClick={() => { setOpen(value => !value); void load(); }}>
       <Bell aria-hidden="true" size={18} />{unread ? <span className={styles.badge}>{unread > 9 ? "9+" : unread}</span> : null}
     </button>
     {open ? <section className={styles.panel} role="dialog" aria-label={t("Notifications")}>

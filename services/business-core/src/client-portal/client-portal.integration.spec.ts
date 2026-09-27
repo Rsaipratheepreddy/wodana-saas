@@ -222,7 +222,7 @@ integration("client portal (plan §6.22)", () => {
         whatsapp: async ({ phone, code }) => { if (phone.endsWith("2")) throw new Error("not on WhatsApp"); sent.push({ channel: "whatsapp", to: phone, code }); },
         email: async ({ to, code }) => { sent.push({ channel: "email", to, code }); return true; },
       });
-      const admin = new ClientPortalAdminService(access(manager, everything), config, mailer as never);
+      const admin = new ClientPortalAdminService(access(manager, everything), config, mailer as never, definitions);
       await work({ client, workspaceId, slug, caseId, quoteId, party, manager, designer, managerMembership, designerMembership, kitchen, storage, core: new ProjectCoreService(access(manager, everything)),
         portal, admin, sent, invites, savepoint });
     } finally {
@@ -483,6 +483,37 @@ integration("client portal (plan §6.22)", () => {
       const paused = (await w.portal.view(w.slug, token)).projects[0];
       expect(paused).toMatchObject({ paused: true, progress: null, decisions: null, payments: null, next: [] });
       await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "request", caseId: w.caseId, title: "Hi", detail: "Hello" })).rejects.toThrow(/paused/);
+    });
+  });
+
+  it("lets the team preview the portal exactly as the decision-maker sees it, without a session and without writing anything", async () => {
+    await world(async (w) => {
+      // No contact yet: the client is shown as a viewer, named as the team knows them.
+      const early = await w.admin.preview(actor, w.workspaceId, w.caseId);
+      expect(early.preview).toBe(true);
+      expect(early.view.contact.name).toBe("Maya Client");
+      expect(early.view.projects[0]).toMatchObject({ id: w.caseId, role: "viewer" });
+      const { approver } = await open(w);
+      const loaded = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!;
+      const data = { ...(loaded.content as CommercialData), revision: loaded.revision };
+      const quote = data.quotes.find((item) => item.id === w.quoteId)!;
+      Object.assign(quote, { status: "issued", issuedAt: new Date().toISOString(), validUntil: "2099-12-31", approverId: approver.id });
+      quote.hash = freezeHash(quote);
+      data.revision = loaded.revision + 1;
+      await commercialRepository.save(w.client, w.workspaceId, w.caseId, data);
+      const token = await signIn(w, APPROVER);
+      const client = await w.portal.view(w.slug, token);
+      const count = async () => (await w.client.query(
+        `SELECT (SELECT count(*) FROM client_portal_sessions WHERE workspace_id = $1)::int + (SELECT count(*) FROM client_portal_commands WHERE workspace_id = $1)::int
+              + (SELECT count(*) FROM audit_events WHERE workspace_id = $1)::int AS n`, [w.workspaceId])).rows[0].n;
+      const before = await count();
+      const preview = await w.admin.preview(actor, w.workspaceId, w.caseId);
+      expect(preview.site.slug).toBe(w.slug);
+      // The same projects, sections and decisions the decision-maker sees, the quotation still waiting for them.
+      expect(preview.view.projects).toEqual(client.projects);
+      expect(preview.view.projects[0].decisions!.quotes[0]).toMatchObject({ id: w.quoteId, status: "issued", canDecide: true });
+      expect(await count()).toBe(before);
+      await expect(w.admin.preview(actor, w.workspaceId, randomUUID())).rejects.toThrow(/not found/i);
     });
   });
 

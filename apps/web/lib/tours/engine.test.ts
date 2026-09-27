@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { TourRunner, type TourHost } from "./engine";
+import { TourRunner, actorAt, fillRoute, type TourHost } from "./engine";
+import { TOUR_PERSONAS } from "./personas";
 import { readingTime, tourMinutes } from "./timing";
 import { tourById, tourForPath, tours } from "./tours";
 import type { Tour } from "./types";
@@ -55,7 +56,14 @@ const tour: Tour = {
 };
 
 async function settle(runner: TourRunner) {
-  for (let turn = 0; turn < 200 && runner.getSnapshot().status === "running"; turn += 1) await Promise.resolve();
+  for (let turn = 0; turn < 5000 && ["preparing", "running"].includes(runner.getSnapshot().status); turn += 1) await Promise.resolve();
+}
+
+/** Every snapshot the runner publishes, for checking the order of phases and statuses. */
+function record(runner: TourRunner) {
+  const seen: Array<ReturnType<TourRunner["getSnapshot"]>> = [];
+  runner.subscribe(() => { seen.push(runner.getSnapshot()); });
+  return seen;
 }
 
 describe("tour engine", () => {
@@ -117,6 +125,112 @@ describe("tour engine", () => {
     expect(host.silenced).toBeGreaterThan(0);
   });
 
+  it("prepares behind the loader: opens the first screen and shows the tour only once its first target is there", async () => {
+    const list = element("list");
+    const targets: Record<string, HTMLElement> = {};
+    const host = fakeHost(targets);
+    let polls = 0;
+    host.find = (target) => { if (target === "list" && ++polls > 3) targets.list = list; return targets[target] ?? null; };
+    const runner = new TourRunner(host);
+    const seen = record(runner);
+    runner.start({ ...tour, steps: tour.steps.slice(0, 1) });
+    expect(runner.getSnapshot().status).toBe("preparing");
+    await settle(runner);
+    expect(host.navigated).toEqual(["/workspace/crm/leads"]);
+    const firstRunning = seen.findIndex((state) => state.status === "running");
+    expect(seen.slice(0, firstRunning).every((state) => state.status === "preparing")).toBe(true);
+    expect(seen[firstRunning]).toMatchObject({ progress: 1 });
+    // Nothing is pointed at or said until the tour shows.
+    expect(seen.slice(0, firstRunning).some((state) => state.pointer || state.phase === "speaking")).toBe(false);
+    expect(polls).toBeGreaterThan(3);
+  });
+
+  it("shows a short persona switch when another person takes over, and keeps the actor until the next one", async () => {
+    const host = fakeHost({ list: element("list"), tab: element("tab", { "data-tour-safe": "" }), field: element("field", {}, "input") });
+    const runner = new TourRunner(host);
+    const seen = record(runner);
+    const steps = tour.steps.map((step, index) => ({ ...step, actor: index === 0 ? "sales" as const : index === 2 ? "finance" as const : undefined }));
+    runner.start({ ...tour, steps });
+    await settle(runner);
+    const switches = seen.filter((state, index) => state.phase === "switching" && seen[index - 1]?.phase !== "switching").map((state) => state.actor);
+    expect(switches).toEqual(["sales", "finance"]);
+    // The cursor doesn't move while someone takes over.
+    expect(seen.filter((state) => state.phase === "switching").every((state) => !state.pointer)).toBe(true);
+    expect(seen.filter((state) => state.index === 1 && state.phase === "speaking").every((state) => state.actor === "sales")).toBe(true);
+    expect(seen.filter((state) => state.index === 3 && state.phase === "speaking").every((state) => state.actor === "finance")).toBe(true);
+  });
+
+  it("returns to records opened earlier (captured from the address) and skips a step whose record is unknown", async () => {
+    const host = fakeHost({ list: element("list"), detail: element("detail"), portal: element("portal") });
+    let where = "/workspace/pre-projects/cases/11111111-2222-4333-8444-555555555555/requirements?quote=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    host.location = () => where;
+    host.navigate = (href) => { host.navigated.push(href); where = href; };
+    host.path = () => where.split("?")[0];
+    const runner = new TourRunner(host);
+    const seen = record(runner);
+    runner.start({
+      id: "journey", title: "Home at a glance", screens: [],
+      captures: [{ key: "case", pattern: "/pre-projects/cases/([0-9a-f-]{36})" }, { key: "quote", pattern: "[?&]quote=([0-9a-f-]{36})" }],
+      steps: [
+        { id: "one", route: where, target: "list", action: "point", woddy: "hello", narration: "One." as never },
+        { id: "two", route: "/workspace/client-view/{case}", target: "portal", action: "wait", woddy: "hello", narration: "Two." as never },
+        { id: "three", route: "/workspace/projects/{project}/site", target: "detail", action: "point", woddy: "hello", narration: "Three." as never },
+        { id: "recap", action: "wait", woddy: "celebrating", narration: "Four." as never },
+      ],
+    });
+    await settle(runner);
+    expect(host.navigated).toContain("/workspace/client-view/11111111-2222-4333-8444-555555555555");
+    // No project was opened, so the site step is skipped with a note and nothing is guessed.
+    expect(host.navigated.some((href) => href.includes("/projects/"))).toBe(false);
+    expect(seen.some((state) => state.index === 2 && state.missing)).toBe(true);
+    expect(host.said).toEqual(["One.", "Two.", "Four."]);
+    // Opening another screen shows the loading state, with the cursor out of sight.
+    expect(seen.filter((state) => state.phase === "loading").every((state) => !state.pointer)).toBe(true);
+    expect(seen.some((state) => state.phase === "loading")).toBe(true);
+  });
+
+  it("moves the cursor into a dialog the step opened, never pointing behind it", async () => {
+    const dialog = document.createElement("div");
+    const sheet = element("sheet");
+    dialog.append(sheet);
+    document.body.append(dialog);
+    const overlays: HTMLElement[] = [];
+    const host = fakeHost({ list: element("list"), row: element("row", { "data-tour-safe": "" }), sheet }, overlays);
+    host.press = () => { overlays.push(dialog); };
+    const runner = new TourRunner(host);
+    const seen = record(runner);
+    runner.start({ ...tour, steps: [tour.steps[0], { id: "two", target: "row", action: "click", waitFor: "sheet", woddy: "working", narration: "Two." as never }] });
+    await settle(runner);
+    const speaking = seen.find((state) => state.index === 1 && state.phase === "speaking");
+    expect(speaking?.pointer?.dataset.tour).toBe("sheet");
+    expect(speaking?.spotlight?.dataset.tour).toBe("sheet");
+  });
+
+  it("points at the row of the job it follows, and at the first row when that job isn't known", async () => {
+    const list = element("list"), first = element("row"), followed = element("row");
+    const find = (target: string, record?: string) => (target === "list" ? list : target === "row" ? (record ? (record === "c2" ? followed : null) : first) : null);
+    const steps = [tour.steps[0], { id: "two", target: "row#{case}|row", action: "point" as const, woddy: "hello" as const, narration: "Two." as never }];
+    for (const [values, expected] of [[{ case: "c2" }, followed], [{ case: "c9" }, first], [{}, first]] as const) {
+      const host = fakeHost({});
+      host.find = find;
+      const runner = new TourRunner(host);
+      const seen = record(runner);
+      runner.start({ ...tour, steps }, values);
+      await settle(runner);
+      expect(seen.find((state) => state.index === 1 && state.phase === "moving")?.pointer).toBe(expected);
+    }
+  });
+
+  it("takes the first target that is on screen when a step names alternatives", async () => {
+    const host = fakeHost({ list: element("list"), status: element("status") });
+    const runner = new TourRunner(host);
+    runner.start({ ...tour, steps: [tour.steps[0], { id: "two", target: "send|status", action: "point", woddy: "hello", narration: "Two." as never }] });
+    const seen = record(runner);
+    await settle(runner);
+    expect(seen.find((state) => state.index === 1 && state.phase === "moving")?.pointer?.dataset.tour).toBe("status");
+    expect(host.said).toEqual(["One our client.", "Two."]);
+  });
+
   it("pauses, resumes and steps back and forward", async () => {
     const host = fakeHost({ list: element("list"), tab: element("tab", { "data-tour-safe": "" }), field: element("field", {}, "input") });
     let release = () => undefined as void;
@@ -166,6 +280,7 @@ describe("tour scripts", () => {
       for (const step of item.steps) {
         expect(en).toHaveProperty([step.narration]);
         if (step.voice) expect(en).toHaveProperty([step.voice]);
+        if (step.caption) expect(en).toHaveProperty([step.caption]);
       }
     }
   });
@@ -182,6 +297,32 @@ describe("tour scripts", () => {
       }
       if (item.next) expect(tourById(item.next)).toBeDefined();
     }
+  });
+
+  it("follows the whole journey in the full walkthrough: people, the client's side and back, with short captions", () => {
+    const journey = tourById("full-journey")!;
+    expect(tours[0]).toBe(journey);
+    expect(journey.steps.length).toBeGreaterThanOrEqual(20);
+    expect(journey.steps.length).toBeLessThanOrEqual(30);
+    expect(journey.steps[0].id).toBe("greeting");
+    const actors = journey.steps.map((step) => step.actor).filter(Boolean);
+    expect(new Set(actors)).toEqual(new Set(["sales", "designer", "estimator", "approver", "finance", "buyer", "factory", "site", "client"]));
+    // The client's side sits in the middle, then the tour returns to staff.
+    const client = journey.steps.findIndex((step) => step.actor === "client");
+    expect(client).toBeGreaterThan(5);
+    expect(journey.steps.slice(client + 1).some((step) => step.actor && step.actor !== "client")).toBe(true);
+    const captured = new Set(journey.captures?.map((capture) => capture.key));
+    for (const step of journey.steps) {
+      // Every record a route returns to was captured earlier; captions stay short on screen.
+      for (const [, key] of step.route?.matchAll(/\{(\w+)\}/g) ?? []) expect(captured.has(key), `${step.id}: {${key}}`).toBe(true);
+      expect(step.caption, step.id).toBeTruthy();
+      expect(step.caption!.split(/\s+/).length, step.id).toBeLessThanOrEqual(14);
+    }
+    for (const item of tours) for (const step of item.steps) if (step.actor) expect(Object.keys(TOUR_PERSONAS)).toContain(step.actor);
+    expect(actorAt(journey, 0)).toBeNull();
+    expect(actorAt(journey, 2)).toBe("sales");
+    expect(fillRoute("/workspace/client-view/{case}", { case: "abc" })).toBe("/workspace/client-view/abc");
+    expect(fillRoute("/workspace/projects/{project}/site", {})).toBeNull();
   });
 
   it("finds the tour for the screen and estimates a human pace", () => {

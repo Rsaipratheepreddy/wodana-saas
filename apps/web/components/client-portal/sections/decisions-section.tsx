@@ -36,12 +36,13 @@ export function DecisionsSection({ project, format, open }: SectionProps) {
   if (!rows.length) return <EmptyState illustration="done" title={t("Nothing to decide yet")} description={t("When your team sends you something to decide, it will be here.")} />;
   const waiting = rows.flatMap((group) => group.rows.filter((row) => row.waiting));
   const list = (items: Row[], label: string): ReactNode => <ul aria-label={label} className={styles.list}>{items.map((row) => <li key={row.key}>
-    <button className={`${styles.item} ${styles.itemButton}`} type="button" onClick={() => open(row.target)}>
+    <button className={`${styles.item} ${styles.itemButton}`} data-tour={row.target.kind === "quote" ? "portal-quote" : row.target.kind === "materials" ? "portal-materials" : undefined}
+      data-tour-safe type="button" onClick={() => open(row.target)}>
       <span className={styles.itemText}><span className={styles.itemTitle}>{row.title}</span>{row.meta ? <span className={styles.itemMeta}>{row.meta}</span> : null}</span>
       <span className={styles.itemEnd}><StateLabel state={row.state} /><ChevronRight aria-hidden="true" size={18} /></span>
     </button>
   </li>)}</ul>;
-  return <div className={styles.section}>
+  return <div className={styles.section} data-tour="portal-decisions">
     {waiting.length ? <section className={styles.group} aria-labelledby="portal-waiting">
       <h2 className={styles.groupTitle} id="portal-waiting">{t("Waiting for you")}</h2>{list(waiting, t("Waiting for you"))}
     </section> : null}
