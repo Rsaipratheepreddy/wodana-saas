@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query } 
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
+import { AllowWhenReadOnly } from "../auth/tenant-write-block.guard";
 import { CatalogV2Service } from "./catalog-v2.service";
 import { AiCleanDto, ImportItemsDto, ArchiveItemDto, CreateAttributeDto, CreateCatalogDto, CreateCategoryDto, CreatePriceBookDto, ItemDto, PriceBookStatusDto, PriceEntryDto, PricePreviewDto, ReviewPriceDto, SetComponentsDto } from "./catalog-v2.dto";
 
@@ -33,5 +34,5 @@ export class CatalogV2Controller {
   @Post("prices/:entryId/review") review(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("entryId", ParseUUIDPipe) e: string, @Body() body: ReviewPriceDto) { return this.catalogs.reviewPrice(a, w, e, body); }
   @Post(":catalogId/import/ai-clean") aiClean(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Body() body: AiCleanDto) { return this.catalogs.aiCleanImport(a, w, c, body); }
   @Post(":catalogId/import") importItems(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Body() body: ImportItemsDto) { return this.catalogs.importItems(a, w, c, body); }
-  @Post(":catalogId/price-preview") preview(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Body() body: PricePreviewDto) { return this.catalogs.pricePreview(a, w, c, body); }
+  @AllowWhenReadOnly() @Post(":catalogId/price-preview") preview(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Body() body: PricePreviewDto) { return this.catalogs.pricePreview(a, w, c, body); }
 }

@@ -4,6 +4,7 @@ import type { Response } from "express";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
+import { AllowWhenReadOnly } from "../auth/tenant-write-block.guard";
 import { WorkspacesModule } from "../workspaces/workspaces.module";
 import { CatalogService } from "./catalog.service";
 import { CatalogV2Controller } from "../catalog-core/catalog-v2.controller";
@@ -23,7 +24,7 @@ export class CatalogController {
     return this.service.list(actor,workspaceId,{overview:overview==='true',catalogId});
   }
   @Post("import") importRecords(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() body:ImportCatalogDto) { return this.service.importRecords(actor,workspaceId,body); }
-  @Post("preview") preview(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() body:RecipePreviewDto) { return this.service.preview(actor,workspaceId,body); }
+  @AllowWhenReadOnly() @Post("preview") preview(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() body:RecipePreviewDto) { return this.service.preview(actor,workspaceId,body); }
   @Put("records") save(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() body:SaveCatalogRecordDto) { return this.service.save(actor,workspaceId,body); }
   @Patch("records/:id") archive(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Param("id",ParseUUIDPipe) id:string,@Body() body:ArchiveCatalogDto) { return this.service.archive(actor,workspaceId,id,body); }
   @Post("collections") create(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() body:CreateCatalogDto){return this.service.createCatalog(actor,workspaceId,body);}

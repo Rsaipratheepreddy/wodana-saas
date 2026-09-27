@@ -1,7 +1,7 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
 import {
-  IsEmail, IsInt, IsString, Matches, MaxLength, Min, MinLength, ValidateNested,
+  IsEmail, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested,
 } from "class-validator";
 import { CreateWorkspaceDto } from "./create-workspace.dto";
 import { ProvisionTenantOwnerDto } from "./provision-tenant.dto";
@@ -46,6 +46,10 @@ export class TenantSetupSelectionsDto {
   @ApiProperty({ type: TenantSetupProfileRefDto })
   @ValidateNested() @Type(() => TenantSetupProfileRefDto)
   plan!: TenantSetupProfileRefDto;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 100000, description: "Seats sold, when they differ from the plan's default" })
+  @IsOptional() @IsInt() @Min(1) @Max(100000)
+  seatLimit?: number;
 }
 
 export class CreateTenantProvisioningDraftDto {

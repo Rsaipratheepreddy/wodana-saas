@@ -8,6 +8,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { ProjectFilesService } from "./project-files.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { Public } from "../auth/public.decorator";
+import { AllowWhenReadOnly } from "../auth/tenant-write-block.guard";
 import { VendorOrderService } from "./vendor-order.service";
 import {
   Body,
@@ -195,7 +196,7 @@ export class ProjectsController {
   ) {
     return this.schedule.availability(actor, workspaceId, query);
   }
-  @Post(":projectId/bookings/preview") previewBooking(
+  @AllowWhenReadOnly() @Post(":projectId/bookings/preview") previewBooking(
     @CurrentActor() actor: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
     @Param("projectId", ParseUUIDPipe) projectId: string,

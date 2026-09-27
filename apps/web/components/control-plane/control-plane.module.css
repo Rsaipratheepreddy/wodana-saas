@@ -1,0 +1,63 @@
+/* Wodana Control: accounts, the account record and create tenant. Tokens and logical properties only. */
+.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; max-inline-size: 80rem; }
+.muted { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
+.stack { display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
+.panel { display: grid; gap: var(--wd-space-4); padding-block-start: var(--wd-space-4); min-inline-size: 0; }
+
+/* Frame */
+.brand { color: inherit; text-decoration: none; }
+.shellActions { display: flex; align-items: center; gap: var(--wd-space-2); }
+.operator { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
+.operator > span:last-child { display: grid; min-inline-size: 0; }
+.operator strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.operator small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+/* List cells */
+.nameCell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; white-space: normal; }
+.nameCell > a, .nameCell > strong { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: none; overflow-wrap: anywhere; }
+.nameCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.stateCell { display: grid; justify-items: start; gap: var(--wd-space-0-5); }
+.stateCell small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+/* Record header facts */
+.properties { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-0-5) var(--wd-phi-3); margin: 0; }
+.properties > div { display: grid; grid-template-columns: 9rem minmax(0, 1fr); align-items: center; min-block-size: var(--wd-control-sm); }
+.properties dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.properties dd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin: 0; min-inline-size: 0; font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-3); min-inline-size: 0; }
+.toolbarActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin-inline-start: auto; }
+.section { display: grid; gap: var(--wd-space-2); padding-block-start: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); min-inline-size: 0; }
+.panel > .section:first-child { padding-block-start: 0; border-block-start: 0; }
+.sectionHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2); }
+.subhead { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
+
+/* Modules and seats */
+.switches { display: grid; gap: var(--wd-space-3); }
+.seatFacts { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-phi-3); margin: 0; }
+.seatFacts > div { display: grid; gap: var(--wd-space-0-5); }
+.seatFacts dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.seatFacts dd { margin: 0; font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
+
+/* DNS record */
+.record { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--wd-space-1) var(--wd-space-3); margin: 0; font-size: var(--wd-text-sm); }
+.record dt { color: var(--wd-color-text-tertiary); }
+.record dd { margin: 0; min-inline-size: 0; }
+.record code { font-family: var(--wd-font-mono); font-size: var(--wd-text-xs); overflow-wrap: anywhere; direction: ltr; unicode-bidi: isolate; }
+
+/* Dialogs and the create flow */
+.dialogBody { display: grid; gap: var(--wd-space-4); }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: start; }
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: start; }
+.form { display: grid; gap: var(--wd-phi-3); max-inline-size: 48rem; }
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-2); }
+.link { display: grid; gap: var(--wd-space-2); }
+.link code { font-family: var(--wd-font-mono); font-size: var(--wd-text-xs); overflow-wrap: anywhere; direction: ltr; unicode-bidi: isolate; }
+
+@media (max-width: 720px) {
+  .page { padding: var(--wd-space-4); }
+  .properties, .pair, .trio { grid-template-columns: minmax(0, 1fr); }
+  .properties > div { grid-template-columns: 7rem minmax(0, 1fr); }
+  .operator > span:last-child { display: none; }
+}

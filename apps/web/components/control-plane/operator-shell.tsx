@@ -1,0 +1,51 @@
+"use client";
+
+import { LogOut, Moon, Sun } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
+import { AppShell, Avatar, DesignSystemProvider, IconButton, ToastProvider, useToast } from "@/design-system";
+import type { OperatorPermission } from "@/lib/internal/auth";
+import { useLanguage, useT } from "@/lib/i18n/i18n-provider";
+import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
+import styles from "./control-plane.module.css";
+
+export type ConsoleOperator = { name: string; email: string; role: string; permissions: OperatorPermission[] };
+
+/**
+ * Wodana Control's frame. Operators work across tenants, so dates follow the operator's own language and
+ * time zone, never a tenant's region.
+ */
+export function OperatorShell({ operator, children }: { operator: ConsoleOperator; children: ReactNode }) {
+  const t = useT();
+  const { language, direction } = useLanguage();
+  const { theme, toggleTheme } = useWorkspaceTheme();
+  const [timeZone, setTimeZone] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    queueMicrotask(() => setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone));
+  }, []);
+  return <DesignSystemProvider theme={theme === "dark" ? "dark" : "light"} locale={language} direction={direction} timeZone={timeZone}>
+    <ToastProvider>
+      <AppShell title={<Link className={styles.brand} href="/internal">{t("Wodana Control")}</Link>} topActions={<ShellActions operator={operator} theme={theme} onToggleTheme={toggleTheme} />}>
+        {children}
+      </AppShell>
+    </ToastProvider>
+  </DesignSystemProvider>;
+}
+
+function ShellActions({ operator, theme, onToggleTheme }: { operator: ConsoleOperator; theme: string; onToggleTheme: () => void }) {
+  const t = useT();
+  const router = useRouter();
+  const toast = useToast();
+  return <div className={styles.shellActions}>
+    <span className={styles.operator}><Avatar name={operator.name} size="sm" /><span><strong>{operator.name}</strong><small>{operator.email}</small></span></span>
+    <IconButton aria-label={theme === "dark" ? t("Use light mode") : t("Use dark mode")} onPress={onToggleTheme}>
+      {theme === "dark" ? <Sun aria-hidden="true" size={16} /> : <Moon aria-hidden="true" size={16} />}
+    </IconButton>
+    <IconButton aria-label={t("Sign out")} onPress={() => {
+      void fetch("/api/internal/auth/logout", { method: "POST" })
+        .then((response) => { if (!response.ok) throw new Error(); router.replace("/internal/sign-in"); })
+        .catch(() => toast.push({ title: t("Sign out failed"), message: t("Try again."), tone: "danger" }));
+    }}><LogOut aria-hidden="true" data-directional="true" size={16} /></IconButton>
+  </div>;
+}

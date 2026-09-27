@@ -8,7 +8,7 @@ import {
   Form, Heading, SelectField, Skeleton, TextInput, ValidationSummary,
 } from "@/design-system";
 import {
-  emptyTenantDetails, selectedProfile, tenantDraftPayload, tenantSlug,
+  defaultSelections, emptyTenantDetails, selectedProfile, tenantDraftPayload, tenantSlug,
   validateTenantDetails, type NewTenantDetails, type SetupProfile,
 } from "@/lib/internal/provisioning";
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
@@ -70,7 +70,7 @@ export function ProvisioningPage() {
     let active = true;
     void fetch("/api/internal/provisioning/profiles", { cache: "no-store" })
       .then((response) => result<SetupProfile[]>(response))
-      .then((value) => { if (active) setProfiles(value); })
+      .then((value) => { if (active) { setProfiles(value); setDetails((current) => ({ ...current, ...defaultSelections(value) })); } })
       .catch((reason) => { if (active) setProfileError((reason as Error).message); })
       .finally(() => { if (active) setProfileLoading(false); });
     return () => { active = false; };
@@ -91,7 +91,7 @@ export function ProvisioningPage() {
           slug: saved.organization.slug, registeredName: saved.organization.firstLegalEntity.registeredName,
           ownerName: saved.owner.displayName, ownerEmail: saved.owner.email,
           regionCode: saved.defaults.region.code, firmKitCode: saved.defaults.firmKit.code,
-          planCode: saved.defaults.plan.code,
+          planCode: saved.defaults.plan.code, seatLimit: null,
         });
         const storedKey = sessionStorage.getItem(`wodana-provision:${saved.id}`);
         if (storedKey) setProvisionKey(storedKey);

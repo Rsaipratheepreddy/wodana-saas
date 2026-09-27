@@ -16,6 +16,7 @@ import sharp from "sharp";
 import { ActorUser, RequestActor } from "../auth/actor";
 import { IdentityService } from "../auth/identity.service";
 import { DatabaseService } from "../database/database.service";
+import { writeBlockFor } from "../auth/tenant-write-block.guard";
 import { CreateIntegrationConnectionDto } from "../integrations/dto/create-integration-connection.dto";
 import { UpdateIntegrationConnectionDto } from "../integrations/dto/update-integration-connection.dto";
 import { CreateBusinessUnitDto } from "./dto/create-business-unit.dto";
@@ -430,7 +431,7 @@ export class WorkspacesService {
             `INSERT INTO workspace_subscriptions
               (workspace_id, plan_code, billing_cycle, seat_limit, project_limit, currency, renews_at)
              VALUES ($1, $2, $3, $4, $5, $6, now() + interval '14 days')`,
-            [workspaceId, input.defaults!.plan.code, plan.billingCycle, plan.seatLimit, plan.projectLimit, input.defaultCurrency],
+            [workspaceId, input.defaults!.plan.code, plan.billingCycle, input.defaults!.seatLimit ?? plan.seatLimit, plan.projectLimit, input.defaultCurrency],
           );
           await client.query(
             `INSERT INTO workspace_setup_versions
@@ -465,7 +466,7 @@ export class WorkspacesService {
                seat_limit, project_limit, trial_ends_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '14 days')`,
             [accountId, input.defaults!.plan.code, input.defaults!.plan.version,
-              input.defaultCurrency, plan.billingCycle, plan.seatLimit, plan.projectLimit],
+              input.defaultCurrency, plan.billingCycle, input.defaults!.seatLimit ?? plan.seatLimit, plan.projectLimit],
           );
         }
         const legalEntityResponse = this.mapLegalEntity(legalEntity);
@@ -4185,7 +4186,12 @@ export class WorkspacesService {
       "SELECT id FROM workspaces WHERE id = $1 AND status = 'active' FOR UPDATE",
       [workspaceId],
     );
-    if (!lock.rowCount) throw new NotFoundException("Workspace not found");
+    if (lock.rowCount) return;
+    // A suspended organization is read-only; the refusal says so instead of hiding the workspace.
+    const current = await client.query<{ status: string }>("SELECT status::text AS status FROM workspaces WHERE id = $1", [workspaceId]);
+    const blocked = writeBlockFor(current.rows[0]?.status);
+    if (blocked) throw blocked;
+    throw new NotFoundException("Workspace not found");
   }
 
   private async assertSeatAvailable(

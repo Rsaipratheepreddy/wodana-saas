@@ -277,10 +277,9 @@ describe("InternalPortal", () => {
 });
 
 describe("InternalLoading", () => {
-  it("uses the shared tenant grid loading state without a one-item sidebar", () => {
+  it("uses the shared page skeleton without a one-item sidebar", () => {
     render(<InternalLoading />);
-    expect(screen.getByRole("heading", { name: "Tenants" })).toBeVisible();
-    expect(screen.getByRole("status", { name: "Loading Customer organizations" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
   });
 });

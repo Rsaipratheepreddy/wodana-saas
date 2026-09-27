@@ -18,10 +18,7 @@ import {
   CaptureAccountUsageSnapshotDto,
   CreateTenantOperationPlanDto,
   DecideTenantOperationDto,
-  DecideTenantSupportSessionDto,
   RecordAccountBillingDocumentEventDto,
-  RequestTenantSupportSessionDto,
-  TransitionTenantLifecycleDto,
   UpdateAccountCollectionStateDto,
   UpdateAccountContractDto,
   UpdateOrganizationBillingAllocationDto,
@@ -93,12 +90,6 @@ export class OperatorTenantsController {
   @RequireOperatorPermission("tenants.read")
   getStatus(@Param("externalTenantId") externalTenantId: string) {
     return this.tenants.getTenantStatus(externalTenantId);
-  }
-
-  @Get(":externalTenantId/access")
-  @RequireOperatorPermission("tenants.read")
-  getAccess(@Param("externalTenantId") externalTenantId: string) {
-    return this.tenants.getTenantAccess(externalTenantId);
   }
 
   @Get(":externalTenantId/domains")
@@ -212,27 +203,6 @@ export class OperatorTenantsController {
     return this.operations.overview(externalTenantId, request.platformOperator!.userId);
   }
 
-  @Get(":externalTenantId/operations/lifecycle")
-  @RequireOperatorPermission("tenants.read")
-  lifecycleOverview(@Param("externalTenantId") externalTenantId: string, @Req() request: OperatorRequest) {
-    return this.operations.lifecycleOverview(externalTenantId, request.platformOperator!.userId);
-  }
-
-  @Post(":externalTenantId/operations/lifecycle/transitions")
-  @RequireOperatorPermission("lifecycle.manage")
-  transitionLifecycle(
-    @Param("externalTenantId") externalTenantId: string,
-    @Headers("idempotency-key") key: string | undefined,
-    @Headers("x-request-id") correlationId: string | undefined,
-    @Body() input: TransitionTenantLifecycleDto,
-    @Req() request: OperatorRequest,
-  ) {
-    if (!key) throw new BadRequestException("Idempotency-Key is required for a lifecycle transition");
-    return this.operations.transitionLifecycle(
-      externalTenantId, input, key, request.platformOperator!.userId, correlationId,
-    );
-  }
-
   @Get(":externalTenantId/operations/billing")
   @RequireOperatorPermission("tenants.read")
   billingOverview(@Param("externalTenantId") externalTenantId: string, @Req() request: OperatorRequest) {
@@ -317,29 +287,6 @@ export class OperatorTenantsController {
     @Req() request: OperatorRequest,
   ) {
     return this.operations.updateDataPolicy(externalTenantId, input, request.platformOperator!.userId, correlationId);
-  }
-
-  @Post(":externalTenantId/operations/support-sessions")
-  @RequireOperatorPermission("support.request")
-  requestSupport(
-    @Param("externalTenantId") externalTenantId: string,
-    @Body() input: RequestTenantSupportSessionDto,
-    @Headers("x-request-id") correlationId: string | undefined,
-    @Req() request: OperatorRequest,
-  ) {
-    return this.operations.requestSupport(externalTenantId, input, request.platformOperator!.userId, correlationId);
-  }
-
-  @Post(":externalTenantId/operations/support-sessions/:sessionId/decision")
-  @RequireOperatorPermission("support.approve")
-  decideSupport(
-    @Param("externalTenantId") externalTenantId: string,
-    @Param("sessionId", ParseUUIDPipe) sessionId: string,
-    @Body() input: DecideTenantSupportSessionDto,
-    @Headers("x-request-id") correlationId: string | undefined,
-    @Req() request: OperatorRequest,
-  ) {
-    return this.operations.decideSupport(externalTenantId, sessionId, input, request.platformOperator!.userId, correlationId);
   }
 
   @Post(":externalTenantId/operations/plans")

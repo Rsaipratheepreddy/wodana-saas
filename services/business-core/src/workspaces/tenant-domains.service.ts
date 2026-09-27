@@ -1,9 +1,12 @@
-import { BadRequestException, ConflictException, GoneException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ConflictException, GoneException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from "@nestjs/common";
 import { randomBytes, randomUUID } from "node:crypto";
 import { resolveTxt } from "node:dns/promises";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
-import { domainDnsChallenge, normalizeCustomDomain, txtAnswerMatches } from "./domain-policy";
+import { ControlNoticesService, SERVICE_ACTOR_ID } from "../control-plane/control-notices.service";
+import { domainState, signInHost } from "../control-plane/control-plane.domain";
+import { resolveTenantRegistry } from "../control-plane/tenant-registry";
+import { BASE_DOMAIN, domainDnsChallenge, normalizeCustomDomain, txtAnswerMatches } from "./domain-policy";
 import { assertValidIdempotencyKey } from "./provisioning-idempotency";
 
 type DomainRow = {
@@ -12,12 +15,16 @@ type DomainRow = {
   certificateStatus: string; certificateExpiresAt: Date | null;
   routingStatus: string; routingActivatedAt: Date | null; rollbackStatus: string;
   lastErrorCode: string | null; version: number; removedAt: Date | null;
+  lastCheckedAt: Date | null; checkCount: number; ownershipLostAt: Date | null;
   createdAt: Date; updatedAt: Date;
 };
 
 @Injectable()
 export class TenantDomainsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    @Optional() private readonly notices?: ControlNoticesService,
+  ) {}
 
   // TXT lookup is the only network operation. Tests replace it without touching DNS.
   lookupTxt: (hostname: string) => Promise<string[][]> = resolveTxt;
@@ -26,7 +33,12 @@ export class TenantDomainsService {
     const workspace = await this.workspace(externalTenantId, operatorUserId);
     return this.database.tenantTransaction(workspace.id, operatorUserId, async (client) => {
       const result = await client.query<DomainRow>(`${this.select()} WHERE workspace_id = $1 AND removed_at IS NULL ORDER BY (routing_status = 'active') DESC, created_at DESC`, [workspace.id]);
-      return { platformHostname: `${workspace.slug}.wodana.ai`, domains: result.rows.map((row) => this.publicDomain(row)) };
+      const domains = result.rows.map((row) => this.publicDomain(row));
+      return {
+        platformHostname: `${workspace.slug}.${BASE_DOMAIN}`,
+        signIn: signInHost({ slug: workspace.slug, baseDomain: BASE_DOMAIN, domains }),
+        domains,
+      };
     });
   }
 
@@ -78,10 +90,17 @@ export class TenantDomainsService {
     if (initial.version !== expectedVersion) throw new ConflictException("Domain request changed; reload and try again");
     if (initial.dnsStatus === "verified") return this.publicDomain(initial);
     if (initial.challengeExpiresAt <= new Date()) throw new GoneException("DNS challenge expired; request a new one");
-    if (!await this.ownershipRecordPresent(initial)) throw new ConflictException("DNS ownership record was not found yet");
+    if (!await this.ownershipRecordPresent(initial)) {
+      // The attempt is a fact ("verifying"), even though the record is not there yet.
+      await this.database.tenantTransaction(workspace.id, operatorUserId, (client) => client.query(
+        `UPDATE workspace_domains SET last_checked_at = now(), check_count = check_count + 1, updated_at = now()
+         WHERE workspace_id = $1 AND id = $2 AND removed_at IS NULL`, [workspace.id, domainId]));
+      throw new ConflictException("DNS ownership record was not found yet");
+    }
     return this.database.tenantTransaction(workspace.id, operatorUserId, async (client) => {
       const updated = await client.query<DomainRow>(
         `UPDATE workspace_domains SET dns_status = 'verified', dns_verified_at = now(),
+           last_checked_at = now(), check_count = check_count + 1,
            certificate_status = 'manual_setup_required', version = version + 1, updated_at = now()
          WHERE workspace_id = $1 AND id = $2 AND version = $3 AND challenge_value = $4
            AND removed_at IS NULL AND challenge_expires_at > now() AND dns_status = 'pending'
@@ -115,6 +134,8 @@ export class TenantDomainsService {
            routing_status = CASE WHEN NOT $5 AND routing_status IN ('active', 'pending') THEN 'failed' ELSE routing_status END,
            rollback_status = CASE WHEN NOT $5 AND (routing_status IN ('active', 'pending') OR certificate_status IN ('pending', 'issued')) THEN 'pending' ELSE rollback_status END,
            last_error_code = CASE WHEN $5 THEN NULL ELSE 'dns_ownership_lost' END,
+           ownership_lost_at = CASE WHEN $5 THEN NULL ELSE now() END,
+           last_checked_at = now(), check_count = check_count + 1,
            version = version + 1, updated_at = now()
          WHERE workspace_id = $1 AND id = $2 AND version = $3 AND challenge_value = $4
            AND removed_at IS NULL AND dns_status = 'verified'
@@ -124,9 +145,124 @@ export class TenantDomainsService {
       if (!updated.rowCount) throw new ConflictException("Domain request changed; reload and try again");
       await this.audit(client, operatorUserId, externalTenantId, "tenant.domain_dns_rechecked", correlationId,
         { domainId, hostname: initial.hostname, ownershipPresent: present, rollbackRequired: updated.rows[0].rollbackStatus === "pending" });
-      return this.publicDomain(updated.rows[0]);
+      const direct = present ? [] : await this.notify(client, workspace.id, "domain.ownership_lost", updated.rows[0], operatorUserId);
+      return { domain: this.publicDomain(updated.rows[0]), direct };
+    }).then(async ({ domain, direct }) => {
+      await this.notices?.deliver(workspace.id, direct, operatorUserId);
+      return domain;
     });
   }
+
+  /**
+   * The sweep's ownership check: a verified domain whose TXT record disappeared falls back to the Wodana
+   * address (routing off, rollback pending), and the owner and the domain operators are told.
+   */
+  async sweepOwnership(workspaceId: string) {
+    const due = await this.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, (client) => client.query<DomainRow>(
+      `${this.select()} WHERE workspace_id = $1 AND removed_at IS NULL AND dns_status = 'verified'
+         AND (last_checked_at IS NULL OR last_checked_at < now() - interval '6 hours')`, [workspaceId]));
+    let lost = 0;
+    for (const domain of due.rows) {
+      const present = await this.ownershipRecordPresent(domain).catch(() => null);
+      if (present === null) continue;
+      const direct = await this.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => {
+        const updated = await client.query<DomainRow>(
+          `UPDATE workspace_domains SET
+             dns_status = CASE WHEN $4 THEN 'verified' ELSE 'failed' END,
+             dns_verified_at = CASE WHEN $4 THEN now() ELSE dns_verified_at END,
+             routing_status = CASE WHEN NOT $4 AND routing_status IN ('active', 'pending') THEN 'failed' ELSE routing_status END,
+             rollback_status = CASE WHEN NOT $4 AND (routing_status IN ('active', 'pending') OR certificate_status IN ('pending', 'issued')) THEN 'pending' ELSE rollback_status END,
+             last_error_code = CASE WHEN $4 THEN NULL ELSE 'dns_ownership_lost' END,
+             ownership_lost_at = CASE WHEN $4 THEN NULL ELSE now() END,
+             last_checked_at = now(), check_count = check_count + 1, version = version + 1, updated_at = now()
+           WHERE workspace_id = $1 AND id = $2 AND version = $3 AND dns_status = 'verified' ${this.returning()}`,
+          [workspaceId, domain.id, domain.version, present]);
+        if (!updated.rowCount || present) return [] as string[];
+        lost += 1;
+        await this.audit(client, null, workspaceId, "tenant.domain_ownership_lost", undefined,
+          { workspaceId, domainId: domain.id, hostname: domain.hostname });
+        return this.notify(client, workspaceId, "domain.ownership_lost", updated.rows[0], null);
+      });
+      await this.notices?.deliver(workspaceId, direct, null);
+    }
+    return { checked: due.rowCount ?? 0, lost };
+  }
+
+  /** Records the certificate the edge issued for a verified domain (certificate_issued). */
+  async recordCertificate(externalTenantId: string, domainId: string, expectedVersion: number, expiresAt: string,
+    operatorUserId: string, correlationId?: string) {
+    const expiry = new Date(expiresAt);
+    if (Number.isNaN(expiry.getTime()) || expiry <= new Date()) throw new BadRequestException("Enter a future certificate expiry.");
+    return this.change(externalTenantId, domainId, expectedVersion, operatorUserId, async (client, workspaceId, domain) => {
+      if (domain.dnsStatus !== "verified") throw new ConflictException("Verify DNS ownership before recording a certificate");
+      const updated = await client.query<DomainRow>(
+        `UPDATE workspace_domains SET certificate_status = 'issued', certificate_expires_at = $3,
+           last_error_code = NULL, version = version + 1, updated_at = now()
+         WHERE workspace_id = $1 AND id = $2 ${this.returning()}`, [workspaceId, domainId, expiry]);
+      await this.audit(client, operatorUserId, externalTenantId, "tenant.domain_certificate_recorded", correlationId,
+        { domainId, hostname: domain.hostname, expiresAt: expiry.toISOString() });
+      return { row: updated.rows[0], direct: [] };
+    });
+  }
+
+  /** Routes sign-in to the custom domain (live). Needs verified ownership and a current certificate. */
+  async activate(externalTenantId: string, domainId: string, expectedVersion: number, operatorUserId: string, correlationId?: string) {
+    return this.change(externalTenantId, domainId, expectedVersion, operatorUserId, async (client, workspaceId, domain) => {
+      if (domain.dnsStatus !== "verified" || domain.certificateStatus !== "issued"
+        || !domain.certificateExpiresAt || domain.certificateExpiresAt <= new Date()) {
+        throw new ConflictException("A verified domain with a current certificate is required to go live");
+      }
+      if (domain.rollbackStatus === "pending" || domain.rollbackStatus === "failed") {
+        throw new ConflictException("Finish the rollback before going live again");
+      }
+      const updated = await client.query<DomainRow>(
+        `UPDATE workspace_domains SET routing_status = 'active', routing_activated_at = now(), rollback_status = 'none',
+           version = version + 1, updated_at = now()
+         WHERE workspace_id = $1 AND id = $2 ${this.returning()}`, [workspaceId, domainId]);
+      await this.audit(client, operatorUserId, externalTenantId, "tenant.domain_live", correlationId, { domainId, hostname: domain.hostname });
+      return { row: updated.rows[0], direct: await this.notify(client, workspaceId, "domain.live", updated.rows[0], operatorUserId) };
+    });
+  }
+
+  /** Confirms routing and the certificate were taken down after a failure, so the domain can be verified again. */
+  async completeRollback(externalTenantId: string, domainId: string, expectedVersion: number, operatorUserId: string, correlationId?: string) {
+    return this.change(externalTenantId, domainId, expectedVersion, operatorUserId, async (client, workspaceId, domain) => {
+      if (domain.rollbackStatus !== "pending" && domain.rollbackStatus !== "failed") {
+        throw new ConflictException("This domain has no rollback to finish");
+      }
+      const updated = await client.query<DomainRow>(
+        `UPDATE workspace_domains SET routing_status = 'not_requested', routing_activated_at = NULL,
+           certificate_status = CASE WHEN certificate_status IN ('pending', 'issued') THEN 'not_requested' ELSE certificate_status END,
+           certificate_expires_at = NULL, rollback_status = 'completed', version = version + 1, updated_at = now()
+         WHERE workspace_id = $1 AND id = $2 ${this.returning()}`, [workspaceId, domainId]);
+      await this.audit(client, operatorUserId, externalTenantId, "tenant.domain_rollback_completed", correlationId,
+        { domainId, hostname: domain.hostname });
+      return { row: updated.rows[0], direct: [] };
+    });
+  }
+
+  private async change(externalTenantId: string, domainId: string, expectedVersion: number, operatorUserId: string,
+    work: (client: PoolClient, workspaceId: string, domain: DomainRow) => Promise<{ row: DomainRow; direct: string[] }>) {
+    const workspace = await this.workspace(externalTenantId, operatorUserId);
+    const outcome = await this.database.tenantTransaction(workspace.id, operatorUserId, async (client) => {
+      const found = await client.query<DomainRow>(`${this.select()} WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspace.id, domainId]);
+      if (!found.rowCount) throw new NotFoundException("Domain request not found");
+      const domain = found.rows[0];
+      if (domain.removedAt) throw new GoneException("Domain request was removed");
+      if (domain.version !== expectedVersion) throw new ConflictException("Domain request changed; reload and try again");
+      return work(client, workspace.id, domain);
+    });
+    await this.notices?.deliver(workspace.id, outcome.direct, operatorUserId);
+    return this.publicDomain(outcome.row);
+  }
+
+  private notify(client: PoolClient, workspaceId: string, event: "domain.ownership_lost" | "domain.live", domain: DomainRow,
+    actorUserId: string | null): Promise<string[]> {
+    if (!this.notices) return Promise.resolve([]);
+    return this.notices.queue(client, { workspaceId, event, sourceType: "domain", sourceId: domain.id, actorUserId,
+      domain: domain.hostname });
+  }
+
 
   async rotateChallenge(externalTenantId: string, domainId: string, expectedVersion: number,
     operatorUserId: string, correlationId?: string) {
@@ -182,13 +318,12 @@ export class TenantDomainsService {
   }
 
   private async workspace(externalTenantId: string, operatorUserId: string) {
-    const registry = await this.database.query<{ id: string }>(
-      `SELECT workspace_id AS id FROM tenant_provisioning_requests WHERE external_tenant_id = $1`, [externalTenantId],
-    );
-    if (!registry.rowCount) throw new NotFoundException("Customer organization not found");
-    return this.database.tenantTransaction(registry.rows[0].id, operatorUserId, async (client) => {
+    const registry = await resolveTenantRegistry(this.database, externalTenantId).catch(() => {
+      throw new NotFoundException("Customer organization not found");
+    });
+    return this.database.tenantTransaction(registry.workspaceId, operatorUserId, async (client) => {
       const found = await client.query<{ id: string; slug: string }>(
-        `SELECT id, slug FROM workspaces WHERE id = $1`, [registry.rows[0].id],
+        `SELECT id, slug FROM workspaces WHERE id = $1`, [registry.workspaceId],
       );
       if (!found.rowCount) throw new NotFoundException("Customer organization not found");
       return found.rows[0];
@@ -221,7 +356,8 @@ export class TenantDomainsService {
       certificate_status AS "certificateStatus", certificate_expires_at AS "certificateExpiresAt",
       routing_status AS "routingStatus", routing_activated_at AS "routingActivatedAt",
       rollback_status AS "rollbackStatus", last_error_code AS "lastErrorCode", version,
-      removed_at AS "removedAt", created_at AS "createdAt", updated_at AS "updatedAt"
+      removed_at AS "removedAt", last_checked_at AS "lastCheckedAt", check_count AS "checkCount",
+      ownership_lost_at AS "ownershipLostAt", created_at AS "createdAt", updated_at AS "updatedAt"
       FROM workspace_domains`;
   }
 
@@ -236,7 +372,8 @@ export class TenantDomainsService {
     certificate_status AS "certificateStatus", certificate_expires_at AS "certificateExpiresAt",
     routing_status AS "routingStatus", routing_activated_at AS "routingActivatedAt",
     rollback_status AS "rollbackStatus", last_error_code AS "lastErrorCode", version,
-    removed_at AS "removedAt", created_at AS "createdAt", updated_at AS "updatedAt"`; }
+    removed_at AS "removedAt", last_checked_at AS "lastCheckedAt", check_count AS "checkCount",
+    ownership_lost_at AS "ownershipLostAt", created_at AS "createdAt", updated_at AS "updatedAt"`; }
 
   private publicDomain(row: DomainRow) {
     const now = Date.now();
@@ -248,6 +385,7 @@ export class TenantDomainsService {
       && ownershipFresh && certificateCurrent && !row.removedAt;
     return {
       id: row.id, hostname: row.hostname, version: row.version,
+      state: domainState(row, new Date(now)),
       isUsable,
       issues: [
         ...(row.dnsStatus === "failed" ? ["DNS ownership record is missing"] : []),
@@ -261,11 +399,12 @@ export class TenantDomainsService {
       certificate: { status: row.certificateStatus, expiresAt: row.certificateExpiresAt },
       routing: { status: row.routingStatus, activatedAt: row.routingActivatedAt },
       rollback: { status: row.rollbackStatus },
+      lastCheckedAt: row.lastCheckedAt, checkCount: row.checkCount, ownershipLostAt: row.ownershipLostAt,
       removedAt: row.removedAt, updatedAt: row.updatedAt,
     };
   }
 
-  private audit(client: PoolClient, actorId: string, externalTenantId: string, action: string,
+  private audit(client: PoolClient, actorId: string | null, externalTenantId: string, action: string,
     suppliedCorrelationId: string | undefined, details: Record<string, unknown>) {
     const correlationId = suppliedCorrelationId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(suppliedCorrelationId)
       ? suppliedCorrelationId : randomUUID();

@@ -267,7 +267,8 @@ export function planBillingAllocation(input: {
     || !Number.isInteger(input.projectLimit) || input.projectLimit < 1) {
     throw new Error("Allocation limits must be positive integers");
   }
-  if (input.seatLimit < input.currentUsage.seats) throw new Error("Seat allocation is below current reserved seats");
+  // A seat limit below the seats in use is allowed: members keep their access and new invites are refused
+  // until the organization is back under its limit (§6.1 "downgrade below used seats").
   if (input.projectLimit < input.currentUsage.projects) throw new Error("Project allocation is below current usage");
   if (input.status === "scheduled" && effectiveFrom <= now) throw new Error("A scheduled allocation needs a future start");
   if (effectiveUntil && effectiveUntil <= effectiveFrom) throw new Error("Allocation end must be after its start");

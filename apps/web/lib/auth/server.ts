@@ -29,6 +29,10 @@ export type AuthProfile = {
     workspaceCurrency?: string | null;
     workspaceTimezone?: string | null;
     accountName?: string | null;
+    /** A suspended organization stays readable; the API refuses its changes (423). */
+    workspaceStatus?: string;
+    /** Set when Wodana configured the organization's modules; then only those modules show, for owners too. */
+    entitlement?: { status: string; version: number | null };
     allowedModules: Array<"workspace" | "crm" | "pre-project" | "projects" | "hrms">;
     allowedPermissions?: string[];
     roles: string[];

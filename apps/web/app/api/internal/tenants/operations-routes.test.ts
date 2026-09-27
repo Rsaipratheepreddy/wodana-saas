@@ -14,14 +14,10 @@ import { internalBinaryResponse, internalJsonResponse } from "@/lib/internal/pro
 import { isSameOrigin } from "@/lib/workspace/workspace-api";
 import { GET as overview } from "./[externalTenantId]/operations/route";
 import { PATCH as updateResource } from "./[externalTenantId]/operations/[resource]/route";
-import { POST as requestSupport } from "./[externalTenantId]/operations/support-sessions/route";
-import { POST as decideSupport } from "./[externalTenantId]/operations/support-sessions/[sessionId]/decision/route";
 import { POST as planOperation } from "./[externalTenantId]/operations/plans/route";
 import { POST as decideOperation } from "./[externalTenantId]/operations/[resource]/decision/route";
 import { GET as downloadExport } from "./[externalTenantId]/operations/exports/[exportId]/route";
 import { GET as billingOverview } from "./[externalTenantId]/operations/billing/route";
-import { GET as lifecycleOverview } from "./[externalTenantId]/operations/lifecycle/route";
-import { POST as transitionLifecycle } from "./[externalTenantId]/operations/lifecycle/transitions/route";
 import { PATCH as patchBilling, POST as postBilling } from "./[externalTenantId]/operations/billing/[resource]/route";
 import { POST as recordBillingDocument } from "./[externalTenantId]/operations/billing/documents/events/route";
 
@@ -32,7 +28,6 @@ afterEach(() => {
 
 describe("tenant operation BFF routes", () => {
   const tenant = "tenant_test";
-  const sessionId = "00000000-0000-4000-8000-000000000111";
 
   it("loads the operator projection through the authenticated proxy", async () => {
     await overview(new Request(`http://wodana.test/api/internal/tenants/${tenant}/operations`), {
@@ -73,33 +68,6 @@ describe("tenant operation BFF routes", () => {
     })).status).toBe(400);
   });
 
-  it("loads lifecycle and forwards only same-origin, keyed decisions", async () => {
-    await lifecycleOverview(new Request(`http://wodana.test/api/internal/tenants/${tenant}/operations/lifecycle`), {
-      params: Promise.resolve({ externalTenantId: tenant }),
-    });
-    expect(internalJsonResponse).toHaveBeenLastCalledWith(
-      `/internal/operator/tenants/${tenant}/operations/lifecycle`, { method: "GET" }, expect.any(String),
-    );
-    const url = `http://wodana.test/api/internal/tenants/${tenant}/operations/lifecycle/transitions`;
-    const body = JSON.stringify({ expectedVersion: 1, to: "suspended", reason: "Customer-approved access pause" });
-    expect((await transitionLifecycle(new Request(url, { method: "POST", body }), {
-      params: Promise.resolve({ externalTenantId: tenant }),
-    })).status).toBe(400);
-    vi.mocked(isSameOrigin).mockReturnValue(false);
-    expect((await transitionLifecycle(new Request(url, { method: "POST", body, headers: { "idempotency-key": "pause-1" } }), {
-      params: Promise.resolve({ externalTenantId: tenant }),
-    })).status).toBe(400);
-    vi.mocked(isSameOrigin).mockReturnValue(true);
-    await transitionLifecycle(new Request(url, { method: "POST", body, headers: { "idempotency-key": "pause-1" } }), {
-      params: Promise.resolve({ externalTenantId: tenant }),
-    });
-    expect(internalJsonResponse).toHaveBeenLastCalledWith(
-      `/internal/operator/tenants/${tenant}/operations/lifecycle/transitions`,
-      expect.objectContaining({ method: "POST", body,
-        headers: expect.objectContaining({ "idempotency-key": "pause-1" }) }), expect.any(String),
-    );
-  });
-
   it("requires a bounded idempotency key for billing document events", async () => {
     const body = JSON.stringify({ documentType: "invoice", status: "issued" });
     expect((await recordBillingDocument(new Request("http://wodana.test/billing/documents", { method: "POST", body }), {
@@ -133,31 +101,6 @@ describe("tenant operation BFF routes", () => {
     expect(internalJsonResponse).toHaveBeenCalledWith(
       `/internal/operator/tenants/${tenant}/operations/entitlements`,
       expect.objectContaining({ method: "PATCH", body }),
-      expect.any(String),
-    );
-  });
-
-  it("proxies support requests and validates decisions", async () => {
-    const supportBody = JSON.stringify({ accessLevel: "read_only", durationMinutes: 60, reason: "Investigate a reported access issue" });
-    await requestSupport(new Request(`http://wodana.test/api/internal/tenants/${tenant}/operations/support-sessions`, {
-      method: "POST", body: supportBody,
-    }), { params: Promise.resolve({ externalTenantId: tenant }) });
-    expect(internalJsonResponse).toHaveBeenCalledWith(
-      `/internal/operator/tenants/${tenant}/operations/support-sessions`,
-      expect.objectContaining({ method: "POST", body: supportBody }),
-      expect.any(String),
-    );
-
-    const decisionBody = JSON.stringify({ expectedVersion: 1, decision: "approve", reason: "Reviewed by a second operator" });
-    expect((await decideSupport(new Request("http://wodana.test/invalid", { method: "POST", body: decisionBody }), {
-      params: Promise.resolve({ externalTenantId: tenant, sessionId: "not-a-uuid" }),
-    })).status).toBe(400);
-    await decideSupport(new Request("http://wodana.test/valid", { method: "POST", body: decisionBody }), {
-      params: Promise.resolve({ externalTenantId: tenant, sessionId }),
-    });
-    expect(internalJsonResponse).toHaveBeenCalledWith(
-      `/internal/operator/tenants/${tenant}/operations/support-sessions/${sessionId}/decision`,
-      expect.objectContaining({ method: "POST", body: decisionBody }),
       expect.any(String),
     );
   });

@@ -210,7 +210,7 @@ export class MfaService {
         `SELECT 1 FROM workspace_memberships membership
          JOIN workspaces workspace ON workspace.id = membership.workspace_id
          WHERE membership.workspace_id = $1 AND membership.user_id = $2
-           AND membership.status = 'active' AND workspace.status = 'active'`,
+           AND membership.status = 'active' AND workspace.status IN ('active', 'suspended')`,
         [challenge.workspaceId, challenge.userId],
       );
       if (!membership.rowCount) {

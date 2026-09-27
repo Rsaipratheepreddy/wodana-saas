@@ -46,6 +46,7 @@ export function planTenantLifecycleTransition(input: {
     workspaceStatus: input.to === "suspended" ? "suspended" as const
       : input.to === "archived" ? "archived" as const : "active" as const,
     noticeRequired: input.to !== "draft",
-    noticeDeliveryState: input.to === "draft" ? "not_required" as const : "not_configured" as const,
+    // A notice is pending until its channel reports a receipt (tenant_control_notices); never "delivered" here.
+    noticeDeliveryState: input.to === "draft" ? "not_required" as const : "pending" as const,
   };
 }

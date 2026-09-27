@@ -24,7 +24,7 @@ describe("tenant organization lifecycle", () => {
     expect(() => planTenantLifecycleTransition({ from: "active", to: "grace", now })).toThrow("future end date");
     expect(planTenantLifecycleTransition({ from: "active", to: "grace", now,
       graceEndsAt: new Date("2026-09-20T00:00:00Z") })).toEqual({
-      workspaceStatus: "active", noticeRequired: true, noticeDeliveryState: "not_configured",
+      workspaceStatus: "active", noticeRequired: true, noticeDeliveryState: "pending",
     });
     expect(planTenantLifecycleTransition({ from: "active", to: "suspended", now }).workspaceStatus).toBe("suspended");
   });
