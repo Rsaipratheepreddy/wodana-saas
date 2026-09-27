@@ -622,7 +622,7 @@ export class QuotationBuilderService {
       me: userId,
       assistant: await this.assistant(client, workspaceId, userId),
       document: documentOf(quote, settings),
-      brand: await effectivePortalBrand(client, workspaceId, null),
+      brand: await effectivePortalBrand(client, workspaceId),
       client: (await client.query<{ name: string; project: string; address: string | null }>(
         `SELECT coalesce(party.display_name, opportunity.title) AS name, opportunity.title AS project,
                 (SELECT concat_ws(', ', NULLIF(address.line1, ''), NULLIF(address.locality, ''), NULLIF(address.region, '')) FROM crm_addresses address

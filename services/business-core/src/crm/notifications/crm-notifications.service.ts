@@ -204,25 +204,32 @@ export class CrmNotificationsService {
    * blocks the rest.
    */
   async dispatchStaffEmailsInternal(input: ClaimNotificationJobsDto) {
+    // Team members (users) and client portal contacts: both are sent by the platform mailer in the tenant's brand.
     const claimed = await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
-      const result = await client.query<{ id: string; subject: string | null; body: string; deepLink: string | null; email: string | null; eventType: string }>(
+      const result = await client.query<{ id: string; subject: string | null; body: string; deepLink: string | null; email: string | null; eventType: string; recipientType: string }>(
         `WITH due AS (
-           SELECT notification.id FROM notifications notification
-           WHERE notification.workspace_id=$1 AND notification.recipient_type='user' AND notification.channel='email'
+           SELECT notification.id, CASE WHEN notification.recipient_type='user' THEN person.primary_email ELSE contact.email END AS email
+           FROM notifications notification
+           LEFT JOIN users person ON notification.recipient_type='user' AND person.id=notification.recipient_id
+           LEFT JOIN client_portal_grants contact ON notification.recipient_type='portal_contact' AND contact.workspace_id=notification.workspace_id
+                                                AND contact.id=notification.recipient_id AND contact.active
+           WHERE notification.workspace_id=$1 AND notification.recipient_type IN ('user','portal_contact') AND notification.channel='email'
              AND ((notification.status IN ('pending','scheduled') AND notification.scheduled_for<=now())
                OR (notification.status='processing' AND notification.processing_started_at<now()-interval '5 minutes'))
-           ORDER BY notification.scheduled_for FOR UPDATE SKIP LOCKED LIMIT $2)
+           ORDER BY notification.scheduled_for FOR UPDATE OF notification SKIP LOCKED LIMIT $2)
          UPDATE notifications notification SET status='processing', processing_started_at=now(), version=version+1
-         FROM due, users person WHERE notification.id=due.id AND person.id=notification.recipient_id
-         RETURNING notification.id, notification.subject, notification.body, notification.deep_link AS "deepLink", person.primary_email AS email, notification.event_type AS "eventType"`,
+         FROM due WHERE notification.id=due.id
+         RETURNING notification.id, notification.subject, notification.body, notification.deep_link AS "deepLink", due.email, notification.event_type AS "eventType",
+                   notification.recipient_type AS "recipientType"`,
         [input.workspaceId, Math.min(input.limit ?? 50, 100)],
       );
       return result.rows;
     });
     let delivered = 0;
     for (const row of claimed) {
+      const actionLabel = row.recipientType === "portal_contact" ? "Open your project" : row.eventType === "crm.lead.assigned" ? "Open enquiry" : undefined;
       const outcome = row.email
-        ? await (this.mailer ? this.mailer.sendStaffNotice({ workspaceId: input.workspaceId, to: row.email, subject: row.subject ?? "Update", body: row.body, deepLink: row.deepLink, actionLabel: row.eventType === "crm.lead.assigned" ? "Open enquiry" : undefined }) : Promise.resolve({ status: "not_configured" as const, provider: null, messageId: null })).catch(() => ({ status: "failed" as const, provider: null, messageId: null }))
+        ? await (this.mailer ? this.mailer.sendStaffNotice({ workspaceId: input.workspaceId, to: row.email, subject: row.subject ?? "Update", body: row.body, deepLink: row.deepLink, actionLabel }) : Promise.resolve({ status: "not_configured" as const, provider: null, messageId: null })).catch(() => ({ status: "failed" as const, provider: null, messageId: null }))
         : { status: "failed" as const, provider: null, messageId: null };
       const status = outcome.status === "sent" ? "delivered" : outcome.status === "not_configured" ? "suppressed" : "failed";
       if (status === "delivered") delivered += 1;
@@ -243,7 +250,7 @@ export class CrmNotificationsService {
         FROM notifications notification
         WHERE notification.workspace_id=$1
           AND notification.channel<>'in_app'
-          AND NOT (notification.recipient_type='user' AND notification.channel='email')
+          AND NOT (notification.recipient_type IN ('user','portal_contact') AND notification.channel='email')
           AND ((notification.status IN ('pending','scheduled') AND notification.scheduled_for<=now())
             OR (notification.status='processing' AND notification.processing_started_at<now()-interval '5 minutes'))
         ORDER BY notification.scheduled_for

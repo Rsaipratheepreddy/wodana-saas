@@ -2,7 +2,7 @@
 
 import type { Quote, PortalBrand } from "@/lib/commercial/types";
 import type { CSSProperties } from "react";
-import { BrandLogo } from "./portal-settings";
+import { BrandLogo } from "./brand-logo";
 import s from "./quotation-cover.module.css";
 
 type CoverQuote = Pick<

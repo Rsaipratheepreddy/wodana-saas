@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
-import { Button, ControlledModalDialog, DateField, EmptyState, ErrorState, IconButton, InlineNotice, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Button, Checkbox, ControlledModalDialog, DateField, EmptyState, ErrorState, IconButton, InlineNotice, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { siteApi } from "@/lib/site/client";
 import type { Outlook, Safety, SiteReport, SiteState } from "@/lib/site/types";
@@ -87,6 +87,12 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
       {report.notes ? <li className={styles.muted}>{report.notes}</li> : null}
     </ul>
     <SavedPhotos photos={report.photos.map((photo) => ({ ...photo, byName: report.authorName, at: report.reportDate }))} url={api.photoUrl} />
+    {/* The project manager chooses which photos of an approved report the client sees in the portal. */}
+    {report.status === "approved" && state.canManage && report.photos.length ? <fieldset className={styles.group}>
+      <legend>{t("Shown to the client")}</legend>
+      {report.photos.map((photo, index) => <Checkbox key={photo.id} isSelected={Boolean(photo.shared)}
+        onChange={(shared) => void run("share_photo", { photoId: photo.id, shared })}>{t("Photo {number}", { number: index + 1 })}</Checkbox>)}
+    </fieldset> : null}
     {waiting.includes(report) ? <div className={styles.actions}>
       <Button size="compact" variant="quiet" onPress={() => setReturning(report)}>{t("Send back")}</Button>
       <Button size="compact" variant="primary" onPress={() => void run("approve", { reportId: report.id, version: report.version })}>{t("Approve")}</Button>

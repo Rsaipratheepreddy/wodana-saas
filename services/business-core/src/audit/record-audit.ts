@@ -6,7 +6,7 @@ type Db = Pick<PoolClient, "query">;
 /** One audited change: an immutable audit event plus the matching outbox event, in the caller's transaction. */
 export async function recordAudit(db: Db, change: {
   workspaceId: string; actorUserId: string | null; action: string; entityType: string; entityId: string;
-  before?: unknown; after?: unknown; source?: "user" | "internal";
+  before?: unknown; after?: unknown; source?: "user" | "internal" | "client_portal";
 }) {
   const eventId = randomUUID();
   const correlationId = randomUUID();

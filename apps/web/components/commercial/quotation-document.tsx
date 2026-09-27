@@ -1,5 +1,5 @@
-import { EmptyState } from "@/design-system";
 "use client";
+import { EmptyState } from "@/design-system";
 import { Fragment } from "react";
 import {
   materialAmount,
@@ -114,12 +114,12 @@ export function QuotationDocument({
                   <table>
                     <colgroup>
                       <col style={{ width: "18%" }} />
-                      <col style={{ width: "18%" }} />
-                      <col style={{ width: "14%" }} />
+                      <col style={{ width: "12%" }} />
+                      <col style={{ width: "12%" }} />
                       <col style={{ width: "24%" }} />
                       <col style={{ width: "8%" }} />
-                      <col style={{ width: "9%" }} />
-                      <col style={{ width: "9%" }} />
+                      <col style={{ width: "13%" }} />
+                      <col style={{ width: "13%" }} />
                     </colgroup>
                     <thead>
                       <tr>

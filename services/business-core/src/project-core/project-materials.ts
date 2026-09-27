@@ -213,12 +213,16 @@ export async function sendMaterials(db: Db, workspaceId: string, projectId: stri
  * Records the client's decision on the revision they have: each material approved or rejected (with a
  * reason). All approved → the list is signed off and every line it covers records it.
  */
-export async function recordMaterialDecision(db: Db, workspaceId: string, projectId: string, input: Record<string, unknown>, actorUserId: string) {
+export async function recordMaterialDecision(db: Db, workspaceId: string, projectId: string, input: Record<string, unknown>, actorUserId: string | null,
+  portal?: { grantId: string; name: string; revisionId: string }) {
   const revision = await latestRevision(db, workspaceId, projectId, true);
-  if (!revision || revision.status !== "sent") throw new ConflictException("Send the material list to the client first.");
-  const decidedBy = typeof input.decidedBy === "string" ? input.decidedBy.trim() : "";
+  if (!revision || revision.status !== "sent") throw new ConflictException(portal ? "This material list isn't waiting for your decision any more." : "Send the material list to the client first.");
+  // The client decides on the exact revision they were shown.
+  if (portal && revision.id !== portal.revisionId) throw new ConflictException("A newer material list was sent. Reload to see it.");
+  const decidedBy = portal ? portal.name : typeof input.decidedBy === "string" ? input.decidedBy.trim() : "";
   if (!decidedBy || decidedBy.length > 200) throw new BadRequestException("Say who decided.");
-  if (!METHODS.includes(input.method as (typeof METHODS)[number])) throw new BadRequestException("Say how the client decided.");
+  if (!portal && !METHODS.includes(input.method as (typeof METHODS)[number])) throw new BadRequestException("Say how the client decided.");
+  if (!portal && !actorUserId) throw new BadRequestException("Say who recorded the decision.");
   const snapshot = (await db.query<{ snapshot: Array<{ id: string; boqLineIds: string[] }> }>(`SELECT snapshot FROM project_material_revisions WHERE workspace_id = $1 AND id = $2`, [workspaceId, revision.id])).rows[0].snapshot;
   const given = new Map((Array.isArray(input.decisions) ? input.decisions : []).map((raw) => {
     const row = (raw ?? {}) as Record<string, unknown>;
@@ -233,8 +237,10 @@ export async function recordMaterialDecision(db: Db, workspaceId: string, projec
   const signedOff = decisions.every((entry) => entry.decision === "approved");
   const note = typeof input.note === "string" ? input.note.trim().slice(0, 2000) : "";
   await db.query(
-    `UPDATE project_material_revisions SET status = $3, decided_at = clock_timestamp(), decided_by_name = $4, decision_method = $5, recorded_by = $6, decision_note = $7
-      WHERE workspace_id = $1 AND id = $2`, [workspaceId, revision.id, signedOff ? "signed_off" : "changes_requested", decidedBy, input.method, actorUserId, note]);
+    `UPDATE project_material_revisions SET status = $3, decided_at = clock_timestamp(), decided_by_name = $4, decision_method = $5, recorded_by = $6, decision_note = $7,
+            decided_by_grant_id = $8
+      WHERE workspace_id = $1 AND id = $2`,
+    [workspaceId, revision.id, signedOff ? "signed_off" : "changes_requested", decidedBy, portal ? "portal" : input.method, portal ? null : actorUserId, note, portal?.grantId ?? null]);
   if (signedOff)
     for (const lineId of new Set(snapshot.flatMap((item) => item.boqLineIds)))
       await event(db, workspaceId, projectId, lineId, "signed_off", { revision: `R${revision.number}`, by: decidedBy }, null, actorUserId);

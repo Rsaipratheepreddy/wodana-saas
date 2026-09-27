@@ -17,13 +17,13 @@ async function handle(
       (["archive", "rollback"].includes(path[2]) && request.method === "POST")
     )) ||
     (path.length === 1 &&
-      ["portal-settings", "payment-templates", "quotation-templates"].includes(path[0]) &&
+      ["payment-templates", "quotation-templates"].includes(path[0]) &&
       ["GET", "PUT"].includes(request.method)) ||
     (path[0] === "cases" &&
       UUID.test(path[1] ?? "") &&
       ((path.length === 2 && ["GET", "POST"].includes(request.method)) ||
         (path.length === 3 &&
-          ((path[2] === "invoice" && request.method === "POST") || (path[2] === "contacts" && request.method === "PUT") ||
+          ((path[2] === "invoice" && request.method === "POST") ||
             (["catalog-context","catalog-options","master-catalog","quotation-composer"].includes(path[2]) && request.method === "GET") ||
             (["catalog-price","quotation-proposals"].includes(path[2]) && request.method === "POST"))) ||
         (path.length === 5 && path[2] === "quotation-proposals" && UUID.test(path[3]) && ["apply","dismiss"].includes(path[4]) && request.method === "POST")));

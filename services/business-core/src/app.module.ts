@@ -1,4 +1,5 @@
 import { CommercialModule } from "./commercial/commercial.module";
+import { ClientPortalModule } from "./client-portal/client-portal.module";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { resolve } from "node:path";
@@ -78,6 +79,7 @@ import { InventoryModule } from "./inventory/inventory.module";
     WorkspacesModule,
     PreProjectsModule,
     CommercialModule,
+    ClientPortalModule,
     CatalogModule,
     SourcingModule,
     JobsModule,

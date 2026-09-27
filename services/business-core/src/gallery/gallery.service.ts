@@ -51,7 +51,7 @@ export class GalleryService {
       return {
         settings, items: await readItems(client, workspaceId, false),
         forms: (await client.query(`SELECT id, coalesce(published->>'title', draft->>'title', 'Enquiry form') AS title, status FROM crm_lead_forms WHERE workspace_id = $1 ORDER BY created_at`, [workspaceId])).rows,
-        brand: await effectivePortalBrand(client, workspaceId, null),
+        brand: await effectivePortalBrand(client, workspaceId),
         currency: (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? "",
         canManage: await this.canManage(client, workspaceId, user.userId),
       };
@@ -271,7 +271,7 @@ export class GalleryService {
       const form = settings.leadFormId && settings.display.list !== false ? (await client.query<{ token: string }>(`SELECT token FROM crm_lead_forms WHERE workspace_id = $1 AND id = $2 AND status = 'published'`, [workspaceId, settings.leadFormId])).rows[0] : undefined;
       const { leadFormId: _form, enquirySource: _source, enquiryChannel: _channel, version: _version, status: _status, ...visible } = settings;
       return {
-        settings: visible, items: await readItems(client, workspaceId, true), brand: await effectivePortalBrand(client, workspaceId, null),
+        settings: visible, items: await readItems(client, workspaceId, true), brand: await effectivePortalBrand(client, workspaceId),
         currency: (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? "",
         formToken: form?.token ?? null,
       };

@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
+import { tellClients } from "../client-portal/portal-notices";
 import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { currencyDecimals, firstTime } from "../purchasing/orders";
@@ -96,6 +97,8 @@ export class ReceivablesService {
         [randomUUID(), workspaceId, id, position, line.description, line.rate, line.net, line.tax, line.total]);
     await recordAudit(client, { workspaceId, actorUserId: userId, action: "client_invoice.issued", entityType: "client_invoice", entityId: id,
       after: { number, projectId: milestone.projectId, caseId, paymentId, issueDate, dueDate, currency: draft.currency, total: draft.total } });
+    // The client hears an invoice is due (in the portal's Payments, once per invoice).
+    await tellClients(client, { workspaceId, caseId, event: "invoice_issued", recordId: id, title: number, due: dueDate });
   }
 
   /**
