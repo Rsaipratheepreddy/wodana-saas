@@ -34,3 +34,5 @@ apps/mobile
 **/storybook-static
 tmp
 .DS_Store
+# Local agent worktrees and tooling state never enter an image.
+.claude
