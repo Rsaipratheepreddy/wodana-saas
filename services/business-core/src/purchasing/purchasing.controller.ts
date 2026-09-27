@@ -10,6 +10,7 @@ import { OrdersService } from "./orders.service";
 import { PriceRequestsService } from "./price-requests.service";
 import { ReceivingService } from "./receiving.service";
 import { SupplierReturnsService } from "./returns.service";
+import { SupplierControlsService } from "./supplier-controls.service";
 import { SuppliersService } from "./suppliers.service";
 
 /** Purchasing: suppliers, what projects need to order, and purchase orders. Bodies are validated in the services. */
@@ -18,7 +19,43 @@ import { SuppliersService } from "./suppliers.service";
 @Controller("workspaces/:workspaceId/purchasing")
 export class PurchasingController {
   constructor(private readonly suppliers: SuppliersService, private readonly orders: OrdersService, private readonly requests: PriceRequestsService,
-    private readonly receiving: ReceivingService, private readonly returns: SupplierReturnsService) {}
+    private readonly receiving: ReceivingService, private readonly returns: SupplierReturnsService, private readonly controls: SupplierControlsService) {}
+
+  @Get("suppliers/:supplierId")
+  supplier(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("supplierId", ParseUUIDPipe) supplierId: string) {
+    return this.controls.detail(actor, workspaceId, supplierId);
+  }
+
+  @Post("suppliers/:supplierId/documents")
+  addDocument(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("supplierId", ParseUUIDPipe) supplierId: string, @Body() input: Record<string, unknown>) {
+    return this.controls.addDocument(actor, workspaceId, supplierId, input ?? {});
+  }
+
+  @Post("suppliers/:supplierId/documents/:documentId/file")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 1 } }))
+  documentUpload(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("supplierId", ParseUUIDPipe) supplierId: string,
+    @Param("documentId", ParseUUIDPipe) documentId: string, @UploadedFile() file: ReferenceUpload) {
+    return this.controls.uploadDocumentFile(actor, workspaceId, supplierId, documentId, file);
+  }
+
+  @Get("supplier-documents/:documentId")
+  async documentFile(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("documentId", ParseUUIDPipe) documentId: string,
+    @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const file = await this.controls.documentFile(actor, workspaceId, documentId);
+    response.setHeader("Cache-Control", "private, max-age=60");
+    return sendMedia(file, request, response);
+  }
+
+  @Post("suppliers/:supplierId/bank-accounts")
+  requestBank(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("supplierId", ParseUUIDPipe) supplierId: string, @Body() input: Record<string, unknown>) {
+    return this.controls.requestBankAccount(actor, workspaceId, supplierId, input ?? {});
+  }
+
+  @Post("suppliers/:supplierId/bank-accounts/:accountId")
+  bankCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("supplierId", ParseUUIDPipe) supplierId: string,
+    @Param("accountId", ParseUUIDPipe) accountId: string, @Body() input: Record<string, unknown>) {
+    return this.controls.bankAccountCommand(actor, workspaceId, supplierId, accountId, input ?? {});
+  }
 
   @Get("suppliers")
   listSuppliers(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.suppliers.list(actor, workspaceId); }

@@ -1,6 +1,6 @@
 import type {
   DeliveriesState, NeedsState, OrderState, OrdersState, PriceRequestsState, PriceRequestState, PurchasingSettings, ReceiptState, ReceivingForm, SupplierImportPlan, SupplierImportRow,
-  SupplierReturnState, SupplierReturnsState, SupplierState, UnmatchedState,
+  SupplierControlsState, SupplierReturnState, SupplierReturnsState, SupplierState, UnmatchedState,
 } from "./types";
 
 export class PurchasingRequestError extends Error {
@@ -33,6 +33,12 @@ export function purchasingApi(workspaceId: string) {
     saveSupplier: (input: Record<string, unknown>) => request<SupplierState>(at("suppliers"), "POST", input),
     approveSupplier: (id: string, input: Record<string, unknown>) => request<SupplierState>(at(`suppliers/${id}/approval`), "POST", input),
     archiveSupplier: (id: string, input: Record<string, unknown>) => request<SupplierState>(at(`suppliers/${id}/archive`), "POST", input),
+    supplierControls: (id: string) => request<SupplierControlsState>(at(`suppliers/${id}`)),
+    addDocument: (id: string, input: Record<string, unknown>) => request<SupplierControlsState>(at(`suppliers/${id}/documents`), "POST", input),
+    uploadDocument: (id: string, documentId: string, file: File) => upload<SupplierControlsState>(at(`suppliers/${id}/documents/${documentId}/file`), file),
+    documentUrl: (documentId: string) => at(`supplier-documents/${documentId}`),
+    requestBankAccount: (id: string, input: Record<string, unknown>) => request<SupplierControlsState>(at(`suppliers/${id}/bank-accounts`), "POST", input),
+    bankAccountCommand: (id: string, accountId: string, input: Record<string, unknown>) => request<SupplierControlsState>(at(`suppliers/${id}/bank-accounts/${accountId}`), "POST", input),
     previewImport: (rows: SupplierImportRow[]) => request<SupplierImportPlan>(at("suppliers/import"), "POST", { rows }),
     commitImport: (rows: SupplierImportRow[]) => request<SupplierState>(at("suppliers/import"), "POST", { rows, commit: true }),
     needs: () => request<NeedsState>(at("needs")),

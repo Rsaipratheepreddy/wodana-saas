@@ -7,7 +7,8 @@ import { PriceRequestsService } from "./price-requests.service";
 import { PurchasingController } from "./purchasing.controller";
 import { ReceivingService } from "./receiving.service";
 import { SupplierReturnsService } from "./returns.service";
+import { SupplierControlsService } from "./supplier-controls.service";
 import { SuppliersService } from "./suppliers.service";
 
-@Module({ imports: [WorkspacesModule, EmailModule], controllers: [PurchasingController], providers: [SuppliersService, OrdersService, PriceRequestsService, ReceivingService, SupplierReturnsService, BrandAssetStorageService] })
+@Module({ imports: [WorkspacesModule, EmailModule], controllers: [PurchasingController], providers: [SuppliersService, OrdersService, PriceRequestsService, ReceivingService, SupplierReturnsService, SupplierControlsService, BrandAssetStorageService] })
 export class PurchasingModule {}

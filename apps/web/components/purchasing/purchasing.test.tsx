@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import type {
-  DeliveriesState, Need, OrderState, PriceRequestState, ReceiptState, ReceivingForm, Supplier, SupplierImportPlan, SupplierReturnState, SupplierState, UnmatchedState,
+  DeliveriesState, Need, OrderState, PriceRequestState, ReceiptState, ReceivingForm, Supplier, SupplierControlsState, SupplierImportPlan, SupplierReturnState, SupplierState, UnmatchedState,
 } from "@/lib/purchasing/types";
 import { PurchasingPage, type PurchasingSection } from "./purchasing-page";
 
@@ -23,6 +23,14 @@ const state = (patch: Partial<SupplierState> = {}): SupplierState => ({
   categories: ["Glass", "Marble", "Paint", "Travertine"], entities: [{ id: "f", code: "FAC", name: "Studio Furniture Manufacturing" }, { id: "i", code: "INT", name: "Studio Interiors Trading" }],
   canManage: true, canApprove: true, ...patch,
 });
+const controls = (patch: Partial<SupplierControlsState> = {}): SupplierControlsState => ({
+  supplier: supplier({ id: "s2", name: "Ritver Paints" }), documents: [], bankAccounts: [],
+  scorecard: { orders: [], deliveredLines: 0, onTimePercent: null, received: "0", rejected: "0", rejectPercent: null, returns: 0, priceRequests: 0, replyPercent: null, replyDays: null },
+  openOrders: [], canManage: true, canApprove: true, me: "u2", ...patch,
+});
+/** Supplier detail (documents, bank, performance) answers for /suppliers/<id>; everything else as given. */
+const withControls = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown, detail: () => unknown = () => controls()) =>
+  (url: string, body: Record<string, unknown> | undefined) => (/\/suppliers\/s\d\?/.test(url) && !body ? detail() : respond(url, body));
 const mount = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     const value = respond(url, typeof init?.body === "string" ? JSON.parse(init.body) : undefined);
@@ -40,7 +48,7 @@ describe("suppliers", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("lists suppliers in use with approval, terms, deal and companies, and filters them", async () => {
-    mount(() => state());
+    mount(withControls(() => state()));
     page();
     const grid = await screen.findByRole("grid", { name: "Suppliers" }).catch(() => screen.findByRole("table", { name: "Suppliers" }));
     await within(grid).findByText("Nile Marble & Granite");
@@ -61,7 +69,7 @@ describe("suppliers", () => {
   });
 
   it("adds a supplier with its terms, deal, companies and full phone number", async () => {
-    const fetcher = mount(() => state());
+    const fetcher = mount(withControls(() => state()));
     page();
     await userEvent.click(await screen.findByRole("button", { name: "Add supplier" }));
     const sheet = await screen.findByRole("dialog", { name: "New supplier" });
@@ -82,7 +90,7 @@ describe("suppliers", () => {
   });
 
   it("approves a supplier as the preferred one for a category, and asks why when putting one on hold", async () => {
-    const fetcher = mount(() => state());
+    const fetcher = mount(withControls(() => state()));
     page();
     await userEvent.click(await screen.findByText("Ritver Paints"));
     const sheet = await screen.findByRole("dialog", { name: "Ritver Paints" });
@@ -94,6 +102,32 @@ describe("suppliers", () => {
     await userEvent.click(within(dialog).getByRole("radio", { name: "Approved" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ url: expect.stringContaining("/suppliers/s2/approval"), body: { version: 3, approval: "approved", preferredFor: [], note: "" } }));
+  });
+
+  it("checks new bank details: a call-back by someone else first, then approval; documents show their expiry", async () => {
+    const pending = { id: "b1", accountName: "Ritver LLC", bankName: "Emirates NBD", accountNumber: "AE07 0331 2345 6789 0123 456", swift: "", currency: null, source: "email" as const,
+      status: "pending" as const, requestedBy: "u1", requestedByName: "Bina Buyer", requestedAt: "2026-09-27T09:00:00Z", callbackByName: null, callbackAt: null, callbackNote: "",
+      decidedByName: null, decidedAt: null, rejectReason: null };
+    let detail = controls({ bankAccounts: [pending], documents: [{ id: "d1", kind: "trade_licence", label: "", number: "DED-1", expiresOn: "2020-01-01", required: true, hasFile: true,
+      fileName: "licence.pdf", createdByName: "Bina", createdAt: "2026-09-01T09:00:00Z", replacedAt: null }] });
+    const fetcher = mount(withControls((url, body) => {
+      if (url.includes("/bank-accounts/b1")) detail = controls({ ...detail, bankAccounts: [{ ...pending, callbackByName: "Omar", callbackAt: "2026-09-27T10:00:00Z", callbackNote: String(body?.note ?? "") }] });
+      return url.includes("/bank-accounts/b1") ? detail : state();
+    }, () => detail));
+    page();
+    await userEvent.click(await screen.findByText("Ritver Paints"));
+    const sheet = await screen.findByRole("dialog", { name: "Ritver Paints" });
+    expect(await within(sheet).findByText(/Expired/)).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("tab", { name: "Bank details" }));
+    expect(await within(sheet).findByText("Waiting for checks")).toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Approve" })).toBeNull();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Record the call-back" }));
+    const dialog = await screen.findByRole("dialog", { name: "Record the call-back" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Who you called/ }), "Called Ahmed on the number from the 2024 contract");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ url: expect.stringContaining("/suppliers/s2/bank-accounts/b1"),
+      body: { action: "callback", note: "Called Ahmed on the number from the 2024 contract" } }));
+    expect(await within(sheet).findByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 
   it("imports a supplier list: reads the columns, shows what will be added, then imports", async () => {
@@ -138,7 +172,7 @@ describe("ordering", () => {
       total: "3780.0000", expectedDate: "2099-10-20", promisedDate: null, createdAt: "2026-09-27T09:00:00Z", createdByName: "Bina Buyer", projects: [{ id: "p1", reference: "PRJ-0007" }], lines: 2,
       revision: 0, version: 1, paymentTerms: "split", advancePercent: "50.00", creditDays: null, termsNote: "", deliverTo: "site", deliveryAddress: "Villa 12, Palm", supplierReference: "", notes: "",
       subtotal: "4000.0000", discountTotal: "400.0000", taxTotal: "180.0000", createdBy: "u1", submittedBy: null, approvedByName: null, approvedAt: null, sentAt: null, sentTo: null,
-      confirmedAt: null, cancelledAt: null, cancelReason: null, closedAt: null, closeReason: null, overReason: null, companyName: "Studio Furniture", ...patch },
+      confirmedAt: null, cancelledAt: null, cancelReason: null, closedAt: null, closeReason: null, overReason: null, continuedAt: null, continuedNote: null, continuedByName: null, companyName: "Studio Furniture", ...patch },
     lines: [
       { id: "a", position: 0, projectId: "p1", projectReference: "PRJ-0007", source: "material", materialItemId: "m1", boqLineId: null, description: "Calacatta slab", specification: "CAL-20",
         quantity: "10.0000", unit: "m²", unitPrice: "350.0000", discountPercent: "10.00", taxRate: "5.0000", net: "3150.0000", tax: "157.5000", total: "3307.5000",
@@ -152,7 +186,7 @@ describe("ordering", () => {
         alternateStatus: null, alternateDescription: null, alternateSpecification: "", alternateUnitPrice: null, alternateNote: "", alternateOfferedBy: null, originalDescription: null, originalSpecification: null }],
     events: [{ id: "e1", kind: "created", detail: {}, byName: "Bina Buyer", at: "2026-09-27T09:00:00Z" }], revisions: [],
     supplier: { id: "s1", name: "Nile Marble & Granite", email: "orders@nile.example", phone: null, contactName: "Mohamed", approval: "approved", deal: "discount", dealPercent: "10.00" },
-    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], me: "u2", ...rights,
+    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], me: "u2", supplierHold: null, ...rights,
   });
   const ordersList = { orders: [orderState().order], settings: needs.settings, canBuy: true, canApprove: true };
 
@@ -338,6 +372,22 @@ describe("ordering", () => {
     expect(await within(sheet).findByText(/The supplier offers Calacatta Oro, Honed at .*340\.00: Polished is discontinued/)).toBeInTheDocument();
     await userEvent.click(within(sheet).getByRole("button", { name: "Take it" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "decide_alternate", lineId: "a", decision: "accept" }));
+  });
+
+  it("holds an open order whose supplier is on hold until someone who approves orders continues it", async () => {
+    nav.query = "order=o1";
+    const held = orderState({ status: "approved", approvedAt: "2026-09-27T10:00:00Z", version: 3 }, { supplierHold: { approval: "on_hold", note: "Its trade licence expired on 2026-09-01." } });
+    const fetcher = mount((url, body) => (url.includes("/orders/o1") ? (body ? orderState({ status: "approved", version: 4, continuedAt: "2026-09-27T11:00:00Z", continuedNote: "Renewal filed",
+      continuedByName: "Dara" }, { supplierHold: { approval: "on_hold", note: "Its trade licence expired on 2026-09-01." } }) : held) : ordersList));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    expect(await within(sheet).findByText(/Nile Marble & Granite is on hold: Its trade licence expired on 2026-09-01/)).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Continue this order" }));
+    const dialog = await screen.findByRole("dialog", { name: "Continue this order" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it continues/ }), "Renewal filed");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Continue this order" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "continue_on_hold", note: "Renewal filed" }));
+    expect(await within(sheet).findByText("Continued while the supplier is on hold, by Dara: Renewal filed")).toBeInTheDocument();
   });
 
   it("offers the supplier's pack size on a draft line", async () => {

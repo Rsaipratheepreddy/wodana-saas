@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
+import { SupplierControlsService, processSupplierDocuments } from "../purchasing/supplier-controls.service";
 import { InventoryService } from "../inventory/inventory.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
 
@@ -1714,6 +1715,68 @@ integration("projects core (plan §6.10)", () => {
       await expect(buyer.stock.send(actor, w.workspaceId, { id: randomUUID(), fromLocationId: store, toLocationId: siteB, lines: [{ itemId: grout.itemId, projectId, quantity: "2" }] }))
         .rejects.toThrow(/can't go to another project's site/);
       await w.client.query("ROLLBACK TO SAVEPOINT second");
+    });
+  });
+
+  it("controls suppliers: an expired required document holds them and their open orders wait for a decision; bank details need a call-back and a second person; duplicates are refused; a scorecard from the records", async () => {
+    await world(async (w) => {
+      const { core, projectId, company, vendor, buyer, manager, access, all } = await buying(w);
+      const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-docs-")) }));
+      const clerk = new SupplierControlsService(access(w.designer, all), storage);
+      const approver = new SupplierControlsService(access(w.manager, all), storage);
+      const viewer = new SupplierControlsService(access(w.manager, ["vendors.view"]), storage);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta slab", quantity: "4", unit: "m²", clientChoice: false, version: detail.project.version });
+      const need = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((item) => item.title === "Calacatta slab")!;
+      let order = await buyer.orders.create(actor, w.workspaceId, { id: randomUUID(), vendorId: vendor, lines: [{ source: "material", materialItemId: need.sourceId, quantity: "4", unitPrice: "350" }] });
+      order = await buyer.orders.command(actor, w.workspaceId, order.order.id, { action: "submit", version: order.order.version });
+
+      // The trade licence ran out at the start of the month; the tax certificate runs out soon.
+      const licence = randomUUID();
+      await expect(clerk.addDocument(actor, w.workspaceId, vendor, { id: randomUUID(), kind: "trade_licence", required: true })).rejects.toThrow(/needs its expiry date/);
+      await clerk.addDocument(actor, w.workspaceId, vendor, { id: licence, kind: "trade_licence", number: "DED-4411", expiresOn: "2026-09-01", required: true });
+      let supplier = await clerk.addDocument(actor, w.workspaceId, vendor, { id: randomUUID(), kind: "tax_certificate", number: "TRN-9", expiresOn: "2026-10-10" });
+      supplier = await clerk.uploadDocumentFile(actor, w.workspaceId, vendor, licence, { buffer: Buffer.from("%PDF-1.4\n%fake licence\n"), originalname: "licence.pdf", mimetype: "application/pdf", size: 0 });
+      expect(supplier.documents.map((document) => [document.kind, document.expiresOn, document.required, document.hasFile])).toEqual([
+        ["tax_certificate", "2026-10-10", false, false], ["trade_licence", "2026-09-01", true, true]]);
+      expect((await processSupplierDocuments(w.client, w.workspaceId)).held).toBe(1);
+      supplier = await clerk.detail(actor, w.workspaceId, vendor);
+      expect(supplier.supplier).toMatchObject({ approval: "on_hold", approvalNote: "Its trade licence expired on 2026-09-01." });
+      expect(supplier.openOrders.map((item) => item.number)).toEqual([order.order.number]);
+
+      // The approved order waits: it can't go to the supplier until someone who approves orders says it continues.
+      expect((await buyer.orders.get(actor, w.workspaceId, order.order.id)).supplierHold).toMatchObject({ approval: "on_hold" });
+      await expect(buyer.orders.command(actor, w.workspaceId, order.order.id, { action: "send", version: order.order.version })).rejects.toThrow(/Nile Marble is on hold/);
+      await expect(manager.orders.command(actor, w.workspaceId, order.order.id, { action: "continue_on_hold", version: order.order.version })).rejects.toThrow(/Say why/);
+      order = await manager.orders.command(actor, w.workspaceId, order.order.id, { action: "continue_on_hold", note: "Renewal is filed; material is already cut", version: order.order.version });
+      expect(order.order).toMatchObject({ continuedNote: "Renewal is filed; material is already cut", continuedByName: "Omar Manager" });
+      order = await buyer.orders.command(actor, w.workspaceId, order.order.id, { action: "send", version: order.order.version });
+      const receipt = await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: "warehouse", receivedOn: "2026-09-27",
+        lines: [{ orderLineId: order.lines[0].id, received: "4", rejected: "1", rejectKind: "damaged", rejectReason: "Chipped" }] });
+      expect(receipt.receipt.accepted).toBe("3.0000");
+      // The renewed licence replaces the old one; the old stays as history.
+      supplier = await clerk.addDocument(actor, w.workspaceId, vendor, { id: randomUUID(), kind: "trade_licence", number: "DED-4411", expiresOn: "2027-09-01", required: true });
+      expect(supplier.documents.filter((document) => !document.replacedAt).map((document) => [document.kind, document.expiresOn])).toEqual([["tax_certificate", "2026-10-10"], ["trade_licence", "2027-09-01"]]);
+
+      // New bank details by email: a call-back by someone else, then someone else approves; the whole number only for them.
+      const account = randomUUID();
+      supplier = await clerk.requestBankAccount(actor, w.workspaceId, vendor, { id: account, accountName: "Nile Marble LLC", bankName: "Emirates NBD", accountNumber: "AE07 0331 2345 6789 0123 456", source: "email" });
+      await expect(clerk.requestBankAccount(actor, w.workspaceId, vendor, { id: randomUUID(), accountName: "Nile", bankName: "ADCB", accountNumber: "1234", source: "email" })).rejects.toThrow(/still waiting/);
+      await expect(clerk.bankAccountCommand(actor, w.workspaceId, vendor, account, { action: "callback", note: "Called Mohamed" })).rejects.toThrow(/Someone else checks/);
+      await expect(approver.bankAccountCommand(actor, w.workspaceId, vendor, account, { action: "approve" })).rejects.toThrow(/Call the supplier/);
+      await approver.bankAccountCommand(actor, w.workspaceId, vendor, account, { action: "callback", note: "Called Mohamed on +971 50 317 5797 from the 2024 contract" });
+      supplier = await approver.bankAccountCommand(actor, w.workspaceId, vendor, account, { action: "approve" });
+      expect(supplier.bankAccounts[0]).toMatchObject({ status: "approved", accountNumber: "AE07 0331 2345 6789 0123 456", decidedByName: "Omar Manager" });
+      expect((await viewer.detail(actor, w.workspaceId, vendor)).bankAccounts[0].accountNumber).toBe("•••• 3456");
+
+      // One phone number, one supplier.
+      await buyer.suppliers.save(actor, w.workspaceId, { id: vendor, version: (await buyer.suppliers.list(actor, w.workspaceId)).suppliers.find((item) => item.id === vendor)!.version,
+        name: "Nile Marble", entityIds: [company], phone: "+971 50 317 5797" });
+      await expect(buyer.suppliers.save(actor, w.workspaceId, { id: randomUUID(), version: 0, name: "Nile Marble Trading", phone: "+971-50-317-5797" })).rejects.toThrow(/Another supplier has this phone number/);
+
+      // The scorecard reads what happened.
+      const card = (await clerk.detail(actor, w.workspaceId, vendor)).scorecard;
+      expect(card).toMatchObject({ orders: [{ currency: "AED", orders: 1 }], received: "4.0000", rejected: "1.0000", rejectPercent: "25", returns: 0 });
     });
   });
 

@@ -4,6 +4,7 @@ import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { tellSupplierOnHold } from "./supplier-controls.service";
 import {
   APPROVALS, DEALS, PAYMENT_TERMS, cleanCategories, normalName, percent, readApproval, readDeal, readSupplier, readSuppliers, readTerms, supplierCode,
   type Approval, type Deal, type PaymentTerms, type Supplier,
@@ -90,6 +91,9 @@ export class SuppliersService {
         `UPDATE workspace_vendors SET approval = $3::varchar, preferred_for = $4, approval_note = $5, approval_at = CASE WHEN $3::varchar = 'pending' THEN NULL ELSE now() END,
                 approval_by = CASE WHEN $3::varchar = 'pending' THEN NULL ELSE $6::uuid END, updated_by = $6::uuid, updated_at = now(), version = version + 1
           WHERE workspace_id = $1 AND id = $2`, [workspaceId, supplierId, approval, preferred, note, user.userId]);
+      // Going on hold (or refused) with orders still open: their buyers and the approvers hear, and those orders wait.
+      if ((approval === "on_hold" || approval === "not_approved") && current.approval !== approval)
+        await tellSupplierOnHold(client, workspaceId, supplierId, current.name, note, user.userId, `approval:${supplierId}:${current.version}`);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "supplier.approval_changed", entityType: "supplier", entityId: supplierId,
         before: { approval: current.approval, preferredFor: current.preferredFor }, after: { approval, preferredFor: preferred, note } });
       return this.state(client, workspaceId, user.userId);
@@ -218,6 +222,12 @@ export class SuppliersService {
   private async contact(client: Db, workspaceId: string, vendorId: string, body: Record<string, unknown> | { contactName: string; phone: string; email: string; locality: string }, userId: string, fillOnly = false) {
     const input = body as Record<string, unknown>;
     const value = { contactName: text(input.contactName, 180, "Contact") || null, phone: text(input.phone, 80, "Phone") || null, email: text(input.email, 320, "Email") || null, locality: text(input.locality, 160, "Location") || null };
+    // The same phone number on two suppliers is usually the same supplier twice.
+    const digits = (value.phone ?? "").replace(/\D/g, "");
+    if (!fillOnly && digits.length >= 7 && (await client.query(
+      `SELECT 1 FROM workspace_vendor_sites site JOIN workspace_vendors vendor ON vendor.workspace_id = site.workspace_id AND vendor.id = site.vendor_id
+        WHERE site.workspace_id = $1 AND site.vendor_id <> $2 AND site.status = 'active' AND vendor.status <> 'archived' AND regexp_replace(coalesce(site.phone, ''), '\\D', '', 'g') = $3`,
+      [workspaceId, vendorId, digits])).rowCount) throw new ConflictException("Another supplier has this phone number.");
     const site = (await client.query<{ id: string; contactName: string | null; phone: string | null; email: string | null; locality: string | null }>(
       `SELECT id, contact_name AS "contactName", phone, email, locality FROM workspace_vendor_sites WHERE workspace_id = $1 AND vendor_id = $2 AND status = 'active' AND is_primary FOR UPDATE`,
       [workspaceId, vendorId])).rows[0];

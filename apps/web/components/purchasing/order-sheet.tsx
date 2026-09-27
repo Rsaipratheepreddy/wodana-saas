@@ -21,7 +21,7 @@ type LineDraft = Pick<OrderLine, "id" | "source" | "materialItemId" | "boqLineId
   quantity: string; unitPrice: string; discountPercent: string; taxRate: string;
 };
 type Form = { expectedDate: string | null; deliverTo: DeliverTo; deliveryAddress: string; paymentTerms: PaymentTerms; advancePercent: string; creditDays: string; termsNote: string; notes: string; lines: LineDraft[] };
-type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | null;
+type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | "continue" | null;
 /** Still to come on a line: ordered less cancelled, credited, accepted and waiting for inspection. */
 const stillToCome = (line: OrderLine) => subtractExact(line.quantity, addExact(line.cancelled, line.credited, line.accepted, line.pending));
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
@@ -155,6 +155,12 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
       {order.status === "cancelled" ? <InlineNotice tone="info" message={t("Cancelled: {reason}", { reason: order.cancelReason ?? "" })} /> : null}
       {order.status === "closed" && order.closeReason ? <InlineNotice tone="info" message={t("Closed: {reason}", { reason: order.closeReason })} /> : null}
       {order.status === "pending_approval" && !state.canApproveThis ? <InlineNotice tone="info" message={t("Waiting for someone who approves orders.")} /> : null}
+      {state.supplierHold && !order.continuedAt ? <div className={styles.alternate} role="note">
+        <InlineNotice tone="error" message={t("{supplier} is on hold: {note}. This order waits until someone who approves orders says it continues; or cancel it, or order the rest elsewhere.",
+          { supplier: order.supplierName, note: state.supplierHold.note })} />
+        {state.canApprove ? <div><Button size="compact" onPress={() => setDialog("continue")}>{t("Continue this order")}</Button></div> : null}
+      </div> : null}
+      {order.continuedAt ? <InlineNotice tone="info" message={t("Continued while the supplier is on hold, by {name}: {note}", { name: order.continuedByName ?? "", note: order.continuedNote ?? "" })} /> : null}
       {over.length ? <InlineNotice tone="info" message={t("More than the project needs: {lines}", { lines: over.map((line) => `${line.description} +${quantityText(line.over)} ${line.unit}`.trim()).join(", ") })} /> : null}
       {over.length && draft ? <TextInput label={t("Why order more than needed")} isRequired value={overReason || order.overReason || ""} onChange={setOverReason} /> : null}
       {order.overReason && !draft ? <InlineNotice tone="info" message={t("Ordered more than needed: {reason}", { reason: order.overReason })} /> : null}
@@ -251,6 +257,7 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
       onSave={async (to, message) => { if (await run("send", { to, message })) setDialog(null); }} /> : null}
     {dialog === "confirm" && order && state ? <ConfirmDialog promised={order.promisedDate} reference={order.supplierReference} lines={state.lines} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("confirm", input)) setDialog(null); }} /> : null}
+    {dialog === "continue" ? <ReasonDialog kind="continue" onClose={() => setDialog(null)} onSave={async (note) => { if (await run("continue_on_hold", { note })) setDialog(null); }} /> : null}
     {dialog === "chase" ? <ChaseDialog onClose={() => setDialog(null)} onSave={async (note, promisedDate) => { if (await run("chase", { note, promisedDate })) setDialog(null); }} /> : null}
     {offering ? <OfferAlternateDialog line={offering} onClose={() => setOffering(null)}
       onSave={async (input) => { if (await run("offer_alternate", { lineId: offering.id, ...input })) setOffering(null); }} /> : null}
@@ -284,6 +291,7 @@ function History({ state }: { state: OrderState }) {
       case "alternate_offered": return t("recorded the supplier's alternative: {item} instead of {original}", { item: value("alternative"), original: value("item") });
       case "alternate_accepted": return t("took the supplier's alternative: {item}", { item: value("alternative") });
       case "alternate_rejected": return t("refused the supplier's alternative: {note}", { note: value("note") });
+      case "continued_on_hold": return t("let it continue while the supplier is on hold: {note}", { note: value("note") });
       case "line_cancelled": return t("cancelled {quantity} of {item}: {reason}", { quantity: `${quantityText(value("quantity"))} ${value("unit")}`.trim(), item: value("description"), reason: value("reason") });
       case "received": return t("received delivery {number} at {place}", { number: String(detail.receipt ?? ""), place: value("location") });
       case "inspected": return t("inspected delivery {number}", { number: String(detail.receipt ?? "") });
@@ -302,12 +310,13 @@ function History({ state }: { state: OrderState }) {
   return <section className={styles.part} aria-label={t("History")}><h3 className={styles.subhead}>{t("History")}</h3><ActivityFeed items={items} /></section>;
 }
 
-function ReasonDialog({ kind, optional = false, onClose, onSave }: { kind: "cancel" | "change" | "return" | "close"; optional?: boolean; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
+function ReasonDialog({ kind, optional = false, onClose, onSave }: { kind: "cancel" | "change" | "return" | "close" | "continue"; optional?: boolean; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const title = kind === "cancel" ? t("Cancel order") : kind === "change" ? t("Change the order") : kind === "close" ? t("Close order") : t("Send back");
-  const label = kind === "cancel" ? t("Why it's cancelled") : kind === "change" ? t("What's changing") : kind === "close" ? t("Why the rest won't come") : t("What needs to change");
+  const title = kind === "cancel" ? t("Cancel order") : kind === "change" ? t("Change the order") : kind === "close" ? t("Close order") : kind === "continue" ? t("Continue this order") : t("Send back");
+  const label = kind === "cancel" ? t("Why it's cancelled") : kind === "change" ? t("What's changing") : kind === "close" ? t("Why the rest won't come")
+    : kind === "continue" ? t("Why it continues while the supplier is on hold") : t("What needs to change");
   return <ControlledModalDialog isOpen size="md" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!optional && !reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{title}</Button></div>}>

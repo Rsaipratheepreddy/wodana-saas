@@ -66,6 +66,7 @@ export type OrderDetail = OrderRow & {
   paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: DeliverTo; deliveryAddress: string; supplierReference: string; notes: string;
   subtotal: string; discountTotal: string; taxTotal: string; createdBy: string; submittedBy: string | null; approvedByName: string | null; approvedAt: string | null;
   sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; overReason: string | null; companyName: string;
+  continuedAt: string | null; continuedNote: string | null; continuedByName: string | null;
 };
 export type OrderState = {
   order: OrderDetail; lines: OrderLine[]; receipts: Receipt[]; returns: SupplierReturnRow[]; canReceive: boolean;
@@ -73,6 +74,8 @@ export type OrderState = {
   revisions: Array<{ revision: number; reason: string; at: string; byName: string }>;
   supplier: { id: string; name: string; email: string | null; phone: string | null; contactName: string | null; approval: Approval; deal: Deal; dealPercent: string | null } | null;
   canBuy: boolean; canApprove: boolean; canApproveThis: boolean;
+  /** The supplier is on hold while this order is open: it waits for someone who approves orders. */
+  supplierHold: { approval: Approval; note: string } | null;
   /** Who's looking (to tell whether they recorded something someone else decides). */
   me: string;
   /** Lines taking a project past what it needs, by how much (while the order is a draft or waiting for approval). */
@@ -166,4 +169,24 @@ export type DeliveriesState = {
 export type ReceivingForm = {
   order: OrderDetail; lines: Array<OrderLine & { outstanding: string; receivable: string }>; places: Place[]; defaultPlace: string | null;
   requireInspection: boolean; receiveTolerancePercent: string; requireSitePhoto: boolean;
+};
+
+export type DocumentKind = "trade_licence" | "tax_certificate" | "insurance" | "bank_letter" | "other";
+export type VendorDocument = {
+  id: string; kind: DocumentKind; label: string; number: string; expiresOn: string | null; required: boolean; hasFile: boolean; fileName: string | null;
+  createdByName: string; createdAt: string; replacedAt: string | null;
+};
+export type BankSource = "supplier_letter" | "email" | "in_person" | "phone";
+export type BankAccount = {
+  id: string; accountName: string; bankName: string; accountNumber: string; swift: string; currency: string | null; source: BankSource;
+  status: "pending" | "approved" | "rejected" | "retired"; requestedBy: string; requestedByName: string; requestedAt: string; callbackByName: string | null; callbackAt: string | null;
+  callbackNote: string; decidedByName: string | null; decidedAt: string | null; rejectReason: string | null;
+};
+export type Scorecard = {
+  orders: Array<{ currency: string; orders: number; value: string }>; deliveredLines: number; onTimePercent: string | null; received: string; rejected: string;
+  rejectPercent: string | null; returns: number; priceRequests: number; replyPercent: string | null; replyDays: string | null;
+};
+export type SupplierControlsState = {
+  supplier: Supplier; documents: VendorDocument[]; bankAccounts: BankAccount[]; scorecard: Scorecard;
+  openOrders: Array<{ id: string; number: string; status: OrderStatus; total: string; currency: string }>; canManage: boolean; canApprove: boolean; me: string;
 };

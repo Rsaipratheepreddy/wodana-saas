@@ -96,11 +96,18 @@ export class ReceivingService {
    * status, stock, history and notices. Used for deliveries and for matching goods that came without an order.
    */
   private async receiveIn(client: Db, workspaceId: string, receiverId: string, id: string, body: Record<string, unknown>) {
+    const held = async (order: { vendorId: string; continuedAt: string | null }) => {
+      const supplier = (await client.query<{ name: string; approval: string }>(`SELECT display_name AS name, approval FROM workspace_vendors WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, order.vendorId])).rows[0];
+      if (supplier && (supplier.approval === "on_hold" || supplier.approval === "not_approved") && !order.continuedAt)
+        throw new ConflictException(`${supplier.name} is on hold. Someone who approves orders decides whether this order continues.`);
+    };
     const orderId = uuid(body.orderId, "Order");
     const order = await readOrder(client, workspaceId, orderId, true);
     if (!order) throw new NotFoundException("Order not found.");
     if (!(RECEIVABLE as readonly string[]).includes(order.status))
       throw new ConflictException(order.status === "approved" ? "Send the order to the supplier before receiving against it." : order.status === "received" ? "Everything on this order has arrived." : "This order isn't open for deliveries.");
+    await held(order);
     const settings = await ensurePurchasingSettings(client, workspaceId);
     const orderLines = await readOrderLines(client, workspaceId, orderId);
     const receivedOn = date(body.receivedOn, "Received on");

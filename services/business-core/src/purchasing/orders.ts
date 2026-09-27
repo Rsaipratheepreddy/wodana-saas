@@ -148,6 +148,8 @@ export type OrderDetail = OrderRow & {
   paymentTerms: string; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: string; deliveryAddress: string; supplierReference: string; notes: string;
   subtotal: string; discountTotal: string; taxTotal: string; createdBy: string; submittedBy: string | null; approvedByName: string | null; approvedAt: string | null;
   sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; overReason: string | null; companyName: string;
+  /** When the supplier went on hold, who said this order continues anyway, and why. */
+  continuedAt: string | null; continuedNote: string | null; continuedByName: string | null;
 };
 
 export async function readOrder(db: Db, workspaceId: string, orderId: string, lock = false): Promise<OrderDetail | undefined> {
@@ -158,11 +160,13 @@ export async function readOrder(db: Db, workspaceId: string, orderId: string, lo
             purchase.subtotal::text AS subtotal, purchase.discount_total::text AS "discountTotal", purchase.tax_total::text AS "taxTotal", purchase.created_by AS "createdBy",
             purchase.submitted_by AS "submittedBy", approver.display_name AS "approvedByName", purchase.approved_at AS "approvedAt", purchase.sent_at AS "sentAt", purchase.sent_to AS "sentTo",
             purchase.confirmed_at AS "confirmedAt", purchase.cancelled_at AS "cancelledAt", purchase.cancel_reason AS "cancelReason",
-            purchase.closed_at AS "closedAt", purchase.close_reason AS "closeReason", purchase.over_reason AS "overReason", entity.display_name AS "companyName"
+            purchase.closed_at AS "closedAt", purchase.close_reason AS "closeReason", purchase.over_reason AS "overReason",
+            purchase.continue_on_hold_at AS "continuedAt", purchase.continue_on_hold_note AS "continuedNote", continuer.display_name AS "continuedByName", entity.display_name AS "companyName"
        FROM (${ORDER_SELECT} WHERE purchase.workspace_id = $1 AND purchase.id = $2) listed
        JOIN purchase_orders purchase ON purchase.workspace_id = $1 AND purchase.id = listed.id
        JOIN legal_entities entity ON entity.workspace_id = $1 AND entity.id = purchase.legal_entity_id
-       LEFT JOIN users approver ON approver.id = purchase.approved_by`, [workspaceId, orderId])).rows[0];
+       LEFT JOIN users approver ON approver.id = purchase.approved_by
+       LEFT JOIN users continuer ON continuer.id = purchase.continue_on_hold_by`, [workspaceId, orderId])).rows[0];
 }
 
 export async function readOrderLines(db: Db, workspaceId: string, orderId: string): Promise<OrderLine[]> {

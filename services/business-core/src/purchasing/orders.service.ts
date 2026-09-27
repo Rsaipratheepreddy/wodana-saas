@@ -168,6 +168,7 @@ export class OrdersService {
       } else if (action === "send") {
         await need("purchasing.manage", "You can't send purchase orders.");
         status("approved");
+        await this.notHeld(client, workspaceId, order);
         const to = body.to === null || body.to === undefined || body.to === "" ? null : text(body.to, 320, "Email");
         if (to && !EMAIL.test(to)) throw new BadRequestException("Enter the supplier's email.");
         await set(`status = 'sent', sent_at = now(), sent_to = $3`, [to]);
@@ -219,6 +220,17 @@ export class OrdersService {
         } else await set(`notes = notes`, []);
         await orderEvent(client, workspaceId, orderId, "chased", { note, promisedDate: promised }, user.userId);
         audit = { note, promised };
+      } else if (action === "continue_on_hold") {
+        // The supplier is on hold: someone who approves orders says this order continues anyway, and why.
+        await need("purchasing.approve", "Someone who approves orders decides this.");
+        status("approved", "sent", "confirmed", "partly_received");
+        const supplier = await readSupplier(client, workspaceId, order.vendorId);
+        if (!supplier || (supplier.approval !== "on_hold" && supplier.approval !== "not_approved")) throw new ConflictException("The supplier isn't on hold.");
+        const note = text(body.note, 500, "Note");
+        if (!note) throw new BadRequestException("Say why this order continues.");
+        await set(`continue_on_hold_by = $3, continue_on_hold_at = now(), continue_on_hold_note = $4`, [user.userId, note]);
+        await orderEvent(client, workspaceId, orderId, "continued_on_hold", { note }, user.userId);
+        audit = { note };
       } else if (action === "offer_alternate") {
         // The supplier offers something else for a line (another make, finish or size): recorded, then decided by someone else.
         await need("purchasing.manage", "You can't change purchase orders.");
@@ -407,6 +419,8 @@ export class OrdersService {
       ...rights,
       canApproveThis: rights.canApprove && order.status === "pending_approval" && order.createdBy !== userId && order.submittedBy !== userId,
       me: userId,
+      supplierHold: supplier && (supplier.approval === "on_hold" || supplier.approval === "not_approved") && ["approved", "sent", "confirmed", "partly_received"].includes(order.status)
+        ? { approval: supplier.approval, note: supplier.approvalNote } : null,
       overOrdered: ["draft", "pending_approval"].includes(order.status) ? await this.overOrdered(client, workspaceId, orderId) : [],
       packs: await this.packs(client, workspaceId, order),
     };
@@ -611,6 +625,13 @@ export class OrdersService {
       for (const { projectId, reference } of chosen)
         if (!(await clientChoicesSignedOff(client, workspaceId, projectId))) throw new ConflictException(`The client hasn't signed off ${reference}'s material list yet.`);
     }
+  }
+
+  /** An order with a supplier on hold waits until someone who approves orders says it continues. */
+  async notHeld(client: Db, workspaceId: string, order: OrderDetail) {
+    const supplier = await readSupplier(client, workspaceId, order.vendorId);
+    if (supplier && (supplier.approval === "on_hold" || supplier.approval === "not_approved") && !order.continuedAt)
+      throw new ConflictException(`${supplier.name} is on hold. Someone who approves orders decides whether this order continues.`);
   }
 
   /** Recomputes an order's totals from its lines' own rounded amounts. */

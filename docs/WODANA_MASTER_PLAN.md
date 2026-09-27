@@ -569,6 +569,13 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
 
 Approving is its own permission (`vendors.approve`), so adding a supplier never approves it. A duplicate name or tax number is refused, and archiving asks why. *Import* reads the list a firm already keeps (Excel/CSV, one sheet per company): it finds the columns by their names, turns written terms ("50 / 50", "SOA end of month", "30 days after received", "0.1", "Discount as requested") into those fields, merges rows with the same name, and gives approvals only when the person importing may approve. It shows what it will do first and is safe to run again.
 
+**Built (supplier controls, in the supplier's sheet: Documents · Bank details · Performance):**
+- **Documents** (trade licence, tax certificate, insurance, bank letter, other) with number, expiry and an optional file (PDF or photo). A new one of the same kind replaces the old, which stays as history. People who manage suppliers hear 30 days before one expires. When a *required* document has expired, the daily run puts an approved supplier on hold, with the reason.
+- **On hold with open orders:** the buyers of those orders and the approvers hear. Each open order shows the hold, and can't be sent or received until someone who approves orders says it continues (with why); otherwise it's cancelled, or the rest is ordered elsewhere.
+- **Bank details** are recorded as the supplier sent them (letter, email, in person, phone) and wait. Someone other than whoever recorded them records the call-back (who was called, on a number the firm already had) and then approves (the old account is retired) or refuses with why. Only people who approve suppliers see the whole number; others see the last four digits. One set of new details at a time.
+- **Duplicates:** the same name, tax number or phone number (any formatting) on another supplier is refused.
+- **Performance** from the records: orders and their value, lines delivered on time, rejected quantity and rate, returns, and how often and how fast the supplier answers price requests.
+
 - **Records:** vendors (`draft → pending_approval → approved → on_hold → blocked → archived`), sites, contacts, documents with expiry, bank accounts (Finance approval + call-back evidence), rate contracts + lines (price, validity, MOQ, pack size, lead time), scorecard view (on-time %, QC reject %, price variance, RFQ response time).
 - **Rules:**
   - An RFQ may go to any vendor; a PO only to approved vendors.
