@@ -17,6 +17,8 @@ export type Membership = {
 };
 export type Profile = {
   id: string; primaryEmail: string; displayName: string; status: string;
+  /** The interface language saved on the person's profile ("ar-AE"); plain "en" is the default, not a choice. */
+  preferredLocale?: string | null;
   memberships: Membership[]; nextAction: string;
   unavailableOrganizations?: Array<{ workspaceId: string; workspaceName: string; workspaceStatus: string }>;
 };

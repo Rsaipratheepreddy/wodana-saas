@@ -1,17 +1,28 @@
-import { createContext, createElement, useCallback, useContext, useMemo, type PropsWithChildren } from 'react';
+import { createContext, useCallback, useContext } from 'react';
+import { languageDirection, languages, type AppLanguage } from '../../../web/lib/i18n/languages';
+
+export { formattingLocale, languages, preferenceLocale, supportedLanguage, type AppLanguage } from '../../../web/lib/i18n/languages';
 
 /**
- * Labels are the English text, the same keys as the web's `apps/web/lib/i18n/en.json`; another
- * language supplies a dictionary for those keys. `{name}` placeholders are filled from `vars`.
+ * Labels are the English text, the same keys as the web's `apps/web/lib/i18n/en.json`; the languages are the
+ * web's (`apps/web/lib/i18n/languages.ts`) and their translations come from `npm run sync:i18n`.
+ * `{name}` placeholders are filled from `vars`. This module stays free of native code (models and node tests
+ * import it); `I18nProvider` in `i18n-provider.ts` remembers the choice and switches direction.
  */
-type Dictionary = Record<string, string>;
-const RTL = new Set(['ar', 'he', 'fa', 'ur']);
-const I18nContext = createContext<{ language: string; dictionary: Dictionary }>({ language: 'en', dictionary: {} });
+export type Dictionary = Record<string, string>;
 
-export function I18nProvider({ language = 'en', dictionary = {}, children }: PropsWithChildren<{ language?: string; dictionary?: Dictionary }>) {
-  const value = useMemo(() => ({ language, dictionary }), [language, dictionary]);
-  return createElement(I18nContext.Provider, { value }, children);
-}
+export type I18nValue = {
+  language: AppLanguage;
+  dictionary: Dictionary;
+  /** Whether the person chose the language on this phone (otherwise it follows their profile or workspace). */
+  chosen: boolean;
+  ready: boolean;
+  /** The person's own choice: remembered on this phone; a change of direction restarts the app once. */
+  setLanguage: (language: AppLanguage) => Promise<void>;
+  /** The profile's or workspace's language, used while the person has not chosen on this phone. */
+  adopt: (language: AppLanguage) => void;
+};
+export const I18nContext = createContext<I18nValue>({ language: 'en', dictionary: {}, chosen: false, ready: true, setLanguage: async () => undefined, adopt: () => undefined });
 
 export function translate(dictionary: Dictionary, key: string, vars?: Record<string, string | number>) {
   const text = dictionary[key] ?? key;
@@ -27,6 +38,6 @@ export function useT(): T {
   return useCallback((key: string, vars?: Record<string, string | number>) => translate(dictionary, key, vars), [dictionary]);
 }
 export function useLanguage() {
-  const { language } = useContext(I18nContext);
-  return { language, direction: RTL.has(language.split('-')[0]) ? ('rtl' as const) : ('ltr' as const) };
+  const { language, chosen, ready, setLanguage, adopt } = useContext(I18nContext);
+  return { language, direction: languageDirection(language), chosen, ready, setLanguage, adopt, label: languages.find((item) => item.id === language)?.label ?? language };
 }
