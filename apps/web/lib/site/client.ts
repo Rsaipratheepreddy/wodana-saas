@@ -1,4 +1,4 @@
-import type { SiteState } from "./types";
+import type { HandoverKind, HandoverState, SiteState } from "./types";
 
 export class SiteRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -24,6 +24,15 @@ export function siteApi(workspaceId: string, projectId: string) {
       return send<SiteState>(at(`reports/${reportId}/photos/${photoId}`), { method: "POST", body: form }, "The photo could not be uploaded.");
     },
     photoUrl: (photoId: string, preview = true) => `${at(`photos/${photoId}`)}${preview ? "&preview=1" : ""}`,
+    handover: () => send<HandoverState>(at("handover"), {}, "The handover didn't load."),
+    handoverCommand: (action: string, input: Record<string, unknown> = {}) =>
+      send<HandoverState>(at("handover"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, action }) }, "Could not save."),
+    /** A document for a draft pack; replayed safely by its id. */
+    uploadDocument: (packId: string, documentId: string, kind: HandoverKind, title: string, file: File) => {
+      const form = new FormData(); form.set("file", file);
+      return send<HandoverState>(`${at(`handover/${packId}/documents/${documentId}`)}&${new URLSearchParams({ kind, title })}`, { method: "POST", body: form }, "The file could not be uploaded.");
+    },
+    documentUrl: (documentId: string) => at(`handover/documents/${documentId}`),
   };
 }
 export type SiteApi = ReturnType<typeof siteApi>;

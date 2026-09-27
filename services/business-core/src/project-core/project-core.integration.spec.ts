@@ -28,6 +28,7 @@ import { FactoryService } from "../factory/factory.service";
 import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { tellScopeChanges } from "../factory/factory-changes";
 import { SiteService } from "../site/site.service";
+import { HandoverService } from "../site/handover.service";
 import { processSiteReports } from "../site/site-reminders";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -149,6 +150,13 @@ integration("projects core (plan §6.10)", () => {
     const saved = await buyer.suppliers.save(actor, w.workspaceId, { id: vendor, version: 0, name: "Nile Marble", entityIds: [company], email: "orders@nile.example" });
     await manager.suppliers.approve(actor, w.workspaceId, vendor, { version: saved.suppliers[0].version, approval: "approved" });
     return { core, projectId, company, vendor, buyer, manager, access, all };
+  }
+
+  /** The client accepted a whole-project handover pack (issued and decided). */
+  async function acceptHandover(w: World, projectId: string) {
+    await w.client.query(
+      `INSERT INTO handover_packs (id, workspace_id, project_id, revision, title, status, snapshot, content_hash, issued_by, issued_at, decided_on, decided_by_name, decision_method, recorded_by, created_by)
+       VALUES ($1, $2, $3, 1, 'Handover', 'accepted', '{}'::jsonb, repeat('a', 64), $4, now(), '2026-09-26', 'Maya Client', 'signed_document', $4, $4)`, [randomUUID(), w.workspaceId, projectId, w.manager]);
   }
 
   /** Draft → placed → sent, as the buyer. */
@@ -1399,7 +1407,7 @@ integration("projects core (plan §6.10)", () => {
       detail = await manager.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: snagging.id, version: detail.project.version });
       const handover = detail.stages.find((stage) => stage.key === "handover")!;
       expect(handover.status).toBe("current");
-      detail = await manager.command(actor, w.workspaceId, projectId, { action: "confirm_check", stageId: handover.id, checkKey: "accepted", version: detail.project.version });
+      await acceptHandover(w, projectId);
       detail = await manager.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: handover.id, version: detail.project.version });
       expect(detail.project.status).toBe("completed");
       await expect(manager.command(actor, w.workspaceId, projectId, { action: "post_update", health: "on_track", note: "x", version: detail.project.version })).rejects.toThrow(/The project is closed/);
@@ -2414,6 +2422,67 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("hands over with a frozen pack: refused with why makes a snag and a new revision, accepted only with no critical snag, outstanding items become snags", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "set_member", role: "designer", membershipId: w.designerMembership, version: detail.project.version });
+      const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-handover-")) }));
+      const as = (userId: string) => new HandoverService({
+        asMember: async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          await w.client.query("SAVEPOINT handover"); try { const result = await fn(w.client, { userId }); await w.client.query("RELEASE SAVEPOINT handover"); return result; }
+          catch (error) { await w.client.query("ROLLBACK TO SAVEPOINT handover"); throw error; } },
+        hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => code === "projects.view" } as never, storage);
+      const pm = as(w.manager);
+      const kitchen = (await w.client.query("SELECT id FROM pre_project_rooms WHERE case_id = $1", [w.caseId])).rows[0].id;
+      const first = randomUUID();
+      await expect(as(w.designer).command(actor, w.workspaceId, projectId, { action: "create_pack", id: first, title: "Kitchen handover", areaIds: [kitchen] }))
+        .rejects.toThrow("Only the project manager prepares and records the handover.");
+      let state = await pm.command(actor, w.workspaceId, projectId, { action: "create_pack", id: first, title: "Kitchen handover", areaIds: [kitchen] });
+      let pack = state.packs[0];
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "issue", packId: first, version: pack.version })).rejects.toThrow("Add the documents the client receives first.");
+      const pdf = { buffer: Buffer.from("%PDF-1.4\n%warranty\n"), originalname: "warranty.pdf", mimetype: "application/pdf", size: 0 };
+      state = await pm.uploadDocument(actor, w.workspaceId, projectId, first, randomUUID(), { kind: "warranty", title: "Hinge warranty" }, pdf);
+      pack = state.packs[0];
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "issue", packId: first, version: pack.version });
+      pack = state.packs[0];
+      expect([pack.status, pack.revision, pack.contentHash?.length, pack.documents.map((document) => [document.kind, document.title])]).toEqual(["issued", 1, 64, [["warranty", "Hinge warranty"]]]);
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "update_pack", packId: first, title: "Changed", areaIds: [], version: pack.version })).rejects.toThrow(/An issued pack doesn't change/);
+      await w.client.query("SAVEPOINT frozen");
+      await expect(w.client.query("UPDATE handover_packs SET title = 'x' WHERE id = $1", [first])).rejects.toThrow(/cannot be changed/);
+      await w.client.query("ROLLBACK TO SAVEPOINT frozen");
+
+      // Refused: the reason is a snag to fix, and a new revision (same documents) to issue.
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "refuse", packId: first, version: pack.version, decidedOn: "2026-09-26", decidedByName: "Maya Client", method: "in_person",
+        reason: "Cabinet doors misaligned" });
+      expect(state.packs.map((row) => [row.revision, row.status, row.documents.length])).toEqual([[2, "draft", 1], [1, "refused", 1]]);
+      const refused = (await w.client.query("SELECT title, severity, source FROM work_items WHERE project_id = $1 AND type = 'snag'", [projectId])).rows;
+      expect(refused).toEqual([{ title: "Handover refused: Cabinet doors misaligned", severity: "major", source: "client" }]);
+
+      // Accepted only when no critical snag is open in the kitchen.
+      const second = state.packs[0];
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "issue", packId: second.id, version: second.version });
+      await w.client.query(`INSERT INTO work_items (id, workspace_id, project_id, number, type, title, severity, source, area_id, created_by)
+        VALUES (gen_random_uuid(), $1, $2, 99, 'snag', 'Glass splashback cracked', 'critical', 'inspection', $3, $4)`, [w.workspaceId, projectId, kitchen, w.manager]);
+      const issued = state.packs[0];
+      const acceptance = { action: "accept", packId: issued.id, decidedOn: "2026-09-27", decidedByName: "Maya Client", method: "signed_document", outstanding: ["Touch-up paint on the skirting"] };
+      await expect(pm.command(actor, w.workspaceId, projectId, { ...acceptance, version: issued.version })).rejects.toThrow("Close the critical snag first: #99.");
+      await w.client.query("UPDATE work_items SET status = 'done', completed_at = now(), completed_by = $2 WHERE project_id = $1 AND number = 99", [projectId, w.manager]);
+      state = await pm.command(actor, w.workspaceId, projectId, { ...acceptance, version: issued.version });
+      expect([state.packs[0].status, state.covered]).toEqual(["accepted", true]);
+      const minor = (await w.client.query("SELECT title, severity, source FROM work_items WHERE project_id = $1 AND type = 'snag' AND severity = 'minor'", [projectId])).rows;
+      expect(minor).toEqual([{ title: "Touch-up paint on the skirting", severity: "minor", source: "client" }]);
+      expect((await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'handover.accepted'", [w.workspaceId])).rows).toEqual([{ id: w.designer }]);
+      // The handover stage reads it.
+      await w.client.query("UPDATE project_stages SET status = 'done', completed_at = now(), completed_by = $2 WHERE project_id = $1 AND key <> 'handover'", [projectId, w.manager]);
+      await w.client.query("UPDATE project_stages SET status = 'current', started_at = now() WHERE project_id = $1 AND key = 'handover'", [projectId]);
+      detail = await core.get(actor, w.workspaceId, projectId);
+      expect(detail.stages.find((stage) => stage.key === "handover")!.checks.find((check) => check.kind === "handover_accepted")!.passed).toBe(true);
+    });
+  });
+
   /** The factory service as one person, with the purchasing and inventory services it uses. */
   function factoryAs(access: (userId: string, permissions: string[]) => never, userId: string, permissions: string[]) {
     return new FactoryService(access(userId, permissions), new OrdersService(access(userId, permissions)), new InventoryService(access(userId, permissions)));
@@ -2621,7 +2690,7 @@ integration("projects core (plan §6.10)", () => {
       await w.client.query("UPDATE project_stages SET status = 'current', started_at = now() WHERE project_id = $1 AND key = 'handover'", [projectId]);
       detail = await core.get(actor, w.workspaceId, projectId);
       const handover = detail.stages.find((stage) => stage.key === "handover")!;
-      detail = await core.command(actor, w.workspaceId, projectId, { action: "confirm_check", stageId: handover.id, checkKey: "accepted", version: detail.project.version });
+      await acceptHandover(w, projectId);
       await expect(core.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: handover.id, version: detail.project.version }))
         .rejects.toThrow("Before the project closes: 1 piece of work is open.");
       detail = await core.get(actor, w.workspaceId, projectId);

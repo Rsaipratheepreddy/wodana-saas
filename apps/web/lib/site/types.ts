@@ -16,3 +16,13 @@ export type SiteState = {
   site: { startedOn: string | null; finishedOn: string | null }; reports: SiteReport[]; lines: SiteLine[]; members: Array<{ membershipId: string; name: string }>;
   today: string; me: string; canReport: boolean; canApprove: boolean; canManage: boolean;
 };
+
+export type HandoverKind = "drawing" | "warranty" | "manual" | "care_guide" | "photo" | "other";
+export type HandoverMethod = "signed_document" | "in_person" | "email" | "portal";
+/** What the client receives for the whole project or some areas; frozen once issued. */
+export type HandoverPack = {
+  id: string; revision: number; title: string; areaIds: string[]; status: "draft" | "issued" | "accepted" | "refused"; replacesId: string | null; contentHash: string | null;
+  issuedAt: string | null; issuedByName: string | null; decidedOn: string | null; decidedByName: string | null; decisionMethod: HandoverMethod | null; decisionNote: string; version: number;
+  documents: Array<{ id: string; kind: HandoverKind; title: string; name: string; size: number; sha256: string }>;
+};
+export type HandoverState = { packs: HandoverPack[]; areas: Array<{ id: string; name: string }>; covered: boolean; canManage: boolean };

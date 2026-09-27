@@ -9,7 +9,8 @@ export type ProjectRole = { key: string; label: string };
  * What must be true to finish a stage. Checks read from data wherever the data exists; `confirm` is a
  * person confirming something the system doesn't record yet (e.g. "Kickoff meeting held").
  */
-export const CHECK_KINDS = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off", "everything_ordered", "everything_made", "snags_closed", "no_critical_snags"] as const;
+export const CHECK_KINDS = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off", "everything_ordered", "everything_made", "snags_closed", "no_critical_snags",
+  "handover_accepted"] as const;
 export type CheckKind = (typeof CHECK_KINDS)[number];
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };
 export type TemplateStage = { key: string; name: string; ownerRole: string | null; checks: StageCheck[] };
@@ -56,7 +57,7 @@ export const DEFAULT_STAGES: TemplateStage[] = [
   ] },
   { key: "handover", name: "Handover", ownerRole: "project_manager", checks: [
     { key: "critical", kind: "no_critical_snags" },
-    { key: "accepted", kind: "confirm", label: "Client accepted the handover" },
+    { key: "accepted", kind: "handover_accepted" },
   ] },
 ];
 
@@ -135,6 +136,8 @@ export type CheckFacts = {
   everythingMade: boolean;
   /** Snags on the project that aren't closed: all of them, and the critical ones. */
   openSnags: number; openCriticalSnags: number;
+  /** Accepted handover packs cover the whole project. */
+  handedOver: boolean;
 };
 
 /** Whether a check passes, from the facts gathered for the stage. */
@@ -149,5 +152,6 @@ export function checkPasses(check: StageCheck, facts: CheckFacts) {
     case "everything_made": return facts.everythingMade;
     case "snags_closed": return facts.openSnags === 0;
     case "no_critical_snags": return facts.openCriticalSnags === 0;
+    case "handover_accepted": return facts.handedOver;
   }
 }

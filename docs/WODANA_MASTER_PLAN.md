@@ -833,6 +833,12 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - A balance still due at handover: the payment request blocks Complete unless Owner waives.
   - A warranty claim after expiry: chargeable job (a new variation round).
 
+- **Built (project → Handover):**
+  - A pack (for the whole project or some of its areas) gathers what the client receives: drawings, warranties, manuals, care guides, as-built photos (PDFs or photos). Issuing it freezes revision R#: its contents listed and fingerprinted, and the database refuses any change after.
+  - The project manager records the client's decision on an issued revision (who, when, how). Accepted: only while no critical snag is open in its areas; anything still outstanding becomes minor snags from the client; the team is told. Refused with why: the reason becomes a major snag, and a new draft revision (same documents) is made to issue once it's fixed.
+  - The default Handover stage finishes on *The client accepted the handover*: accepted packs cover the whole project (a whole-project pack, or every area).
+  - Still to come: the final account and a waiver for a balance still due (Money, phase 9), warranty terms from the handover date (phase 8), and acceptance in the client portal (phase 10).
+
 ### 6.20 Change orders (variations)
 - **Records:** change_orders (kind `addition | deduction | replacement | move | schedule | price_correction`), impact assessment snapshot (affected packages, tasks, POs, WOs, bookings, reported work) with an explicit disposition per impact, variation quote rounds.
 - **Rules:**

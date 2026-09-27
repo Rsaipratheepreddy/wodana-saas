@@ -725,6 +725,7 @@ function checkLabel(check: Evaluated["checks"][number], roles: Array<{ key: stri
   if (check.kind === "everything_made") return "Everything is made and checked";
   if (check.kind === "snags_closed") return "All snags closed";
   if (check.kind === "no_critical_snags") return "No critical snag open";
+  if (check.kind === "handover_accepted") return "The client accepted the handover";
   return "Production payment verified";
 }
 

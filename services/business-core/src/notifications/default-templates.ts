@@ -130,6 +130,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "site.blocked", channel: "in_app", subject: "The site is blocked · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.report_missing", channel: "in_app", subject: "No site report today · {{title}}", body: "Add today's report before the end of the day.", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.report_overdue", channel: "in_app", subject: "No site report yesterday · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "handover.accepted", channel: "in_app", subject: "{{title}}: handover accepted", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "handover.refused", channel: "in_app", subject: "{{title}}: handover refused", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.cancelled", channel: "in_app", subject: "{{title}} is cancelled", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.cancelled", channel: "email", subject: "{{title}} is cancelled", body: "{{actor}} cancelled {{title}} for {{clientName}}.\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.completed", channel: "in_app", subject: "{{title}} is complete", body: "{{actor}} finished the last stage.", variables: ["title", "clientName", "actor", "note"] },
