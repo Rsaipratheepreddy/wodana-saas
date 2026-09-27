@@ -84,7 +84,8 @@ export function ProjectCrewDays({ workspaceId, projectId, openId, switcher, me, 
     userId: me, membershipId: data.boot.membershipId, evidence: data.boot.permissions.evidence,
     broad: data.crews.canManage || data.boot.permissions.manageProjects || onTeam,
   } : null;
-  const markable = data && viewer ? data.crews.crews.filter((crew) => crew.active && (viewer.broad || crew.leadMembershipId === viewer.membershipId)) : [];
+  // The server says which crews this person may mark (their own crews, or all for a manager); older answers fall back to the same rule here.
+  const markable = data && viewer ? data.crews.crews.filter((crew) => crew.active && (data.list.markableCrewIds ? data.list.markableCrewIds.includes(crew.id) : viewer.broad || crew.leadMembershipId === viewer.membershipId)) : [];
   const needle = search.trim().toLocaleLowerCase();
   const rows = (data?.list.days ?? []).filter((day) => !needle || `${day.crewName} ${day.trade} ${day.markedByName}`.toLocaleLowerCase().includes(needle));
   const mark = markable.length ? <Button variant="primary" onPress={() => setOpen("new")}><Plus aria-hidden="true" size={14} />{t("Mark crew day")}</Button> : undefined;
@@ -108,7 +109,7 @@ export function LinkedCrewDay({ api, boot, id, onClose }: { api: HrmsApi; boot: 
   if (!data.list.days.some((day) => day.id === id)) return <InlineNotice tone="info" message={t("This crew day isn't there any more.")} />;
   const viewer: Viewer = { userId: boot.employee?.userId ?? null, membershipId: boot.membershipId, evidence: boot.permissions.evidence,
     broad: data.crews.canManage || boot.permissions.manageProjects };
-  const markable = data.crews.crews.filter((crew) => crew.active && (viewer.broad || crew.leadMembershipId === viewer.membershipId));
+  const markable = data.crews.crews.filter((crew) => crew.active && (data.list.markableCrewIds ? data.list.markableCrewIds.includes(crew.id) : viewer.broad || crew.leadMembershipId === viewer.membershipId));
   return open ? <CrewDayPanel api={api} data={data} viewer={viewer} projectId={null} markable={markable} open={open} showPlace
     onOpen={(next) => { setOpen(next); if (!next) onClose(); }} onChanged={changed} /> : null;
 }

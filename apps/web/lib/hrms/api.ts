@@ -58,7 +58,7 @@ export type LocationInput = {
 };
 
 /** Crew days for a project (or every one the person can see), with whether day rates show. */
-export type CrewDayList = { days: CrewDay[]; canSeeCosts: boolean };
+export type CrewDayList = { days: CrewDay[]; canSeeCosts: boolean; canMark?: boolean; markableCrewIds?: string[] };
 export type CrewDayQuery = { projectId?: string | null; from?: string; to?: string };
 export type CrewDayDecision = { version: number; decision: "approve" | "return"; note: string };
 export type WeekDecision = { version: number; decision: "approve" | "return"; note: string };
