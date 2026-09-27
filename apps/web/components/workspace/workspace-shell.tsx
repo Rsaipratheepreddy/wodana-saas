@@ -10,9 +10,8 @@ import { WoddyProvider, useWoddy } from "@/components/crm/woddy-chat";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import {
   findWorkspaceModule,
-  findWorkspaceScreen,
-  HOME_ROUTES,
   homeTabs,
+  productNavigation,
   type WorkspaceIdentity,
   type WorkspaceModuleDefinition,
   type WorkspaceUser,
@@ -31,6 +30,8 @@ import { WorkspaceFocusProvider, useWorkspaceFocus } from "./workspace-focus";
 import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 import { WorkspaceBreadcrumbProvider, useWorkspaceBreadcrumb } from "./workspace-breadcrumb";
 import { WorkspaceIdentityProvider } from "./workspace-identity";
+import { resolveWorkspaceRoute } from "@/lib/workspace/route-map";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 export type WorkspaceShellProps = {
   children: ReactNode;
@@ -62,18 +63,25 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
   const activeModule = baseModule.id === "pre-project"
     ? { ...baseModule, navigation: preProjectNavigation(baseModule.navigation, pathname, selectedCase?.search) }
     : baseModule;
-  // The Settings menu belongs to settings pages only, not to every page without a module of its own (Tasks, Approvals…).
-  const settingsPage = activeModule.id === "workspace" && activeModule.navigation.some((group) => group.items.some((item) => item.href !== "/workspace" && (pathname === item.href || pathname.startsWith(`${item.href}/`))));
-  // Sales sub-sections share /workspace/crm/leads; name the breadcrumb after the tab the person is on.
-  const salesSection = pathname === "/workspace/crm/leads" ? builderSearch.get("section") : null;
-  const salesSectionLabel = salesSection && ["forms", "sources"].includes(salesSection) ? "Campaigns" : salesSection && ["assignment", "sla", "options", "automations"].includes(salesSection) ? "Settings" : salesSection === "reports" ? "Reports" : null;
-  const currentScreen = salesSectionLabel ? { label: salesSectionLabel } : pathname === "/workspace/crm/follow-ups" && ["schedule", "calendar"].includes(builderSearch.get("view") ?? "") ? { label: "Calendar" } : pathname === "/workspace/crm/preparation" ? { label: "Preparation" } : pathname === "/workspace/projects/clients" ? { label: "Clients" } : pathname === "/workspace/tasks" || pathname === "/workspace/approvals" ? { label: "Home" } : pathname.startsWith("/workspace/projects/") ? { label: "Project" } : preProjectRoute ? activeModule.navigation.flatMap((group) => group.items).find((item) => item.href.split("?")[0] === pathname) ?? findWorkspaceScreen(pathname, modules) : findWorkspaceScreen(pathname, modules);
+  // One route map names the page, its breadcrumb, the sidebar entry and whether it is a Settings page.
+  const route = resolveWorkspaceRoute(pathname, builderSearch);
+  const t = useT();
+  const recordTitle = projectPage ? breadcrumb?.title : selectedCase?.record.title;
+  const pageTitle = route.record && recordTitle ? recordTitle : t(route.label as never);
+  const crumbs = route.homeTab ? route.trail.slice(0, -1) : route.trail;
+  const currentCrumb = route.homeTab ? t((route.trail.at(-1)?.label ?? route.label) as never) : pageTitle;
+  const workspaceName = workspaces[0]?.name;
+  useEffect(() => {
+    document.title = workspaceName ? `${pageTitle} · ${workspaceName}` : pageTitle;
+  }, [pageTitle, workspaceName]);
   const [mobileNavigationPath, setMobileNavigationPath] = useState<string | null>(null);
   const woddy = useWoddy();
   const { theme, toggleTheme } = useWorkspaceTheme();
   const mobileOpen = mobileNavigationPath === pathname;
   // Products sit in the top bar; company and account settings open from the utilities.
   const settingsModule = modules.find((module) => module.id === "workspace");
+  // The Settings gear opens the first Settings page this person can use.
+  const settingsHref = productNavigation(modules).flatMap((section) => section.items).find((item) => item.id === "settings")?.href ?? route.trail.find((crumb) => crumb.id === "settings")?.href ?? "/workspace/settings/profile";
   useEffect(() => {
     if (!mobileOpen) return;
     document.body.dataset.scrollLock = "true";
@@ -139,13 +147,13 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
           </button>
           {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label="All planning" className={styles.focusBack} href="/workspace/pre-projects"><ArrowLeft size={16} data-directional="true" /><span>Planning</span></Link>{selectedCase ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
           {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? "Back to quotations" : "Back to planning") : "Back to CRM"}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
-          <nav aria-label="Breadcrumb" className={styles.breadcrumbs}>
+          <nav aria-label={t("Breadcrumb")} className={styles.breadcrumbs}>
             <ol>
-              {projectPage ? <li><Link href="/workspace/projects">Projects</Link><ChevronRight aria-hidden="true" data-directional="true" size={13}/></li> : pathname !== "/workspace" && pathname !== "/workspace/tasks" && pathname !== "/workspace/approvals" && !pathname.startsWith("/workspace/catalogs") && !pathname.startsWith("/workspace/purchasing") && !pathname.startsWith("/workspace/inventory") && !pathname.startsWith("/workspace/factory") && currentScreen.label !== activeModule.label ? <li><Link href={activeModule.href}>{activeModule.label}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li> : null}
-              <li aria-current="page">{projectPage ? breadcrumb?.title ?? <span aria-busy="true">{currentScreen.label}</span> : pathname === "/workspace" ? "Home" : currentScreen.label}</li>
+              {crumbs.map((crumb) => <li key={crumb.id}><Link href={crumb.id === "settings" ? settingsHref : crumb.href}>{t(crumb.label as never)}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li>)}
+              <li aria-current="page">{route.record && !recordTitle ? <span aria-busy="true">{currentCrumb}</span> : currentCrumb}</li>
             </ol>
           </nav>
-          {HOME_ROUTES.includes(pathname) ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} /> : null}
+          {route.id === "home" || route.homeTab ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} /> : null}
           <div className={styles.globalUtilities}>
             <div className={styles.woddyControl}>
               <button
@@ -167,12 +175,12 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
             </div>
             <WorkspaceNotifications workspaceId={workspaceId} />
             {settingsModule ? <Link
-              aria-current={activeModule.id === "workspace" ? "page" : undefined}
-              aria-label="Settings"
+              aria-current={route.settings ? "page" : undefined}
+              aria-label={t("Settings")}
               className={styles.themeToggle}
-              data-active={activeModule.id === "workspace" || undefined}
-              href={settingsModule.href}
-              title="Settings"
+              data-active={route.settings || undefined}
+              href={settingsHref}
+              title={t("Settings")}
             >
               <Settings aria-hidden="true" size={16} />
             </Link> : null}
@@ -188,7 +196,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
             <WorkspaceAccountMenu user={user} />
           </div>
         </header>
-        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects" || projectPage) ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || projectPage || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : activeModule.id === "workspace" && settingsPage ? <SettingsLayout module={activeModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
+        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects" || projectPage) ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || projectPage || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : route.settings && settingsModule ? <SettingsLayout module={settingsModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
       </div>
     </div>
   );
