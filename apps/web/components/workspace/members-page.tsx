@@ -472,61 +472,55 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     }
   };
 
-  const columns: GroupedTableColumn<DirectoryRow>[] = [
+  /** Invitations and members share the columns; only the words differ (invited on / created at, access / role). */
+  const columnsFor = (kind: "invitation" | "member"): GroupedTableColumn<DirectoryRow>[] => [
     {
       id: "person",
-      label: t("Person"),
+      label: kind === "invitation" ? t("Invited") : t("Member"),
       mobileWidth: "14rem",
-      width: "25%",
       render: (item) => {
         const name = item.kind === "member"
           ? item.member.displayName
           : item.invitation.displayName || inviteeFallback(item.invitation.email);
         const email = item.kind === "member" ? item.member.email : item.invitation.email;
         const isCurrentUser = item.kind === "member" && item.member.userId === initialData.currentUserId;
-        return <span className={styles.identity}>{item.kind === "member" ? <Avatar name={name} preset={item.member.avatarPreset ?? "auto"} seed={item.member.userId} src={item.member.photoUrl} /> : <Avatar name={name} />}<span className={styles.identityDetails}><strong>{isCurrentUser ? t("{name} (You)", { name }) : name}</strong><small>{email}</small></span></span>;
+        return <span className={styles.identity}>{item.kind === "member" ? <Avatar name={name} preset={item.member.avatarPreset ?? "auto"} seed={item.member.userId} src={item.member.photoUrl} /> : <Avatar name={name} />}<span className={styles.identityDetails}><strong>{isCurrentUser ? t("{name} (You)", { name }) : name}</strong><small><a aria-label={email} className={styles.emailLink} href={`mailto:${email}`}>{email.includes("@") ? <>{email.slice(0, email.indexOf("@") + 1)}<wbr />{email.slice(email.indexOf("@") + 1)}</> : email}</a></small></span></span>;
       },
     },
     {
       id: "date",
-      label: t("Created at"),
+      label: kind === "invitation" ? t("Invited on") : t("Created at"),
       mobileHidden: true,
-      width: "17%",
+      width: "8rem",
       render: (item) => dateLabel(item.kind === "member" ? item.member.joinedAt : item.invitation.createdAt, t, { locale, timeZone }),
     },
     {
-      id: "email",
-      label: t("Email"),
-      mobileHidden: true,
-      width: "25%",
-      render: (item) => {
-        const email = item.kind === "member" ? item.member.email : item.invitation.email;
-        return <a className={styles.emailLink} href={`mailto:${email}`}>{email}</a>;
-      },
-    },
-    {
       id: "role",
-      label: t("Access"),
-      mobileWidth: "7rem",
-      width: "15%",
+      label: kind === "invitation" ? t("Access") : t("Role"),
+      mobileWidth: "9rem",
+      width: "13rem",
       render: (item) => {
         const roleCodes = item.kind === "member" ? item.member.roles : item.invitation.roles;
         const inherited = item.kind === "member" ? item.member.inheritedRoles ?? [] : [];
-        return <span className={styles.roleText}>{[...roleCodes, ...inherited].map((role) => readableRole(role, initialData.roles)).filter((role, index, all) => all.indexOf(role) === index).join(", ") || t("Via team")}</span>;
+        // The primary role first as a chip, then one more; the rest fold into "+N" with the names as a tooltip.
+        const names = [...roleCodes, ...inherited].map((role) => readableRole(role, initialData.roles)).filter((role, index, all) => all.indexOf(role) === index);
+        if (!names.length) return <span className={styles.roleText}>{t("Via team")}</span>;
+        const rest = names.slice(2);
+        return <span className={styles.roleChips}>{names.slice(0, 2).map((role) => <Badge key={role} tone="neutral">{role}</Badge>)}{rest.length ? <Badge title={rest.join(", ")} tone="neutral">{`+${rest.length}`}</Badge> : null}</span>;
       },
     },
     {
       id: "team",
       label: t("Team"),
       mobileHidden: true,
-      width: "15%",
+      width: "8rem",
       render: (item) => (item.kind === "member" ? item.member.teams : item.invitation.teams)?.map((team) => team.name).join(", ") || "—",
     },
     {
       id: "status",
-      label: t("Status"),
+      label: kind === "invitation" ? t("Invitation") : t("Status"),
       mobileWidth: "6rem",
-      width: "12%",
+      width: "6.5rem",
       render: (item) => {
         const value = item.kind === "member" ? item.member.status : item.invitation.status;
         const label = ({ pending: t("Pending"), active: t("Active"), suspended: t("Suspended"), expired: t("Expired"), accepted: t("Accepted"), cancelled: t("Cancelled") } as Record<string, string>)[value] ?? value[0].toUpperCase() + value.slice(1);
@@ -555,14 +549,11 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   ];
 
   const selectedRows = rows.filter((row) => selectedIds.has(row.id));
-  const sectionDefinitions: GroupedTableSection<DirectoryRow>[] = [
-    { id: "invited", label: t("Invited"), emptyMessage: t("No pending invitations."), rows: invitedRows, headerLabels: { date: t("Invited at"), role: t("Access"), status: t("Invitation") } },
-    { id: "guests", label: t("Guest"), emptyMessage: t("No guests have access."), rows: guestRows, headerLabels: { date: t("Created at"), role: t("Permission"), status: t("Status") } },
-    { id: "members", label: t("Member"), emptyMessage: t("No members have joined yet."), rows: memberRows, headerLabels: { date: t("Created at"), role: t("Role"), status: t("Status") } },
-  ];
-  const tableSections = sectionDefinitions.some((section) => section.rows.length)
-    ? sectionDefinitions.filter((section) => section.rows.length)
-    : [sectionDefinitions[2]];
+  // Pending invitations are their own short list above the members; guests get a group row only when there are any.
+  const memberSections: GroupedTableSection<DirectoryRow>[] = [
+    { id: "guests", label: t("Guest"), emptyMessage: t("No guests have access."), rows: guestRows },
+    { id: "members", label: t("Member"), emptyMessage: t("No members have joined yet."), rows: memberRows },
+  ].filter((section) => section.rows.length || section.id === "members");
   const bulkFallbackCount = bulkInvitationResult?.created
     .filter((item) => item.deliveryStatus !== "sent").length ?? 0;
   const hasInvitationOutcome = Boolean(invitationResult || bulkInvitationResult);
@@ -611,17 +602,36 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           <Button onPress={() => exportRows(selectedRows)} size="compact"><Download aria-hidden="true" size={14} />{t("Export selected")}</Button>
         </div> : null}
 
-        <div className={styles.tableRegion}>
-          <GroupedTable appearance="plain"
-            ariaLabel={t("Workspace members")}
-            columns={columns}
-            getRowId={(row) => row.id}
-            getRowLabel={(row) => row.kind === "member" ? row.member.displayName : row.invitation.email}
-            onSelectionChange={setSelectedIds}
-            sections={tableSections}
-            selectedIds={selectedIds}
-          />
-        </div>
+        {invitedRows.length ? <section aria-label={t("Pending invitations")} className={styles.tableSection}>
+          <h3 className={styles.sectionTitle}>{t("Pending invitations")}</h3>
+          <div className={styles.tableRegion}>
+            <GroupedTable appearance="plain"
+              ariaLabel={t("Pending invitations")}
+              columns={columnsFor("invitation")}
+              getRowId={(row) => row.id}
+              getRowLabel={(row) => row.kind === "member" ? row.member.displayName : row.invitation.email}
+              groupRows={false}
+              onSelectionChange={setSelectedIds}
+              sections={[{ id: "invited", label: t("Pending invitations"), emptyMessage: "", rows: invitedRows }]}
+              selectedIds={selectedIds}
+            />
+          </div>
+        </section> : null}
+        <section aria-label={t("Members")} className={styles.tableSection}>
+          {invitedRows.length ? <h3 className={styles.sectionTitle}>{t("Members")}</h3> : null}
+          <div className={styles.tableRegion}>
+            <GroupedTable appearance="plain"
+              ariaLabel={t("Workspace members")}
+              columns={columnsFor("member")}
+              getRowId={(row) => row.id}
+              getRowLabel={(row) => row.kind === "member" ? row.member.displayName : row.invitation.email}
+              groupRows={memberSections.length > 1}
+              onSelectionChange={setSelectedIds}
+              sections={memberSections}
+              selectedIds={selectedIds}
+            />
+          </div>
+        </section>
         {!canInvite && !canEdit && !canCancelInvitations ? <p className={styles.permissionNote}>{t("Your access is read-only. Ask a workspace administrator to change people or invitations.")}</p> : null}
       </SettingsPage>
 

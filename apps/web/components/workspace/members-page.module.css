@@ -12,9 +12,14 @@
 .tableRegion { min-inline-size: 0; max-inline-size: 100%; }
 .identity { min-inline-size: 0; max-inline-size: 100%; display: inline-flex; align-items: center; gap: var(--wd-flow-2); }
 .identityDetails { min-inline-size: 0; display: grid; }
-.identity strong { min-inline-size: 0; overflow: hidden; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.identity small { display: none; min-inline-size: 0; overflow: hidden; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-overflow: ellipsis; white-space: nowrap; }
-.emailLink { display: block; overflow: hidden; color: var(--wd-color-link); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+/* Name on the first line, email muted on the second; neither truncates. */
+.identity strong { min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); overflow-wrap: break-word; }
+.identity small { min-inline-size: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: break-word; }
+.emailLink { color: var(--wd-color-text-secondary); text-decoration: none; }
+.roleChips { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); }
+.tableSection { display: grid; gap: var(--wd-flow-2); }
+.tableSection + .tableSection { margin-block-start: var(--wd-flow-4); }
+.sectionTitle { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
 .emailLink:hover { text-decoration: underline; }
 .emailLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: var(--wd-space-1); }
 .roleText { color: var(--wd-color-text); }
