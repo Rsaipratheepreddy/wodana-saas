@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import type { HomeMetrics, HomeOverview } from "@wodana/contracts";
 import Link from "next/link";
-import { ArrowRight, BookOpen, CalendarClock, CircleCheck, ClipboardList, FileText, GripVertical, LayoutGrid, ListChecks, MessageSquare, Minus, Package, Plus, RefreshCw, Users } from "lucide-react";
-import { Button, ControlledModalDialog, DesignSystemProvider, EmptyState, IconButton, MiniBars, PageHeader, SplitBar, useDesignSystem } from "@/design-system";
+import { AlertTriangle, BookOpen, CalendarClock, CircleCheck, ClipboardList, FileText, GripVertical, LayoutGrid, ListChecks, MessageSquare, Minus, Package, Plus, RefreshCw, Users } from "lucide-react";
+import { Button, ControlledModalDialog, DesignSystemProvider, EmptyState, ErrorState, IconButton, ListTabs, MiniBars, PageHeader, SegmentedControl, SplitBar, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
 import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
@@ -13,8 +13,8 @@ import { defaultLayoutFor, homeActionLabel, homeActivityId, homeProfile, homeWid
 import { crmRecordLink, crmTime } from "@/components/crm/crm-product-shell";
 import { FollowUpSheet, NewFollowUpDialog } from "@/components/crm/follow-up-editor";
 import { HomeAttendance } from "./home-attendance";
-import { ActivityWidget, HealthWidget, ItemList, KpiRow, MoneyWidget, StorageWidget, TrendWidget, type MetricsState } from "./home-widgets";
-import { greetingPart } from "./home-format";
+import { ActivityWidget, HealthWidget, ItemList, MoneyWidget, Row, StorageWidget, SummaryStrip, TrendWidget, ViewLink, type MetricsState, type Series } from "./home-widgets";
+import { formatCount, greetingPart } from "./home-format";
 import s from "./workspace-home.module.css";
 
 type Props = {
@@ -29,7 +29,8 @@ type Props = {
   /** Permission keys granted in this workspace; widgets and figures follow them. */
   permissions?: string[];
 };
-const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "—";
+type AttentionFilter = "all" | "follow-ups" | "messages";
+const isReply = (item: Record<string, unknown>) => String(item.kind).includes("reply");
 
 export function WorkspaceHome(props: Props) {
   // Direction is left to the provider, which follows the chosen UI language (right-to-left for Arabic).
@@ -41,7 +42,7 @@ export function WorkspaceHome(props: Props) {
   return <DesignSystemProvider {...inherited} theme={inherited.theme === "high-contrast" ? inherited.theme : theme === "dark" ? "dark" : "light"} portalContainer={portal}><div ref={setPortal}><HomeContent key={`${props.workspaceId}:${props.userId}`} {...props} /></div></DesignSystemProvider>;
 }
 
-function HomeContent({ workspaceId, userId, workspaceName, modules, initialData, canManage, firstName, permissions }: Props) {
+function HomeContent({ workspaceId, userId, modules, initialData, canManage, firstName, permissions }: Props) {
   const t = useT();
   const { locale } = useDesignSystem();
   const crmEnabled = modules.includes("crm");
@@ -49,7 +50,7 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
   const can = (permission: string) => Boolean(canManage) || (permissions ? permissions.includes(permission) : false);
   const widgetNames: Record<HomeWidgetId, string> = {
     attention: t("Needs attention"), projects: t("My tasks"), trend: t("Sales trend"), money: t("Money in"), health: t("Projects health"), planning: t("In planning"),
-    activity: t("Recent activity"), storage: t("Storage overview"), sales: t("Sales snapshot"), tools: t("Quick actions"), attendance: t("Attendance"),
+    activity: t("Recent activity"), storage: t("Storage overview"), sales: t("Sales snapshot"), tools: t("Quick actions"),
   };
   const [overview, setOverview] = useState<HomeOverview | null>(null);
   const [overviewError, setOverviewError] = useState("");
@@ -66,7 +67,6 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
   /** What the person may see at all, from modules and permissions (stable before any data arrives). */
   const permitted = (id: HomeWidgetId): boolean => {
     switch (id) {
-      case "attendance": return modules.includes("hrms");
       case "tools": return true;
       case "planning": return modules.includes("pre-project");
       case "projects": return modules.includes("projects");
@@ -113,7 +113,8 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
   const loading = useRef(false);
   const [activity, setActivity] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<AttentionFilter>("all");
+  const [series, setSeries] = useState<"enquiries" | "quotes">(canEnquiries ? "enquiries" : "quotes");
   const refresh = async () => {
     if (loading.current || !canView) return;
     loading.current = true; setBusy(true); setFailure("");
@@ -125,19 +126,20 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
     finally { loading.current = false; setBusy(false); }
   };
   const items = data?.canView ? data.items : [];
-  const visibleItems = items.filter(item => filter === "all" || (filter === "messages" ? String(item.kind).includes("reply") : !String(item.kind).includes("reply")));
+  const replies = items.filter(isReply).length;
+  const visibleItems = items.filter(item => filter === "all" || (filter === "messages" ? isReply(item) : !isReply(item)));
   const summary = (data?.canView ? data.supporting.summary ?? {} : {}) as Record<string, unknown>;
-  const tools = [
+  const tools: Array<{ title: string; href: string; Icon: typeof FileText; series: Series }> = [
     ...(modules.includes("pre-project") ? [
-      { title: t("Quotations"), href: "/workspace/pre-projects?section=quotations", Icon: FileText },
-      { title: t("Catalog"), href: "/workspace/catalogs", Icon: BookOpen },
-      { title: t("Requirements"), href: "/workspace/pre-projects?section=requirements", Icon: ClipboardList },
+      { title: t("Quotations"), href: "/workspace/pre-projects?section=quotations", Icon: FileText, series: 2 as Series },
+      { title: t("Catalog"), href: "/workspace/catalogs", Icon: BookOpen, series: 4 as Series },
+      { title: t("Requirements"), href: "/workspace/pre-projects?section=requirements", Icon: ClipboardList, series: 2 as Series },
     ] : []),
     ...(crmEnabled ? [
-      { title: t("Inbox"), href: "/workspace/crm/conversations", Icon: MessageSquare },
-      { title: t("Clients"), href: "/workspace/crm/customers", Icon: Users },
+      { title: t("Inbox"), href: "/workspace/crm/conversations", Icon: MessageSquare, series: 1 as Series },
+      { title: t("Clients"), href: "/workspace/crm/customers", Icon: Users, series: 1 as Series },
     ] : []),
-    ...(modules.includes("projects") ? [{ title: t("Projects"), href: "/workspace/projects", Icon: Package }] : []),
+    ...(modules.includes("projects") ? [{ title: t("Projects"), href: "/workspace/projects", Icon: Package, series: 3 as Series }] : []),
   ];
   useEffect(() => {
     const controller = new AbortController();
@@ -213,7 +215,8 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
   };
   const onDragEnd = () => { if (dragId) { const order = draft.filter(shownInEdit); setAnnouncement(t("{name} moved to position {position} of {total}", { name: widgetNames[dragId], position: order.findIndex(item => item.id === dragId) + 1, total: order.length })); } setDragId(null); lastOver.current = null; };
 
-  const expectedKpis = [canEnquiries, canQuotes, canPayments, canProjects].filter(Boolean).length;
+  // The summary keeps a place for each figure the person may see (at most four) while it loads.
+  const expectedFigures = Math.min(4, [crmEnabled && can("crm.activities.view"), canQuotes, canProjects, can("purchasing.view"), canPayments, canEnquiries].filter(Boolean).length);
   const shownLayout = (editing ? draft : layout).filter(widget => widget.visible && available(widget.id));
   const hiddenWidgets = draft.filter(widget => !widget.visible && available(widget.id));
   const part = greetingPart(undefined);
@@ -222,28 +225,50 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
     : (part === "morning" ? t("Good morning") : part === "afternoon" ? t("Good afternoon") : t("Good evening"));
   const today = new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", timeZone: metrics?.timeZone }).format(new Date());
 
-  const headerLink = (id: HomeWidgetId): ReactNode => {
-    if (id === "attention") return <Button size="compact" variant="quiet" isLoading={busy} onPress={() => void refresh()}><RefreshCw size={14} aria-hidden="true" />{t("Refresh")}</Button>;
+  /** The end of a widget's header: its view switch or filter, and the link to its full list. */
+  const headerTools = (id: HomeWidgetId): ReactNode => {
+    if (id === "attention") return <>
+      <ListTabs label={t("Filter work")} value={filter} onChange={setFilter} items={[
+        { id: "all", label: t("All work"), count: items.length },
+        { id: "follow-ups", label: t("Follow-ups"), count: items.length - replies },
+        { id: "messages", label: t("Client replies"), count: replies },
+      ]} />
+      <IconButton size="compact" aria-label={t("Refresh")} isLoading={busy} onPress={() => void refresh()}><RefreshCw size={14} aria-hidden="true" /></IconButton>
+    </>;
+    if (id === "trend") return (metrics ? Boolean(metrics.enquiries) : canEnquiries) && (metrics ? Boolean(metrics.quotes) : canQuotes)
+      ? <SegmentedControl label={t("Show")} value={series} onChange={value => setSeries(value as "enquiries" | "quotes")} options={[{ id: "enquiries", label: t("Enquiries") }, { id: "quotes", label: t("Quote value") }]} />
+      : null;
     const links: Partial<Record<HomeWidgetId, [string, string]>> = { sales: ["/workspace/crm", t("View sales")], planning: ["/workspace/pre-projects", t("View all")], projects: ["/workspace/tasks", t("View all")], money: ["/workspace/finance", t("Open finance")], health: ["/workspace/projects", t("View all")], activity: ["/workspace/settings/audit-logs", t("View all")] };
     const link = links[id];
-    return link ? <Link className={s.textAction} href={link[0]}>{link[1]}<ArrowRight size={14} aria-hidden="true" /></Link> : null;
+    return link ? <ViewLink href={link[0]}>{link[1]}</ViewLink> : null;
   };
+  const attentionTone = (kind: string) => kind === "sla_breach" ? "danger" as const : kind.includes("overdue") ? "warning" as const : undefined;
   const body = (id: HomeWidgetId): ReactNode => {
     switch (id) {
-      case "attendance": return <HomeAttendance workspaceId={workspaceId} />;
       case "attention": return <>
-        <div className={s.filters} role="group" aria-label={t("Filter work")}>{[{ id: "all", label: t("All work") }, { id: "follow-ups", label: t("Follow-ups") }, { id: "messages", label: t("Client replies") }].map(option => <button type="button" key={option.id} aria-pressed={filter === option.id} onClick={() => setFilter(option.id)}>{option.label}</button>)}</div>
-        {failure ? <div className={s.inlineFailure} role="alert"><span>{failure}</span><Button size="compact" isLoading={busy} onPress={() => void refresh()}>{t("Retry")}</Button></div> : null}
-        <ul className={s.list} aria-busy={busy}>{visibleItems.slice(0, 6).map(item => <li key={item.id} className={s.workRow}><span className={s.rowIcon} aria-hidden="true">{String(item.kind).includes("reply") ? <MessageSquare size={16} /> : <CalendarClock size={16} />}</span><span className={s.rowCopy}><strong>{String(item.title ?? item.partyName ?? t("Follow-up"))}</strong><small>{[String(item.reason ?? t("Review the linked record")), crmTime(item.dueAt)].filter(Boolean).join(" · ")}</small></span>{homeActivityId(item) ? <Button className={s.tonedAction} size="compact" onPress={() => setActivity(homeActivityId(item))}>{t("Update follow-up")}</Button> : <Link className={s.tonedLink} href={crmRecordLink(item)}>{t(homeActionLabel(item) as Parameters<typeof t>[0])}</Link>}</li>)}</ul>
-        {!visibleItems.length && !failure ? <div className={s.state}><EmptyState illustration={null} icon={<CircleCheck size={18} aria-hidden="true" />} title={filter === "all" ? t("No work needs attention") : t("No matching work")} action={canView ? <Button size="compact" onPress={() => setCreating(true)}><CalendarClock size={14} aria-hidden="true" />{t("Plan follow-up")}</Button> : null} /></div> : null}
-        {visibleItems.length > 6 ? <Link className={s.textAction} href={filter === "messages" ? "/workspace/crm/conversations" : "/workspace/crm/follow-ups"}>{filter === "messages" ? t("View more conversations") : t("View more follow-ups")}<ArrowRight size={14} aria-hidden="true" /></Link> : null}
-        {visibleItems.length > 0 && canView ? <div className={s.widgetFooter}><Button size="compact" className={s.tonedAction} onPress={() => setCreating(true)}><CalendarClock size={14} aria-hidden="true" />{t("Plan follow-up")}</Button></div> : null}
+        {failure && items.length ? <p className={s.inlineFailure} role="alert"><AlertTriangle size={14} aria-hidden="true" /><span>{failure}</span><Button size="compact" variant="quiet" isLoading={busy} onPress={() => void refresh()}>{t("Retry")}</Button></p> : null}
+        {failure && !items.length ? <div className={s.state} role="alert"><ErrorState title={t("This could not be loaded")} description="" onRetry={() => void refresh()} /></div> : null}
+        {visibleItems.length ? <ul className={s.list} aria-busy={busy}>{visibleItems.slice(0, 5).map(item => {
+          const reply = isReply(item);
+          const activityId = homeActivityId(item);
+          return <li key={item.id}><Row icon={reply ? MessageSquare : CalendarClock} series={reply ? 2 : 1} tone={attentionTone(String(item.kind))}
+            title={String(item.title ?? item.partyName ?? t("Follow-up"))}
+            detail={[String(item.reason ?? t("Review the linked record")), crmTime(item.dueAt)].filter(Boolean).join(" · ")}
+            end={activityId ? <Button size="compact" onPress={() => setActivity(activityId)}>{t("Update follow-up")}</Button>
+              : <Link className="wd-button" data-size="compact" data-variant="secondary" href={crmRecordLink(item)}>{t(homeActionLabel(item) as Parameters<typeof t>[0])}</Link>} /></li>;
+        })}</ul> : null}
+        {!visibleItems.length && !failure ? <div className={s.state}><EmptyState illustration={null} icon={<CircleCheck size={16} aria-hidden="true" />} title={filter === "all" ? t("No work needs attention") : t("No matching work")} action={canView ? <Button size="compact" onPress={() => setCreating(true)}><CalendarClock size={14} aria-hidden="true" />{t("Plan follow-up")}</Button> : null} /></div> : null}
+        {visibleItems.length && canView ? <div className={s.widgetFooter}>
+          <Button size="compact" variant="quiet" onPress={() => setCreating(true)}><CalendarClock size={14} aria-hidden="true" />{t("Plan follow-up")}</Button>
+          {visibleItems.length > 5 ? <ViewLink href={filter === "messages" ? "/workspace/crm/conversations" : "/workspace/crm/follow-ups"}>{filter === "messages" ? t("View more conversations") : t("View more follow-ups")}</ViewLink> : null}
+        </div> : null}
       </>;
-      case "tools": return tools.length ? <div className={s.tools}>{tools.map(({ title, href, Icon }) => <Link key={href} className={s.tool} href={href}><span className={s.rowIcon}><Icon size={16} aria-hidden="true" /></span><strong>{title}</strong></Link>)}</div> : <div className={s.state}><EmptyState illustration={null} title={t("No tools are available for your role")} /></div>;
-      case "sales": return <div className={s.sales}>{[{ key: "activeLeads", label: t("Active enquiries"), href: "/workspace/crm/leads" }, { key: "openOpportunities", label: t("Open opportunities"), href: "/workspace/crm/opportunities" }, { key: "pendingFollowUps", label: t("Follow-ups"), href: "/workspace/crm/follow-ups" }].map(metric => <Link key={metric.key} href={metric.href}><strong>{count(summary[metric.key])}</strong><span>{metric.label}</span><ArrowRight size={14} aria-hidden="true" /></Link>)}</div>;
-      case "planning": return <ItemList icon={ClipboardList} items={overview?.planning} loading={!overview && !overviewError} failed={Boolean(overviewError)} retry={() => setOverviewReload(value => value + 1)} empty={{ title: t("No planning cases assigned to you"), action: <Link className={s.textAction} href="/workspace/pre-projects">{t("Open planning")}<ArrowRight size={14} aria-hidden="true" /></Link> }} />;
-      case "projects": return <ItemList icon={ListChecks} items={overview?.tasks} loading={!overview && !overviewError} failed={Boolean(overviewError)} retry={() => setOverviewReload(value => value + 1)} empty={{ title: t("No open tasks assigned to you"), action: <Link className={s.textAction} href="/workspace/tasks">{t("Open tasks")}<ArrowRight size={14} aria-hidden="true" /></Link> }} />;
-      case "trend": return <TrendWidget metrics={metricsState} canEnquiries={metrics ? Boolean(metrics.enquiries) : canEnquiries} canQuotes={metrics ? Boolean(metrics.quotes) : canQuotes} />;
+      case "tools": return tools.length ? <div className={s.tools}>{tools.map(({ title, href, Icon, series: tint }) => <Link key={href} className={s.tool} href={href}><span className={s.rowIcon} data-series={tint} aria-hidden="true"><Icon size={15} /></span><strong>{title}</strong></Link>)}</div> : <div className={s.state}><EmptyState illustration={null} title={t("No tools are available for your role")} /></div>;
+      case "sales": return <ul className={s.list}>{[{ key: "activeLeads", label: t("Active enquiries"), href: "/workspace/crm/leads", Icon: Users }, { key: "openOpportunities", label: t("Open opportunities"), href: "/workspace/crm/opportunities", Icon: FileText }, { key: "pendingFollowUps", label: t("Follow-ups"), href: "/workspace/crm/follow-ups", Icon: CalendarClock }].map(metric => <li key={metric.key}>
+        <Row href={metric.href} icon={metric.Icon} series={1} title={metric.label} end={<strong className={s.rowFigure}>{typeof summary[metric.key] === "number" ? formatCount(summary[metric.key] as number, locale ?? "en") : "—"}</strong>} /></li>)}</ul>;
+      case "planning": return <ItemList icon={ClipboardList} series={2} items={overview?.planning} loading={!overview && !overviewError} failed={Boolean(overviewError)} retry={() => setOverviewReload(value => value + 1)} empty={{ title: t("No planning cases assigned to you"), action: <ViewLink href="/workspace/pre-projects">{t("Open planning")}</ViewLink> }} />;
+      case "projects": return <ItemList icon={ListChecks} series={3} items={overview?.tasks} loading={!overview && !overviewError} failed={Boolean(overviewError)} retry={() => setOverviewReload(value => value + 1)} empty={{ title: t("No open tasks assigned to you"), action: <ViewLink href="/workspace/tasks">{t("Open tasks")}</ViewLink> }} />;
+      case "trend": return <TrendWidget metrics={metricsState} series={metrics && !metrics.enquiries ? "quotes" : metrics && !metrics.quotes ? "enquiries" : series} />;
       case "money": return <MoneyWidget metrics={metricsState} />;
       case "health": return <HealthWidget metrics={metricsState} />;
       case "activity": return <ActivityWidget metrics={metricsState} />;
@@ -252,28 +277,30 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
   };
 
   return <section className={s.home} aria-label={t("Workspace Home")} data-editing={editing || undefined}>
-    <PageHeader title={greeting} description={today} actions={editing
-      ? <div className={s.actions}><Button onPress={() => setGallery(true)} isDisabled={layoutBusy}><Plus size={16} aria-hidden="true" />{t("Add widget")}</Button><Button variant="quiet" isDisabled={layoutBusy} onPress={() => setEditing(false)}>{t("Cancel")}</Button><Button variant="primary" isLoading={layoutBusy} isDisabled={layoutVersion === null} onPress={() => void saveLayout()}>{t("Done")}</Button></div>
-      : <div className={s.actions}><Button variant="quiet" onPress={startEditing}><LayoutGrid size={16} aria-hidden="true" />{t("Edit Home")}</Button>{crmEnabled ? <Link className={s.primaryAction} href="/workspace/crm/leads?create=true"><Plus size={16} aria-hidden="true" />{t("New enquiry")}</Link> : null}</div>} />
-    {editing && preferenceError ? <div className={s.inlineFailure} role="alert"><span>{preferenceError}</span><Button size="compact" isDisabled={layoutBusy} onPress={() => { setLayoutReload(value => value + 1); setEditing(false); }}>{t("Reload saved layout")}</Button></div> : null}
-    {!editing ? <KpiRow metrics={metricsState} expected={expectedKpis} /> : null}
-    <div className={s.grid}>{shownLayout.map(widget => <section key={widget.id} className={s.widget} data-widget-id={widget.id} data-size={widget.size} data-dragging={dragId === widget.id || undefined} aria-label={widgetNames[widget.id]}>
+    <PageHeader title={greeting}
+      description={<span className={s.meta}><span>{today}</span>{modules.includes("hrms") ? <HomeAttendance workspaceId={workspaceId} /> : null}</span>}
+      actions={editing
+        ? <div className={s.actions}><Button onPress={() => setGallery(true)} isDisabled={layoutBusy}><Plus size={16} aria-hidden="true" />{t("Add widget")}</Button><Button variant="quiet" isDisabled={layoutBusy} onPress={() => setEditing(false)}>{t("Cancel")}</Button><Button variant="primary" isLoading={layoutBusy} isDisabled={layoutVersion === null} onPress={() => void saveLayout()}>{t("Done")}</Button></div>
+        : <div className={s.actions}><Button variant="quiet" data-tour="home-edit" onPress={startEditing}><LayoutGrid size={16} aria-hidden="true" />{t("Edit Home")}</Button>{crmEnabled ? <Link className="wd-button" data-size="standard" data-variant="primary" href="/workspace/crm/leads?create=true"><Plus size={16} aria-hidden="true" />{t("New enquiry")}</Link> : null}</div>} />
+    {editing && preferenceError ? <p className={s.inlineFailure} role="alert"><AlertTriangle size={14} aria-hidden="true" /><span>{preferenceError}</span><Button size="compact" isDisabled={layoutBusy} onPress={() => { setLayoutReload(value => value + 1); setEditing(false); }}>{t("Reload saved layout")}</Button></p> : null}
+    {!editing ? <SummaryStrip metrics={metricsState} expected={expectedFigures} /> : null}
+    <div className={s.grid}>{shownLayout.map(widget => <section key={widget.id} className={s.widget} data-widget-id={widget.id} data-size={widget.size} data-dragging={dragId === widget.id || undefined} data-tour={widget.id === "attention" ? "home-widget-attention" : undefined} aria-label={widgetNames[widget.id]}>
       {editing ? <div className={s.editChrome}>
         <IconButton className={s.removeButton} aria-label={t("Remove {name}", { name: widgetNames[widget.id] })} onPress={() => remove(widget.id)}><Minus size={14} aria-hidden="true" /></IconButton>
         <button type="button" className={s.dragHandle} aria-label={t("Move {name}", { name: widgetNames[widget.id] })} aria-describedby="home-move-hint" onKeyDown={event => onHandleKey(event, widget.id)} onPointerDown={event => onDragStart(event, widget.id)} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}><GripVertical size={16} aria-hidden="true" data-directional="true" /></button>
       </div> : null}
       <div className={s.widgetInner} inert={editing || undefined}>
-        {widget.id !== "attendance" ? <header className={s.widgetHeader}><h2>{widgetNames[widget.id]}</h2>{headerLink(widget.id)}</header> : null}
+        <header className={s.widgetHeader}><h2>{widgetNames[widget.id]}</h2><span className={s.widgetTools}>{headerTools(widget.id)}</span></header>
         {body(widget.id)}
       </div>
       {editing ? <div className={s.sizePicker} role="group" aria-label={t("Size of {name}", { name: widgetNames[widget.id] })}>{homeWidgetSizes.map(size => <button key={size} type="button" aria-pressed={widget.size === size} onClick={() => resize(widget.id, size)}>{size === "small" ? t("Small") : size === "medium" ? t("Medium") : t("Wide")}</button>)}</div> : null}
     </section>)}</div>
-    {!shownLayout.length ? <div className={s.state}><EmptyState illustration={null} icon={<LayoutGrid size={18} aria-hidden="true" />} title={t("Your Home is clear")} action={editing ? <Button onPress={() => setGallery(true)}><Plus size={16} aria-hidden="true" />{t("Add widget")}</Button> : <Button onPress={startEditing}>{t("Edit Home")}</Button>} /></div> : null}
+    {!shownLayout.length ? <div className={s.state}><EmptyState illustration={null} icon={<LayoutGrid size={16} aria-hidden="true" />} title={t("Your Home is clear")} action={editing ? <Button onPress={() => setGallery(true)}><Plus size={16} aria-hidden="true" />{t("Add widget")}</Button> : <Button onPress={startEditing}>{t("Edit Home")}</Button>} /></div> : null}
     <span id="home-move-hint" className="wd-visually-hidden">{t("Use the arrow keys to move this widget.")}</span>
     <span className="wd-visually-hidden" aria-live="polite">{announcement}</span>
     <ControlledModalDialog isOpen={gallery} onOpenChange={setGallery} title={t("Add widget")} size="md">
       {hiddenWidgets.length ? <ul className={s.gallery}>{hiddenWidgets.map(widget => <li key={widget.id}><button type="button" className={s.galleryTile} onClick={() => add(widget.id)} aria-label={t("Add {name}", { name: widgetNames[widget.id] })}><WidgetPreview id={widget.id} /><span><strong>{widgetNames[widget.id]}</strong><Plus size={16} aria-hidden="true" /></span></button></li>)}</ul>
-        : <div className={s.state}><EmptyState illustration={null} icon={<CircleCheck size={18} aria-hidden="true" />} title={t("Every widget is on your Home")} /></div>}
+        : <div className={s.state}><EmptyState illustration={null} icon={<CircleCheck size={16} aria-hidden="true" />} title={t("Every widget is on your Home")} /></div>}
       <div className={s.modalActions}><Button onPress={() => { setDraft(roleDefault.map(item => ({ ...item }))); setGallery(false); }}>{t("Reset layout")}</Button></div>
     </ControlledModalDialog>
     {activity && <FollowUpSheet workspaceId={workspaceId} recordId={activity} onClose={() => setActivity(null)} onSaved={() => { void refresh(); }} />}
@@ -285,10 +312,7 @@ const sample = [3, 5, 4, 6, 5, 7, 6, 8].map((value, index) => ({ label: String(i
 /** A small, static picture of each widget for the gallery; decorative only. */
 function WidgetPreview({ id }: { id: HomeWidgetId }) {
   const picture = id === "trend" || id === "sales" ? <MiniBars points={sample} label="" />
-    : id === "storage" ? <SplitBar label="" segments={[{ id: "a", label: "", value: 5, display: "" }, { id: "b", label: "", value: 3, display: "" }, { id: "c", label: "", value: 2, display: "" }, { id: "d", label: "", value: 1, display: "" }]} />
-      : id === "money" ? <span className={s.previewRing} />
-        : <span className={s.previewLines}><i /><i /><i /></span>;
+    : id === "storage" || id === "money" ? <SplitBar label="" segments={[{ id: "a", label: "", value: 5, display: "" }, { id: "b", label: "", value: 3, display: "" }, { id: "c", label: "", value: 2, display: "" }, { id: "d", label: "", value: 1, display: "" }]} />
+      : <span className={s.previewLines}><i /><i /><i /></span>;
   return <span className={s.preview} aria-hidden="true">{picture}</span>;
 }
-
-

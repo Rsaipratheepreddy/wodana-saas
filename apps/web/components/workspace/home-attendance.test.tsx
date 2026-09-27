@@ -27,15 +27,25 @@ const mount = (bootstrap: HrmsBootstrap, current: AttendanceSession | null) => v
 }));
 const home = () => render(<DesignSystemProvider locale="en-GB" timeZone="UTC"><HomeAttendance workspaceId="w" /></DesignSystemProvider>);
 
-describe("Home attendance", () => {
+describe("Home attendance chip", () => {
   afterEach(() => { vi.unstubAllGlobals(); device.clear(); });
 
-  it("says so, without a check-in, when attendance isn't on for the person", async () => {
+  it("shows nothing when attendance isn't on for the person", async () => {
     mount(boot(false), null);
     home();
-    expect(await screen.findByText("Attendance isn't on for you.")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading" })).toBeNull());
+    expect(screen.queryByRole("group", { name: "My attendance" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Check in" })).toBeNull();
-    expect(screen.getByRole("link", { name: "My days" })).toHaveAttribute("href", "/workspace/hrms");
+  });
+
+  it("says when attendance didn't load and tries again", async () => {
+    const fetcher = vi.fn(async (url: string) => ({ ok: false, status: 500, url, json: async () => ({ message: "Attendance is resting" }) }));
+    vi.stubGlobal("fetch", fetcher);
+    home();
+    expect(await screen.findByRole("group", { name: "My attendance" })).toHaveTextContent(/.+/);
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(fetcher.mock.calls.filter(([url]) => String(url).includes("bootstrap")).length).toBe(2));
   });
 
   it("checks in from Home with the same capture as People", async () => {
@@ -51,7 +61,8 @@ describe("Home attendance", () => {
     mount(boot(true), open);
     home();
     await waitFor(() => expect(screen.getByRole("button", { name: "Check out" })).toBeEnabled());
-    expect(screen.getByText(/Office · since/)).toBeInTheDocument();
-    expect(screen.getByText("Checked in")).toBeInTheDocument();
+    const chip = screen.getByRole("group", { name: "My attendance" });
+    expect(within(chip).getByText(/Office · since/)).toBeInTheDocument();
+    expect(within(chip).getByText("Checked in")).toBeInTheDocument();
   });
 });
