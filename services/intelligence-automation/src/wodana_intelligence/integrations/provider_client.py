@@ -3,8 +3,10 @@
 import base64
 import hashlib
 import hmac
+import json as jsonlib
+import re
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import quote, urlencode, urlparse
 
 import httpx
@@ -28,6 +30,18 @@ ZOHO_REGIONS = {
     "jp": ("accounts.zoho.jp", "www.zohoapis.jp"),
     "sa": ("accounts.zoho.sa", "www.zohoapis.sa"),
 }
+# What accounting sync writes to Zoho Books. Connections made before sync existed lack these
+# and must reconnect; QuickBooks' single accounting scope already covers every posting.
+ZOHO_POSTING_SCOPES = (
+    "ZohoBooks.contacts.CREATE",
+    "ZohoBooks.creditnotes.READ",
+    "ZohoBooks.creditnotes.CREATE",
+    "ZohoBooks.customerpayments.CREATE",
+    "ZohoBooks.bills.CREATE",
+    "ZohoBooks.vendorpayments.READ",
+    "ZohoBooks.vendorpayments.CREATE",
+    "ZohoBooks.vendorpayments.DELETE",
+)
 SCOPES = {
     "quickbooks": ["com.intuit.quickbooks.accounting"],
     "zoho_books": [
@@ -39,9 +53,100 @@ SCOPES = {
         "ZohoBooks.bills.READ",
         "ZohoBooks.purchaseorders.READ",
         "ZohoBooks.expenses.READ",
+        # Chart of accounts, for the account mapping dropdowns.
+        "ZohoBooks.accountants.READ",
+        *ZOHO_POSTING_SCOPES,
     ],
     "whatsapp": ["whatsapp_business_management", "whatsapp_business_messaging"],
 }
+AccountingProvider = Literal["quickbooks", "zoho_books"]
+CallFailure = Literal[
+    "timeout", "network", "auth", "rate_limited", "unavailable", "rejected", "invalid_response"
+]
+CallHint = Literal[
+    "duplicate", "duplicate_name", "closed_period", "invalid_tax", "invalid_reference", "not_found"
+]
+# Provider error codes whose meaning is stable enough to name. Anything else is reported by code.
+_QUICKBOOKS_HINTS: dict[str, CallHint] = {
+    "610": "not_found",  # Object Not Found
+    "2500": "invalid_reference",  # Invalid Reference Id (item, account, tax code, customer)
+    "6140": "duplicate",  # Duplicate Document Number Error
+    "6210": "closed_period",  # Account Period Closed
+    "6240": "duplicate_name",  # Duplicate Name Exists Error
+}
+_ZOHO_HINTS: dict[str, CallHint] = {"1001": "duplicate", "1002": "not_found"}
+_SAFE_CODE = re.compile(r"^[A-Za-z0-9_.-]{1,20}$")
+
+
+class ProviderCallError(RuntimeError):
+    """A signed accounting call failed.
+
+    Carries only structured facts that are safe to store and show: never the response body, the
+    request URL (which holds names and numbers) or a token.
+    """
+
+    def __init__(
+        self,
+        failure: CallFailure,
+        *,
+        status: Optional[int] = None,
+        provider_code: Optional[str] = None,
+        hint: Optional[CallHint] = None,
+    ) -> None:
+        super().__init__(f"Accounting provider call failed: {failure}")
+        self.failure = failure
+        self.status = status
+        self.provider_code = provider_code
+        self.hint = hint
+
+
+def exact_json_value(value: Any) -> Any:
+    """Prepare a body for JSON: amounts leave Decimal only here, and only if they survive exactly.
+
+    Every amount the contract allows (at most 15 significant digits) round-trips through a double,
+    so providers that require JSON numbers receive exactly the decimal Business Core sent.
+    """
+    if isinstance(value, Decimal):
+        number = float(value)
+        if not value.is_finite() or Decimal(repr(number)) != value:
+            raise ValueError("Amount cannot be represented exactly as a JSON number")
+        return number
+    if isinstance(value, dict):
+        return {key: exact_json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [exact_json_value(item) for item in value]
+    return value
+
+
+def _call_error_facts(
+    provider: AccountingProvider, data: Any
+) -> tuple[Optional[str], Optional[CallHint]]:
+    """Read the provider's error code and classify it. The provider's text never leaves here."""
+    code: Any = None
+    message = ""
+    if isinstance(data, dict):
+        if provider == "quickbooks":
+            fault = data.get("Fault") or data.get("fault")
+            errors = fault.get("Error") or fault.get("error") if isinstance(fault, dict) else None
+            first = errors[0] if isinstance(errors, list) and errors else {}
+            if isinstance(first, dict):
+                code = first.get("code")
+                message = f"{first.get('Message', '')} {first.get('Detail', '')}"
+        else:
+            code = data.get("code")
+            message = str(data.get("message", ""))
+    safe = str(code) if code is not None and _SAFE_CODE.fullmatch(str(code)) else None
+    hints = _QUICKBOOKS_HINTS if provider == "quickbooks" else _ZOHO_HINTS
+    hint: Optional[CallHint] = hints.get(safe or "")
+    text = message.lower()
+    if hint is None:
+        if "already exist" in text or "duplicate" in text:
+            hint = "duplicate"
+        elif "locked" in text or ("period" in text and "closed" in text):
+            hint = "closed_period"
+        elif "tax" in text and ("invalid" in text or "not valid" in text):
+            hint = "invalid_tax"
+    return safe, hint
 
 
 def safe_payment_url(value: Any) -> Optional[str]:
@@ -129,6 +234,9 @@ class ProviderClient:
                 code, status = "provider_access_denied", 409
             elif response.status_code == 429:
                 code, status = "provider_rate_limited", 429
+            elif response.status_code >= 500:
+                # Transient: callers retry these, unlike a rejected request or refresh token.
+                code = "provider_unavailable"
             raise IntegrationFlowError(
                 code, "Provider rejected the request. Check account access and settings.", status
             )
@@ -189,15 +297,9 @@ class ProviderClient:
     def graph(self) -> str:
         return f"https://graph.facebook.com/{self.settings.whatsapp_graph_version}"
 
-    async def api(
-        self,
-        credential: ProviderCredential,
-        method: str,
-        path: str,
-        *,
-        params: Optional[dict[str, Any]] = None,
-        json: Any = None,
-    ) -> dict[str, Any]:
+    def _signed(
+        self, credential: ProviderCredential, path: str, params: Optional[dict[str, Any]]
+    ) -> tuple[str, dict[str, Any], dict[str, str]]:
         query = dict(params or {})
         if credential.provider == "quickbooks":
             host = (
@@ -220,13 +322,80 @@ class ProviderClient:
                 credential.access_token.encode(),
                 hashlib.sha256,
             ).hexdigest()
-        return await self.request(
-            method,
-            base + path,
-            params=query,
-            json=json,
-            headers={"Authorization": authorization, "Accept": "application/json"},
+        return base + path, query, {"Authorization": authorization, "Accept": "application/json"}
+
+    async def api(
+        self,
+        credential: ProviderCredential,
+        method: str,
+        path: str,
+        *,
+        params: Optional[dict[str, Any]] = None,
+        json: Any = None,
+    ) -> dict[str, Any]:
+        url, query, headers = self._signed(credential, path, params)
+        return await self.request(method, url, params=query, json=json, headers=headers)
+
+    async def books_request(
+        self,
+        credential: ProviderCredential,
+        method: str,
+        path: str,
+        *,
+        params: Optional[dict[str, Any]] = None,
+        json: Any = None,
+    ) -> dict[str, Any]:
+        """A signed QuickBooks or Zoho Books call for accounting sync.
+
+        Unlike api(), amounts go out and come back as exact decimals, and failures are raised as
+        ProviderCallError with the status and provider error code, so the caller can tell a
+        rejected document from a transient outage.
+        """
+        provider = credential.provider
+        if provider != "quickbooks" and provider != "zoho_books":
+            raise ValueError("Accounting sync supports QuickBooks and Zoho Books only")
+        url, query, headers = self._signed(credential, path, params)
+        content: Optional[bytes] = None
+        if json is not None:
+            content = jsonlib.dumps(exact_json_value(json)).encode()
+            headers["Content-Type"] = "application/json"
+        try:
+            response = await self.http.request(
+                method, url, params=query, content=content, headers=headers
+            )
+        except httpx.TimeoutException:
+            raise ProviderCallError("timeout") from None
+        except httpx.HTTPError:
+            raise ProviderCallError("network") from None
+        try:
+            data: Any = jsonlib.loads(response.content, parse_float=Decimal)
+        except ValueError:
+            data = None
+        status = response.status_code
+        code, hint = _call_error_facts(provider, data)
+        if status in (401, 403):
+            raise ProviderCallError("auth", status=status, provider_code=code)
+        if status == 429:
+            raise ProviderCallError("rate_limited", status=status, provider_code=code)
+        if status >= 500:
+            raise ProviderCallError("unavailable", status=status, provider_code=code)
+        if response.is_error:
+            raise ProviderCallError(
+                "rejected",
+                status=status,
+                provider_code=code,
+                hint="not_found" if status == 404 and hint is None else hint,
+            )
+        if not isinstance(data, dict):
+            raise ProviderCallError("invalid_response", status=status)
+        failed = (
+            bool(data.get("Fault"))
+            if provider == "quickbooks"
+            else data.get("code", 0) != 0
         )
+        if failed:
+            raise ProviderCallError("rejected", status=status, provider_code=code, hint=hint)
+        return data
 
     async def list_records(
         self, credential: ProviderCredential, kind: str, page: int = 1
@@ -241,6 +410,8 @@ class ProviderClient:
                 "payments": "Payment",
                 "purchaseorders": "PurchaseOrder",
                 "expenses": "Purchase",
+                "accounts": "Account",
+                "taxes": "TaxCode",
             }.get(kind)
             if not entity:
                 raise IntegrationFlowError("invalid_resource", "Unsupported accounting resource")
@@ -257,24 +428,28 @@ class ProviderClient:
             items = data.get("QueryResponse", {}).get(entity, [])
             return {"items": items, "page": page, "hasMore": len(items) == 50}
         if credential.provider == "zoho_books":
+            # kind -> (path, key of the list in the response)
             endpoint = {
-                "customers": "contacts",
-                "vendors": "contacts",
-                "invoices": "invoices",
-                "items": "items",
-                "bills": "bills",
-                "payments": "customerpayments",
-                "purchaseorders": "purchaseorders",
-                "expenses": "expenses",
+                "customers": ("/contacts", "contacts"),
+                "vendors": ("/contacts", "contacts"),
+                "invoices": ("/invoices", "invoices"),
+                "items": ("/items", "items"),
+                "bills": ("/bills", "bills"),
+                "payments": ("/customerpayments", "customerpayments"),
+                "purchaseorders": ("/purchaseorders", "purchaseorders"),
+                "expenses": ("/expenses", "expenses"),
+                "accounts": ("/chartofaccounts", "chartofaccounts"),
+                "taxes": ("/settings/taxes", "taxes"),
             }.get(kind)
             if not endpoint:
                 raise IntegrationFlowError("invalid_resource", "Unsupported accounting resource")
+            path, key = endpoint
             query: dict[str, Any] = {"page": page, "per_page": 50}
             if kind in ("customers", "vendors"):
                 query["contact_type"] = "customer" if kind == "customers" else "vendor"
-            data = await self.api(credential, "GET", f"/{endpoint}", params=query)
+            data = await self.api(credential, "GET", path, params=query)
             return {
-                "items": data.get(endpoint, []),
+                "items": data.get(key, []),
                 "page": page,
                 "hasMore": bool(data.get("page_context", {}).get("has_more_page")),
             }
