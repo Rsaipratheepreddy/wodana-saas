@@ -10,7 +10,8 @@ type DirectoryRow = {
   workspace_id: string; external_tenant_id: string | null; organization_name: string; slug: string;
   workspace_status: string; is_default: boolean; lifecycle_state: TenantLifecycleState | null; lifecycle_version: number | null;
   grace_ends_at: Date | null; onboarding_status: string | null; subscription_status: string | null;
-  plan_code: string | null; plan_version: number | null; seat_limit: number | null;
+  plan_code: string | null; plan_version: number | null; contract_status: string | null; trial_ends_at: Date | null;
+  seat_limit: number | null;
   active_members: number; invited_members: number; pending_invitations: number;
   owner_email: string | null; owner_invitation_status: string | null; owner_delivery_status: string | null;
   last_activity_at: Date | null; created_at: Date;
@@ -50,6 +51,7 @@ function organization(row: DirectoryRow) {
     graceEndsAt: row.grace_ends_at,
     onboardingStatus: row.onboarding_status,
     plan: row.plan_code ? { code: row.plan_code, version: row.plan_version } : null,
+    contract: row.contract_status ? { status: row.contract_status, trialEndsAt: row.trial_ends_at } : null,
     seats,
     owner: { email: row.owner_email, invitationStatus: row.owner_invitation_status, deliveryStatus: row.owner_delivery_status },
     lastActivityAt: row.last_activity_at,

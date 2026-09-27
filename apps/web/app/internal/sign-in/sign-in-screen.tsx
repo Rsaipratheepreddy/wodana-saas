@@ -7,6 +7,7 @@ import {
   Button, Callout, Code, Container, DesignSystemProvider, EmailInput, Form,
   Heading, IconButton, Inline, PasswordInput, Stack, Text, TextInput,
 } from "@/design-system";
+import { useLanguage, useT } from "@/lib/i18n/i18n-provider";
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
 import styles from "./sign-in.module.css";
 
@@ -22,12 +23,14 @@ async function submit(action: string, body: Record<string, unknown>) {
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
-  if (!response.ok) throw new Error(typeof payload?.message === "string"
-    ? payload.message : "Sign-in could not be completed.");
+  if (!response.ok) throw new Error(typeof payload?.message === "string" ? payload.message : "");
   return payload ?? {};
 }
 
+/** Operator sign-in: password, then a mandatory authenticator code (set up on first sign-in). */
 export function OperatorSignIn() {
+  const t = useT();
+  const { language, direction } = useLanguage();
   const router = useRouter();
   const { theme, toggleTheme } = useWorkspaceTheme();
   const [stage, setStage] = useState<Stage>("password");
@@ -45,14 +48,14 @@ export function OperatorSignIn() {
     setBusy(true);
     setError("");
     try { await work(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "Sign-in could not be completed."); }
+    catch (reason) { setError((reason instanceof Error && reason.message) || t("Sign-in could not be completed.")); }
     finally { setBusy(false); }
   }
 
   function onPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void run(async () => {
-      if (!email.trim() || !password) throw new Error("Enter your email and password.");
+      if (!email.trim() || !password) throw new Error(t("Enter your email and password."));
       const result = await submit("login", { email: email.trim(), password }) as LoginResponse;
       setPassword("");
       setChallengeToken(result.challengeToken);
@@ -63,7 +66,7 @@ export function OperatorSignIn() {
   function onFactor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void run(async () => {
-      if (!code.trim()) throw new Error("Enter your authenticator or recovery code.");
+      if (!code.trim()) throw new Error(t("Enter your authenticator or recovery code."));
       const action = stage === "enroll" ? "confirm" : "verify";
       const result = await submit(action, { challengeToken, code: code.trim() }) as VerifyResponse;
       setCode("");
@@ -89,67 +92,63 @@ export function OperatorSignIn() {
   }
 
   return (
-    <DesignSystemProvider className={styles.page} theme={theme === "dark" ? "dark" : "light"}>
+    <DesignSystemProvider className={styles.page} theme={theme === "dark" ? "dark" : "light"} locale={language} direction={direction}>
       <Container as="main" size="form">
         <Stack gap={8}>
           <Inline>
-            <Heading as="h1" size="md">Wodana Control</Heading>
-            <IconButton aria-label={theme === "dark" ? "Use light mode" : "Use dark mode"} onPress={toggleTheme}>
+            <Heading as="h1" size="md">{t("Wodana Control")}</Heading>
+            <IconButton aria-label={theme === "dark" ? t("Use light mode") : t("Use dark mode")} onPress={toggleTheme}>
               {theme === "dark" ? <Sun aria-hidden="true" size={16} /> : <Moon aria-hidden="true" size={16} />}
             </IconButton>
           </Inline>
           {stage === "password" ? (
-            <Stack gap={4}>
-              <Text tone="muted">Sign in with your Wodana operator account.</Text>
-              <Form onSubmit={onPassword}>
-                <EmailInput autoComplete="username" isRequired label="Work email" onChange={setEmail} value={email} />
-                <PasswordInput autoComplete="current-password" isRequired label="Password" onChange={setPassword} value={password} />
-                {error ? <Callout title="Sign-in failed" tone="danger">{error}</Callout> : null}
-                <Button isLoading={busy} type="submit" variant="primary">Continue</Button>
-              </Form>
-            </Stack>
+            <Form onSubmit={onPassword}>
+              <EmailInput autoComplete="username" isRequired label={t("Work email")} onChange={setEmail} value={email} />
+              <PasswordInput autoComplete="current-password" isRequired label={t("Password")} onChange={setPassword} value={password} />
+              {error ? <Callout title={t("Sign-in failed")} tone="danger">{error}</Callout> : null}
+              <Button isLoading={busy} type="submit" variant="primary">{t("Continue")}</Button>
+            </Form>
           ) : null}
           {stage === "enroll" ? (
             <Stack gap={4}>
-              <Heading as="h2" size="sm">Set up your authenticator</Heading>
-              <Text tone="muted">Operator access requires an authenticator code.</Text>
-              {!setup ? <Button isLoading={busy} onPress={startSetup} variant="primary">Start setup</Button> : (
+              <Heading as="h2" size="sm">{t("Set up your authenticator")}</Heading>
+              {!setup ? <Button isLoading={busy} onPress={startSetup} variant="primary">{t("Start setup")}</Button> : (
                 <>
-                  <Text>Add this key in your authenticator app:</Text>
+                  <Text>{t("Add this key in your authenticator app:")}</Text>
                   <Code>{setup.secret}</Code>
                   <Form onSubmit={onFactor}>
-                    <TextInput autoComplete="one-time-code" isRequired label="6-digit code" onChange={setCode} value={code} />
-                    {error ? <Callout title="Verification failed" tone="danger">{error}</Callout> : null}
-                    <Button isLoading={busy} type="submit" variant="primary">Verify and sign in</Button>
+                    <TextInput autoComplete="one-time-code" isRequired label={t("6-digit code")} onChange={setCode} value={code} />
+                    {error ? <Callout title={t("Verification failed")} tone="danger">{error}</Callout> : null}
+                    <Button isLoading={busy} type="submit" variant="primary">{t("Verify and sign in")}</Button>
                   </Form>
                 </>
               )}
-              <Button onPress={restart} variant="quiet">Back to sign in</Button>
+              <Button onPress={restart} variant="quiet">{t("Back to sign in")}</Button>
             </Stack>
           ) : null}
           {stage === "verify" ? (
             <Stack gap={4}>
-              <Heading as="h2" size="sm">Verify it&apos;s you</Heading>
+              <Heading as="h2" size="sm">{t("Verify it's you")}</Heading>
               <Form onSubmit={onFactor}>
-                <TextInput autoComplete="one-time-code" isRequired label={recoveryMode ? "Recovery code" : "Authenticator code"} onChange={setCode} value={code} />
-                {error ? <Callout title="Verification failed" tone="danger">{error}</Callout> : null}
-                <Button isLoading={busy} type="submit" variant="primary">Verify and sign in</Button>
+                <TextInput autoComplete="one-time-code" isRequired label={recoveryMode ? t("Recovery code") : t("Authenticator code")} onChange={setCode} value={code} />
+                {error ? <Callout title={t("Verification failed")} tone="danger">{error}</Callout> : null}
+                <Button isLoading={busy} type="submit" variant="primary">{t("Verify and sign in")}</Button>
               </Form>
               <Inline>
                 <Button onPress={() => { setRecoveryMode((value) => !value); setCode(""); }} variant="quiet">
-                  {recoveryMode ? "Use authenticator" : "Use a recovery code"}
+                  {recoveryMode ? t("Use authenticator") : t("Use a recovery code")}
                 </Button>
-                <Button onPress={restart} variant="quiet">Back</Button>
+                <Button onPress={restart} variant="quiet">{t("Back")}</Button>
               </Inline>
             </Stack>
           ) : null}
           {stage === "recovery" ? (
             <Stack gap={4}>
-              <Heading as="h2" size="sm">Save your recovery codes</Heading>
-              <Text tone="muted">These are shown only once. Store them somewhere secure.</Text>
+              <Heading as="h2" size="sm">{t("Save your recovery codes")}</Heading>
+              <Text tone="muted">{t("They're shown only once.")}</Text>
               <Code>{recoveryCodes.join("  ·  ")}</Code>
-              <Button onPress={() => void navigator.clipboard.writeText(recoveryCodes.join("\n"))}>Copy codes</Button>
-              <Button onPress={() => router.replace("/internal")} variant="primary">Continue to Wodana Control</Button>
+              <Button onPress={() => void navigator.clipboard.writeText(recoveryCodes.join("\n"))}>{t("Copy codes")}</Button>
+              <Button onPress={() => router.replace("/internal")} variant="primary">{t("Continue")}</Button>
             </Stack>
           ) : null}
         </Stack>

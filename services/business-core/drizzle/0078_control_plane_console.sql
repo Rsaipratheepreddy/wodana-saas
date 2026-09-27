@@ -128,7 +128,7 @@ RETURNS TABLE (
   workspace_id uuid, external_tenant_id varchar, organization_name varchar, slug varchar,
   workspace_status text, is_default boolean, lifecycle_state varchar, lifecycle_version integer,
   grace_ends_at timestamptz, onboarding_status text, subscription_status varchar,
-  plan_code varchar, plan_version integer, seat_limit integer,
+  plan_code varchar, plan_version integer, contract_status varchar, trial_ends_at timestamptz, seat_limit integer,
   active_members integer, invited_members integer, pending_invitations integer,
   owner_email text, owner_invitation_status text, owner_delivery_status varchar,
   last_activity_at timestamptz, created_at timestamptz,
@@ -149,7 +149,8 @@ BEGIN
          workspace.id, request.external_tenant_id, workspace.name, workspace.slug,
          workspace.status::text, linked.is_default, lifecycle.state, lifecycle.version, lifecycle.grace_ends_at,
          onboarding.status::text, subscription.status,
-         COALESCE(contract.plan_code, subscription.plan_code), contract.plan_version, subscription.seat_limit,
+         COALESCE(contract.plan_code, subscription.plan_code), contract.plan_version, contract.status, contract.trial_ends_at,
+         subscription.seat_limit,
          (SELECT count(*)::integer FROM workspace_memberships m WHERE m.workspace_id = workspace.id AND m.status = 'active'),
          (SELECT count(*)::integer FROM workspace_memberships m WHERE m.workspace_id = workspace.id AND m.status = 'invited'),
          (SELECT count(*)::integer FROM workspace_invitations i

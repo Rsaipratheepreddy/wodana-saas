@@ -4,7 +4,8 @@ import { cookies } from "next/headers";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 import { getMyProfile } from "@/lib/workspace/profile.server";
 import { I18nProvider } from "@/lib/i18n/i18n-provider";
-import { WorkspaceRegionProvider } from "@/design-system";
+import { Callout, WorkspaceRegionProvider } from "@/design-system";
+import { translator } from "@/lib/i18n/messages";
 import { getWorkspaceRegion } from "@/lib/workspace/region.server";
 import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
 import { scopePeopleNavigation, scopeSupplyNavigation, visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
@@ -13,7 +14,9 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
   const profile = await getAuthenticatedProfile();
   const activeMembership = profile.memberships[0];
   const ownerAccess = activeMembership?.roles.some((role) => role === "owner" || role === "administrator") ?? false;
-  const allowedModules = ownerAccess
+  // A module Wodana took off the organization's plan is hidden for everyone (its data stays; the API refuses it).
+  const entitled = activeMembership?.entitlement && activeMembership.entitlement.status !== "not_configured";
+  const allowedModules = ownerAccess && !entitled
     ? (["workspace", "crm", "pre-project", "projects", "hrms"] as const)
     : activeMembership?.allowedModules ?? (["workspace", "crm", "pre-project", "projects", "hrms"] as const);
   const workspaces = profile.memberships.map((membership) => {
@@ -38,6 +41,8 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
   ]);
   const user = { email: profile.primaryEmail, name: profile.displayName, id: profile.id, avatarUrl: appearance?.photoUrl ?? undefined, avatarPreset: appearance?.avatarPreset ?? "auto" };
   const language = resolveLanguage(cookieStore.get(LANGUAGE_COOKIE)?.value);
+  const t = translator(language);
+  const readOnly = activeMembership?.workspaceStatus === "suspended";
   return (
     <I18nProvider language={language}>
     <WorkspaceRegionProvider {...region}>
@@ -51,6 +56,7 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
       user={user}
       workspaces={workspaces}>
       {!(process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") ? <SessionMonitor /> : null}
+      {readOnly ? <Callout tone="warning" title={t("Read-only")}>{t("Changes are paused. You can still read and export your records.")}</Callout> : null}
       {children}
     </WorkspaceShell>
     </WorkspaceRegionProvider>

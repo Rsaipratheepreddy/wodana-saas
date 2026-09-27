@@ -1,12 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
-import InternalPortalError from "./error";
+import InternalError from "./error";
 
-it("offers an accessible retry when the tenant list cannot load", async () => {
+it("offers an accessible retry when the console cannot load", async () => {
   const reset = vi.fn();
-  render(<InternalPortalError error={new Error("Backend unavailable")} reset={reset} />);
-  expect(screen.getByRole("heading", { name: "Tenant controls are temporarily unavailable" })).toBeVisible();
-  await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
+  render(<InternalError error={new Error("Backend unavailable")} reset={reset} />);
+  expect(screen.getByText("Wodana Control is unavailable")).toBeVisible();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Try again" }));
   expect(reset).toHaveBeenCalledOnce();
 });
