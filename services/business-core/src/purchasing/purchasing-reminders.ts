@@ -1,16 +1,19 @@
 import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
-import { currencyDecimals, readOrderLines } from "./orders";
+import { currencyDecimals, ensurePurchasingSettings, readNeeds, readOrderLines } from "./orders";
 import { outstanding } from "./receiving";
 
 type Db = Pick<PoolClient, "query">;
 
 /**
- * The daily chase of late orders, run inside one workspace's tenant transaction: an order is late when
- * something still to come was due before today (its line's promise, else the order's promise, else when
- * it was needed). The buyer hears the first day it's late and then every week while it stays late, in
- * the app and by email. Keys make each reminder once only; a missed day catches up.
+ * The daily chase, run inside one workspace's tenant transaction.
+ * - Late orders: something still to come was due before today (its line's promise, else the order's
+ *   promise, else when it was needed). The buyer hears the first day it's late and then every week while
+ *   it stays late, in the app and by email.
+ * - Late to order: a project still needs something that should have been ordered by now to arrive when
+ *   its work starts. The people who buy hear once per project, then every week while it stays so.
+ * Keys make each reminder once only; a missed day catches up.
  */
 export async function processPurchasingDeadlines(db: Db, workspaceId: string) {
   const today = (await db.query<{ today: string; locale: string }>(
@@ -42,5 +45,36 @@ export async function processPurchasingDeadlines(db: Db, workspaceId: string) {
       if (result.queued) sent += 1;
     }
   }
-  return { sent };
+  return { sent: sent + await chaseOrdering(db, workspaceId, today.today, today.locale) };
+}
+
+async function chaseOrdering(db: Db, workspaceId: string, today: string, locale: string) {
+  const settings = await ensurePurchasingSettings(db, workspaceId);
+  const late = (await readNeeds(db, workspaceId, settings.requireMaterialSignoff))
+    .filter((need) => !need.blocked && need.orderBy && need.orderBy < today && need.remaining !== null && Dec.of(need.remaining).cmp(0) > 0);
+  if (!late.length) return 0;
+  const buyers = (await db.query<{ userId: string }>(
+    `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership
+       JOIN effective_member_roles effective_role ON effective_role.membership_id = membership.id
+       JOIN role_permissions granted ON granted.role_id = effective_role.role_id
+       JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'purchasing.manage'
+      WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows.map((row) => row.userId);
+  const day = (value: string) => { try { return new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(`${value}T00:00:00Z`)); } catch { return value; } };
+  let sent = 0;
+  for (const projectId of new Set(late.map((need) => need.projectId))) {
+    const mine = late.filter((need) => need.projectId === projectId).sort((a, b) => a.neededBy!.localeCompare(b.neededBy!));
+    const since = mine.map((need) => need.orderBy!).sort()[0];
+    const week = Math.floor((Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${since}T00:00:00Z`)) / 86_400_000) - 1) / 7);
+    const items = mine.slice(0, 5).map((need) => `${need.title} ${Dec.of(need.remaining!).toString()} ${need.unit}`.trim() + ` (needed ${day(need.neededBy!)})`).join(", ");
+    const note = `${items}${mine.length > 5 ? ` and ${mine.length - 5} more` : ""}.`;
+    const project = `${mine[0].projectReference} · ${mine[0].projectName}`;
+    for (const userId of buyers) {
+      const message = { workspaceId, recipientUserId: userId, code: "purchasing.order_late", eventType: "purchasing.order_late", variables: { project, note }, deepLink: "/workspace/purchasing" };
+      const key = `purchasing.order_late:${projectId}:${since}:${week}:${userId}`;
+      const result = await notifyUserInApp(db, { ...message, idempotencyKey: key });
+      await queueUserEmail(db, { ...message, idempotencyKey: `${key}:email` });
+      if (result.queued) sent += 1;
+    }
+  }
+  return sent;
 }

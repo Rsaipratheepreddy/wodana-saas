@@ -7,6 +7,7 @@ import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { Need, NeedsState } from "@/lib/purchasing/types";
 import { AskPricesDialog } from "./ask-prices-dialog";
 import { CreateOrderDialog } from "./create-order-dialog";
+import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "./order-labels";
 import styles from "./purchasing.module.css";
 
@@ -21,6 +22,7 @@ const left = (need: Need) => need.remaining === null || Number(need.remaining) !
  */
 export function ToOrder({ api, onCreated, onAsked }: { api: PurchasingApi; onCreated: (orderId: string) => void; onAsked: (requestId: string) => void }) {
   const t = useT();
+  const format = useProjectFormat();
   const [state, setState] = useState<NeedsState | null>(null);
   const [error, setError] = useState("");
   const [show, setShow] = useState<Show>("left");
@@ -36,11 +38,15 @@ export function ToOrder({ api, onCreated, onAsked }: { api: PurchasingApi; onCre
   const needs = useMemo(() => (state?.needs ?? []).filter((need) => (show === "all" || left(need))
     && (!search.trim() || `${need.title} ${need.detail} ${need.projectReference} ${need.projectName}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))), [state, show, search]);
   const columns: GroupedTableColumn<Need>[] = [
-    { id: "item", label: t("Item"), width: "44%", render: (need) => <span className={styles.nameCell}><span>{need.title}</span>
+    { id: "item", label: t("Item"), width: "34%", render: (need) => <span className={styles.nameCell}><span>{need.title}</span>
       {need.detail || need.packageName ? <small>{[need.detail, need.packageName].filter(Boolean).join(" · ")}</small> : null}</span> },
-    { id: "needed", label: t("Needed"), width: "16%", render: (need) => need.required === null ? <span className={styles.muted}>{t("Quantity to confirm")}</span> : `${quantityText(need.required)} ${need.unit}` },
-    { id: "ordered", label: t("Ordered"), width: "18%", mobileHidden: true, render: (need) => <span className={styles.nameCell}><span>{Number(need.placed) ? `${quantityText(need.placed)} ${need.unit}` : "—"}</span>
-      {Number(need.drafted) ? <small>{t("{quantity} in draft", { quantity: `${quantityText(need.drafted)} ${need.unit}` })}</small> : null}</span> },
+    { id: "needed", label: t("Needed"), width: "14%", render: (need) => need.required === null ? <span className={styles.muted}>{t("Quantity to confirm")}</span> : `${quantityText(need.required)} ${need.unit}` },
+    { id: "ordered", label: t("Ordered"), width: "14%", mobileHidden: true, render: (need) => <span className={styles.nameCell}><span>{Number(need.placed) ? `${quantityText(need.placed)} ${need.unit}` : "—"}</span>
+      {Number(need.drafted) ? <small>{t("{quantity} in draft", { quantity: `${quantityText(need.drafted)} ${need.unit}` })}</small> : null}
+      {Number(need.fromStock) ? <small>{t("{quantity} from stock", { quantity: `${quantityText(need.fromStock)} ${need.unit}`.trim() })}</small> : null}</span> },
+    { id: "when", label: t("Needed by"), width: "16%", mobileHidden: true, render: (need) => !need.neededBy ? "—"
+      : <span className={styles.nameCell}><span>{format.day(need.neededBy)}</span>
+        {need.orderBy && left(need) && Number(need.remaining ?? 0) > 0 ? <small className={need.orderBy < format.today() ? styles.lateText : undefined}>{t("Order by {date}", { date: format.day(need.orderBy) })}</small> : null}</span> },
     { id: "left", label: t("Left"), width: "22%", render: (need) => need.blocked ? <span className={styles.muted}>{t("Waiting for the client's sign-off")}</span>
       : need.remaining === null ? "—" : Number(need.remaining) > 0 ? <strong>{`${quantityText(need.remaining)} ${need.unit}`}</strong>
       : Number(need.remaining) < 0 ? <span className={styles.lateText}>{t("Ordered {quantity} more than needed", { quantity: `${quantityText(need.remaining.replace("-", ""))} ${need.unit}`.trim() })}</span>

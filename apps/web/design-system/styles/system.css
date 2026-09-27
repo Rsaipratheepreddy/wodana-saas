@@ -681,6 +681,7 @@
 .wd-gantt-bar[data-tone="done"] { border-color: var(--wd-color-success); background: var(--wd-color-success-subtle); }
 .wd-gantt-bar[data-tone="late"] { border-color: var(--wd-color-danger); background: var(--wd-color-danger-subtle); }
 .wd-gantt-bar[data-tone="blocked"] { border-color: var(--wd-color-warning); background: var(--wd-color-warning-subtle); }
+.wd-gantt-bar[data-critical] { border-width: 2px; border-color: var(--wd-color-danger); }
 .wd-gantt-baseline { grid-row: 2; margin-inline: var(--wd-space-0-5); border-radius: var(--wd-radius-xs); background: var(--wd-color-border-strong); }
 @media (max-width: 640px) { .wd-gantt { --wd-gantt-label: 10rem; } }
 .wd-burndown { display: grid; gap: var(--wd-space-1-5); margin: 0; }

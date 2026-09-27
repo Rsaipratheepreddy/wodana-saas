@@ -27,7 +27,7 @@ const detail = (patch: Partial<ProjectDetail["project"]> = {}, stages?: ProjectD
       checks: [{ key: "payment", kind: "payment_verified", passed: false, confirmedBy: null, confirmedAt: null, note: "" }], ready: false, owner: null, canWork: false },
   ],
   next: { stage: "Kickoff", kind: "confirm", text: "Kickoff meeting held", role: "project_manager", owner: "Omar Haddad" },
-  updates: [], members: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], canManage: true, canClose: true,
+  updates: [], members: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], canManage: true, canClose: true, progress: 35,
 });
 const mount = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {

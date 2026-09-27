@@ -14,6 +14,8 @@ export type WorkItem = {
   id: string; projectId: string; number: number; type: WorkType; parentId: string | null; packageId: string | null; boqLineId: string | null; stageId: string | null; sprintId: string | null;
   title: string; status: WorkStatus; priority: (typeof WORK_PRIORITIES)[number]; assigneeId: string | null; assigneeName: string | null;
   startDate: string | null; dueDate: string | null; baselineStart: string | null; baselineDue: string | null; completedAt: string | null; createdBy: string; version: number;
+  /** The package's materials must be there when it starts: purchasing counts back from its start. */
+  needsMaterials: boolean;
   subtasks: number; subtasksDone: number; comments: number;
   /** What it's waiting on: a predecessor not yet finished (finish-to-start) or not yet started (start-to-start). */
   blockedBy: WorkRef[];
@@ -23,6 +25,7 @@ const ITEM_SELECT = `SELECT item.id, item.project_id AS "projectId", item.number
   item.boq_line_id AS "boqLineId", item.stage_id AS "stageId", item.sprint_id AS "sprintId", item.title, item.status, item.priority, item.assignee_membership_id AS "assigneeId",
   coalesce(assignee.display_name, assignee.primary_email) AS "assigneeName", item.start_date::text AS "startDate", item.due_date::text AS "dueDate",
   item.baseline_start::text AS "baselineStart", item.baseline_due::text AS "baselineDue", item.completed_at AS "completedAt", item.created_by AS "createdBy", item.version,
+  item.needs_materials AS "needsMaterials",
   (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status <> 'cancelled') AS subtasks,
   (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status = 'done') AS "subtasksDone",
   (SELECT count(*)::int FROM work_item_comments comment WHERE comment.workspace_id = item.workspace_id AND comment.work_item_id = item.id) AS comments,
@@ -172,4 +175,34 @@ export async function readInsights(db: Db, workspaceId: string, membershipId: st
       GROUP BY GROUPING SETS ((scoped.assignee_membership_id, person.display_name, person.primary_email), ())
       ORDER BY GROUPING(scoped.assignee_membership_id) DESC, count(*) FILTER (WHERE is_open) DESC, name NULLS LAST`,
     [workspaceId, all, membershipId, days])).rows;
+}
+
+/**
+ * How far the work is, in whole percent. A task counts once it's done; until then a task with subtasks
+ * counts the share of its subtasks done. A package is the share of its tasks; the project weighs each
+ * package by its value in the live scope (equally when the scope has no values), and a package with no
+ * tasks yet counts as not started. With no packages, the project is the share of all its tasks. Issues
+ * and cancelled work don't count. Null when there's nothing to count.
+ */
+export async function readProgress(db: Db, workspaceId: string, projectId: string): Promise<{ project: number | null; packages: Record<string, number> }> {
+  const tasks = (await db.query<{ packageId: string | null; units: number; count: number }>(
+    `SELECT task.package_id AS "packageId", sum(CASE WHEN task.status = 'done' THEN 1 WHEN sub.total > 0 THEN sub.done::float8 / sub.total ELSE 0 END)::float8 AS units, count(*)::int AS count
+       FROM work_items task
+       LEFT JOIN LATERAL (SELECT count(*) FILTER (WHERE child.status <> 'cancelled') AS total, count(*) FILTER (WHERE child.status = 'done') AS done
+                            FROM work_items child WHERE child.workspace_id = task.workspace_id AND child.parent_id = task.id) sub ON true
+      WHERE task.workspace_id = $1 AND task.project_id = $2 AND task.parent_id IS NULL AND task.type = 'task' AND task.status <> 'cancelled'
+      GROUP BY task.package_id`, [workspaceId, projectId])).rows;
+  const packages = (await db.query<{ id: string; value: number }>(
+    `SELECT package.id, coalesce((SELECT sum(line.net) FROM project_boq_lines line WHERE line.workspace_id = package.workspace_id AND line.package_id = package.id AND line.status = 'active'), 0)::float8 AS value
+       FROM project_packages package WHERE package.workspace_id = $1 AND package.project_id = $2`, [workspaceId, projectId])).rows;
+  const percent = (share: number) => Math.floor(Math.round(share * 10_000) / 100);
+  const share = new Map(tasks.filter((row) => row.packageId).map((row) => [row.packageId!, row.units / row.count]));
+  const byPackage = Object.fromEntries([...share].filter(([id]) => packages.some((item) => item.id === id)).map(([id, value]) => [id, percent(value)]));
+  if (!packages.length) {
+    const count = tasks.reduce((sum, row) => sum + row.count, 0);
+    return { project: count ? percent(tasks.reduce((sum, row) => sum + row.units, 0) / count) : null, packages: byPackage };
+  }
+  const total = packages.reduce((sum, item) => sum + item.value, 0);
+  const weight = (item: { value: number }) => (total > 0 ? item.value / total : 1 / packages.length);
+  return { project: percent(packages.reduce((sum, item) => sum + (share.get(item.id) ?? 0) * weight(item), 0)), packages: byPackage };
 }

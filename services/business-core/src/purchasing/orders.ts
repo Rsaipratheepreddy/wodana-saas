@@ -41,6 +41,16 @@ export type Need = {
   clientChoice: boolean;
   /** Why it can't be ordered yet, if it can't. */
   blocked: "material_signoff" | null;
+  /**
+   * When it must be there: the earliest start of open work in its package that needs the materials (for
+   * a material used nowhere in particular, the project's earliest). Ordered its lead time before that:
+   * the supplier's when the catalog knows it, else the workspace's.
+   */
+  neededBy: string | null; leadDays: number; orderBy: string | null;
+  /** Given from free stock: reserved for the project or issued to it, less what went back. It counts before orders. */
+  fromStock: string;
+  /** The packages whose work uses it (none: used anywhere in the project). */
+  packageIds: string[];
 };
 
 /**
@@ -49,7 +59,7 @@ export type Need = {
  * each, how much is needed, how much is on placed orders and in draft, and what's left.
  */
 export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boolean, projectId: string | null = null): Promise<Need[]> {
-  const rows = (await db.query<Omit<Need, "blocked" | "remaining"> & { remaining: string | null }>(
+  const rows = (await db.query<Omit<Need, "blocked" | "remaining" | "orderBy" | "fromStock"> & { remaining: string | null }>(
     `WITH projects AS (
        SELECT project.id, project.reference, project.name FROM delivery_projects project
         WHERE project.workspace_id = $1 AND project.started_at IS NOT NULL AND project.status IN ('active', 'on_hold') AND ($2::uuid IS NULL OR project.id = $2)
@@ -75,16 +85,28 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
          LEFT JOIN accepted ON accepted.order_line_id = line.id
         WHERE line.workspace_id = $1 AND purchase.status <> 'cancelled' AND line.source IN ('material', 'line')
         GROUP BY line.material_item_id, line.boq_line_id
+     ), needed AS (
+       -- The earliest open work that needs the materials, per package and per project.
+       SELECT work.project_id, work.package_id, GROUPING(work.package_id) = 1 AS whole, min(coalesce(work.start_date, work.due_date)) AS needed_by
+         FROM work_items work JOIN projects ON projects.id = work.project_id
+        WHERE work.workspace_id = $1 AND work.needs_materials AND work.status NOT IN ('done', 'cancelled') AND coalesce(work.start_date, work.due_date) IS NOT NULL
+        GROUP BY GROUPING SETS ((work.project_id, work.package_id), (work.project_id))
      ), needs AS (
        SELECT 'material:' || item.id AS key, 'material' AS source, item.id AS "sourceId", projects.id AS "projectId", projects.reference AS "projectReference", projects.name AS "projectName",
               item.name AS title, concat_ws(' · ', nullif(item.code, ''), nullif(item.specification, '')) AS detail, item.unit, item.quantity AS required,
               item.catalog_item_id AS "catalogItemId", item.supplier AS "supplierHint", NULL::text AS "packageName", NULL::text AS supply, item.position AS sort,
-              item.client_choice AS "clientChoice"
+              item.client_choice AS "clientChoice",
+              ARRAY(SELECT DISTINCT line.package_id FROM project_boq_lines line WHERE line.workspace_id = item.workspace_id AND line.id = ANY(item.boq_line_ids) AND line.package_id IS NOT NULL) AS "packageIds",
+              coalesce((SELECT min(needed.needed_by) FROM project_boq_lines line JOIN needed ON NOT needed.whole AND needed.package_id = line.package_id
+                         WHERE line.workspace_id = item.workspace_id AND line.id = ANY(item.boq_line_ids)),
+                       (SELECT needed.needed_by FROM needed WHERE needed.project_id = item.project_id AND needed.whole
+                           AND NOT EXISTS (SELECT 1 FROM project_boq_lines line WHERE line.workspace_id = item.workspace_id AND line.id = ANY(item.boq_line_ids) AND line.package_id IS NOT NULL))) AS "neededBy"
          FROM project_material_items item JOIN projects ON projects.id = item.project_id
         WHERE item.workspace_id = $1
        UNION ALL
        SELECT 'line:' || line.id, 'line', line.id, projects.id, projects.reference, projects.name, line.title, line.description, line.unit, line.quantity,
-              line.catalog_item_id, '', package.name, package.supply, 100000 + line.position, false
+              line.catalog_item_id, '', package.name, package.supply, 100000 + line.position, false, ARRAY[package.id],
+              (SELECT needed.needed_by FROM needed WHERE NOT needed.whole AND needed.package_id = package.id)
          FROM project_boq_lines line JOIN projects ON projects.id = line.project_id
          JOIN project_packages package ON package.workspace_id = line.workspace_id AND package.id = line.package_id
         WHERE line.workspace_id = $1 AND line.status = 'active' AND package.supply IN ('buy', 'ready_made', 'subcontract')
@@ -92,13 +114,59 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
      SELECT needs.key, needs.source, needs."sourceId", needs."projectId", needs."projectReference", needs."projectName", needs.title, needs.detail, needs.unit,
             needs.required::text AS required, coalesce(ordered.placed, 0)::text AS placed, coalesce(ordered.drafted, 0)::text AS drafted, coalesce(ordered.received, 0)::text AS received,
             (needs.required - coalesce(ordered.placed, 0) - coalesce(ordered.drafted, 0))::text AS remaining,
-            needs."catalogItemId", needs."supplierHint", needs."packageName", needs.supply, needs."clientChoice"
+            needs."catalogItemId", needs."supplierHint", needs."packageName", needs.supply, needs."clientChoice", needs."neededBy"::text AS "neededBy", needs."packageIds",
+            -- The supplier's lead time when the catalog knows it (the preferred supplier's, else the longest), else the workspace's.
+            coalesce((SELECT link.lead_time_days FROM catalog_supplier_links link WHERE link.workspace_id = $1 AND link.item_id = needs."catalogItemId" AND link.lead_time_days IS NOT NULL
+                       ORDER BY link.preferred DESC, link.lead_time_days DESC LIMIT 1),
+                     (SELECT settings.order_ahead_days FROM workspace_purchasing_settings settings WHERE settings.workspace_id = $1), 14) AS "leadDays"
        FROM needs LEFT JOIN ordered ON (needs.source = 'material' AND ordered.material_item_id = needs."sourceId") OR (needs.source = 'line' AND ordered.boq_line_id = needs."sourceId")
       ORDER BY needs."projectReference", needs.sort`, [workspaceId, projectId])).rows;
   // Only materials the client chooses wait for their sign-off; bought scope lines were agreed in the quotation.
   const signed = new Map<string, boolean>();
   if (requireSignoff) for (const projectId of new Set(rows.filter((row) => row.clientChoice).map((row) => row.projectId))) signed.set(projectId, await clientChoicesSignedOff(db, workspaceId, projectId));
-  return rows.map((row) => ({ ...row, blocked: requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const : null }));
+  const fromStock = await givenFromStock(db, workspaceId, rows);
+  const orderBy = (neededBy: string | null, days: number) => (neededBy ? new Date(Date.parse(`${neededBy}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10) : null);
+  return rows.map((row) => {
+    const stock = fromStock.get(row.key) ?? Dec.ZERO;
+    return { ...row, fromStock: stock.toString(), remaining: row.remaining === null ? null : Dec.of(row.remaining).sub(stock).toFixed(4), orderBy: orderBy(row.neededBy, row.leadDays),
+      blocked: requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const : null };
+  });
+}
+
+/**
+ * What free stock has given each need: reserved for its project (less released) or issued to it straight
+ * from free stock (less what came back). Stock matches a need by its catalog item in the same unit, else
+ * by name and unit; when two needs match the same stock, the first in the list takes what it needs first.
+ */
+async function givenFromStock(db: Db, workspaceId: string, needs: Array<{ key: string; projectId: string; title: string; unit: string; required: string | null; catalogItemId: string | null }>) {
+  const given = new Map<string, Dec>();
+  const projects = [...new Set(needs.map((need) => need.projectId))];
+  if (!projects.length) return given;
+  const supplies = (await db.query<{ projectId: string; catalogItemId: string | null; normalKey: string; unit: string; quantity: string }>(
+    `SELECT coalesce(movement.project_id, movement.for_project_id) AS "projectId", item.catalog_item_id AS "catalogItemId", item.normal_key AS "normalKey", item.unit,
+            sum(CASE WHEN movement.kind IN ('allocate', 'release') THEN movement.quantity ELSE -movement.quantity END)::text AS quantity
+       FROM stock_movements movement JOIN stock_items item ON item.workspace_id = movement.workspace_id AND item.id = movement.item_id
+      WHERE movement.workspace_id = $1
+        AND ((movement.kind IN ('allocate', 'release') AND movement.project_id = ANY($2::uuid[]))
+          OR (movement.kind IN ('issue', 'return') AND movement.project_id IS NULL AND movement.for_project_id = ANY($2::uuid[])))
+      GROUP BY 1, item.id, item.catalog_item_id, item.normal_key, item.unit`, [workspaceId, projects])).rows;
+  const key = (name: string, unit: string) => `${name.trim().toLocaleLowerCase().replace(/\s+/g, " ")}|${unit.trim().toLocaleLowerCase()}`.slice(0, 300);
+  for (const supply of supplies) {
+    let left = Dec.of(supply.quantity);
+    for (const need of needs) {
+      if (left.cmp(0) <= 0) break;
+      if (need.projectId !== supply.projectId || need.required === null) continue;
+      const sameUnit = !need.unit.trim() || need.unit.trim().toLocaleLowerCase() === supply.unit.trim().toLocaleLowerCase();
+      if (!((need.catalogItemId && need.catalogItemId === supply.catalogItemId && sameUnit) || key(need.title, need.unit) === supply.normalKey)) continue;
+      const already = given.get(need.key) ?? Dec.ZERO;
+      const take = Dec.of(need.required).sub(already);
+      if (take.cmp(0) <= 0) continue;
+      const share = take.cmp(left) < 0 ? take : left;
+      given.set(need.key, already.add(share));
+      left = left.sub(share);
+    }
+  }
+  return given;
 }
 
 export type OrderRow = {
@@ -214,14 +282,17 @@ export type PurchasingSettings = {
   /** A delivery received at a project's site shows as missing its photo until one is added. */
   requireSitePhoto: boolean;
   /** Stock corrections worth more than this (in the workspace's currency) wait for a second person; none when empty. */
-  stockAdjustApprovalValue: string | null; version: number;
+  stockAdjustApprovalValue: string | null;
+  /** How many days before it's needed something is ordered, when the supplier's lead time isn't known. */
+  orderAheadDays: number; version: number;
 };
 
 export async function ensurePurchasingSettings(db: Db, workspaceId: string): Promise<PurchasingSettings> {
   await db.query(`INSERT INTO workspace_purchasing_settings (workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId]);
   return (await db.query<PurchasingSettings>(
     `SELECT approval_threshold::text AS "approvalThreshold", require_material_signoff AS "requireMaterialSignoff", require_approved_supplier AS "requireApprovedSupplier",
-            require_inspection AS "requireInspection", receive_tolerance_percent::text AS "receiveTolerancePercent", require_site_photo AS "requireSitePhoto", stock_adjust_approval_value::text AS "stockAdjustApprovalValue", version
+            require_inspection AS "requireInspection", receive_tolerance_percent::text AS "receiveTolerancePercent", require_site_photo AS "requireSitePhoto", stock_adjust_approval_value::text AS "stockAdjustApprovalValue",
+            order_ahead_days AS "orderAheadDays", version
        FROM workspace_purchasing_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 

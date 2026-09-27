@@ -193,7 +193,7 @@ describe("ordering", () => {
   afterEach(() => { vi.unstubAllGlobals(); nav.replace.mockReset(); nav.query = ""; });
   const need = (patch: Partial<Need>): Need => ({ key: "material:m1", source: "material", sourceId: "m1", projectId: "p1", projectReference: "PRJ-0007", projectName: "Villa 12",
     title: "Calacatta slab", detail: "CAL-20", unit: "m²", required: "12.0000", placed: "0", drafted: "0", received: "0", remaining: "12.0000", catalogItemId: null, supplierHint: "Nile", packageName: null,
-    supply: null, clientChoice: true, blocked: null, ...patch });
+    supply: null, clientChoice: true, blocked: null, neededBy: null, leadDays: 14, orderBy: null, fromStock: "0", packageIds: [], ...patch });
   const needs = { needs: [need({}), need({ key: "line:l1", source: "line", sourceId: "l1", title: "Under-cabinet lights", detail: "", unit: "nos", required: "1.0000", remaining: "1.0000",
     supplierHint: "", packageName: "Lights" }), need({ key: "material:m9", sourceId: "m9", projectId: "p2", projectReference: "PRJ-0008", projectName: "Marina", title: "Oak veneer", blocked: "material_signoff" })],
     settings: { approvalThreshold: "0", requireMaterialSignoff: true, requireApprovedSupplier: true, requireInspection: true, receiveTolerancePercent: "0.00", requireSitePhoto: true, version: 1 }, canBuy: true, canApprove: true };
@@ -216,7 +216,7 @@ describe("ordering", () => {
         alternateStatus: null, alternateDescription: null, alternateSpecification: "", alternateUnitPrice: null, alternateNote: "", alternateOfferedBy: null, originalDescription: null, originalSpecification: null }],
     events: [{ id: "e1", kind: "created", detail: {}, byName: "Bina Buyer", at: "2026-09-27T09:00:00Z" }], revisions: [],
     supplier: { id: "s1", name: "Nile Marble & Granite", email: "orders@nile.example", phone: null, contactName: "Mohamed", approval: "approved", deal: "discount", dealPercent: "10.00" },
-    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], contracts: [], me: "u2", supplierHold: null, ...rights,
+    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], contracts: [], neededBy: {}, me: "u2", supplierHold: null, ...rights,
   });
   const ordersList = { orders: [orderState().order], settings: needs.settings, canBuy: true, canApprove: true };
 
@@ -282,6 +282,34 @@ describe("ordering", () => {
     mount((url) => (url.includes("/needs") ? { ...needs, needs: [need({ placed: "14.0000", remaining: "-2.0000" })] } : ordersList));
     page("to-order");
     expect(await screen.findByText("Ordered 2 m² more than needed")).toBeInTheDocument();
+  });
+
+  it("shows when each need is needed and when it should be ordered by, late ones marked", async () => {
+    mount((url) => (url.includes("/needs") ? { ...needs, needs: [need({ neededBy: "2026-10-05", orderBy: "2020-09-21" }), need({ key: "material:m2", sourceId: "m2", title: "Brass handles", neededBy: "2099-11-02", orderBy: "2099-10-19" })] } : ordersList));
+    page("to-order");
+    const late = await screen.findByText("Order by Sep 21, 2020");
+    expect(late.className).toMatch(/lateText/);
+    expect(screen.getByText("Oct 5, 2026")).toBeInTheDocument();
+    expect(screen.getByText("Order by Oct 19, 2099").className).not.toMatch(/lateText/);
+  });
+
+  it("counts free stock given to the project before what's left to order", async () => {
+    mount((url) => (url.includes("/needs") ? { ...needs, needs: [need({ fromStock: "8", remaining: "4.0000" })] } : ordersList));
+    page("to-order");
+    expect(await screen.findByText("8 m² from stock")).toBeInTheDocument();
+    expect(screen.getByText("4 m²")).toBeInTheDocument();
+  });
+
+  it("says when an order line arrives after its project needs it", async () => {
+    nav.query = "order=o1";
+    const sent = orderState({ status: "sent", sentAt: "2026-09-27T10:00:00Z", approvedAt: "2026-09-27T10:00:00Z", expectedDate: "2099-10-20" }, { neededBy: { a: "2099-10-12", b: "2099-11-01" } });
+    // Both lines are due on the 20th: the slab is needed before then, the lights after.
+    const due = { ...sent, lines: sent.lines.map((line) => ({ ...line, due: "2099-10-20" })) };
+    mount((url) => (url.includes("/orders/o1") ? due : url.includes("/suppliers") ? state() : ordersList));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: /FAC-PO-2026-00001/ });
+    expect(await within(sheet).findByText("Arrives after it's needed on Oct 12, 2099")).toBeInTheDocument();
+    expect(within(sheet).getByText("Needed Nov 1, 2099")).toBeInTheDocument();
   });
 
   it("needs a photo for a delivery at the project's site, and uploads it with the delivery", async () => {

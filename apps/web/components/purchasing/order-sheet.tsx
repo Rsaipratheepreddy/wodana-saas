@@ -111,6 +111,12 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
     line.alternateStatus === "accepted" && line.originalDescription ? t("Instead of {item}", { item: [line.originalDescription, line.originalSpecification].filter(Boolean).join(", ") }) : "",
     line.alternateStatus === "rejected" ? t("Supplier's alternative refused") : "",
   ].filter(Boolean).join(" · ");
+  /** Still to come after the day the project needs it. */
+  const arrivesLate = (lineId: string) => {
+    const line = state?.lines.find((item) => item.id === lineId);
+    const due = line ? line.due : order?.promisedDate ?? order?.expectedDate ?? null;
+    return Boolean(state?.neededBy[lineId] && due && due > state.neededBy[lineId] && (!line || stillToCome(line) !== "0"));
+  };
   const contractOf = (lineId: string) => (state?.contracts ?? []).find((item) => item.lineId === lineId);
   const canDecide = (line: OrderLine) => Boolean(state?.canApprove && line.alternateStatus === "offered" && line.alternateOfferedBy !== state?.me);
   /** What has arrived on a line so far, once anything has. */
@@ -196,6 +202,8 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
               <small>{[line.projectReference, line.specification].filter(Boolean).join(" · ")}</small>
               {!draft && arrived(state.lines[index]) ? <small className={styles.arrived}>{arrived(state.lines[index])}</small> : null}
               {!draft && state.lines[index] && lineFacts(state.lines[index]) ? <small>{lineFacts(state.lines[index])}</small> : null}
+              {state.neededBy[line.id] ? <small className={arrivesLate(line.id) ? styles.lateText : undefined}>{arrivesLate(line.id)
+                ? t("Arrives after it's needed on {date}", { date: format.day(state.neededBy[line.id]) }) : t("Needed {date}", { date: format.day(state.neededBy[line.id]) })}</small> : null}
               {contractOf(line.id) ? <small className={contractOf(line.id)!.above ? styles.lateText : undefined}>{contractOf(line.id)!.above
                 ? t("Above the {reference} price of {price}", { reference: contractOf(line.id)!.reference, price: money(contractOf(line.id)!.unitPrice) })
                 : t("{reference} price", { reference: contractOf(line.id)!.reference })}</small> : null}

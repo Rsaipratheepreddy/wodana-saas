@@ -19,6 +19,7 @@ import {
   readTemplates, setRole, writeTemplate, type ProjectRow, type StageRow, type TeamMember,
 } from "./project-core.store";
 import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeout";
+import { readProgress } from "./project-work";
 import { noticeProject, type ProjectNotice } from "./project-notices";
 import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, suggestMaterials } from "./project-materials";
 import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, seedBoq, SUPPLY, type Supply } from "./project-scope";
@@ -646,6 +647,7 @@ export class ProjectCoreService {
       members: manager ? await activeMembers(client, workspaceId) : [],
       canManage: manager,
       canClose: all,
+      progress: (await readProgress(client, workspaceId, projectId)).project,
     };
   }
 

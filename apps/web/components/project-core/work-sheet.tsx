@@ -5,7 +5,7 @@ import { parseDate } from "@internationalized/date";
 import { ArrowRight, Plus, X } from "lucide-react";
 import {
   ActivityFeed, Avatar, Button, Checkbox, ControlledModalDialog, DateField, ErrorState, IconButton, InlineNotice, InspectorSheet, MenuButton, SegmentedControl, SelectField, Skeleton,
-  TextAreaField, TextInput, type ActivityItem,
+  Switch, TextAreaField, TextInput, type ActivityItem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
@@ -71,6 +71,7 @@ function WorkBody({ detail, board, run, notice, onOpenItem, preview }: { detail:
   const stageName = board.stages.find((item) => item.id === detail.stageId)?.name;
   const typeOptions: WorkType[] = ["task", "client_request", "snag", "blocker"];
   const due = detail.dueDate && isOpen(detail.status) ? format.until(detail.dueDate) : null;
+  const slack = isOpen(detail.status) ? board.critical.float[detail.id] : undefined;
   const slip = detail.dueDate && detail.baselineDue && detail.dueDate > detail.baselineDue
     ? Math.round((Date.parse(`${detail.dueDate}T00:00:00Z`) - Date.parse(`${detail.baselineDue}T00:00:00Z`)) / 86_400_000) : 0;
   const [pending, setPending] = useState<{ dates: Dates; moves: WorkMove[] } | null>(null);
@@ -120,10 +121,17 @@ function WorkBody({ detail, board, run, notice, onOpenItem, preview }: { detail:
         </> : <span>{[format.day(detail.startDate), format.day(detail.dueDate)].filter(Boolean).join(" – ") || "—"}</span>}
         {due ? <span className={styles.muted} data-late={due.late || undefined}>{due.text}</span> : null}
         {slip ? <span className={styles.slip}>{slip === 1 ? t("1 day behind the baseline") : t("{count} days behind the baseline", { count: slip })}</span> : null}
+        {slack === undefined ? null : slack <= 0 ? <span className={styles.critical}>{slack < 0 ? t("Critical: {count} working days too late for the plan's finish", { count: -slack }) : t("On the critical path")}</span>
+          : <span className={styles.muted}>{slack === 1 ? t("Can slip 1 working day") : t("Can slip {count} working days", { count: slack })}</span>}
       </dd></div>
       {board.packages.length ? <div><dt>{t("Package")}</dt><dd>
         {edit ? <MenuButton size="compact" label={packageName ?? t("None")} onAction={(id) => void update({ packageId: id === "none" ? null : id })}
           items={[...(detail.packageId ? [{ id: "none", label: t("None") }] : []), ...board.packages.filter((item) => item.id !== detail.packageId).map((item) => ({ id: item.id, label: item.name }))]} /> : packageName ?? "—"}
+      </dd></div> : null}
+      {detail.packageId && !detail.parentId ? <div><dt>{t("Materials")}</dt><dd>
+        {edit ? <Switch isSelected={detail.needsMaterials} onChange={(value) => void update({ needsMaterials: value })}>{t("Needed when it starts")}</Switch>
+          : detail.needsMaterials ? t("Needed when it starts") : "—"}
+        {board.materials[detail.id]?.length ? <span className={styles.slip}>{t("Not in yet: {items}", { items: board.materials[detail.id].join(", ") })}</span> : null}
       </dd></div> : null}
       <div><dt>{t("Stage")}</dt><dd>
         {edit ? <MenuButton size="compact" label={stageName ?? t("None")} onAction={(id) => void update({ stageId: id === "none" ? null : id })}

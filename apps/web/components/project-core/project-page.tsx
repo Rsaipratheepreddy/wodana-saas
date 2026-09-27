@@ -96,6 +96,7 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
       <div><dt>{t("Client")}</dt><dd>{project.clientName}</dd></div>
       <div><dt>{t("Project number")}</dt><dd>{project.reference}</dd></div>
       <div><dt>{t("Stage")}</dt><dd>{current ? <>{current.name} <span className={styles.muted}>{t("{position} of {count}", { position: current.position + 1, count: detail.stages.length })}</span></> : status.label}</dd></div>
+      {detail.progress !== null ? <div><dt>{t("Progress")}</dt><dd><button type="button" className={styles.propertyButton} onClick={() => go("plan")}>{t("{percent}% done", { percent: detail.progress })}</button></dd></div> : null}
       <div><dt>{t("Status")}</dt><dd><button type="button" className={styles.propertyButton} onClick={() => go("updates")}><span className={styles.status} data-tone={status.tone}>{status.label}</span></button></dd></div>
       <div><dt>{t("Priority")}</dt><dd>{manage
         ? <MenuButton size="compact" label={priorityLabel[project.priority]} onAction={(id) => void run("set_priority", { priority: id })}

@@ -30,7 +30,7 @@ const PID = "0c6b0c7e-4c4d-4a9e-9d64-3b6f0f2d7a11";
 const item = (patch: Partial<WorkItem> & Pick<WorkItem, "id" | "number" | "title">): WorkItem => ({
   projectId: PID, type: "task", parentId: null, packageId: null, boqLineId: null, stageId: null, sprintId: null, status: "todo", priority: "normal",
   assigneeId: null, assigneeName: null, startDate: null, dueDate: null, baselineStart: null, baselineDue: null, completedAt: null, createdBy: "u1", version: 1,
-  subtasks: 0, subtasksDone: 0, comments: 0, blockedBy: [], ...patch,
+  subtasks: 0, subtasksDone: 0, comments: 0, blockedBy: [], needsMaterials: false, ...patch,
 });
 const drawings = item({ id: "i1", number: 1, title: "Kitchen shop drawings", packageId: "k1", assigneeId: "m2", assigneeName: "Dana Karim", dueDate: "2099-10-10", priority: "high", subtasks: 1,
   blockedBy: [{ id: "i3", number: 3, title: "Marble thickness", type: "blocker", status: "todo" }], version: 3 });
@@ -40,7 +40,7 @@ const handles = item({ id: "i4", number: 4, title: "Order handles", status: "don
 const board = (items: WorkItem[] = [drawings, sheet, marble, handles], extra: Partial<WorkBoard> = {}): WorkBoard => ({
   items, packages: [{ id: "k1", name: "Kitchen joinery", supply: "make", planned: true }], stages: [{ id: "s1", name: "Technical drawings", status: "current" }], lines: [],
   people: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], me: "m1", canEdit: true, canManage: true, item: null,
-  calendar: { workingDays: [1, 2, 3, 4, 5], holidays: [] }, promiseDate: "2099-12-01", startDate: null, baseline: null, sprints: [], ...extra,
+  calendar: { workingDays: [1, 2, 3, 4, 5], holidays: [] }, promiseDate: "2099-12-01", startDate: null, baseline: null, sprints: [], critical: { finish: null, float: {} }, progress: { project: 40, packages: { k1: 40 } }, materials: {}, ...extra,
 });
 const detail = (base: WorkItem, patch: Partial<WorkDetail> = {}): WorkDetail => ({
   ...base, description: "", createdByName: "Omar Haddad", createdAt: "2026-09-22T09:00:00Z", startedAt: null, subtaskIds: base.id === "i1" ? ["i2"] : [],
@@ -68,7 +68,7 @@ describe("project plan", () => {
     plan();
     const table = await screen.findByRole("table", { name: "Plan" }).catch(() => screen.findByRole("grid", { name: "Plan" }));
     const text = table.textContent ?? "";
-    expect(text.indexOf("Kitchen joinery · 1")).toBeLessThan(text.indexOf("Kitchen shop drawings"));
+    expect(text.indexOf("Kitchen joinery · 1 · 40% done")).toBeLessThan(text.indexOf("Kitchen shop drawings"));
     expect(text.indexOf("Kitchen shop drawings")).toBeLessThan(text.indexOf("Elevation sheet"));
     expect(text.indexOf("No package · 1")).toBeLessThan(text.indexOf("Marble thickness"));
     expect(text.indexOf("Done · 1")).toBeLessThan(text.indexOf("Order handles"));
@@ -127,6 +127,32 @@ describe("project plan", () => {
     await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "comment", itemId: "i1", body: "Marble arrives Monday." }));
   });
 
+  it("marks a task as needing its package's materials when it starts", async () => {
+    let current = detail(drawings);
+    const fetcher = mount((url, body) => {
+      if (!body) return url.includes("/work/i1") ? current : board();
+      current = detail({ ...drawings, needsMaterials: true, version: 4 });
+      return board(undefined, { item: current });
+    });
+    plan();
+    await userEvent.click(await screen.findByText("Kitchen shop drawings"));
+    const panel = await screen.findByRole("dialog");
+    const needs = await within(panel).findByRole("switch", { name: "Needed when it starts" });
+    expect(needs).not.toBeChecked();
+    await userEvent.click(needs);
+    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "update", itemId: "i1", needsMaterials: true }));
+    await waitFor(() => expect(within(panel).getByRole("switch", { name: "Needed when it starts" })).toBeChecked());
+  });
+
+  it("shows work whose materials aren't in yet, and which ones", async () => {
+    const fit = { ...drawings, needsMaterials: true };
+    mount((url) => (url.includes("/work/i1") ? detail(fit) : board([fit, sheet, marble, handles], { materials: { i1: ["Oak veneer", "Brass handles"] } })));
+    plan();
+    expect(await screen.findByText("2 materials not in")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Kitchen shop drawings"));
+    expect(await within(await screen.findByRole("dialog")).findByText("Not in yet: Oak veneer, Brass handles")).toBeInTheDocument();
+  });
+
   it("creates a task given to the person by default", async () => {
     const fetcher = mount((_url, body) => (body ? board([...board().items, item({ id: "i5", number: 5, title: "Site measure" })]) : board()));
     plan();
@@ -163,14 +189,20 @@ describe("project plan", () => {
   it("draws the plan on a timeline and warns when it runs past the handover", async () => {
     nav.set("view=timeline");
     const late = { ...drawings, startDate: "2099-11-25", dueDate: "2099-12-04", baselineStart: "2099-11-20", baselineDue: "2099-11-28" };
-    mount((url) => (url.includes("/work/i1") ? detail(late) : board([late, { ...sheet, dueDate: "2099-11-26" }, marble, handles])));
+    const critical = { finish: "2099-12-04", float: { i1: 0, i2: 5 } };
+    mount((url) => (url.includes("/work/i1") ? detail(late) : board([late, { ...sheet, dueDate: "2099-11-26" }, marble, handles], { critical })));
     plan();
     expect(await screen.findByText("The plan ends Dec 4, 2099, 3 days after the handover date.")).toBeInTheDocument();
     const timeline = screen.getByRole("region", { name: "Timeline" });
     expect(within(timeline).getByRole("button", { name: "#1 Kitchen shop drawings" })).toBeInTheDocument();
     expect(within(timeline).getByRole("region", { name: "No dates" })).toHaveTextContent("Marble thickness");
-    await userEvent.click(within(timeline).getByRole("button", { name: "#1 Kitchen shop drawings" }));
+    // The critical path, on request: the drawings have no slack, the sheet can slip.
+    await userEvent.click(screen.getByRole("switch", { name: "Critical path" }));
+    expect(within(timeline).getByRole("button", { name: "#1 Kitchen shop drawings, on the critical path" })).toBeInTheDocument();
+    expect(within(timeline).getByRole("button", { name: "#2 Elevation sheet" })).toBeInTheDocument();
+    await userEvent.click(within(timeline).getByRole("button", { name: "#1 Kitchen shop drawings, on the critical path" }));
     expect(nav.get()).toContain("item=i1");
+    expect(await screen.findByText("On the critical path")).toBeInTheDocument();
   });
 
   it("lets the project manager set the baseline", async () => {

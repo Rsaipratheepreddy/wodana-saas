@@ -13,7 +13,7 @@ export type ProjectSettings = {
 };
 export type SettingsState = { settings: ProjectSettings; templates: ProjectRoute[]; workTemplates: WorkTemplate[]; canManage: boolean };
 /** One step of a package's standard work: working days, the role that does it, its stage, and whether it runs with the step before. */
-export type TemplateTask = { title: string; days: number; role: string | null; stage: string | null; withPrevious: boolean };
+export type TemplateTask = { title: string; days: number; role: string | null; stage: string | null; withPrevious: boolean; needsMaterials?: boolean };
 export type WorkTemplate = { supply: Supply; tasks: TemplateTask[]; version: number };
 
 export type NextStep = { stage: string; kind: CheckKind | "finish"; text: string; role: string | null; owner: string | null };
@@ -48,6 +48,8 @@ export type ProjectDetail = {
   members: Member[];
   canManage: boolean;
   canClose: boolean;
+  /** Whole percent of the work done, packages weighed by value; null before any work is planned. */
+  progress: number | null;
 };
 
 /** An order or price request never sent. */
@@ -142,6 +144,8 @@ export type WorkItem = {
   sprintId: string | null; title: string; status: WorkStatus; priority: WorkPriority; assigneeId: string | null; assigneeName: string | null;
   startDate: string | null; dueDate: string | null; baselineStart: string | null; baselineDue: string | null; completedAt: string | null; createdBy: string; version: number;
   subtasks: number; subtasksDone: number; comments: number; blockedBy: WorkRef[];
+  /** Its package's materials must be there when it starts: purchasing counts back from its start. */
+  needsMaterials: boolean;
 };
 export type WorkLink = WorkRef & { kind: "fs" | "ss"; lagDays: number };
 export type WorkActivity =
@@ -158,6 +162,12 @@ export type WorkBoard = {
   /** The working week (0 = Sunday) and days off, for scheduling. */
   calendar: { workingDays: number[]; holidays: string[] };
   promiseDate: string | null; startDate: string | null; baseline: { at: string; byName: string | null } | null;
+  /** The plan's finish and, per open dated item, the working days it can slip before that finish moves (none or less: critical). */
+  critical: { finish: string | null; float: Record<string, number> };
+  /** Whole percent done: the project (packages weighed by value) and each package with tasks. */
+  progress: { project: number | null; packages: Record<string, number> };
+  /** For open work that needs its package's materials: those not in yet, by item id. */
+  materials: Record<string, string[]>;
 };
 /** An item pushed later because something it waits on moved. */
 export type WorkMove = { id: string; number: number; title: string; fromStart: string | null; fromDue: string | null; startDate: string | null; dueDate: string | null; because: number };

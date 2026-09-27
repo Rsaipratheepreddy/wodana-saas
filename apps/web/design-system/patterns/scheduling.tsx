@@ -22,6 +22,8 @@ export type GanttRow = {
   /** The committed dates, drawn as a faint line under the bar. */
   baseline?: { start: number; end: number } | null;
   tone?: "default" | "late" | "done" | "blocked"; depth?: 0 | 1;
+  /** On the critical path: drawn with a strong edge (the row's label says so too). */
+  critical?: boolean;
 };
 export type GanttGroup = { id: string; label: string; rows: GanttRow[] };
 
@@ -71,7 +73,7 @@ export function Gantt({ ariaLabel, days, groups, labelHeader, markers = [], onRo
           </span>
           <div className="wd-gantt-track">
             {row.baseline ? <span aria-hidden="true" className="wd-gantt-baseline" style={column(row.baseline.start, row.baseline.end)} /> : null}
-            {row.start !== undefined && row.end !== undefined ? <span aria-hidden="true" className="wd-gantt-bar" data-tone={row.tone ?? "default"} onClick={onRowAction ? () => onRowAction(row.id) : undefined} style={column(row.start, row.end)} /> : null}
+            {row.start !== undefined && row.end !== undefined ? <span aria-hidden="true" className="wd-gantt-bar" data-tone={row.tone ?? "default"} data-critical={row.critical || undefined} onClick={onRowAction ? () => onRowAction(row.id) : undefined} style={column(row.start, row.end)} /> : null}
           </div>
         </div>)}
       </section>)}

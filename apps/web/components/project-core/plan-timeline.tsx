@@ -15,7 +15,7 @@ const iso = (value: number) => new Date(value).toISOString().slice(0, 10);
  * The plan on a timeline: each item from its start to its due date, grouped like the list, with days
  * off shaded, today and the handover date drawn across, and the baseline under each bar.
  */
-export function PlanTimeline({ board, items, onOpen }: { board: WorkBoard; items: WorkItem[]; onOpen: (id: string) => void }) {
+export function PlanTimeline({ board, items, critical = false, onOpen }: { board: WorkBoard; items: WorkItem[]; critical?: boolean; onOpen: (id: string) => void }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const today = useMemo(() => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()), [timeZone]);
@@ -47,10 +47,11 @@ export function PlanTimeline({ board, items, onOpen }: { board: WorkBoard; items
     const baseline = item.baselineStart ?? item.baselineDue;
     const baselineEnd = item.baselineDue ?? item.baselineStart;
     const blocked = item.blockedBy.length > 0 && isOpen(item.status);
+    const onPath = critical && isOpen(item.status) && (board.critical.float[item.id] ?? 1) <= 0;
     return {
-      id: item.id, depth,
-      label: <><TypeIcon type={item.type} /><span className={styles.number}>#{item.number}</span><span>{item.title}</span></>,
-      ariaLabel: `#${item.number} ${item.title}`,
+      id: item.id, depth, critical: onPath,
+      label: <><TypeIcon type={item.type} /><span className={styles.number}>#{item.number}</span>{onPath ? <span className={styles.critical}>{t("Critical")}</span> : null}<span>{item.title}</span></>,
+      ariaLabel: onPath ? t("#{number} {title}, on the critical path", { number: item.number, title: item.title }) : `#${item.number} ${item.title}`,
       ...(start && end ? { start: clamp(index(start)), end: clamp(index(end)) } : {}),
       baseline: baseline && baselineEnd && (baseline !== start || baselineEnd !== end) ? { start: clamp(index(baseline)), end: clamp(index(baselineEnd)) } : null,
       tone: item.status === "done" ? "done" : end && end < today && isOpen(item.status) ? "late" : blocked ? "blocked" : "default",

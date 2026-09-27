@@ -8,12 +8,14 @@ type Db = Pick<PoolClient, "query">;
 
 /**
  * One step of a package's standard work: how many working days it takes, which team role does it, the
- * project stage it belongs to, and whether it starts with the step before (otherwise it follows it).
+ * project stage it belongs to, whether it starts with the step before (otherwise it follows it), and
+ * whether the package's materials must be there when it starts.
  */
-export type TemplateTask = { title: string; days: number; role: string | null; stage: string | null; withPrevious: boolean };
+export type TemplateTask = { title: string; days: number; role: string | null; stage: string | null; withPrevious: boolean; needsMaterials?: boolean };
 export type WorkTemplate = { supply: Supply; tasks: TemplateTask[]; version: number };
 
-const task = (title: string, days: number, role: string | null, stage: string | null, withPrevious = false): TemplateTask => ({ title, days, role, stage, withPrevious });
+const task = (title: string, days: number, role: string | null, stage: string | null, withPrevious = false, needsMaterials = false): TemplateTask =>
+  ({ title, days, role, stage, withPrevious, ...(needsMaterials ? { needsMaterials } : {}) });
 
 /** The standard work for each way a package is delivered. Firms change them in Settings → Projects. */
 export const DEFAULT_WORK_TEMPLATES: Record<Supply, TemplateTask[]> = {
@@ -21,7 +23,7 @@ export const DEFAULT_WORK_TEMPLATES: Record<Supply, TemplateTask[]> = {
     task("Shop drawings", 5, "technical_designer", "drawings"),
     task("Client approves the drawings", 3, "designer", "drawings"),
     task("Order the materials", 2, "procurement", "procurement"),
-    task("Production", 15, "factory_lead", "production"),
+    task("Production", 15, "factory_lead", "production", false, true),
     task("Quality check", 1, "factory_lead", "production"),
     task("Deliver to site", 1, "installation_lead", "installation"),
     task("Install", 5, "installation_lead", "installation"),
@@ -30,12 +32,12 @@ export const DEFAULT_WORK_TEMPLATES: Record<Supply, TemplateTask[]> = {
     task("Place the order", 1, "procurement", "procurement"),
     task("Supplier confirms", 2, "procurement", "procurement"),
     task("Delivered to site", 10, "procurement", "installation"),
-    task("Fit on site", 3, "installation_lead", "installation"),
+    task("Fit on site", 3, "installation_lead", "installation", false, true),
   ],
   ready_made: [
     task("Place the order", 1, "procurement", "procurement"),
     task("Delivered", 14, "procurement", "installation"),
-    task("Place and check", 1, "installation_lead", "installation"),
+    task("Place and check", 1, "installation_lead", "installation", false, true),
   ],
   subcontract: [
     task("Agree scope and price with the subcontractor", 3, "procurement", "procurement"),
@@ -45,11 +47,11 @@ export const DEFAULT_WORK_TEMPLATES: Record<Supply, TemplateTask[]> = {
   client: [
     task("Tell the client what to supply and when", 1, "account_manager", "procurement"),
     task("Received and checked on site", 5, "site_supervisor", "installation"),
-    task("Install", 2, "installation_lead", "installation"),
+    task("Install", 2, "installation_lead", "installation", false, true),
   ],
   site_work: [
     task("Site ready", 2, "site_supervisor", "installation"),
-    task("Work done", 5, "site_supervisor", "installation"),
+    task("Work done", 5, "site_supervisor", "installation", false, true),
     task("Inspect the work", 1, "site_supervisor", "snagging"),
   ],
 };
@@ -76,7 +78,7 @@ export function parseTemplateTasks(value: unknown, roles: ProjectRole[]): Templa
     const role = item.role === null || item.role === undefined || item.role === "" ? null : String(item.role);
     if (role && !known.has(role)) throw new BadRequestException(`Choose one of the team roles for "${title}".`);
     const stage = typeof item.stage === "string" && /^[a-z0-9_]{1,64}$/.test(item.stage) ? item.stage : null;
-    return { title, days, role, stage, withPrevious: index > 0 && item.withPrevious === true };
+    return { title, days, role, stage, withPrevious: index > 0 && item.withPrevious === true, ...(item.needsMaterials === true ? { needsMaterials: true } : {}) };
   });
 }
 

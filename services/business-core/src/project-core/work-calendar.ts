@@ -116,3 +116,56 @@ export function ripple(nodes: PlanNode[], links: PlanLink[], changed: { id: stri
   }
   return moves;
 }
+
+/**
+ * The critical path, from a backward pass over the plan: for each open item with dates, how many
+ * working days it can slip before the plan's finish (the latest due date of open work) moves. Items
+ * with no slack are critical; negative slack means the plan already can't hold. Finished and undated
+ * items aren't part of it.
+ */
+export function criticalPath(nodes: PlanNode[], links: PlanLink[], calendar: WorkCalendar): { finish: string | null; float: Map<string, number> } {
+  const math = workdays(calendar);
+  const open = new Map(nodes.filter((node) => node.status !== "done" && node.status !== "cancelled" && (node.startDate || node.dueDate)).map((node) => {
+    const start = node.startDate ?? node.dueDate!;
+    const due = node.dueDate ?? node.startDate!;
+    return [node.id, { start, due, length: math.span(start, due) }] as const;
+  }));
+  const float = new Map<string, number>();
+  if (!open.size) return { finish: null, float };
+  const finish = [...open.values()].map((item) => item.due).sort().at(-1)!;
+  const relevant = links.filter((link) => open.has(link.predecessorId) && open.has(link.successorId));
+  const after = new Map<string, PlanLink[]>();
+  const waiting = new Map([...open.keys()].map((id) => [id, 0]));
+  for (const link of relevant) {
+    after.set(link.predecessorId, [...(after.get(link.predecessorId) ?? []), link]);
+    waiting.set(link.successorId, waiting.get(link.successorId)! + 1);
+  }
+  // Predecessors before successors; the backward pass then walks it from the end.
+  const order: string[] = [];
+  const ready = [...waiting].filter(([, count]) => count === 0).map(([id]) => id);
+  while (ready.length) {
+    const id = ready.shift()!;
+    order.push(id);
+    for (const link of after.get(id) ?? []) {
+      const left = waiting.get(link.successorId)! - 1;
+      waiting.set(link.successorId, left);
+      if (left === 0) ready.push(link.successorId);
+    }
+  }
+  const latestStart = new Map<string, string>();
+  for (const id of order.reverse()) {
+    const item = open.get(id)!;
+    let latestFinish = finish;
+    for (const link of after.get(id) ?? []) {
+      const next = latestStart.get(link.successorId);
+      if (!next) continue;
+      // Finish-to-start: done at least a working day (plus the lag) before the next one must start.
+      // Start-to-start: started no later than the lag before the next one must start.
+      const bound = link.kind === "fs" ? math.shift(next, -(link.lagDays + 1)) : math.shift(math.shift(next, -link.lagDays), item.length - 1);
+      if (bound < latestFinish) latestFinish = bound;
+    }
+    latestStart.set(id, math.shift(latestFinish, -(item.length - 1)));
+    float.set(id, latestFinish >= item.due ? math.span(item.due, latestFinish) - 1 : -(math.span(latestFinish, item.due) - 1));
+  }
+  return { finish, float };
+}

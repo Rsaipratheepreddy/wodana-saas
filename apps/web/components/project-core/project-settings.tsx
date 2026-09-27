@@ -228,6 +228,7 @@ function WorkTemplateEditor({ template, title, roles, stages, readOnly, onClose,
             <SelectField aria-label={t("Stage")} label={null} accent="neutral" isDisabled={readOnly} placeholder={t("Stage")} selectedKey={task.stage ?? ""}
               onSelectionChange={(key) => update(index, { stage: key ? String(key) : null })} items={[{ id: "", label: t("No stage") }, ...stages]} />
             {index > 0 ? <Switch isDisabled={readOnly} isSelected={task.withPrevious} onChange={(value) => update(index, { withPrevious: value })}>{t("Starts with the task before")}</Switch> : <span />}
+            <Switch isDisabled={readOnly} isSelected={task.needsMaterials === true} onChange={(value) => update(index, { needsMaterials: value })}>{t("Needs the materials")}</Switch>
           </div>
         </li>)}
       </ol>

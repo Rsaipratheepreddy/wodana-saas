@@ -35,7 +35,7 @@ export type OrderStatus = "draft" | "pending_approval" | "approved" | "sent" | "
 export type DeliverTo = "site" | "factory" | "warehouse" | "pickup" | "other";
 export type PurchasingSettings = {
   approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string;
-  requireSitePhoto: boolean; stockAdjustApprovalValue: string | null; version: number;
+  requireSitePhoto: boolean; stockAdjustApprovalValue: string | null; orderAheadDays: number; version: number;
 };
 
 /** Something a running project still needs to order. */
@@ -43,6 +43,10 @@ export type Need = {
   key: string; source: "material" | "line"; sourceId: string; projectId: string; projectReference: string; projectName: string;
   title: string; detail: string; unit: string; required: string | null; placed: string; drafted: string; received: string; remaining: string | null;
   catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null; clientChoice: boolean; blocked: "material_signoff" | null;
+  /** When the work that uses it starts; ordered its lead time (in days) before that. */
+  neededBy: string | null; leadDays: number; orderBy: string | null;
+  /** Given from free stock (reserved for the project or issued to it); counted before orders. */
+  fromStock: string; packageIds: string[];
 };
 export type NeedsState = { needs: Need[]; settings: PurchasingSettings; canBuy: boolean; canApprove: boolean };
 
@@ -84,6 +88,8 @@ export type OrderState = {
   packs: Array<{ lineId: string; packSize: string | null; minimum: string | null; suggested: string }>;
   /** Lines under a valid rate contract: its reference and price, and whether the line costs more. */
   contracts: Array<{ lineId: string; reference: string; unitPrice: string; above: boolean }>;
+  /** When each line's goods are needed on its project, by line id. */
+  neededBy: Record<string, string>;
   /** After cancelling the rest of a line and ordering it elsewhere: the new draft order. */
   reordered?: string | null;
   /** After sending: how the supplier's email went. */

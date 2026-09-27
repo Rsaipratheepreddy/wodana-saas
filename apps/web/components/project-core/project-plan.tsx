@@ -6,7 +6,7 @@ import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
 import {
   Avatar, Button, ControlledModalDialog, DateField, EmptyState, ErrorState, GroupedTable, IconMenuButton, InlineNotice, Kanban, MenuButton, SearchInput, SegmentedControl,
-  SelectField, Skeleton, TextInput, type GroupedTableSection,
+  SelectField, Skeleton, Switch, TextInput, type GroupedTableSection,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
@@ -47,6 +47,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const format = useProjectFormat();
   const [baselining, setBaselining] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [critical, setCritical] = useState(false);
   const open = params.get("item");
 
   const load = useCallback(async () => {
@@ -118,6 +119,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
         </> : null}
       </div>
       <div className={styles.toolbarGroup}>
+        {view === "timeline" && !empty ? <Switch isSelected={critical} onChange={setCritical}>{t("Critical path")}</Switch> : null}
         <SegmentedControl label={t("View")} value={view} onChange={(value) => navigate({ view: value as View })}
           options={[{ id: "list", label: t("List") }, { id: "board", label: t("Board") }, { id: "timeline", label: t("Timeline") }, { id: "sprints", label: t("Sprints") }]} />
         {board.canEdit ? <Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />{t("New task")}</Button> : null}
@@ -133,7 +135,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
           : <Button variant="primary" onPress={() => setCreating(true)}>{t("New task")}</Button>} />
       : !filtered.length ? <EmptyState illustration={null} title={t("Nothing matches")} action={<Button onPress={() => { setSearch(""); setWho("everyone"); setSprintFilter("all"); }}>{t("Clear filters")}</Button>} />
       : view === "list" ? <PlanList board={board} items={filtered} onOpen={(item) => navigate({ item: item.id })} />
-      : view === "timeline" ? <PlanTimeline board={board} items={filtered} onOpen={(id) => navigate({ item: id })} />
+      : view === "timeline" ? <PlanTimeline board={board} items={filtered} critical={critical} onOpen={(id) => navigate({ item: id })} />
       : <Kanban<WorkItem> columns={BOARD_STATUSES.map((status) => ({ id: status, label: labels.status[status], items: filtered.filter((item) => item.status === status) }))}
           getId={(item) => item.id} getLabel={(item) => `#${item.number} ${item.title}`} onItemAction={(item) => navigate({ item: item.id })}
           onMove={board.canEdit ? (id, status) => { const item = board.items.find((entry) => entry.id === id); if (item) void move(item, status as WorkStatus); } : undefined}
@@ -200,7 +202,11 @@ function PlanList({ board, items, onOpen }: { board: WorkBoard; items: WorkItem[
     { id: "none", label: board.packages.length ? t("No package") : t("Open"), rows: withChildren(open.filter((row) => !row.packageId || !board.packages.some((item) => item.id === row.packageId))), emptyMessage: "" },
     { id: "done", label: t("Done"), rows: done.map((item) => ({ ...item, depth: 0 as const })), emptyMessage: "" },
   ].filter((section) => section.rows.length)
-    .map((section) => ({ ...section, label: `${section.label} · ${section.rows.filter((row) => row.depth === 0).length}` }));
+    .map((section) => {
+      const label = `${section.label} · ${section.rows.filter((row) => row.depth === 0).length}`;
+      const percent = board.progress.packages[section.id];
+      return { ...section, label: percent === undefined ? label : t("{label} · {percent}% done", { label, percent }) };
+    });
   const columns = useWorkColumns<Row>(board);
   return <GroupedTable<Row> ariaLabel={t("Plan")} columns={columns} sections={sections} selectable={false} getRowId={(row) => row.id}
     getRowLabel={(row) => `#${row.number} ${row.title}`} onRowAction={onOpen} />;

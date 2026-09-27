@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ripple, workdays, type PlanLink, type PlanNode } from "./work-calendar";
+import { criticalPath, ripple, workdays, type PlanLink, type PlanNode } from "./work-calendar";
 
 const weekdays = { workingDays: [1, 2, 3, 4, 5], holidays: [] };
 const gulf = { workingDays: [0, 1, 2, 3, 4], holidays: ["2026-10-06"] };
@@ -56,5 +56,42 @@ describe("ripple", () => {
       [{ predecessorId: "a", successorId: "b", kind: "fs", lagDays: 0 }], { id: "a", startDate: "2026-10-01", dueDate: "2026-10-01" }, gulf);
     // Thursday's next working day is Sunday; b keeps 2 working days (Thu + Sun) → Sun–Mon.
     expect(moves.map(({ startDate, dueDate }) => [startDate, dueDate])).toEqual([["2026-10-04", "2026-10-05"]]);
+  });
+});
+
+describe("critical path", () => {
+  const links: PlanLink[] = [
+    { predecessorId: "a", successorId: "b", kind: "fs", lagDays: 0 },
+    { predecessorId: "b", successorId: "c", kind: "fs", lagDays: 2 },
+    { predecessorId: "a", successorId: "d", kind: "ss", lagDays: 1 },
+    { predecessorId: "c", successorId: "e", kind: "fs", lagDays: 0 },
+    { predecessorId: "d", successorId: "e", kind: "fs", lagDays: 0 },
+  ];
+  const nodes = [
+    node("a", 1, "2026-10-01", "2026-10-02"),
+    node("b", 2, "2026-10-05", "2026-10-07"),
+    node("c", 3, "2026-10-12", "2026-10-12"),
+    node("d", 4, "2026-10-02", "2026-10-02"),
+    node("e", 5, null, "2026-10-13"),
+  ];
+
+  it("finds the chain with no slack and how far everything else can slip, in working days", () => {
+    const { finish, float } = criticalPath(nodes, links, weekdays);
+    expect(finish).toBe("2026-10-13");
+    expect(Object.fromEntries(float)).toEqual({ a: 0, b: 0, c: 0, d: 6, e: 0 });
+  });
+
+  it("shows negative slack when the plan can't hold, and leaves out finished and undated work", () => {
+    const squeezed = nodes.map((item) => (item.id === "c" ? { ...item, startDate: "2026-10-08", dueDate: "2026-10-13" } : item));
+    const { finish, float } = criticalPath([...squeezed, node("f", 6, null, null), { ...node("g", 7, "2026-10-01", "2026-10-30"), status: "done" }], links, weekdays);
+    expect(finish).toBe("2026-10-13");
+    // c must finish a working day before e (the 13th) but is due on the 13th; b must then finish by the 2nd, not the 7th.
+    expect([float.get("c"), float.get("b"), float.has("f"), float.has("g")]).toEqual([-1, -3, false, false]);
+  });
+
+  it("counts the workspace's week and holidays", () => {
+    const { float } = criticalPath([node("a", 1, "2026-10-01", "2026-10-01"), node("b", 2, "2026-10-08", "2026-10-08")], [], gulf);
+    // Thursday the 1st to Thursday the 8th: the 4th, 5th, 7th and 8th are worked, the 6th is a holiday.
+    expect(float.get("a")).toBe(4);
   });
 });

@@ -3,14 +3,16 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import type { PoolClient } from "pg";
 import type { ActorUser, RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
+import { Dec } from "../catalog-core/decimal";
+import { readNeeds } from "../purchasing/orders";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { activeMembers, ensureSettings, membershipOf, readProject, readTeam, type ProjectRow } from "./project-core.store";
 import { noticeWork, type WorkNotice } from "./project-notices";
 import {
-  ensureProjectAccess, OPEN, readActivity, readInsights, readItem, readItems, readLinks, readOpenWork, readProjectLinks, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
+  ensureProjectAccess, OPEN, readActivity, readInsights, readItem, readItems, readLinks, readOpenWork, readProgress, readProjectLinks, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
   type WorkItem, type WorkStatus,
 } from "./project-work";
-import { readCalendar, ripple, type PlanMove } from "./work-calendar";
+import { criticalPath, readCalendar, ripple, type PlanMove } from "./work-calendar";
 import { ensureWorkTemplates, schedulePackage } from "./work-templates";
 import { MISS_REASONS, readSprintDetail, readSprints, type MissReason } from "./project-sprints";
 
@@ -126,9 +128,9 @@ export class ProjectWorkService {
         for (const [index, task] of plan.tasks.entries()) {
           const id = randomUUID();
           await client.query(
-            `INSERT INTO work_items (id, workspace_id, project_id, number, type, package_id, stage_id, title, assignee_membership_id, start_date, due_date, created_by, template_key)
-             VALUES ($1, $2, $3, $4, 'task', $5, $6, $7, $8, $9, $10, $11, $12)`,
-            [id, workspaceId, projectId, number++, packageId, task.stageId, task.title, task.assigneeId, task.startDate, task.dueDate, user.userId, `${plan.package.supply}:${index}`]);
+            `INSERT INTO work_items (id, workspace_id, project_id, number, type, package_id, stage_id, title, assignee_membership_id, start_date, due_date, created_by, template_key, needs_materials)
+             VALUES ($1, $2, $3, $4, 'task', $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+            [id, workspaceId, projectId, number++, packageId, task.stageId, task.title, task.assigneeId, task.startDate, task.dueDate, user.userId, `${plan.package.supply}:${index}`, task.needsMaterials]);
           await workEvent(client, workspaceId, id, "created", { template: plan.package.name }, user.userId);
           if (ids.length) await client.query(`INSERT INTO work_item_links (workspace_id, project_id, predecessor_id, successor_id, kind, lag_days, created_by) VALUES ($1, $2, $3, $4, $5, 0, $6)`,
             [workspaceId, projectId, ids.at(-1), id, task.withPrevious ? "ss" : "fs", user.userId]);
@@ -220,9 +222,11 @@ export class ProjectWorkService {
     await client.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, projectId]);
     const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM work_items WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, projectId])).rows[0].next;
     await client.query(
-      `INSERT INTO work_items (id, workspace_id, project_id, number, type, parent_id, package_id, boq_line_id, stage_id, title, description, priority, assignee_membership_id, start_date, due_date, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-      [id, workspaceId, projectId, number, type, parent?.id ?? null, packageId, line?.id ?? null, stageId, title, description, priority, assigneeId, startDate, dueDate, userId]);
+      `INSERT INTO work_items (id, workspace_id, project_id, number, type, parent_id, package_id, boq_line_id, stage_id, title, description, priority, assignee_membership_id, start_date, due_date, created_by,
+                               needs_materials)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+      [id, workspaceId, projectId, number, type, parent?.id ?? null, packageId, line?.id ?? null, stageId, title, description, priority, assigneeId, startDate, dueDate, userId,
+        body.needsMaterials === true]);
     await workEvent(client, workspaceId, id, "created", { type, parent: parent ? parent.number : null }, userId);
     if (blocks) {
       await client.query(`INSERT INTO work_item_links (workspace_id, project_id, predecessor_id, successor_id, kind, lag_days, created_by) VALUES ($1, $2, $3, $4, 'fs', 0, $5)`,
@@ -277,6 +281,10 @@ export class ProjectWorkService {
     if (body.packageId !== undefined) {
       const packageId = await this.packageOf(client, workspaceId, projectId, body.packageId);
       if (packageId !== item.packageId) { set("package_id", packageId); await workEvent(client, workspaceId, itemId, "package", { name: await this.packageName(client, workspaceId, packageId) }, userId); }
+    }
+    if (body.needsMaterials !== undefined && Boolean(body.needsMaterials) !== item.needsMaterials) {
+      set("needs_materials", body.needsMaterials === true);
+      await workEvent(client, workspaceId, itemId, "needs_materials", { to: body.needsMaterials === true }, userId);
     }
     if (body.stageId !== undefined) {
       const stageId = await this.stageOf(client, workspaceId, projectId, body.stageId);
@@ -346,6 +354,8 @@ export class ProjectWorkService {
       `SELECT line.id, line.title, room.name AS "areaName", line.package_id AS "packageId" FROM project_boq_lines line
          LEFT JOIN pre_project_rooms room ON room.workspace_id = line.workspace_id AND room.case_id = $3 AND room.id = line.area_id
         WHERE line.workspace_id = $1 AND line.project_id = $2 AND line.status = 'active' ORDER BY line.position`, [workspaceId, project.id, project.caseId]);
+    const calendar = await readCalendar(client, workspaceId);
+    const path = criticalPath(items, await readProjectLinks(client, workspaceId, project.id), calendar);
     const baseline = (await client.query<{ at: string | null; byName: string | null }>(
       `SELECT project.plan_baseline_at AS at, person.display_name AS "byName" FROM delivery_projects project LEFT JOIN users person ON person.id = project.plan_baseline_by
         WHERE project.workspace_id = $1 AND project.id = $2`, [workspaceId, project.id])).rows[0];
@@ -354,10 +364,28 @@ export class ProjectWorkService {
       people: context.canEdit ? await activeMembers(client, workspaceId) : [],
       sprints: await readSprints(client, workspaceId, project.id),
       me: context.membershipId, canEdit: context.canEdit, canManage: context.manager && context.canEdit,
-      calendar: await readCalendar(client, workspaceId), promiseDate: project.promiseDate, startDate: project.startDate,
+      calendar, promiseDate: project.promiseDate, startDate: project.startDate,
+      // Working days each open item can slip before the plan's finish moves; none or less is the critical path.
+      critical: { finish: path.finish, float: Object.fromEntries(path.float) },
+      progress: await readProgress(client, workspaceId, project.id),
+      materials: await this.materialsWaiting(client, workspaceId, project.id, items),
       baseline: baseline?.at ? baseline : null,
       item: itemId ? await this.detail(client, workspaceId, project.id, itemId) : null,
     };
+  }
+
+  /**
+   * For each open piece of work that needs its package's materials: those not in yet (received on orders
+   * or given from stock, short of what's needed). A material used nowhere in particular counts for every package.
+   */
+  private async materialsWaiting(client: Db, workspaceId: string, projectId: string, items: WorkItem[]) {
+    const needing = items.filter((item) => item.needsMaterials && OPEN(item.status));
+    if (!needing.length) return {};
+    const short = (await readNeeds(client, workspaceId, false, projectId))
+      .filter((need) => need.required !== null && Dec.of(need.received).add(need.fromStock).cmp(need.required) < 0);
+    return Object.fromEntries(needing.map((item) => [item.id, short
+      .filter((need) => !item.packageId || !need.packageIds.length || need.packageIds.includes(item.packageId))
+      .map((need) => need.title)]).filter(([, titles]) => titles.length));
   }
 
   private async detail(client: Db, workspaceId: string, projectId: string, itemId: string) {
@@ -516,7 +544,7 @@ export class ProjectWorkService {
     const tasks = schedulePackage(template.tasks, startDate, await readCalendar(client, workspaceId)).map((task) => {
       const member = task.role ? team.find((item) => item.roles.includes(task.role!)) : undefined;
       const stage = task.stage ? stages.find((item) => item.key === task.stage) : undefined;
-      return { title: task.title, days: task.days, withPrevious: task.withPrevious, startDate: task.startDate, dueDate: task.dueDate,
+      return { title: task.title, days: task.days, withPrevious: task.withPrevious, needsMaterials: task.needsMaterials === true, startDate: task.startDate, dueDate: task.dueDate,
         role: task.role, roleLabel: settings.roles.find((role) => role.key === task.role)?.label ?? null,
         assigneeId: member?.membershipId ?? null, assigneeName: member?.name ?? null, stageId: stage?.id ?? null, stageName: stage?.name ?? null };
     });

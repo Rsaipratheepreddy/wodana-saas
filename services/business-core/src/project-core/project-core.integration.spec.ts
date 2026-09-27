@@ -1863,6 +1863,141 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("measures progress from finished tasks, packages weighed by their value, and finds the critical path on the workspace's calendar", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const manager = w.as(w.manager);
+      const { projectId } = await manager.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const scope = await manager.scope(actor, w.workspaceId, projectId);
+      const [kitchen, general] = scope.packages; // 5,400 + 1,800 in the kitchen; 650 for the lights
+      const lead = w.work(w.manager);
+      const [a, b, c, d, e, sub1, sub2] = Array.from({ length: 7 }, () => randomUUID());
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: a, title: "Measure", packageId: kitchen.id });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: b, title: "Shop drawings", packageId: kitchen.id, startDate: "2026-10-05", dueDate: "2026-10-07" });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: c, title: "Produce", packageId: kitchen.id, startDate: "2026-10-08", dueDate: "2026-10-09" });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: d, title: "Old idea", packageId: kitchen.id });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: e, title: "Order lights", packageId: general.id, startDate: "2026-10-05", dueDate: "2026-10-05" });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: sub1, parentId: b, title: "Elevations" });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: sub2, parentId: b, title: "Sections" });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: randomUUID(), type: "blocker", title: "Marble thickness", packageId: kitchen.id });
+      await lead.command(actor, w.workspaceId, projectId, { action: "link", itemId: c, predecessorId: b, kind: "fs", lagDays: 0 });
+      let board = await lead.board(actor, w.workspaceId, projectId);
+      const version = (id: string) => board.items.find((item) => item.id === id)!.version;
+      board = await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: a, version: version(a), status: "done" });
+      board = await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: sub1, version: version(sub1), status: "done" });
+      board = await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: d, version: version(d), status: "cancelled" });
+
+      // Kitchen: measure done (1), drawings half through their subtasks (½), production not started (0) → 50 %.
+      // The lights have no tasks done: 0 %. The project weighs the kitchen's 7,200 of 7,850 → 45 %.
+      expect(board.progress).toEqual({ project: 45, packages: { [kitchen.id]: 50, [general.id]: 0 } });
+      expect((await manager.get(actor, w.workspaceId, projectId)).progress).toBe(45);
+      // Drawings then production run to the plan's finish on Friday the 9th; ordering the lights can slip four working days.
+      expect(board.critical).toEqual({ finish: "2026-10-09", float: { [b]: 0, [c]: 0, [e]: 4 } });
+    });
+  });
+
+  it("dates what projects need from the plan: needed when the work that uses it starts, ordered its lead time before, and chased when that's passed", async () => {
+    await world(async (w) => {
+      const { core, projectId, vendor, buyer } = await buying(w);
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const [kitchen] = scope.packages;
+      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "20", unit: "sheets", clientChoice: false, boqLineIds: [cabinets.id], version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Wood glue", quantity: "4", unit: "nos", clientChoice: false, version: detail.project.version });
+      // Fitting the kitchen needs its materials from 5 Oct; a later fit from the 26th; drawings don't need them.
+      const lead = w.work(w.manager);
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: randomUUID(), title: "Shop drawings", packageId: kitchen.id, startDate: "2026-09-29", dueDate: "2026-10-02" });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: randomUUID(), title: "Fit on site", packageId: kitchen.id, startDate: "2026-10-05", dueDate: "2026-10-09", needsMaterials: true });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: randomUUID(), title: "Second fix", packageId: kitchen.id, startDate: "2026-10-26", dueDate: "2026-10-27", needsMaterials: true });
+
+      let needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      const dates = (title: string) => { const need = needs.find((item) => item.title === title)!; return [need.neededBy, need.leadDays, need.orderBy]; };
+      // No supplier lead time known: the workspace's 14 days.
+      expect(dates("Oak veneer")).toEqual(["2026-10-05", 14, "2026-09-21"]);
+      expect(dates("Kitchen cabinets")).toEqual(["2026-10-05", 14, "2026-09-21"]);
+      // Glue isn't tied to any scope line: the project's earliest need.
+      expect(dates("Wood glue")).toEqual(["2026-10-05", 14, "2026-09-21"]);
+      await w.client.query("UPDATE workspace_purchasing_settings SET order_ahead_days = 3 WHERE workspace_id = $1", [w.workspaceId]);
+      needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      expect(dates("Oak veneer")).toEqual(["2026-10-05", 3, "2026-10-02"]);
+
+      // Past its order-by date and not ordered: the people who buy are told, once per project and then weekly.
+      await w.client.query("UPDATE workspace_purchasing_settings SET order_ahead_days = 30 WHERE workspace_id = $1", [w.workspaceId]);
+      const role = randomUUID();
+      await w.client.query("INSERT INTO roles (id, workspace_id, code, name) VALUES ($1, $2, 'buyer', 'Buyer')", [role, w.workspaceId]);
+      await w.client.query("INSERT INTO role_permissions (workspace_id, role_id, permission_id) SELECT $1, $2, id FROM permissions WHERE code = 'purchasing.manage'", [w.workspaceId, role]);
+      await w.client.query("INSERT INTO member_roles (workspace_id, membership_id, role_id) VALUES ($1, $2, $3)", [w.workspaceId, w.designerMembership, role]);
+      expect((await processPurchasingDeadlines(w.client, w.workspaceId)).sent).toBe(1);
+      expect((await processPurchasingDeadlines(w.client, w.workspaceId)).sent).toBe(0);
+      const told = (await w.client.query<{ recipient: string; subject: string; body: string }>(
+        "SELECT recipient_id AS recipient, subject, body FROM notifications WHERE workspace_id = $1 AND event_type = 'purchasing.order_late' AND channel = 'in_app'", [w.workspaceId])).rows;
+      expect(told).toEqual([{ recipient: w.designer, subject: "Order now for PRJ-0001 · Villa 12", body: expect.stringMatching(/^Oak veneer 20 sheets \(needed .*\), .*Wood glue 4 nos/) }]);
+
+      // Ordered: the order line knows when it's needed, and nothing is chased any more for it.
+      const oak = needs.find((item) => item.title === "Oak veneer")!;
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "material", materialItemId: oak.sourceId, quantity: "20", unitPrice: "100", taxRate: "0" }]);
+      expect(Object.values(order.neededBy)).toEqual(["2026-10-05"]);
+      // Once the fitting is done, the next piece of work that needs them sets the date.
+      const board = await lead.board(actor, w.workspaceId, projectId);
+      const fit = board.items.find((item) => item.title === "Fit on site")!;
+      await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: fit.id, version: fit.version, status: "done" });
+      expect((await buyer.orders.needs(actor, w.workspaceId)).needs.find((item) => item.title === "Wood glue")!.neededBy).toBe("2026-10-26");
+    });
+  });
+
+  it("counts free stock given to a project before orders, and tells the work that needs the materials what isn't in yet", async () => {
+    await world(async (w) => {
+      const { core, projectId, vendor, buyer, manager } = await buying(w);
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const [kitchen] = scope.packages;
+      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "20", unit: "sheets", clientChoice: false, boqLineIds: [cabinets.id], version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Wood glue", quantity: "4", unit: "nos", clientChoice: false, boqLineIds: [cabinets.id], version: detail.project.version });
+      const lead = w.work(w.manager);
+      const fit = randomUUID();
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: fit, title: "Fit on site", packageId: kitchen.id, startDate: "2026-10-05", dueDate: "2026-10-09", needsMaterials: true });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: randomUUID(), title: "Measure", packageId: kitchen.id });
+
+      // Twelve sheets and all the glue are in free stock: eight sheets reserved, the glue issued straight to the project, one tube brought back.
+      const store = buyer.stock;
+      let stock = await store.stock(actor, w.workspaceId);
+      await store.saveLocation(actor, w.workspaceId, { id: randomUUID(), kind: "warehouse", name: "Warehouse" });
+      stock = await store.stock(actor, w.workspaceId);
+      const warehouse = stock.locations[0].id;
+      stock = await store.command(actor, w.workspaceId, { id: randomUUID(), action: "add", name: "Oak veneer", unit: "sheets", locationId: warehouse, quantity: "12", reason: "Opening stock" });
+      stock = await store.command(actor, w.workspaceId, { id: randomUUID(), action: "add", name: "Wood glue", unit: "nos", locationId: warehouse, quantity: "10", reason: "Opening stock" });
+      const oakItem = stock.rows.find((row) => row.itemName === "Oak veneer")!.itemId;
+      const glueItem = stock.rows.find((row) => row.itemName === "Wood glue")!.itemId;
+      await store.command(actor, w.workspaceId, { id: randomUUID(), action: "allocate", itemId: oakItem, locationId: warehouse, forProjectId: projectId, quantity: "8", reason: "Kitchen" });
+      await store.command(actor, w.workspaceId, { id: randomUUID(), action: "issue", itemId: glueItem, locationId: warehouse, forProjectId: projectId, quantity: "5", reason: "Kitchen" });
+      await store.command(actor, w.workspaceId, { id: randomUUID(), action: "return", itemId: glueItem, locationId: warehouse, forProjectId: projectId, quantity: "1", reason: "One too many" });
+
+      let needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      const left = (title: string) => { const need = needs.find((item) => item.title === title)!; return [need.fromStock, need.remaining]; };
+      expect(left("Oak veneer")).toEqual(["8", "12.0000"]);
+      expect(left("Wood glue")).toEqual(["4", "0.0000"]);
+      let board = await lead.board(actor, w.workspaceId, projectId);
+      // The glue is all there; the oak, and the kitchen's bought cabinets and worktop, aren't.
+      expect(board.materials).toEqual({ [fit]: ["Oak veneer", "Kitchen cabinets", "Worktop"] });
+
+      // The rest of the oak arrives on an order with the cabinets and worktop: the fitting has what it needs.
+      const oak = needs.find((item) => item.title === "Oak veneer")!;
+      const worktop = scope.lines.find((line) => line.title === "Worktop")!;
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [
+        { source: "material", materialItemId: oak.sourceId, quantity: "12", unitPrice: "100", taxRate: "0" },
+        { source: "line", boqLineId: cabinets.id, quantity: "4.5", unitPrice: "900", taxRate: "0" },
+        { source: "line", boqLineId: worktop.id, quantity: "2.25", unitPrice: "600", taxRate: "0" }]);
+      await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: "warehouse", receivedOn: "2026-09-27",
+        lines: order.lines.map((line) => ({ orderLineId: line.id, received: line.quantity })) });
+      needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      expect(left("Oak veneer")).toEqual(["8", "0.0000"]);
+      board = await lead.board(actor, w.workspaceId, projectId);
+      expect(board.materials).toEqual({});
+    });
+  });
+
   /** The project service where each call is its own transaction, as in the app. */
   function projectsAt(w: World, userId: string, permissions = ["projects.manage", "projects.view"]) {
     const asMember = async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => {

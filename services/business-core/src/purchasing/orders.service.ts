@@ -82,9 +82,12 @@ export class OrdersService {
       const adjustLimit = body.stockAdjustApprovalValue === undefined ? current.stockAdjustApprovalValue
         : body.stockAdjustApprovalValue === null || body.stockAdjustApprovalValue === "" ? null : String(body.stockAdjustApprovalValue);
       if (adjustLimit !== null && !NUMBER.test(adjustLimit)) throw new BadRequestException("Enter the value above which stock corrections need approval, or leave it empty.");
+      const ahead = body.orderAheadDays === undefined ? current.orderAheadDays : Number(body.orderAheadDays);
+      if (!Number.isInteger(ahead) || ahead < 0 || ahead > 365) throw new BadRequestException("Order ahead is a whole number of days, from 0 to 365.");
       await client.query(`UPDATE workspace_purchasing_settings SET approval_threshold = $2, require_material_signoff = $3, require_approved_supplier = $4, require_inspection = $5,
-        receive_tolerance_percent = $6, require_site_photo = $8, stock_adjust_approval_value = $9, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
-        [workspaceId, threshold, flag("requireMaterialSignoff"), flag("requireApprovedSupplier"), flag("requireInspection"), tolerance, user.userId, flag("requireSitePhoto"), adjustLimit]);
+        receive_tolerance_percent = $6, require_site_photo = $8, stock_adjust_approval_value = $9, order_ahead_days = $10, version = version + 1, updated_by = $7, updated_at = now()
+        WHERE workspace_id = $1`,
+        [workspaceId, threshold, flag("requireMaterialSignoff"), flag("requireApprovedSupplier"), flag("requireInspection"), tolerance, user.userId, flag("requireSitePhoto"), adjustLimit, ahead]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "purchasing.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return ensurePurchasingSettings(client, workspaceId);
     });
@@ -413,8 +416,9 @@ export class OrdersService {
     if (!order) throw new NotFoundException("Order not found.");
     const supplier = await readSupplier(client, workspaceId, order.vendorId);
     const rights = await this.rights(client, workspaceId, userId);
+    const lines = await readOrderLines(client, workspaceId, orderId);
     return {
-      order, lines: await readOrderLines(client, workspaceId, orderId), events: await readOrderEvents(client, workspaceId, orderId),
+      order, lines, events: await readOrderEvents(client, workspaceId, orderId),
       receipts: await readReceipts(client, workspaceId, { orderId }),
       returns: await readReturns(client, workspaceId, orderId),
       revisions: (await client.query<{ revision: number; reason: string; at: string; byName: string }>(
@@ -429,7 +433,21 @@ export class OrdersService {
       overOrdered: ["draft", "pending_approval"].includes(order.status) ? await this.overOrdered(client, workspaceId, orderId) : [],
       packs: await this.packs(client, workspaceId, order),
       contracts: await this.contracts(client, workspaceId, order),
+      neededBy: await this.neededBy(client, workspaceId, lines),
     };
+  }
+
+  /** When each line's goods are needed on its project, from the plan (lines with no date are left out). */
+  private async neededBy(client: Db, workspaceId: string, lines: OrderLine[]) {
+    const dates: Record<string, string> = {};
+    for (const projectId of new Set(lines.map((line) => line.projectId).filter((id): id is string => Boolean(id)))) {
+      const needs = new Map((await readNeeds(client, workspaceId, false, projectId)).map((need) => [need.key, need.neededBy]));
+      for (const line of lines.filter((item) => item.projectId === projectId)) {
+        const date = line.materialItemId ? needs.get(`material:${line.materialItemId}`) : line.boqLineId ? needs.get(`line:${line.boqLineId}`) : null;
+        if (date) dates[line.id] = date;
+      }
+    }
+    return dates;
   }
 
   private async rights(client: Db, workspaceId: string, userId: string) {
