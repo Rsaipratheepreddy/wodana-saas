@@ -38,12 +38,16 @@ describe("personal Home layouts", () => {
   it("refuses stale writes rather than overwriting another session", async () => {
     await expect(setup([]).service.updateHomeLayout({} as never, "workspace", { version: 1, widgets })).rejects.toThrow("changed elsewhere");
   });
+  it("accepts sized widgets and layouts saved before sizes existed", async () => {
+    expect(await validate(plainToInstance(UpdateHomeLayoutDto, { version: 0, widgets: [{ id: "storage", visible: true, size: "medium", wide: false }, { id: "attention", visible: true, wide: true }] }))).toEqual([]);
+  });
   it.each([
     { version: -1, widgets },
     { version: 0, widgets: [{ id: "admin", visible: true, wide: false }] },
     { version: 0, widgets: [...widgets, ...widgets] },
     { version: 0, widgets: [{ id: "tools", visible: "yes", wide: false }] },
     { version: 0, widgets: [null] },
+    { version: 0, widgets: [{ id: "storage", visible: true, size: "huge" }] },
   ])("rejects malformed layout %j", async input => {
     expect((await validate(plainToInstance(UpdateHomeLayoutDto, input))).length).toBeGreaterThan(0);
   });
