@@ -607,7 +607,13 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - An order's lines are saved in place: a line with deliveries or returns stays on the order, keeps what it's for and its unit, and can't go below what has arrived.
   - An expired supplier price can't be awarded, and the cheapest is chosen from valid prices only.
   - Create commands, and order and return commands sent with a command id, run once: a retry returns the result.
-- Still to come: blanket orders, advances and retention (with payables), vendor portal replies, and the late-delivery expediting task.
+- **Following an order:**
+  - The supplier's confirmation is per line: how much they confirm (less than ordered is shown on the line) and by when. The order's promised date is the earliest.
+  - A line is due on its own promise, else the order's promise, else when it's needed. Expected deliveries sort by the first line still to come.
+  - **Late orders:** the buyer hears the first day something still to come is late and then weekly, in the app and by email (in the daily reminder run). *Chase* records what the supplier said and a new date for the late lines.
+  - **Cancel the rest of a line** with the reason (never more than is still to come; if nothing on the order would come, the order is cancelled instead). It can go to another supplier as a new draft order whose line is linked to the one it replaces. Still owed = ordered − cancelled − credited − accepted − waiting.
+  - **Packs:** where the supplier's catalog price has a pack size or minimum, a draft line that doesn't fit shows the quantity that does, to use in one click (ordering past the need then says why).
+- Still to come: blanket orders, advances and retention (with payables), alternate items offered by the supplier, and vendor portal replies.
 
 - **Records:** rfqs, rfq_lines, rfq_suppliers (sent/viewed/responded), supplier_quotes + lines (price, qty, lead time, validity, alternate item), purchase_orders (kind `standard | blanket | service`, revision), po_lines (ship-to **per line**: warehouse, factory or site), po_line_allocations (line → requirement/project, qty), po_revisions, po_acknowledgements (per line; partial allowed), blanket_releases, supplier advances.
 - **PO states:** `draft → pending_approval → approved → sent → acknowledged | partly_acknowledged → partly_received → received → closed`, plus `cancelled` and `short_closed`.

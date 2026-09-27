@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Plus, X } from "lucide-react";
+import { Ban, Plus, X } from "lucide-react";
 import {
   ActivityFeed, Button, ControlledModalDialog, DateField, ErrorState, IconButton, InlineNotice, InspectorSheet, SelectField, Skeleton, TextAreaField, TextInput, type ActivityItem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { currencyDecimals, orderTotals, priceLine } from "@/lib/purchasing/amounts";
+import { addExact, currencyDecimals, orderTotals, priceLine, subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { DeliverTo, OrderLine, OrderState, PaymentTerms, PurchasingSettings } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
@@ -21,7 +21,9 @@ type LineDraft = Pick<OrderLine, "id" | "source" | "materialItemId" | "boqLineId
   quantity: string; unitPrice: string; discountPercent: string; taxRate: string;
 };
 type Form = { expectedDate: string | null; deliverTo: DeliverTo; deliveryAddress: string; paymentTerms: PaymentTerms; advancePercent: string; creditDays: string; termsNote: string; notes: string; lines: LineDraft[] };
-type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | null;
+type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | null;
+/** Still to come on a line: ordered less cancelled, credited, accepted and waiting for inspection. */
+const stillToCome = (line: OrderLine) => subtractExact(line.quantity, addExact(line.cancelled, line.credited, line.accepted, line.pending));
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const TERMS: PaymentTerms[] = ["upfront", "split", "on_delivery", "credit", "statement"];
 const DELIVERY: DeliverTo[] = ["site", "factory", "warehouse", "pickup", "other"];
@@ -39,8 +41,9 @@ const formOf = (state: OrderState): Form => ({
  * by someone other than the buyer, sending to the supplier, the supplier's confirmation, deliveries
  * against it and closing it — with its history.
  */
-export function OrderSheet({ api, orderId, settings, onChanged, onClose, onReceipt }: {
+export function OrderSheet({ api, orderId, settings, onChanged, onClose, onReceipt, onOpenOrder }: {
   api: PurchasingApi; orderId: string; settings: PurchasingSettings | null; onChanged: () => void; onClose: () => void; onReceipt: (receiptId: string) => void;
+  onOpenOrder?: (orderId: string) => void;
 }) {
   const t = useT();
   const format = useProjectFormat();
@@ -52,6 +55,7 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
   const [notice, setNotice] = useState<{ tone: "error" | "info" | "success"; text: string } | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [overReason, setOverReason] = useState("");
+  const [cancelling, setCancelling] = useState<OrderLine | null>(null);
   const [busy, setBusy] = useState(false);
   const accept = useCallback((next: OrderState) => { setState(next); setForm(formOf(next)); }, []);
   const load = useCallback(async () => {
@@ -94,6 +98,15 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
   // Short when what was accepted and what the supplier credited don't make up the line (as the server counts it).
   const short = (state?.lines ?? []).some((line) => Number(line.accepted) + Number(line.credited) < Number(line.quantity));
   const over = order && ["draft", "pending_approval"].includes(order.status) ? state?.overOrdered ?? [] : [];
+  const following = Boolean(order && ["sent", "confirmed", "partly_received"].includes(order.status) && state?.canBuy);
+  const late = (state?.lines ?? []).some((line) => stillToCome(line) !== "0" && line.due && line.due < format.today());
+  /** What the supplier said about a line and what became of it, once it's out of draft. */
+  const lineFacts = (line: OrderLine) => [
+    line.promisedDate ? t("Promised {date}", { date: format.day(line.promisedDate) }) : "",
+    line.confirmedQuantity !== null && Number(line.confirmedQuantity) < Number(subtractExact(line.quantity, line.cancelled)) ? t("Supplier confirmed {quantity}", { quantity: quantityText(line.confirmedQuantity) }) : "",
+    Number(line.cancelled) ? t("{quantity} cancelled: {reason}", { quantity: quantityText(line.cancelled), reason: line.cancelReason ?? "" }) : "",
+    line.replacesOrderNumber ? t("Replaces a line on {order}", { order: line.replacesOrderNumber }) : "",
+  ].filter(Boolean).join(" · ");
   /** What has arrived on a line so far, once anything has. */
   const arrived = (line: OrderLine | undefined) => {
     if (!line || !(Number(line.accepted) || Number(line.rejected) || Number(line.pending) || Number(line.credited))) return "";
@@ -116,11 +129,14 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
         <Button variant="quiet" onPress={() => setDialog("change")}>{t("Change")}</Button></> : null}<span className={styles.spacer} />
       {!state.canBuy ? null : order.status === "approved" ? <><Button isLoading={busy} onPress={() => void run("send", { to: null })}>{t("Mark as sent")}</Button>
         <Button variant="primary" onPress={() => setDialog("send")}>{t("Send to supplier")}</Button></>
-        : <Button onPress={() => setDialog("confirm")}>{order.status === "sent" ? t("Record confirmation") : t("Update confirmation")}</Button>}
+        : <>{late ? <Button onPress={() => setDialog("chase")}>{t("Chase")}</Button> : null}
+          <Button onPress={() => setDialog("confirm")}>{order.status === "sent" ? t("Record confirmation") : t("Update confirmation")}</Button></>}
       {order.status !== "approved" && state.canReceive ? <Button variant="primary" onPress={() => setDialog("receive")}>{t("Receive")}</Button> : null}
     </div>
     : ["partly_received", "received"].includes(order.status) && (state.canBuy || state.canReceive) ? <div className="wd-dialog-actions">
       {state.canBuy ? <Button variant="quiet" onPress={() => setDialog("close")}>{t("Close order")}</Button> : null}<span className={styles.spacer} />
+      {following && late ? <Button onPress={() => setDialog("chase")}>{t("Chase")}</Button> : null}
+      {following ? <Button onPress={() => setDialog("confirm")}>{t("Update confirmation")}</Button> : null}
       {order.status === "partly_received" && state.canReceive ? <Button variant="primary" onPress={() => setDialog("receive")}>{t("Receive")}</Button> : null}
     </div> : null;
 
@@ -167,6 +183,12 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
               {draft && line.source === "free" ? <TextInput aria-label={t("What")} label={null} value={line.description} onChange={(description) => setLine(line.id, { description })} /> : <span>{line.description}</span>}
               <small>{[line.projectReference, line.specification].filter(Boolean).join(" · ")}</small>
               {!draft && arrived(state.lines[index]) ? <small className={styles.arrived}>{arrived(state.lines[index])}</small> : null}
+              {!draft && state.lines[index] && lineFacts(state.lines[index]) ? <small>{lineFacts(state.lines[index])}</small> : null}
+              {draft ? (state.packs ?? []).filter((pack) => pack.lineId === line.id).map((pack) => <small key={pack.lineId} className={styles.packHint}>
+                {pack.packSize && pack.minimum ? t("Sold in packs of {pack}, at least {minimum}", { pack: pack.packSize, minimum: pack.minimum })
+                  : pack.packSize ? t("Sold in packs of {pack}", { pack: pack.packSize }) : t("At least {minimum}", { minimum: pack.minimum ?? "" })}
+                {line.quantity !== pack.suggested ? <Button size="compact" variant="quiet" onPress={() => setLine(line.id, { quantity: pack.suggested })}>{t("Order {quantity}", { quantity: pack.suggested })}</Button> : null}
+              </small>) : null}
             </span>
             {draft ? <>
               <span role="cell"><TextInput aria-label={t("Quantity for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.quantity} suffix={line.unit || undefined} onChange={(value) => setLine(line.id, { quantity: numeric(value) })} /></span>
@@ -181,7 +203,9 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
             </>}
             <span role="cell" className={styles.money}>{priced[index] ? money(priced[index]!.total) : "—"}</span>
             <span role="cell">{draft && form.lines.length > 1 ? <IconButton aria-label={t("Remove {item}", { item: line.description })} size="compact" variant="quiet"
-              onPress={() => setForm({ ...form, lines: form.lines.filter((item) => item.id !== line.id) })}><X aria-hidden="true" size={14} /></IconButton> : null}</span>
+              onPress={() => setForm({ ...form, lines: form.lines.filter((item) => item.id !== line.id) })}><X aria-hidden="true" size={14} /></IconButton>
+              : following && state.lines[index] && stillToCome(state.lines[index]) !== "0" ? <IconButton aria-label={t("Cancel the rest of {item}", { item: line.description })} size="compact" variant="quiet"
+                onPress={() => setCancelling(state.lines[index])}><Ban aria-hidden="true" size={14} /></IconButton> : null}</span>
           </div>)}
         </div>
         {draft ? <Button size="compact" variant="quiet" onPress={() => setForm({ ...form, lines: [...form.lines, { id: crypto.randomUUID(), source: "free", materialItemId: null, boqLineId: null, projectId: null,
@@ -209,8 +233,14 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
     {dialog === "receive" ? <ReceiveDialog api={api} orderId={orderId} onClose={() => setDialog(null)} onReceived={(receipt) => { setDialog(null); onChanged(); onReceipt(receipt.receipt.id); }} /> : null}
     {dialog === "send" && state ? <SendDialog email={state.supplier?.email ?? ""} onClose={() => setDialog(null)}
       onSave={async (to, message) => { if (await run("send", { to, message })) setDialog(null); }} /> : null}
-    {dialog === "confirm" && order ? <ConfirmDialog promised={order.promisedDate} reference={order.supplierReference} onClose={() => setDialog(null)}
-      onSave={async (promisedDate, supplierReference) => { if (await run("confirm", { promisedDate, supplierReference })) setDialog(null); }} /> : null}
+    {dialog === "confirm" && order && state ? <ConfirmDialog promised={order.promisedDate} reference={order.supplierReference} lines={state.lines} onClose={() => setDialog(null)}
+      onSave={async (input) => { if (await run("confirm", input)) setDialog(null); }} /> : null}
+    {dialog === "chase" ? <ChaseDialog onClose={() => setDialog(null)} onSave={async (note, promisedDate) => { if (await run("chase", { note, promisedDate })) setDialog(null); }} /> : null}
+    {cancelling ? <CancelLineDialog api={api} line={cancelling} left={stillToCome(cancelling)} vendorId={order?.vendorId ?? ""} onClose={() => setCancelling(null)}
+      onSave={async (input) => {
+        const next = await run("cancel_line", { lineId: cancelling.id, ...input });
+        if (next) { setCancelling(null); if (next.reordered) onOpenOrder?.(next.reordered); }
+      }} /> : null}
   </InspectorSheet>;
 }
 
@@ -230,6 +260,8 @@ function History({ state }: { state: OrderState }) {
       case "confirmed": return value("promisedDate") ? t("recorded the supplier's confirmation, promised for {date}", { date: format.day(value("promisedDate")) }) : t("recorded the supplier's confirmation");
       case "changing": return t("reopened it to change: {reason}", { reason: value("reason") });
       case "cancelled": return t("cancelled it: {reason}", { reason: value("reason") });
+      case "chased": return value("promisedDate") ? t("chased it: {note} (new date {date})", { note: value("note"), date: format.day(value("promisedDate")) }) : t("chased it: {note}", { note: value("note") });
+      case "line_cancelled": return t("cancelled {quantity} of {item}: {reason}", { quantity: `${quantityText(value("quantity"))} ${value("unit")}`.trim(), item: value("description"), reason: value("reason") });
       case "received": return t("received delivery {number} at {place}", { number: String(detail.receipt ?? ""), place: value("location") });
       case "inspected": return t("inspected delivery {number}", { number: String(detail.receipt ?? "") });
       case "closed": return value("reason") ? t("closed it: {reason}", { reason: value("reason") }) : t("closed it");
@@ -278,17 +310,78 @@ function SendDialog({ email, onClose, onSave }: { email: string; onClose: () => 
   </ControlledModalDialog>;
 }
 
-function ConfirmDialog({ promised, reference, onClose, onSave }: { promised: string | null; reference: string; onClose: () => void; onSave: (promised: string | null, reference: string) => Promise<void> }) {
+/** The supplier's confirmation: their reference, and for each line by when and how much (when it differs from what was ordered). */
+function ConfirmDialog({ promised, reference, lines, onClose, onSave }: {
+  promised: string | null; reference: string; lines: OrderLine[]; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>;
+}) {
   const t = useT();
-  const [date, setDate] = useState(promised);
+  const open = lines.filter((line) => Number(line.cancelled) < Number(line.quantity));
   const [ref, setRef] = useState(reference);
+  const [rows, setRows] = useState(() => Object.fromEntries(open.map((line) => [line.id, { date: line.promisedDate ?? promised, quantity: line.confirmedQuantity ? quantityText(line.confirmedQuantity) : "" }])));
   const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Supplier's confirmation")} onOpenChange={(open) => { if (!open) onClose(); }}
+  const tooMuch = open.find((line) => rows[line.id].quantity !== "" && Number(rows[line.id].quantity) > Number(subtractExact(line.quantity, line.cancelled)));
+  return <ControlledModalDialog isOpen size="lg" title={t("Supplier's confirmation")} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} onPress={async () => { setBusy(true); await onSave(date, ref.trim()); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <div className={styles.pair}>
-      <DateField label={t("Promised delivery")} value={date ? parseDate(date) : null} onChange={(value) => setDate(value ? value.toString() : null)} />
+      <Button variant="primary" isLoading={busy} isDisabled={Boolean(tooMuch)} onPress={async () => { setBusy(true); await onSave({ supplierReference: ref.trim(),
+        lines: open.map((line) => ({ lineId: line.id, promisedDate: rows[line.id].date, confirmedQuantity: rows[line.id].quantity || null })) }); setBusy(false); }}>{t("Save")}</Button></div>}>
+    <div className={styles.dialogBody}>
       <TextInput label={t("Their reference")} value={ref} onChange={setRef} />
+      <div className={styles.receiveLines} role="table" aria-label={t("Lines")} data-columns="3">
+        <div role="row" className={styles.receiveHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("They confirm")}</span><span role="columnheader">{t("Promised")}</span></div>
+        {open.map((line) => <div role="row" key={line.id} className={styles.receiveLine}>
+          <span role="cell" className={styles.nameCell}><span>{line.description}</span><small>{t("Ordered {quantity}", { quantity: `${quantityText(subtractExact(line.quantity, line.cancelled))} ${line.unit}`.trim() })}</small></span>
+          <span role="cell"><TextInput aria-label={t("Confirmed of {item}", { item: line.description })} label={null} inputMode="decimal" placeholder={t("All")} suffix={line.unit || undefined}
+            value={rows[line.id].quantity} onChange={(value) => setRows({ ...rows, [line.id]: { ...rows[line.id], quantity: numeric(value) } })} /></span>
+          <span role="cell"><DateField aria-label={t("Promised date for {item}", { item: line.description })} label={null} value={rows[line.id].date ? parseDate(rows[line.id].date!) : null}
+            onChange={(value) => setRows({ ...rows, [line.id]: { ...rows[line.id], date: value ? value.toString() : null } })} /></span>
+        </div>)}
+      </div>
+      {tooMuch ? <InlineNotice tone="error" message={t("The supplier can't confirm more of {item} than was ordered.", { item: tooMuch.description })} /> : null}
+    </div>
+  </ControlledModalDialog>;
+}
+
+/** A late order chased: what the supplier said and, if they gave one, their new date. */
+function ChaseDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string, promisedDate: string | null) => Promise<void> }) {
+  const t = useT();
+  const [note, setNote] = useState("");
+  const [date, setDate] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return <ControlledModalDialog isOpen size="md" title={t("Chase")} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim(), date); setBusy(false); }}>{t("Save")}</Button></div>}>
+    <div className={styles.dialogBody}>
+      <TextAreaField label={t("What the supplier said")} isRequired value={note} onChange={setNote} />
+      <DateField label={t("New date")} value={date ? parseDate(date) : null} onChange={(value) => setDate(value ? value.toString() : null)} />
+    </div>
+  </ControlledModalDialog>;
+}
+
+/** The rest of a line won't come: how much, why, and optionally which other supplier gets it (as a new draft order). */
+function CancelLineDialog({ api, line, left, vendorId, onClose, onSave }: {
+  api: PurchasingApi; line: OrderLine; left: string; vendorId: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>;
+}) {
+  const t = useT();
+  const [quantity, setQuantity] = useState(quantityText(left));
+  const [reason, setReason] = useState("");
+  const [reorder, setReorder] = useState<string | null>(null);
+  const [suppliers, setSuppliers] = useState<Array<{ id: string; label: string }>>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.suppliers().then((state) => setSuppliers(state.suppliers.filter((item) => item.status !== "archived" && item.id !== vendorId)
+      .sort((a, b) => a.name.localeCompare(b.name)).map((item) => ({ id: item.id, label: item.name })))).catch(() => undefined);
+  }, [api, vendorId]);
+  const tooMuch = Number(quantity) > Number(left);
+  return <ControlledModalDialog isOpen size="md" title={t("Cancel the rest of {item}", { item: line.description })} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim() || !(Number(quantity) > 0) || tooMuch}
+        onPress={async () => { setBusy(true); await onSave({ quantity, reason: reason.trim(), reorderVendorId: reorder }); setBusy(false); }}>{t("Cancel the rest")}</Button></div>}>
+    <div className={styles.dialogBody}>
+      <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={line.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
+      {tooMuch ? <InlineNotice tone="error" message={t("At most {quantity} is still to come.", { quantity: `${quantityText(left)} ${line.unit}`.trim() })} /> : null}
+      <TextAreaField label={t("Why it won't come")} isRequired value={reason} onChange={setReason} />
+      <SelectField label={t("Order it from")} selectedKey={reorder ?? "none"} onSelectionChange={(key) => setReorder(key === null || key === "none" ? null : String(key))}
+        items={[{ id: "none", label: t("Don't reorder") }, ...suppliers]} />
     </div>
   </ControlledModalDialog>;
 }

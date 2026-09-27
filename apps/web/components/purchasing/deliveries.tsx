@@ -49,8 +49,8 @@ export function Deliveries({ api, openId, returnId, onOpen, onOpenReturn, onOpen
     { id: "order", header: t("Order"), accessorFn: (row) => `${row.number} ${row.supplierName}`, size: 230, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{row.number}</span><small>{row.supplierName}</small></span> } },
     { id: "for", header: t("For"), accessorFn: (row) => row.projects.map((project) => project.reference).join(", "), size: 150, meta: { mobileHidden: true } },
-    { id: "due", header: t("Due"), accessorFn: (row) => row.promisedDate ?? row.expectedDate ?? "", size: 160, meta: { renderCell: (row) => {
-      const date = row.promisedDate ?? row.expectedDate;
+    { id: "due", header: t("Due"), accessorFn: (row) => row.due ?? "", size: 160, meta: { renderCell: (row) => {
+      const date = row.due;
       const until = format.until(date);
       return date ? <span className={styles.nameCell}><span>{format.day(date)}</span><small className={until?.late ? styles.late : undefined}>{until?.text}</small></span> : "—";
     } } },

@@ -31,14 +31,19 @@ export class ReceivingService {
   deliveries(actor: RequestActor, workspaceId: string) {
     return this.access.withAnyPermission(actor, workspaceId, ["purchasing.view", "stock.receive", "stock.inspect"], async (client, user) => {
       const open = (await readOrders(client, workspaceId)).filter((order) => (RECEIVABLE as readonly string[]).includes(order.status));
-      // Lines still to come count credits, returns to be replaced and reversed receipts, as the order does.
-      const left: Array<{ orderId: string; lines: number }> = [];
-      for (const order of open) left.push({ orderId: order.id, lines: (await readOrderLines(client, workspaceId, order.id)).filter((line) => outstanding(line).cmp(0) > 0).length });
+      // Lines still to come count credits, cancellations, returns to be replaced and reversed receipts, as the order does;
+      // an order is due when the first of those lines is.
+      const left: Array<{ orderId: string; lines: number; due: string | null }> = [];
+      for (const order of open) {
+        const coming = (await readOrderLines(client, workspaceId, order.id)).filter((line) => outstanding(line).cmp(0) > 0);
+        left.push({ orderId: order.id, lines: coming.length, due: coming.map((line) => line.due).filter((value): value is string => Boolean(value)).sort()[0] ?? null });
+      }
       const deliverTo = new Map((await client.query<{ id: string; deliverTo: string }>(`SELECT id, deliver_to AS "deliverTo" FROM purchase_orders WHERE workspace_id = $1 AND id = ANY($2::uuid[])`,
         [workspaceId, open.map((order) => order.id)])).rows.map((row) => [row.id, row.deliverTo]));
-      const expected = open.map((order) => ({ ...order, deliverTo: deliverTo.get(order.id) ?? "site", linesLeft: left.find((row) => row.orderId === order.id)?.lines ?? 0 }))
-        .filter((order) => order.linesLeft > 0)
-        .sort((a, b) => (a.promisedDate ?? a.expectedDate ?? "9999").localeCompare(b.promisedDate ?? b.expectedDate ?? "9999"));
+      const expected = open.map((order) => {
+        const row = left.find((item) => item.orderId === order.id);
+        return { ...order, deliverTo: deliverTo.get(order.id) ?? "site", linesLeft: row?.lines ?? 0, due: row?.due ?? null };
+      }).filter((order) => order.linesLeft > 0).sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"));
       return {
         expected,
         inspection: await readReceipts(client, workspaceId, { pending: true }),

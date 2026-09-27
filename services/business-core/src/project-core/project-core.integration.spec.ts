@@ -14,6 +14,7 @@ import { OrdersService } from "../purchasing/orders.service";
 import { PriceRequestsService } from "../purchasing/price-requests.service";
 import { ReceivingService } from "../purchasing/receiving.service";
 import { SupplierReturnsService } from "../purchasing/returns.service";
+import { processPurchasingDeadlines } from "../purchasing/purchasing-reminders";
 import { InventoryService } from "../inventory/inventory.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
 
@@ -1453,6 +1454,80 @@ integration("projects core (plan §6.10)", () => {
       request = await requests.command(actor, w.workspaceId, request.request.id, { action: "record_reply", version: request.request.version, vendorId: pending, prices: [{ lineId: request.lines[0].id, unitPrice: "90" }] });
       await expect(requests.command(actor, w.workspaceId, request.request.id, { action: "award", version: request.request.version, awards: [{ lineId: request.lines[0].id, vendorId: pending }] }))
         .rejects.toThrow(/isn't approved as a supplier yet/);
+    });
+  });
+
+  it("follows an order through: per-line confirmation, late orders chased and reminded weekly, the rest of a line cancelled and reordered elsewhere, and pack sizes", async () => {
+    await world(async (w) => {
+      const { core, projectId, company, vendor, buyer, manager } = await buying(w);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta slab", quantity: "10", unit: "m²", clientChoice: false, version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Brass handles", quantity: "10", unit: "nos", clientChoice: false, version: detail.project.version });
+      const needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      const slabNeed = needs.find((need) => need.title === "Calacatta slab")!, handleNeed = needs.find((need) => need.title === "Brass handles")!;
+      // Nile sells handles in packs of 4, at least 8.
+      const catalog = randomUUID(), handleItem = randomUUID();
+      await w.client.query("INSERT INTO catalogs(id,workspace_id,code,name) VALUES($1,$2,'core','Core')", [catalog, w.workspaceId]);
+      await w.client.query("INSERT INTO catalog_units(workspace_id,code,label,kind,to_base) VALUES($1,'nos','nos','count',1) ON CONFLICT DO NOTHING", [w.workspaceId]);
+      await w.client.query("INSERT INTO catalog_items(id,workspace_id,catalog_id,code,name,item_type,unit_code) VALUES($1,$2,$3,'BH','Brass handles','material','nos')", [handleItem, w.workspaceId, catalog]);
+      await w.client.query("INSERT INTO catalog_supplier_links(id,workspace_id,item_id,vendor_id,cost,currency,preferred,pack_size,minimum_order) VALUES($1,$2,$3,$4,12,'AED',true,4,8)", [randomUUID(), w.workspaceId, handleItem, vendor]);
+      await w.client.query("UPDATE project_material_items SET catalog_item_id = $2 WHERE id = $1", [handleNeed.sourceId, handleItem]);
+
+      const orderId = randomUUID();
+      let state = await buyer.orders.create(actor, w.workspaceId, { id: orderId, vendorId: vendor, expectedDate: "2026-09-15", lines: [
+        { source: "material", materialItemId: slabNeed.sourceId, quantity: "10", unitPrice: "350" }, { source: "material", materialItemId: handleNeed.sourceId, quantity: "10" }] });
+      const [slab, handles] = state.lines;
+      expect(state.packs).toEqual([{ lineId: handles.id, packSize: "4", minimum: "8", suggested: "12" }]);
+      state = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "submit", version: state.order.version });
+      state = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "send", version: state.order.version });
+
+      // The supplier confirms 8 m² of slab for the 20th and the handles for the end of October.
+      state = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "confirm", supplierReference: "SO-77", version: state.order.version, lines: [
+        { lineId: slab.id, promisedDate: "2026-09-20", confirmedQuantity: "8" }, { lineId: handles.id, promisedDate: "2026-10-30" }] });
+      expect(state.order).toMatchObject({ status: "confirmed", promisedDate: "2026-09-20", supplierReference: "SO-77" });
+      expect(state.lines.map((line) => [line.promisedDate, line.confirmedQuantity, line.due])).toEqual([["2026-09-20", "8.0000", "2026-09-20"], ["2026-10-30", null, "2026-10-30"]]);
+      await expect(buyer.orders.command(actor, w.workspaceId, orderId, { action: "confirm", version: state.order.version, lines: [{ lineId: slab.id, confirmedQuantity: "11" }] }))
+        .rejects.toThrow(/can't confirm more/);
+      expect((await buyer.receiving.deliveries(actor, w.workspaceId)).expected.map((order) => [order.number, order.due])).toEqual([[state.order.number, "2026-09-20"]]);
+
+      // The slab is late: the buyer hears once a week, in the app and by email.
+      expect((await processPurchasingDeadlines(w.client, w.workspaceId)).sent).toBe(1);
+      expect((await processPurchasingDeadlines(w.client, w.workspaceId)).sent).toBe(0);
+      const late = (await w.client.query<{ channel: string }>(`SELECT channel FROM notifications WHERE workspace_id = $1 AND event_type = 'purchasing.late' AND recipient_id = $2 ORDER BY channel`,
+        [w.workspaceId, w.designer])).rows.map((row) => row.channel);
+      expect(late).toEqual(["email", "in_app"]);
+      // Chased: the late slab moves to its new date; the handles keep theirs; nothing is late any more.
+      await expect(buyer.orders.command(actor, w.workspaceId, orderId, { action: "chase", version: state.order.version })).rejects.toThrow(/what the supplier said/);
+      state = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "chase", note: "Container held at port", promisedDate: "2026-10-05", version: state.order.version });
+      expect(state.lines.map((line) => line.due)).toEqual(["2026-10-05", "2026-10-30"]);
+      expect(state.events.at(-1)).toMatchObject({ kind: "chased", detail: { note: "Container held at port", promisedDate: "2026-10-05" } });
+      expect((await processPurchasingDeadlines(w.client, w.workspaceId)).sent).toBe(0);
+
+      // The two m² the supplier can't make are cancelled and ordered from another supplier, linked to this line.
+      const other = randomUUID();
+      const saved = await buyer.suppliers.save(actor, w.workspaceId, { id: other, version: 0, name: "Siom Marble", entityIds: [company] });
+      await manager.suppliers.approve(actor, w.workspaceId, other, { version: saved.suppliers.find((item) => item.id === other)!.version, approval: "approved" });
+      await expect(buyer.orders.command(actor, w.workspaceId, orderId, { action: "cancel_line", lineId: slab.id, quantity: "11", reason: "x", version: state.order.version })).rejects.toThrow(/At most 10 m²/);
+      await expect(buyer.orders.command(actor, w.workspaceId, orderId, { action: "cancel_line", lineId: slab.id, quantity: "2", version: state.order.version })).rejects.toThrow(/Say why/);
+      const cancelled = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "cancel_line", lineId: slab.id, quantity: "2", reason: "Only 8 m² in this block",
+        reorderVendorId: other, version: state.order.version });
+      expect(cancelled.lines[0]).toMatchObject({ cancelled: "2.0000", cancelReason: "Only 8 m² in this block" });
+      const replacement = await buyer.orders.get(actor, w.workspaceId, cancelled.reordered!);
+      expect(replacement.order).toMatchObject({ status: "draft", supplierName: "Siom Marble" });
+      expect(replacement.lines.map((line) => [line.description, line.quantity, line.replacesLineId, line.replacesOrderNumber])).toEqual([["Calacatta slab", "2.0000", slab.id, state.order.number]]);
+      const slabNow = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((need) => need.title === "Calacatta slab")!;
+      expect([slabNow.placed, slabNow.drafted, slabNow.remaining]).toEqual(["8.0000", "2.0000", "0.0000"]);
+
+      // What's left arrives: 8 m² and the handles. The order is complete.
+      const receipt = await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId, place: "warehouse", receivedOn: "2026-09-27",
+        lines: [{ orderLineId: slab.id, received: "8" }, { orderLineId: handles.id, received: "10" }] });
+      expect(receipt.receipt.accepted).toBe("18.0000");
+      const done = await buyer.orders.get(actor, w.workspaceId, orderId);
+      expect(done.order.status).toBe("received");
+      // Nothing left to cancel; closing isn't short (8 accepted + 2 cancelled make the slab line).
+      await expect(buyer.orders.command(actor, w.workspaceId, orderId, { action: "cancel_line", lineId: handles.id, reason: "x", version: done.order.version })).rejects.toThrow(/can only be closed now/);
+      const closed = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "close", version: done.order.version });
+      expect(closed.order).toMatchObject({ status: "closed", closeReason: null });
     });
   });
 

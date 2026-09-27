@@ -323,6 +323,13 @@
       "when": 1793275200000,
       "tag": "0045_purchasing_accuracy",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793361600000,
+      "tag": "0046_purchasing_followup",
+      "breakpoints": true
     }
   ]
 }

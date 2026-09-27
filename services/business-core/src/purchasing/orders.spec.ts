@@ -20,3 +20,15 @@ describe("purchase order amounts", () => {
     expect([currencyDecimals("AED"), currencyDecimals("JPY"), currencyDecimals("KWD"), currencyDecimals("INR")]).toEqual([2, 0, 3, 2]);
   });
 });
+
+describe("pack rounding", () => {
+  it("orders at least the minimum, in whole packs", async () => {
+    const { packQuantity } = await import("./orders");
+    expect(packQuantity("10", "4", null)).toBe("12");
+    expect(packQuantity("12", "4", null)).toBe("12");
+    expect(packQuantity("3", "4", "10")).toBe("12");
+    expect(packQuantity("2.5", "0.5", null)).toBe("2.5");
+    expect(packQuantity("7", null, "5")).toBe("7");
+    expect(packQuantity("7", null, null)).toBe("7");
+  });
+});

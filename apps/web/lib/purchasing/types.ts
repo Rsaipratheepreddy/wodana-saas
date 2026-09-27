@@ -56,6 +56,8 @@ export type OrderLine = {
   id: string; position: number; projectId: string | null; projectReference: string | null; source: "material" | "line" | "free"; materialItemId: string | null; boqLineId: string | null;
   description: string; specification: string; quantity: string; unit: string; unitPrice: string; discountPercent: string; taxRate: string; net: string; tax: string; total: string;
   accepted: string; rejected: string; pending: string; credited: string; returned: string;
+  promisedDate: string | null; confirmedQuantity: string | null; due: string | null;
+  cancelled: string; cancelReason: string | null; replacesLineId: string | null; replacesOrderNumber: string | null;
 };
 export type OrderDetail = OrderRow & {
   paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: DeliverTo; deliveryAddress: string; supplierReference: string; notes: string;
@@ -70,6 +72,10 @@ export type OrderState = {
   canBuy: boolean; canApprove: boolean; canApproveThis: boolean;
   /** Lines taking a project past what it needs, by how much (while the order is a draft or waiting for approval). */
   overOrdered: Array<{ lineId: string; description: string; unit: string; over: string }>;
+  /** The supplier's pack size and minimum where a line doesn't fit them, and the quantity that does. */
+  packs: Array<{ lineId: string; packSize: string | null; minimum: string | null; suggested: string }>;
+  /** After cancelling the rest of a line and ordering it elsewhere: the new draft order. */
+  reordered?: string | null;
   /** After sending: how the supplier's email went. */
   delivery?: "sent" | "not_configured" | "failed" | null;
 };
@@ -131,7 +137,7 @@ export type SupplierReturnState = {
 };
 export type SupplierReturnsState = { returns: SupplierReturnRow[]; canBuy: boolean; canReceive: boolean };
 
-export type ExpectedOrder = OrderRow & { deliverTo: DeliverTo; linesLeft: number };
+export type ExpectedOrder = OrderRow & { deliverTo: DeliverTo; linesLeft: number; due: string | null };
 export type DeliveriesState = {
   expected: ExpectedOrder[]; inspection: Receipt[]; received: Receipt[]; locations: StockLocation[]; canReceive: boolean; canInspect: boolean; userId: string;
 };

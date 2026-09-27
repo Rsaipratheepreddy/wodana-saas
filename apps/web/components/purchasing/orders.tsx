@@ -68,6 +68,7 @@ export function Orders({ api, openId, onOpen, onReceipt, refreshKey }: {
       selectable={false}
       wrapText
     />
-    {openId ? <OrderSheet api={api} orderId={openId} settings={state?.settings ?? null} onChanged={() => void load()} onClose={() => onOpen(null)} onReceipt={onReceipt} /> : null}
+    {openId ? <OrderSheet api={api} orderId={openId} settings={state?.settings ?? null} onChanged={() => void load()} onClose={() => onOpen(null)} onReceipt={onReceipt}
+      onOpenOrder={(id) => { void load(); onOpen(id); }} /> : null}
   </>;
 }

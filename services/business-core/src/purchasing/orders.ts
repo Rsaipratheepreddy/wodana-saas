@@ -67,7 +67,7 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
      ), ordered AS (
        -- A closed (short-closed) order counts only what was accepted, and credited goods won't come: the rest goes back to be ordered.
        SELECT line.material_item_id, line.boq_line_id,
-              sum(CASE WHEN purchase.status = 'closed' THEN coalesce(accepted.accepted, 0) ELSE line.quantity - coalesce(accepted.credited, 0) END)
+              sum(CASE WHEN purchase.status = 'closed' THEN coalesce(accepted.accepted, 0) ELSE line.quantity - coalesce(accepted.credited, 0) - line.cancelled_quantity END)
                 FILTER (WHERE purchase.status IN ('approved', 'sent', 'confirmed', 'partly_received', 'received', 'closed')) AS placed,
               sum(line.quantity) FILTER (WHERE purchase.status IN ('draft', 'pending_approval')) AS drafted,
               sum(coalesce(accepted.accepted, 0)) AS received
@@ -133,6 +133,12 @@ export type OrderLine = {
    * accepted goods once they've gone back), and what went back to the supplier.
    */
   credited: string; returned: string;
+  /** What the supplier confirmed for the line, and by when. */
+  promisedDate: string | null; confirmedQuantity: string | null;
+  /** When the line is due: its own promise, else the order's promise, else when it's needed. */
+  due: string | null;
+  /** The rest of the line that won't come (with why), and the line on another order this one replaces. */
+  cancelled: string; cancelReason: string | null; replacesLineId: string | null; replacesOrderNumber: string | null;
 };
 
 export type OrderDetail = OrderRow & {
@@ -163,8 +169,15 @@ export async function readOrderLines(db: Db, workspaceId: string, orderId: strin
             line.tax_rate::text AS "taxRate", line.net::text AS net, line.tax::text AS tax, line.total::text AS total,
             (coalesce(received.accepted, 0) - coalesce(back."returnedAccepted", 0))::numeric(18, 4)::text AS accepted, coalesce(received.rejected, 0)::numeric(18, 4)::text AS rejected,
             coalesce(received.pending, 0)::numeric(18, 4)::text AS pending, coalesce(back.credited, 0)::numeric(18, 4)::text AS credited,
-            coalesce(back.returned, 0)::numeric(18, 4)::text AS returned
-       FROM purchase_order_lines line LEFT JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
+            coalesce(back.returned, 0)::numeric(18, 4)::text AS returned,
+            line.promised_date::text AS "promisedDate", line.confirmed_quantity::text AS "confirmedQuantity",
+            coalesce(line.promised_date, purchase.promised_date, purchase.expected_date)::text AS due,
+            line.cancelled_quantity::text AS cancelled, line.cancel_reason AS "cancelReason", line.replaces_line_id AS "replacesLineId", replaced.number AS "replacesOrderNumber"
+       FROM purchase_order_lines line
+       JOIN purchase_orders purchase ON purchase.workspace_id = line.workspace_id AND purchase.id = line.order_id
+       LEFT JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
+       LEFT JOIN purchase_order_lines previous ON previous.workspace_id = line.workspace_id AND previous.id = line.replaces_line_id
+       LEFT JOIN purchase_orders replaced ON replaced.workspace_id = previous.workspace_id AND replaced.id = previous.order_id
        LEFT JOIN LATERAL (SELECT sum(got.accepted) AS accepted, sum(got.rejected) AS rejected, sum(got.pending) AS pending
                             FROM goods_receipt_lines got JOIN goods_receipts receipt ON receipt.workspace_id = got.workspace_id AND receipt.id = got.receipt_id
                            WHERE got.workspace_id = line.workspace_id AND got.order_line_id = line.id AND receipt.reversed_at IS NULL) received ON true
@@ -234,4 +247,18 @@ export async function firstTime(db: Db, workspaceId: string, commandId: string, 
   return Boolean((await db.query(
     `INSERT INTO purchasing_commands (workspace_id, id, entity_id, action, actor_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (workspace_id, id) DO NOTHING`,
     [workspaceId, commandId, entityId, action.slice(0, 24), actorId])).rowCount);
+}
+
+/**
+ * What to order when a supplier sells in packs and has a minimum: at least the minimum, rounded up to
+ * whole packs. The same quantity when it already fits, or when there's no pack rule.
+ */
+export function packQuantity(quantity: string, packSize: string | null, minimum: string | null) {
+  let result = Dec.of(quantity);
+  if (minimum && Dec.of(minimum).cmp(result) > 0) result = Dec.of(minimum);
+  if (packSize && Dec.of(packSize).cmp(0) > 0) {
+    const packs = result.div(packSize).ceil(0);
+    result = packs.mul(packSize);
+  }
+  return result.toString();
 }

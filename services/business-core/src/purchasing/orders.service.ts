@@ -11,10 +11,10 @@ import { event as boqEvent } from "../project-core/project-scope";
 import { clientChoicesSignedOff } from "../project-core/project-materials";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import {
-  DELIVER_TO, currencyDecimals, defaultTaxRate, ensurePurchasingSettings, firstTime, nextOrderNumber, orderEvent, orderTotals, priceLine, readNeeds, readOrder, readOrderEvents, readOrderLines,
+  DELIVER_TO, currencyDecimals, defaultTaxRate, ensurePurchasingSettings, firstTime, nextOrderNumber, packQuantity, orderEvent, orderTotals, priceLine, readNeeds, readOrder, readOrderEvents, readOrderLines,
   readOrders, type OrderDetail, type OrderLine,
 } from "./orders";
-import { readReceipts } from "./receiving";
+import { outstanding, readReceipts, settleOrder } from "./receiving";
 import { readReturns } from "./returns.service";
 import { PAYMENT_TERMS, percent, readSupplier, type Supplier } from "./suppliers";
 
@@ -27,6 +27,8 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 type LineInput = {
   id: string; source: "material" | "line" | "free"; materialItemId: string | null; boqLineId: string | null; projectId: string | null;
   description: string; specification: string; quantity: string; unit: string; unitPrice: string; discountPercent: string; taxRate: string;
+  /** A line on another order this one replaces (that supplier didn't deliver it). */
+  replacesLineId: string | null;
 };
 
 /**
@@ -112,6 +114,7 @@ export class OrdersService {
       const set = (sql: string, values: unknown[]) => client.query(`UPDATE purchase_orders SET ${sql}, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, orderId, ...values]);
       let audit: Record<string, unknown> = {};
       let email: { to: string; message: string } | null = null;
+      let reordered: string | null = null;
 
       if (action === "save") {
         await need("purchasing.manage", "You can't change purchase orders.");
@@ -175,13 +178,80 @@ export class OrdersService {
         if (to) email = { to, message: text(body.message, 2000, "Message") };
         audit = { to };
       } else if (action === "confirm") {
+        // The supplier's confirmation: by when, and for each line how much and by when if it differs.
         await need("purchasing.manage", "You can't record supplier confirmations.");
-        status("sent", "confirmed");
-        const promised = date(body.promisedDate, "Promised date");
+        status("sent", "confirmed", "partly_received");
         const reference = text(body.supplierReference, 120, "Supplier reference");
-        await set(`status = 'confirmed', confirmed_at = coalesce(confirmed_at, now()), promised_date = $3, supplier_reference = $4`, [promised, reference]);
-        await orderEvent(client, workspaceId, orderId, "confirmed", { promisedDate: promised, supplierReference: reference }, user.userId);
-        audit = { promised, reference };
+        const lines = await readOrderLines(client, workspaceId, orderId);
+        const given = Array.isArray(body.lines) ? body.lines as Array<Record<string, unknown>> : [];
+        const confirmed: Array<{ description: string; promisedDate: string | null; confirmedQuantity: string | null; short: boolean }> = [];
+        for (const raw of given) {
+          const line = lines.find((item) => item.id === raw?.lineId);
+          if (!line) throw new BadRequestException("A line isn't on this order.");
+          const promisedDate = date(raw.promisedDate, `${line.description}: promised date`);
+          const confirmedQuantity = raw.confirmedQuantity === undefined || raw.confirmedQuantity === null || raw.confirmedQuantity === "" ? null : amount(raw.confirmedQuantity, `${line.description}: confirmed`);
+          const ordered = Dec.of(line.quantity).sub(line.cancelled);
+          if (confirmedQuantity !== null && Dec.of(confirmedQuantity).cmp(ordered) > 0) throw new BadRequestException(`${line.description}: the supplier can't confirm more than was ordered.`);
+          await client.query(`UPDATE purchase_order_lines SET promised_date = $3, confirmed_quantity = $4 WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id, promisedDate, confirmedQuantity]);
+          confirmed.push({ description: line.description, promisedDate, confirmedQuantity, short: confirmedQuantity !== null && Dec.of(confirmedQuantity).cmp(ordered) < 0 });
+        }
+        const lineDates = confirmed.map((line) => line.promisedDate).filter((value): value is string => Boolean(value)).sort();
+        const promised = body.promisedDate === undefined ? lineDates[0] ?? order.promisedDate : date(body.promisedDate, "Promised date");
+        await set(`status = CASE WHEN status = 'sent' THEN 'confirmed' ELSE status END, confirmed_at = coalesce(confirmed_at, now()), promised_date = $3, supplier_reference = $4`, [promised, reference]);
+        await orderEvent(client, workspaceId, orderId, "confirmed", { promisedDate: promised, supplierReference: reference, lines: confirmed }, user.userId);
+        audit = { promised, reference, lines: confirmed };
+      } else if (action === "chase") {
+        // A late order chased: what the supplier said, and their new date for everything still to come.
+        await need("purchasing.manage", "You can't chase orders.");
+        status("sent", "confirmed", "partly_received");
+        const note = text(body.note, 500, "Note");
+        if (!note) throw new BadRequestException("Say what the supplier said.");
+        const promised = date(body.promisedDate, "New date");
+        if (promised) {
+          // The new date is for what's late now; lines promised later keep their own date.
+          const today = (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`,
+            [workspaceId])).rows[0].today;
+          const lines = await readOrderLines(client, workspaceId, orderId);
+          for (const line of lines)
+            if (outstanding(line).cmp(0) > 0 && (!line.due || line.due < today))
+              await client.query(`UPDATE purchase_order_lines SET promised_date = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id, promised]);
+          await set(`promised_date = CASE WHEN promised_date IS NULL OR promised_date < $3::date THEN $3::date ELSE promised_date END`, [promised]);
+        } else await set(`notes = notes`, []);
+        await orderEvent(client, workspaceId, orderId, "chased", { note, promisedDate: promised }, user.userId);
+        audit = { note, promised };
+      } else if (action === "cancel_line") {
+        // The rest of one line won't come: cancelled with the reason, and optionally ordered from another supplier.
+        await need("purchasing.manage", "You can't change purchase orders.");
+        status("sent", "confirmed", "partly_received");
+        const lines = await readOrderLines(client, workspaceId, orderId);
+        const line = lines.find((item) => item.id === body.lineId);
+        if (!line) throw new BadRequestException("A line isn't on this order.");
+        const left = outstanding(line);
+        const quantity = body.quantity === undefined || body.quantity === null || body.quantity === "" ? left.toString() : amount(body.quantity, "Quantity");
+        if (Dec.of(quantity).cmp(0) <= 0 || Dec.of(quantity).cmp(left) > 0)
+          throw new ConflictException(left.isZero() ? `Nothing more of ${line.description} is still to come.` : `At most ${left.toString()} ${line.unit} of ${line.description} is still to come.`);
+        const reason = text(body.reason, 500, "Reason");
+        if (!reason) throw new BadRequestException(`Say why the rest of ${line.description} won't come.`);
+        const arrived = (await client.query(`SELECT 1 FROM goods_receipts WHERE workspace_id = $1 AND order_id = $2 AND reversed_at IS NULL LIMIT 1`, [workspaceId, orderId])).rowCount;
+        const everything = lines.every((item) => (item.id === line.id ? Dec.of(item.cancelled).add(quantity) : Dec.of(item.cancelled)).cmp(item.quantity) === 0);
+        if (!arrived && everything) throw new ConflictException("Nothing on this order would come; cancel the order instead.");
+        await client.query(`UPDATE purchase_order_lines SET cancelled_quantity = cancelled_quantity + $3, cancel_reason = $4 WHERE workspace_id = $1 AND id = $2`,
+          [workspaceId, line.id, quantity, reason]);
+        await set(`notes = notes`, []);
+        await orderEvent(client, workspaceId, orderId, "line_cancelled", { description: line.description, quantity, unit: line.unit, reason }, user.userId);
+        await settleOrder(client, workspaceId, orderId);
+        if (body.reorderVendorId) {
+          const supplier = await this.supplier(client, workspaceId, body.reorderVendorId);
+          if (supplier.id === order.vendorId) throw new BadRequestException("Choose another supplier to order it from.");
+          const legalEntityId = await this.company(client, workspaceId, supplier, order.legalEntityId);
+          const currency = supplier.currency ?? (await client.query<{ currency: string }>(`SELECT base_currency AS currency FROM legal_entities WHERE workspace_id = $1 AND id = $2`, [workspaceId, legalEntityId])).rows[0].currency;
+          reordered = randomUUID();
+          await this.createDraft(client, workspaceId, user.userId, { id: reordered, supplier, legalEntityId, currency, from: { replaces: order.number },
+            header: { deliverTo: order.deliverTo, deliveryAddress: order.deliveryAddress, expectedDate: order.expectedDate, notes: "" },
+            lines: [{ source: line.source, materialItemId: line.materialItemId, boqLineId: line.boqLineId, projectId: line.projectId, description: line.description,
+              specification: line.specification, quantity, unit: line.unit, replacesLineId: line.id }] });
+        }
+        audit = { line: line.id, quantity, reason, reordered };
       } else if (action === "change") {
         await need("purchasing.manage", "You can't change purchase orders.");
         status("approved", "sent", "confirmed");
@@ -201,7 +271,7 @@ export class OrdersService {
         if (lines.some((line) => Dec.of(line.pending).cmp(0) > 0)) throw new ConflictException("Some goods are still waiting for inspection.");
         if ((await client.query(`SELECT 1 FROM supplier_returns WHERE workspace_id = $1 AND order_id = $2 AND status = 'open'`, [workspaceId, orderId])).rowCount)
           throw new ConflictException("Goods are still waiting to go back to the supplier.");
-        const short = lines.some((line) => Dec.of(line.accepted).add(line.credited).cmp(line.quantity) < 0);
+        const short = lines.some((line) => Dec.of(line.accepted).add(line.credited).add(line.cancelled).cmp(line.quantity) < 0);
         if (short && !reason) throw new BadRequestException("Say why the rest won't come.");
         await set(`status = 'closed', closed_at = now(), close_reason = $3`, [reason || null]);
         await orderEvent(client, workspaceId, orderId, "closed", { reason, short }, user.userId);
@@ -219,7 +289,7 @@ export class OrdersService {
       }
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `purchase_order.${action}`, entityType: "purchase_order", entityId: orderId, after: audit });
       const detail = await this.detail(client, workspaceId, orderId, user.userId);
-      return { ...detail, email };
+      return { ...detail, email, reordered };
     }).then(async (result) => {
       // The supplier's email goes out once the order is saved as sent.
       if (!result.email) return { ...result, delivery: null };
@@ -281,6 +351,7 @@ export class OrdersService {
       ...rights,
       canApproveThis: rights.canApprove && order.status === "pending_approval" && order.createdBy !== userId && order.submittedBy !== userId,
       overOrdered: ["draft", "pending_approval"].includes(order.status) ? await this.overOrdered(client, workspaceId, orderId) : [],
+      packs: await this.packs(client, workspaceId, order),
     };
   }
 
@@ -377,7 +448,8 @@ export class OrdersService {
       if (Dec.of(taxRate).cmp(100) > 0) throw new BadRequestException(`Line ${index + 1}: tax is at most 100%.`);
       out.push({ id, source, materialItemId: source === "material" ? input.materialItemId as string : null, boqLineId: source === "line" ? input.boqLineId as string : null, projectId,
         description, specification: text(input.specification, 1000, "Specification") || (input.specification === undefined ? origin?.detail ?? "" : ""),
-        quantity, unit: this.unit(text(input.unit, 40, "Unit"), origin, index), unitPrice: unitPrice ?? "0", discountPercent, taxRate });
+        quantity, unit: this.unit(text(input.unit, 40, "Unit"), origin, index), unitPrice: unitPrice ?? "0", discountPercent, taxRate,
+        replacesLineId: typeof input.replacesLineId === "string" && UUID.test(input.replacesLineId) ? input.replacesLineId : null });
     }
     return out;
   }
@@ -391,6 +463,21 @@ export class OrdersService {
     if (!origin || !origin.unit.trim()) return given;
     if (given && given.toLocaleLowerCase() !== origin.unit.trim().toLocaleLowerCase()) throw new BadRequestException(`Line ${index + 1}: order ${origin.title} in ${origin.unit}.`);
     return origin.unit;
+  }
+
+  /** The supplier's pack size and minimum for lines from their catalog, with the quantity that fits when the line doesn't. */
+  private async packs(client: Db, workspaceId: string, order: OrderDetail) {
+    const rows = (await client.query<{ lineId: string; quantity: string; packSize: string | null; minimum: string | null }>(
+      `SELECT DISTINCT ON (line.id) line.id AS "lineId", line.quantity::text AS quantity, link.pack_size::text AS "packSize", link.minimum_order::text AS minimum
+         FROM purchase_order_lines line
+         LEFT JOIN project_material_items material ON material.workspace_id = line.workspace_id AND material.id = line.material_item_id
+         LEFT JOIN project_boq_lines scope ON scope.workspace_id = line.workspace_id AND scope.id = line.boq_line_id
+         JOIN catalog_supplier_links link ON link.workspace_id = line.workspace_id AND link.item_id = coalesce(material.catalog_item_id, scope.catalog_item_id) AND link.vendor_id = $3
+        WHERE line.workspace_id = $1 AND line.order_id = $2 AND (coalesce(link.pack_size, 0) > 0 OR coalesce(link.minimum_order, 0) > 0)
+        ORDER BY line.id, link.preferred DESC, link.updated_at DESC`, [workspaceId, order.id, order.vendorId])).rows;
+    const plain = (value: string | null) => (value === null || Dec.of(value).isZero() ? null : Dec.of(value).toString());
+    return rows.map((row) => ({ lineId: row.lineId, packSize: plain(row.packSize), minimum: plain(row.minimum), suggested: packQuantity(row.quantity, plain(row.packSize), plain(row.minimum)) }))
+      .filter((row) => Dec.of(row.suggested).cmp(rows.find((item) => item.lineId === row.lineId)!.quantity) !== 0);
   }
 
   /** Lines on this order that take a project past what it needs, by how much. */
@@ -428,19 +515,19 @@ export class OrdersService {
         if (Dec.of(line.quantity).cmp(arrived) < 0) throw new ConflictException(`${before.description}: ${arrived.toString()} ${before.unit} has already arrived; order at least that.`);
       }
       const values = [line.id, workspaceId, orderId, position, line.projectId, line.source, line.materialItemId, line.boqLineId, line.description, line.specification, line.quantity, line.unit,
-        line.unitPrice, line.discountPercent, line.taxRate, amounts.net, amounts.tax, amounts.total];
+        line.unitPrice, line.discountPercent, line.taxRate, amounts.net, amounts.tax, amounts.total, line.replacesLineId ?? before?.replacesLineId ?? null];
       // A new line never takes an id already used elsewhere.
       if (!before && (await client.query(`SELECT 1 FROM purchase_order_lines WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id])).rowCount) values[0] = randomUUID();
       if (before)
         await client.query(
           `UPDATE purchase_order_lines SET position = $4, project_id = $5, source = $6, material_item_id = $7, boq_line_id = $8, description = $9, specification = $10, quantity = $11,
-                  unit = $12, unit_price = $13, discount_percent = $14, tax_rate = $15, net = $16, tax = $17, total = $18
+                  unit = $12, unit_price = $13, discount_percent = $14, tax_rate = $15, net = $16, tax = $17, total = $18, replaces_line_id = $19
             WHERE id = $1 AND workspace_id = $2 AND order_id = $3`, values);
       else
         await client.query(
           `INSERT INTO purchase_order_lines (id, workspace_id, order_id, position, project_id, source, material_item_id, boq_line_id, description, specification, quantity, unit, unit_price,
-                                             discount_percent, tax_rate, net, tax, total)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`, values);
+                                             discount_percent, tax_rate, net, tax, total, replaces_line_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`, values);
     }
     const totals = orderTotals(priced.map((item) => item.amounts), decimals);
     await client.query(`UPDATE purchase_orders SET subtotal = $3, discount_total = $4, tax_total = $5, total = $6 WHERE workspace_id = $1 AND id = $2`,

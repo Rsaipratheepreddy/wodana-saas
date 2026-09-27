@@ -141,20 +141,21 @@ export async function readReceiptLines(db: Db, workspaceId: string, receiptId: s
       WHERE received.workspace_id = $1 AND received.receipt_id = $2 ORDER BY line.position, line.id`, [workspaceId, receiptId])).rows;
 }
 
-type Owed = { quantity: string; accepted: string; pending: string; credited?: string };
+type Owed = { quantity: string; accepted: string; pending: string; credited?: string; cancelled?: string };
 
 /**
- * Still to come on a line: ordered less what was credited, accepted or is waiting for inspection.
+ * Still to come on a line: ordered less what was cancelled, credited, accepted or is waiting for inspection.
  * Rejected goods, and goods returned to be replaced, are still owed.
  */
 export function outstanding(line: Owed) {
-  const left = Dec.of(line.quantity).sub(line.credited ?? "0").sub(line.accepted).sub(line.pending);
+  const left = Dec.of(line.quantity).sub(line.cancelled ?? "0").sub(line.credited ?? "0").sub(line.accepted).sub(line.pending);
   return left.cmp(0) > 0 ? left : Dec.of(0);
 }
 
 /** The most that can arrive now on a line: what's still to come plus the allowed over-delivery on the whole line. */
 export function receivable(line: Owed, tolerancePercent: string) {
-  const ceiling = Dec.of(line.quantity).mul(Dec.of(100).add(tolerancePercent)).div(100);
+  // The allowance applies to what's still ordered, after any part of the line was cancelled.
+  const ceiling = Dec.of(line.quantity).sub(line.cancelled ?? "0").mul(Dec.of(100).add(tolerancePercent)).div(100);
   const left = ceiling.sub(line.credited ?? "0").sub(line.accepted).sub(line.pending).floor(4);
   return left.cmp(0) > 0 ? left : Dec.of(0);
 }

@@ -140,6 +140,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "purchasing.missing", channel: "in_app", subject: "Goods missing on {{order}}", body: "{{actor}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "purchasing.supplier_return", channel: "in_app", subject: "Goods going back to {{supplier}}", body: "{{actor}} raised a return on {{order}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "purchasing.receipt_reversed", channel: "in_app", subject: "A delivery on {{order}} was reversed", body: "{{actor}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "purchasing.late", channel: "in_app", subject: "{{order}} is late", body: "{{supplier}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "purchasing.late", channel: "email", subject: "{{order}} from {{supplier}} is late", body: "{{note}}\n\nChase the supplier and record their new date on the order.", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "stock.transfer_sent", channel: "in_app", subject: "Stock on its way to {{to}}", body: "{{actor}} sent move {{transfer}} from {{from}}.", variables: ["transfer", "from", "to", "actor", "note"] },
   { code: "stock.transfer_short", channel: "in_app", subject: "Move {{transfer}} arrived short", body: "{{actor}}: {{note}}", variables: ["transfer", "from", "to", "actor", "note"] },
   { code: "stock.adjusted", channel: "in_app", subject: "Stock corrected at {{to}}", body: "{{actor}}: {{note}}", variables: ["transfer", "from", "to", "actor", "note"] },
@@ -195,7 +197,7 @@ export async function notifyUserInApp(db: Db, input: {
   );
   if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
   const row = template.rows[0];
-  await db.query(
+  const inserted = await db.query(
     `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
        subject, body, deep_link, idempotency_key, correlation_id, delivered_at)
      VALUES ($1, $2, 'user', $3, 'in_app', $4, 'delivered', $5, $6, $7, $8, gen_random_uuid(), now())
@@ -204,7 +206,8 @@ export async function notifyUserInApp(db: Db, input: {
       row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
       input.deepLink ?? null, input.idempotencyKey],
   );
-  return { queued: true as const };
+  // A key already used means this notice was already sent: nothing new is queued.
+  return inserted.rowCount ? { queued: true as const } : { queued: false as const, reason: "already_sent" };
 }
 
 /**
