@@ -56,6 +56,7 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
       theme = DEFAULT_SETTINGS.theme,
       density = DEFAULT_SETTINGS.density,
       locale: localeProp,
+      regionLocale: regionLocaleProp,
       direction: directionOverride,
       currency: currencyProp,
       timeZone: timeZoneProp,
@@ -69,7 +70,8 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     // their language with the region's conventions. React Aria gets that locale so keyboard, date fields
     // and overlay placement mirror too.
     const parent = useContext(DesignSystemContext);
-    const regionLocale = localeProp ?? parent.regionLocale;
+    // A provider handed a full settings object (e.g. a nested provider re-using its parent's) keeps its region.
+    const regionLocale = regionLocaleProp ?? localeProp ?? parent.regionLocale;
     const currency = currencyProp ?? parent.currency;
     const timeZone = timeZoneProp ?? parent.timeZone;
     const uiLanguage = useContext(UiLanguageContext);
