@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
@@ -13,6 +13,16 @@ export class FactoryController {
 
   @Get("state")
   state(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.factory.state(actor, workspaceId); }
+
+  @Get("schedule")
+  schedule(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query() query: Record<string, string>) {
+    return this.factory.schedule(actor, workspaceId, query ?? {});
+  }
+
+  @Post("batches")
+  saveBatch(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) {
+    return this.factory.saveBatch(actor, workspaceId, input ?? {});
+  }
 
   @Post("orders")
   plan(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.factory.plan(actor, workspaceId, input ?? {}); }

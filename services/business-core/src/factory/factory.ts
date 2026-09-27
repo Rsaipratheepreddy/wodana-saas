@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
+import { workdays, type WorkCalendar } from "../project-core/work-calendar";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -26,6 +27,8 @@ export type WorkOrderRow = {
   /** Its scope line now: removed by a variation, or how much more its work orders hold than the line needs. */
   lineStatus: "active" | "omitted"; lineQuantity: string; scopeOver: string;
   holdKind: "manual" | "drawing" | null;
+  /** The hours it takes, spread over its working days on its workcenter; the run it's part of. */
+  plannedHours: string | null; batchId: string | null; batchNumber: number | null; batchName: string | null;
 };
 
 const TOTALS = `
@@ -44,8 +47,10 @@ const ORDER_SELECT = `SELECT wo.id, wo.number, wo.project_id AS "projectId", pro
   greatest(reported.made - quality.passed - quality.failed, 0)::text AS "toCheck",
   greatest(wo.quantity - quality.passed - greatest(reported.made - quality.passed - quality.failed, 0) - reported.pending, 0)::text AS "left",
   line.status AS "lineStatus", line.quantity::text AS "lineQuantity",
-  greatest(coalesce(on_line.quantity, 0) - CASE WHEN line.status = 'active' THEN line.quantity ELSE 0 END, 0)::text AS "scopeOver", wo.hold_kind AS "holdKind"
+  greatest(coalesce(on_line.quantity, 0) - CASE WHEN line.status = 'active' THEN line.quantity ELSE 0 END, 0)::text AS "scopeOver", wo.hold_kind AS "holdKind",
+  wo.planned_hours::text AS "plannedHours", wo.batch_id AS "batchId", batch.number AS "batchNumber", batch.name AS "batchName"
   FROM work_orders wo
+  LEFT JOIN production_batches batch ON batch.workspace_id = wo.workspace_id AND batch.id = wo.batch_id
   JOIN project_boq_lines line ON line.workspace_id = wo.workspace_id AND line.id = wo.boq_line_id
   LEFT JOIN LATERAL (SELECT sum(CASE WHEN other.status = 'short_closed'
                                      THEN coalesce((SELECT sum(checked.passed) FROM work_order_checks checked WHERE checked.workspace_id = other.workspace_id AND checked.work_order_id = other.id), 0)
@@ -163,4 +168,56 @@ export async function materialsShort(db: Db, workspaceId: string, orderId: strin
     if (available.cmp(remaining) < 0) short.push({ itemName: material.itemName, unit: material.unit, short: remaining.sub(available.cmp(0) > 0 ? available : Dec.ZERO).toString() });
   }
   return short;
+}
+
+export type Batch = { id: string; number: number; name: string; workcenterId: string | null; workcenterName: string | null; plannedOn: string | null; status: "open" | "started" | "closed";
+  orders: number; projects: string[]; version: number };
+
+export async function readBatches(db: Db, workspaceId: string): Promise<Batch[]> {
+  return (await db.query<Batch>(
+    `SELECT batch.id, batch.number, batch.name, batch.workcenter_id AS "workcenterId", center.name AS "workcenterName", batch.planned_on::text AS "plannedOn", batch.status, batch.version,
+            (SELECT count(*)::int FROM work_orders wo WHERE wo.workspace_id = batch.workspace_id AND wo.batch_id = batch.id) AS orders,
+            coalesce((SELECT array_agg(DISTINCT project.reference ORDER BY project.reference) FROM work_orders wo JOIN delivery_projects project ON project.workspace_id = wo.workspace_id AND project.id = wo.project_id
+                       WHERE wo.workspace_id = batch.workspace_id AND wo.batch_id = batch.id), '{}') AS projects
+       FROM production_batches batch LEFT JOIN workcenters center ON center.workspace_id = batch.workspace_id AND center.id = batch.workcenter_id
+      WHERE batch.workspace_id = $1 ORDER BY batch.status = 'closed', batch.number DESC LIMIT 200`, [workspaceId])).rows;
+}
+
+const OPEN_STATUSES = ["planned", "released", "in_production", "on_hold"];
+
+/**
+ * The hours booked on each workcenter each working day: each open work order with a workcenter, dates and
+ * hours spreads its hours evenly over its working days. A day is over capacity when its hours pass the
+ * workcenter's hours a day. Hours are rounded to a tenth for display; the comparison uses them unrounded.
+ */
+export function capacity(orders: WorkOrderRow[], workcenters: Workcenter[], calendar: WorkCalendar, from: string, to: string) {
+  const math = workdays(calendar);
+  const days: string[] = [];
+  for (let day = from; day <= to; day = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) days.push(day);
+  const load = new Map<string, Map<string, { hours: number; orders: string[] }>>();
+  for (const order of [...orders].sort((a, b) => a.number - b.number)) {
+    if (!OPEN_STATUSES.includes(order.status) || !order.workcenterId || !order.plannedStart || !order.plannedEnd || !order.plannedHours) continue;
+    const worked = [];
+    for (let day = order.plannedStart; day <= order.plannedEnd; day = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)) if (math.isWorking(day)) worked.push(day);
+    if (!worked.length) continue;
+    const share = Number(order.plannedHours) / worked.length;
+    const center = load.get(order.workcenterId) ?? new Map();
+    for (const day of worked) {
+      if (day < from || day > to) continue;
+      const cell = center.get(day) ?? { hours: 0, orders: [] };
+      cell.hours += share;
+      cell.orders.push(order.id);
+      center.set(day, cell);
+    }
+    load.set(order.workcenterId, center);
+  }
+  const conflicts = workcenters.flatMap((center) => !center.hoursPerDay ? [] : [...(load.get(center.id) ?? new Map()).entries()]
+    .filter(([, cell]) => cell.hours > Number(center.hoursPerDay) + 1e-9)
+    .map(([date, cell]) => ({ workcenterId: center.id, workcenterName: center.name, date, hours: Math.round(cell.hours * 10) / 10, capacity: Number(center.hoursPerDay), orders: cell.orders })))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.workcenterName.localeCompare(b.workcenterName));
+  return {
+    days: days.filter((day) => math.isWorking(day)),
+    load: Object.fromEntries([...load].map(([id, center]) => [id, Object.fromEntries([...center].map(([date, cell]) => [date, Math.round(cell.hours * 10) / 10]))])),
+    conflicts,
+  };
 }

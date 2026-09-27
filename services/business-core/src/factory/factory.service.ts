@@ -10,7 +10,8 @@ import { productionPaid } from "../project-core/project-core.store";
 import { needsNotIn, readNeeds } from "../purchasing/orders";
 import { readLocations, resolvePlace } from "../purchasing/receiving";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { ensureFactorySettings, materialsShort, plain, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders, type WorkOrderRow } from "./factory";
+import { readCalendar } from "../project-core/work-calendar";
+import { capacity, ensureFactorySettings, materialsShort, plain, readBatches, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders, type WorkOrderRow } from "./factory";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -35,8 +36,82 @@ export class FactoryService {
       toMake: await readToMake(client, workspaceId),
       orders: await readWorkOrders(client, workspaceId),
       workcenters: await readWorkcenters(client, workspaceId),
+      batches: await readBatches(client, workspaceId),
       ...(await this.rights(client, workspaceId, user.userId)),
     }));
+  }
+
+  /** The next weeks on each workcenter: the hours booked each working day, and where they pass what it can do. */
+  schedule(actor: RequestActor, workspaceId: string, query: { from?: string; days?: string }) {
+    return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client) => {
+      const today = (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
+      const from = query.from && DATE.test(query.from) ? query.from : today;
+      const span = Math.min(Math.max(Number(query.days) || 28, 7), 91);
+      const to = new Date(Date.parse(`${from}T00:00:00Z`) + (span - 1) * 86_400_000).toISOString().slice(0, 10);
+      const workcenters = await readWorkcenters(client, workspaceId);
+      const orders = (await readWorkOrders(client, workspaceId)).filter((order) => ["planned", "released", "in_production", "on_hold"].includes(order.status)
+        && order.plannedStart && order.plannedEnd && order.plannedStart <= to && order.plannedEnd >= from);
+      return { from, to, workcenters, orders, ...capacity(orders, workcenters, await readCalendar(client, workspaceId), from, to) };
+    });
+  }
+
+  /**
+   * Groups work orders from any projects into one run on a workcenter and day. Each keeps its project,
+   * output and checks. A work order is in one open batch at a time, and only before it starts.
+   */
+  saveBatch(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
+    return this.access.withPermission(actor, workspaceId, "factory.manage", async (client, user) => {
+      const id = uuid(body.id, "Batch");
+      const existing = (await client.query<{ status: string; version: number }>(`SELECT status, version FROM production_batches WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, id])).rows[0];
+      const action = existing ? String(body.action ?? "") : "create";
+      if (existing && body.version !== existing.version) throw new ConflictException("Someone else changed this batch. Reload to see their changes.");
+      const orderIds = Array.isArray(body.orderIds) ? [...new Set(body.orderIds.map((value) => uuid(value, "Work order")))] : [];
+      const join = async () => {
+        if (!orderIds.length) throw new BadRequestException("Choose the work orders for the batch.");
+        const orders = (await readWorkOrders(client, workspaceId)).filter((order) => orderIds.includes(order.id));
+        if (orders.length !== orderIds.length) throw new BadRequestException("A work order isn't found.");
+        const busy = orders.find((order) => !["planned", "released"].includes(order.status));
+        if (busy) throw new ConflictException(`WO-${String(busy.number).padStart(4, "0")} has started or is closed.`);
+        const elsewhere = orders.find((order) => order.batchId && order.batchId !== id);
+        if (elsewhere) throw new ConflictException(`WO-${String(elsewhere.number).padStart(4, "0")} is already in ${elsewhere.batchName}.`);
+        await client.query(`UPDATE work_orders SET batch_id = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = ANY($2::uuid[])`, [workspaceId, orderIds, id]);
+      };
+      if (action === "create") {
+        const name = text(body.name, 200);
+        if (!name) throw new BadRequestException("Name the batch.");
+        const workcenterId = body.workcenterId ? uuid(body.workcenterId, "Workcenter") : null;
+        if (workcenterId && !(await readWorkcenters(client, workspaceId)).some((center) => center.id === workcenterId)) throw new BadRequestException("Choose a workcenter in use.");
+        await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('batch-number:' || $1::text, 0))`, [workspaceId]);
+        const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM production_batches WHERE workspace_id = $1`, [workspaceId])).rows[0].next;
+        await client.query(`INSERT INTO production_batches (id, workspace_id, number, name, workcenter_id, planned_on, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [id, workspaceId, number, name, workcenterId, optionalDate(body.plannedOn, "Date"), user.userId]);
+        await join();
+      } else if (action === "add") {
+        if (existing.status !== "open") throw new ConflictException("Only an open batch takes more work orders.");
+        await join();
+      } else if (action === "remove") {
+        const moved = await client.query(`UPDATE work_orders SET batch_id = NULL, version = version + 1, updated_at = now()
+          WHERE workspace_id = $1 AND batch_id = $2 AND id = ANY($3::uuid[]) AND status IN ('planned', 'released')`, [workspaceId, id, orderIds]);
+        if ((moved.rowCount ?? 0) !== orderIds.length) throw new ConflictException("A work order that started stays in its batch.");
+      } else if (action === "start") {
+        // Starting the run starts every released work order in it; the rest say why not.
+        if (existing.status === "closed") throw new ConflictException("The batch is closed.");
+        const orders = (await readWorkOrders(client, workspaceId)).filter((order) => order.batchId === id);
+        const waiting = orders.filter((order) => order.status === "planned");
+        if (waiting.length) throw new ConflictException(`Release ${waiting.map((order) => `WO-${String(order.number).padStart(4, "0")}`).join(", ")} first, or take it out of the batch.`);
+        for (const order of orders.filter((item) => item.status === "released")) {
+          if (order.lineStatus === "omitted" || Dec.of(order.scopeOver).cmp(0) > 0) throw new ConflictException(`WO-${String(order.number).padStart(4, "0")}: its scope changed.`);
+          await client.query(`UPDATE work_orders SET status = 'in_production', started_at = now(), version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id]);
+          await this.event(client, workspaceId, order.id, "start", { batch: id }, user.userId);
+        }
+        await client.query(`UPDATE production_batches SET status = 'started' WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
+      } else if (action === "close") {
+        await client.query(`UPDATE production_batches SET status = 'closed' WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
+      } else throw new BadRequestException("Unknown action.");
+      if (existing) await client.query(`UPDATE production_batches SET version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `production_batch.${action}`, entityType: "production_batch", entityId: id, after: { orderIds } });
+      return { batches: await readBatches(client, workspaceId), orders: await readWorkOrders(client, workspaceId) };
+    });
   }
 
   order(actor: RequestActor, workspaceId: string, orderId: string) {
@@ -57,7 +132,7 @@ export class FactoryService {
       if (Dec.of(quantity).cmp(0) <= 0) throw new BadRequestException("Enter how many to make.");
       if (Dec.of(quantity).cmp(line.left) > 0)
         throw new ConflictException(Dec.of(line.left).cmp(0) > 0 ? `Only ${plain(line.left)} ${line.unit} of ${line.title} is left to plan.`.replace("  ", " ") : `All of ${line.title} is already on work orders.`);
-      const schedule = await this.schedule(client, workspaceId, body, { workcenterId: null, plannedStart: line.suggestedStart, plannedEnd: line.suggestedEnd });
+      const schedule = await this.dates(client, workspaceId, body, { workcenterId: null, plannedStart: line.suggestedStart, plannedEnd: line.suggestedEnd, plannedHours: null });
       await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('work-order-number:' || $1::text, 0))`, [workspaceId]);
       const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM work_orders WHERE workspace_id = $1`, [workspaceId])).rows[0].next;
       await client.query(
@@ -65,6 +140,7 @@ export class FactoryService {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [id, workspaceId, number, line.projectId, line.packageId, lineId, line.title, line.specification.slice(0, 2000), quantity, line.unit, schedule.workcenterId, schedule.plannedStart,
           schedule.plannedEnd, text(body.notes, 2000), user.userId]);
+      if (schedule.plannedHours) await client.query(`UPDATE work_orders SET planned_hours = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, schedule.plannedHours]);
       await this.event(client, workspaceId, id, "planned", { quantity, line: line.title }, user.userId);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "work_order.planned", entityType: "work_order", entityId: id, after: { lineId, quantity } });
       return this.detail(client, workspaceId, id, user.userId);
@@ -129,9 +205,9 @@ export class FactoryService {
       } else if (action === "update") {
         await need("factory.manage", "You can't plan work orders.");
         status("planned", "released", "on_hold");
-        const schedule = await this.schedule(client, workspaceId, body, order);
-        await set(`workcenter_id = $3, planned_start = $4, planned_end = $5, notes = $6`, [schedule.workcenterId, schedule.plannedStart, schedule.plannedEnd,
-          body.notes === undefined ? order.notes : text(body.notes, 2000)]);
+        const schedule = await this.dates(client, workspaceId, body, order);
+        await set(`workcenter_id = $3, planned_start = $4, planned_end = $5, notes = $6, planned_hours = $7`, [schedule.workcenterId, schedule.plannedStart, schedule.plannedEnd,
+          body.notes === undefined ? order.notes : text(body.notes, 2000), schedule.plannedHours]);
         audit = schedule;
       } else if (action === "approve_drawing") {
         await need("factory.manage", "You can't record drawing approvals.");
@@ -488,14 +564,18 @@ export class FactoryService {
     return { materialId: swap.id, decision: approve ? "approved" : "refused", note };
   }
 
-  private async schedule(client: Db, workspaceId: string, body: Record<string, unknown>, current: { workcenterId: string | null; plannedStart: string | null; plannedEnd: string | null }) {
+  /** Where and when from a request, keeping what it doesn't change. */
+  private async dates(client: Db, workspaceId: string, body: Record<string, unknown>,
+    current: { workcenterId: string | null; plannedStart: string | null; plannedEnd: string | null; plannedHours: string | null }) {
     const workcenterId = body.workcenterId === undefined ? current.workcenterId : body.workcenterId === null || body.workcenterId === "" ? null : uuid(body.workcenterId, "Workcenter");
     if (workcenterId && body.workcenterId !== undefined && !(await readWorkcenters(client, workspaceId)).some((center) => center.id === workcenterId))
       throw new BadRequestException("Choose a workcenter in use.");
     const plannedStart = body.plannedStart === undefined ? current.plannedStart : optionalDate(body.plannedStart, "Start");
     const plannedEnd = body.plannedEnd === undefined ? current.plannedEnd : optionalDate(body.plannedEnd, "Finish");
     if (plannedStart && plannedEnd && plannedEnd < plannedStart) throw new BadRequestException("The finish can't be before the start.");
-    return { workcenterId, plannedStart, plannedEnd };
+    const plannedHours = body.plannedHours === undefined ? current.plannedHours : body.plannedHours === null || body.plannedHours === "" ? null : amount(body.plannedHours, "Hours");
+    if (plannedHours !== null && Dec.of(plannedHours).cmp(0) <= 0) throw new BadRequestException("Hours must be more than nothing, or left empty.");
+    return { workcenterId, plannedStart, plannedEnd, plannedHours };
   }
 
   private async detail(client: Db, workspaceId: string, orderId: string, userId: string) {

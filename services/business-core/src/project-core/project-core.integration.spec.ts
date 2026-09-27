@@ -2228,6 +2228,45 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("books hours on workcenters day by day and flags days over capacity; batches start their released work orders together", async () => {
+    await world(async (w) => {
+      const { core, projectId, access, all } = await buying(w);
+      const maker = new FactoryService(access(w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]));
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: scope.packages[0].id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
+      const settings = await maker.settings(actor, w.workspaceId);
+      await maker.saveSettings(actor, w.workspaceId, { version: settings.settings.version, requireDrawing: false, requirePayment: false, requireMaterials: false });
+      const joinery = randomUUID();
+      await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery", hoursPerDay: "8" });
+      const first = randomUUID(), second = randomUUID();
+      // 24 hours over Monday to Wednesday is 8 a day; another 8 hours on Tuesday doubles it.
+      let one = await maker.plan(actor, w.workspaceId, { id: first, lineId: cabinets.id, quantity: "3", workcenterId: joinery, plannedStart: "2026-10-05", plannedEnd: "2026-10-07", plannedHours: "24" });
+      let two = await maker.plan(actor, w.workspaceId, { id: second, lineId: cabinets.id, quantity: "1.5", workcenterId: joinery, plannedStart: "2026-10-06", plannedEnd: "2026-10-06", plannedHours: "8" });
+      const week = await maker.schedule(actor, w.workspaceId, { from: "2026-10-05", days: "7" });
+      expect(week.days).toEqual(["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09"]);
+      expect(week.load[joinery]).toEqual({ "2026-10-05": 8, "2026-10-06": 16, "2026-10-07": 8 });
+      expect(week.conflicts).toEqual([{ workcenterId: joinery, workcenterName: "Joinery", date: "2026-10-06", hours: 16, capacity: 8, orders: [first, second] }]);
+      // Moving the second a day later clears it.
+      two = await maker.command(actor, w.workspaceId, second, { action: "update", plannedStart: "2026-10-08", plannedEnd: "2026-10-08", version: two.order.version });
+      expect((await maker.schedule(actor, w.workspaceId, { from: "2026-10-05", days: "7" })).conflicts).toEqual([]);
+
+      // One run for both: it starts only what's released.
+      one = await maker.command(actor, w.workspaceId, first, { action: "release", version: one.order.version });
+      const run = randomUUID();
+      let batches = await maker.saveBatch(actor, w.workspaceId, { id: run, name: "Oak cutting run", workcenterId: joinery, plannedOn: "2026-10-05", orderIds: [first, second] });
+      expect(batches.batches.map((batch) => [batch.number, batch.name, batch.orders, batch.projects, batch.status])).toEqual([[1, "Oak cutting run", 2, ["PRJ-0001"], "open"]]);
+      await expect(maker.saveBatch(actor, w.workspaceId, { id: randomUUID(), name: "Other", orderIds: [first] })).rejects.toThrow("WO-0001 is already in Oak cutting run.");
+      await expect(maker.saveBatch(actor, w.workspaceId, { id: run, action: "start", version: 1 })).rejects.toThrow("Release WO-0002 first, or take it out of the batch.");
+      batches = await maker.saveBatch(actor, w.workspaceId, { id: run, action: "remove", orderIds: [second], version: 1 });
+      batches = await maker.saveBatch(actor, w.workspaceId, { id: run, action: "start", version: 2 });
+      expect(batches.batches[0]).toMatchObject({ status: "started", orders: 1 });
+      expect(batches.orders.find((order) => order.id === first)).toMatchObject({ status: "in_production", batchName: "Oak cutting run" });
+      await expect(maker.saveBatch(actor, w.workspaceId, { id: run, action: "add", orderIds: [second], version: 3 })).rejects.toThrow("Only an open batch takes more work orders.");
+    });
+  });
+
   async function buyingStock(w: World, access: (userId: string, permissions: string[]) => never, all: string[]) {
     return new InventoryService(access(w.designer, all)).stock(actor, w.workspaceId);
   }

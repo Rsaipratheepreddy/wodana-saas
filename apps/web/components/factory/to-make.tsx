@@ -59,6 +59,7 @@ function PlanDialog({ api, line, state, onClose, onPlanned }: { api: FactoryApi;
   const [start, setStart] = useState(line.suggestedStart);
   const [end, setEnd] = useState(line.suggestedEnd);
   const [notes, setNotes] = useState("");
+  const [hours, setHours] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const over = Number(quantity) > Number(line.left);
@@ -67,7 +68,8 @@ function PlanDialog({ api, line, state, onClose, onPlanned }: { api: FactoryApi;
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
         setBusy(true); setError("");
-        try { const saved = await api.plan({ id, lineId: line.lineId, quantity, workcenterId: workcenterId || null, plannedStart: start, plannedEnd: end, notes: notes.trim() }); onPlanned(saved.order.id); }
+        try { const saved = await api.plan({ id, lineId: line.lineId, quantity, workcenterId: workcenterId || null, plannedStart: start, plannedEnd: end, plannedHours: hours || null, notes: notes.trim() });
+          onPlanned(saved.order.id); }
         catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
       }}>{t("Plan work order")}</Button></div>}>
     <div className={styles.dialogBody}>
@@ -84,6 +86,7 @@ function PlanDialog({ api, line, state, onClose, onPlanned }: { api: FactoryApi;
         <DateField label={t("Finish")} value={end ? parseDate(end) : null} onChange={(value) => setEnd(value ? value.toString() : null)}
           isInvalid={Boolean(start && end && end < start)} errorMessage={start && end && end < start ? t("The finish can't be before the start.") : undefined} />
       </div>
+      <TextInput label={t("Hours it takes")} inputMode="decimal" suffix={t("h")} value={hours} onChange={(value) => setHours(numeric(value))} />
       <TextAreaField label={t("Notes")} value={notes} onChange={setNotes} />
     </div>
   </ControlledModalDialog>;

@@ -20,6 +20,17 @@ export type WorkOrderRow = {
   lineStatus: "active" | "omitted"; lineQuantity: string; scopeOver: string;
   /** Why it's on hold: put on hold, or stopped because its drawing changed (someone else lets it go on). */
   holdKind: "manual" | "drawing" | null;
+  /** The hours it takes, spread over its working days; the run it's part of. */
+  plannedHours: string | null; batchId: string | null; batchNumber: number | null; batchName: string | null;
+};
+
+/** Work orders from any projects run together on a workcenter and day. */
+export type Batch = { id: string; number: number; name: string; workcenterId: string | null; workcenterName: string | null; plannedOn: string | null; status: "open" | "started" | "closed";
+  orders: number; projects: string[]; version: number };
+/** Hours booked on each workcenter each working day, and the days over what it can do. */
+export type ScheduleState = {
+  from: string; to: string; days: string[]; workcenters: Workcenter[]; orders: WorkOrderRow[]; load: Record<string, Record<string, number>>;
+  conflicts: Array<{ workcenterId: string; workcenterName: string; date: string; hours: number; capacity: number; orders: string[] }>;
 };
 
 export type ReleaseCheck = { key: "running" | "scope" | "drawing" | "payment" | "materials" | "schedule"; passed: boolean; missing: string; detail?: string[] };
@@ -38,7 +49,7 @@ export type WorkOrderMaterial = {
   replacesId: string | null; replacesName: string | null; reason: string; requestedBy: string; requestedByName: string; decidedByName: string | null; decisionNote: string;
   issued: string; issuedValue: string; projectOnHand: string; freeOnHand: string;
 };
-export type FactoryState = FactoryRights & { toMake: MakeLine[]; orders: WorkOrderRow[]; workcenters: Workcenter[] };
+export type FactoryState = FactoryRights & { toMake: MakeLine[]; orders: WorkOrderRow[]; workcenters: Workcenter[]; batches: Batch[] };
 export type WorkOrderState = FactoryRights & {
   order: WorkOrderRow & { drawingRef: string; drawingApprovedAt: string | null; drawingApprovedByName: string | null; holdReason: string | null; closeReason: string | null;
     closedAt: string | null; releasedAt: string | null; readyAt: string | null };

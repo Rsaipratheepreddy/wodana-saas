@@ -18,9 +18,11 @@ const row = (patch: Partial<WorkOrderState["order"]> = {}): WorkOrderState["orde
   id: "w1", number: 7, projectId: "p1", projectReference: "PRJ-0007", projectName: "Villa 12", packageId: "k1", packageName: "Kitchen joinery", boqLineId: "l1", title: "Kitchen cabinets",
   specification: "", quantity: "3.0000", unit: "m", status: "planned", workcenterId: "c1", workcenterName: "Joinery", plannedStart: "2099-10-05", plannedEnd: "2099-10-16", notes: "", version: 2,
   made: "0", pending: "0", passed: "0", toCheck: "0", left: "3.0000", scrapped: "0", drawingRef: "", drawingApprovedAt: null, drawingApprovedByName: null, holdReason: null,
-  closeReason: null, closedAt: null, releasedAt: null, readyAt: null, lineStatus: "active", lineQuantity: "4.5000", scopeOver: "0", holdKind: null, ...patch,
+  closeReason: null, closedAt: null, releasedAt: null, readyAt: null, lineStatus: "active", lineQuantity: "4.5000", scopeOver: "0", holdKind: null,
+  plannedHours: null, batchId: null, batchNumber: null, batchName: null, ...patch,
 });
-const factory = (patch: Partial<FactoryState> = {}): FactoryState => ({ toMake: [line], orders: [row()], workcenters: [joinery], canManage: true, canReport: true, canApprove: true, canIssue: true, ...patch });
+const factory = (patch: Partial<FactoryState> = {}): FactoryState => ({ toMake: [line], orders: [row()], workcenters: [joinery], batches: [], canManage: true, canReport: true, canApprove: true,
+  canIssue: true, ...patch });
 const order = (patch: Partial<WorkOrderState["order"]> = {}, extra: Partial<WorkOrderState> = {}): WorkOrderState => ({
   order: row(patch), reports: [], checks: [], events: [], settings, workcenters: [joinery], canManage: true, canReport: true, canApprove: true, canIssue: true, me: "u1",
   materials: [], materialCost: "0.0000", currency: "AED", projectMaterials: [{ id: "pm1", name: "Oak veneer", unit: "sheets" }], canSuggest: false,
@@ -193,6 +195,50 @@ describe("factory", () => {
     const held = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
     expect(await within(held).findByText("On hold: Drawing changed to K-01 rev C: Handles moved")).toBeInTheDocument();
     expect(within(held).getByRole("button", { name: "Go on with the new drawing" })).toBeInTheDocument();
+  });
+
+  it("shows each workcenter's weeks and the days booked over capacity", async () => {
+    const busy = row({ id: "w1", plannedStart: "2099-10-05", plannedEnd: "2099-10-07", plannedHours: "24.00" });
+    const other = row({ id: "w2", number: 8, title: "Wardrobes", plannedStart: "2099-10-06", plannedEnd: "2099-10-06", plannedHours: "8.00" });
+    mount((url) => (url.includes("/schedule") ? { from: "2099-10-05", to: "2099-10-18", days: ["2099-10-05", "2099-10-06", "2099-10-07", "2099-10-08", "2099-10-09"], workcenters: [joinery],
+      orders: [busy, other], load: { c1: { "2099-10-05": 8, "2099-10-06": 16, "2099-10-07": 8 } },
+      conflicts: [{ workcenterId: "c1", workcenterName: "Joinery", date: "2099-10-06", hours: 16, capacity: 8, orders: ["w1", "w2"] }] } : factory()));
+    page("schedule");
+    const over = await screen.findByRole("region", { name: "Over capacity" });
+    expect(within(over).getByText("Joinery · Oct 6, 2099")).toBeInTheDocument();
+    expect(within(over).getByText("WO-0007, WO-0008")).toBeInTheDocument();
+    expect(within(over).getByText("16 of 8 hours")).toBeInTheDocument();
+    const schedule = screen.getByRole("region", { name: "Schedule" });
+    expect(within(schedule).getByRole("region", { name: "Joinery · 8 h a day" })).toBeInTheDocument();
+    await userEvent.click(within(schedule).getByRole("button", { name: "WO-0008 Wardrobes, on a day over capacity" }));
+    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/factory/orders?order=w2", { scroll: false });
+  });
+
+  it("runs work orders from several projects together as a batch and starts it", async () => {
+    const other = row({ id: "w2", number: 8, title: "Wardrobes", projectId: "p2", projectReference: "PRJ-0008", status: "released", releasedAt: "2026-09-27T09:00:00Z" });
+    const batch = { id: "b1", number: 1, name: "Oak cutting run", workcenterId: "c1", workcenterName: "Joinery", plannedOn: "2099-10-05", status: "open" as const, orders: 2, projects: ["PRJ-0007", "PRJ-0008"], version: 1 };
+    const fetcher = mount((url, body) => (url.includes("/batches") ? { batches: [batch], orders: [] } : body ? {} : factory({ orders: [row(), other] })));
+    const { unmount } = page("orders");
+    const grid = await screen.findByRole("grid", { name: "Work orders" }).catch(() => screen.findByRole("table", { name: "Work orders" }));
+    for (const box of within(grid).getAllByRole("checkbox", { name: /Select row/ })) await userEvent.click(box);
+    await userEvent.click(await screen.findByRole("button", { name: "Run together (2)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Run together" });
+    expect(within(dialog).getByText("WO-0007 · PRJ-0007, WO-0008 · PRJ-0008")).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Name/ }), "Oak cutting run");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create batch" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ name: "Oak cutting run", workcenterId: "c1", plannedOn: "2099-10-05", orderIds: ["w1", "w2"] }));
+    const created = String(posts(fetcher).at(-1)!.body.id);
+    expect(nav.replace).toHaveBeenLastCalledWith(`/workspace/factory/batches?batch=${created}`, { scroll: false });
+    unmount();
+
+    nav.query = "batch=b1";
+    mount((url) => (url.includes("/batches") ? { batches: [batch], orders: [] } : factory({ orders: [{ ...row(), batchId: "b1", batchNumber: 1, batchName: "Oak cutting run" },
+      { ...other, batchId: "b1", batchNumber: 1, batchName: "Oak cutting run" }], batches: [batch] })));
+    page("batches");
+    const sheet = await screen.findByRole("dialog", { name: "Oak cutting run" });
+    expect(within(sheet).getByText("WO-0008 · Wardrobes")).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Start batch" }));
+    await waitFor(() => expect(posts(vi.mocked(fetch) as never).at(-1)!.body).toEqual({ id: "b1", action: "start", version: 1 }));
   });
 
   it("sets what a work order needs before release and adds a workcenter", async () => {

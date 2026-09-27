@@ -87,7 +87,9 @@ export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: Fact
           {Number(order.left) && order.status !== "planned" ? <span className={styles.muted}>{t("{quantity} still to make", { quantity: unit(order.left) })}</span> : null}
         </dd></div>
         <div><dt>{t("Where and when")}</dt><dd>
-          <span>{[order.workcenterName, [format.day(order.plannedStart), format.day(order.plannedEnd)].filter(Boolean).join(" – ")].filter(Boolean).join(" · ") || "—"}</span>
+          <span>{[order.workcenterName, [format.day(order.plannedStart), format.day(order.plannedEnd)].filter(Boolean).join(" – "),
+            order.plannedHours ? t("{hours} h", { hours: Number(order.plannedHours) }) : "", order.batchName ? t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName }) : ""]
+            .filter(Boolean).join(" · ") || "—"}</span>
           {state.canManage && ["planned", "released", "on_hold"].includes(order.status) ? <Button size="compact" variant="quiet" onPress={() => setDialog("schedule")}>{t("Change")}</Button> : null}
         </dd></div>
         <div><dt>{t("Drawing")}</dt><dd>
@@ -179,12 +181,13 @@ function ScheduleDialog({ state, onClose, onSave }: { state: WorkOrderState; onC
   const [start, setStart] = useState(state.order.plannedStart);
   const [end, setEnd] = useState(state.order.plannedEnd);
   const [notes, setNotes] = useState(state.order.notes);
+  const [hours, setHours] = useState(state.order.plannedHours ? quantityText(state.order.plannedHours) : "");
   const [busy, setBusy] = useState(false);
   const valid = !start || !end || end >= start;
   return <ControlledModalDialog isOpen size="md" title={t("Where and when")} onOpenChange={(open) => { if (!open) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); await onSave({ workcenterId: workcenterId || null, plannedStart: start, plannedEnd: end, notes: notes.trim() }); setBusy(false);
+        setBusy(true); await onSave({ workcenterId: workcenterId || null, plannedStart: start, plannedEnd: end, plannedHours: hours || null, notes: notes.trim() }); setBusy(false);
       }}>{t("Save")}</Button></div>}>
     <div className={styles.dialogBody}>
       <SelectField label={t("Workcenter")} placeholder={t("Choose")} selectedKey={workcenterId} onSelectionChange={(key) => setWorkcenterId(key ? String(key) : "")}
@@ -194,6 +197,7 @@ function ScheduleDialog({ state, onClose, onSave }: { state: WorkOrderState; onC
         <DateField label={t("Finish")} value={end ? parseDate(end) : null} onChange={(value) => setEnd(value ? value.toString() : null)}
           isInvalid={!valid} errorMessage={valid ? undefined : t("The finish can't be before the start.")} />
       </div>
+      <TextInput label={t("Hours it takes")} inputMode="decimal" suffix={t("h")} value={hours} onChange={(value) => setHours(numeric(value))} />
       <TextAreaField label={t("Notes")} value={notes} onChange={setNotes} />
     </div>
   </ControlledModalDialog>;
