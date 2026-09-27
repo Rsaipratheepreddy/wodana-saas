@@ -9,13 +9,6 @@
 
 .taskRow{display:flex;align-items:center;gap:var(--wd-space-3);min-block-size:42px;padding:var(--wd-space-1) 0}.taskLabel{flex:1;font-size:var(--wd-text-sm)}.taskRow[data-complete=true] .taskLabel{text-decoration:line-through;color:var(--wd-color-text-secondary)}.rowAction{display:inline-flex;align-items:center;justify-content:center;gap:var(--wd-space-1-5);box-sizing:border-box;min-block-size:32px;padding:var(--wd-space-1-5) var(--wd-space-2);border-radius:var(--wd-radius-xs);background:var(--wd-color-action-primary-subtle);color:var(--wd-color-action-primary);font-size:var(--wd-text-xs);font-weight:600;text-decoration:none}.rowAction:hover{background:var(--wd-color-surface-hover);color:var(--wd-color-action-primary)}.rowAction:focus-visible{outline:2px solid var(--wd-color-action-primary);outline-offset:3px}.taskRow :global(.wd-button){background:var(--wd-color-action-primary-subtle);color:var(--wd-color-action-primary);font-weight:600}.taskRow .rowAction,.taskRow :global(.wd-button){min-inline-size:144px}
 @media(max-width:480px){.taskRow{gap:var(--wd-space-2);flex-wrap:wrap}.taskRow .rowAction,.taskRow :global(.wd-button){min-inline-size:0;min-block-size:44px}.taskLabel{font-size:var(--wd-text-xs)}.rowAction{font-size:var(--wd-text-2xs);padding-inline:var(--wd-space-2)}}
-.setupCard { display: grid; gap: var(--wd-space-2); margin: var(--wd-space-1) var(--wd-space-3) var(--wd-space-4); padding: var(--wd-space-3); inline-size: calc(100% - 24px); text-align: start; font: inherit; color: var(--wd-color-text); background: var(--wd-color-surface); border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-sm); cursor: pointer; }
-.setupCard > span { font-size: var(--wd-text-xs); font-weight: 600; }
-.setupCard small { font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); }
-.setupCard progress { inline-size: 100%; block-size: 5px; border: 0; border-radius: var(--wd-radius-2xs); overflow: hidden; accent-color: var(--wd-color-action-primary); }
-.setupCard progress::-webkit-progress-bar { background: var(--wd-color-surface-muted); }
-.setupCard progress::-webkit-progress-value { background: var(--wd-color-action-primary); border-radius: var(--wd-radius-2xs); }
-.setupCard:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 .readiness { padding: 0; background: var(--wd-color-surface); }
 .steps { display: grid; gap: var(--wd-space-2); }
 .taskRow { display: flex; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-3) var(--wd-space-4); min-block-size: 74px; border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); }
@@ -25,13 +18,3 @@
 .taskRow[data-complete="true"] { background: color-mix(in srgb, var(--wd-color-action-primary) 12%, var(--wd-color-surface)); }
 .taskRow[data-complete="true"] .taskLabel { text-decoration: line-through; }
 @media(max-width:600px) { .stepArt { display: none; } .taskRow { flex-wrap: wrap; } .taskLabel { min-inline-size: 160px; } }
-.setupCard { grid-template-columns: 1fr auto; align-content: center; align-self: start; box-sizing: border-box; block-size: 58px; min-block-size: 58px; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); margin-block: var(--wd-space-0-5) var(--wd-space-2); border-radius: var(--wd-radius-sm); }
-.setupCard > span { font-size: var(--wd-text-2xs); }
-.setupCard small { font-size: var(--wd-text-2xs); }
-.setupCard progress { grid-column: 1 / -1; block-size: 4px; }
-/* Keep setup aligned with navigation and clearly distinguish its importance. */
-.setupCard { margin: 0 0 var(--wd-space-2); inline-size: 100%; block-size: 60px; min-block-size: 60px; padding: var(--wd-space-3); gap: var(--wd-space-2); border: 1px solid color-mix(in srgb, var(--wd-color-action-primary) 35%, var(--wd-color-surface)); background: color-mix(in srgb, var(--wd-color-action-primary) 10%, var(--wd-color-surface)); border-radius: var(--wd-radius-sm); }
-.setupCard > span { font-size: var(--wd-text-xs); font-weight: 600; }
-.setupCard small { font-size: var(--wd-text-2xs); font-weight: 600; color: var(--wd-color-action-primary); }
-.setupCard progress::-webkit-progress-bar { background: color-mix(in srgb, var(--wd-color-action-primary) 18%, var(--wd-color-surface)); }
-.setupCard:hover { background: color-mix(in srgb, var(--wd-color-action-primary) 15%, var(--wd-color-surface)); }

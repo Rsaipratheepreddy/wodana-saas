@@ -32,7 +32,7 @@ function ChangeLine({ change, t }: { change: Change; t: T }) {
   return <span className={s.kpiChange} data-tone={tone}><Icon size={14} aria-hidden="true" data-directional="true" />{text}</span>;
 }
 
-type Kpi = { id: string; label: string; value: string; meta?: string; footer: ReactNode; href: string; bars: { label: string; value: number; display: string }[] };
+type Kpi = { id: string; label: string; Icon: LucideIcon; value: string; meta?: string; footer: ReactNode; href: string; bars: { label: string; value: number; display: string }[] };
 
 /** The KPI row shows only the cards this person may see; while loading it keeps their places. */
 export function KpiRow({ metrics, expected }: { metrics: MetricsState; expected: number }) {
@@ -47,13 +47,13 @@ export function KpiRow({ metrics, expected }: { metrics: MetricsState; expected:
   const money = (value: string, compact = true) => formatMoneyText(value, data.currency, locale, compact);
   const weeks = (series: HomeMetricWeek[], show: (value: string) => string) => series.map(week => ({ label: weekLabel(week.start, locale), value: weekValue(week), display: show(week.value) }));
   const cards: Kpi[] = [];
-  if (data.enquiries) cards.push({ id: "enquiries", label: t("New enquiries"), value: formatCount(data.enquiries.current, locale), href: "/workspace/crm/leads", footer: <ChangeLine change={changeBetween(data.enquiries.current, data.enquiries.previous)} t={t} />, bars: weeks(data.enquiries.weekly, value => formatCount(Number(value), locale)) });
-  if (data.quotes) cards.push({ id: "quotes", label: t("Quotes issued"), value: money(data.quotes.issuedValue), meta: t("{count} accepted", { count: formatCount(data.quotes.accepted, locale) }), href: "/workspace/pre-projects?section=quotations", footer: <ChangeLine change={changeBetween(data.quotes.issuedValue, data.quotes.previousIssuedValue)} t={t} />, bars: weeks(data.quotes.weekly, value => money(value, false)) });
-  if (data.payments) cards.push({ id: "payments", label: t("Payments received"), value: money(data.payments.received), href: "/workspace/finance", footer: <ChangeLine change={changeBetween(data.payments.received, data.payments.previousReceived)} t={t} />, bars: weeks(data.payments.weekly, value => money(value, false)) });
-  if (data.projects) cards.push({ id: "projects", label: t("Active projects"), value: formatCount(data.projects.active, locale), href: "/workspace/projects", footer: <span className={s.kpiChange} data-tone={data.projects.overdueTasks ? "warning" : "success"}>{data.projects.overdueTasks ? <AlertTriangle size={14} aria-hidden="true" /> : <CircleCheck size={14} aria-hidden="true" />}{data.projects.overdueTasks ? t("{count} overdue tasks", { count: formatCount(data.projects.overdueTasks, locale) }) : t("No overdue tasks")}</span>, bars: weeks(data.projects.weekly, value => formatCount(Number(value), locale)) });
+  if (data.enquiries) cards.push({ id: "enquiries", label: t("New enquiries"), Icon: Users, value: formatCount(data.enquiries.current, locale), href: "/workspace/crm/leads", footer: <ChangeLine change={changeBetween(data.enquiries.current, data.enquiries.previous)} t={t} />, bars: weeks(data.enquiries.weekly, value => formatCount(Number(value), locale)) });
+  if (data.quotes) cards.push({ id: "quotes", label: t("Quotes issued"), Icon: FileText, value: money(data.quotes.issuedValue), meta: t("{count} accepted", { count: formatCount(data.quotes.accepted, locale) }), href: "/workspace/pre-projects?section=quotations", footer: <ChangeLine change={changeBetween(data.quotes.issuedValue, data.quotes.previousIssuedValue)} t={t} />, bars: weeks(data.quotes.weekly, value => money(value, false)) });
+  if (data.payments) cards.push({ id: "payments", label: t("Payments received"), Icon: Banknote, value: money(data.payments.received), href: "/workspace/finance", footer: <ChangeLine change={changeBetween(data.payments.received, data.payments.previousReceived)} t={t} />, bars: weeks(data.payments.weekly, value => money(value, false)) });
+  if (data.projects) cards.push({ id: "projects", label: t("Active projects"), Icon: Package, value: formatCount(data.projects.active, locale), href: "/workspace/projects", footer: <span className={s.kpiChange} data-tone={data.projects.overdueTasks ? "warning" : "success"}>{data.projects.overdueTasks ? <AlertTriangle size={14} aria-hidden="true" /> : <CircleCheck size={14} aria-hidden="true" />}{data.projects.overdueTasks ? t("{count} overdue tasks", { count: formatCount(data.projects.overdueTasks, locale) }) : t("No overdue tasks")}</span>, bars: weeks(data.projects.weekly, value => formatCount(Number(value), locale)) });
   if (!cards.length) return null;
   return <div className={s.kpis} data-count={cards.length}>{cards.map(card => <Link key={card.id} href={card.href} className={s.kpi} data-kpi={card.id}>
-    <span className={s.kpiHead}><span className={s.kpiLabel}>{card.label}</span><MiniBars points={card.bars} label={t("{name}, last 8 weeks", { name: card.label })} /></span>
+    <span className={s.kpiHead}><span className={s.kpiTitle}><span className={s.kpiIcon} aria-hidden="true"><card.Icon size={14} /></span><span className={s.kpiLabel}>{card.label}</span></span><MiniBars points={card.bars} label={t("{name}, last 8 weeks", { name: card.label })} /></span>
     <span className={s.kpiValue}><strong>{card.value}</strong>{card.meta ? <small>{card.meta}</small> : null}</span>
     {card.footer}
   </Link>)}</div>;

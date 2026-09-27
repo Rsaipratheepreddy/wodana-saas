@@ -39,6 +39,7 @@ export function GroupedTable<T>({
   selectedIds,
   selectable = true,
   collapsible = true,
+  groupRows = true,
   appearance = "plain",
   onRowAction,
   onSectionAction,
@@ -53,6 +54,8 @@ export function GroupedTable<T>({
   selectable?: boolean;
   /** Group rows toggle their rows open and closed. */
   collapsible?: boolean;
+  /** Without group rows the sections run together under the one header (a single-section list). */
+  groupRows?: boolean;
   appearance?: "plain" | "enclosed";
   /** Opens a row (click, Enter or Space), like DataGrid rows. */
   onRowAction?: (row: T) => void;
@@ -85,11 +88,11 @@ export function GroupedTable<T>({
     {sections.map((section) => {
       const rowIds = section.rows.map(getRowId);
       const selectedCount = rowIds.filter((id) => selectedIds.has(id)).length;
-      const closed = collapsed.has(section.id);
+      const closed = groupRows && collapsed.has(section.id);
       const summary = Boolean(section.headerLabels);
       const name = onSectionAction ? <button className="wd-grouped-table-section-button" onClick={() => onSectionAction(section.id)} type="button">{section.label}</button> : <span className="wd-grouped-table-section-label">{section.label}</span>;
       return <tbody key={section.id}>
-        <tr className="wd-grouped-table-heading" data-collapsed={closed || undefined}>
+        {groupRows ? <tr className="wd-grouped-table-heading" data-collapsed={closed || undefined}>
           {selectable ? <th scope="row"><Checkbox aria-label={t("Select all {name}", { name: section.label.toLowerCase() })} isIndeterminate={selectedCount > 0 && selectedCount < rowIds.length} isSelected={Boolean(rowIds.length) && selectedCount === rowIds.length} onChange={(selected) => selectMany(rowIds, selected)} /></th> : null}
           <th scope="colgroup" colSpan={summary ? 1 : columns.length}><span className="wd-grouped-table-section">
             {collapsible ? <button aria-expanded={!closed} aria-label={t(closed ? "Expand {name}" : "Collapse {name}", { name: section.label })} className="wd-grouped-table-toggle" onClick={() => setCollapsed((current) => { const next = new Set(current); if (next.has(section.id)) next.delete(section.id); else next.add(section.id); return next; })} type="button">{closed ? <ChevronRight aria-hidden="true" size={14} /> : <ChevronDown aria-hidden="true" size={14} />}</button> : null}
@@ -97,7 +100,7 @@ export function GroupedTable<T>({
             <span className="wd-grouped-table-section-count">{section.rows.length}</span>
           </span></th>
           {summary ? columns.slice(1).map((column) => <th scope="colgroup" data-align={column.align} data-mobile-hidden={column.mobileHidden || undefined} key={column.id}>{section.headerLabels?.[column.id] ?? ""}</th>) : null}
-        </tr>
+        </tr> : null}
         {closed ? null : section.rows.length ? section.rows.map((row) => {
           const id = getRowId(row);
           return <tr className="wd-grouped-table-row" data-selected={selectedIds.has(id) || undefined} key={id}

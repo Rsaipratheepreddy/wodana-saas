@@ -12,7 +12,6 @@ import type { CrmScreenPageData } from "@/lib/crm/screens";
 import { defaultLayoutFor, homeActionLabel, homeActivityId, homeProfile, homeWidgetSizes, moveHomeWidget, parseHomeLayout, placeHomeWidget, type HomeWidget, type HomeWidgetId, type HomeWidgetSize } from "@/lib/workspace/home-layout";
 import { crmRecordLink, crmTime } from "@/components/crm/crm-product-shell";
 import { FollowUpSheet, NewFollowUpDialog } from "@/components/crm/follow-up-editor";
-import { WorkspaceReadiness, type ReadinessData } from "./workspace-readiness";
 import { HomeAttendance } from "./home-attendance";
 import { ActivityWidget, HealthWidget, ItemList, KpiRow, MoneyWidget, StorageWidget, TrendWidget, type MetricsState } from "./home-widgets";
 import { greetingPart } from "./home-format";
@@ -24,14 +23,12 @@ type Props = {
   workspaceName: string;
   modules: string[];
   initialData: CrmScreenPageData | null;
-  readiness?: ReadinessData;
   canManage?: boolean;
   /** The person's first name for the greeting. */
   firstName?: string;
   /** Permission keys granted in this workspace; widgets and figures follow them. */
   permissions?: string[];
 };
-type HomeTab = "overview" | "sales" | "planning" | "projects" | "people";
 const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "—";
 
 export function WorkspaceHome(props: Props) {
@@ -44,7 +41,7 @@ export function WorkspaceHome(props: Props) {
   return <DesignSystemProvider {...inherited} theme={inherited.theme === "high-contrast" ? inherited.theme : theme === "dark" ? "dark" : "light"} portalContainer={portal}><div ref={setPortal}><HomeContent key={`${props.workspaceId}:${props.userId}`} {...props} /></div></DesignSystemProvider>;
 }
 
-function HomeContent({ workspaceId, userId, workspaceName, modules, initialData, readiness, canManage, firstName, permissions }: Props) {
+function HomeContent({ workspaceId, userId, workspaceName, modules, initialData, canManage, firstName, permissions }: Props) {
   const t = useT();
   const { locale } = useDesignSystem();
   const crmEnabled = modules.includes("crm");
@@ -54,7 +51,6 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
     attention: t("Needs attention"), projects: t("My tasks"), trend: t("Sales trend"), money: t("Money in"), health: t("Projects health"), planning: t("In planning"),
     activity: t("Recent activity"), storage: t("Storage overview"), sales: t("Sales snapshot"), tools: t("Quick actions"), attendance: t("Attendance"),
   };
-  const [tab, setTab] = useState<HomeTab>("overview");
   const [overview, setOverview] = useState<HomeOverview | null>(null);
   const [overviewError, setOverviewError] = useState("");
   const [overviewReload, setOverviewReload] = useState(0);
@@ -156,7 +152,7 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
     setOverview(null); setOverviewError("");
     fetch(`/api/workspace/home-overview?workspaceId=${encodeURIComponent(workspaceId)}`, { signal: controller.signal, cache: "no-store" })
       .then(async response => { if (!response.ok) throw new Error(t("Your latest workspace overview could not be loaded.")); return response.json() as Promise<HomeOverview>; })
-      .then(result => { if (!controller.signal.aborted) { setOverview(result); setTab(previous => previous === "planning" && !result.sections.planning || previous === "projects" && !result.sections.projects ? "overview" : previous); } })
+      .then(result => { if (!controller.signal.aborted) setOverview(result); })
       .catch(error => { if (!controller.signal.aborted) setOverviewError(error instanceof Error ? error.message : t("Overview unavailable.")); });
     return () => controller.abort();
   }, [workspaceId, userId, overviewReload, t]);
@@ -182,7 +178,7 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
     } catch (error) { setPreferenceError(error instanceof Error ? error.message : t("Your Home layout could not be saved. Your choices are still here.")); }
     finally { savingLayout.current = false; setLayoutBusy(false); }
   };
-  const startEditing = () => { setDraft(layout.map(item => ({ ...item }))); setTab("overview"); setPreferenceError(""); setEditing(true); };
+  const startEditing = () => { setDraft(layout.map(item => ({ ...item }))); setPreferenceError(""); setEditing(true); };
   const shownInEdit = (item: HomeWidget) => item.visible && available(item.id);
   const move = (id: HomeWidgetId, offset: -1 | 1) => setDraft(previous => {
     const next = moveHomeWidget(previous, id, offset, shownInEdit);
@@ -217,16 +213,8 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
   };
   const onDragEnd = () => { if (dragId) { const order = draft.filter(shownInEdit); setAnnouncement(t("{name} moved to position {position} of {total}", { name: widgetNames[dragId], position: order.findIndex(item => item.id === dragId) + 1, total: order.length })); } setDragId(null); lastOver.current = null; };
 
-  const tabs: { id: HomeTab; label: string; show: boolean }[] = [
-    { id: "overview", label: t("Overview"), show: true },
-    { id: "sales", label: t("Sales"), show: canView },
-    { id: "planning", label: t("Planning"), show: available("planning") },
-    { id: "projects", label: t("Projects"), show: available("projects") },
-    { id: "people", label: t("My time"), show: available("attendance") },
-  ];
-  const widgetInTab = (id: HomeWidgetId) => tab === "overview" || tab === "sales" && (id === "attention" || id === "sales" || id === "trend") || tab === "planning" && id === "planning" || tab === "projects" && (id === "projects" || id === "health") || tab === "people" && id === "attendance";
   const expectedKpis = [canEnquiries, canQuotes, canPayments, canProjects].filter(Boolean).length;
-  const shownLayout = (editing ? draft : layout).filter(widget => widget.visible && available(widget.id) && widgetInTab(widget.id));
+  const shownLayout = (editing ? draft : layout).filter(widget => widget.visible && available(widget.id));
   const hiddenWidgets = draft.filter(widget => !widget.visible && available(widget.id));
   const part = greetingPart(undefined);
   const greeting = firstName
@@ -267,10 +255,8 @@ function HomeContent({ workspaceId, userId, workspaceName, modules, initialData,
     <PageHeader title={greeting} description={today} actions={editing
       ? <div className={s.actions}><Button onPress={() => setGallery(true)} isDisabled={layoutBusy}><Plus size={16} aria-hidden="true" />{t("Add widget")}</Button><Button variant="quiet" isDisabled={layoutBusy} onPress={() => setEditing(false)}>{t("Cancel")}</Button><Button variant="primary" isLoading={layoutBusy} isDisabled={layoutVersion === null} onPress={() => void saveLayout()}>{t("Done")}</Button></div>
       : <div className={s.actions}><Button variant="quiet" onPress={startEditing}><LayoutGrid size={16} aria-hidden="true" />{t("Edit Home")}</Button>{crmEnabled ? <Link className={s.primaryAction} href="/workspace/crm/leads?create=true"><Plus size={16} aria-hidden="true" />{t("New enquiry")}</Link> : null}</div>} />
-    {!editing && <nav className={s.tabs} aria-label={t("Home sections")}>{tabs.filter(item => item.show).map(item => <button key={item.id} type="button" aria-current={tab === item.id ? "page" : undefined} onClick={() => setTab(item.id)}>{item.label}</button>)}</nav>}
     {editing && preferenceError ? <div className={s.inlineFailure} role="alert"><span>{preferenceError}</span><Button size="compact" isDisabled={layoutBusy} onPress={() => { setLayoutReload(value => value + 1); setEditing(false); }}>{t("Reload saved layout")}</Button></div> : null}
-    {(tab === "overview" || tab === "sales" || tab === "projects") && !editing ? <KpiRow metrics={metricsState} expected={expectedKpis} /> : null}
-    {tab === "overview" && canManage && !editing ? <div className={s.setupArea}><WorkspaceReadiness compact workspaceId={workspaceId} userId={userId} readiness={readiness} modules={modules} /></div> : null}
+    {!editing ? <KpiRow metrics={metricsState} expected={expectedKpis} /> : null}
     <div className={s.grid}>{shownLayout.map(widget => <section key={widget.id} className={s.widget} data-widget-id={widget.id} data-size={widget.size} data-dragging={dragId === widget.id || undefined} aria-label={widgetNames[widget.id]}>
       {editing ? <div className={s.editChrome}>
         <IconButton className={s.removeButton} aria-label={t("Remove {name}", { name: widgetNames[widget.id] })} onPress={() => remove(widget.id)}><Minus size={14} aria-hidden="true" /></IconButton>

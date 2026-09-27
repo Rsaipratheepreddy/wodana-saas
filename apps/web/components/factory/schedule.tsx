@@ -40,11 +40,14 @@ export function Schedule({ api, refreshKey, onOpen }: { api: FactoryApi; refresh
       list.push({ date: iso(at), label: dayLabel.format(moment), month: !list.length || moment.getUTCDate() === 1 ? monthLabel.format(moment) : undefined, off: !worked.has(iso(at)), today: iso(at) === state.from });
     }
     const index = (date: string) => Math.max(0, Math.min(list.length - 1, Math.round((time(date) - time(state.from)) / DAY)));
+    const runsPast = (start: string, end: string) => { const before = time(start) < time(state.from), after = time(end) > time(state.to); return before && after ? "both" as const : before ? "start" as const : after ? "end" as const : undefined; };
     const busy = new Set(state.conflicts.flatMap((conflict) => conflict.orders));
     const rows = (centerId: string | null) => state.orders.filter((order) => order.workcenterId === centerId).map((order) => ({
       id: order.id, ariaLabel: busy.has(order.id) ? t("{order} {item}, on a day over capacity", { order: orderNumber(order.number), item: order.title }) : `${orderNumber(order.number)} ${order.title}`,
       label: <><span className={styles.number}>{orderNumber(order.number)}</span>{busy.has(order.id) ? <span className={styles.lateText}>{t("Over")}</span> : null}<span>{`${order.title} · ${order.projectReference}`}</span></>,
       start: index(order.plannedStart!), end: index(order.plannedEnd!), tone: order.status === "on_hold" ? "blocked" as const : "default" as const, critical: busy.has(order.id),
+      barLabel: order.plannedHours ? t("{order} · {hours} h", { order: orderNumber(order.number), hours: Number(order.plannedHours) }) : orderNumber(order.number),
+      continues: runsPast(order.plannedStart!, order.plannedEnd!),
     }));
     return {
       days: list,

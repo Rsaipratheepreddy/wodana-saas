@@ -17,12 +17,13 @@ const splashDarkBackground = env('EXPO_PUBLIC_SPLASH_DARK_BACKGROUND', splashBac
 const splashWidth = Number(env('EXPO_PUBLIC_SPLASH_IMAGE_WIDTH', '186'));
 const androidSplashImage = env('EXPO_PUBLIC_ANDROID_SPLASH_IMAGE', adaptiveIcon);
 const accent = env('EXPO_PUBLIC_APP_ACCENT', '#292d32');
-const bundleId = env('EXPO_PUBLIC_BUNDLE_ID', 'com.wodana.mobile');
+const bundleId = env('EXPO_PUBLIC_BUNDLE_ID', 'ai.wodana.mobile');
 const scheme = env('EXPO_PUBLIC_APP_SCHEME', 'wodana');
 
 const config: ExpoConfig = {
   name,
-  slug: env('EXPO_PUBLIC_APP_SLUG', 'wodana-mobile'),
+  slug: env('EXPO_PUBLIC_APP_SLUG', 'wodana'),
+  owner: env('EXPO_PUBLIC_EXPO_OWNER', 'wodanas-team'),
   scheme,
   version: '0.2.0',
   runtimeVersion: { policy: 'appVersion' },

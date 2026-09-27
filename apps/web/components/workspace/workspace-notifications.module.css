@@ -33,4 +33,4 @@
 .badge,.filters button span[data-pending="true"] { background:var(--wd-danger-soft); color:var(--wd-danger); font-weight:700; }
 .badge { border:1px solid color-mix(in srgb,var(--wd-danger) 18%,transparent); min-inline-size:1.2rem; block-size:1.2rem; border-radius:var(--wd-radius-xs); }
 .unread { background:var(--wd-danger); }
-.badge { background:#c62828; color:var(--wd-color-text-inverse); border:2px solid var(--wd-color-surface); border-radius:999px; }
+.badge { background:var(--wd-color-danger-solid); color:var(--wd-color-on-danger); border:2px solid var(--wd-color-surface); border-radius:999px; }
