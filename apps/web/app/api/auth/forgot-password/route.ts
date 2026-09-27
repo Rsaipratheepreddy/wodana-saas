@@ -15,7 +15,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: t("Choose a valid organization.") }, { status: 400 });
   }
   const tenantSlug = resolvedHost.kind === "tenant" ? resolvedHost.branding.loginSlug
-    : requestedSlug || process.env.LOGIN_TENANT_SLUG || "iglo-architects";
+    // No tenant named on the platform host: email-first recovery finds the person's own workspace.
+    : requestedSlug || process.env.LOGIN_TENANT_SLUG || "";
   if (resolvedHost.kind === "tenant" && requestedSlug && requestedSlug !== tenantSlug) {
     return NextResponse.json({ message: t("This organization does not match the login address.") }, { status: 400 });
   }
