@@ -293,7 +293,9 @@ export type PurchasingSettings = {
   /** Stock corrections worth more than this (in the workspace's currency) wait for a second person; none when empty. */
   stockAdjustApprovalValue: string | null;
   /** How many days before it's needed something is ordered, when the supplier's lead time isn't known. */
-  orderAheadDays: number; version: number;
+  orderAheadDays: number;
+  /** How far above the ordered price (in percent) a supplier's invoice may be before it's held. */
+  invoiceTolerancePercent: string; version: number;
 };
 
 export async function ensurePurchasingSettings(db: Db, workspaceId: string): Promise<PurchasingSettings> {
@@ -301,7 +303,7 @@ export async function ensurePurchasingSettings(db: Db, workspaceId: string): Pro
   return (await db.query<PurchasingSettings>(
     `SELECT approval_threshold::text AS "approvalThreshold", require_material_signoff AS "requireMaterialSignoff", require_approved_supplier AS "requireApprovedSupplier",
             require_inspection AS "requireInspection", receive_tolerance_percent::text AS "receiveTolerancePercent", require_site_photo AS "requireSitePhoto", stock_adjust_approval_value::text AS "stockAdjustApprovalValue",
-            order_ahead_days AS "orderAheadDays", version
+            order_ahead_days AS "orderAheadDays", invoice_tolerance_percent::text AS "invoiceTolerancePercent", version
        FROM workspace_purchasing_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 

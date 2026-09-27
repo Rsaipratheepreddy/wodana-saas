@@ -20,6 +20,11 @@ describe('product navigation route ownership', () => {
     ['/workspace/settings/client-portal', '', 'settings'],
     ['/workspace/integrations', '', 'integrations'],
     ['/workspace/gallery', '', 'gallery'],
+    ['/workspace/purchasing/orders', '', 'purchasing'],
+    ['/workspace/inventory', '', 'inventory'],
+    ['/workspace/factory/orders', 'order=w1', 'factory'],
+    ['/workspace/finance', '', 'finance'],
+    ['/workspace/finance/suppliers/vendor-1', '', 'finance'],
   ])('assigns %s to one destination', (path, query, expected) => {
     expect(productNavigationActive(path, new URLSearchParams(query), sections)).toBe(expected);
   });

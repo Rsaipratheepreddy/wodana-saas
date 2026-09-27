@@ -32,6 +32,8 @@ import { HandoverService } from "../site/handover.service";
 import { WarrantyService } from "../site/warranty.service";
 import { processWarrantyExpiry } from "../site/site-reminders";
 import { processSiteReports } from "../site/site-reminders";
+import { PayablesService } from "../purchasing/payables.service";
+import { processPayablesDue } from "../purchasing/purchasing-reminders";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -2798,6 +2800,138 @@ integration("projects core (plan §6.10)", () => {
       const saved = await service.saveTemplate(actor, w.workspaceId, { name: "Furniture only", stages: [{ name: "Order", ownerRole: "procurement", checks: [{ kind: "confirm", label: "Ordered" }] }, { name: "Deliver", checks: [] }] });
       expect(saved.templates.map((template) => template.name)).toEqual(["Standard", "Furniture only"]);
       await expect(service.saveSettings(actor, w.workspaceId, { version: settings.version, roles: settings.roles.filter((role) => role.key !== "procurement") })).rejects.toThrow(/still uses a role/);
+    });
+  });
+
+  it("matches supplier invoices three ways, holds what doesn't match for someone else, pays in advance and in part, and settles credited returns with debit notes", async () => {
+    await world(async (w) => {
+      const { core, projectId, company, vendor, buyer, manager, access, all } = await buying(w);
+      const detail = await core.get(actor, w.workspaceId, projectId);
+      await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "10", unit: "sheets", clientChoice: false, version: detail.project.version });
+      const oak = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((need) => need.title === "Oak veneer")!;
+      // 10 sheets at 100 less 10% = 90 net each, 5% tax: 900 + 45.
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "material", materialItemId: oak.sourceId, quantity: "10", unitPrice: "100", discountPercent: "10" }]);
+      const orderLine = order.lines[0];
+      expect(orderLine).toMatchObject({ net: "900.0000", tax: "45.0000" });
+      const payables = [...all, "payables.view", "payables.manage", "payables.approve"];
+      const payer = new PayablesService(access(w.designer, payables)), approver = new PayablesService(access(w.manager, payables));
+      const viewer = new PayablesService(access(w.manager, ["payables.view"]));
+      const send = (service: PayablesService, body: Record<string, unknown>) => service.command(actor, w.workspaceId, { commandId: randomUUID(), ...body });
+      const bill = (id: string) => payer.bill(actor, w.workspaceId, id);
+      const oakLine = (quantity: string, unitPrice = "90", taxRate = "5") => ({ orderLineId: orderLine.id, quantity, unitPrice, taxRate });
+      const header = { vendorId: vendor, legalEntityId: company, currency: "AED", invoiceDate: "2026-09-26" };
+
+      // An advance on the order before anything arrives: by bank only into an approved account.
+      const advance = randomUUID();
+      await expect(send(payer, { action: "pay", id: advance, vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-20", amount: "200", method: "bank", orderId: order.order.id }))
+        .rejects.toThrow(/no approved bank account/);
+      await expect(send(payer, { action: "pay", id: advance, vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-20", amount: "200.005", method: "cheque" }))
+        .rejects.toThrow(/more decimals than AED/);
+      await expect(send(payer, { action: "pay", id: advance, vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2099-01-01", amount: "200", method: "cheque" }))
+        .rejects.toThrow(/once it's made/);
+      const paid = await send(payer, { action: "pay", id: advance, vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-20", amount: "200", method: "cheque",
+        reference: "CHQ-1", orderId: order.order.id }) as { payment: { unallocated: string; orderNumber: string } };
+      expect(paid.payment).toMatchObject({ unallocated: "200.0000", orderNumber: order.order.number });
+      await expect(send(payer, { action: "pay", id: randomUUID(), vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-20", amount: "5", method: "cheque", reference: "chq-1" }))
+        .rejects.toThrow(/CHQ-1 is already recorded|chq-1 is already recorded/);
+
+      // An invoice before the goods: held, and cancelled; its number can be entered again.
+      const early = randomUUID();
+      await expect(send(payer, { action: "save", id: early, ...header, number: "INV-1", invoiceDate: "2099-01-01", lines: [oakLine("4")] })).rejects.toThrow(/in the future/);
+      let state = await send(payer, { action: "save", id: early, ...header, number: "INV-1", lines: [oakLine("4")] }) as Awaited<ReturnType<typeof bill>>;
+      expect(state.bill).toMatchObject({ status: "draft", net: "360.0000", tax: "18.0000", total: "378.0000", orders: [order.order.number] });
+      state = await send(payer, { action: "submit", id: early, version: state.bill.version }) as never;
+      expect(state.bill).toMatchObject({ status: "held", holdReasons: "Oak veneer: nothing received yet" });
+      expect(state.canApproveThis).toBe(false);
+      state = await send(payer, { action: "cancel", id: early, version: state.bill.version, reason: "Entered before the goods came" }) as never;
+      expect(state.bill.status).toBe("cancelled");
+
+      // Six arrive; the invoice for six at the ordered price matches and is approved at once, taking the advance.
+      const receipt = await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: "warehouse", receivedOn: "2026-09-25", lines: [{ orderLineId: orderLine.id, received: "6" }] });
+      const first = randomUUID();
+      state = await send(payer, { action: "save", id: first, ...header, number: "INV-1", dueDate: "2026-10-20", statedTotal: "567", lines: [oakLine("6")] }) as never;
+      state = await send(payer, { action: "submit", id: first, version: state.bill.version }) as never;
+      expect(state.bill).toMatchObject({ status: "approved", total: "567.0000", paid: "200.0000", balance: "367.0000", approvedByName: null, dueDate: "2026-10-20" });
+      expect(state.payments.map((payment) => payment.id)).toEqual([advance]);
+      await expect(send(payer, { action: "save", id: randomUUID(), ...header, number: " inv-1 ", lines: [oakLine("1")] })).rejects.toThrow(/INV-1|inv-1 from this supplier is already entered/);
+      await expect(send(payer, { action: "save", id: first, ...header, number: "INV-1", lines: [oakLine("6")], version: state.bill.version })).rejects.toThrow(/doesn't change/);
+
+      // Invoiced beyond what came, above the ordered price, at another tax rate, and a total that doesn't add up: all held with why.
+      const over = randomUUID();
+      state = await send(payer, { action: "save", id: over, ...header, number: "INV-2", statedTotal: "480", lines: [oakLine("5", "95", "0")] }) as never;
+      state = await send(payer, { action: "submit", id: over, version: state.bill.version }) as never;
+      expect(state.bill.status).toBe("held");
+      expect(state.bill.holdReasons.split("\n")).toEqual([
+        "Oak veneer: invoiced 11 sheets, received 6 sheets", "Oak veneer: 95 a unit, ordered at 90", "Oak veneer: tax 0%, ordered at 5%", "Invoice total 480.00, lines add up to 475.00"]);
+      // Whoever entered it can't approve it; someone else does, with why.
+      await expect(send(payer, { action: "approve", id: over, version: state.bill.version, note: "ok" })).rejects.toThrow(/Someone other than who entered/);
+      await expect(send(approver, { action: "approve", id: over, version: state.bill.version })).rejects.toThrow(/Say why/);
+      await expect(send(viewer, { action: "approve", id: over, version: state.bill.version, note: "x" })).rejects.toThrow(/Not allowed/);
+      state = await send(payer, { action: "cancel", id: over, version: state.bill.version, reason: "Supplier re-issues it" }) as never;
+
+      // A delivery charge that was never on an order: held, then approved by the manager.
+      const freight = randomUUID();
+      state = await send(payer, { action: "save", id: freight, ...header, number: "INV-3", lines: [{ description: "Delivery charge", quantity: "1", unitPrice: "50", taxRate: "5", projectId }] }) as never;
+      expect(state.lines[0]).toMatchObject({ projectId, total: "52.5000" });
+      state = await send(payer, { action: "submit", id: freight, version: state.bill.version }) as never;
+      expect(state.bill.holdReasons).toBe("Delivery charge: not on an order");
+      expect((await approver.bill(actor, w.workspaceId, freight)).canApproveThis).toBe(true);
+      state = await send(approver, { action: "approve", id: freight, version: state.bill.version, note: "Agreed on the phone" }) as never;
+      expect(state.bill).toMatchObject({ status: "approved", approvedByName: "Omar Manager", approvalNote: "Agreed on the phone", balance: "52.5000" });
+
+      // Paid in part: never more than an invoice has left or the payment has left; the advance stays on its own order.
+      const part = randomUUID();
+      await expect(send(payer, { action: "pay", id: part, vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-26", amount: "400", method: "cash",
+        allocations: [{ invoiceId: first, amount: "368" }] })).rejects.toThrow(/INV-1 has 367.00 left to pay/);
+      await expect(send(payer, { action: "pay", id: part, vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-26", amount: "400", method: "cash",
+        allocations: [{ invoiceId: first, amount: "367" }, { invoiceId: freight, amount: "52.5" }] })).rejects.toThrow(/Only 33.00 of this payment is left/);
+      const cash = await send(payer, { action: "pay", id: part, vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-26", amount: "400", method: "cash",
+        allocations: [{ invoiceId: first, amount: "367" }] }) as { payment: { unallocated: string; allocations: unknown[] } };
+      expect(cash.payment).toMatchObject({ unallocated: "33.0000", allocations: [{ invoiceId: first, number: "INV-1", amount: "367.0000" }] });
+      const commandId = randomUUID();
+      await payer.command(actor, w.workspaceId, { commandId, action: "allocate", paymentId: part, allocations: [{ invoiceId: freight, amount: "30" }] });
+      const replay = await payer.command(actor, w.workspaceId, { commandId, action: "allocate", paymentId: part, allocations: [{ invoiceId: freight, amount: "30" }] }) as { payment: { unallocated: string } };
+      expect(replay.payment.unallocated).toBe("3.0000");
+      expect((await bill(freight)).bill.balance).toBe("22.5000");
+      await expect(send(payer, { action: "cancel", id: first, version: (await bill(first)).bill.version, reason: "x" })).rejects.toThrow(/reverse them first/);
+      await expect(send(payer, { action: "allocate", paymentId: advance, allocations: [{ invoiceId: freight, amount: "1" }] })).rejects.toThrow(/Only 0.00|goes only to that order/);
+
+      // Two accepted sheets go back for a credit after they were invoiced: a debit note of 180 + 9 settles them.
+      const back = await buyer.returns.create(actor, w.workspaceId, { id: randomUUID(), receiptId: receipt.receipt.id, outcome: "credit",
+        lines: [{ receiptLineId: receipt.lines[0].id, source: "accepted", quantity: "2", reasonKind: "defective", reason: "Delaminating" }] });
+      await buyer.returns.command(actor, w.workspaceId, back.return.id, { action: "sent", version: 1 });
+      let supplier = await viewer.supplier(actor, w.workspaceId, vendor);
+      expect(supplier.debitNotes.map((note) => [note.orderNumber, note.quantity, note.amount])).toEqual([[order.order.number, "2", "189.0000"]]);
+      // Owed: 567 + 52.50 invoiced, 200 + 400 paid, 189 debited.
+      expect(supplier.balances).toEqual([expect.objectContaining({ invoiced: "619.5000", paid: "600.0000", debited: "189.0000", owed: "-169.5000", held: "0.0000", overdue: "0.0000" })]);
+      expect((await viewer.invoiceable(actor, w.workspaceId, order.order.id)).lines[0]).toMatchObject({ accepted: "4.0000", credited: "2.0000", billed: "6.0000", left: "0", netUnitPrice: "90" });
+
+      // The cash payment bounces: its invoices are owed again.
+      await expect(send(payer, { action: "reverse", paymentId: part })).rejects.toThrow(/Say why/);
+      await send(payer, { action: "reverse", paymentId: part, reason: "Returned by the bank" });
+      expect((await bill(first)).bill).toMatchObject({ paid: "200.0000", balance: "367.0000" });
+      supplier = await viewer.supplier(actor, w.workspaceId, vendor);
+      expect(supplier.balances[0]).toMatchObject({ paid: "200.0000", owed: "230.5000" });
+      await expect(send(payer, { action: "allocate", paymentId: part, allocations: [{ invoiceId: first, amount: "1" }] })).rejects.toThrow(/reversed payment/);
+
+      // Due and overdue invoices remind the people who pay, once until something changes.
+      await w.client.query(`UPDATE supplier_invoices SET invoice_date = '2026-08-01', due_date = '2026-09-01' WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, first]);
+      expect((await viewer.supplier(actor, w.workspaceId, vendor)).balances[0].overdue).toBe("230.5000");
+      const overview = await viewer.overview(actor, w.workspaceId);
+      expect(overview.bills.map((item) => [item.number, item.status])).toEqual(expect.arrayContaining([["INV-1", "approved"], ["INV-1", "cancelled"], ["INV-2", "cancelled"], ["INV-3", "approved"]]));
+      expect(overview).toMatchObject({ canManage: false, canApprove: false });
+      const role = randomUUID();
+      await w.client.query("INSERT INTO roles (id, workspace_id, code, name) VALUES ($1, $2, 'payer', 'Payer')", [role, w.workspaceId]);
+      await w.client.query("INSERT INTO role_permissions (workspace_id, role_id, permission_id) SELECT $1, $2, id FROM permissions WHERE code = 'payables.manage'", [w.workspaceId, role]);
+      await w.client.query("INSERT INTO member_roles (workspace_id, membership_id, role_id) VALUES ($1, $2, $3)", [w.workspaceId, w.designerMembership, role]);
+      expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 1 });
+      expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 0 });
+      const notice = (await w.client.query<{ body: string }>(`SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.due' ORDER BY created_at DESC LIMIT 1`,
+        [w.workspaceId])).rows[0];
+      expect(notice?.body).toBe("INV-1: AED 367.00 overdue since 2026-09-01");
+      // The delivery charge falls due too: one more notice, naming both.
+      await w.client.query(`UPDATE supplier_invoices SET due_date = invoice_date WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, freight]);
+      expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 1 });
     });
   });
 });

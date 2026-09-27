@@ -6,7 +6,7 @@ import { processDesignDeadlines } from "../design/design-journey.store";
 import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { processSiteReports, processWarrantyExpiry } from "../site/site-reminders";
 import { processWorkDeadlines } from "../project-core/work-reminders";
-import { processPurchasingDeadlines } from "../purchasing/purchasing-reminders";
+import { processPayablesDue, processPurchasingDeadlines } from "../purchasing/purchasing-reminders";
 import { processSupplierDocuments } from "../purchasing/supplier-controls.service";
 import { ProjectNotificationsService } from "./project-notifications";
 
@@ -31,7 +31,7 @@ export class ProjectRemindersService {
     const workspaces = await this.db.query<{ workspace_id: string }>(
       "SELECT workspace_id FROM list_reminder_workspaces()",
     );
-    const totals = { created: 0, dueReminders: 0, decisionReminders: 0, weeklySummaries: 0, designAlerts: 0, workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, failedWorkspaces: 0 };
+    const totals = { created: 0, dueReminders: 0, decisionReminders: 0, weeklySummaries: 0, designAlerts: 0, workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, payablesDue: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
       try {
         const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => ({
@@ -45,6 +45,7 @@ export class ProjectRemindersService {
           factory: projectId ? null : await processFactoryDeadlines(client, workspaceId),
           site: projectId ? null : await processSiteReports(client, workspaceId),
           warranty: projectId ? null : await processWarrantyExpiry(client, workspaceId),
+          payables: projectId ? null : await processPayablesDue(client, workspaceId),
         }));
         await this.queueDueEmails(run.due);
         if (run.weekly) await this.queueWeeklyEmails(run.weekly.rows, run.weekly.emailWorkspaces);
@@ -58,6 +59,7 @@ export class ProjectRemindersService {
         totals.factoryShortages += run.factory?.sent ?? 0;
         totals.siteReports += run.site?.sent ?? 0;
         totals.warrantyEnding += run.warranty?.sent ?? 0;
+        totals.payablesDue += run.payables?.sent ?? 0;
       } catch (error) {
         totals.failedWorkspaces += 1;
         this.logger.error(`Reminder run failed for workspace ${workspaceId}: ${(error as Error).message}`);

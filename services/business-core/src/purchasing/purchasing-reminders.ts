@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { currencyDecimals, ensurePurchasingSettings, readNeeds, readOrderLines } from "./orders";
+import { readBillsDue } from "./payables";
 import { outstanding } from "./receiving";
 
 type Db = Pick<PoolClient, "query">;
@@ -77,4 +79,37 @@ async function chaseOrdering(db: Db, workspaceId: string, today: string, locale:
     }
   }
   return sent;
+}
+
+/**
+ * Supplier invoices falling due: the people who pay suppliers hear once per supplier when invoices are
+ * due within three days, and again when one of them goes overdue. The key is the set of invoices and
+ * their state, so nothing repeats until something changes.
+ */
+export async function processPayablesDue(db: Db, workspaceId: string) {
+  const due = await readBillsDue(db, workspaceId, 3);
+  if (!due.length) return { sent: 0 };
+  const payers = (await db.query<{ userId: string }>(
+    `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership
+       JOIN effective_member_roles effective_role ON effective_role.membership_id = membership.id
+       JOIN role_permissions granted ON granted.role_id = effective_role.role_id
+       JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'payables.manage'
+      WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows.map((row) => row.userId);
+  let sent = 0;
+  for (const vendorId of new Set(due.map((bill) => bill.vendorId))) {
+    const bills = due.filter((bill) => bill.vendorId === vendorId);
+    const key = createHash("sha256").update(bills.map((bill) => `${bill.id}:${bill.overdue ? "late" : "due"}`).join(",")).digest("hex").slice(0, 24);
+    const note = bills.map((bill) => `${bill.number}: ${bill.currency} ${Dec.of(bill.balance).toFixed(currencyDecimals(bill.currency))} ${bill.overdue ? "overdue since" : "due"} ${bill.dueDate}`)
+      .join("; ").slice(0, 480);
+    const totals = new Map<string, Dec>();
+    for (const bill of bills) totals.set(bill.currency, (totals.get(bill.currency) ?? Dec.ZERO).add(bill.balance));
+    const amount = [...totals].map(([currency, total]) => `${currency} ${total.toFixed(currencyDecimals(currency))}`).join(" + ");
+    for (const userId of payers) {
+      const result = await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: "payables.due", eventType: "payables.due",
+        variables: { supplier: bills[0].supplierName, invoice: bills.map((bill) => bill.number).join(", ").slice(0, 200), amount, actor: "", note },
+        deepLink: `/workspace/finance/suppliers/${vendorId}`, idempotencyKey: `payables.due:${vendorId}:${key}:${userId}` });
+      if (result.queued) sent += 1;
+    }
+  }
+  return { sent };
 }

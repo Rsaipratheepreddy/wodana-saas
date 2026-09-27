@@ -307,7 +307,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
     icon: "projects",
     id: "projects",
     label: "Projects",
-    paths: ["/workspace/purchasing", "/workspace/inventory", "/workspace/factory"],
+    paths: ["/workspace/purchasing", "/workspace/inventory", "/workspace/factory", "/workspace/finance"],
     navigation: [
       {
         id: "projects-primary",
@@ -316,6 +316,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/purchasing", icon: "procurement", id: "global-purchasing", label: "Purchasing", description: "What to order, orders and suppliers." },
           { href: "/workspace/inventory", icon: "materialPlan", id: "global-inventory", label: "Inventory", description: "Stock by place, moves and counts." },
           { href: "/workspace/factory", icon: "production", id: "global-factory", label: "Factory", description: "What to make, work orders and their checks." },
+          { href: "/workspace/finance", icon: "commercial", id: "global-finance", label: "Finance", description: "Supplier invoices, payments and what's owed." },
         ],
       },
     ],
@@ -360,6 +361,7 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
       ...(allowed.has("customers") || allowed.has("projects-overview") ? [{ id: "clients", label: "Clients", href: allowed.has("customers") ? "/workspace/crm/customers" : "/workspace/projects/clients", icon: "customers" as const }] : []),
       ...(allowed.has("pre-projects") ? [{ id: "planning", label: "Planning", href: "/workspace/pre-projects", icon: "preProjects" as const }] : []),
       ...(allowed.has("projects-overview") ? [{ id: "projects", label: "Projects", href: "/workspace/projects", icon: "projects" as const }] : []),
+      ...(allowed.has("global-finance") ? [{ id: "finance", label: "Finance", href: "/workspace/finance", icon: "commercial" as const }] : []),
     ] },
     { id: "operations", label: "Operations", items: [
       ...(allowed.has("global-purchasing") ? [{ id: "purchasing", label: "Purchasing", href: "/workspace/purchasing", icon: "procurement" as const }] : []),
@@ -406,6 +408,8 @@ export function productNavigationActive(pathname: string, query: URLSearchParams
   if (under("/workspace/projects/clients")) return exists("clients");
   if (under("/workspace/purchasing")) return exists("purchasing");
   if (under("/workspace/inventory")) return exists("inventory");
+  if (under("/workspace/factory")) return exists("factory");
+  if (under("/workspace/finance")) return exists("finance");
   if (under("/workspace/projects")) return exists("projects");
   if (under("/workspace/hrms")) return exists("team");
   if (under("/workspace/integrations")) return exists("integrations");

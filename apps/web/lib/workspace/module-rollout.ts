@@ -61,12 +61,13 @@ export function scopeSupplyNavigation(
   const canViewPurchasing = isAdministrator || (allowedPermissions ?? []).some(permission => ["purchasing.view", "purchasing.manage", "vendors.view", "vendors.manage"].includes(permission));
   const canViewInventory = isAdministrator || (allowedPermissions ?? []).some(permission => ["stock.view", "stock.manage", "stock.adjust", "stock.receive"].includes(permission));
   const canViewFactory = isAdministrator || (allowedPermissions ?? []).some(permission => ["factory.view", "factory.manage", "factory.report", "factory.approve"].includes(permission));
+  const canViewFinance = isAdministrator || (allowedPermissions ?? []).some(permission => ["payables.view", "payables.manage", "payables.approve"].includes(permission));
   return modules.map(module => module.id !== "projects" ? module : {
     ...module,
     navigation: module.navigation.map(section => ({
       ...section,
       items: section.items.filter(item => (item.id !== "global-purchasing" || canViewPurchasing) && (item.id !== "global-inventory" || canViewInventory)
-        && (item.id !== "global-factory" || canViewFactory)),
+        && (item.id !== "global-factory" || canViewFactory) && (item.id !== "global-finance" || canViewFinance)),
     })),
   });
 }
