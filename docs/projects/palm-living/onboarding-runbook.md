@@ -124,6 +124,16 @@ MIGRATION_DATABASE_URL=postgresql://postgres@localhost:5432/wodana_release \
 Check Settings → Quotations → Proposal: introduction, terms, exclusions, contact details and the
 pictures are filled.
 
+### Seeding the workspace from the host (no passwords, no email)
+
+`services/business-core/src/seed/palm-showcase` runs inside the core container as the owner (`SEED_ACTOR_EMAIL`), with
+`DATABASE_URL`, `SEED_TENANT_SLUG` (the login slug, e.g. `plm`) and `SEED_DATA_DIR=/workspace/docs`. `--commit --phase bootstrap`
+provisions the tenant on an empty database (owner invitation only; its activation link is printed), then, once the owner has
+signed in, creates the teams, roles and the role-wise team invitations and prints their links; `--commit` (all) adds the tax
+profile, settings, proposal kit, supplier register, the Core Collection (`SEED_CORE_COLLECTION_DIR`, the artifact's `prepared`
+folder) and the showcase project. Every run is idempotent; `--dry-run` writes nothing. Email leaves the process only with
+`SEED_DELIVER_EMAIL=1`.
+
 ## 7. Team and access
 
 1. The firm kit gives the workspace its roles on creation: **Sales** (enquiries, pipeline, planning
