@@ -106,3 +106,4 @@
 /* Selected lines keep their actions in view while the list scrolls. */
 .selectionBar { position: sticky; inset-block-end: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); }
 .selectionActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin-inline-start: auto; }
+@media (max-width: 48rem) { .nameCell { max-inline-size: 16rem; } }

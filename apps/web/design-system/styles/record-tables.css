@@ -87,7 +87,8 @@
   .wd-data-grid .wd-grid-footer { padding: var(--wd-space-2) 0; min-block-size: 48px; flex-wrap: wrap; border-block-start: 0; background: transparent; color: var(--wd-record-muted); }
   .wd-data-grid .wd-grid-footer > span { font-size: var(--wd-text-xs); flex-wrap: wrap; }
   @media (max-width: 48rem) {
-    .wd-grouped-table-scroll .wd-record-table { min-inline-size: 100%; }
+    /* On a phone the grouped table sizes to its content and scrolls sideways instead of squeezing every column. */
+    .wd-grouped-table-scroll .wd-record-table { inline-size: max-content !important; min-inline-size: 100%; }
     .wd-data-grid .wd-record-table { inline-size: max-content !important; }
     .wd-data-grid .wd-record-table :is(th,td):not([data-column="__select"]) { inline-size: var(--wd-record-column-size, auto) !important; }
     .wd-data-grid .wd-record-table [data-column="__select"] { display: table-cell; }
