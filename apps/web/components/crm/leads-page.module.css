@@ -182,7 +182,6 @@
 .intakeChip, .serviceChip { display:inline-flex; align-items:center; padding:var(--wd-space-0-5) var(--wd-space-2); border-radius:var(--wd-radius-2xs); font-size:var(--wd-text-xs); line-height:1.5; border:1px solid var(--wd-color-structural-divider); background:var(--wd-color-surface-muted); color:var(--wd-color-text); }
 .serviceChip[data-missing] { background:var(--wd-color-warning-subtle); color:var(--wd-color-warning); border-color:currentColor; }
 
-.personAvatar { display:inline-flex; align-items:center; justify-content:center; inline-size:28px; block-size:28px; flex:0 0 28px; border-radius:50%; font-size:var(--wd-text-2xs); font-weight:600; }
 .sheet .managerCell { gap:var(--wd-space-2); }
 .sheet .assigneeButton { gap:var(--wd-space-1-5); font-size:var(--wd-text-xs); }
 .sheet .assigneeButton:disabled { opacity:1; cursor:default; }

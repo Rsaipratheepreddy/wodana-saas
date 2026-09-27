@@ -24,6 +24,7 @@ import {
   useDesignSystem,
 } from "@/design-system";
 import { CRM_LEAD_TRANSITIONS, leadStage, leadStageLabel, salesOwnerChoices, type CrmLeadListItem, type CrmLeadStatus, type LeadsPageData } from "@/lib/crm/leads";
+import { Avatar } from "@/design-system/components/avatar";
 import styles from "./leads-page.module.css";
 import theme from "./crm-workspace-colors.module.css";
 import { EnquiryFieldsSettings } from "./enquiry-fields-settings";
@@ -63,13 +64,6 @@ function humanize(value: string | null, notSet: string) {
     .filter(Boolean)
     .map((word) => word[0]?.toUpperCase() + word.slice(1))
     .join(" ");
-}
-
-function PersonAvatar({ name }: { name: string }) {
-  const palette = [["#e3eafa", "#334f8a"], ["#f5e5d6", "#8b542b"], ["#ece3f7", "#6a438a"], ["#dceeed", "#286763"], ["#f5dfe7", "#8b3d5d"]];
-  const hash = [...name].reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 0);
-  const [background, color] = palette[hash % palette.length];
-  return <span aria-hidden="true" className={styles.personAvatar} style={{ background, color }}>{name.trim().split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase()}</span>;
 }
 
 /** Owners, admins and sales managers see the team; salespeople start from their own new enquiries (PLM-076). */
@@ -273,7 +267,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const statusText = (lead: CrmLeadListItem) => lead.isConverted ? t("Converted") : lead.status === "duplicate" ? t("Duplicate") : lead.status === "qualified" ? t("Qualified") : lead.status === "disqualified" ? t("Not interested") : listOf(lead.status) === "come_back" ? t("Come back later") : listOf(lead.status) === "contacted" ? t("Contacted") : t("New");
   const statusTone = (lead: CrmLeadListItem): "success" | "info" | "warning" | "neutral" | "danger" => lead.isConverted || lead.status === "qualified" ? "success" : lead.status === "disqualified" ? "neutral" : listOf(lead.status) === "come_back" ? "warning" : listOf(lead.status) === "new" ? "info" : "neutral";
   const columns: DataGridColumn<CrmLeadListItem>[] = [
-    { accessorKey: "partyName", header: t("Customer"), size: 220, meta: { headerIcon: <ContactRound size={14}/> }, cell: ({row:{original:lead}}) => { const name = customerDisplayName(lead.partyName); return <button type="button" className={styles.sheetLead} onClick={() => setCardLead(lead)} aria-label={t("Open {name}", { name })} title={name}><PersonAvatar name={name} /><span className={styles.clientRequest}><strong>{name}</strong>{lead.reference ? <small>{lead.reference}</small> : null}</span></button>; } },
+    { accessorKey: "partyName", header: t("Customer"), size: 220, meta: { headerIcon: <ContactRound size={14}/> }, cell: ({row:{original:lead}}) => { const name = customerDisplayName(lead.partyName); return <button type="button" className={styles.sheetLead} onClick={() => setCardLead(lead)} aria-label={t("Open {name}", { name })} title={name}><Avatar name={name} roles={["client"]} seed={lead.id} size="sm" /><span className={styles.clientRequest}><strong>{name}</strong>{lead.reference ? <small>{lead.reference}</small> : null}</span></button>; } },
     { accessorKey: "title", header: t("Enquiry title"), size: 240, meta: { headerIcon: <Type size={14}/> }, cell: ({getValue}) => <span className={styles.sheetText} title={String(getValue())}>{String(getValue())}</span> },
     { id: "status", header: t("Status"), size: 140, accessorFn: lead => statusText(lead), meta: { headerIcon: <CheckCircle2 size={14}/> }, cell: ({row:{original:lead}}) => <Badge tone={statusTone(lead)}>{statusText(lead)}</Badge> },
     { id: "source", header: t("Source"), size: 150, accessorFn: lead => sourceLabel(lead.source), filterFn: "equalsString", meta: { headerIcon: <Globe size={14}/>, filterOptions: sources.map(source=>({id:sourceLabel(source),label:sourceLabel(source)})) }, cell: ({row:{original:lead}}) => <SourceChip source={lead.source} displayLabel={sourceLabel(lead.source)} /> },
@@ -283,7 +277,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
     { accessorKey: "ownerName", header: t("Assigned to"), size: 190, meta: { headerIcon: <UsersRound size={14}/> }, cell: ({row:{original:lead}}) => <div className={styles.managerCell}><button type="button"
       aria-label={t("Assign {name}", { name: customerDisplayName(lead.partyName) })} title={lead.ownerName ? t("{name} · Reassign", { name: lead.ownerName }) : t("Choose sales owner")}
       className={styles.assigneeButton} disabled={busy || lead.isConverted || ["qualified", "disqualified"].includes(lead.status)} onClick={() => setAssignment(lead)}>
-      {lead.ownerName ? <PersonAvatar name={lead.ownerName} /> : <UserRoundPlus aria-hidden="true" size={16} />}
+      {lead.ownerName ? <Avatar name={lead.ownerName} roles={["sales"]} seed={lead.ownerMembershipId ?? lead.ownerName} size="sm" /> : <UserRoundPlus aria-hidden="true" size={16} />}
       <span>{lead.ownerName ?? t("Unassigned")}</span>
     </button>{!lead.ownerMembershipId && ACTIVE_STATUSES.has(lead.status) && !lead.isConverted ? <Button size="compact" isDisabled={busy} onPress={() => void runAutoAssign(lead)} aria-label={t("Auto-assign {name}", { name: customerDisplayName(lead.partyName) })}>{t("Auto")}</Button> : null}</div> },
     { accessorKey: "nextActionAt", header: t("Next follow-up"), size: 160, meta: { headerIcon: <CalendarClock size={14}/> }, cell: ({row:{original:lead}}) => {

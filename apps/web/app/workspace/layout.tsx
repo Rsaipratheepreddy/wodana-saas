@@ -45,7 +45,7 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
     cookies(),
     process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true" ? {} : getWorkspaceRegion(activeMembership?.workspaceId, activeMembership),
   ]);
-  const user = { email: profile.primaryEmail, name: profile.displayName, id: profile.id, avatarUrl: appearance?.photoUrl ?? undefined, avatarPreset: appearance?.avatarPreset ?? "auto" };
+  const user = { email: profile.primaryEmail, name: profile.displayName, id: profile.id, avatarUrl: appearance?.photoUrl ?? undefined, avatarPreset: appearance?.avatarPreset ?? "auto", roles: activeMembership?.roles ?? [] };
   // The root layout follows the language cookie. A person who has not chosen on this device yet gets the
   // language saved on their profile, else the workspace's default language (and this device remembers it).
   const chosen = supportedLanguage(cookieStore.get(LANGUAGE_COOKIE)?.value);

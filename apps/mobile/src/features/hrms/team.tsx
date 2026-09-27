@@ -157,7 +157,7 @@ function TeamToday() {
   if (history.error) return <Failure message={errorMessage(history.error, t('Your team could not be loaded.'))} onRetry={() => void history.refetch()} />;
   if (!days.length) return <Empty icon={Users} title={t('No one on your team yet')} />;
   return <Section>
-    {days.map((day, index) => <ListRow key={day.membershipId} first={index === 0} leading={<Avatar name={day.name} />} title={day.name}
+    {days.map((day, index) => <ListRow key={day.membershipId} first={index === 0} leading={<Avatar name={day.name} person={{ id: day.membershipId }} />} title={day.name}
       detail={day.open ? `${day.place ?? t('Checked in')} · ${t('since {time}', { time: format.time(day.firstIn) })}` : day.leaveType ?? (day.firstIn ? `${format.time(day.firstIn)} – ${format.time(day.lastOut)}` : day.scheduled ? '' : t('Day off'))}
       trailing={<StatusChip status={day.status} />} />)}
   </Section>;

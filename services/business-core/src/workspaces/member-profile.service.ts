@@ -7,7 +7,8 @@ import { BrandAssetStorageService } from "./brand-asset-storage.service";
 import { WorkspaceAccessService } from "./workspace-access.service";
 
 export const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
-export const AVATAR_PRESET_PATTERN = /^[ab](0[1-9]|10)$/;
+/** A picture from the brand avatar set: `<role>-<f|m>` (packages/brand/avatars). */
+export const AVATAR_PRESET_PATTERN = /^(owner|sales|designer|estimator|project_manager|site_supervisor|purchasing|finance|people|factory|carpenter|electrician|painter|installer|client|default)-[fm]$/;
 /** A language, optionally with a region: "ar", "ar-AE", "en-001". */
 export const LANGUAGE_LOCALE_PATTERN = /^[a-z]{2,3}(-([A-Z]{2}|\d{3}))?$/;
 const PHOTO_TYPES: Record<string, string> = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };

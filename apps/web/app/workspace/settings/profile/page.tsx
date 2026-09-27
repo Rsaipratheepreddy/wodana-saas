@@ -9,5 +9,5 @@ export default async function Page() {
   const workspaceId = profile.memberships[0]?.workspaceId;
   if (!workspaceId) redirect("/login");
   const appearance = await getMyProfile(workspaceId) ?? { avatarPreset: null, photoUrl: null, version: 0 };
-  return <UserSettingsFrame active="profile"><ProfileAppearance email={profile.primaryEmail} initial={appearance} name={profile.displayName} userId={profile.id} workspaceId={workspaceId} /></UserSettingsFrame>;
+  return <UserSettingsFrame active="profile"><ProfileAppearance email={profile.primaryEmail} initial={appearance} name={profile.displayName} roles={profile.memberships[0]?.roles ?? []} userId={profile.id} workspaceId={workspaceId} /></UserSettingsFrame>;
 }

@@ -23,8 +23,8 @@ export function PersonName({ person, fallback, className }: { person: PersonLike
 }
 
 /** A person with their avatar: owners, assignees and authors on cards and rows. */
-export function PersonChip({ person, src, preset, seed, fallback }: { person: PersonLike | string | null | undefined; src?: string | null; preset?: string | null; seed?: string; fallback?: string }) {
+export function PersonChip({ person, src, preset, seed, roles, fallback }: { person: PersonLike | string | null | undefined; src?: string | null; preset?: string | null; seed?: string; roles?: ReadonlyArray<string> | null; fallback?: string }) {
   const name = personDisplayName(person) || fallback || "";
   if (!name) return null;
-  return <span className="wd-person-chip"><span aria-hidden="true"><Avatar name={name} preset={preset} seed={seed} size="sm" src={src} /></span><PersonName fallback={fallback} person={person} /></span>;
+  return <span className="wd-person-chip"><span aria-hidden="true"><Avatar name={name} preset={preset} roles={roles} seed={seed ?? name} size="sm" src={src} /></span><PersonName fallback={fallback} person={person} /></span>;
 }

@@ -62,7 +62,7 @@ export function MeScreen() {
   };
 
   return <Screen large title={session.profile.displayName} subtitle={`${session.membership.workspaceName} · ${session.profile.primaryEmail}`}
-    action={<Avatar name={session.profile.displayName} size={44} />}
+    action={<Avatar name={session.profile.displayName} size={44} person={{ id: session.profile.id, roles: session.membership.roles }} />}
     onRefresh={() => { void bootstrap.refetch(); void current.refetch(); void balances.refetch(); }} refreshing={current.isRefetching}>
     {hrms && employee?.enabled !== false ? <Card tone={open ? 'action' : 'default'}>
       <Row style={{ justifyContent: 'space-between' }}>

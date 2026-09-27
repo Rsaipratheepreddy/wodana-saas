@@ -28,7 +28,7 @@ export function ProjectTeam({ detail, run, onClose }: { detail: ProjectDetail; r
               items={role.role === "project_manager" ? options.filter((option) => option.id !== NOBODY) : options} />
           : <div className={styles.teamRow}>
               <span className={styles.teamRole}>{t(role.label as never)}</span>
-              {role.member ? <span className={styles.teamPerson}><Avatar name={role.member.name} size="sm" />{role.member.name}</span> : <span className={styles.muted}>{t("Not named")}</span>}
+              {role.member ? <span className={styles.teamPerson}><Avatar name={role.member.name} seed={role.member.name} size="sm" />{role.member.name}</span> : <span className={styles.muted}>{t("Not named")}</span>}
             </div>}
       </li>)}
     </ul>
