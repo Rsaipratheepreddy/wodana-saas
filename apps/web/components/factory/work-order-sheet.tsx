@@ -9,6 +9,7 @@ import type { ReleaseCheck, WorkOrderState } from "@/lib/factory/types";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
 import { WorkOrderStatusLabel, orderNumber } from "./factory-labels";
+import { WorkOrderMaterials } from "./work-order-materials";
 import styles from "./factory.module.css";
 
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
@@ -92,6 +93,8 @@ export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: Fact
         </dd></div>
         {order.notes ? <div><dt>{t("Notes")}</dt><dd>{order.notes}</dd></div> : null}
       </dl>
+
+      <WorkOrderMaterials state={state} run={run} busy={busy} />
 
       {state.releaseChecks.length ? <section className={styles.stack} aria-label={t("Before it's released")}>
         <h3 className={styles.subhead}>{t("Before it's released")}</h3>

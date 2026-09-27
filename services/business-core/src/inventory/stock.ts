@@ -82,7 +82,7 @@ export async function stockItemInCatalogUnit(db: Db, workspaceId: string, input:
 export type Movement = {
   batchId: string; itemId: string; locationId: string; projectId: string | null; kind: MovementKind; quantity: string; forProjectId?: string | null;
   unitCost?: string | null; currency?: string | null; receiptLineId?: string | null; transferId?: string | null; supplierReturnId?: string | null; reason?: string; movedOn: string; actorId: string;
-  workOrderId?: string | null;
+  workOrderId?: string | null; workOrderMaterialId?: string | null;
 };
 
 /** Writes one movement; the database keeps the balance and refuses to go below zero. */
@@ -90,11 +90,11 @@ export async function move(db: Db, workspaceId: string, movement: Movement) {
   try {
     await db.query(
       `INSERT INTO stock_movements (id, workspace_id, batch_id, item_id, location_id, project_id, kind, quantity, for_project_id, unit_cost, currency, receipt_line_id, transfer_id,
-                                   supplier_return_id, reason, moved_on, actor_id, work_order_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+                                   supplier_return_id, reason, moved_on, actor_id, work_order_id, work_order_material_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
       [randomUUID(), workspaceId, movement.batchId, movement.itemId, movement.locationId, movement.projectId, movement.kind, movement.quantity, movement.forProjectId ?? null,
         movement.unitCost ?? null, movement.unitCost ? movement.currency ?? null : null, movement.receiptLineId ?? null, movement.transferId ?? null, movement.supplierReturnId ?? null,
-        movement.reason ?? "", movement.movedOn, movement.actorId, movement.workOrderId ?? null]);
+        movement.reason ?? "", movement.movedOn, movement.actorId, movement.workOrderId ?? null, movement.workOrderMaterialId ?? null]);
   } catch (error) {
     if ((error as { constraint?: string }).constraint === "stock_balances_not_negative") throw new ConflictException("There isn't that much in stock there.");
     throw error;

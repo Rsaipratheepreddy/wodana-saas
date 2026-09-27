@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
 import { processDesignDeadlines } from "../design/design-journey.store";
+import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { processWorkDeadlines } from "../project-core/work-reminders";
 import { processPurchasingDeadlines } from "../purchasing/purchasing-reminders";
 import { processSupplierDocuments } from "../purchasing/supplier-controls.service";
@@ -29,7 +30,7 @@ export class ProjectRemindersService {
     const workspaces = await this.db.query<{ workspace_id: string }>(
       "SELECT workspace_id FROM list_reminder_workspaces()",
     );
-    const totals = { created: 0, dueReminders: 0, decisionReminders: 0, weeklySummaries: 0, designAlerts: 0, workReminders: 0, lateOrders: 0, supplierDocuments: 0, failedWorkspaces: 0 };
+    const totals = { created: 0, dueReminders: 0, decisionReminders: 0, weeklySummaries: 0, designAlerts: 0, workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
       try {
         const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => ({
@@ -40,6 +41,7 @@ export class ProjectRemindersService {
           work: projectId ? null : await processWorkDeadlines(client, workspaceId),
           purchasing: projectId ? null : await processPurchasingDeadlines(client, workspaceId),
           suppliers: projectId ? null : await processSupplierDocuments(client, workspaceId),
+          factory: projectId ? null : await processFactoryDeadlines(client, workspaceId),
         }));
         await this.queueDueEmails(run.due);
         if (run.weekly) await this.queueWeeklyEmails(run.weekly.rows, run.weekly.emailWorkspaces);
@@ -50,6 +52,7 @@ export class ProjectRemindersService {
         totals.workReminders += run.work?.sent ?? 0;
         totals.lateOrders += run.purchasing?.sent ?? 0;
         totals.supplierDocuments += (run.suppliers?.held ?? 0) + (run.suppliers?.warned ?? 0);
+        totals.factoryShortages += run.factory?.sent ?? 0;
       } catch (error) {
         totals.failedWorkspaces += 1;
         this.logger.error(`Reminder run failed for workspace ${workspaceId}: ${(error as Error).message}`);

@@ -757,7 +757,7 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - Dispatched ≤ passed lot qty − previous dispatches + returns.
   - Site delivery records accepted and rejected qty. A rejected qty creates a snag plus a rework order and a return trip automatically.
 - **Screens:** Factory = production queue (WOs by workcenter and day: board + grid) · WO inspector (allocations, materials, operations, outputs, QC, lots, dispatches) · Dispatch planner (ready lots → trips).
-- **Build order:** F1 work orders, release checks, output reports, QC and ready stock → F2 work-order materials (issue, shortage, substitution) → F3 capacity schedule and cross-project batches → F4 outsourced operations, drawing revisions, deduction variations → dispatch and site acceptance with Site (phase 7).
+- **Build order:** F1 work orders, release checks, output reports, QC and ready stock ✔ → F2 work-order materials (issue, shortage, substitution) ✔ → F3 capacity schedule and cross-project batches → F4 outsourced operations, drawing revisions, deduction variations → dispatch and site acceptance with Site (phase 7).
 - **F1 (built) — Operations → Factory: To make · Work orders; Settings → Factory:**
   1. *To make* lists the scope lines of packages made in our factory, in running projects: quantity, on work orders, left. *Plan work order* takes all or part of what's left (Σ work orders ≤ the line, under a lock), a workcenter and planned dates (by default the package's work that needs its materials).
   2. *Release* passes only when its checks do, each shown with what's missing: the project is running; the drawing is approved (a reference, recorded by whom and when); payments before production are verified; the package's materials are in (from orders or stock); a workcenter and dates are set. Each check is a Factory setting.
@@ -767,6 +767,13 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - Notices: released (factory people and the project's factory lead), a report waiting (approvers), a check failed (factory lead and project manager), ready (project manager and installation lead).
   - Permissions: `factory.view`, `factory.manage` (plan, release, start, hold, close), `factory.report`, `factory.approve` (approve reports, check quality).
   - Records: `workcenters`, `workspace_factory_settings`, `work_orders` (numbered WO-n), `work_order_reports`, `work_order_checks`, `work_order_events`; made goods are `produce` movements in the stock ledger, and Inventory → History names the work order.
+- **F2 (built) — materials on a work order (its sheet → Materials):**
+  - Each material is a stock item and a quantity: from the project's material list or any other by name and unit. *Add from the material list* adds the materials used only on the work order's line, at its share of the line (rounded up).
+  - *Issue* from the project's own stock or free stock at a place; more than it still needs only with why. *Return* sends issued stock back to the project's stock at the cost it was issued at, with why. Issued value shows as *Issued worth*.
+  - The quantity can't go below what's issued; a material is removed only while none is issued.
+  - *Swap for another* (with why) waits for someone else with `factory.approve`; approved, the old material is replaced (what was issued of it can still come back).
+  - Release: when a work order lists materials, each must be issued or covered by the project's own stock after what its other running work orders still need of it; otherwise its package's materials must be in.
+  - The daily run tells the people who buy about a work order that should start within a week (or already should have) and still waits for materials — once, then weekly.
 
 ### 6.17 Site execution
 - **Records:** daily_reports (date, author, workforce by trade, weather, safety state `none|observation|incident`, forecast state `none|watch|blocked`, impact/recovery plan/next update date, photos), daily_report_lines → task_progress_entries, installation records (task progress), site deliveries, access/permit notes, commissioning checks.

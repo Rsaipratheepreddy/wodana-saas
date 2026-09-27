@@ -25,6 +25,7 @@ import { SupplierControlsService, processSupplierDocuments } from "../purchasing
 import { InventoryService } from "../inventory/inventory.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
 import { FactoryService } from "../factory/factory.service";
+import { processFactoryDeadlines } from "../factory/factory-reminders";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -2086,6 +2087,87 @@ integration("projects core (plan §6.10)", () => {
       expect((await maker.state(actor, w.workspaceId)).toMake.find((line) => line.title === "Kitchen cabinets")!.left).toBe("0.5000");
       const history = await new InventoryService(access(w.designer, all)).movements(actor, w.workspaceId, { projectId });
       expect(history.movements.map((row) => [row.kind, row.quantity, row.workOrderNumber])).toEqual([["produce", "1.0000", 3], ["produce", "1.5000", 1], ["produce", "1.5000", 1]]);
+    });
+  });
+
+  it("issues materials to work orders: suggested from the material list, covered before release, over-issued only with why, returned, swapped with someone else's approval, and chased when short", async () => {
+    await world(async (w) => {
+      const { core, projectId, access, all } = await buying(w);
+      const maker = new FactoryService(access(w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]));
+      const checker = new FactoryService(access(w.manager, ["factory.view", "factory.approve"]));
+      const store = new InventoryService(access(w.designer, all));
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
+      const worktop = scope.lines.find((line) => line.title === "Worktop")!;
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: scope.packages[0].id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "20", unit: "sheets", clientChoice: false, boqLineIds: [cabinets.id], version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Wood glue", quantity: "4", unit: "nos", clientChoice: false, boqLineIds: [cabinets.id, worktop.id], version: detail.project.version });
+      const settings = await maker.settings(actor, w.workspaceId);
+      await maker.saveSettings(actor, w.workspaceId, { version: settings.settings.version, requireDrawing: false, requirePayment: false });
+      const joinery = randomUUID();
+      await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery" });
+      const wo = randomUUID();
+      let order = await maker.plan(actor, w.workspaceId, { id: wo, lineId: cabinets.lineId ?? cabinets.id, quantity: "3", workcenterId: joinery, plannedStart: "2026-10-05", plannedEnd: "2026-10-16" });
+
+      // Oak is used only on the cabinets: 3 of 4.5 m takes two thirds of 20 sheets, rounded up. Glue is shared, so it isn't suggested.
+      expect(order.canSuggest).toBe(true);
+      order = await maker.command(actor, w.workspaceId, wo, { action: "suggest_materials", version: order.order.version });
+      expect(order.materials.map((row) => [row.itemName, row.quantity, row.status])).toEqual([["Oak veneer", "13.3334", "active"]]);
+      await expect(maker.command(actor, w.workspaceId, wo, { action: "suggest_materials", version: order.order.version })).rejects.toThrow(/No materials from the project's list/);
+      await expect(maker.command(actor, w.workspaceId, wo, { action: "release", version: order.order.version })).rejects.toThrow("Before it's released: materials aren't in: Oak veneer 13.3334 sheets.");
+
+      // Twenty sheets in free stock at 50 each; five reserved for the project.
+      let stock = await store.stock(actor, w.workspaceId);
+      await store.saveLocation(actor, w.workspaceId, { id: randomUUID(), kind: "warehouse", name: "Warehouse" });
+      stock = await store.stock(actor, w.workspaceId);
+      const warehouse = stock.locations[0].id;
+      stock = await store.command(actor, w.workspaceId, { id: randomUUID(), action: "add", name: "Oak veneer", unit: "sheets", locationId: warehouse, quantity: "20", unitCost: "50", reason: "Opening stock" });
+      await store.command(actor, w.workspaceId, { id: randomUUID(), action: "allocate", itemId: stock.rows[0].itemId, locationId: warehouse, forProjectId: projectId, quantity: "5", reason: "Kitchen" });
+      const oak = order.materials[0].id;
+      order = await maker.command(actor, w.workspaceId, wo, { action: "issue_material", id: randomUUID(), materialId: oak, locationId: warehouse, quantity: "5", from: "project" });
+      await expect(maker.command(actor, w.workspaceId, wo, { action: "issue_material", id: randomUUID(), materialId: oak, locationId: warehouse, quantity: "6", from: "project" })).rejects.toThrow(/isn't that much in stock/);
+      order = await maker.command(actor, w.workspaceId, wo, { action: "issue_material", id: randomUUID(), materialId: oak, locationId: warehouse, quantity: "6", from: "free" });
+      expect([order.materials[0].issued, order.releaseChecks.find((check) => check.key === "materials")!.detail]).toEqual(["11.0000", ["Oak veneer 2.3334 sheets"]]);
+      await expect(maker.command(actor, w.workspaceId, wo, { action: "issue_material", id: randomUUID(), materialId: oak, locationId: warehouse, quantity: "3", from: "free" }))
+        .rejects.toThrow("It needs 2.3334 sheets more: say why you're issuing more.");
+      const over = randomUUID();
+      order = await maker.command(actor, w.workspaceId, wo, { action: "issue_material", id: over, materialId: oak, locationId: warehouse, quantity: "3", from: "free", reason: "Offcuts too short" });
+      order = await maker.command(actor, w.workspaceId, wo, { action: "issue_material", id: over, materialId: oak, locationId: warehouse, quantity: "3", from: "free", reason: "Offcuts too short" });
+      expect(order.materials[0].issued).toBe("14.0000");
+      order = await maker.command(actor, w.workspaceId, wo, { action: "release", version: order.order.version });
+      await expect(maker.command(actor, w.workspaceId, wo, { action: "set_material", materialId: oak, quantity: "10", version: order.order.version })).rejects.toThrow(/14 sheets of Oak veneer is already issued/);
+      await expect(maker.command(actor, w.workspaceId, wo, { action: "return_material", id: randomUUID(), materialId: oak, locationId: warehouse, quantity: "0.5" })).rejects.toThrow("Say why it's coming back.");
+      order = await maker.command(actor, w.workspaceId, wo, { action: "return_material", id: randomUUID(), materialId: oak, locationId: warehouse, quantity: "0.5", reason: "Not needed" });
+      // Issued at 50 a sheet: 14 less half a sheet back.
+      expect([order.materials[0].issued, order.materialCost]).toEqual(["13.5000", "675.0000"]);
+
+      // Walnut instead of oak: someone else decides.
+      const walnut = randomUUID();
+      await expect(maker.command(actor, w.workspaceId, wo, { action: "substitute", materialId: walnut, replacesId: oak, name: "Walnut veneer", unit: "sheets", quantity: "13", version: order.order.version }))
+        .rejects.toThrow("Say why it's swapped.");
+      order = await maker.command(actor, w.workspaceId, wo, { action: "substitute", materialId: walnut, replacesId: oak, name: "Walnut veneer", unit: "sheets", quantity: "13", reason: "Client changed the finish", version: order.order.version });
+      await expect(maker.command(actor, w.workspaceId, wo, { action: "decide_substitution", materialId: walnut, decision: "approve", version: order.order.version })).rejects.toThrow("Someone else decides your swap.");
+      order = await checker.command(actor, w.workspaceId, wo, { action: "decide_substitution", materialId: walnut, decision: "approve", version: order.order.version });
+      expect(order.materials.map((row) => [row.itemName, row.status, row.issued])).toEqual([["Oak veneer", "replaced", "13.5000"], ["Walnut veneer", "active", "0.0000"]]);
+      // What was issued of the oak goes back to the project's stock (with the half sheet returned before).
+      order = await maker.command(actor, w.workspaceId, wo, { action: "return_material", id: randomUUID(), materialId: oak, locationId: warehouse, quantity: "13.5", reason: "Finish changed" });
+      stock = await store.stock(actor, w.workspaceId);
+      expect(stock.rows.map((row) => [row.itemName, row.projectId, row.onHand])).toEqual([["Oak veneer", null, "6.0000"], ["Oak veneer", projectId, "14.0000"]]);
+
+      // A work order starting within the week that waits for materials tells the buyers.
+      const role = randomUUID();
+      await w.client.query("INSERT INTO roles (id, workspace_id, code, name) VALUES ($1, $2, 'buyer', 'Buyer')", [role, w.workspaceId]);
+      await w.client.query("INSERT INTO role_permissions (workspace_id, role_id, permission_id) SELECT $1, $2, id FROM permissions WHERE code = 'purchasing.manage'", [w.workspaceId, role]);
+      await w.client.query("INSERT INTO member_roles (workspace_id, membership_id, role_id) VALUES ($1, $2, $3)", [w.workspaceId, w.managerMembership, role]);
+      const soon = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+      const next = randomUUID();
+      let second = await maker.plan(actor, w.workspaceId, { id: next, lineId: cabinets.id, quantity: "1.5", workcenterId: joinery, plannedStart: soon, plannedEnd: soon });
+      second = await maker.command(actor, w.workspaceId, next, { action: "add_material", materialId: randomUUID(), name: "Brass hinges", unit: "nos", quantity: "12", version: second.order.version });
+      expect((await processFactoryDeadlines(w.client, w.workspaceId)).sent).toBe(1);
+      expect((await processFactoryDeadlines(w.client, w.workspaceId)).sent).toBe(0);
+      const told = (await w.client.query("SELECT recipient_id AS recipient, body FROM notifications WHERE workspace_id = $1 AND event_type = 'factory.material_short'", [w.workspaceId])).rows;
+      expect(told).toEqual([{ recipient: w.manager, body: "PRJ-0001 · Villa 12: Brass hinges 12 nos." }]);
     });
   });
 

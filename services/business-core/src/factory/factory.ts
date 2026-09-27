@@ -96,3 +96,61 @@ export async function readWorkcenters(db: Db, workspaceId: string, all = false):
 
 /** Whole-number text for a quantity ("12.0000" → "12"). */
 export const plain = (value: string) => Dec.of(value).toString();
+
+export type WorkOrderMaterial = {
+  id: string; itemId: string; itemName: string; unit: string; materialItemId: string | null; quantity: string; status: "active" | "pending" | "replaced" | "refused" | "removed";
+  replacesId: string | null; replacesName: string | null; reason: string; requestedBy: string; requestedByName: string; decidedByName: string | null; decisionNote: string;
+  /** Issued to the work order, less what came back; its value at the cost it left stock with. */
+  issued: string; issuedValue: string;
+  /** On hand now: the project's own stock of the item, and free stock. */
+  projectOnHand: string; freeOnHand: string;
+};
+
+export async function readWorkOrderMaterials(db: Db, workspaceId: string, orderId: string): Promise<WorkOrderMaterial[]> {
+  return (await db.query<WorkOrderMaterial>(
+    `SELECT material.id, material.item_id AS "itemId", item.name AS "itemName", item.unit, material.material_item_id AS "materialItemId", material.quantity::text AS quantity,
+            material.status, material.replaces_id AS "replacesId", replaced_item.name AS "replacesName", material.reason, material.requested_by AS "requestedBy",
+            requester.display_name AS "requestedByName", decider.display_name AS "decidedByName", material.decision_note AS "decisionNote",
+            coalesce(-issued.quantity, 0)::numeric(18, 4)::text AS issued, coalesce(-issued.value, 0)::numeric(18, 4)::text AS "issuedValue",
+            coalesce(own.on_hand, 0)::numeric(18, 4)::text AS "projectOnHand", coalesce(free.on_hand, 0)::numeric(18, 4)::text AS "freeOnHand"
+       FROM work_order_materials material
+       JOIN work_orders wo ON wo.workspace_id = material.workspace_id AND wo.id = material.work_order_id
+       JOIN stock_items item ON item.workspace_id = material.workspace_id AND item.id = material.item_id
+       JOIN users requester ON requester.id = material.requested_by
+       LEFT JOIN users decider ON decider.id = material.decided_by
+       LEFT JOIN work_order_materials replaced ON replaced.workspace_id = material.workspace_id AND replaced.id = material.replaces_id
+       LEFT JOIN stock_items replaced_item ON replaced_item.workspace_id = replaced.workspace_id AND replaced_item.id = replaced.item_id
+       LEFT JOIN LATERAL (SELECT sum(movement.quantity) AS quantity, sum(round(movement.quantity * coalesce(movement.unit_cost, 0), 4)) AS value
+                            FROM stock_movements movement WHERE movement.workspace_id = material.workspace_id AND movement.work_order_material_id = material.id) issued ON true
+       LEFT JOIN LATERAL (SELECT sum(balance.on_hand) AS on_hand FROM stock_balances balance
+                           WHERE balance.workspace_id = material.workspace_id AND balance.item_id = material.item_id AND balance.project_id = wo.project_id) own ON true
+       LEFT JOIN LATERAL (SELECT sum(balance.on_hand) AS on_hand FROM stock_balances balance
+                           WHERE balance.workspace_id = material.workspace_id AND balance.item_id = material.item_id AND balance.project_id IS NULL) free ON true
+      WHERE material.workspace_id = $1 AND material.work_order_id = $2
+      ORDER BY material.position, material.requested_at`, [workspaceId, orderId])).rows;
+}
+
+/**
+ * What a work order's materials are still short of: each active material is covered when it's issued, or
+ * when the project's own stock of it is enough after what the project's other running work orders still
+ * need of it (they came first). Empty when everything is covered.
+ */
+export async function materialsShort(db: Db, workspaceId: string, orderId: string, materials: WorkOrderMaterial[]) {
+  const short: Array<{ itemName: string; unit: string; short: string }> = [];
+  for (const material of materials.filter((row) => row.status === "active")) {
+    const remaining = Dec.of(material.quantity).sub(material.issued);
+    if (remaining.cmp(0) <= 0) continue;
+    const claimed = (await db.query<{ quantity: string | null }>(
+      `SELECT sum(greatest(other.quantity + coalesce((SELECT sum(movement.quantity) FROM stock_movements movement
+                                                       WHERE movement.workspace_id = other.workspace_id AND movement.work_order_material_id = other.id), 0), 0))::text AS quantity
+         FROM work_order_materials other
+         JOIN work_orders wo ON wo.workspace_id = other.workspace_id AND wo.id = other.work_order_id
+         JOIN work_orders mine ON mine.workspace_id = wo.workspace_id AND mine.id = $2
+        WHERE other.workspace_id = $1 AND other.item_id = $3 AND other.status = 'active' AND wo.id <> mine.id AND wo.project_id = mine.project_id
+          AND (wo.status IN ('released', 'in_production') OR (wo.status = 'on_hold' AND wo.held_from IN ('released', 'in_production')))`,
+      [workspaceId, orderId, material.itemId])).rows[0]?.quantity ?? "0";
+    const available = Dec.of(material.projectOnHand).sub(claimed);
+    if (available.cmp(remaining) < 0) short.push({ itemName: material.itemName, unit: material.unit, short: remaining.sub(available.cmp(0) > 0 ? available : Dec.ZERO).toString() });
+  }
+  return short;
+}

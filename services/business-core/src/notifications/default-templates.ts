@@ -118,6 +118,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "factory.released", channel: "in_app", subject: "{{order}} released: {{item}}", body: "{{actor}} released it for {{project}}.", variables: ["order", "item", "project", "actor", "note"] },
   { code: "factory.report_waiting", channel: "in_app", subject: "Approve output on {{order}}", body: "{{actor}}: {{note}}", variables: ["order", "item", "project", "actor", "note"] },
   { code: "factory.check_failed", channel: "in_app", subject: "{{order}} failed its check", body: "{{actor}}: {{note}}", variables: ["order", "item", "project", "actor", "note"] },
+  { code: "factory.material_short", channel: "in_app", subject: "{{order}} is waiting for materials", body: "{{project}}: {{note}}", variables: ["order", "item", "project", "actor", "note"] },
+  { code: "factory.substitution", channel: "in_app", subject: "A material swap on {{order}} needs your decision", body: "{{actor}}: {{note}}", variables: ["order", "item", "project", "actor", "note"] },
   { code: "factory.ready", channel: "in_app", subject: "{{item}} is ready", body: "{{order}} for {{project}} is made and checked.", variables: ["order", "item", "project", "actor", "note"] },
   { code: "project.cancelled", channel: "in_app", subject: "{{title}} is cancelled", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.cancelled", channel: "email", subject: "{{title}} is cancelled", body: "{{actor}} cancelled {{title}} for {{clientName}}.\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },

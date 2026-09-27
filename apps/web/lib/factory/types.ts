@@ -1,3 +1,5 @@
+import type { StockLocation } from "@/lib/purchasing/types";
+
 export type WorkOrderStatus = "planned" | "released" | "in_production" | "ready" | "on_hold" | "cancelled" | "short_closed";
 export type FactorySettings = { requireDrawing: boolean; requirePayment: boolean; requireMaterials: boolean; requireCheck: boolean; version: number };
 export type Workcenter = { id: string; name: string; hoursPerDay: string | null; active: boolean };
@@ -24,11 +26,19 @@ export type OutputReport = {
 export type QualityCheck = { id: string; passed: string; failed: string; failReason: string; checkedByName: string; checkedAt: string };
 export type WorkOrderEvent = { id: string; kind: string; detail: Record<string, unknown>; byName: string; at: string };
 
-export type FactoryRights = { canManage: boolean; canReport: boolean; canApprove: boolean };
+export type FactoryRights = { canManage: boolean; canReport: boolean; canApprove: boolean; canIssue: boolean };
+
+/** A material a work order uses: needed, issued (less returned) and what's on hand; a swap waits for someone else. */
+export type WorkOrderMaterial = {
+  id: string; itemId: string; itemName: string; unit: string; materialItemId: string | null; quantity: string; status: "active" | "pending" | "replaced" | "refused" | "removed";
+  replacesId: string | null; replacesName: string | null; reason: string; requestedBy: string; requestedByName: string; decidedByName: string | null; decisionNote: string;
+  issued: string; issuedValue: string; projectOnHand: string; freeOnHand: string;
+};
 export type FactoryState = FactoryRights & { toMake: MakeLine[]; orders: WorkOrderRow[]; workcenters: Workcenter[] };
 export type WorkOrderState = FactoryRights & {
   order: WorkOrderRow & { drawingRef: string; drawingApprovedAt: string | null; drawingApprovedByName: string | null; holdReason: string | null; closeReason: string | null;
     closedAt: string | null; releasedAt: string | null; readyAt: string | null };
   reports: OutputReport[]; checks: QualityCheck[]; events: WorkOrderEvent[]; settings: FactorySettings; releaseChecks: ReleaseCheck[]; workcenters: Workcenter[]; me: string;
+  materials: WorkOrderMaterial[]; materialCost: string; currency: string; projectMaterials: Array<{ id: string; name: string; unit: string }>; canSuggest: boolean; places: StockLocation[];
 };
 export type FactorySettingsState = { settings: FactorySettings; workcenters: Workcenter[]; canManage: boolean };

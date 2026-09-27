@@ -8,16 +8,17 @@ import { move, stockItemFor } from "../inventory/stock";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { productionPaid } from "../project-core/project-core.store";
 import { needsNotIn, readNeeds } from "../purchasing/orders";
-import { resolvePlace } from "../purchasing/receiving";
+import { readLocations, resolvePlace } from "../purchasing/receiving";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { ensureFactorySettings, plain, readToMake, readWorkcenters, readWorkOrders, type WorkOrderRow } from "./factory";
+import { ensureFactorySettings, materialsShort, plain, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders, type WorkOrderRow } from "./factory";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const NUMBER = /^\d{1,14}(\.\d{1,4})?$/;
 const VIEW = ["factory.view", "factory.manage", "factory.report", "factory.approve"];
-type Notice = { code: "factory.released" | "factory.report_waiting" | "factory.check_failed" | "factory.ready"; users: string[]; note: string; key: string };
+type Notice = { code: "factory.released" | "factory.report_waiting" | "factory.check_failed" | "factory.ready" | "factory.substitution"; users: string[]; note: string; key: string };
+const MATERIAL_ACTIONS = ["add_material", "set_material", "remove_material", "suggest_materials", "issue_material", "return_material", "substitute", "decide_substitution"];
 
 /**
  * The factory: work orders for scope lines made in our factory. A line splits across work orders but
@@ -72,7 +73,7 @@ export class FactoryService {
 
   /** One change to a work order, version-checked (reports and checks also by their own id). */
   command(actor: RequestActor, workspaceId: string, orderId: string, body: Record<string, unknown>) {
-    return this.access.withAnyPermission(actor, workspaceId, ["factory.manage", "factory.report", "factory.approve"], async (client, user) => {
+    return this.access.withAnyPermission(actor, workspaceId, ["factory.manage", "factory.report", "factory.approve", "stock.manage"], async (client, user) => {
       await client.query(`SELECT 1 FROM work_orders WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, uuid(orderId, "Work order")]);
       const order = (await readWorkOrders(client, workspaceId, { id: orderId }))[0];
       if (!order) throw new NotFoundException("Work order not found.");
@@ -80,8 +81,8 @@ export class FactoryService {
       const has = (code: string) => this.access.hasPermission(client, workspaceId, user.userId, code);
       const need = async (code: string, message: string) => { if (!(await has(code))) throw new ForbiddenException(message); };
       const status = (...allowed: string[]) => { if (!allowed.includes(order.status)) throw new ConflictException(statusMessage(order.status)); };
-      // Reports and checks carry their own id: sent twice, they're recorded once.
-      const recordId = ["report", "check"].includes(action) ? uuid(body.id, action === "report" ? "Report" : "Check") : null;
+      // Reports, checks and stock issued or returned carry their own id: sent twice, they're recorded once.
+      const recordId = ["report", "check", "issue_material", "return_material"].includes(action) ? uuid(body.id, action === "report" ? "Report" : action === "check" ? "Check" : "Change") : null;
       if (recordId && (await client.query(`SELECT 1 FROM factory_commands WHERE workspace_id = $1 AND command_id = $2`, [workspaceId, recordId])).rowCount)
         return this.detail(client, workspaceId, orderId, user.userId);
       if (!recordId && body.version !== order.version) throw new ConflictException("Someone else changed this work order. Reload to see their changes.");
@@ -186,6 +187,8 @@ export class FactoryService {
         if (!reason) throw new BadRequestException(action === "cancel" ? "Say why it's cancelled." : "Say why the rest won't be made.");
         await set(`status = $3, closed_by = $4, closed_at = now(), close_reason = $5, hold_reason = NULL, held_from = NULL`, [action === "cancel" ? "cancelled" : "short_closed", user.userId, reason]);
         audit = { reason };
+      } else if (MATERIAL_ACTIONS.includes(action)) {
+        audit = await this.materialCommand(client, workspaceId, order, action, body, recordId, user.userId, notices, need);
       } else {
         throw new BadRequestException("Unknown action.");
       }
@@ -253,7 +256,10 @@ export class FactoryService {
     if (settings.requireDrawing) checks.push({ key: "drawing", passed: Boolean(drawing?.at), missing: "the drawing isn't approved" });
     if (settings.requirePayment) checks.push({ key: "payment", passed: project ? await productionPaid(client, workspaceId, project.caseId, project.quoteId) : false, missing: "the payment before production isn't verified" });
     if (settings.requireMaterials) {
-      const short = needsNotIn(await readNeeds(client, workspaceId, false, order.projectId), order.packageId).map((need) => need.title);
+      // Its own materials when it lists them (issued, or covered by the project's stock); otherwise its package's.
+      const materials = (await readWorkOrderMaterials(client, workspaceId, order.id)).filter((row) => row.status === "active");
+      const short = materials.length ? (await materialsShort(client, workspaceId, order.id, materials)).map((row) => `${row.itemName} ${plain(row.short)} ${row.unit}`.trim())
+        : needsNotIn(await readNeeds(client, workspaceId, false, order.projectId), order.packageId).map((need) => need.title);
       checks.push({ key: "materials", passed: !short.length, missing: `materials aren't in: ${short.slice(0, 5).join(", ")}${short.length > 5 ? ` and ${short.length - 5} more` : ""}`, detail: short });
     }
     checks.push({ key: "schedule", passed: Boolean(order.workcenterId && order.plannedStart && order.plannedEnd), missing: "it has no workcenter or dates" });
@@ -275,7 +281,7 @@ export class FactoryService {
       const itemId = await stockItemFor(client, workspaceId, { catalogItemId: line?.catalogItemId ?? null, name: order.title, unit: order.unit });
       const today = (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
       await move(client, workspaceId, { batchId: checkId, itemId, locationId: factory!.id, projectId: order.projectId, kind: "produce", quantity: passed, forProjectId: order.projectId,
-        workOrderId: order.id, reason: `WO-${String(order.number).padStart(4, "0")}`, movedOn: today, actorId: userId });
+        workOrderId: order.id, movedOn: today, actorId: userId });
     }
     if (Dec.of(failed).cmp(0) > 0)
       notices.push({ code: "factory.check_failed", users: await this.team(client, workspaceId, order.projectId, ["factory_lead"], true), note: `${plain(failed)} ${order.unit} failed: ${failReason}`.replace("  ", " "), key: `failed:${checkId}` });
@@ -287,6 +293,157 @@ export class FactoryService {
     } else {
       await client.query(`UPDATE work_orders SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id]);
     }
+  }
+
+  /**
+   * The materials a work order uses: added (from the project's list or by name and unit), suggested from
+   * the materials used only on its line (their share for its quantity), changed while nothing more than
+   * the new quantity is issued, issued from the project's own or free stock at a place and returned, or
+   * swapped for another item with why — which someone else approves.
+   */
+  private async materialCommand(client: Db, workspaceId: string, order: WorkOrderRow, action: string, body: Record<string, unknown>, commandId: string | null, userId: string,
+    notices: Notice[], need: (code: string, message: string) => Promise<void>) {
+    if (!["planned", "released", "in_production", "on_hold"].includes(order.status)) throw new ConflictException(statusMessage(order.status));
+    const materials = await readWorkOrderMaterials(client, workspaceId, order.id);
+    const find = (value: unknown, statuses = ["active"]) => {
+      const row = materials.find((item) => item.id === value);
+      if (!row) throw new NotFoundException("Material not found.");
+      if (!statuses.includes(row.status)) throw new ConflictException(`${row.itemName} isn't used on this work order any more.`);
+      return row;
+    };
+    const itemFor = async () => {
+      if (body.materialItemId) {
+        const listed = (await client.query<{ name: string; unit: string; catalogItemId: string | null }>(
+          `SELECT name, unit, catalog_item_id AS "catalogItemId" FROM project_material_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3`,
+          [workspaceId, order.projectId, uuid(body.materialItemId, "Material")])).rows[0];
+        if (!listed) throw new BadRequestException("Choose a material from the project's list.");
+        return { itemId: await stockItemFor(client, workspaceId, { catalogItemId: listed.catalogItemId, name: listed.name, unit: listed.unit }), materialItemId: String(body.materialItemId) };
+      }
+      const name = text(body.name, 300);
+      if (!name) throw new BadRequestException("Name the material.");
+      return { itemId: await stockItemFor(client, workspaceId, { catalogItemId: null, name, unit: text(body.unit, 40) }), materialItemId: null };
+    };
+    const insert = async (id: string, item: { itemId: string; materialItemId: string | null }, quantity: string, extra: { status?: string; replacesId?: string; reason?: string } = {}) => {
+      if (materials.some((row) => row.id === id)) return;
+      await client.query(
+        `INSERT INTO work_order_materials (id, workspace_id, work_order_id, position, item_id, material_item_id, quantity, status, replaces_id, reason, requested_by)
+         VALUES ($1, $2, $3, (SELECT count(*) FROM work_order_materials WHERE workspace_id = $2 AND work_order_id = $3), $4, $5, $6, $7, $8, $9, $10)`,
+        [id, workspaceId, order.id, item.itemId, item.materialItemId, quantity, extra.status ?? "active", extra.replacesId ?? null, extra.reason ?? "", userId]);
+    };
+    const bump = () => client.query(`UPDATE work_orders SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id]);
+
+    if (action === "add_material") {
+      await need("factory.manage", "You can't change a work order's materials.");
+      const quantity = amount(body.quantity, "Quantity");
+      if (Dec.of(quantity).cmp(0) <= 0) throw new BadRequestException("Enter how much it uses.");
+      const item = await itemFor();
+      if (materials.some((row) => row.itemId === item.itemId && row.status === "active")) throw new ConflictException("It's already on this work order: change its quantity instead.");
+      await insert(uuid(body.materialId, "Material"), item, quantity);
+      await bump();
+      return { itemId: item.itemId, quantity };
+    }
+    if (action === "suggest_materials") {
+      await need("factory.manage", "You can't change a work order's materials.");
+      // Materials used only on this line, at this work order's share of the line.
+      const listed = (await client.query<{ id: string; name: string; unit: string; catalogItemId: string | null; quantity: string | null; lineQuantity: string }>(
+        `SELECT item.id, item.name, item.unit, item.catalog_item_id AS "catalogItemId", item.quantity::text AS quantity, line.quantity::text AS "lineQuantity"
+           FROM project_material_items item JOIN project_boq_lines line ON line.workspace_id = item.workspace_id AND line.id = $3
+          WHERE item.workspace_id = $1 AND item.project_id = $2 AND item.boq_line_ids = ARRAY[$3::uuid] AND item.quantity IS NOT NULL ORDER BY item.position`,
+        [workspaceId, order.projectId, order.boqLineId])).rows;
+      let added = 0;
+      for (const row of listed) {
+        if (materials.some((material) => material.materialItemId === row.id && ["active", "pending"].includes(material.status))) continue;
+        const share = Dec.of(row.quantity!).mul(order.quantity).div(row.lineQuantity).ceil(4);
+        if (share.cmp(0) <= 0) continue;
+        await insert(randomUUID(), { itemId: await stockItemFor(client, workspaceId, { catalogItemId: row.catalogItemId, name: row.name, unit: row.unit }), materialItemId: row.id }, share.toFixed(4));
+        added++;
+      }
+      if (!added) throw new ConflictException("No materials from the project's list are used only on this line.");
+      await bump();
+      return { added };
+    }
+    if (action === "set_material") {
+      await need("factory.manage", "You can't change a work order's materials.");
+      const row = find(body.materialId);
+      const quantity = amount(body.quantity, "Quantity");
+      if (Dec.of(quantity).cmp(0) <= 0) throw new BadRequestException("Enter how much it uses, or remove it.");
+      if (Dec.of(quantity).cmp(row.issued) < 0) throw new ConflictException(`${plain(row.issued)} ${row.unit} of ${row.itemName} is already issued: return some first.`.replace("  ", " "));
+      await client.query(`UPDATE work_order_materials SET quantity = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, row.id, quantity]);
+      await bump();
+      return { materialId: row.id, from: row.quantity, to: quantity };
+    }
+    if (action === "remove_material") {
+      await need("factory.manage", "You can't change a work order's materials.");
+      const row = find(body.materialId);
+      if (Dec.of(row.issued).cmp(0) > 0) throw new ConflictException(`Some ${row.itemName} is issued to it: return it first.`);
+      await client.query(`UPDATE work_order_materials SET status = 'removed' WHERE workspace_id = $1 AND id = $2`, [workspaceId, row.id]);
+      await bump();
+      return { materialId: row.id };
+    }
+    if (action === "issue_material" || action === "return_material") {
+      if (!(await this.access.hasPermission(client, workspaceId, userId, "factory.manage")) && !(await this.access.hasPermission(client, workspaceId, userId, "stock.manage")))
+        throw new ForbiddenException("You can't issue stock.");
+      const row = find(body.materialId, action === "issue_material" ? ["active"] : ["active", "replaced", "removed"]);
+      const quantity = amount(body.quantity, "Quantity");
+      if (Dec.of(quantity).cmp(0) <= 0) throw new BadRequestException("Enter how much.");
+      const place = (await readLocations(client, workspaceId)).find((location) => location.id === body.locationId);
+      if (!place) throw new BadRequestException("Choose a place where stock is kept.");
+      if (place.kind === "site" && place.projectId !== order.projectId) throw new BadRequestException("That's another project's site.");
+      const reason = text(body.reason, 500);
+      const today = (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
+      await client.query(`INSERT INTO factory_commands (workspace_id, command_id, entity_id, action, actor_id) VALUES ($1, $2, $3, $4, $5)`, [workspaceId, commandId, order.id, action, userId]);
+      if (action === "issue_material") {
+        const left = Dec.of(row.quantity).sub(row.issued);
+        // More than it needs only with why (a breakage, an offcut too small).
+        if (Dec.of(quantity).cmp(left) > 0 && !reason) throw new BadRequestException(`It needs ${plain(left.cmp(0) > 0 ? left.toString() : "0")} ${row.unit} more: say why you're issuing more.`.replace("  ", " "));
+        const owner = body.from === "free" ? null : order.projectId;
+        await move(client, workspaceId, { batchId: commandId!, itemId: row.itemId, locationId: place.id, projectId: owner, kind: "issue", quantity: Dec.of(quantity).neg().toString(),
+          forProjectId: order.projectId, workOrderId: order.id, workOrderMaterialId: row.id, reason, movedOn: today, actorId: userId });
+      } else {
+        if (!reason) throw new BadRequestException("Say why it's coming back.");
+        if (Dec.of(quantity).cmp(row.issued) > 0) throw new ConflictException(Dec.of(row.issued).cmp(0) > 0 ? `Only ${plain(row.issued)} ${row.unit} was issued.`.replace("  ", " ") : "None of it was issued.");
+        // It comes back to the project's stock at the cost it was issued at.
+        const cost = (await client.query<{ unitCost: string | null; currency: string | null }>(
+          `SELECT unit_cost::text AS "unitCost", currency FROM stock_movements WHERE workspace_id = $1 AND work_order_material_id = $2 AND kind = 'issue' AND unit_cost IS NOT NULL
+            ORDER BY seq DESC LIMIT 1`, [workspaceId, row.id])).rows[0];
+        await move(client, workspaceId, { batchId: commandId!, itemId: row.itemId, locationId: place.id, projectId: order.projectId, kind: "return", quantity, forProjectId: order.projectId,
+          workOrderId: order.id, workOrderMaterialId: row.id, reason, movedOn: today, actorId: userId, unitCost: cost?.unitCost, currency: cost?.currency });
+      }
+      await bump();
+      return { materialId: row.id, quantity, locationId: place.id, from: body.from === "free" ? "free" : "project", reason };
+    }
+    if (action === "substitute") {
+      await need("factory.manage", "You can't change a work order's materials.");
+      const row = find(body.replacesId);
+      if (materials.some((material) => material.replacesId === row.id && material.status === "pending")) throw new ConflictException(`A swap for ${row.itemName} is already waiting for a decision.`);
+      const reason = text(body.reason, 500);
+      if (!reason) throw new BadRequestException("Say why it's swapped.");
+      const quantity = amount(body.quantity, "Quantity");
+      if (Dec.of(quantity).cmp(0) <= 0) throw new BadRequestException("Enter how much it uses.");
+      const item = await itemFor();
+      if (item.itemId === row.itemId) throw new BadRequestException("Choose a different material.");
+      const id = uuid(body.materialId, "Material");
+      await insert(id, item, quantity, { status: "pending", replacesId: row.id, reason });
+      await bump();
+      notices.push({ code: "factory.substitution", users: (await this.holders(client, workspaceId, ["factory.approve"])).filter((person) => person !== userId),
+        note: `${row.itemName} → ${(await client.query<{ name: string }>(`SELECT name FROM stock_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, item.itemId])).rows[0].name}: ${reason}`,
+        key: `swap:${id}` });
+      return { materialId: id, replacesId: row.id, quantity, reason };
+    }
+    // decide_substitution
+    await need("factory.approve", "You can't decide material swaps.");
+    const swap = find(body.materialId, ["pending"]);
+    if (swap.requestedBy === userId) throw new ForbiddenException("Someone else decides your swap.");
+    const approve = body.decision === "approve";
+    const note = text(body.note, 500);
+    if (!approve && !note) throw new BadRequestException("Say why the swap is refused.");
+    const replaced = materials.find((row) => row.id === swap.replacesId);
+    if (approve && replaced?.status !== "active") throw new ConflictException("The material it replaces isn't used any more.");
+    await client.query(`UPDATE work_order_materials SET status = $3, decided_by = $4, decided_at = now(), decision_note = $5 WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, swap.id, approve ? "active" : "refused", userId, note]);
+    if (approve) await client.query(`UPDATE work_order_materials SET status = 'replaced' WHERE workspace_id = $1 AND id = $2`, [workspaceId, swap.replacesId]);
+    await bump();
+    return { materialId: swap.id, decision: approve ? "approved" : "refused", note };
   }
 
   private async schedule(client: Db, workspaceId: string, body: Record<string, unknown>, current: { workcenterId: string | null; plannedStart: string | null; plannedEnd: string | null }) {
@@ -321,8 +478,18 @@ export class FactoryService {
     const events = (await client.query<{ id: string; kind: string; detail: Record<string, unknown>; byName: string; at: string }>(
       `SELECT event.id, event.kind, event.detail, person.display_name AS "byName", event.at FROM work_order_events event JOIN users person ON person.id = event.actor_id
         WHERE event.workspace_id = $1 AND event.work_order_id = $2 ORDER BY event.at`, [workspaceId, orderId])).rows;
+    const materials = await readWorkOrderMaterials(client, workspaceId, orderId);
+    const projectMaterials = (await client.query<{ id: string; name: string; unit: string; lineOnly: boolean }>(
+      `SELECT item.id, item.name, item.unit, item.boq_line_ids = ARRAY[$3::uuid] AS "lineOnly" FROM project_material_items item
+        WHERE item.workspace_id = $1 AND item.project_id = $2 ORDER BY item.position`, [workspaceId, order.projectId, order.boqLineId])).rows;
     return {
-      order: { ...order, ...extra }, reports, checks, events, settings,
+      order: { ...order, ...extra }, reports, checks, events, settings, materials,
+      materialCost: materials.reduce((sum, row) => sum.add(row.issuedValue), Dec.ZERO).toFixed(4),
+      currency: (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? "",
+      // Materials from the project's list; those used only on this line can be added in one go.
+      projectMaterials: projectMaterials.map(({ lineOnly: _lineOnly, ...row }) => row),
+      canSuggest: projectMaterials.some((row) => row.lineOnly && !materials.some((material) => material.materialItemId === row.id && ["active", "pending"].includes(material.status))),
+      places: await readLocations(client, workspaceId),
       releaseChecks: order.status === "planned" ? await this.releaseChecks(client, workspaceId, order, settings) : [],
       workcenters: await readWorkcenters(client, workspaceId),
       ...(await this.rights(client, workspaceId, userId)), me: userId,
@@ -331,7 +498,8 @@ export class FactoryService {
 
   private async rights(client: Db, workspaceId: string, userId: string) {
     const has = (code: string) => this.access.hasPermission(client, workspaceId, userId, code);
-    return { canManage: await has("factory.manage"), canReport: await has("factory.report"), canApprove: await has("factory.approve") };
+    const canManage = await has("factory.manage");
+    return { canManage, canReport: await has("factory.report"), canApprove: await has("factory.approve"), canIssue: canManage || (await has("stock.manage")) };
   }
 
   private async event(client: Db, workspaceId: string, orderId: string, kind: string, detail: Record<string, unknown>, actorId: string) {

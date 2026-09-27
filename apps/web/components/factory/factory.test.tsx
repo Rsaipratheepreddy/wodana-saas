@@ -20,9 +20,11 @@ const row = (patch: Partial<WorkOrderState["order"]> = {}): WorkOrderState["orde
   made: "0", pending: "0", passed: "0", toCheck: "0", left: "3.0000", scrapped: "0", drawingRef: "", drawingApprovedAt: null, drawingApprovedByName: null, holdReason: null,
   closeReason: null, closedAt: null, releasedAt: null, readyAt: null, ...patch,
 });
-const factory = (patch: Partial<FactoryState> = {}): FactoryState => ({ toMake: [line], orders: [row()], workcenters: [joinery], canManage: true, canReport: true, canApprove: true, ...patch });
+const factory = (patch: Partial<FactoryState> = {}): FactoryState => ({ toMake: [line], orders: [row()], workcenters: [joinery], canManage: true, canReport: true, canApprove: true, canIssue: true, ...patch });
 const order = (patch: Partial<WorkOrderState["order"]> = {}, extra: Partial<WorkOrderState> = {}): WorkOrderState => ({
-  order: row(patch), reports: [], checks: [], events: [], settings, workcenters: [joinery], canManage: true, canReport: true, canApprove: true, me: "u1",
+  order: row(patch), reports: [], checks: [], events: [], settings, workcenters: [joinery], canManage: true, canReport: true, canApprove: true, canIssue: true, me: "u1",
+  materials: [], materialCost: "0.0000", currency: "AED", projectMaterials: [{ id: "pm1", name: "Oak veneer", unit: "sheets" }], canSuggest: false,
+  places: [{ id: "f1", kind: "factory", name: "Factory", projectId: null, projectReference: null, address: "", isDefault: true, active: true }],
   releaseChecks: patch.status && patch.status !== "planned" ? [] : [
     { key: "running", passed: true, missing: "" }, { key: "drawing", passed: false, missing: "the drawing isn't approved" }, { key: "payment", passed: true, missing: "" },
     { key: "materials", passed: false, missing: "materials aren't in: Oak veneer", detail: ["Oak veneer"] }, { key: "schedule", passed: true, missing: "" }],
@@ -132,6 +134,36 @@ describe("factory", () => {
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it failed/ }), "Veneer lifting");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "check", passed: "1.5", failed: "0.5", failReason: "Veneer lifting" }));
+  });
+
+  it("issues a material to the work order and asks why when it's more than it needs; a swap waits for someone else", async () => {
+    nav.query = "order=w1";
+    const oak = { id: "m1", itemId: "i1", itemName: "Oak veneer", unit: "sheets", materialItemId: "pm1", quantity: "13.3334", status: "active" as const, replacesId: null, replacesName: null,
+      reason: "", requestedBy: "u1", requestedByName: "Me", decidedByName: null, decisionNote: "", issued: "11.0000", issuedValue: "550.0000", projectOnHand: "0", freeOnHand: "9.0000" };
+    const swap = { ...oak, id: "m2", itemId: "i2", itemName: "Walnut veneer", status: "pending" as const, replacesId: "m1", replacesName: "Oak veneer", reason: "Client changed the finish",
+      requestedBy: "u2", requestedByName: "Faisal", issued: "0", issuedValue: "0", freeOnHand: "0" };
+    const fetcher = mount((url) => (url.includes("/orders/w1") ? order({ status: "released", releasedAt: "2026-09-27T09:00:00Z" }, { materials: [oak, swap], materialCost: "550.0000" }) : factory()));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    const materials = await within(sheet).findByRole("region", { name: "Materials" });
+    expect(within(materials).getByText("11 of 13.3334 sheets issued · 9 sheets free")).toBeInTheDocument();
+    expect(within(materials).getByText(/Issued worth .*550/)).toBeInTheDocument();
+    expect(within(materials).getByText("Instead of Oak veneer: Client changed the finish — Faisal")).toBeInTheDocument();
+    await userEvent.click(within(materials).getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "decide_substitution", materialId: "m2", decision: "approve", version: 2 }));
+
+    await userEvent.click(within(materials).getByRole("button", { name: "Actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Issue" }));
+    const dialog = await screen.findByRole("dialog", { name: "Issue Oak veneer" });
+    const quantity = within(dialog).getByRole("textbox", { name: "Quantity" });
+    expect(quantity).toHaveValue("2.3334");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Free stock" }));
+    await userEvent.clear(quantity);
+    await userEvent.type(quantity, "3");
+    expect(within(dialog).getByRole("button", { name: "Issue" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why more/ }), "Offcuts too short");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Issue" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "issue_material", materialId: "m1", locationId: "f1", quantity: "3", from: "free", reason: "Offcuts too short" }));
   });
 
   it("sets what a work order needs before release and adds a workcenter", async () => {
