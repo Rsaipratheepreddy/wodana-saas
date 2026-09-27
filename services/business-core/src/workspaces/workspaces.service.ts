@@ -45,6 +45,7 @@ import { UpdateWorkspaceTerminologyDto } from "./dto/update-workspace-terminolog
 import { UpdateWorkspaceAppearanceDto } from "./dto/update-workspace-appearance.dto";
 import { UpdateHomeLayoutDto } from "./dto/update-home-layout.dto";
 import { readHomeOverview } from "./home-overview";
+import { readHomeMetrics } from "./home-metrics";
 import { WorkspaceAccessService } from "./workspace-access.service";
 import { DEFAULT_CRM_AUTOMATION_TEMPLATES } from "../crm/automations/default-automation-templates";
 import { parseProjectWorkflowTemplate } from "../projects/project-workflow";
@@ -1179,6 +1180,25 @@ export class WorkspacesService {
         this.access.hasPermission(client, workspaceId, user.userId, "projects.manage"),
       ]);
       return readHomeOverview(client, workspaceId, membership.rows[0].id, { sales, planning, projects, manageProjects });
+    });
+  }
+
+  /** Live Home metrics in one tenant transaction; each section only when the caller holds its permission. */
+  async homeMetrics(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const membership = await client.query<{ id: string }>(
+        `SELECT id FROM workspace_memberships WHERE workspace_id=$1 AND user_id=$2 AND status='active'`,
+        [workspaceId, user.userId],
+      );
+      if (!membership.rows[0]) throw new NotFoundException("Workspace membership not found");
+      const can = (permission: string) => this.access.hasPermission(client, workspaceId, user.userId, permission);
+      const [enquiries, quotes, payments, projects, manageProjects, activity, settings, data] = await Promise.all([
+        can("crm.leads.view"), can("pre_projects.view"), can("receivables.view"), can("projects.view"),
+        can("projects.manage"), can("audit.view"), can("workspace.settings.manage"), can("data.manage"),
+      ]);
+      return readHomeMetrics(client, workspaceId, membership.rows[0].id, {
+        enquiries, quotes, payments, projects, manageProjects, activity, storage: settings || data,
+      });
     });
   }
 
