@@ -38,7 +38,7 @@ export class QuotationController {
   boq(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string) { return this.builder.boq(actor, workspaceId, caseId, quoteId); }
 
   @Get("cases/:caseId/quotes/:quoteId/catalog")
-  search(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Query("q") query = "") { return this.builder.search(actor, workspaceId, caseId, quoteId, String(query)); }
+  search(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Query("q") query = "", @Query("limit") limit = "") { return this.builder.search(actor, workspaceId, caseId, quoteId, String(query), Number(limit) || undefined); }
 
   @Post("cases/:caseId/quotes/:quoteId/lines")
   apply(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { ops?: unknown }) { return this.builder.apply(actor, workspaceId, caseId, quoteId, input ?? {}); }
@@ -56,7 +56,7 @@ export class QuotationController {
   aiDraft(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string) { return this.assistant.draft(actor, workspaceId, caseId, quoteId); }
 
   @Post("cases/:caseId/quotes/:quoteId/ai/edit")
-  aiEdit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { request?: unknown }) { return this.assistant.edit(actor, workspaceId, caseId, quoteId, input ?? {}); }
+  aiEdit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { request?: unknown; history?: unknown; focusLineIds?: unknown }) { return this.assistant.edit(actor, workspaceId, caseId, quoteId, input ?? {}); }
 
   @Get("cases/:caseId/quotes/:quoteId/comments")
   threads(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string) { return this.collab.threads(actor, workspaceId, caseId, quoteId); }

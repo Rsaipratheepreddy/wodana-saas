@@ -118,11 +118,6 @@ export function DocumentStudio({ state, api, workspaceId, caseId, onState, onErr
         <Switch isDisabled={readOnly} isSelected={doc.showDescriptions} onChange={(on) => change({ showDescriptions: on })}>{t("Show descriptions")}</Switch>
         <Switch isDisabled={readOnly} isSelected={doc.showImages} onChange={(on) => change({ showImages: on })}>{t("Show pictures")}</Switch>
       </section>
-      {doc.sections.terms ? <section>
-        <h3>{t("Terms")}</h3>
-        <TextAreaField label={t("Terms and conditions")} isReadOnly={readOnly} value={doc.terms} onChange={(value) => change({ terms: value })} />
-        <TextAreaField label={t("Exclusions")} isReadOnly={readOnly} value={doc.exclusions} onChange={(value) => change({ exclusions: value })} />
-      </section> : null}
     </aside>
     <div className={styles.previewArea}>
       <div className={styles.previewBar}>

@@ -20,6 +20,11 @@ export class AiUnavailableError extends ServiceUnavailableException {}
  * The model call happens outside any database transaction; every call is logged. Output is JSON,
  * validated by the calling feature before anyone sees it, and always shown as a suggestion.
  */
+/** Whether the deployment has a model key at all (the per-workspace switch comes on top). */
+export function aiConfigured() {
+  return Boolean(process.env.GEMINI_API_KEY?.trim());
+}
+
 @Injectable()
 export class AiGatewayService {
   private fetcher: Fetcher = (url, init) => fetch(url, init);
@@ -30,7 +35,7 @@ export class AiGatewayService {
 
   /** Same Gemini key and model as the rest of Wodana's AI (cheaper, one provider). */
   get configured() {
-    return Boolean(process.env.GEMINI_API_KEY?.trim());
+    return aiConfigured();
   }
 
   settings(actor: RequestActor, workspaceId: string) {

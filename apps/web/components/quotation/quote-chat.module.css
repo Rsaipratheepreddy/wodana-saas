@@ -1,0 +1,67 @@
+.chat { display: flex; flex-direction: column; min-block-size: 0; block-size: 100%; }
+.thread { display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--wd-space-4); min-block-size: 0; overflow-y: auto; padding: var(--wd-space-4); }
+
+/* Before the first question: one line, then the ways to start. */
+.starters { display: grid; gap: var(--wd-space-2); }
+.hello { display: flex; align-items: flex-start; gap: var(--wd-space-2); margin: 0 0 var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); line-height: 1.5; }
+.hello svg { flex: none; margin-block-start: var(--wd-space-0-5); color: var(--wd-color-action-primary); }
+.starter { display: flex; align-items: center; gap: var(--wd-space-2-5); inline-size: 100%; min-block-size: var(--wd-space-10); padding: var(--wd-space-2) var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); text-align: start; cursor: pointer; }
+.starter span { flex: 1 1 auto; }
+.starter svg { flex: none; color: var(--wd-color-text-secondary); }
+.starter:hover:not(:disabled) { border-color: var(--wd-color-border-strong); background: var(--wd-color-surface-hover); }
+.starter:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.starter[data-primary] { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary-subtle); font-weight: var(--wd-weight-medium); }
+.starter[data-primary] svg { color: var(--wd-color-action-primary); }
+.starter:disabled { opacity: 0.6; cursor: default; }
+
+/* The estimator's words, then the assistant's answer. */
+.ask { align-self: flex-end; max-inline-size: 88%; padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); color: var(--wd-color-text); font-size: var(--wd-text-sm); line-height: 1.5; white-space: pre-wrap; }
+.answer { display: grid; gap: var(--wd-space-2); font-size: var(--wd-text-sm); line-height: 1.5; }
+.answer p { margin: 0; }
+.answer[data-failed] p { color: var(--wd-color-danger); }
+.thinking { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-text-secondary); }
+.thinking svg { color: var(--wd-color-action-primary); }
+
+/* A set of proposed changes: ticked ones are applied together. */
+.changes { overflow: hidden; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.changes[data-state="applied"], .changes[data-state="discarded"] { background: var(--wd-color-surface-subtle); }
+.changes header, .changes footer { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); }
+.changes header { border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-xs); }
+.changes header button { padding: 0; border: 0; background: none; color: var(--wd-color-text-secondary); font: inherit; cursor: pointer; }
+.changes header button:hover { color: var(--wd-color-text); text-decoration: underline; }
+.changes footer { justify-content: flex-end; border-block-start: 1px solid var(--wd-color-structural-divider); }
+.changes ul { display: grid; max-block-size: 22rem; margin: 0; padding: var(--wd-space-1) 0; overflow-y: auto; list-style: none; }
+.changes li { display: flex; align-items: flex-start; gap: var(--wd-space-2); padding: var(--wd-space-1-5) var(--wd-space-3); }
+.changes li:hover { background: var(--wd-color-surface-hover); }
+.change { display: flex; flex: 1 1 auto; align-items: flex-start; gap: var(--wd-space-2); min-inline-size: 0; }
+.changeIcon { flex: none; margin-block-start: var(--wd-space-0-5); }
+li[data-action="add"] .changeIcon { color: var(--wd-color-success); }
+li[data-action="remove"] .changeIcon { color: var(--wd-color-danger); }
+li[data-action="move"] .changeIcon, li[data-action="update"] .changeIcon { color: var(--wd-color-info); }
+li[data-action="remove"] .changeText > span:first-child { text-decoration: line-through; text-decoration-color: var(--wd-color-danger); }
+.changeText { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.changeText small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.lineLink { padding: 0; border: 0; background: none; color: var(--wd-color-text); font: inherit; font-weight: var(--wd-weight-semibold); text-decoration: underline; text-decoration-color: var(--wd-color-border-strong); text-underline-offset: 2px; cursor: pointer; }
+.lineLink:hover { text-decoration-color: currentColor; }
+.done { display: inline-flex; align-items: center; gap: var(--wd-space-1); margin-inline-end: auto; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+/* Asking: the line being pointed at, the words, send. */
+.composer { display: grid; gap: var(--wd-space-2); margin: 0; padding: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); }
+.composer textarea { inline-size: 100%; min-block-size: var(--wd-space-12); max-block-size: 10rem; padding: var(--wd-space-2) var(--wd-space-2-5); resize: vertical; border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); line-height: 1.5; }
+.composer textarea:focus { border-color: var(--wd-color-focus); outline: none; box-shadow: 0 0 0 1px var(--wd-color-focus); }
+.composer textarea::placeholder { color: var(--wd-color-text-tertiary); }
+.composerFoot { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); }
+.reset { display: inline-flex; align-items: center; gap: var(--wd-space-1); padding: 0; border: 0; background: none; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-xs); cursor: pointer; }
+.reset:hover { color: var(--wd-color-text); }
+.reset:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.composerFoot small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.context { display: inline-flex; align-items: center; gap: var(--wd-space-1); justify-self: start; max-inline-size: 100%; padding: var(--wd-space-0-5) var(--wd-space-1) var(--wd-space-0-5) var(--wd-space-2); border-radius: var(--wd-radius-pill); background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.context span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.context button { display: grid; place-items: center; inline-size: var(--wd-space-4); block-size: var(--wd-space-4); padding: 0; border: 0; border-radius: var(--wd-radius-pill); background: none; color: inherit; cursor: pointer; }
+.context button:hover { background: var(--wd-color-surface-hover); }
+
+/* When the assistant can't be used: say why and, for an admin, the switch. */
+.off { display: grid; justify-items: start; gap: var(--wd-space-2); padding: var(--wd-space-5) var(--wd-space-4); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); line-height: 1.5; }
+.off svg { color: var(--wd-color-action-primary); }
+.off strong { color: var(--wd-color-text); font-size: var(--wd-text-md); }
+.off p { margin: 0; }

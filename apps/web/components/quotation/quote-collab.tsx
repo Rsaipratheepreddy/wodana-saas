@@ -96,6 +96,43 @@ export function CommentPanel({ anchor, title, threads, members, api, meId, onThr
   </section>;
 }
 
+/**
+ * Every conversation on the quote in one place, newest first: open ones, then (on request) resolved.
+ * Opening one shows its thread; the composer at the end starts a comment on the quote as a whole.
+ */
+export function CommentsList({ threads, members, api, meId, titleOf, onOpen, onThreads, onError }: {
+  threads: QuoteThread[]; members: Member[]; api: Api; meId: string | null; titleOf: (thread: QuoteThread) => string;
+  onOpen: (thread: QuoteThread) => void; onThreads: (threads: QuoteThread[]) => void; onError: (message: string) => void;
+}) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
+  const [showResolved, setShowResolved] = useState(false);
+  const last = (thread: QuoteThread) => thread.messages[thread.messages.length - 1];
+  const sorted = [...threads].sort((a, b) => (last(b)?.createdAt ?? b.createdAt).localeCompare(last(a)?.createdAt ?? a.createdAt));
+  const open = sorted.filter((thread) => thread.status === "open");
+  const resolved = sorted.filter((thread) => thread.status === "resolved");
+  const shown = showResolved ? [...open, ...resolved] : open;
+  const when = (value: string) => new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+  return <div className={styles.commentList}>
+    {shown.length ? <ul>{shown.map((thread) => {
+      const message = last(thread);
+      return <li key={thread.id}>
+        <button type="button" onClick={() => onOpen(thread)} data-resolved={thread.status === "resolved" || undefined}>
+          <Avatar name={message?.createdByName ?? thread.createdByName} size="sm" />
+          <span>
+            <strong>{titleOf(thread)}</strong>
+            <span className={styles.snippet}>{message ? `${message.createdByName}: ${message.body}` : ""}</span>
+            <small>{message ? when(message.createdAt) : ""}{thread.messages.length > 1 ? ` · ${t("{count} replies", { count: thread.messages.length - 1 })}` : ""}{thread.status === "resolved" ? ` · ${t("Resolved")}` : ""}</small>
+          </span>
+        </button>
+      </li>;
+    })}</ul> : <p className={styles.noComments}><MessageCircle aria-hidden="true" size={18} />{t("No comments yet")}</p>}
+    {resolved.length ? <button type="button" className={styles.linkButton} onClick={() => setShowResolved((value) => !value)}>{showResolved ? t("Hide resolved") : t("Resolved · {count}", { count: resolved.length })}</button> : null}
+    <Composer members={members} meId={meId} placeholder={t("Comment on the quote · @ to mention")}
+      onSend={async (body, mentions) => { try { onThreads((await api.comment(crypto.randomUUID(), { kind: "total", key: "" }, body, mentions)).threads ?? []); return true; } catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not save.")); return false; } }} />
+  </div>;
+}
+
 const FIELD_LABEL: Record<string, string> = { title: "Item", quantity: "Qty", unit: "Unit", rate: "Rate", amount: "Amount", area: "Area", trade: "Work package" };
 
 function Composer({ members, meId, placeholder, autoFocus, onSend }: { members: Member[]; meId: string | null; placeholder: string; autoFocus?: boolean; onSend: (body: string, mentions: string[]) => Promise<boolean> }) {

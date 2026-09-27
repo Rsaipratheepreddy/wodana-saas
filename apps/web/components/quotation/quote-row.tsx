@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { ComboBox, Input, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { GripVertical, ImagePlus, Plus, Sigma } from "lucide-react";
 import { Avatar, Badge, IconMenuButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { LINE_KIND_LABEL, money, plain } from "@/lib/quotation/format";
 import type { BuilderLine, CatalogHit, QuotePerson, QuoteThread } from "@/lib/quotation/types";
 import { CommentButton } from "./quote-collab";
+import { CellPicker } from "./cell-picker";
 import styles from "./quote-builder.module.css";
 
 export type RowColumn = "area" | "trade" | null;
@@ -33,20 +35,35 @@ function ImageCell({ url, canEdit, title, onPick }: { url: string | null; canEdi
   </span>;
 }
 
-export function QuoteRow({ line, draft, column, areas, trades, amount, currency, decimals, canEdit, search, comments = [], editingBy = [], image, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea }: {
-  line: BuilderLine; draft?: boolean; column: RowColumn; areas: Option[]; trades: Option[]; amount: string | null; currency: string; decimals: number; canEdit: boolean;
-  /** The picture column, when shown: the line's picture URL (its own or its catalog item's). */
-  image?: { url: string | null } | null; onImage?: (file: File | null) => void; onNewArea?: () => void; catalogThumb?: (imageId: string) => string;
+/** Which optional columns the table shows. */
+export type RowColumns = { picture: boolean; size: boolean; material: boolean };
+
+export function QuoteRow({ line, draft, serial, column, columns, areas, trades, units = [], materials = [], sizeUnit = "cm", amount, currency, decimals, canEdit, canAsk, search, comments = [], editingBy = [], imageUrl, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea, onDiscard, flash }: {
+  line: BuilderLine; draft?: boolean; serial?: number; column: RowColumn; columns: RowColumns; areas: Option[]; trades: Option[];
+  units?: Array<{ code: string; label: string }>; materials?: string[]; sizeUnit?: string;
+  amount: string | null; currency: string; decimals: number; canEdit: boolean;
+  /** The assistant can be asked about this line (⌘K). */
+  canAsk?: boolean;
+  /** The line's picture (its own or its catalog item's). */
+  imageUrl?: string | null; onImage?: (file: File | null) => void; onNewArea?: () => void; catalogThumb?: (imageId: string) => string;
   comments?: QuoteThread[]; editingBy?: QuotePerson[]; onComments?: () => void;
-  search: (text: string, signal: AbortSignal) => Promise<CatalogHit[]>;
+  search: (text: string, signal: AbortSignal, limit?: number) => Promise<CatalogHit[]>;
   onChange: (fields: Partial<BuilderLine>) => void; onCatalog: (hit: CatalogHit, title: string) => void; onOpen: () => void; onNewCatalogItem?: (title: string) => void;
   onMenu: (action: string) => void; onDragStart: () => void; onDropBefore: () => void; onNewTrade: () => void;
+  /** A new row left empty goes away. */
+  onDiscard?: () => void;
+  /** Just changed by the assistant: highlighted for a moment. */
+  flash?: boolean;
 }) {
   const t = useT();
   const { locale } = useDesignSystem();
   // A removal credits an agreed item as it was sold: only how much is removed can change.
   const fixed = line.changeOp === "omit";
-  return <div role="row" className={styles.row} data-line-id={line.id} data-change={line.changeOp ?? undefined} data-optional={line.optional || undefined} data-draft={draft || undefined} data-busy={editingBy.length ? true : undefined}
+  const locked = !canEdit || draft || fixed;
+  // Sizes keep the unit they were written in; the first size typed records the workspace's unit.
+  const size = (key: "length" | "width" | "height", value: string) => onChange({ [key]: value || null, ...(line.dimensionUnit ? {} : { dimensionUnit: sizeUnit }) });
+  const unitOptions = [...units.map((unit) => ({ id: unit.code, name: unit.code })), ...(line.unit && !units.some((unit) => unit.code === line.unit) ? [{ id: line.unit, name: line.unit }] : [])];
+  return <div role="row" className={styles.row} data-line-id={line.id} data-change={line.changeOp ?? undefined} data-optional={line.optional || undefined} data-draft={draft || undefined} data-busy={editingBy.length ? true : undefined} data-flash={flash || undefined}
     onDragOver={(event) => { if (canEdit) { event.preventDefault(); event.currentTarget.dataset.dropTarget = "true"; } }}
     onDragLeave={(event) => { delete event.currentTarget.dataset.dropTarget; }}
     onDrop={(event) => { event.preventDefault(); delete event.currentTarget.dataset.dropTarget; onDropBefore(); }}>
@@ -54,38 +71,41 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
       {editingBy.length ? <span className={styles.editing} title={editingBy.map((person) => person.name).join(", ")}><Avatar name={editingBy[0].name} size="sm" /></span> : null}
       {canEdit && !draft && !editingBy.length ? <button type="button" className={styles.handle} draggable aria-label={t("Move {name}", { name: line.title })} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", line.id); onDragStart(); }}><GripVertical aria-hidden="true" size={14} /></button> : null}
     </span>
+    <span role="gridcell" className={styles.serialCell}>{serial ?? ""}</span>
+    {columns.picture ? <span role="gridcell" className={styles.imageCell}>
+      <ImageCell url={imageUrl ?? null} canEdit={canEdit && !draft} title={line.title} onPick={(file) => onImage?.(file)} />
+    </span> : null}
     <span role="gridcell" className={styles.itemCell}>
-      <ItemCell line={line} canEdit={canEdit && !fixed} search={search} thumb={catalogThumb} onCommit={(title) => onChange({ title })} onCatalog={onCatalog} onNewCatalogItem={onNewCatalogItem} autoFocus={draft} />
+      <ItemCell line={line} canEdit={canEdit && !fixed} search={search} thumb={catalogThumb} onCommit={(title) => onChange({ title })} onCatalog={onCatalog} onNewCatalogItem={onNewCatalogItem} draft={draft} onDiscard={onDiscard} />
       <span className={styles.itemMeta}>
         {line.changeOp === "omit" ? <Badge tone="danger">{t("Removes")}</Badge> : line.changeOp === "move" ? <Badge tone="info">{t("Moves")}</Badge> : null}
-        {line.kind !== "item" && line.changeOp !== "move" ? <Badge tone={line.kind === "client_supplied" ? "info" : "neutral"}>{t(LINE_KIND_LABEL[line.kind] as never)}</Badge> : null}
+        {line.kind === "client_supplied" || line.kind === "relocate" ? <Badge tone="info">{t(LINE_KIND_LABEL[line.kind] as never)}</Badge> : null}
         {line.optional ? <Badge tone="warning">{t("Optional")}</Badge> : null}
         {line.description ? <span className={styles.description}>{line.description}</span> : null}
         {line.catalogSnapshot?.priceReason ? <span className={styles.warn}>{t(line.catalogSnapshot.priceReason as never)}</span> : null}
       </span>
     </span>
-    {image ? <span role="gridcell" className={styles.imageCell}>
-      <ImageCell url={image.url} canEdit={canEdit && !draft} title={line.title} onPick={(file) => onImage?.(file)} />
-    </span> : null}
     {column ? <span role="gridcell" className={styles.pickCell}>
-      <select aria-label={column === "area" ? t("Area") : t("Work package")} disabled={!canEdit || draft || fixed} className={styles.select}
-        value={(column === "area" ? line.areaId : line.workPackageId) ?? ""}
-        onChange={(event) => {
-          if (event.target.value === "__new") { onNewTrade(); return; }
-          if (event.target.value === "__new_area") { onNewArea?.(); return; }
-          onChange(column === "area" ? { areaId: event.target.value || null } : { workPackageId: event.target.value || null });
-        }}>
-        <option value="">{column === "area" ? t("General") : t("No work package")}</option>
-        {(column === "area" ? areas : trades).map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
-        {column === "trade" && canEdit ? <option value="__new">{t("New work package…")}</option> : null}
-        {column === "area" && canEdit && onNewArea ? <option value="__new_area">{t("New area…")}</option> : null}
-      </select>
+      <CellPicker label={column === "area" ? t("Area") : t("Work package")} isDisabled={locked}
+        value={(column === "area" ? line.areaId : line.workPackageId) ?? null}
+        options={column === "area" ? areas : trades} noneLabel={column === "area" ? t("General") : t("No work package")}
+        onChange={(id) => onChange(column === "area" ? { areaId: id } : { workPackageId: id })}
+        onCreate={canEdit ? (column === "area" ? onNewArea : onNewTrade) : undefined}
+        createLabel={column === "area" ? t("New area…") : t("New work package…")} />
+    </span> : null}
+    {columns.size ? (["length", "width", "height"] as const).map((key) => <span key={key} role="gridcell" className={styles.numberCell}>
+      <CellInput label={t(SIZE_LABEL[key] as never)} value={line[key] === null ? "" : plain(line[key], locale, 2)} disabled={locked} numeric allowEmpty onCommit={(value) => size(key, value)} />
+    </span>) : null}
+    {columns.material ? <span role="gridcell" className={styles.materialCell}>
+      <MaterialCell value={line.material} options={materials} disabled={locked} onCommit={(material) => onChange({ material })} />
     </span> : null}
     <span role="gridcell" className={styles.numberCell}>
       {line.formula ? <button type="button" className={styles.formulaChip} onClick={onOpen} title={line.formula} data-error={line.formulaError ? true : undefined}>ƒ {plain(line.quantity, locale)}</button>
         : <CellInput label={t("Quantity")} value={plain(line.quantity, locale, 4)} disabled={!canEdit || draft} numeric onCommit={(value) => onChange({ quantity: value })} />}
     </span>
-    <span role="gridcell" className={styles.unitCell}><CellInput label={t("Unit")} value={line.unit} disabled={!canEdit || draft || fixed} onCommit={(value) => onChange({ unit: value })} /></span>
+    <span role="gridcell" className={styles.unitCell}>
+      <CellPicker label={t("Unit")} value={line.unit || null} options={unitOptions} noneLabel="—" isDisabled={locked} onChange={(id) => onChange({ unit: id ?? "" })} />
+    </span>
     <span role="gridcell" className={styles.numberCell}>
       {line.pricingMode === "build_up" ? <button type="button" className={styles.formulaChip} onClick={onOpen} data-error={line.buildUpComplete === false || undefined}><Sigma aria-hidden="true" size={12} />{plain(line.rate, locale, decimals)}</button>
         : <CellInput label={t("Rate")} value={line.kind === "client_supplied" ? "0" : plain(line.rate, locale, 6)} disabled={!canEdit || draft || line.kind === "client_supplied" || fixed} numeric onCommit={(value) => onChange({ rate: value })} />}
@@ -94,6 +114,7 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
     <span role="gridcell" className={styles.menuCell}>
       {!draft && onComments ? <CommentButton threads={comments} label={t("Comments on {name}", { name: line.title })} onOpen={onComments} /> : null}
       {!draft ? <IconMenuButton ariaLabel={t("Line actions for {name}", { name: line.title })} onAction={onMenu} items={[
+        ...(canAsk ? [{ id: "ask", label: t("Ask AI about this line") }] : []),
         { id: "details", label: t("Details") },
         { id: "comment", label: t("Comment") },
         ...(canEdit ? [
@@ -107,8 +128,30 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
   </div>;
 }
 
+const SIZE_LABEL = { length: "Length", width: "Depth", height: "Height" } as const;
+
+/** What the line is made of: pick one of the workspace's materials, or type your own ("Taj Mahal marble / veneer wood"). */
+function MaterialCell({ value, options, disabled, onCommit }: { value: string; options: string[]; disabled?: boolean; onCommit: (value: string) => void }) {
+  const t = useT();
+  const { portalContainer, direction } = useDesignSystem();
+  const [text, setText] = useState<string | null>(null);
+  const shown = text ?? value;
+  const query = (text ?? "").trim().toLowerCase();
+  const items = options.filter((name) => !query || name.toLowerCase().includes(query)).slice(0, 40).map((name) => ({ id: name, name }));
+  const commit = (next: string) => { setText(null); if (next.trim() !== value) onCommit(next.trim()); };
+  return <ComboBox aria-label={t("Material")} className={styles.picker} allowsCustomValue menuTrigger="input" inputValue={shown} items={items} isDisabled={disabled}
+    onInputChange={setText} onSelectionChange={(key) => { if (key !== null) commit(String(key)); }}>
+    <Input className={styles.pickerInput} onFocus={(event) => event.currentTarget.select()}
+      onBlur={() => { if (text !== null) commit(text); }}
+      onKeyDown={(event) => { if (event.key === "Escape") setText(null); if (event.key === "Enter") { const input = event.currentTarget; requestAnimationFrame(() => input.blur()); } }} />
+    <Popover UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" dir={direction} placement="bottom start">
+      <ListBox renderEmptyState={() => null}>{(item: { id: string; name: string }) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.name}>{item.name}</ListBoxItem>}</ListBox>
+    </Popover>
+  </ComboBox>;
+}
+
 /** A cell that edits in place: commits on Enter or leaving the cell, Escape puts the value back. */
-function CellInput({ label, value, disabled, numeric, onCommit }: { label: string; value: string; disabled?: boolean; numeric?: boolean; onCommit: (value: string) => void }) {
+function CellInput({ label, value, disabled, numeric, allowEmpty, placeholder, onCommit }: { label: string; value: string; disabled?: boolean; numeric?: boolean; allowEmpty?: boolean; placeholder?: string; onCommit: (value: string) => void }) {
   const [text, setText] = useState(value);
   const [focused, setFocused] = useState(false);
   const cancelled = useRef(false);
@@ -116,9 +159,9 @@ function CellInput({ label, value, disabled, numeric, onCommit }: { label: strin
   const commit = () => {
     if (cancelled.current) { cancelled.current = false; return; }
     const next = numeric ? text.replace(/[^\d.]/g, "") : text.trim();
-    if (next !== (numeric ? value.replace(/[^\d.]/g, "") : value) && (!numeric || next !== "")) onCommit(next);
+    if (next !== (numeric ? value.replace(/[^\d.]/g, "") : value) && (!numeric || allowEmpty || next !== "")) onCommit(next);
   };
-  return <input aria-label={label} className={styles.cell} data-numeric={numeric || undefined} inputMode={numeric ? "decimal" : undefined} disabled={disabled} value={shown}
+  return <input aria-label={label} className={styles.cell} data-numeric={numeric || undefined} inputMode={numeric ? "decimal" : undefined} disabled={disabled} value={shown} placeholder={placeholder}
     onFocus={(event) => { setText(value); setFocused(true); event.currentTarget.select(); }}
     onChange={(event) => setText(event.target.value)}
     onBlur={() => { setFocused(false); commit(); }}
@@ -141,7 +184,7 @@ function moveDown(event: KeyboardEvent<HTMLInputElement>) {
 }
 
 /** The item name: typing searches the catalog; pick a result to fill the row, or keep the typed name as a custom line. */
-function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCatalogItem, autoFocus }: { line: BuilderLine; canEdit: boolean; search: (text: string, signal: AbortSignal) => Promise<CatalogHit[]>; thumb?: (imageId: string) => string; onCommit: (title: string) => void; onCatalog: (hit: CatalogHit, title: string) => void; onNewCatalogItem?: (title: string) => void; autoFocus?: boolean }) {
+function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCatalogItem, draft, onDiscard }: { line: BuilderLine; canEdit: boolean; search: (text: string, signal: AbortSignal, limit?: number) => Promise<CatalogHit[]>; thumb?: (imageId: string) => string; onCommit: (title: string) => void; onCatalog: (hit: CatalogHit, title: string) => void; onNewCatalogItem?: (title: string) => void; draft?: boolean; onDiscard?: () => void }) {
   const t = useT();
   const { locale } = useDesignSystem();
   const listId = useId();
@@ -173,21 +216,33 @@ function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCata
     requestAnimationFrame(() => input.current?.blur());
   };
   return <div className={styles.itemInput}>
-    <input ref={input} autoFocus={autoFocus} aria-label={t("Item")} role="combobox" aria-expanded={open && options.length > 0} aria-controls={listId} aria-autocomplete="list"
+    <input ref={input} autoFocus={draft} aria-label={t("Item")} role="combobox" aria-expanded={open && options.length > 0} aria-controls={listId} aria-autocomplete="list"
       aria-activedescendant={open && options[active] ? `${listId}-${active}` : undefined}
-      className={styles.cell} data-title placeholder={t("Type to find an item…")} disabled={!canEdit} value={shown}
+      className={styles.cell} data-title placeholder={t("Type to find an item…")} disabled={!canEdit} value={shown} title={line.title || undefined}
       onFocus={(event) => { setText(line.title); setFocused(true); event.currentTarget.select(); }}
       onChange={(event) => { setText(event.target.value); setOpen(true); }}
-      onBlur={() => { setFocused(false); setOpen(false); if (cancelled.current) { cancelled.current = false; return; } if (text.trim() && text.trim() !== line.title) onCommit(text.trim()); }}
+      onBlur={() => {
+        setFocused(false); setOpen(false);
+        if (cancelled.current) { cancelled.current = false; return; }
+        // A new row becomes a line only by choosing an item or pressing Enter; left empty, it goes away.
+        if (draft) { if (!text.trim()) onDiscard?.(); return; }
+        if (text.trim() && text.trim() !== line.title) onCommit(text.trim());
+      }}
       onKeyDown={(event) => {
         if (open && options.length && (event.key === "ArrowDown" || event.key === "ArrowUp")) { event.preventDefault(); setActive((value) => (value + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length); return; }
         if (event.key === "Enter") {
           event.preventDefault();
           if (open && options.length) choose(active);
+          else if (draft && text.trim()) { cancelled.current = true; onCommit(text.trim()); }
           else moveDown(event); // leaving the cell saves it
           return;
         }
-        if (event.key === "Escape") { if (open) { setOpen(false); return; } cancelled.current = true; setText(line.title); event.currentTarget.blur(); }
+        if (event.key === "Escape") {
+          if (open) { setOpen(false); return; }
+          cancelled.current = true; setText(line.title);
+          if (draft) onDiscard?.();
+          event.currentTarget.blur();
+        }
       }} />
     {open && options.length ? <ul id={listId} role="listbox" aria-label={t("Catalog items")} className={styles.suggestions}>
       {options.map((option, index) => <li key={option.type === "hit" ? option.hit.id : option.type} id={`${listId}-${index}`} role="option" aria-selected={index === active}

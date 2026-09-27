@@ -23,13 +23,14 @@ export function quoteApi(workspaceId: string, caseId: string, quoteId: string) {
     discount: (input: Omit<QuoteDiscount, "reason"> & { reason?: string }) => request<BuilderState>(quotationPath(workspaceId, `${base}/discounts`), "PUT", input),
     tax: (taxRate: string) => request<BuilderState>(quotationPath(workspaceId, `${base}/tax`), "PUT", { taxRate }),
     boq: () => request<{ lines: BoqPick[] }>(quotationPath(workspaceId, `${base}/boq`)),
-    search: (q: string, signal?: AbortSignal) => request<{ items: CatalogHit[] }>(quotationPath(workspaceId, `${base}/catalog`, { q }), "GET", undefined, signal),
+    search: (q: string, signal?: AbortSignal, limit = 12) => request<{ items: CatalogHit[] }>(quotationPath(workspaceId, `${base}/catalog`, { q, limit: String(limit) }), "GET", undefined, signal),
     paymentTerms: (terms: PaymentMilestone[]) => request<BuilderState>(quotationPath(workspaceId, `${base}/payment-terms`), "PUT", { terms }),
     /** A step on the quote's journey (submit, approve, issue, revise, record_decision…), through the commercial case. */
     step: (action: string, revision: number, extra: Record<string, unknown> = {}) =>
       request<{ data: { revision: number; quotes: Array<{ id: string; number: number; status: string }> } }>(`/api/commercial/cases/${caseId}?${new URLSearchParams({ workspaceId })}`, "POST", { action, revision, quoteId, ...extra }),
     aiDraft: () => request<AiProposal>(quotationPath(workspaceId, `${base}/ai/draft`), "POST", {}),
-    aiEdit: (text: string) => request<AiProposal>(quotationPath(workspaceId, `${base}/ai/edit`), "POST", { request: text }),
+    aiEdit: (text: string, chat: { history?: Array<{ role: "estimator" | "assistant"; text: string }>; focusLineIds?: string[] } = {}) =>
+      request<AiProposal>(quotationPath(workspaceId, `${base}/ai/edit`), "POST", { request: text, history: chat.history ?? [], focusLineIds: chat.focusLineIds ?? [] }),
     threads: () => request<{ threads: QuoteThread[]; members: Array<{ id: string; name: string }> }>(quotationPath(workspaceId, `${base}/comments`)),
     comment: (id: string, anchor: QuoteAnchor, body: string, mentions: string[]) => request<{ threads: QuoteThread[] }>(quotationPath(workspaceId, `${base}/comments`), "POST", { id, anchorKind: anchor.kind, anchorKey: anchor.key, anchorField: anchor.field ?? null, body, mentions }),
     reply: (threadId: string, id: string, body: string, mentions: string[]) => request<{ threads: QuoteThread[] }>(quotationPath(workspaceId, `${base}/comments/${threadId}/replies`), "POST", { id, body, mentions }),

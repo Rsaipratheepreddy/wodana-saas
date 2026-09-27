@@ -1,3 +1,4 @@
+import { aiConfigured } from "../ai-gateway/ai-gateway.service";
 import { randomUUID as randomUUIDv4 } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
@@ -41,6 +42,8 @@ type LineRow = {
   taxRate: string | null; optional: boolean | null; optionGroup: string | null; note: string; catalogItemId: string | null;
   catalogSnapshot: Record<string, unknown> | null; updatedAt: string; updatedByName: string | null;
   imageAssetId: string | null; catalogImageId: string | null;
+  /** What it's made of, as written on the quote. */
+  material: string;
   /** On a variation: what the line does to the agreed scope, and the live BOQ line it changes. */
   changeOp: "add" | "omit" | "move" | null; boqLineId: string | null;
   /** The client requirement this line covers (requirement trace). */
@@ -147,11 +150,11 @@ export class QuotationBuilderService {
     return this.access.withPermission(actor, workspaceId, VIEW, async (client, user) => this.state(client, workspaceId, caseId, quoteId, user.userId));
   }
 
-  search(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, query: string) {
+  search(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, query: string, limit?: number) {
     return this.access.withPermission(actor, workspaceId, VIEW, async (client) => {
       const quote = await readQuote(client, workspaceId, caseId, quoteId);
       const settings = await readSettings(client, workspaceId);
-      return { items: await searchCatalog(client, workspaceId, { search: query.slice(0, 120), currency: quote.currency, priceBookId: settings.priceBookId }) };
+      return { items: await searchCatalog(client, workspaceId, { search: query.slice(0, 120), currency: quote.currency, priceBookId: settings.priceBookId, limit }) };
     });
   }
 
@@ -500,8 +503,8 @@ export class QuotationBuilderService {
       `INSERT INTO commercial_quote_lines (workspace_id, case_id, quote_id, id, sort_order, room, title, quantity, unit, unit_cost, rate, optional,
          kind, description, pricing_mode, note, area_id, from_area_id, work_package_id, catalog_item_id, catalog_snapshot, formula, length, width, height,
          count, dimension_unit, markup_percent, discount_kind, discount_value, tax_code, tax_rate, option_group, version, updated_by, updated_at, image_asset_id, catalog_image_id,
-         change_op, boq_line_id, scope_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 1, $34, now(), $35, $36, $37, $38, $39)
+         change_op, boq_line_id, scope_id, material)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 1, $34, now(), $35, $36, $37, $38, $39, $40)
        ON CONFLICT (case_id, quote_id, id) DO UPDATE SET sort_order = excluded.sort_order, room = excluded.room, title = excluded.title, quantity = excluded.quantity,
          unit = excluded.unit, unit_cost = excluded.unit_cost, rate = excluded.rate, optional = excluded.optional, kind = excluded.kind, description = excluded.description,
          pricing_mode = excluded.pricing_mode, note = excluded.note, area_id = excluded.area_id, from_area_id = excluded.from_area_id, work_package_id = excluded.work_package_id,
@@ -509,12 +512,13 @@ export class QuotationBuilderService {
          height = excluded.height, count = excluded.count, dimension_unit = excluded.dimension_unit, markup_percent = excluded.markup_percent,
          discount_kind = excluded.discount_kind, discount_value = excluded.discount_value, tax_code = excluded.tax_code, tax_rate = excluded.tax_rate,
          option_group = excluded.option_group, version = commercial_quote_lines.version + 1, updated_by = excluded.updated_by, updated_at = now(),
-         image_asset_id = excluded.image_asset_id, catalog_image_id = excluded.catalog_image_id, change_op = excluded.change_op, boq_line_id = excluded.boq_line_id, scope_id = excluded.scope_id`,
+         image_asset_id = excluded.image_asset_id, catalog_image_id = excluded.catalog_image_id, change_op = excluded.change_op, boq_line_id = excluded.boq_line_id, scope_id = excluded.scope_id,
+         material = excluded.material`,
       [workspaceId, caseId, quoteId, line.id, line.position, room, line.title.trim(), line.quantity, line.unit, line.unitCost, line.rate, line.optional || null,
         line.kind, line.description, line.pricingMode, line.note, line.areaId, line.fromAreaId, line.workPackageId, line.catalogItemId,
         line.catalogSnapshot ? JSON.stringify(line.catalogSnapshot) : null, line.formula, line.length, line.width, line.height, line.count, line.dimensionUnit,
         line.markupPercent, line.discountKind, line.discountValue, line.taxCode, line.taxRate, line.optionGroup, userId, line.imageAssetId, line.catalogImageId,
-        line.changeOp, line.boqLineId, line.scopeId]);
+        line.changeOp, line.boqLineId, line.scopeId, line.material]);
     if (line.components) {
       await client.query(`DELETE FROM commercial_quote_line_components WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND line_id = $4`, [workspaceId, caseId, quoteId, line.id]);
       for (const [position, component] of line.components.entries())
@@ -543,6 +547,18 @@ export class QuotationBuilderService {
     // Other commands read the case under its revision; moving it makes them reload instead of overwriting.
     await client.query(`UPDATE commercial_cases SET revision = revision + 1, updated_at = now() WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId]);
     return pricing;
+  }
+
+  /** Whether this person can use the quote assistant now, and if not, why (so the screen can say so). */
+  private async assistant(client: Db, workspaceId: string, userId: string) {
+    const on = (await client.query<{ enabled: boolean }>(`SELECT enabled FROM workspace_ai_settings WHERE workspace_id = $1`, [workspaceId])).rows[0]?.enabled ?? false;
+    const allowed = await this.access.hasPermission(client, workspaceId, userId, "ai.suggestions.use");
+    const configured = aiConfigured();
+    return {
+      available: configured && on && allowed,
+      reason: !configured ? ("not_set_up" as const) : !on ? ("off" as const) : !allowed ? ("no_access" as const) : null,
+      canTurnOn: configured && !on && await this.access.hasPermission(client, workspaceId, userId, "workspace.settings.manage"),
+    };
   }
 
   private async state(client: Db, workspaceId: string, caseId: string, quoteId: string, userId: string) {
@@ -579,6 +595,16 @@ export class QuotationBuilderService {
       areas: await caseAreas(client, workspaceId, caseId),
       workPackages: await workPackages(client, workspaceId, false),
       taxCodes: await taxCodes(client, workspaceId, caseId),
+      // The choices in the line's unit and material cells: the workspace's units, and its catalog
+      // materials with what estimators have written before.
+      // Sizes (length × depth × height) are written in the workspace's unit system unless a line says otherwise.
+      sizeUnit: (await client.query<{ unitSystem: string }>(`SELECT unit_system::text AS "unitSystem" FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.unitSystem === "imperial" ? "in" : "cm",
+      units: (await client.query<{ code: string; label: string }>(`SELECT code, label FROM catalog_units WHERE workspace_id = $1 ORDER BY label`, [workspaceId])).rows,
+      materials: (await client.query<{ name: string }>(
+        `SELECT name FROM (
+           SELECT item.name FROM catalog_items item WHERE item.workspace_id = $1 AND item.item_type = 'material' AND item.status = 'active'
+           UNION SELECT DISTINCT line.material FROM commercial_quote_lines line WHERE line.workspace_id = $1 AND line.material <> ''
+         ) choice ORDER BY lower(name) LIMIT 300`, [workspaceId])).rows.map((row) => row.name),
       lines: lines.map((line) => {
         const parts = components.filter((part) => part.lineId === line.id);
         const measurements = { length: line.length, width: line.width, height: line.height, count: line.count };
@@ -594,6 +620,7 @@ export class QuotationBuilderService {
       pricing: canViewCosts ? pricing : { ...pricing, cost: null, margin: null, lines: pricing.lines.map((line) => ({ ...line, cost: null })) },
       checks,
       me: userId,
+      assistant: await this.assistant(client, workspaceId, userId),
       document: documentOf(quote, settings),
       brand: await effectivePortalBrand(client, workspaceId, null),
       client: (await client.query<{ name: string; project: string; address: string | null }>(
@@ -668,7 +695,7 @@ const LINE_SELECT = `SELECT line.id, line.sort_order AS position, line.version, 
   line.discount_kind AS "discountKind", line.discount_value::text AS "discountValue", line.tax_code AS "taxCode", line.tax_rate::text AS "taxRate",
   line.optional, line.option_group AS "optionGroup", line.note, line.catalog_item_id AS "catalogItemId", line.catalog_snapshot AS "catalogSnapshot",
   line.updated_at AS "updatedAt", editor.display_name AS "updatedByName", line.image_asset_id AS "imageAssetId", line.catalog_image_id AS "catalogImageId",
-  line.change_op AS "changeOp", line.boq_line_id AS "boqLineId", line.scope_id AS "scopeId"
+  line.change_op AS "changeOp", line.boq_line_id AS "boqLineId", line.scope_id AS "scopeId", coalesce(line.material, '') AS material
   FROM commercial_quote_lines line LEFT JOIN users editor ON editor.id = line.updated_by`;
 
 async function readLines(db: Db, workspaceId: string, caseId: string, quoteId: string) {
@@ -713,7 +740,7 @@ const blankLine = (id: string): LineRow => ({
   quantity: "1", formula: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: null,
   markupPercent: null, pricingMode: "rate", discountKind: null, discountValue: null, taxCode: null, taxRate: null, optional: null,
   optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, updatedAt: "", updatedByName: null, imageAssetId: null, catalogImageId: null,
-  changeOp: null, boqLineId: null, scopeId: null,
+  changeOp: null, boqLineId: null, scopeId: null, material: "",
 });
 
 /** Validates and applies the editor's fields to a line. Costs and markup change only with cost permission. */
@@ -725,6 +752,7 @@ function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fie
   if (has("description")) next.description = text(fields.description, "Description", 4000, true);
   if (has("unit")) next.unit = text(fields.unit, "Unit", 20, true);
   if (has("note")) next.note = text(fields.note, "Note", 4000, true);
+  if (has("material")) next.material = text(fields.material, "Material", 500, true);
   if (has("areaId")) next.areaId = area(fields.areaId, context.areas);
   if (has("fromAreaId")) next.fromAreaId = area(fields.fromAreaId, context.areas);
   if (has("workPackageId")) {
@@ -980,7 +1008,7 @@ export async function acceptedScope(db: Db, workspaceId: string, caseId: string,
     length: line.length, width: line.width, height: line.height, count: line.count, dimensionUnit: line.dimensionUnit,
     rate: line.rate, discountKind: line.discountKind, discountValue: line.discountValue, taxRate: line.taxRate ?? quote.taxRate,
     catalogItemId: line.catalogItemId, imageAssetId: line.imageAssetId, catalogImageId: line.catalogImageId,
-    changeOp: line.changeOp, boqLineId: line.boqLineId,
+    changeOp: line.changeOp, boqLineId: line.boqLineId, material: line.material,
     net: priced.get(line.id)?.net ?? "0", total: priced.get(line.id)?.total ?? "0",
   });
   const included = lines.filter((line) => !line.optional);

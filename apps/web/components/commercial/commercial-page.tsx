@@ -5,6 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { QuotationList } from "./quotation-list";
+import { SERVICE_PATHS } from "@/lib/commercial/service-paths";
 import { History, Plus } from "lucide-react";
 import {
   Button,
@@ -52,12 +53,6 @@ const labels: Record<string, string> = {
   approvals: "Approvals & release",
   "execution-release": "Release readiness",
 };
-const palmServicePaths = [
-  { label: "Design + fitout / furniture", scope: { design: true, mainQuotation: true, materialSelection: true, procurement: true, manufacturing: true, siteWorks: true, installation: true } },
-  { label: "Design / moodboards only", scope: { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false } },
-  { label: "Made-to-order furniture", scope: { design: false, mainQuotation: true, materialSelection: true, procurement: true, manufacturing: true, siteWorks: false, installation: true } },
-  { label: "Ready-made furniture", scope: { design: false, mainQuotation: true, materialSelection: false, procurement: true, manufacturing: false, siteWorks: false, installation: true } },
-] as const;
 export function CommercialPage({
   initial,
   record,
@@ -278,8 +273,8 @@ export function CommercialPage({
                 : "Choose what the client is buying before preparing the first quotation. This keeps inapplicable project stages out of the way."}</p>
             </div>
             {state.data.palmFlow
-              ? <span className={s.flowSelected}>{palmServicePaths.find(path => JSON.stringify(path.scope) === JSON.stringify(state.data.palmFlow?.scope))?.label ?? "Custom service path"}</span>
-              : <div className={s.flowChoices}>{palmServicePaths.map(path => (
+              ? <span className={s.flowSelected}>{SERVICE_PATHS.find(path => JSON.stringify(path.scope) === JSON.stringify(state.data.palmFlow?.scope))?.label ?? "Custom service path"}</span>
+              : <div className={s.flowChoices}>{SERVICE_PATHS.map(path => (
                   <Button key={path.label} size="compact" isDisabled={busy || !state.canEdit} onPress={() => void run("set_palm_flow", { scope: path.scope })}>
                     {path.label}
                   </Button>

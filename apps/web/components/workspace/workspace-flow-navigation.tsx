@@ -49,7 +49,7 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
     const areaLabels: Record<string, string> = { overview: t("Overview"), requirements: t("Requirements"), site: t("Site"), moodboard: t("Moodboard"), design: t("Design"), quotes: t("Quotes"), agreement: t("Agreement") };
     const viewLabels: Record<string, string> = {
       "client-portal": t("Client access"), "execution-release": t("Release readiness"), requirements: t("Requirements"), measurements: t("Measurements"),
-      "site-layouts": t("Photos & plans"), site: t("Visits"), inspiration: t("Moodboard"), definition: t("Scope"), boq: t("Design quote"), quotations: t("Fit-out quote"),
+      "site-layouts": t("Photos & plans"), site: t("Visits"), inspiration: t("Moodboard"), definition: t("Scope sign-off"), quotations: t("Quotes"),
       contracts: t("Agreement"), "payment-plan": t("Payments"), approvals: t("Approvals"), variations: t("Change requests"),
     };
     const views = area.id === "overview" ? [] : area.sections;

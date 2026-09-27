@@ -2,36 +2,37 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowLeftRight, Bookmark, Image as ImageIcon, Percent, Plus } from "lucide-react";
-import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SegmentedControl, Skeleton, ToggleButton, useDesignSystem } from "@/design-system";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Bookmark, CircleAlert, Columns3, Image as ImageIcon, Layers, MapPin, PanelRight, Plus, Ruler, Sparkles, Store, Type, X } from "lucide-react";
+import { Badge, EmptyState, ErrorState, IconButton, IconMenuButton, InlineNotice, MenuButton, SegmentedControl, Skeleton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { catalogImageUrl, quoteApi, QuotationRequestError } from "@/lib/quotation/client";
-import { caseApi, caseRequest, saveCaseRoom, type CaseAsset } from "@/lib/pre-project/content";
-import { groupLines, money, VIEW_LABEL, type LineGroup } from "@/lib/quotation/format";
+import { caseApi, caseRequest, saveCaseRoom, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
+import { groupLines, money, QUOTE_STATUS, VIEW_LABEL, type LineGroup } from "@/lib/quotation/format";
 import type { BuilderLine, BuilderState, CatalogHit, LineOp, QuoteAnchor, QuoteThread, QuoteView } from "@/lib/quotation/types";
 import { GENERAL, NO_TRADE } from "@/lib/quotation/types";
 import { RoomPicker } from "@/components/pre-project/room-manager";
-import type { CaseRoom } from "@/lib/pre-project/content";
 import { LineDetails } from "./line-details";
-import { QuoteRow, type RowColumn } from "./quote-row";
+import { QuoteRow, type RowColumn, type RowColumns } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
-import { FlowActions, RevisionChanges } from "./quote-flow";
+import { FlowActions, QuotePayments, RevisionChanges } from "./quote-flow";
+import { QuoteTerms } from "./quote-terms";
 import { DocumentStudio } from "./document-studio";
 import { InsertTemplate, SaveTemplate } from "./quote-templates";
-import { QuoteAssistant } from "./quote-assistant";
+import { QuoteChat, type AssistantCommands } from "./quote-chat";
+import { QuoteCatalog } from "./quote-catalog";
+import { NameDialog } from "./name-dialog";
 import { ChangeAgreedItem } from "./quote-variation";
-import { CommentButton, CommentPanel, PeopleHere, threadsAt, usePulse } from "./quote-collab";
-import { useRouter } from "next/navigation";
+import { CommentButton, CommentPanel, CommentsList, PeopleHere, threadsAt, usePulse } from "./quote-collab";
 import styles from "./quote-builder.module.css";
 
 type Draft = { id: string; areaId: string | null; workPackageId: string | null };
-const STATUS_LABEL: Record<string, string> = { draft: "Draft", internal_review: "In review", internal_approved: "Approved internally", issued: "Sent", accepted: "Accepted", changes_requested: "Changes requested", declined: "Declined", superseded: "Superseded", withdrawn: "Withdrawn" };
 
 /**
  * The quotation builder (plan §6.8): one list of lines, read by area, by trade or both. Edit like a
  * spreadsheet; every change is saved line by line as you go, priced on the server and shown back.
  */
-export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, initialTab = "items", quoteHref: hrefOf }: { workspaceId: string; caseId: string; quoteId: string; backHref: string; quoteHref?: (id: string) => string; initial?: BuilderState; initialTab?: "items" | "document" }) {
+export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, initialTab = "items", quoteHref: hrefOf }: { workspaceId: string; caseId: string; quoteId: string; backHref: string; quoteHref?: (id: string) => string; initial?: BuilderState; initialTab?: QuoteTab }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const router = useRouter();
@@ -44,11 +45,11 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [dragged, setDragged] = useState<string | null>(null);
-  const [addingArea, setAddingArea] = useState(false);
-  const [tab, setTab] = useState<"items" | "document">(initialTab);
-  // Showing pictures is a per-person choice, remembered on this device.
-  const images = useSyncExternalStore(subscribePictures, readPictures, () => false);
-  const toggleImages = () => { try { window.localStorage.setItem(PICTURES_KEY, images ? "0" : "1"); } catch { /* storage unavailable */ } window.dispatchEvent(new Event(PICTURES_KEY)); };
+  const [tab, setTab] = useState<QuoteTab>(initialTab);
+  // Which optional columns show is a per-person choice, remembered on this device.
+  const shownColumns = useSyncExternalStore(subscribeColumns, readColumns, () => COLUMNS_DEFAULT);
+  const columns: RowColumns = JSON.parse(shownColumns);
+  const toggleColumn = (key: keyof RowColumns) => { try { window.localStorage.setItem(COLUMNS_KEY, JSON.stringify({ ...columns, [key]: !columns[key] })); } catch { /* storage unavailable */ } window.dispatchEvent(new Event(COLUMNS_KEY)); };
   const [inserting, setInserting] = useState(false);
   const [changing, setChanging] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState<{ scope: "area" | "trade" | "quote"; target: string; name: string } | null>(null);
@@ -57,6 +58,22 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const [commentAt, setCommentAt] = useState<{ anchor: QuoteAnchor; title: string } | null>(null);
   const focus = useRef<{ lineId: string | null; field: string | null }>({ lineId: null, field: null });
   const [discountFor, setDiscountFor] = useState<{ scope: "area" | "trade" | "quote"; target: string; name: string } | null>(null);
+  // The side panel: the assistant, the catalog, comments and totals. On a narrow screen it's a sheet.
+  const [panel, setPanel] = useState<Panel>("assistant");
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const narrow = useSyncExternalStore(subscribeNarrow, readNarrow, () => false);
+  const showPanel = narrow ? sheetOpen : panelOpen;
+  // The document has its own settings beside the preview; the panel steps aside there.
+  const panelShown = showPanel && tab !== "document";
+  const [contextLineId, setContextLineId] = useState<string | null>(null);
+  const [flash, setFlash] = useState<Set<string>>(new Set());
+  const scrollTo = useRef<string | null>(null);
+  const chatInput = useRef<HTMLTextAreaElement>(null);
+  const assistantRef = useRef<AssistantCommands | null>(null);
+  const [catalogArea, setCatalogArea] = useState<string | null>(null);
+  const [roomFor, setRoomFor] = useState<BuilderLine | "new" | null>(null);
+  const [tradeFor, setTradeFor] = useState<BuilderLine | "new" | null>(null);
   const latest = useRef(state);
   useEffect(() => { latest.current = state; }, [state]);
   const queue = useRef<LineOp[]>([]);
@@ -90,19 +107,37 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   }, [api, load, t]);
   const send = useCallback((ops: LineOp[]) => { queue.current.push(...ops); void flush(); }, [flush]);
 
+  // Lines just added or changed (by the assistant, the catalog or a check) light up for a moment.
+  const highlight = useCallback((ids: string[]) => {
+    if (!ids.length) return;
+    setFlash(new Set(ids));
+    scrollTo.current = ids[0];
+    window.setTimeout(() => setFlash((current) => (ids.some((id) => current.has(id)) ? new Set() : current)), 2400);
+  }, []);
+  useEffect(() => {
+    if (!scrollTo.current) return;
+    const row = document.querySelector<HTMLElement>(`[data-line-id="${CSS.escape(scrollTo.current)}"]`);
+    if (!row) return;
+    scrollTo.current = null;
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [state, flash]);
+  const touched = (ops: LineOp[]) => ops.flatMap((op) => (op.op === "upsert" || op.op === "catalog" ? [op.line.id] : []));
+  const applyOps = (ops: LineOp[]) => { send(ops); highlight(touched(ops)); };
+
   const changeLine = (line: BuilderLine, fields: Partial<BuilderLine>) => {
     // Show the change straight away; the server's answer (with prices) replaces it.
     setState((current) => current ? { ...current, lines: current.lines.map((item) => (item.id === line.id ? { ...item, ...fields } : item)) } : current);
     send([{ op: "upsert", line: { id: line.id, ...fields } }]);
   };
+  const discardDraft = (draft: Draft) => setDrafts((current) => current.filter((item) => item.id !== draft.id));
   const createFromDraft = (draft: Draft, fields: Partial<BuilderLine>, hit?: CatalogHit) => {
-    setDrafts((current) => current.filter((item) => item.id !== draft.id));
+    discardDraft(draft);
     const base = { id: draft.id, areaId: draft.areaId, workPackageId: draft.workPackageId, ...fields };
     send([hit ? { op: "catalog", itemId: hit.id, line: base } : { op: "upsert", line: base }]);
   };
   // A brand-new item: the line is created, then added to the catalog (price and picture can follow).
   const newCatalogLine = async (draft: Draft, title: string) => {
-    setDrafts((current) => current.filter((item) => item.id !== draft.id));
+    discardDraft(draft);
     try {
       const created = await api.apply([{ op: "upsert", line: { id: draft.id, title, areaId: draft.areaId, workPackageId: draft.workPackageId } }]);
       const line = created.lines.find((item) => item.id === draft.id);
@@ -111,6 +146,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); void load(); }
   };
   const addDraft = (group: { areaId: string | null; workPackageId: string | null }) => setDrafts((current) => [...current, { id: crypto.randomUUID(), ...group }]);
+  const addFromCatalog = (hit: CatalogHit, areaId: string | null) => applyOps([{ op: "catalog", itemId: hit.id, line: { id: crypto.randomUUID(), areaId, workPackageId: null } }]);
 
   const loadThreads = useCallback(async () => {
     try { const result = await api.threads(); setThreads(result.threads ?? []); setMembers(result.members ?? []); } catch { /* comments load again on the next change */ }
@@ -126,7 +162,26 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     onRevision: () => { if (!sending.current && !queue.current.length) void load(); },
     onComments: () => void loadThreads(),
   });
-  const openComments = (anchor: QuoteAnchor, title: string) => setCommentAt({ anchor, title });
+
+  const showSide = useCallback((next: boolean) => (narrow ? setSheetOpen(next) : setPanelOpen(next)), [narrow]);
+  const openPanel = useCallback((view: Panel) => { setPanel(view); showSide(true); }, [showSide]);
+  const openComments = (anchor: QuoteAnchor, title: string) => { setCommentAt({ anchor, title }); openPanel("comments"); };
+  // ⌘K asks the assistant about the line you're on; ⌘J shows or hides the panel.
+  const askAbout = useCallback((lineId: string | null) => {
+    setContextLineId(lineId); openPanel("assistant");
+    requestAnimationFrame(() => chatInput.current?.focus());
+  }, [openPanel]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "k" && latest.current?.canEdit) { event.preventDefault(); askAbout(focus.current.lineId); }
+      else if (key === "j") { event.preventDefault(); showSide(!showPanel); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [askAbout, showSide, showPanel]);
+
   const lineImage = (line: BuilderLine) => line.imageAssetId ? caseApi(workspaceId, caseId, `assets/${line.imageAssetId}?preview=1`) : line.catalogImageId ? catalogImageUrl(workspaceId, line.catalogImageId) : null;
   const setLineImage = async (line: BuilderLine, file: File | null) => {
     if (!file) { changeLine(line, line.imageAssetId ? { imageAssetId: null } : { catalogImageId: null }); return; }
@@ -136,31 +191,26 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       changeLine(line, { imageAssetId: asset.id });
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not upload the picture.")); }
   };
-  // A new area straight from a line's area picker; the line moves into it.
-  const newArea = async (line: BuilderLine) => {
-    const name = window.prompt(t("Name of the new area"))?.trim();
-    if (!name) return;
-    try {
-      const room = await saveCaseRoom(workspaceId, caseId, { id: crypto.randomUUID(), version: 0, name: name.slice(0, 120), catalogRecordId: null } as never);
-      await load();
-      changeLine(line, { areaId: room.id });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+  // A new area or work package, from the table or straight from a line's picker (the line moves into it).
+  const roomPicked = async (room: CaseRoom) => {
+    const line = roomFor;
+    setRoomFor(null);
+    const next = await load();
+    if (line && line !== "new") changeLine(next?.lines.find((item) => item.id === line.id) ?? line, { areaId: room.id });
+  };
+  const newTrade = async (name: string) => {
+    const line = tradeFor;
+    const trade = await api.addTrade(crypto.randomUUID(), name);
+    const next = await load();
+    if (line && line !== "new" && next) changeLine(next.lines.find((item) => item.id === line.id) ?? line, { workPackageId: trade.id });
   };
 
-  const search = useCallback(async (text: string, signal: AbortSignal) => (await api.search(text, signal)).items, [api]);
-
-  const newTrade = async (line?: BuilderLine) => {
-    const name = window.prompt(t("Name of the work package"))?.trim();
-    if (!name) return;
-    try {
-      const trade = await api.addTrade(crypto.randomUUID(), name);
-      const next = await load();
-      if (line && next) changeLine(next.lines.find((item) => item.id === line.id) ?? line, { workPackageId: trade.id });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
-  };
+  const search = useCallback(async (text: string, signal: AbortSignal, limit?: number) => (await api.search(text, signal, limit)).items, [api]);
+  const catalogThumb = useCallback((id: string) => catalogImageUrl(workspaceId, id), [workspaceId]);
 
   const menu = (line: BuilderLine, action: string) => {
     if (action === "details") setOpen(line.id);
+    else if (action === "ask") askAbout(line.id);
     else if (action === "comment") openComments({ kind: "line", key: line.id }, line.title);
     else if (action === "to_catalog") {
       void api.toCatalog(line.id, line.version).then((next) => { setState(next); setError(""); }).catch((cause: Error) => { setError(cause.message); void load(); });
@@ -174,10 +224,11 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       const fields = Object.fromEntries(Object.entries(line).filter(([key, value]) => !skip.has(key) && value !== null));
       const copy = { ...fields, id: crypto.randomUUID(), title: line.title, ...(line.components.length ? { components: line.components.map((part) => Object.fromEntries(Object.entries(part).filter(([key]) => key !== "worked" && key !== "id"))) } : {}) };
       send([{ op: "upsert", line: copy }, { op: "reorder", ids: reordered(latest.current?.lines ?? [], copy.id, line.id, "after") }]);
+      highlight([copy.id]);
     }
   };
 
-  // Drag a line onto another line (or a group's empty row): it moves there and takes that group's area/trade.
+  // Drag a line onto another line (or a group's heading): it moves there and takes that group's area/trade.
   const dropBefore = (target: { lineId?: string; areaId: string | null; workPackageId: string | null }, groupView: QuoteView) => {
     const current = latest.current;
     if (!dragged || !current || dragged === target.lineId) return;
@@ -194,142 +245,223 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   };
 
   const quoteHref = hrefOf ?? ((id: string) => `${backHref.split("?")[0]}?${new URLSearchParams({ quote: id })}`);
-  if (loadError && !state) return <EmptyState illustration="error" title={t("The quote didn't load")} description={loadError} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
-  if (!state) return <Skeleton lines={8} shape="rows" />;
+  if (loadError && !state) return <div className={styles.loading}><ErrorState title={t("The quote didn't load")} description={loadError} onRetry={() => void load()} /></div>;
+  if (!state) return <div className={styles.loading}><Skeleton lines={8} shape="rows" /></div>;
 
   const { currency, decimals } = state.quote;
   const groups = groupLines(state.lines, view, state.areas, state.workPackages, { general: t("General"), noTrade: t("No work package") });
   const amountOf = new Map(state.pricing.lines.map((line) => [line.id, String(Number(line.gross) - Number(line.lineDiscount))]));
   const sectionOf = new Map((view === "trade" ? state.pricing.trades : state.pricing.areas).map((section) => [section.key, section]));
-  const column: RowColumn = view === "area" ? "trade" : view === "trade" ? "area" : null;
+  // Grouped by trade, each line shows its area; grouped by area, the work package lives in the line's details.
+  const column: RowColumn = view === "trade" ? "area" : null;
   const openLine = state.lines.find((line) => line.id === open) ?? null;
+  const contextLine = state.lines.find((line) => line.id === contextLineId) ?? null;
+  const canAsk = state.canEdit && state.assistant?.available !== false;
+  const openThreads = threads.filter((thread) => thread.status === "open").length;
+  const toFix = state.quote.status === "draft" ? state.checks.length : 0;
+  const views: Array<{ id: Panel; label: string }> = [
+    ...(state.canEdit ? [{ id: "assistant" as const, label: t("Assistant") }, { id: "catalog" as const, label: t("Catalog") }] : []),
+    { id: "comments", label: openThreads ? t("Comments · {count}", { count: openThreads }) : t("Comments") },
+    { id: "totals", label: t("Totals") },
+  ];
+  const activePanel = views.some((item) => item.id === panel) ? panel : views[0].id;
+  const lineTitle = (thread: QuoteThread) => thread.anchorKind === "line" ? state.lines.find((line) => line.id === thread.anchorKey)?.title || t("A removed line")
+    : thread.anchorKind === "area" ? (state.areas.find((area) => area.id === thread.anchorKey)?.name ?? t("General"))
+      : thread.anchorKind === "trade" ? (state.workPackages.find((trade) => trade.id === thread.anchorKey)?.name ?? t("No work package")) : t("The quote");
+  const groupMenu = (group: LineGroup) => [
+    { id: "comment", label: t("Comment") },
+    ...(state.canEdit && group.lines.length ? [{ id: "discount", label: t("Discount") }, { id: "template", label: t("Save as template") }] : []),
+  ];
+  const onGroupMenu = (group: LineGroup, action: string) => {
+    const scope = view === "trade" ? "trade" : "area";
+    if (action === "comment") openComments({ kind: scope, key: group.key }, group.name);
+    else if (action === "discount") { setDiscountFor({ scope, target: group.key, name: group.name }); openPanel("totals"); }
+    else if (action === "template") setSavingTemplate({ scope, target: group.key, name: group.name });
+  };
 
-  const renderGroup = (group: LineGroup, context: { areaId: string | null; workPackageId: string | null }, depth: number) => {
+  // Column headings, repeated under each area's band so a long quote stays readable.
+  const headerRow = () => <div role="row" className={styles.columns}>
+    <span role="columnheader" />
+    <span role="columnheader" data-numeric>{t("#")}</span>
+    {columns.picture ? <span role="columnheader" aria-label={t("Picture")} title={t("Picture")}><ImageIcon aria-hidden="true" size={13} /></span> : null}
+    <span role="columnheader"><Type aria-hidden="true" size={13} />{t("Item")}</span>
+    {column ? <span role="columnheader"><MapPin aria-hidden="true" size={13} />{t("Area")}</span> : null}
+    {columns.size ? <span role="columnheader" className={styles.sizeHead}><Ruler aria-hidden="true" size={13} />{t("L × D × H ({unit})", { unit: state.sizeUnit ?? "cm" })}</span> : null}
+    {columns.material ? <span role="columnheader"><Layers aria-hidden="true" size={13} />{t("Material")}</span> : null}
+    <span role="columnheader" data-numeric>{t("Qty")}</span>
+    <span role="columnheader">{t("Unit")}</span>
+    <span role="columnheader" data-numeric>{t("Rate")}</span>
+    <span role="columnheader" data-numeric>{t("Amount")}</span>
+    <span role="columnheader" />
+  </div>;
+
+  const renderGroup = (group: LineGroup, context: { areaId: string | null; workPackageId: string | null }, depth: number, tone?: string) => {
     const groupDrafts = drafts.filter((draft) => draft.areaId === context.areaId && draft.workPackageId === context.workPackageId);
     const section = depth === 0 ? sectionOf.get(group.key) : null;
     const discount = depth === 0 && view !== "area_trade" ? state.discounts.find((item) => item.scope === (view === "trade" ? "trade" : "area") && item.target === group.key) : undefined;
-    const empty = !group.lines.length && !groupDrafts.length;
+    const groupThreads = depth === 0 && view !== "area_trade" ? threadsAt(threads, { kind: view === "trade" ? "trade" : "area", key: group.key }) : [];
     return <div key={`${depth}-${group.key}`} role="rowgroup" className={styles.group} data-depth={depth}>
-      <div role="row" className={styles.groupHead}
+      <div role="row" className={styles.groupHead} data-tone={tone}
         onDragOver={(event) => { if (state.canEdit && dragged) event.preventDefault(); }}
         onDrop={(event) => { event.preventDefault(); dropBefore({ lineId: group.lines[0]?.id, ...context }, view); }}>
-        <span role="columnheader" className={styles.groupName}>{group.name}<small>{group.lines.length}</small></span>
+        <span role="columnheader" className={styles.groupName}>{depth === 0 ? <span className={styles.groupDot} aria-hidden="true" /> : null}{group.name}<small>{group.lines.length}</small></span>
         <span className={styles.groupTotal}>
+          {groupThreads.some((thread) => thread.status === "open") ? <CommentButton threads={groupThreads} label={t("Comments on {name}", { name: group.name })} onOpen={() => openComments({ kind: view === "trade" ? "trade" : "area", key: group.key }, group.name)} /> : null}
           {discount ? <Badge tone="success">−{discount.kind === "percent" ? `${discount.value}%` : money(discount.value, currency, decimals, locale)}</Badge> : null}
-          {section ? money(section.net, currency, decimals, locale) : null}
-          {depth === 0 && view !== "area_trade" ? <CommentButton threads={threadsAt(threads, { kind: view === "trade" ? "trade" : "area", key: group.key })} label={t("Comments on {name}", { name: group.name })}
-            onOpen={() => openComments({ kind: view === "trade" ? "trade" : "area", key: group.key }, group.name)} /> : null}
-          {state.canEdit && depth === 0 && view !== "area_trade" && group.lines.length ? <IconButton aria-label={t("Save {name} as a template", { name: group.name })} size="compact" variant="quiet"
-            onPress={() => setSavingTemplate({ scope: view === "trade" ? "trade" : "area", target: group.key, name: group.name })}><Bookmark aria-hidden="true" size={13} /></IconButton> : null}
-          {state.canEdit && depth === 0 && view !== "area_trade" && group.lines.length ? <IconButton aria-label={t("Discount on {name}", { name: group.name })} size="compact" variant="quiet"
-            onPress={() => setDiscountFor({ scope: view === "trade" ? "trade" : "area", target: group.key, name: group.name })}><Percent aria-hidden="true" size={13} /></IconButton> : null}
+          {section ? <span>{money(section.net, currency, decimals, locale)}</span> : null}
+          <span className={styles.groupActions}>
+            {state.canEdit && !group.children ? <IconButton aria-label={t("New line in {name}", { name: group.name })} size="compact" onPress={() => addDraft(context)}><Plus aria-hidden="true" size={15} /></IconButton> : null}
+            {depth === 0 && view !== "area_trade" ? <IconMenuButton ariaLabel={t("Actions for {name}", { name: group.name })} items={groupMenu(group)} onAction={(action) => onGroupMenu(group, action)} /> : null}
+          </span>
         </span>
       </div>
+      {depth === 0 ? headerRow() : null}
       {group.children ? group.children.map((child) => renderGroup(child, { ...context, workPackageId: child.key === NO_TRADE ? null : child.key }, depth + 1)) : <>
-        {group.lines.map((line) => <QuoteRow key={line.id} line={line} column={column} areas={state.areas} trades={state.workPackages} amount={amountOf.get(line.id) ?? null}
-          currency={currency} decimals={decimals} canEdit={state.canEdit} search={search}
+        {group.lines.map((line, index) => <QuoteRow key={line.id} line={line} serial={index + 1} column={column} columns={columns} units={state.units} materials={state.materials} sizeUnit={state.sizeUnit}
+          areas={state.areas} trades={state.workPackages} amount={amountOf.get(line.id) ?? null}
+          currency={currency} decimals={decimals} canEdit={state.canEdit} canAsk={canAsk} search={search} flash={flash.has(line.id)}
           comments={threadsAt(threads, { kind: "line", key: line.id })} editingBy={people.filter((person) => person.lineId === line.id)}
-          image={images ? { url: lineImage(line) } : null} onImage={(file) => void setLineImage(line, file)} catalogThumb={(id) => catalogImageUrl(workspaceId, id)} onNewArea={() => void newArea(line)}
+          imageUrl={lineImage(line)} onImage={(file) => void setLineImage(line, file)} catalogThumb={catalogThumb} onNewArea={() => setRoomFor(line)}
           onComments={() => openComments({ kind: "line", key: line.id }, line.title)}
           onChange={(fields) => changeLine(line, fields)}
           onCatalog={(hit) => send([{ op: "catalog", itemId: hit.id, line: { id: line.id } }])}
           onOpen={() => setOpen(line.id)} onMenu={(action) => menu(line, action)} onDragStart={() => setDragged(line.id)}
-          onDropBefore={() => dropBefore({ lineId: line.id, areaId: line.areaId, workPackageId: line.workPackageId }, view)} onNewTrade={() => void newTrade(line)} />)}
-        {groupDrafts.map((draft) => <QuoteRow key={draft.id} draft line={{ ...EMPTY_LINE, id: draft.id, areaId: draft.areaId, workPackageId: draft.workPackageId }} column={column} areas={state.areas} trades={state.workPackages}
-          image={images ? { url: null } : null} catalogThumb={(id) => catalogImageUrl(workspaceId, id)}
+          onDropBefore={() => dropBefore({ lineId: line.id, areaId: line.areaId, workPackageId: line.workPackageId }, view)} onNewTrade={() => setTradeFor(line)} />)}
+        {groupDrafts.map((draft, index) => <QuoteRow key={draft.id} draft serial={group.lines.length + index + 1} line={{ ...EMPTY_LINE, id: draft.id, areaId: draft.areaId, workPackageId: draft.workPackageId }}
+          column={column} columns={columns} units={state.units} materials={state.materials} sizeUnit={state.sizeUnit} areas={state.areas} trades={state.workPackages} catalogThumb={catalogThumb}
           amount={null} currency={currency} decimals={decimals} canEdit={state.canEdit} search={search}
           onChange={(fields) => { if (fields.title) createFromDraft(draft, fields); }} onCatalog={(hit) => createFromDraft(draft, {}, hit)}
-          onNewCatalogItem={(title) => void newCatalogLine(draft, title)}
+          onNewCatalogItem={(title) => void newCatalogLine(draft, title)} onDiscard={() => discardDraft(draft)}
           onOpen={() => undefined} onMenu={() => undefined} onDragStart={() => undefined} onDropBefore={() => undefined} onNewTrade={() => undefined} />)}
-        {state.canEdit && (depth > 0 || !group.children) ? <div role="row" className={styles.addRow} data-empty={empty || undefined}>
-          <button type="button" onClick={() => addDraft(context)}><Plus aria-hidden="true" size={14} />{empty ? t("Add the first item") : t("Add item")}</button>
+        {state.canEdit && (depth > 0 || !group.children) ? <div role="row" className={styles.addRow}>
+          <button type="button" onClick={() => addDraft(context)}><Plus aria-hidden="true" size={14} />{t("New line")}</button>
         </div> : null}
       </>}
     </div>;
   };
 
-  return <section className={styles.builder} aria-label={t("Quotation builder")}>
-    <header className={styles.head}>
+  const empty = !state.lines.length;
+  return <section className={styles.builder} aria-label={t("Quotation builder")} data-panel={panelShown ? "open" : "closed"}>
+    <header className={styles.top}>
       <Link href={backHref} className={styles.back} aria-label={t("All quotes")}><ArrowLeft aria-hidden="true" data-directional="true" size={16} /></Link>
       <h1>{t("Q-{number}", { number: state.quote.number })} · {state.quote.title}</h1>
-      <Badge tone={state.quote.status === "accepted" ? "success" : state.quote.status === "draft" ? "neutral" : "info"}>{t((STATUS_LABEL[state.quote.status] ?? state.quote.status) as never)}</Badge>
-      {state.family.length > 1 ? <PillTabs ariaLabel={t("Revisions")} selectedKey={state.quote.id} onSelectionChange={(id) => router.push(quoteHref(id))}
-        items={state.family.map((item, index) => ({ id: item.id, label: t("R{number}", { number: index + 1 }) }))} /> : null}
-      {state.quote.validUntil && ["draft", "internal_review", "internal_approved", "issued"].includes(state.quote.status) ? <span className={styles.meta}>{t("Valid until {date}", { date: new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(`${state.quote.validUntil}T00:00:00Z`)) })}</span> : null}
+      <Badge tone={QUOTE_STATUS[state.quote.status]?.tone ?? "neutral"}>{t((QUOTE_STATUS[state.quote.status]?.label ?? state.quote.status) as never)}</Badge>
+      {state.family.length > 1 ? <span className={styles.revisions}><SegmentedControl label={t("Revisions")} value={state.quote.id} onChange={(id) => router.push(quoteHref(id))}
+        options={state.family.map((item, index) => ({ id: item.id, label: t("R{number}", { number: index + 1 }) }))} /></span> : null}
       <span className={styles.saving} aria-live="polite">{saving ? t("Saving…") : null}</span>
-      <PeopleHere people={people} />
       <span className={styles.spacer} />
+      <PeopleHere people={people} />
+      {toFix ? <button type="button" className={styles.toFix} onClick={() => openPanel("totals")}><CircleAlert aria-hidden="true" size={14} />{toFix === 1 ? t("1 to fix") : t("{count} to fix", { count: toFix })}</button> : null}
       <strong className={styles.total}>{money(state.pricing.total, currency, decimals, locale)}</strong>
       <FlowActions state={state} api={api} workspaceId={workspaceId} caseId={caseId} onDone={load} onError={setError} onRevision={(id) => router.push(quoteHref(id))} />
+      <IconButton aria-label={showPanel ? t("Hide the side panel") : t("Show the side panel")} aria-pressed={showPanel} isDisabled={tab === "document"} onPress={() => showSide(!showPanel)}>
+        <PanelRight aria-hidden="true" data-directional="true" size={16} />
+      </IconButton>
     </header>
-    {state.quote.clientDecision ? <InlineNotice tone={state.quote.status === "accepted" ? "success" : "info"} message={t("{decision} by {name} on {date}{how}", {
-      decision: t((state.quote.clientDecision.decision === "accept" ? "Accepted" : state.quote.clientDecision.decision === "changes" ? "Changes requested" : "Declined") as never),
-      name: state.quote.clientDecision.decidedBy,
-      date: new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(state.quote.clientDecision.decidedAt)),
-      how: state.quote.clientDecision.recordedBy ? t(" · recorded by {name}", { name: state.quote.clientDecision.recordedBy }) : "",
-    }) + (state.quote.clientDecision.note ? ` — ${state.quote.clientDecision.note}` : "")} /> : null}
-    <RevisionChanges key={state.quote.id} state={state} api={api} />
 
-    <PillTabs ariaLabel={t("Quote")} selectedKey={tab} onSelectionChange={(key) => setTab(key as "items" | "document")} items={[{ id: "items", label: t("Items") }, { id: "document", label: t("Document") }]} />
-    {tab === "document" ? <>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-      <DocumentStudio state={state} api={api} workspaceId={workspaceId} caseId={caseId} onState={setState} onError={setError} />
-    </> : <>
-    <div className={styles.toolbar}>
-      {state.quote.kind === "variation" && state.canEdit && state.project ? <Button size="compact" onPress={() => setChanging(true)}><ArrowLeftRight aria-hidden="true" size={14} />{t("Change an agreed item")}</Button> : null}
-      <SegmentedControl label={t("View")} value={view} onChange={(value) => setView(value as QuoteView)} options={(["area", "trade", "area_trade"] as QuoteView[]).map((id) => ({ id, label: t(VIEW_LABEL[id] as never) }))} />
-      <span className={styles.spacer} />
-      {state.canEdit && view !== "trade" ? <Button size="compact" variant="quiet" onPress={() => setAddingArea(true)}><Plus aria-hidden="true" size={14} />{t("Area")}</Button> : null}
-      {state.canEdit && view !== "area" ? <Button size="compact" variant="quiet" onPress={() => void newTrade()}><Plus aria-hidden="true" size={14} />{t("Work package")}</Button> : null}
-      {state.canEdit ? <Button size="compact" variant="quiet" onPress={() => setInserting(true)}><Bookmark aria-hidden="true" size={14} />{t("Insert template")}</Button> : null}
-      {state.lines.length ? <Button size="compact" variant="quiet" onPress={() => setSavingTemplate({ scope: "quote", target: "", name: state.quote.title })}>{t("Save quote as template")}</Button> : null}
-      <ToggleButton size="compact" isSelected={images} onPress={toggleImages}><ImageIcon aria-hidden="true" size={14} />{t("Pictures")}</ToggleButton>
-    </div>
-
-    {state.canEdit ? <QuoteAssistant state={state} api={api} starting={!state.lines.length} onApply={(ops) => send(ops)} onError={setError} /> : null}
-    {error ? <InlineNotice tone="error" message={error} /> : null}
-    {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={t("This quote has been sent. Start a new revision to change it.")} /> : null}
-
-    <div className={styles.body}>
-      <div role="grid" aria-label={t("Quote lines")} className={styles.grid} data-column={column ?? "none"} data-images={images || undefined}
-        onFocusCapture={(event) => {
-          const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");
-          const label = (event.target as HTMLElement).getAttribute("aria-label") ?? "";
-          focus.current = { lineId: row?.dataset.lineId ?? null, field: ({ Item: "title", Quantity: "quantity", Unit: "unit", Rate: "rate", Area: "area", "Work package": "trade" } as Record<string, string>)[label] ?? null };
-        }}
-        onBlurCapture={() => { focus.current = { lineId: null, field: null }; }}>
-        <div role="row" className={styles.columns}>
-          <span role="columnheader" />
-          {images ? <span role="columnheader" data-col="image" /> : null}
-          <span role="columnheader">{t("Item")}</span>
-          {column ? <span role="columnheader" data-col="pick">{column === "area" ? t("Area") : t("Work package")}</span> : null}
-          <span role="columnheader" data-numeric>{t("Qty")}</span>
-          <span role="columnheader" data-col="unit">{t("Unit")}</span>
-          <span role="columnheader" data-numeric>{t("Rate")}</span>
-          <span role="columnheader" data-numeric>{t("Amount")}</span>
-          <span role="columnheader" />
+    <div className={styles.workbench}>
+      <main className={styles.canvas}>
+        <div className={styles.canvasHead}>
+          <SegmentedControl label={t("Quote")} value={tab} onChange={(key) => setTab(key as QuoteTab)}
+            options={[{ id: "items", label: t("Items") }, { id: "terms", label: t("Terms") }, { id: "payments", label: t("Payments") }, { id: "document", label: t("Document") }]} />
+          <span className={styles.spacer} />
+          {tab === "items" ? <>
+            {state.quote.validUntil && ["draft", "internal_review", "internal_approved", "issued"].includes(state.quote.status) ? <span className={styles.meta}>{t("Valid until {date}", { date: new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(`${state.quote.validUntil}T00:00:00Z`)) })}</span> : null}
+            <MenuButton size="compact" label={t(GROUP_LABEL[view] as never)} onAction={(id) => setView(id as QuoteView)}
+              items={(["area", "trade", "area_trade"] as QuoteView[]).map((id) => ({ id, label: t(VIEW_LABEL[id] as never) }))} />
+            <IconMenuButton ariaLabel={t("Columns")} icon={<Columns3 aria-hidden="true" size={16} />} onAction={(id) => toggleColumn(id as keyof RowColumns)} items={[
+              { id: "picture", label: columns.picture ? t("Hide pictures") : t("Show pictures") },
+              { id: "size", label: columns.size ? t("Hide sizes") : t("Show sizes") },
+              { id: "material", label: columns.material ? t("Hide materials") : t("Show materials") },
+            ]} />
+            <IconMenuButton ariaLabel={t("More")} onAction={(id) => {
+              if (id === "template") setInserting(true);
+              else if (id === "save_template") setSavingTemplate({ scope: "quote", target: "", name: state.quote.title });
+              else if (id === "trade") setTradeFor("new");
+              else if (id === "change") setChanging(true);
+            }} items={[
+              ...(state.canEdit ? [{ id: "template", label: t("Insert a template") }, { id: "trade", label: t("New work package") }] : []),
+              ...(state.lines.length ? [{ id: "save_template", label: t("Save quote as template") }] : []),
+              ...(state.quote.kind === "variation" && state.canEdit && state.project ? [{ id: "change", label: t("Change an agreed item") }] : []),
+            ]} />
+          </> : null}
         </div>
-        {groups.filter((group) => group.lines.length || state.canEdit).map((group) => renderGroup(group, view === "trade"
-          ? { areaId: null, workPackageId: group.key === NO_TRADE ? null : group.key }
-          : { areaId: group.key === GENERAL ? null : group.key, workPackageId: null }, 0))}
-        {!state.lines.length && !state.canEdit ? <EmptyState title={t("No items yet")} /> : null}
-      </div>
-      <div className={styles.side}>
-        {commentAt ? <CommentPanel key={`${commentAt.anchor.kind}:${commentAt.anchor.key}`} anchor={commentAt.anchor} title={commentAt.title} threads={threads} members={members} api={api} meId={state.me}
-          onThreads={setThreads} onClose={() => setCommentAt(null)} onError={setError} /> : null}
-        <QuoteSummary state={state} api={api} onState={setState} onError={setError} discountFor={discountFor} onDiscountFor={setDiscountFor}
-          totalComments={<CommentButton threads={threadsAt(threads, { kind: "total", key: "" })} label={t("Comments on the total")} onOpen={() => openComments({ kind: "total", key: "" }, t("Total"))} />} />
-      </div>
+
+        {state.quote.clientDecision ? <InlineNotice tone={state.quote.status === "accepted" ? "success" : "info"} message={t("{decision} by {name} on {date}{how}", {
+          decision: t((state.quote.clientDecision.decision === "accept" ? "Accepted" : state.quote.clientDecision.decision === "changes" ? "Changes requested" : "Declined") as never),
+          name: state.quote.clientDecision.decidedBy,
+          date: new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(state.quote.clientDecision.decidedAt)),
+          how: state.quote.clientDecision.recordedBy ? t(" · recorded by {name}", { name: state.quote.clientDecision.recordedBy }) : "",
+        }) + (state.quote.clientDecision.note ? ` — ${state.quote.clientDecision.note}` : "")} /> : null}
+        <RevisionChanges key={state.quote.id} state={state} api={api} />
+        {error ? <InlineNotice tone="error" message={error} /> : null}
+        {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={t("This quote has been sent. Start a new revision to change it.")} /> : null}
+
+        {tab === "document" ? <DocumentStudio state={state} api={api} workspaceId={workspaceId} caseId={caseId} onState={setState} onError={setError} />
+          : tab === "terms" ? <QuoteTerms key={`terms:${state.quote.id}`} state={state} api={api} onState={setState} onError={setError} />
+            : tab === "payments" ? <QuotePayments key={`payments:${state.quote.id}:${JSON.stringify(state.quote.paymentTerms)}`} state={state} api={api} onState={setState} onError={setError} /> : <>
+          {empty && state.canEdit ? <div className={styles.starts} aria-label={t("Start the quote")} role="group">
+            <button type="button" data-primary onClick={() => { openPanel("assistant"); requestAnimationFrame(() => assistantRef.current?.draft()); }}>
+              <Sparkles aria-hidden="true" size={18} /><strong>{t("Draft it with AI")}</strong><small>{t("From Planning")}</small>
+            </button>
+            <button type="button" onClick={() => openPanel("catalog")}><Store aria-hidden="true" size={18} /><strong>{t("Pick from the catalog")}</strong><small>{t("Search and add")}</small></button>
+            <button type="button" onClick={() => setInserting(true)}><Bookmark aria-hidden="true" size={18} /><strong>{t("Insert a template")}</strong><small>{t("Saved areas and quotes")}</small></button>
+          </div> : null}
+          <div className={styles.gridScroll}><div role="grid" aria-label={t("Quote lines")} className={styles.grid} style={{ "--cols": gridColumns(column, columns) } as React.CSSProperties}
+            onFocusCapture={(event) => {
+              const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");
+              const label = (event.target as HTMLElement).getAttribute("aria-label") ?? "";
+              focus.current = { lineId: row?.dataset.lineId ?? null, field: ({ Item: "title", Quantity: "quantity", Unit: "unit", Rate: "rate", Area: "area", "Work package": "trade" } as Record<string, string>)[label] ?? null };
+            }}
+            onBlurCapture={() => { focus.current = { lineId: null, field: null }; }}>
+            {groups.filter((group) => group.lines.length || state.canEdit).map((group, index) => renderGroup(group, view === "trade"
+              ? { areaId: null, workPackageId: group.key === NO_TRADE ? null : group.key }
+              : { areaId: group.key === GENERAL ? null : group.key, workPackageId: null }, 0, GROUP_TONES[index % GROUP_TONES.length]))}
+            {empty && !state.canEdit ? <EmptyState title={t("No items yet")} /> : null}
+          </div></div>
+          {state.canEdit ? <div className={styles.tableFoot}>
+            {view !== "trade" ? <button type="button" onClick={() => setRoomFor("new")}><Plus aria-hidden="true" size={14} />{t("Add area")}</button>
+              : <button type="button" onClick={() => setTradeFor("new")}><Plus aria-hidden="true" size={14} />{t("New work package")}</button>}
+            {canAsk ? <button type="button" aria-keyshortcuts="Meta+K Control+K" onClick={() => askAbout(null)}><Sparkles aria-hidden="true" size={14} />{t("Ask AI")}</button> : null}
+          </div> : null}
+        </>}
+      </main>
+
+      <aside className={styles.panel} aria-label={t("Side panel")} hidden={!panelShown}>
+        <div className={styles.panelHead}>
+          <SegmentedControl label={t("Side panel")} value={activePanel} onChange={(id) => setPanel(id as Panel)} options={views} />
+          {narrow ? <IconButton aria-label={t("Close")} onPress={() => setSheetOpen(false)}><X aria-hidden="true" size={16} /></IconButton> : null}
+        </div>
+        {state.canEdit ? <div className={styles.panelBody} hidden={activePanel !== "assistant"}>
+          <QuoteChat state={state} api={api} workspaceId={workspaceId} onApply={applyOps} contextLine={contextLine} onClearContext={() => setContextLineId(null)}
+            onFocusLine={(id) => highlight([id])} inputRef={chatInput} commandsRef={assistantRef} />
+        </div> : null}
+        {state.canEdit ? <div className={styles.panelBody} hidden={activePanel !== "catalog"}>
+          <QuoteCatalog search={search} thumb={catalogThumb} areas={state.areas} areaId={catalogArea} onAreaChange={setCatalogArea} onAdd={addFromCatalog} canEdit={state.canEdit} />
+        </div> : null}
+        <div className={styles.panelBody} data-scroll hidden={activePanel !== "comments"}>
+          {commentAt ? <CommentPanel key={`${commentAt.anchor.kind}:${commentAt.anchor.key}`} anchor={commentAt.anchor} title={commentAt.title} threads={threads} members={members} api={api} meId={state.me}
+            onThreads={setThreads} onClose={() => setCommentAt(null)} onError={setError} />
+            : <CommentsList threads={threads} members={members} api={api} meId={state.me} titleOf={lineTitle} onThreads={setThreads} onError={setError}
+              onOpen={(thread) => { if (thread.anchorKind === "line") highlight([thread.anchorKey]); setCommentAt({ anchor: { kind: thread.anchorKind, key: thread.anchorKey }, title: lineTitle(thread) }); }} />}
+        </div>
+        <div className={styles.panelBody} data-scroll hidden={activePanel !== "totals"}>
+          <QuoteSummary state={state} api={api} onState={setState} onError={setError} discountFor={discountFor} onDiscountFor={setDiscountFor}
+            onFocusLine={(id) => { setTab("items"); highlight([id]); }} onPayments={() => setTab("payments")} onFix={canAsk ? (text) => { openPanel("assistant"); requestAnimationFrame(() => assistantRef.current?.ask(text)); } : undefined}
+            totalComments={<CommentButton threads={threadsAt(threads, { kind: "total", key: "" })} label={t("Comments on the total")} onOpen={() => openComments({ kind: "total", key: "" }, t("Total"))} />} />
+        </div>
+      </aside>
     </div>
 
-    </>}
     {changing ? <ChangeAgreedItem state={state} api={api} onClose={() => setChanging(false)}
       onApply={async (ops) => { try { setState(await api.apply(ops)); setError(""); return true; } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); return false; } }} /> : null}
-    {inserting ? <InsertTemplate state={state} api={api} onInsert={(ops) => send(ops)} onClose={() => { setInserting(false); void load(); }}
+    {inserting ? <InsertTemplate state={state} api={api} onInsert={applyOps} onClose={() => { setInserting(false); void load(); }}
+      onAskAssistant={canAsk ? () => askAbout(null) : undefined}
       createArea={(name) => saveCaseRoom(workspaceId, caseId, { id: crypto.randomUUID(), version: 0, name: name.slice(0, 120), catalogRecordId: null } as never)} /> : null}
     {savingTemplate ? <SaveTemplate api={api} scope={savingTemplate.scope} target={savingTemplate.target} name={savingTemplate.name} onClose={() => setSavingTemplate(null)} onError={setError} /> : null}
-    {addingArea ? <RoomPicker data={{ workspaceId, caseId, canEdit: state.canEdit, rooms: state.areas.map((area) => ({ ...area, version: 1 }) as unknown as CaseRoom) }}
-      onClose={() => setAddingArea(false)} onPick={() => { setAddingArea(false); void load(); }} /> : null}
+    {roomFor ? <RoomPicker data={{ workspaceId, caseId, canEdit: state.canEdit, rooms: state.areas.map((area) => ({ ...area, version: 1 }) as unknown as CaseRoom) }}
+      onClose={() => setRoomFor(null)} onPick={(room) => void roomPicked(room)} /> : null}
+    {tradeFor ? <NameDialog title={t("New work package")} label={t("Name")} onClose={() => setTradeFor(null)} onSave={newTrade} /> : null}
     {openLine ? <LineDetails key={`${openLine.id}-${openLine.version}`} line={openLine} state={state} onClose={() => setOpen(null)}
       onSave={async (fields) => {
         try { const next = await api.apply([{ op: "upsert", line: { id: openLine.id, version: openLine.version, ...fields } }]); setState(next); setError(""); return true; }
@@ -338,15 +470,28 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   </section>;
 }
 
-const PICTURES_KEY = "wodana.quote.images";
-const readPictures = () => { try { return window.localStorage.getItem(PICTURES_KEY) === "1"; } catch { return false; } };
-const subscribePictures = (notify: () => void) => { window.addEventListener(PICTURES_KEY, notify); window.addEventListener("storage", notify); return () => { window.removeEventListener(PICTURES_KEY, notify); window.removeEventListener("storage", notify); }; };
+type Panel = "assistant" | "catalog" | "comments" | "totals";
+export type QuoteTab = "items" | "terms" | "payments" | "document";
+/** Each area gets its own tint, in turn, so areas are told apart at a glance. */
+const GROUP_TONES = ["info", "success", "warning", "brand", "neutral"] as const;
+const GROUP_LABEL: Record<QuoteView, string> = { area: "Group by area", trade: "Group by trade", area_trade: "Group by area, then trade" };
+const NARROW = "(max-width: 64rem)";
+const readNarrow = () => window.matchMedia(NARROW).matches;
+const subscribeNarrow = (notify: () => void) => { const query = window.matchMedia(NARROW); query.addEventListener("change", notify); return () => query.removeEventListener("change", notify); };
+
+const COLUMNS_KEY = "wodana.quote.columns";
+const COLUMNS_DEFAULT = JSON.stringify({ picture: true, size: true, material: true });
+const readColumns = () => { try { const saved = JSON.parse(window.localStorage.getItem(COLUMNS_KEY) ?? "null"); return saved ? JSON.stringify({ ...JSON.parse(COLUMNS_DEFAULT), ...saved }) : COLUMNS_DEFAULT; } catch { return COLUMNS_DEFAULT; } };
+const subscribeColumns = (notify: () => void) => { window.addEventListener(COLUMNS_KEY, notify); window.addEventListener("storage", notify); return () => { window.removeEventListener(COLUMNS_KEY, notify); window.removeEventListener("storage", notify); }; };
+/** The table's column widths, in the order the cells are drawn (sizes come from the stylesheet). */
+const gridColumns = (column: RowColumn, columns: RowColumns) => ["handle", "serial", ...(columns.picture ? ["picture"] : []), "item", ...(column ? ["pick"] : []),
+  ...(columns.size ? ["size", "size", "size"] : []), ...(columns.material ? ["material"] : []), "qty", "unit", "rate", "amount", "menu"].map((name) => `var(--col-${name})`).join(" ");
 
 const EMPTY_LINE: BuilderLine = {
   id: "", position: 0, version: 0, kind: "item", areaId: null, fromAreaId: null, workPackageId: null, title: "", description: "", unit: "", quantity: "1",
   formula: null, formulaError: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: null, markupPercent: null,
   pricingMode: "rate", discountKind: null, discountValue: null, taxCode: null, taxRate: null, optional: null, optionGroup: null, note: "", catalogItemId: null,
-  catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], imageAssetId: null, catalogImageId: null,
+  catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], imageAssetId: null, catalogImageId: null, material: "",
 };
 
 /** Combines queued changes: several edits to one line become one upsert with the version we last saw. */

@@ -32,17 +32,23 @@ export function QuoteDocumentView({ state, coverUrl, imageOf }: { state: Builder
   const sum = (lines: BuilderLine[]) => lines.filter((line) => !line.optional).reduce((acc, line) => acc + (amountOf.get(line.id) ?? 0), 0);
   const total = Number(state.pricing.total);
 
+  // Size and material show only when some line has them, as the estimator wrote them.
+  const sizeOf = (line: BuilderLine) => { const parts = [line.length, line.width, line.height].filter((value): value is string => value !== null); return parts.length ? `${parts.map((value) => plain(value, locale, 2)).join(" × ")} ${line.dimensionUnit ?? state.sizeUnit ?? ""}`.trim() : ""; };
+  const showSize = state.lines.some((line) => sizeOf(line));
+  const showMaterial = state.lines.some((line) => line.material);
   const Head = ({ children }: { children: ReactNode }) => <header className={styles.pageHead}><span>{state.brand.logo ? <img src={state.brand.logo} alt="" /> : state.brand.name}</span><span>{children}</span><span>{reference}</span></header>;
   const lineRow = (line: BuilderLine, index: number) => <tr key={line.id} data-optional={line.optional || undefined}>
     <td>{index + 1}</td>
     {doc.showImages ? <td className={styles.pictureCell}>{imageOf?.(line) ? <img src={imageOf(line)!} alt="" /> : null}</td> : null}
     <td><strong>{line.title}</strong>{doc.showDescriptions && line.description ? <small>{line.description}</small> : null}{line.optional ? <em>{t("Optional")}</em> : null}{line.kind === "client_supplied" ? <em>{t("Supplied by the client")}</em> : null}</td>
+    {showSize ? <td>{sizeOf(line)}</td> : null}
+    {showMaterial ? <td>{line.material}</td> : null}
     <td>{plain(line.quantity, locale)} {line.unit}</td>
     {doc.showRates ? <td>{m(line.rate)}</td> : null}
     <td>{m(amountOf.get(line.id) ?? 0)}</td>
   </tr>;
   const table = (lines: BuilderLine[]) => <table className={styles.items} data-table={style.table}>
-    <thead><tr><th>#</th>{doc.showImages ? <th><span className={styles.srOnly}>{t("Picture")}</span></th> : null}<th>{t("Item")}</th><th>{t("Qty")}</th>{doc.showRates ? <th>{t("Rate")}</th> : null}<th>{t("Amount")}</th></tr></thead>
+    <thead><tr><th>#</th>{doc.showImages ? <th><span className={styles.srOnly}>{t("Picture")}</span></th> : null}<th>{t("Item")}</th>{showSize ? <th>{t("Size")}</th> : null}{showMaterial ? <th>{t("Material")}</th> : null}<th>{t("Qty")}</th>{doc.showRates ? <th>{t("Rate")}</th> : null}<th>{t("Amount")}</th></tr></thead>
     <tbody>{lines.map(lineRow)}</tbody>
   </table>;
 

@@ -526,6 +526,13 @@
       "when": 1795780800000,
       "tag": "0074_hrms_timesheets",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795867200000,
+      "tag": "0075_quote_line_material",
+      "breakpoints": true
     }
   ]
 }

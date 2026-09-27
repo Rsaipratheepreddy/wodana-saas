@@ -19,6 +19,8 @@ export type BuilderLine = {
   id: string; position: number; version: number; kind: LineKind; areaId: string | null; fromAreaId: string | null; workPackageId: string | null;
   title: string; description: string; unit: string; quantity: string; formula: string | null; formulaError: string | null;
   length: string | null; width: string | null; height: string | null; count: string | null; dimensionUnit: string | null;
+  /** What it's made of, as written on the quote. */
+  material: string;
   rate: string; unitCost: string | null; markupPercent: string | null; pricingMode: "rate" | "build_up";
   discountKind: "percent" | "amount" | null; discountValue: string | null; taxCode: string | null; taxRate: string | null;
   optional: boolean | null; optionGroup: string | null; note: string; catalogItemId: string | null;
@@ -45,6 +47,10 @@ export type PaymentMilestone = { id: string; title: string; percent: number; tri
 export type QuoteDiscount = { scope: "quote" | "area" | "trade"; target: string; kind: "percent" | "amount"; value: string; reason: string };
 
 export type BuilderState = {
+  /** The unit sizes are written in unless a line says otherwise ("cm", "in"). */
+  sizeUnit?: string;
+  /** Choices for the unit and material cells. */
+  units?: Array<{ code: string; label: string }>; materials?: string[];
   quote: {
     id: string; number: number; title: string; status: string; kind: string; round: string | null; currency: string; decimals: number; validUntil: string | null; taxRate: string; revision: number;
     paymentTerms: PaymentMilestone[]; approvedBy: string | null;
@@ -62,6 +68,8 @@ export type BuilderState = {
   pricing: Pricing;
   checks: QuoteCheck[];
   me: string;
+  /** Whether the assistant can be used now, and if not why: no model key, switched off, or no access. */
+  assistant?: { available: boolean; reason: "not_set_up" | "off" | "no_access" | null; canTurnOn: boolean };
   document: QuoteDocument;
   brand: { name: string; logo: string; primaryColor: string; accentColor: string };
   client: { name: string; project: string; address: string | null };

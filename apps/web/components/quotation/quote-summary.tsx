@@ -1,21 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { Percent } from "lucide-react";
+import { Percent, Sparkles } from "lucide-react";
 import { Button, IconButton, SegmentedControl, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { money, plain } from "@/lib/quotation/format";
 import type { BuilderState } from "@/lib/quotation/types";
-import { PaymentsPanel } from "./quote-flow";
 import styles from "./quote-builder.module.css";
+
+/** Checks the assistant can put right by adding lines. */
+const AI_FIXABLE = new Set(["{name} is included but no line covers it", "{name} has approved designs but no items"]);
 
 type Target = { scope: "area" | "trade" | "quote"; target: string; name: string };
 
 /** The quote's totals, top to bottom in the order they're worked out, with the quote discount and tax. */
-export function QuoteSummary({ state, api, onState, onError, discountFor, onDiscountFor, totalComments }: {
+export function QuoteSummary({ state, api, onState, onError, discountFor, onDiscountFor, totalComments, onFocusLine, onFix, onPayments }: {
   state: BuilderState; api: ReturnType<typeof quoteApi>; onState: (state: BuilderState) => void; onError: (message: string) => void;
   discountFor: Target | null; onDiscountFor: (target: Target | null) => void; totalComments?: React.ReactNode;
+  /** A check about one line: show that line. */
+  onFocusLine?: (lineId: string) => void;
+  /** A check the assistant can fix: ask it. */
+  onFix?: (request: string) => void;
+  /** The payments check: open the payment milestones. */
+  onPayments?: () => void;
 }) {
   const t = useT();
   const { locale } = useDesignSystem();
@@ -45,10 +53,16 @@ export function QuoteSummary({ state, api, onState, onError, discountFor, onDisc
         <div className={styles.muted} data-alert={belowFloor || undefined}><dt>{t("Margin")}</dt><dd>{pricing.margin === null ? "—" : `${plain(pricing.margin, locale, 1)}%`}</dd></div>
       </> : null}
     </dl>
-    <PaymentsPanel state={state} api={api} onState={onState} onError={onError} />
     {state.checks.length && state.quote.status === "draft" ? <section className={styles.checks} aria-label={t("To fix before sending")}>
       <h3>{t("To fix before sending")}<small>{state.checks.length}</small></h3>
-      <ul>{state.checks.map((check, index) => <li key={`${check.code}-${check.lineId ?? index}`} data-tone={check.tone}>{t(check.code as never, check.values)}</li>)}</ul>
+      <ul>{state.checks.map((check, index) => {
+        const text = t(check.code as never, check.values);
+        return <li key={`${check.code}-${check.lineId ?? index}`} data-tone={check.tone}>
+          {check.lineId && onFocusLine ? <button type="button" className={styles.checkLink} onClick={() => onFocusLine(check.lineId!)}>{text}</button> : <span>{text}</span>}
+          {check.code === "Add the payment milestones" && onPayments ? <button type="button" className={styles.fixLink} onClick={onPayments}>{t("Open payments")}</button>
+            : !check.lineId && onFix && AI_FIXABLE.has(check.code) ? <button type="button" className={styles.fixLink} onClick={() => onFix(text)}><Sparkles aria-hidden="true" size={12} />{t("Fix with AI")}</button> : null}
+        </li>;
+      })}</ul>
     </section> : null}
     {belowFloor ? <p className={styles.alert} role="status">{t("Margin is below the {floor}% floor.", { floor: plain(floor!, locale) })}</p> : null}
     {discountFor ? <DiscountForm key={`${discountFor.scope}-${discountFor.target}`} target={discountFor} state={state} onClose={() => onDiscountFor(null)}

@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException, UnprocessableEntityEx
 import type { RequestActor } from "../auth/actor";
 import { AiGatewayService } from "../ai-gateway/ai-gateway.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { draftPrompt, editPrompt, QUOTE_DRAFT_SYSTEM, QUOTE_PROMPT_SYSTEM, quoteAiContext, validateProposal } from "./quote-ai";
+import { conversation, draftPrompt, editPrompt, QUOTE_DRAFT_SYSTEM, QUOTE_PROMPT_SYSTEM, quoteAiContext, validateProposal } from "./quote-ai";
 
 /**
  * The quotation assistant: a first draft from the planning record, and changes asked for in plain
@@ -20,11 +20,17 @@ export class QuotationAiService {
     return this.ai.run(actor, workspaceId, { feature: "quotation.draft", system: QUOTE_DRAFT_SYSTEM, prompt: draftPrompt(context), maxTokens: 12000, validate: (value) => validateProposal(value, context, ["add"]) });
   }
 
-  async edit(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: { request?: unknown }) {
+  /**
+   * A change asked for in the chat. The last few turns come along (so "the same in the bedroom" or
+   * "make it 4 m" make sense), and so do the lines the estimator is pointing at.
+   */
+  async edit(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: { request?: unknown; history?: unknown; focusLineIds?: unknown }) {
     const request = typeof input.request === "string" ? input.request.trim().slice(0, 1000) : "";
     if (!request) throw new UnprocessableEntityException("Say what to change.");
+    const history = conversation(input.history);
+    const focus = Array.isArray(input.focusLineIds) ? input.focusLineIds.filter((id): id is string => typeof id === "string").slice(0, 20) : [];
     const context = await this.context(actor, workspaceId, caseId, quoteId);
-    return this.ai.run(actor, workspaceId, { feature: "quotation.edit", system: QUOTE_PROMPT_SYSTEM, prompt: editPrompt(context, request), maxTokens: 6000, validate: (value) => validateProposal(value, context, ["add", "update", "move", "remove"]) });
+    return this.ai.run(actor, workspaceId, { feature: "quotation.edit", system: QUOTE_PROMPT_SYSTEM, prompt: editPrompt(context, request, { history, focus }), maxTokens: 6000, validate: (value) => validateProposal(value, context, ["add", "update", "move", "remove"]) });
   }
 
   private context(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string) {

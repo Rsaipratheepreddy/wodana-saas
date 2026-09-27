@@ -38,3 +38,10 @@ export function groupLines(lines: BuilderLine[], view: QuoteView, areas: Array<{
   if (view === "area_trade") return groups.map((group) => ({ ...group, children: byTrade(group.lines).filter((child) => child.lines.length) }));
   return groups;
 }
+
+/** A quote's state in words, and the tone it's shown in. */
+export const QUOTE_STATUS: Record<string, { label: string; tone: "neutral" | "info" | "success" | "warning" | "danger" }> = {
+  draft: { label: "Draft", tone: "neutral" }, internal_review: { label: "In review", tone: "info" }, internal_approved: { label: "Approved internally", tone: "info" },
+  issued: { label: "Sent", tone: "info" }, accepted: { label: "Accepted", tone: "success" }, changes_requested: { label: "Changes requested", tone: "warning" },
+  declined: { label: "Declined", tone: "danger" }, superseded: { label: "Replaced", tone: "neutral" }, withdrawn: { label: "Withdrawn", tone: "neutral" }, expired: { label: "Expired", tone: "warning" },
+};

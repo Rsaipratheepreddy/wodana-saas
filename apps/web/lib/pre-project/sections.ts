@@ -8,7 +8,7 @@ export const planningAreas = [
   { id: "site", label: "Site", section: "site", sections: [{ id: "site", label: "Site" }] },
   { id: "moodboard", label: "Moodboard", section: "inspiration", sections: [{ id: "inspiration", label: "Moodboard" }] },
   { id: "design", label: "Design", section: "designs", sections: [{ id: "designs", label: "Design" }] },
-  { id: "quotes", label: "Quotes", section: "boq", sections: [{ id: "definition", label: "Scope" }, { id: "boq", label: "Design quote" }, { id: "quotations", label: "Fit-out quote" }] },
+  { id: "quotes", label: "Quotes", section: "quotations", sections: [{ id: "quotations", label: "Quotes" }, { id: "definition", label: "Scope sign-off" }] },
   { id: "agreement", label: "Agreement", section: "contracts", sections: [{ id: "contracts", label: "Agreement" }, { id: "payment-plan", label: "Payments" }, { id: "approvals", label: "Approvals" }, { id: "variations", label: "Change requests" }] },
 ] as const;
 export type PlanningArea = (typeof planningAreas)[number];

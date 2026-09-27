@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
-import { Button, Checkbox, ControlledModalDialog, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { Plus, Trash2 } from "lucide-react";
+import { Button, Checkbox, ControlledModalDialog, EmptyState, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { StartProjectDialog } from "@/components/project-core/start-project-dialog";
@@ -125,60 +125,57 @@ function DecisionDialog({ state, onClose, onSave, busy }: { state: BuilderState;
   </ControlledModalDialog>;
 }
 
-/** Payment milestones in the totals panel: each one's share of the total, edited in a dialog. */
-export function PaymentsPanel({ state, api, onState, onError }: { state: BuilderState; api: Api; onState: (state: BuilderState) => void; onError: (message: string) => void }) {
+/**
+ * The payment milestones: each one's share of the total, when it's due and whether it must be paid
+ * before the project starts. Edited in place; the shares must add up to 100%.
+ */
+export function QuotePayments({ state, api, onState, onError }: { state: BuilderState; api: Api; onState: (state: BuilderState) => void; onError: (message: string) => void }) {
   const t = useT();
   const { locale } = useDesignSystem();
-  const [editing, setEditing] = useState(false);
-  const terms = state.quote.paymentTerms;
-  const total = Number(state.pricing.total);
-  return <section className={styles.payments} aria-label={t("Payments")}>
-    <div className={styles.paymentsHead}>
-      <h3>{t("Payments")}</h3>
-      {state.canEdit ? <IconButton aria-label={t("Edit payments")} size="compact" variant="quiet" onPress={() => setEditing(true)}><Pencil aria-hidden="true" size={13} /></IconButton> : null}
-    </div>
-    {terms.length ? <ol>{terms.map((term) => <li key={term.id}>
-      <span><strong>{plain(term.percent, locale, 2)}%</strong> {term.title}<small>{term.trigger}</small></span>
-      <span>{money((total * term.percent) / 100, state.quote.currency, state.quote.decimals, locale)}</span>
-    </li>)}</ol> : <p className={styles.mutedText}>{state.canEdit ? t("Add the payment milestones before sending.") : t("No payment milestones.")}</p>}
-    {editing ? <PaymentsDialog state={state} onClose={() => setEditing(false)} onSave={async (next) => {
-      try { onState(await api.paymentTerms(next)); setEditing(false); } catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not save.")); }
-    }} /> : null}
-  </section>;
-}
-
-function PaymentsDialog({ state, onClose, onSave }: { state: BuilderState; onClose: () => void; onSave: (terms: PaymentMilestone[]) => Promise<void> }) {
-  const t = useT();
-  const [rows, setRows] = useState<Array<PaymentMilestone & { text: string }>>(() => state.quote.paymentTerms.map((term) => ({ ...term, text: String(term.percent) })));
+  const initial = () => state.quote.paymentTerms.map((term) => ({ ...term, text: String(term.percent) }));
+  const [rows, setRows] = useState<Array<PaymentMilestone & { text: string }>>(initial);
   const [busy, setBusy] = useState(false);
+  const total = Number(state.pricing.total);
   const sum = rows.reduce((acc, row) => acc + (Number(row.text) || 0), 0);
   const update = (id: string, patch: Partial<PaymentMilestone & { text: string }>) => setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   const valid = rows.length > 0 && Math.abs(sum - 100) < 0.001 && rows.every((row) => row.title.trim() && row.trigger.trim() && Number(row.text) > 0);
-  return <ControlledModalDialog isOpen size="lg" title={t("Payments")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className={styles.formActions}>
-      <span className={styles.mutedText} data-alert={Math.abs(sum - 100) >= 0.001 || undefined}>{t("Total {percent}%", { percent: Math.round(sum * 100) / 100 })}</span>
+  const dirty = JSON.stringify(rows.map(({ text, ...row }) => ({ ...row, percent: Number(text) }))) !== JSON.stringify(state.quote.paymentTerms);
+  const amount = (percent: string) => money((total * (Number(percent) || 0)) / 100, state.quote.currency, state.quote.decimals, locale);
+  const save = async () => {
+    setBusy(true);
+    try { onState(await api.paymentTerms(rows.map(({ text, ...row }) => ({ ...row, percent: Number(text) })))); }
+    catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    finally { setBusy(false); }
+  };
+  if (!state.canEdit) return <section className={styles.payments} aria-label={t("Payments")}>
+    {rows.length ? <ol>{rows.map((row) => <li key={row.id}>
+      <span><strong>{plain(row.percent, locale, 2)}%</strong> {row.title}<small>{row.trigger}</small></span><span>{amount(row.text)}</span>
+    </li>)}</ol> : <EmptyState title={t("No payment milestones")} />}
+  </section>;
+  return <section className={styles.paymentEditor} aria-label={t("Payments")}>
+    {state.paymentTemplates.length ? <div className={styles.paymentTemplate}><SelectField label={t("Start from a template")} placeholder={t("Choose a template")} selectedKey={null}
+      onSelectionChange={(key) => { const template = state.paymentTemplates.find((item) => item.id === key); if (template) setRows(template.milestones.map((term) => ({ ...term, id: crypto.randomUUID(), text: String(term.percent) }))); }}
+      items={state.paymentTemplates.map((template) => ({ id: template.id, label: template.name }))} /></div> : null}
+    {rows.length ? <table className={styles.milestones}>
+      <thead><tr><th>{t("Milestone")}</th><th data-numeric>{t("%")}</th><th data-numeric>{t("Amount")}</th><th>{t("When")}</th><th>{t("Before the project starts")}</th><th><span className={styles.srOnly}>{t("Remove")}</span></th></tr></thead>
+      <tbody>{rows.map((row) => <tr key={row.id}>
+        <td><input aria-label={t("Milestone")} value={row.title} onChange={(event) => update(row.id, { title: event.target.value })} placeholder={t("Advance")} /></td>
+        <td><input aria-label={t("%")} data-numeric inputMode="decimal" value={row.text} onChange={(event) => update(row.id, { text: event.target.value.replace(/[^\d.]/g, "") })} /></td>
+        <td data-numeric>{amount(row.text)}</td>
+        <td><input aria-label={t("When")} value={row.trigger} onChange={(event) => update(row.id, { trigger: event.target.value })} placeholder={t("On acceptance")} /></td>
+        <td><Checkbox aria-label={t("Before the project starts")} isSelected={row.requiredForRelease} onChange={(value) => update(row.id, { requiredForRelease: value })} /></td>
+        <td><IconButton aria-label={t("Remove {name}", { name: row.title })} size="compact" variant="quiet" onPress={() => setRows((current) => current.filter((item) => item.id !== row.id))}><Trash2 aria-hidden="true" size={14} /></IconButton></td>
+      </tr>)}</tbody>
+    </table> : <EmptyState title={t("No payment milestones yet")} action={<Button size="compact" variant="primary" onPress={() => setRows((current) => [...current, { id: crypto.randomUUID(), title: "", percent: 0, text: String(Math.max(0, Math.round((100 - sum) * 100) / 100)), trigger: "", requiredForRelease: current.length === 0 }])}><Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button>} />}
+    {rows.length || dirty ? <div className={styles.formActions}>
+      {rows.length ? <Button size="compact" variant="quiet" onPress={() => setRows((current) => [...current, { id: crypto.randomUUID(), title: "", percent: 0, text: String(Math.max(0, Math.round((100 - sum) * 100) / 100)), trigger: "", requiredForRelease: current.length === 0 }])}><Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button> : null}
       <span className={styles.spacer} />
-      <Button size="compact" onPress={onClose}>{t("Cancel")}</Button>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => { setBusy(true); await onSave(rows.map(({ text, ...row }) => ({ ...row, percent: Number(text) }))); setBusy(false); }}>{t("Save")}</Button>
-    </div>}>
-    <div className={styles.dialogForm}>
-      {state.paymentTemplates.length ? <SelectField label={t("Start from a template")} placeholder={t("Choose a template")} selectedKey={null}
-        onSelectionChange={(key) => { const template = state.paymentTemplates.find((item) => item.id === key); if (template) setRows(template.milestones.map((term) => ({ ...term, id: crypto.randomUUID(), text: String(term.percent) }))); }}
-        items={state.paymentTemplates.map((template) => ({ id: template.id, label: template.name }))} /> : null}
-      <table className={styles.milestones}>
-        <thead><tr><th>{t("Milestone")}</th><th>{t("%")}</th><th>{t("When")}</th><th>{t("Before the project starts")}</th><th><span className={styles.srOnly}>{t("Remove")}</span></th></tr></thead>
-        <tbody>{rows.map((row) => <tr key={row.id}>
-          <td><input aria-label={t("Milestone")} value={row.title} onChange={(event) => update(row.id, { title: event.target.value })} placeholder={t("Advance")} /></td>
-          <td><input aria-label={t("%")} inputMode="decimal" value={row.text} onChange={(event) => update(row.id, { text: event.target.value.replace(/[^\d.]/g, "") })} /></td>
-          <td><input aria-label={t("When")} value={row.trigger} onChange={(event) => update(row.id, { trigger: event.target.value })} placeholder={t("On acceptance")} /></td>
-          <td><Checkbox aria-label={t("Before the project starts")} isSelected={row.requiredForRelease} onChange={(value) => update(row.id, { requiredForRelease: value })} /></td>
-          <td><IconButton aria-label={t("Remove {name}", { name: row.title })} size="compact" variant="quiet" onPress={() => setRows((current) => current.filter((item) => item.id !== row.id))}><Trash2 aria-hidden="true" size={14} /></IconButton></td>
-        </tr>)}</tbody>
-      </table>
-      <Button size="compact" variant="quiet" onPress={() => setRows((current) => [...current, { id: crypto.randomUUID(), title: "", percent: 0, text: String(Math.max(0, Math.round((100 - sum) * 100) / 100)), trigger: "", requiredForRelease: current.length === 0 }])}><Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button>
-      {rows.length && !rows.some((row) => row.requiredForRelease) ? <InlineNotice tone="info" message={t("Mark at least one milestone to be paid before the project starts.")} /> : null}
-    </div>
-  </ControlledModalDialog>;
+      <span className={styles.mutedText} data-alert={(rows.length && Math.abs(sum - 100) >= 0.001) || undefined}>{t("Total {percent}%", { percent: Math.round(sum * 100) / 100 })}</span>
+      {dirty ? <Button size="compact" onPress={() => setRows(initial())}>{t("Cancel")}</Button> : null}
+      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!valid || !dirty} onPress={() => void save()}>{t("Save")}</Button>
+    </div> : null}
+    {rows.length && !rows.some((row) => row.requiredForRelease) ? <InlineNotice tone="info" message={t("Mark at least one milestone to be paid before the project starts.")} /> : null}
+  </section>;
 }
 
 /** What changed since the previous revision: lines added, removed and changed, and the total's move. */

@@ -62,7 +62,8 @@ Output: {"summary": string, "changes": [{"action": "add", "code": string|null, "
 export const QUOTE_PROMPT_SYSTEM = `You change an interior fit-out quotation as the estimator asks.
 You may add lines (prefer catalog items by code), update a line's quantity, unit, formula, measurements, area or work package, move a line to another area, or remove a line.
 Refer to existing lines by their id. Never state or change prices. Use only the given areas and work packages (or null).
-If the request is unclear or not about this quote, return no changes and explain in the summary.
+"conversation" holds the earlier turns of this chat, oldest first: use it to understand "it", "those" or "the same in the bedroom". "focus" lists the lines the estimator is pointing at; a request without a line name is about them.
+If the request is unclear or not about this quote, return no changes and ask a short question in the summary.
 Output: {"summary": string, "changes": [{"action": "add"|"update"|"move"|"remove", "lineId": string|null, "code": string|null, "title": string|null, "area": string|null, "trade": string|null, "kind": string|null, "quantity": number|null, "unit": string|null, "formula": string|null, "length": number|null, "width": number|null, "height": number|null, "count": number|null, "fromArea": string|null, "why": string}]}`;
 
 export function draftPrompt(context: QuoteAiContext) {
@@ -76,9 +77,21 @@ export function draftPrompt(context: QuoteAiContext) {
   });
 }
 
-export function editPrompt(context: QuoteAiContext, request: string) {
+/** The chat so far, as the model may see it: at most the last eight turns, each kept short. */
+export function conversation(value: unknown): Array<{ role: "estimator" | "assistant"; text: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.slice(-8).flatMap((turn) => {
+    if (!turn || typeof turn !== "object") return [];
+    const role = (turn as { role?: unknown }).role;
+    const text = (turn as { text?: unknown }).text;
+    return (role === "estimator" || role === "assistant") && typeof text === "string" && text.trim() ? [{ role, text: text.trim().slice(0, 600) }] : [];
+  });
+}
+
+export function editPrompt(context: QuoteAiContext, request: string, chat: { history?: Array<{ role: string; text: string }>; focus?: string[] } = {}) {
   return JSON.stringify({
-    request, areas: context.areas.map((area) => area.name), workPackages: context.trades.map((trade) => trade.name),
+    request, conversation: chat.history ?? [], focus: (chat.focus ?? []).filter((id) => context.lines.some((line) => line.id === id)),
+    areas: context.areas.map((area) => area.name), workPackages: context.trades.map((trade) => trade.name),
     lines: context.lines.map(({ version: _version, ...line }) => line),
     catalog: context.catalog.map((item) => ({ code: item.code, name: item.name, type: item.type, unit: item.unit, category: item.category })),
   });

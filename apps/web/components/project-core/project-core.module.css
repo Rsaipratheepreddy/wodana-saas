@@ -1,7 +1,7 @@
 /* Projects: Notion-like pages — quiet surfaces, soft hover, few lines, one thing per view. */
 .page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; max-inline-size: 72rem; }
 .muted { color: var(--wd-color-text-tertiary); }
-.builderPage { padding: var(--wd-space-4) var(--wd-space-6); min-inline-size: 0; }
+.builderPage { min-inline-size: 0; }
 .muted[data-late] { color: var(--wd-color-danger); }
 .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
 .dialogBody { display: grid; gap: var(--wd-space-4); }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, ControlledModalDialog, InlineNotice, SelectField, TextInput, useDesignSystem } from "@/design-system";
+import { Bookmark, Sparkles } from "lucide-react";
+import { Button, ControlledModalDialog, EmptyState, InlineNotice, RadioSet, SelectField, Skeleton, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { plain } from "@/lib/quotation/format";
@@ -28,7 +29,7 @@ export function templateOps(lines: TemplateLine[], areaFor: (line: TemplateLine)
 }
 
 /** Insert a saved template into an area of this quote. */
-export function InsertTemplate({ state, api, onInsert, onClose, createArea }: { state: BuilderState; api: Api; onInsert: (ops: LineOp[]) => void; onClose: () => void; createArea: (name: string) => Promise<{ id: string; name: string }> }) {
+export function InsertTemplate({ state, api, onInsert, onClose, createArea, onAskAssistant }: { state: BuilderState; api: Api; onInsert: (ops: LineOp[]) => void; onClose: () => void; createArea: (name: string) => Promise<{ id: string; name: string }>; onAskAssistant?: () => void }) {
   const t = useT();
   const { locale } = useDesignSystem();
   const [templates, setTemplates] = useState<QuoteTemplate[] | null>(null);
@@ -56,20 +57,24 @@ export function InsertTemplate({ state, api, onInsert, onClose, createArea }: { 
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     finally { setBusy(false); }
   };
+  const empty = templates !== null && !templates.length;
   return <ControlledModalDialog isOpen size="md" title={t("Insert a template")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className={styles.formActions}><span className={styles.spacer} /><Button size="compact" onPress={onClose}>{t("Cancel")}</Button>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!template || !template.lines.length} onPress={() => void insert()}>
-        {template ? t("Insert {count} lines", { count: template.lines.length }) : t("Insert")}</Button></div>}>
+    footer={<div className={styles.formActions}><span className={styles.spacer} /><Button size="compact" onPress={onClose}>{empty ? t("Close") : t("Cancel")}</Button>
+      {empty ? null : <Button size="compact" variant="primary" isLoading={busy} isDisabled={!template || !template.lines.length} onPress={() => void insert()}>
+        {template ? t("Insert {count} lines", { count: template.lines.length }) : t("Insert")}</Button>}</div>}>
     <div className={styles.dialogForm}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
-      {templates && !templates.length ? <p className={styles.mutedText}>{t("No templates yet. Save an area as a template from its heading.")}</p> : null}
+      {!templates && !error ? <Skeleton lines={4} shape="rows" /> : null}
+      {empty ? <EmptyState illustration={null} icon={<Bookmark aria-hidden="true" size={20} />} title={t("No templates yet")} description={t("Save an area as a template from its heading.")}
+        action={onAskAssistant ? <Button size="compact" onPress={() => { onClose(); onAskAssistant(); }}><Sparkles aria-hidden="true" size={14} />{t("Ask the assistant instead")}</Button> : undefined} /> : null}
       {templates?.length ? <>
-        <SelectField label={t("Template")} selectedKey={chosen} onSelectionChange={(key) => setChosen(key ? String(key) : null)} items={templates.map((item) => ({ id: item.id, label: `${item.name} · ${item.lines.length}` }))} />
+        <div className={styles.templatePick}>
+          <RadioSet label={t("Template")} value={chosen ?? ""} onChange={(key) => setChosen(key)}
+            items={templates.map((item) => ({ id: item.id, label: item.name, description: [item.lines.length === 1 ? t("1 line") : t("{count} lines", { count: item.lines.length }), ...[...new Set(item.lines.map((line) => line.areaName).filter(Boolean))].slice(0, 3)].join(" · ") }))} />
+        </div>
         <SelectField label={t("Into")} selectedKey={area} onSelectionChange={(key) => setArea(String(key ?? "general"))}
           items={[...(hasAreas ? [{ id: "keep", label: t("Their own areas (added if missing)") }] : []), { id: "general", label: t("General") }, ...state.areas.map((item) => ({ id: item.id, label: item.name }))]} />
-        {template ? <ul className={styles.templateLines}>{template.lines.slice(0, 12).map((line, index) => <li key={index}><span>{line.title}</span><small>{line.formula ? `ƒ ${line.formula}` : `${plain(line.quantity, locale)} ${line.unit}`}</small></li>)}
-          {template.lines.length > 12 ? <li><small>{t("and {count} more", { count: template.lines.length - 12 })}</small></li> : null}</ul> : null}
-        <p className={styles.mutedText}>{t("Catalog items are priced from today's catalog; other lines keep the template's rate.")}</p>
+        {template ? <ul className={styles.templateLines}>{template.lines.map((line, index) => <li key={index}><span>{line.title}</span><small>{line.formula ? `ƒ ${line.formula}` : `${plain(line.quantity, locale)} ${line.unit}`}</small></li>)}</ul> : null}
       </> : null}
     </div>
   </ControlledModalDialog>;
