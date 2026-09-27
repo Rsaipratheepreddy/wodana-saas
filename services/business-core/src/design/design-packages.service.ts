@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { checkDesignPackage, designFee, type DesignPackageInput, type PricingMethod } from "./design-packages.domain";
+import { checkDesignPackage, designFee, effectiveMinimumDeposit, type DesignPackageInput, type PricingMethod } from "./design-packages.domain";
 
 type PackageRow = {
   id: string; code: string; name: string; pricingMethod: PricingMethod; rate: string; currency: string; areaUnit: "sqft" | "sqm" | null;
@@ -25,10 +25,10 @@ export class DesignPackagesService {
   }
 
   saveMinimumDeposit(actor: RequestActor, workspaceId: string, input: { minimumDeposit?: { amount: string; currency: string } | null; timings?: { inspirationDays: number; siteVisitHours: number }; version?: number }) {
-    const minimum = input.minimumDeposit ?? null;
     const keepMinimum = input.minimumDeposit === undefined;
-    if (minimum && (!/^\d{1,12}(\.\d{1,2})?$/.test(minimum.amount ?? "") || !/^[A-Z]{3}$/.test(minimum.currency ?? "")))
+    if (input.minimumDeposit && (!/^\d{1,12}(\.\d{1,2})?$/.test(input.minimumDeposit.amount ?? "") || !/^[A-Z]{3}$/.test(input.minimumDeposit.currency ?? "")))
       throw new UnprocessableEntityException("Enter the minimum deposit as an amount and currency");
+    const minimum = effectiveMinimumDeposit(input.minimumDeposit);
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
       const current = await client.query<{ amount: string | null; currency: string | null; version: number }>(
         `SELECT minimum_design_deposit::text AS amount, currency, version FROM workspace_design_settings WHERE workspace_id = $1 FOR UPDATE`, [workspaceId]);
@@ -99,14 +99,14 @@ export class DesignPackagesService {
   static async minimumDeposit(client: Pick<PoolClient, "query">, workspaceId: string) {
     const row = (await client.query<{ amount: string | null; currency: string | null }>(
       `SELECT minimum_design_deposit::text AS amount, currency FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
-    return row?.amount && row.currency ? { amount: row.amount, currency: row.currency } : null;
+    return effectiveMinimumDeposit(row);
   }
 
   private async load(client: PoolClient, workspaceId: string) {
     const settings = (await client.query<{ amount: string | null; currency: string | null; version: number; inspirationDays: number; siteVisitHours: number }>(
       `SELECT minimum_design_deposit::text AS amount, currency, version, inspiration_days AS "inspirationDays", site_visit_hours AS "siteVisitHours" FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
     const packages = (await client.query<PackageRow>(`SELECT ${PACKAGE_COLUMNS} FROM design_packages WHERE workspace_id = $1 ORDER BY status, position, name`, [workspaceId])).rows;
-    return { minimumDeposit: settings?.amount && settings.currency ? { amount: settings.amount, currency: settings.currency } : null, version: settings?.version ?? 0,
+    return { minimumDeposit: effectiveMinimumDeposit(settings), version: settings?.version ?? 0,
       timings: { inspirationDays: settings?.inspirationDays ?? 7, siteVisitHours: settings?.siteVisitHours ?? 72 }, packages };
   }
 

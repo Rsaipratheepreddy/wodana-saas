@@ -9,6 +9,7 @@ afterEach(() => vi.unstubAllGlobals());
 it("prepares the standard sales flow only when converting an enquiry, without setup controls", async () => {
   const data = structuredClone(leadsPageFixture);
   data.defaultCurrency = "AED";
+  data.canManagePipelines = true;
   const pipeline = data.pipelines[0]; data.pipelines = [];
   const fetchMock = vi.fn(async (_url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "POST" ? pipeline : [] }));
   vi.stubGlobal("fetch", fetchMock);
@@ -29,6 +30,20 @@ it("prepares the standard sales flow only when converting an enquiry, without se
   expect(writes[1][0]).toContain(`/leads/${data.items[0].id}/qualify`);
 });
 
+it("tells a salesperson who to ask when no pipeline exists, instead of creating one and failing with 403", async () => {
+  const data = structuredClone(leadsPageFixture);
+  data.pipelines = [];
+  data.canManagePipelines = false;
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [] });
+  vi.stubGlobal("fetch", fetchMock);
+  const onCreated = vi.fn();
+  render(<CreateDealDialog lead={data.items[0]} initialData={data} onClose={vi.fn()} onCreated={onCreated} />);
+  await userEvent.setup().click(screen.getByRole("button", { name: "Convert to opportunity" }));
+  expect(await screen.findByText(/No sales pipeline is set up yet/)).toBeInTheDocument();
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  expect(onCreated).not.toHaveBeenCalled();
+});
+
 it("does not create a pipeline or opportunity while the enquiry type is unresolved", () => {
   const data = structuredClone(leadsPageFixture);
   data.items[0].serviceType = "not_sure";
@@ -45,7 +60,8 @@ it("lets the enquiry's own owner convert it when the team list is hidden from th
   const data = structuredClone(leadsPageFixture);
   data.members = [];
   const lead = { ...data.items[0], ownerName: "Sara Sales", nextActionAt: "2026-10-01T09:00:00.000Z" };
-  const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, json: async () => ({ id: "opportunity" }) }));
+  // The live pipeline list is the seeded one; a salesperson never creates a pipeline here.
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, json: async () => url.includes("/pipelines") && init?.method !== "POST" ? data.pipelines : { id: "opportunity" } }));
   vi.stubGlobal("fetch", fetchMock);
   const onCreated = vi.fn().mockResolvedValue(undefined);
   data.defaultCurrency = undefined;

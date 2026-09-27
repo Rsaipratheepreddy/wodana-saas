@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkDesignPackage, depositMeetsMinimum, designFee } from "./design-packages.domain";
+import { checkDesignPackage, depositMeetsMinimum, designFee, effectiveMinimumDeposit } from "./design-packages.domain";
 
 describe("design packages (PLM-041)", () => {
   it("prices per space, per area and fixed without floating point", () => {
@@ -27,5 +27,16 @@ describe("design packages (PLM-041)", () => {
     expect(depositMeetsMinimum("14999.99", { amount: "15000.00", currency: "AED" }, "AED")).toBe(false);
     expect(depositMeetsMinimum(20000, { amount: "15000.00", currency: "AED" }, "USD")).toBe(false);
     expect(depositMeetsMinimum(0, null, "USD")).toBe(true);
+  });
+
+  it("treats an empty or zero minimum deposit as no minimum, never as 0", () => {
+    expect(effectiveMinimumDeposit(undefined)).toBeNull();
+    expect(effectiveMinimumDeposit(null)).toBeNull();
+    expect(effectiveMinimumDeposit({ amount: null, currency: null })).toBeNull();
+    expect(effectiveMinimumDeposit({ amount: "", currency: "AED" })).toBeNull();
+    expect(effectiveMinimumDeposit({ amount: "0", currency: "AED" })).toBeNull();
+    expect(effectiveMinimumDeposit({ amount: "0.00", currency: "AED" })).toBeNull();
+    expect(effectiveMinimumDeposit({ amount: "15000", currency: "AED" })).toEqual({ amount: "15000.00", currency: "AED" });
+    expect(depositMeetsMinimum(0, effectiveMinimumDeposit({ amount: "0.00", currency: "AED" }), "USD")).toBe(true);
   });
 });

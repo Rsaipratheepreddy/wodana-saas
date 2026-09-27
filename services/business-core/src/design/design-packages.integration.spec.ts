@@ -61,4 +61,17 @@ integration("design packages (PLM-041)", () => {
       expect(await DesignPackagesService.minimumDeposit(client, workspaceId)).toEqual({ amount: "15000.00", currency: "AED" });
     });
   });
+
+  it("keeps a new company's minimum deposit empty: timings alone or a zero amount never read as 0", async () => {
+    await withWorkspace(async (client, { workspaceId, service }) => {
+      const timingsOnly = await service.saveMinimumDeposit(actor, workspaceId, { timings: { inspirationDays: 5, siteVisitHours: 48 } });
+      expect(timingsOnly.minimumDeposit).toBeNull();
+      expect(timingsOnly.timings).toEqual({ inspirationDays: 5, siteVisitHours: 48 });
+      const zero = await service.saveMinimumDeposit(actor, workspaceId, { minimumDeposit: { amount: "0", currency: "AED" }, version: timingsOnly.version });
+      expect(zero.minimumDeposit).toBeNull();
+      expect(await DesignPackagesService.minimumDeposit(client, workspaceId)).toBeNull();
+      const stored = await client.query("SELECT minimum_design_deposit, currency FROM workspace_design_settings WHERE workspace_id=$1", [workspaceId]);
+      expect(stored.rows[0]).toEqual({ minimum_design_deposit: null, currency: null });
+    });
+  });
 });

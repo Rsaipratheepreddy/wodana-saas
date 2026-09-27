@@ -34,10 +34,13 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { le
   const region = useDesignSystem();
   const currency = initialData.defaultCurrency ?? region.currency ?? "";
   const [busy, setBusy] = useState(false), [saved, setSaved] = useState(false), [failure, setFailure] = useState("");
+  // Every workspace is provisioned with a Sales pipeline. Only someone who may manage CRM settings
+  // recreates a missing one here; a salesperson is told who to ask instead of hitting a 403.
   const ensurePipeline = async () => {
     const available = rows(await crmRequest(initialData.workspaceId, "pipelines"));
     const existing = available.find(p => p.status === "active" && p.isDefault) ?? available.find(p => p.status === "active");
     if (existing) return existing;
+    if (!initialData.canManagePipelines) throw new Error(t("No sales pipeline is set up yet. Ask a workspace administrator to add one in Sales settings."));
     return crmRequest<RecordData>(initialData.workspaceId, "pipelines", "POST", { name: "Sales", code: "sales", isDefault: true, stages: [
       { code: "qualified", name: "New Opportunity", position: 1, probability: 20, forecastCategory: "pipeline", entryRequirements: { owner: true, nextAction: true } },
       { code: "proposal", name: "Proposal", position: 2, probability: 50, forecastCategory: "best_case", entryRequirements: {} },

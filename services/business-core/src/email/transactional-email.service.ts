@@ -31,7 +31,8 @@ interface WorkspaceInvitationMessage {
   expiresAt: Date;
   invitationToken: string;
   inviterName: string;
-  recipientName: string;
+  /** The invited person's display name when one was given; null greets them neutrally. */
+  recipientName: string | null;
   roleCodes: string[];
   workspaceName: string;
 }
@@ -141,7 +142,7 @@ export class TransactionalEmailService {
       preheader: `Join ${invitation.workspaceName}.`,
       heading: `Join ${invitation.workspaceName}`,
       paragraphs: [
-        `Hello ${invitation.recipientName},`,
+        invitation.recipientName?.trim() ? `Hello ${invitation.recipientName.trim()},` : "Hello,",
         `${invitation.inviterName} invited you to join ${invitation.workspaceName} as ${roles}.`,
       ],
       action: { label: "Accept invitation", url: activationUrl.toString() },

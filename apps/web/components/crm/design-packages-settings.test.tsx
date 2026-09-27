@@ -21,6 +21,16 @@ describe("design packages settings (PLM-041)", () => {
     expect(screen.getByRole("button", { name: "Add package" })).toBeInTheDocument();
   });
 
+  it("shows an empty minimum as no minimum, not as 0", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...settings, minimumDeposit: null }) }));
+    render(<DesignSystemProvider><DesignPackagesSettings workspaceId="ws" currency="AED" locale="en-GB" canManage /></DesignSystemProvider>);
+    expect(await screen.findByText("Concept Package")).toBeInTheDocument();
+    const field = screen.getByRole("textbox", { name: "Minimum deposit" });
+    expect(field).toHaveValue("");
+    expect(field).toHaveAttribute("placeholder", "No minimum");
+    expect(screen.queryByText(/AED\s?0\b/)).not.toBeInTheDocument();
+  });
+
   it("is read-only for people who cannot change settings", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => settings }));
     render(<DesignSystemProvider><DesignPackagesSettings workspaceId="ws" currency="AED" canManage={false} /></DesignSystemProvider>);

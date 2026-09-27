@@ -3,6 +3,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/auth/server";
+import { isWorkspaceAdministrator } from "@/lib/workspace/access";
 import { leadsPageFixture, type LeadsPageData } from "./leads";
 
 export async function getLeadsPageData(): Promise<LeadsPageData> {
@@ -51,11 +52,13 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
   const owners = ownersResponse.ok
     ? await ownersResponse.json() as { items: LeadsPageData["members"]; currentMembershipId: string | null }
     : { items: [], currentMembershipId: null };
+  const currentMembership = authProfile.memberships.find((entry) => entry.workspaceId === membership.workspaceId);
   return {
     defaultCurrency: workspace?.workspace?.defaultCurrency,
     defaultLocale: workspace?.workspace?.defaultLocale,
     canView: true,
-    currentRoles: authProfile.memberships.find((entry) => entry.workspaceId === membership.workspaceId)?.roles ?? [],
+    currentRoles: currentMembership?.roles ?? [],
+    canManagePipelines: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
     currentMembershipId: owners.currentMembershipId
       ?? (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
     salesOwners: owners.items,

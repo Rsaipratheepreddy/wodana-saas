@@ -41,6 +41,17 @@ export function designFee(pkg: { pricingMethod: PricingMethod; rate: string }, m
   return Dec.of(pkg.rate).mul(area).round(2).toFixed(2);
 }
 
+/**
+ * The minimum design deposit a workspace has set, or null when it has none. An empty row, a missing
+ * currency or a zero amount all mean "no minimum": nothing is shown or gated as "0".
+ */
+export function effectiveMinimumDeposit(row: { amount?: string | null; currency?: string | null } | null | undefined): { amount: string; currency: string } | null {
+  if (!row?.amount || !row.currency) return null;
+  const amount = Dec.of(String(row.amount));
+  if (amount.isZero() || amount.isNegative()) return null;
+  return { amount: amount.toFixed(2), currency: row.currency };
+}
+
 /** Is the received design deposit enough? Amounts compared as decimals in the quote's currency. */
 export function depositMeetsMinimum(paid: string | number, minimum: { amount: string; currency: string } | null | undefined, currency: string) {
   if (!minimum) return true;
