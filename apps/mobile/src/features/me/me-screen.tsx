@@ -17,6 +17,7 @@ import { useTheme } from '../../ui/theme';
 import { useOrganization } from '../auth/organization';
 import { useBalances, useBootstrap, useCurrentAttendance, useLeaveRequests, usePendingTime, useReviews } from '../hrms/api';
 import { minutesSince, MODE_LABEL } from '../hrms/model';
+import { personDisplayName } from '../../core/person';
 
 /** Me: my attendance first (one tap to check in or out), then my leave, days, time and documents. */
 export function MeScreen() {
@@ -61,8 +62,9 @@ export function MeScreen() {
     await language.setLanguage(next);
   };
 
-  return <Screen large title={session.profile.displayName} subtitle={`${session.membership.workspaceName} · ${session.profile.primaryEmail}`}
-    action={<Avatar name={session.profile.displayName} size={44} />}
+  const name = personDisplayName(session.profile.displayName, session.profile.primaryEmail);
+  return <Screen large title={name} subtitle={`${session.membership.workspaceName} · ${session.profile.primaryEmail}`}
+    action={<Avatar name={name} size={44} />}
     onRefresh={() => { void bootstrap.refetch(); void current.refetch(); void balances.refetch(); }} refreshing={current.isRefetching}>
     {hrms && employee?.enabled !== false ? <Card tone={open ? 'action' : 'default'}>
       <Row style={{ justifyContent: 'space-between' }}>

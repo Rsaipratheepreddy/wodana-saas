@@ -44,6 +44,17 @@
         "AUTH_MODE=development npm run dev:business"
       ],
       "port": 8000
+    },
+    {
+      "name": "mobile-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/mobile",
+        "run",
+        "web"
+      ],
+      "port": 8082
     }
   ]
 }
