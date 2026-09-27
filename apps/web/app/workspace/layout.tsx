@@ -57,6 +57,7 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
     <LanguagePreferenceProvider persist={persist} resolved={chosen ? undefined : language}>
     <WorkspaceRegionProvider {...region}>
     <WorkspaceShell
+      canManageWorkspace={ownerAccess}
       modules={scopeWorkspaceNavigation(
         visibleWorkspaceModules(workspaceModules, activeMembership?.workspaceSlug ?? "", allowedModules),
         activeMembership?.allowedPermissions,

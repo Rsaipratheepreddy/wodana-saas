@@ -1911,3 +1911,14 @@
 .accountLanguage {
   padding: var(--wd-space-1) var(--wd-space-2);
 }
+
+/* Workspace setup progress around the avatar: a soft attention ring and a dot while steps remain; gone once setup is done. */
+.accountButton { position: relative; }
+.setupRing { position: absolute; inset: calc(-1 * var(--wd-space-1)); pointer-events: none; }
+.setupRing svg { display: block; inline-size: 100%; block-size: 100%; rotate: -90deg; }
+.setupRing circle { fill: none; stroke-width: 2.5; }
+.setupTrack { stroke: color-mix(in srgb, var(--wd-color-danger) 22%, transparent); }
+.setupValue { stroke: var(--wd-color-danger); stroke-linecap: round; }
+.setupDot { position: absolute; inset-block-start: 0; inset-inline-end: 0; inline-size: var(--wd-space-2-5); block-size: var(--wd-space-2-5); border-radius: var(--wd-radius-round); background: var(--wd-color-danger-solid); border: 2px solid var(--wd-color-surface); }
+.setupItem small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.setupDialogHost { display: contents; }

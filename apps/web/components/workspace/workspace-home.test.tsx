@@ -60,13 +60,12 @@ it("shows storage used against the allowance by area", async () => {
   expect(storage).toHaveTextContent("24% of your allowance");
   expect(storage).toHaveTextContent("Catalog");
 });
-it("filters panels using Home tabs", async () => {
+it("shows every section on one page, without a tab bar", async () => {
   api(); render(<WorkspaceHome {...base} permissions={["pre_projects.view", "crm.leads.view"]} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Planning" }));
   await waitFor(() => expect(screen.getByRole("region", { name: "In planning" })).toHaveTextContent("Villa"));
-  expect(screen.queryByRole("region", { name: "Needs attention" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
   expect(screen.getByRole("region", { name: "Needs attention" })).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Home sections" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Planning" })).not.toBeInTheDocument();
 });
 it("edits Home in place: remove, resize, move with the keyboard, add from the gallery, and save with the version", async () => {
   const request = api(); render(<WorkspaceHome {...base} permissions={["crm.leads.view"]} />);
@@ -107,12 +106,7 @@ it("keeps restricted summaries hidden", async () => {
   expect(screen.getAllByRole("alert")[0]).toHaveTextContent("could not be loaded");
   expect(screen.queryByText("No work needs attention")).not.toBeInTheDocument();
 });
-it("shows workspace setup on Home for managers and opens the existing checklist", () => {
-  api();
-  const { rerender } = render(<WorkspaceHome {...base} canManage readiness={{ company: true, regional: true, people: false, connections: false }} />);
-  fireEvent.click(screen.getByRole("button", { name: "Set up your workspace, 2 of 6 complete" }));
-  expect(screen.getByRole("dialog", { name: "Set up your workspace" })).toBeVisible();
-  expect(screen.getByRole("link", { name: /Manage people/ })).toBeVisible();
-  rerender(<WorkspaceHome {...base} canManage={false} />);
-  expect(screen.queryByRole("button", { name: /Set up your workspace/ })).not.toBeInTheDocument();
+it("keeps workspace setup off Home; it lives in the account menu", () => {
+  api(); render(<WorkspaceHome {...base} canManage />);
+  expect(screen.queryByText(/Set up your workspace/)).not.toBeInTheDocument();
 });

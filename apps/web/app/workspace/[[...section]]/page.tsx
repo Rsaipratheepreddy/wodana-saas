@@ -45,21 +45,10 @@ export default async function WorkspaceScreen({
     const available = visibleWorkspaceModules(workspaceModules, membership?.workspaceSlug ?? "", allowed);
     if (!membership) redirect("/login");
     const crmEnabled = available.some(module => module.id === "crm");
-    const [crmData, setupSources] = await Promise.all([
-      crmEnabled ? getCrmScreenPageData("crm-overview").catch((error: unknown) => { unstable_rethrow(error); return null; }) : Promise.resolve(null),
-      ownerAccess ? Promise.allSettled([getCompanyProfilePageData(), getMembersPageData(), getIntegrationsPageData()]) : Promise.resolve(null),
-    ]);
-    const company = setupSources?.[0].status === "fulfilled" ? setupSources[0].value.profile : null;
-    const people = setupSources?.[1].status === "fulfilled" ? setupSources[1].value : null;
-    const connections = setupSources?.[2].status === "fulfilled" ? setupSources[2].value : null;
-    const readiness = ownerAccess ? {
-      company: company ? Boolean(company.legalEntities[0]?.registeredName && company.legalEntities[0]?.address?.line1) : null,
-      regional: company ? Boolean(company.workspace.defaultCurrency && company.workspace.defaultTimezone && company.workspace.unitSystem) : null,
-      people: people ? people.members.length > 1 || people.invitations.some(item => item.status === "pending") : null,
-      connections: connections && !connections.loadError ? connections.connections.some(item => item.status === "connected") : null,
-    } : undefined;
+    // Workspace setup progress lives in the account menu (see /api/workspace/setup-readiness), not on Home.
+    const crmData = crmEnabled ? await getCrmScreenPageData("crm-overview").catch((error: unknown) => { unstable_rethrow(error); return null; }) : null;
     return <WorkspaceHome canManage={ownerAccess} workspaceId={membership.workspaceId} userId={profile.id}
-      workspaceName={membership.workspaceName} modules={available.map(module => module.id)} initialData={crmData} readiness={readiness}
+      workspaceName={membership.workspaceName} modules={available.map(module => module.id)} initialData={crmData}
       firstName={profile.displayName?.trim().split(/\s+/)[0] || undefined} permissions={membership.allowedPermissions ?? undefined} />;
 
   }
