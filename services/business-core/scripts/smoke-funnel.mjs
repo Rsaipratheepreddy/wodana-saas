@@ -987,7 +987,7 @@ assert.deepEqual(
 );
 
 const png = readFileSync(
-  new URL("../../../apps/web/public/brand/wodana/woddy-mark-v4.png", import.meta.url),
+  new URL("../../../apps/web/public/brand/logo/wodana-icon.png", import.meta.url),
 );
 const form = new FormData();
 form.append("file", new Blob([png], { type: "image/png" }), "funnel-plan.png");

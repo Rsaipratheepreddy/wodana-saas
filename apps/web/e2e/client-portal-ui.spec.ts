@@ -9,7 +9,7 @@ test("client portal: Home first, the shared sections, photos and decisions usabl
     const request = route.request();
     if (request.method() !== "GET") writes.push(request.url());
     if (request.url().includes("/files/")) {
-      await route.fulfill({ path: "public/brand/wodana/wodana-mark.png" });
+      await route.fulfill({ path: "public/brand/logo/wodana-icon.png" });
       return;
     }
     await route.fulfill({ json: {

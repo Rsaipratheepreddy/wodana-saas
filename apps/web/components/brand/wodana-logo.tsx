@@ -1,4 +1,3 @@
-import Image from "next/image";
 import type { HTMLAttributes } from "react";
 import styles from "./wodana-logo.module.css";
 
@@ -7,6 +6,7 @@ export type WodanaLogoProps = HTMLAttributes<HTMLSpanElement> & {
   subtitle?: string;
 };
 
+/** The Wodana lockup: the house mark and the wordmark set in the product font. It reads the same in every language direction. */
 export function WodanaLogo({
   className,
   size = "standard",
@@ -19,22 +19,15 @@ export function WodanaLogo({
       aria-label="Wodana"
       className={[styles.logo, className].filter(Boolean).join(" ")}
       data-size={size}
+      dir="ltr"
       role="img"
     >
-      <span className={styles.wordmark}>
-        <span className={styles.artwork}>
-          <Image
-            alt=""
-            className={styles.logoImage}
-            height={587}
-            priority
-            sizes={size === "large" ? "148px" : size === "standard" ? "124px" : size === "small" ? "76px" : size === "compact" ? "54px" : "45px"}
-            src="/brand/wodana/wodana-logo-v5.png"
-            width={1973}
-          />
-        </span>
-        {subtitle ? <small>{subtitle}</small> : null}
+      <span className={styles.lockup} aria-hidden="true">
+        {/* eslint-disable-next-line @next/next/no-img-element -- a tiny static SVG; next/image adds nothing here */}
+        <img alt="" className={styles.mark} src="/brand/logo/wodana-mark.svg" />
+        <span className={styles.wordmark}>wodana</span>
       </span>
+      {subtitle ? <small className={styles.subtitle}>{subtitle}</small> : null}
     </span>
   );
 }

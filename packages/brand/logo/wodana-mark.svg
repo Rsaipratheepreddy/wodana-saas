@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 244">
+  <defs>
+    <mask id="wodana-house">
+      <polygon points="130,13 248,69 248,232 80,232 12,190 12,69" fill="#fff" stroke="#fff" stroke-width="24" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <g mask="url(#wodana-house)">
+    <rect width="260" height="244" fill="#01A92D"/>
+    <path d="M80 254V100Q80 62 118 62H176Q214 62 214 100V254Z" fill="#fff"/>
+    <path d="M102 254V134Q102 84 152 84H170Q192 84 192 106V254Z" fill="#007A20"/>
+  </g>
+</svg>

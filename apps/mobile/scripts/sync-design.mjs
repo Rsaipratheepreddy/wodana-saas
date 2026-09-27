@@ -69,12 +69,9 @@ export async function syncDesign() {
   await mkdir(new URL('src/design-system/', app), { recursive: true });
   await mkdir(new URL('assets/brand/', app), { recursive: true });
   await writeFile(new URL('src/design-system/tokens.generated.ts', app), await generateTokens());
-  for (const file of ['wodana-logo-v4.png', 'woddy-mark-v4.png']) {
-    await copyFile(new URL(`public/brand/wodana/${file}`, web), new URL(`assets/brand/${file}`, app));
-  }
-  // The role avatars and Woddy come from packages/brand (the same copy the web serves).
+  // The logo, role avatars and Woddy come from packages/brand (the same copy the web serves).
   await syncBrand();
-  console.log('Synced web colors, type scale, spacing, radii, motion, and original brand assets.');
+  console.log('Synced web colors, type scale, spacing, radii, motion, and the brand assets.');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await syncDesign();

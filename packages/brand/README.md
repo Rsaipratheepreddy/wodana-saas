@@ -1,8 +1,21 @@
-# Wodana brand characters
+# Wodana brand
 
-The approved role avatars and the Woddy mascot. This folder is the only source; the apps get copies
+The logo, the approved role avatars and the Woddy mascot. This folder is the only source; the apps get copies
 through `node packages/brand/sync.mjs` (web `public/brand/…` and the mobile asset folder). Run it after
 changing a file here, and commit the copies.
+
+## Logo — `logo/`
+
+- `wodana-mark.svg` is the source: the house in green `#01A92D`, a white arch and a darker door `#007A20`.
+- The wordmark "wodana" is set in the product font, Plus Jakarta Sans 800, and follows the text colour.
+  - Web renders it live in `WodanaLogo`.
+  - The PNGs bake it in: `wodana-logo.png` has ink text, `wodana-logo-dark.png` has white text.
+- The lockup is scaled from the mark's height H: the wordmark is 0.87H, and the gap is 0.164H.
+- It always reads left to right, in every language.
+- App icons:
+  - `wodana-icon.png`: iOS, 1024 px, on white.
+  - `wodana-adaptive-icon.png`: the Android foreground, transparent, with the mark inside the safe zone.
+- `node packages/brand/logo/render.mjs` re-renders the PNGs. It needs Google Chrome.
 
 ## Role avatars — `avatars/<role>-<f|m>.webp`
 
