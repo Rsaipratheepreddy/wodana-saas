@@ -44,7 +44,7 @@ describe("quotation builder", () => {
     const grid = screen.getByRole("grid", { name: "Quote lines" });
     expect(within(grid).getByText("Kitchen")).toBeInTheDocument();
     expect(within(grid).getByText("General")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("radio", { name: "Totals" }));
+    await userEvent.click(screen.getByRole("button", { name: "Totals" }));
     expect(screen.getByRole("complementary", { name: "Totals" })).toHaveTextContent("Margin40%");
     await userEvent.click(screen.getByRole("button", { name: /Group by area/ }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "By trade" }));
@@ -72,7 +72,7 @@ describe("quotation builder", () => {
   it("adds an item from the catalog panel to the chosen area", async () => {
     const initial = state([line({})]);
     const fetcher = mount(initial, (url) => url.includes("/catalog") ? { items: [{ id: "i1", code: "WRD", name: "Wardrobe", itemType: "assembly", unitCode: "nos", categoryName: "Joinery", description: null, rate: "7200", hasBuildUp: false }] } : initial);
-    await userEvent.click(screen.getByRole("radio", { name: "Catalog" }));
+    await userEvent.click(screen.getByRole("button", { name: "Catalog" }));
     await userEvent.click(await screen.findByRole("button", { name: "Add Wardrobe" }));
     await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "catalog", itemId: "i1", line: expect.objectContaining({ areaId: null, workPackageId: null }) }] }]));
   });
@@ -184,7 +184,7 @@ describe("quotation builder", () => {
   it("lists what to fix before sending", () => {
     mount({ ...state([line({ rate: "0" })]), checks: [{ code: "{name} has no price", values: { name: "Base cabinets" }, lineId: "a", tone: "danger" }, { code: "Add the payment milestones", tone: "warning" }] });
     expect(screen.getByRole("button", { name: "2 to fix" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: "Totals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Totals" }));
     const checks = screen.getByRole("region", { name: "To fix before sending" });
     expect(checks).toHaveTextContent("Base cabinets has no price");
     expect(checks).toHaveTextContent("Add the payment milestones");
@@ -273,7 +273,7 @@ describe("requirement trace", () => {
       { id: "11111111-1111-4111-8111-111111111113", title: "Wine fridge", roomName: null, priority: "preferred", source: "client", status: "undecided", note: "" }],
       checks: [{ code: "Decide {count} requirements before sending", values: { count: "1" }, tone: "danger" }] };
     const fetcher = mount(traced);
-    await userEvent.click(screen.getByRole("radio", { name: "Totals" }));
+    await userEvent.click(screen.getByRole("button", { name: "Totals" }));
     expect(await screen.findByText("Decide 1 requirements before sending")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Line actions for Base cabinets" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Details" }));

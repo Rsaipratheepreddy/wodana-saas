@@ -15,7 +15,14 @@
 .toFix svg { color: var(--wd-color-warning); }
 .toFix:hover { background: var(--wd-color-surface-hover); }
 .toFix:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
-.total { flex: none; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.total { flex: none; padding: var(--wd-space-1) var(--wd-space-2); border: 0; border-radius: var(--wd-radius-sm); background: none; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; }
+.total:hover { background: var(--wd-color-surface-hover); }
+.total:focus-visible, .askAi:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+/* Ask AI: the assistant opens beside the sheet only when asked for. */
+.askAi { display: inline-flex; flex: none; align-items: center; gap: var(--wd-space-1-5); min-block-size: var(--wd-control-sm); padding-inline: var(--wd-space-3); border: 0; border-radius: var(--wd-radius-pill); background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font: inherit; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); white-space: nowrap; cursor: pointer; }
+.askAi:hover, .askAi[aria-pressed="true"] { background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
+.withCount { position: relative; }
+.countDot { position: absolute; inset-block-start: calc(-1 * var(--wd-space-0-5)); inset-inline-end: calc(-1 * var(--wd-space-0-5)); display: grid; place-items: center; min-inline-size: var(--wd-space-4); block-size: var(--wd-space-4); padding-inline: var(--wd-space-1); border-radius: var(--wd-radius-pill); background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); line-height: 1; }
 .meta { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); white-space: nowrap; }
 
 .workbench { display: grid; flex: 1 1 auto; grid-template-columns: minmax(0, 1fr) var(--panel); align-items: start; min-block-size: 0; }
@@ -23,7 +30,7 @@
 .canvas { display: flex; flex-direction: column; gap: var(--wd-space-4); min-inline-size: 0; padding: var(--wd-phi-3) var(--wd-phi-3) var(--wd-phi-5); }
 .canvasHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 
-.panel { position: sticky; inset-block-start: var(--top); display: flex; flex-direction: column; block-size: calc(100dvh - var(--top)); min-inline-size: 0; border-inline-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface-subtle); }
+.panel { position: sticky; inset-block-start: calc(var(--top) + var(--wd-space-3)); display: flex; flex-direction: column; block-size: calc(100dvh - var(--top) - var(--wd-space-6)); min-inline-size: 0; margin: var(--wd-space-3) var(--wd-space-3) var(--wd-space-3) 0; overflow: hidden; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); box-shadow: var(--wd-shadow-sm); }
 .panel[hidden], .panelBody[hidden] { display: none; }
 .panelHead { display: flex; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-3) var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .panelBody { display: flex; flex: 1 1 auto; flex-direction: column; min-block-size: 0; }
@@ -48,6 +55,12 @@
 .columns, .row { display: grid; grid-template-columns: var(--cols); align-items: stretch; }
 .columns > span, .row > [role="gridcell"] { position: relative; display: flex; align-items: center; min-inline-size: 0; border-block-end: 1px solid var(--wd-color-table-border); border-inline-end: 1px solid var(--wd-color-table-border); }
 .columns > span:nth-child(2), .row > [role="gridcell"]:nth-child(2) { border-inline-start: 1px solid var(--wd-color-table-border); }
+/* Frozen on the left while the sheet scrolls sideways: #, picture and item. */
+.columns > [data-stick], .row > [data-stick] { position: sticky; z-index: 2; }
+.columns > [data-stick="gutter"], .row > [data-stick="gutter"] { inset-inline-start: 0; background: var(--wd-color-surface); }
+.columns > [data-stick="serial"], .row > [data-stick="serial"] { inset-inline-start: var(--stick-serial); }
+.columns > [data-stick="picture"], .row > [data-stick="picture"] { inset-inline-start: var(--stick-picture); }
+.columns > [data-stick="item"], .row > [data-stick="item"] { inset-inline-start: var(--stick-item); }
 .columns > .gutter, .row > .gutter { border-block-end: 0; border-inline-end: 0; }
 .columns { margin-block-start: var(--wd-space-2); color: var(--wd-color-table-header-ink); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
 .columns > span:not(.gutter) { gap: var(--wd-space-1-5); min-block-size: var(--wd-space-10); padding-inline: var(--wd-space-2-5); border-block-start: 1px solid var(--wd-color-table-border); background: var(--wd-color-table-header); white-space: nowrap; }
@@ -60,11 +73,24 @@
 .resizer:focus-visible { outline: none; }
 .row > [role="gridcell"].serialCell { justify-content: center; background: var(--wd-color-table-header); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
 .materialCell { min-inline-size: 0; }
+/* Materials as tags inside the cell; the row grows when there are several. */
+.materials { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); inline-size: 100%; min-block-size: var(--wd-space-10); padding: var(--wd-space-1) var(--wd-space-2); }
+.tag { --tag: var(--wd-color-surface-muted); display: inline-flex; align-items: center; gap: var(--wd-space-0-5); max-inline-size: 100%; min-block-size: var(--wd-space-6); padding-inline: var(--wd-space-2) var(--wd-space-1); border-radius: var(--wd-radius-sm); background: var(--tag); color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }
+.tag[data-tone="info"] { --tag: var(--wd-color-info-subtle); }
+.tag[data-tone="success"] { --tag: var(--wd-color-success-subtle); }
+.tag[data-tone="warning"] { --tag: var(--wd-color-warning-subtle); }
+.tag[data-tone="brand"] { --tag: var(--wd-color-action-primary-subtle); }
+.tag button { display: grid; flex: none; place-items: center; inline-size: var(--wd-space-4); block-size: var(--wd-space-4); padding: 0; border: 0; border-radius: var(--wd-radius-xs); background: none; color: var(--wd-color-text-secondary); cursor: pointer; }
+.tag button:hover { background: var(--wd-color-surface); color: var(--wd-color-text); }
+.tagPicker { flex: 1 1 var(--wd-space-16); min-inline-size: var(--wd-space-12); }
+.suggestions .tag { pointer-events: none; }
+.tagInput { inline-size: 100%; min-block-size: var(--wd-space-6); padding: 0 var(--wd-space-1); border: 0; background: transparent; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); outline: none; }
+.tagInput::placeholder { color: var(--wd-color-text-tertiary); }
 
 /* An area: a tinted band with its dot, name, count and subtotal; the tint tells areas apart. */
 .group { display: flex; flex-direction: column; }
 .group + .group { margin-block-start: var(--wd-space-5); }
-.groupHead { --tone: var(--wd-color-text-tertiary); --band: var(--wd-color-surface-subtle); display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-space-10); padding-inline: var(--wd-space-3) var(--wd-space-1); border-radius: var(--wd-radius-md); background: var(--band); }
+.groupHead { --tone: var(--wd-color-text-tertiary); --band: var(--wd-color-surface-subtle); position: sticky; inset-inline-start: 0; inline-size: var(--visible, 100%); display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-space-10); padding-inline: var(--wd-space-3) var(--wd-space-1); border-radius: var(--wd-radius-md); background: var(--band); }
 .groupHead[data-tone="info"] { --tone: var(--wd-color-info); --band: var(--wd-color-info-subtle); }
 .groupHead[data-tone="success"] { --tone: var(--wd-color-success); --band: var(--wd-color-success-subtle); }
 .groupHead[data-tone="warning"] { --tone: var(--wd-color-warning); --band: var(--wd-color-warning-subtle); }
@@ -128,7 +154,7 @@
 .pickerCreate { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-action-primary); font-weight: var(--wd-weight-medium); }
 
 /* Catalog suggestions under the item cell. */
-.suggestions { position: absolute; z-index: 5; inset-inline-start: 0; inset-block-start: calc(100% + var(--wd-space-1)); inline-size: max(100%, 26rem); max-block-size: 20rem; margin: 0; padding: var(--wd-space-1); overflow: auto; list-style: none; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); box-shadow: var(--wd-shadow-md); }
+.suggestions { z-index: 60; inline-size: max-content; max-inline-size: 28rem; max-block-size: 20rem; margin: 0; padding: var(--wd-space-1); overflow: auto; list-style: none; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); box-shadow: var(--wd-shadow-md); }
 .suggestions li { display: flex; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-1-5) var(--wd-space-2); border-radius: var(--wd-radius-sm); cursor: pointer; }
 .suggestions li[aria-selected="true"] { background: var(--wd-color-surface-hover); }
 .hitName { display: flex; flex: 1 1 auto; flex-direction: column; min-inline-size: 0; font-size: var(--wd-text-sm); }
@@ -136,7 +162,7 @@
 .hitPrice { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .customHit { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-text-secondary); }
 
-.addRow { display: flex; padding: var(--wd-space-1) 0 var(--wd-space-1) var(--wd-space-5); }
+.addRow { position: sticky; inset-inline-start: 0; display: flex; inline-size: fit-content; padding: var(--wd-space-1) 0 var(--wd-space-1) var(--wd-space-5); }
 .addRow button, .tableFoot button { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-2); border: 0; border-radius: var(--wd-radius-sm); background: none; color: var(--wd-color-text-tertiary); font: inherit; font-size: var(--wd-text-sm); cursor: pointer; }
 .addRow button:hover, .tableFoot button:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
 .addRow button:focus-visible, .tableFoot button:focus-visible { outline: 2px solid var(--wd-color-focus); }
@@ -285,7 +311,7 @@
 
 /* Pictures. */
 .row > .imageCell { justify-content: center; padding: var(--wd-space-1); }
-.thumb { position: relative; display: grid; place-items: center; inline-size: var(--wd-space-16); block-size: var(--wd-space-16); overflow: hidden; border-radius: var(--wd-radius-sm); background: transparent; }
+.thumb { position: relative; display: grid; place-items: center; inline-size: var(--wd-space-20); block-size: var(--wd-space-20); overflow: hidden; border-radius: var(--wd-radius-sm); background: transparent; }
 .thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
 .thumbButton { position: absolute; inset: 0; display: grid; place-items: center; padding: 0; border: 1px dashed transparent; border-radius: var(--wd-radius-sm); background: none; color: var(--wd-color-text-tertiary); cursor: pointer; }
 .thumbButton[data-empty] { color: var(--wd-color-text-disabled); }
@@ -312,7 +338,7 @@
 /* Narrow screens: the panel opens over the quote as a sheet. */
 @media (max-width: 64rem) {
   .workbench, .builder[data-panel="closed"] .workbench { grid-template-columns: minmax(0, 1fr); }
-  .panel { position: fixed; z-index: 30; inset-block: 0; inset-inline-end: 0; inline-size: min(26rem, 100vw); block-size: 100dvh; background: var(--wd-color-surface); box-shadow: var(--wd-shadow-md); }
+  .panel { position: fixed; z-index: 30; inset-block: 0; inset-inline-end: 0; inline-size: min(26rem, 100vw); block-size: 100dvh; margin: 0; border-radius: 0; background: var(--wd-color-surface); box-shadow: var(--wd-shadow-md); }
   .top { flex-wrap: wrap; padding-block: var(--wd-space-2); padding-inline: var(--wd-phi-2); }
   .canvas { padding-inline: var(--wd-phi-2); }
   .starts { grid-template-columns: minmax(0, 1fr); }

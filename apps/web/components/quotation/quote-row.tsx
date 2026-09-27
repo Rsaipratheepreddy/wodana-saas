@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { ComboBox, Input, ListBox, ListBoxItem, Popover } from "react-aria-components";
-import { GripVertical, ImagePlus, Plus, Sigma } from "lucide-react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import { GripVertical, ImagePlus, Plus, Sigma, X } from "lucide-react";
 import { Avatar, Badge, IconMenuButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { LINE_KIND_LABEL, money, plain } from "@/lib/quotation/format";
@@ -67,15 +67,15 @@ export function QuoteRow({ line, draft, serial, column, columns, areas, trades, 
     onDragOver={(event) => { if (canEdit) { event.preventDefault(); event.currentTarget.dataset.dropTarget = "true"; } }}
     onDragLeave={(event) => { delete event.currentTarget.dataset.dropTarget; }}
     onDrop={(event) => { event.preventDefault(); delete event.currentTarget.dataset.dropTarget; onDropBefore(); }}>
-    <span role="gridcell" className={`${styles.handleCell} ${styles.gutter}`}>
+    <span role="gridcell" className={`${styles.handleCell} ${styles.gutter}`} data-stick="gutter">
       {editingBy.length ? <span className={styles.editing} title={editingBy.map((person) => person.name).join(", ")}><Avatar name={editingBy[0].name} size="sm" /></span> : null}
       {canEdit && !draft && !editingBy.length ? <button type="button" className={styles.handle} draggable aria-label={t("Move {name}", { name: line.title })} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", line.id); onDragStart(); }}><GripVertical aria-hidden="true" size={14} /></button> : null}
     </span>
-    <span role="gridcell" className={styles.serialCell}>{serial ?? ""}</span>
-    {columns.picture ? <span role="gridcell" className={styles.imageCell}>
+    <span role="gridcell" className={styles.serialCell} data-stick="serial">{serial ?? ""}</span>
+    {columns.picture ? <span role="gridcell" className={styles.imageCell} data-stick="picture">
       <ImageCell url={imageUrl ?? null} canEdit={canEdit && !draft} title={line.title} onPick={(file) => onImage?.(file)} />
     </span> : null}
-    <span role="gridcell" className={styles.itemCell}>
+    <span role="gridcell" className={styles.itemCell} data-stick="item">
       <ItemCell line={line} canEdit={canEdit && !fixed} search={search} thumb={catalogThumb} onCommit={(title) => onChange({ title })} onCatalog={onCatalog} onNewCatalogItem={onNewCatalogItem} draft={draft} onDiscard={onDiscard} />
       <span className={styles.itemMeta}>
         {line.changeOp === "omit" ? <Badge tone="danger">{t("Removes")}</Badge> : line.changeOp === "move" ? <Badge tone="info">{t("Moves")}</Badge> : null}
@@ -130,25 +130,86 @@ export function QuoteRow({ line, draft, serial, column, columns, areas, trades, 
 
 const SIZE_LABEL = { length: "Length", width: "Depth", height: "Height" } as const;
 
-/** What the line is made of: pick one of the workspace's materials, or type your own ("Taj Mahal marble / veneer wood"). */
+/**
+ * What the line is made of — often more than one thing ("PL core fabric", "veneer wood"). Each material
+ * is a tag: pick from the workspace's materials or type your own (a "/" separates several); Backspace
+ * on the empty field removes the last one. Saved as the list the estimator writes on the quote.
+ */
 function MaterialCell({ value, options, disabled, onCommit }: { value: string; options: string[]; disabled?: boolean; onCommit: (value: string) => void }) {
   const t = useT();
-  const { portalContainer, direction } = useDesignSystem();
-  const [text, setText] = useState<string | null>(null);
-  const shown = text ?? value;
-  const query = (text ?? "").trim().toLowerCase();
-  const items = options.filter((name) => !query || name.toLowerCase().includes(query)).slice(0, 40).map((name) => ({ id: name, name }));
-  const commit = (next: string) => { setText(null); if (next.trim() !== value) onCommit(next.trim()); };
-  return <ComboBox aria-label={t("Material")} className={styles.picker} allowsCustomValue menuTrigger="focus" inputValue={shown} items={items} isDisabled={disabled}
-    onInputChange={setText} onSelectionChange={(key) => { if (key !== null) commit(String(key)); }}>
-    <Input className={styles.pickerInput} onFocus={(event) => event.currentTarget.select()}
-      onBlur={() => { if (text !== null) commit(text); }}
-      onKeyDown={(event) => { if (event.key === "Escape") setText(null); if (event.key === "Enter") { const input = event.currentTarget; requestAnimationFrame(() => input.blur()); } }} />
-    <Popover UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" dir={direction} placement="bottom start">
-      <ListBox renderEmptyState={() => null}>{(item: { id: string; name: string }) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.name}>{item.name}</ListBoxItem>}</ListBox>
-    </Popover>
-  </ComboBox>;
+  const listId = useId();
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const field = useRef<HTMLSpanElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const parts = splitMaterials(value);
+  const query = text.trim().toLowerCase();
+  const matches = options.filter((name) => !parts.some((part) => part.toLowerCase() === name.toLowerCase()) && (!query || name.toLowerCase().includes(query))).slice(0, 30);
+  // Nothing called exactly that yet: offer to add what was typed.
+  const offerNew = query && !options.some((name) => name.toLowerCase() === query) && !parts.some((part) => part.toLowerCase() === query);
+  const suggestions = [...matches, ...(offerNew ? [NEW_MATERIAL] : [])];
+  const save = (next: string[]) => { const joined = next.join(" / "); if (joined !== parts.join(" / ")) onCommit(joined); };
+  const add = (typed: string) => {
+    setText(""); setActive(0);
+    const fresh = splitMaterials(typed).filter((name, index, all) => !parts.some((part) => part.toLowerCase() === name.toLowerCase()) && all.findIndex((other) => other.toLowerCase() === name.toLowerCase()) === index);
+    if (fresh.length) save([...parts, ...fresh]);
+  };
+  return <div className={styles.materials}>
+    {parts.map((part, index) => <span key={part} className={styles.tag} data-tone={toneOf(part)}>
+      {part}
+      {disabled ? null : <button type="button" aria-label={t("Remove {name}", { name: part })} onClick={() => save(parts.filter((_, at) => at !== index))}><X aria-hidden="true" size={11} /></button>}
+    </span>)}
+    {disabled ? null : <span ref={field} className={styles.tagPicker}>
+      <input aria-label={t("Material")} role="combobox" aria-expanded={open && suggestions.length > 0} aria-controls={listId} aria-autocomplete="list"
+        aria-activedescendant={open && suggestions[active] ? `${listId}-${active}` : undefined}
+        className={styles.tagInput} placeholder={parts.length ? "" : t("Add material")} value={text}
+        onFocus={() => setOpen(true)} onChange={(event) => { setText(event.target.value); setOpen(true); setActive(0); }}
+        onBlur={() => { setOpen(false); if (text.trim()) add(text); }}
+        onKeyDown={(event) => {
+          if (open && suggestions.length && (event.key === "ArrowDown" || event.key === "ArrowUp")) { event.preventDefault(); setActive((index) => (index + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length); return; }
+          if (event.key === "Enter") { event.preventDefault(); const choice = open ? suggestions[active] : undefined; add(!choice || choice === NEW_MATERIAL ? text : choice); return; }
+          if (event.key === "Backspace" && !text && parts.length) save(parts.slice(0, -1));
+          if (event.key === "Escape") { setOpen(false); setText(""); }
+        }} />
+      {open && suggestions.length ? <FloatingList anchor={field} id={listId} label={t("Materials")} className={styles.suggestions} onClose={close}>
+        {suggestions.map((name, index) => <li key={name} id={`${listId}-${index}`} role="option" aria-selected={index === active}
+          onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setActive(index)} onClick={() => add(name === NEW_MATERIAL ? text : name)}>
+          {name === NEW_MATERIAL ? <span className={styles.customHit}><Plus aria-hidden="true" size={13} />{t("Add “{name}”", { name: text.trim() })}</span>
+            : <span className={styles.tag} data-tone={toneOf(name)}>{name}</span>}
+        </li>)}
+      </FloatingList> : null}
+    </span>}
+  </div>;
 }
+
+/**
+ * A cell's suggestion list, drawn above the sheet (so the sheet's scroll area never clips it) and placed
+ * under its field. It closes when the page scrolls.
+ */
+function FloatingList({ anchor, id, label, className, onClose, children }: { anchor: RefObject<HTMLElement | null>; id: string; label: string; className: string; onClose: () => void; children: ReactNode }) {
+  const { portalContainer, direction } = useDesignSystem();
+  const [place, setPlace] = useState<{ top: number; start: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const box = anchor.current?.getBoundingClientRect();
+      if (box) setPlace({ top: box.bottom + 4, start: direction === "rtl" ? window.innerWidth - box.right : box.left, width: box.width });
+    };
+    measure();
+    const close = () => onClose();
+    window.addEventListener("scroll", close, true); window.addEventListener("resize", measure);
+    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", measure); };
+  }, [anchor, direction, onClose]);
+  if (!place) return null;
+  return createPortal(<ul id={id} role="listbox" aria-label={label} className={className} dir={direction}
+    style={{ position: "fixed", top: place.top, insetInlineStart: place.start, minInlineSize: place.width }}>{children}</ul>, portalContainer ?? document.body);
+}
+
+const NEW_MATERIAL = "\u0000new";
+const splitMaterials = (value: string) => value.split("/").map((part) => part.trim()).filter(Boolean);
+/** A stable tint per material, so the same material looks the same on every line. */
+const TAG_TONES = ["info", "success", "warning", "brand", "neutral"] as const;
+const toneOf = (name: string) => TAG_TONES[[...name.toLowerCase()].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) % 997, 7) % TAG_TONES.length];
 
 /** A cell that edits in place: commits on Enter or leaving the cell, Escape puts the value back. */
 function CellInput({ label, value, disabled, numeric, allowEmpty, placeholder, onCommit }: { label: string; value: string; disabled?: boolean; numeric?: boolean; allowEmpty?: boolean; placeholder?: string; onCommit: (value: string) => void }) {
@@ -198,6 +259,7 @@ function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCata
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const cancelled = useRef(false);
+  const closeList = useCallback(() => setOpen(false), []);
   const shown = focused ? text : line.title;
   useEffect(() => {
     if (!open || !text.trim()) return;
@@ -247,7 +309,7 @@ function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCata
           event.currentTarget.blur();
         }
       }} />
-    {open && options.length ? <ul id={listId} role="listbox" aria-label={t("Catalog items")} className={styles.suggestions}>
+    {open && options.length ? <FloatingList anchor={input} id={listId} label={t("Catalog items")} className={styles.suggestions} onClose={closeList}>
       {options.map((option, index) => <li key={option.type === "hit" ? option.hit.id : option.type} id={`${listId}-${index}`} role="option" aria-selected={index === active}
         onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setActive(index)} onClick={() => choose(index)}>
         {option.type === "hit" ? <>
@@ -256,6 +318,6 @@ function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCata
           <span className={styles.hitPrice}>{option.hit.rate ? `${plain(option.hit.rate, locale, 2)} / ${option.hit.unitCode}` : option.hit.hasBuildUp ? t("Priced from parts") : t("No price")}</span>
         </> : <span className={styles.hitName}><span className={styles.customHit}><Plus aria-hidden="true" size={13} />{option.type === "catalog" ? t("Add “{name}” to the catalog too", { name: text.trim() }) : t("Add “{name}” as a new line", { name: text.trim() })}</span></span>}
       </li>)}
-    </ul> : null}
+    </FloatingList> : null}
   </div>;
 }

@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Bookmark, CircleAlert, Columns3, Image as ImageIcon, Layers, MapPin, PanelRight, Plus, Sparkles, Store, Type, X } from "lucide-react";
-import { Badge, EmptyState, ErrorState, IconButton, IconMenuButton, InlineNotice, MenuButton, SegmentedControl, Skeleton, useDesignSystem } from "@/design-system";
+import { ArrowLeft, Bookmark, CircleAlert, Columns3, Image as ImageIcon, Layers, MapPin, MessageCircle, Plus, Sparkles, Store, Type, X } from "lucide-react";
+import { Badge, Button, EmptyState, ErrorState, IconButton, IconMenuButton, InlineNotice, MenuButton, SegmentedControl, Skeleton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { catalogImageUrl, quoteApi, QuotationRequestError } from "@/lib/quotation/client";
 import { caseApi, caseRequest, saveCaseRoom, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
@@ -51,6 +51,15 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const shownColumns = useSyncExternalStore(subscribeColumns, readColumns, () => COLUMNS_DEFAULT);
   const columns: RowColumns = JSON.parse(shownColumns);
   const widths = useColumnWidths(COLUMN_WIDTHS);
+  // The sheet scrolls sideways; the area bands stay the width of what's visible.
+  const [visible, setVisible] = useState(0);
+  const watching = useRef<ResizeObserver | null>(null);
+  const scroller = useCallback((element: HTMLDivElement | null) => {
+    watching.current?.disconnect();
+    if (!element) return;
+    watching.current = new ResizeObserver(() => setVisible(element.clientWidth));
+    watching.current.observe(element);
+  }, []);
   const toggleColumn = (key: keyof RowColumns) => { try { window.localStorage.setItem(COLUMNS_KEY, JSON.stringify({ ...columns, [key]: !columns[key] })); } catch { /* storage unavailable */ } window.dispatchEvent(new Event(COLUMNS_KEY)); };
   const [inserting, setInserting] = useState(false);
   const [changing, setChanging] = useState(false);
@@ -62,7 +71,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const [discountFor, setDiscountFor] = useState<{ scope: "area" | "trade" | "quote"; target: string; name: string } | null>(null);
   // The side panel: the assistant, the catalog, comments and totals. On a narrow screen it's a sheet.
   const [panel, setPanel] = useState<Panel>("assistant");
-  const [panelOpen, setPanelOpen] = useState(true);
+  // Closed until asked for (AI, comments, catalog or totals): the sheet gets the whole width.
+  const [panelOpen, setPanelOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const narrow = useSyncExternalStore(subscribeNarrow, readNarrow, () => false);
   const showPanel = narrow ? sheetOpen : panelOpen;
@@ -284,6 +294,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   // Column headings, repeated under each area's band so a long quote stays readable. Each heading's
   // edge can be dragged (or moved with the arrow keys) to resize its column.
   const heading = (key: string, content: React.ReactNode, options: { numeric?: boolean; label?: string } = {}) => <span role="columnheader" data-numeric={options.numeric || undefined}
+    data-stick={key === "picture" || key === "item" ? key : undefined}
     aria-label={options.label} title={options.label}>
     {content}
     {RESIZABLE.has(key) ? <span role="separator" aria-orientation="vertical" aria-label={t("Resize {column}", { column: options.label ?? String(content) })} tabIndex={0} className={styles.resizer}
@@ -291,8 +302,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       onKeyDown={(event) => { if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); widths.nudge(key, ((event.key === "ArrowRight") !== (direction === "rtl") ? 1 : -1) * 16); } }} /> : null}
   </span>;
   const headerRow = () => <div role="row" className={styles.columns}>
-    <span role="columnheader" className={styles.gutter} />
-    <span role="columnheader" data-numeric>{t("#")}</span>
+    <span role="columnheader" className={styles.gutter} data-stick="gutter" />
+    <span role="columnheader" data-numeric data-stick="serial">{t("#")}</span>
     {columns.picture ? heading("picture", <ImageIcon aria-hidden="true" size={13} />, { label: t("Picture") }) : null}
     {heading("item", <><Type aria-hidden="true" size={13} />{t("Item")}</>, { label: t("Item") })}
     {column ? heading("pick", <><MapPin aria-hidden="true" size={13} />{t("Area")}</>, { label: t("Area") }) : null}
@@ -366,11 +377,13 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <span className={styles.spacer} />
       <PeopleHere people={people} />
       {toFix ? <button type="button" className={styles.toFix} onClick={() => openPanel("totals")}><CircleAlert aria-hidden="true" size={14} />{toFix === 1 ? t("1 to fix") : t("{count} to fix", { count: toFix })}</button> : null}
-      <strong className={styles.total}>{money(state.pricing.total, currency, decimals, locale)}</strong>
-      <FlowActions state={state} api={api} workspaceId={workspaceId} caseId={caseId} onDone={load} onError={setError} onRevision={(id) => router.push(quoteHref(id))} />
-      <IconButton aria-label={showPanel ? t("Hide the side panel") : t("Show the side panel")} aria-pressed={showPanel} isDisabled={tab === "document"} onPress={() => showSide(!showPanel)}>
-        <PanelRight aria-hidden="true" data-directional="true" size={16} />
+      <button type="button" className={styles.total} aria-label={t("Totals")} onClick={() => openPanel("totals")}>{money(state.pricing.total, currency, decimals, locale)}</button>
+      <IconButton className={styles.withCount} aria-label={openThreads ? t("Comments · {count}", { count: openThreads }) : t("Comments")} aria-pressed={panelShown && activePanel === "comments"} onPress={() => (panelShown && activePanel === "comments" ? showSide(false) : openPanel("comments"))}>
+        <MessageCircle aria-hidden="true" size={17} />{openThreads ? <span className={styles.countDot}>{openThreads}</span> : null}
       </IconButton>
+      {state.canEdit ? <button type="button" className={styles.askAi} aria-pressed={panelShown && activePanel === "assistant"} aria-keyshortcuts="Meta+K Control+K"
+        onClick={() => (panelShown && activePanel === "assistant" ? showSide(false) : askAbout(null))}><Sparkles aria-hidden="true" size={15} />{t("Ask AI")}</button> : null}
+      <FlowActions state={state} api={api} workspaceId={workspaceId} caseId={caseId} onDone={load} onError={setError} onRevision={(id) => router.push(quoteHref(id))} />
     </header>
 
     <div className={styles.workbench}>
@@ -381,6 +394,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           <span className={styles.spacer} />
           {tab === "items" ? <>
             {state.quote.validUntil && ["draft", "internal_review", "internal_approved", "issued"].includes(state.quote.status) ? <span className={styles.meta}>{t("Valid until {date}", { date: new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(`${state.quote.validUntil}T00:00:00Z`)) })}</span> : null}
+            {state.canEdit ? <Button size="compact" variant="quiet" onPress={() => openPanel("catalog")}><Store aria-hidden="true" size={15} />{t("Catalog")}</Button> : null}
             <MenuButton size="compact" label={t(GROUP_LABEL[view] as never)} onAction={(id) => setView(id as QuoteView)}
               items={(["area", "trade", "area_trade"] as QuoteView[]).map((id) => ({ id, label: t(VIEW_LABEL[id] as never) }))} />
             <IconMenuButton ariaLabel={t("Columns")} icon={<Columns3 aria-hidden="true" size={16} />} onAction={(id) => toggleColumn(id as keyof RowColumns)} items={[
@@ -421,7 +435,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
             <button type="button" onClick={() => openPanel("catalog")}><Store aria-hidden="true" size={18} /><strong>{t("Pick from the catalog")}</strong><small>{t("Search and add")}</small></button>
             <button type="button" onClick={() => setInserting(true)}><Bookmark aria-hidden="true" size={18} /><strong>{t("Insert a template")}</strong><small>{t("Saved areas and quotes")}</small></button>
           </div> : null}
-          <div className={styles.gridScroll}><div role="grid" aria-label={t("Quote lines")} className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width) } as React.CSSProperties}
+          <div ref={scroller} className={styles.gridScroll} style={{ "--visible": visible ? `${visible}px` : "100%" } as React.CSSProperties}><div role="grid" aria-label={t("Quote lines")} className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width), "--stick-serial": `${widths.width("gutter")}px`, "--stick-picture": `${widths.width("gutter") + widths.width("serial")}px`,
+            "--stick-item": `${widths.width("gutter") + widths.width("serial") + (columns.picture ? widths.width("picture") : 0)}px` } as React.CSSProperties}
             onFocusCapture={(event) => {
               const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");
               const label = (event.target as HTMLElement).getAttribute("aria-label") ?? "";
@@ -444,7 +459,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <aside className={styles.panel} aria-label={t("Side panel")} hidden={!panelShown}>
         <div className={styles.panelHead}>
           <SegmentedControl label={t("Side panel")} value={activePanel} onChange={(id) => setPanel(id as Panel)} options={views} />
-          {narrow ? <IconButton aria-label={t("Close")} onPress={() => setSheetOpen(false)}><X aria-hidden="true" size={16} /></IconButton> : null}
+          <span className={styles.spacer} />
+          <IconButton aria-label={t("Close")} onPress={() => showSide(false)}><X aria-hidden="true" size={16} /></IconButton>
         </div>
         {state.canEdit ? <div className={styles.panelBody} hidden={activePanel !== "assistant"}>
           <QuoteChat state={state} api={api} workspaceId={workspaceId} onApply={applyOps} contextLine={contextLine} onClearContext={() => setContextLineId(null)}
@@ -498,7 +514,7 @@ const COLUMNS_DEFAULT = JSON.stringify({ picture: true, size: true, material: tr
 const readColumns = () => { try { const saved = JSON.parse(window.localStorage.getItem(COLUMNS_KEY) ?? "null"); return saved ? JSON.stringify({ ...JSON.parse(COLUMNS_DEFAULT), ...saved }) : COLUMNS_DEFAULT; } catch { return COLUMNS_DEFAULT; } };
 const subscribeColumns = (notify: () => void) => { window.addEventListener(COLUMNS_KEY, notify); window.addEventListener("storage", notify); return () => { window.removeEventListener(COLUMNS_KEY, notify); window.removeEventListener("storage", notify); }; };
 /** Starting widths (px) of the table's columns; the item column also takes any room left over. */
-const COLUMN_WIDTHS: Record<string, number> = { gutter: 20, serial: 36, picture: 72, item: 220, pick: 140, length: 64, width: 64, height: 64, material: 140, qty: 56, unit: 68, rate: 84, amount: 108, menu: 48 };
+const COLUMN_WIDTHS: Record<string, number> = { gutter: 20, serial: 44, picture: 96, item: 300, pick: 160, length: 84, width: 84, height: 84, material: 220, qty: 72, unit: 92, rate: 112, amount: 132, menu: 56 };
 const RESIZABLE = new Set(["picture", "item", "pick", "length", "width", "height", "material", "qty", "unit", "rate", "amount"]);
 /** The grid's columns, in the order the cells are drawn. */
 const gridColumns = (column: RowColumn, columns: RowColumns, width: (key: string) => number) => ["gutter", "serial", ...(columns.picture ? ["picture"] : []), "item", ...(column ? ["pick"] : []),
