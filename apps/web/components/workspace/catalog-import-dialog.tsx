@@ -1,7 +1,7 @@
 "use client";
 import {useRef,useState} from 'react';
 import {Upload} from 'lucide-react';
-import {Button,Checkbox,ControlledModalDialog,DataGrid,SelectField,type DataGridColumn} from '@/design-system';
+import {Button,Checkbox,ControlledModalDialog,DataGrid,SelectField,useDesignSystem,type DataGridColumn} from '@/design-system';
 import {type CatalogKind,type CatalogRecord,catalogStructure} from '@/lib/workspace/catalog';
 import {catalogGroups,recordSections} from '@/lib/workspace/catalog-navigation';
 import {guessImportHeader,importFields,parseDelimitedCatalog,prepareCatalogImport,suggestImportMapping,type ImportPlan,type ImportReviewRow,type ImportTable} from '@/lib/workspace/catalog-import';
@@ -15,7 +15,8 @@ export function CatalogImportDialog({catalogId,items,initialKind,groupId,onClose
  const [tables,setTables]=useState<ImportTable[]>([]),[sheet,setSheet]=useState(0),[header,setHeader]=useState(0),[kind,setKind]=useState(initialKind),[group,setGroup]=useState(groupId);
  const [mapping,setMapping]=useState<string[]>([]),[paste,setPaste]=useState(''),[createReferences,setCreateReferences]=useState(false);
  const [plan,setPlan]=useState<ImportPlan|null>(null),[valid,setValid]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
- const [priceDefaults,setPriceDefaults]=useState<Record<string,string>>({currency:'INR',priceType:'cost'});
+ const {currency:workspaceCurrency}=useDesignSystem();
+ const [priceDefaults,setPriceDefaults]=useState<Record<string,string>>({currency:workspaceCurrency,priceType:'cost'});
  const table=tables[sheet];const headers=table?.rows[header]??[];
  const priceMapped=mapping.includes('price:amount');
  const setSource=(next:ImportTable[],index=0)=>{if(!next.length)throw new Error('No worksheets with data were found.');const h=guessImportHeader(next[index].rows,kind);setTables(next);setSheet(index);setHeader(h);setMapping(suggestImportMapping(next[index].rows[h],kind));setPlan(null);setValid(false);setError('');};
@@ -49,7 +50,7 @@ export function CatalogImportDialog({catalogId,items,initialKind,groupId,onClose
    {table&&<><p className={styles.muted}>Column suggestions are editable. Unmatched columns are kept as specifications. Import one record type per worksheet; multiple connections use a semicolon (;).</p><div className={`${tableStyles.tableRegion} ${styles.importMapping}`}><DataGrid ariaLabel="Match import columns" appearance="flush" columns={mapColumns} data={mappingRows} getRowId={r=>r.id} selectable={false} showToolbar={false} pageSize={25}/></div>
    <Checkbox isSelected={createReferences} onChange={setCreateReferences}>Create missing brands, finishes, rooms and categories</Checkbox><p className={styles.muted}>New reference records and groups appear in the review. Units and other dependencies must already be defined or imported first.</p>
    {priceMapped&&<fieldset><legend>Defaults for imported prices</legend><p className={styles.muted}>Mapped price columns override these defaults. Enter the date, inclusions and tax treatment explicitly.</p><div className={styles.grid}>
-    {(['priceType','currency','costIncludes','taxIncluded'] as const).map(key=><SelectField key={key} label={key==='priceType'?'Price type':key==='currency'?'Currency':key==='costIncludes'?'Price includes':'Tax included'} selectedKey={priceDefaults[key]||null} onSelectionChange={value=>setPriceDefaults(d=>({...d,[key]:String(value)}))} items={(key==='currency'?['INR','AED','USD']:catalogStructure.rate_card.fields.find(f=>f.key===key)?.options??[]).filter(id=>id!=='unconfirmed').map(id=>({id,label:id.replaceAll('_',' ')}))}/>)}
+    {(['priceType','currency','costIncludes','taxIncluded'] as const).map(key=><SelectField key={key} label={key==='priceType'?'Price type':key==='currency'?'Currency':key==='costIncludes'?'Price includes':'Tax included'} selectedKey={priceDefaults[key]||null} onSelectionChange={value=>setPriceDefaults(d=>({...d,[key]:String(value)}))} items={(key==='currency'?Array.from(new Set([workspaceCurrency,'INR','AED','USD'])):catalogStructure.rate_card.fields.find(f=>f.key===key)?.options??[]).filter(id=>id!=='unconfirmed').map(id=>({id,label:id.replaceAll('_',' ')}))}/>)}
     <label>Effective from<input type="date" value={priceDefaults.effectiveFrom??''} onChange={e=>setPriceDefaults(d=>({...d,effectiveFrom:e.target.value}))}/></label>
    </div></fieldset>}</>}
   </div>}
