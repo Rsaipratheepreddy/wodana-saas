@@ -1014,6 +1014,25 @@ Edge cases: provider down (queue and retry, visible status); token revoked (conn
 ### 6.28 HRMS (kept, narrow)
 Attendance, leave and calendars stay. People appear in planning only as **availability** (leave blocks assignment and bookings). Private personnel data never enters project views.
 
+HR in a fit-out firm covers four groups: studio staff (hours per project against design fees), site teams (check-in at the site, day cost to the project), factory (shifts, hours per work order) and subcontracted labour (headcount by trade, site access lists). Build order: **H1** make it work ✔ → **H2** crews and workers without logins, crew attendance charged to the project → **H3** documents with expiry and site access lists → **H4** studio timesheets, capacity and leave in planning → **H5** payroll export from the region pack.
+
+**Built (H1) — People: Attendance · Leave · Team · People; Settings → Attendance & leave:**
+- **Works on day one:** the first use makes the workspace's calendar (its time zone and its country's working week, 09:00–18:00), the attendance rules and three leave types (Annual — limited, Sick — unlimited, Unpaid — unlimited and unpaid), and enrols every active member from the day they joined. Nothing is overwritten later.
+- **Access:** every member uses their own attendance and leave whatever their role; being someone's manager (or the fallback approver) is the right to decide for them; `hrms.manage` runs HR. HR can switch a person off (not tracked).
+- **Calendars** are edited with their version: name, time zone, working week and hours change from now on; sessions and leave keep the calendar they were made with, and plans read the default calendar. Calendars are never deleted.
+- **Holidays** are named ranges (up to 31 days, never overlapping on a calendar). The database keeps the calendar's list of days off from them. A holiday announced after leave was booked gives those days back; leave left with no days is withdrawn or cancelled, and the person is told.
+- **Leave types** are limited (a yearly allowance, per-person overrides) or unlimited, paid or unpaid.
+- **Approvals:** a person's manager while active, else the fallback approver, else everyone who manages HR — never the person themself.
+- **Notices:** leave to approve (approver, in-app and email), approved or not approved (the person, in-app and email), cancellation to approve and its outcome, a holiday changing booked leave, attendance to review (an exception at check-in, a correction, a missing check-out) and its outcome, and "You're still checked in" an hour after the working day should have ended (once per session, in-app and email; nothing is closed automatically).
+- **Team day:** each person's day says whether it's a working day, where they are while checked in, and the leave type when on leave.
+
+**Built (H2) — crews and workers without logins (backend; screens follow):**
+- HR keeps **crews** (a trade, optionally the subcontractor who provides them and a lead) and **workers** (a trade, a code, a phone, and optionally their own day rate). Day rates are pay: only people who run HR or see project costs see them.
+- A **crew day** is marked by the crew's lead or the project's managers and site supervisors: who was there (a whole day, half a day, absent), overtime hours, a note. It's a draft until submitted with one group photo and the phone's position against the project's site boundary; a missing photo, a position away from the site, a site without a boundary or a day marked afterwards needs a reason. Nobody can be marked for more than a day in total across crews and places.
+- Someone other than the person who marked it (the project's managers, or HR for the workshop) approves it or sends it back with what to change — enforced in the database. Approving fixes each worker's day rate (their own, else their trade's on that day) and the day can no longer change.
+- **Cost:** each approved crew day is a labour cost of its project at those rates; the named people replace the site report's headcount for their trades that day, so nothing is counted twice. Overtime hours are kept for payroll.
+- Notices: a crew day to approve (the project's managers), approved or sent back (who marked it).
+
 ### 6.29 Staff mobile (Expo)
 - **Tabs:** Today · Tasks · Capture (+) · Inbox · Me.
 - **Actions:** respond to enquiries (call/WhatsApp/note), site visit (measurements, photos, markup), task progress (qty + photo), daily report, receive delivery (PO or site), raise/close snag, handover walk-through, approvals (approve or return with reason), attendance.

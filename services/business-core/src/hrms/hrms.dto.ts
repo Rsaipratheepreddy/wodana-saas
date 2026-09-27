@@ -31,14 +31,23 @@ export class CalendarDto {
   @Min(0, { each: true })
   @Max(6, { each: true })
   workingDays: number[];
-  @IsArray()
-  @ArrayMaxSize(366)
-  @ArrayUnique()
-  @Matches(/^\d{4}-\d{2}-\d{2}$/, { each: true })
-  holidays: string[] = [];
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/) dayStart = "09:00";
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/) halfDay = "13:00";
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/) dayEnd = "18:00";
+}
+export class CalendarUpdateDto extends CalendarDto {
+  @IsInt() @Min(1) version: number;
+}
+export class HolidayDto {
+  @IsString() @MinLength(1) @MaxLength(120) name: string;
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) startsOn: string;
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) endsOn: string;
+}
+export class HolidayUpdateDto extends HolidayDto {
+  @IsInt() @Min(1) version: number;
+}
+export class VersionDto {
+  @IsInt() @Min(1) version: number;
 }
 export class SettingsDto {
   @IsInt() @Min(0) version: number;
@@ -120,8 +129,10 @@ export class LeaveTypeDto {
   @IsOptional() @IsUUID() id?: string;
   @IsInt() @Min(0) version: number;
   @IsString() @MinLength(1) @MaxLength(100) name: string;
+  @IsBoolean() limited = true;
   @IsNumber({ maxDecimalPlaces: 1 }) @Min(0) @Max(366) annualDays: number;
   @IsBoolean() allowHalfDay = true;
+  @IsBoolean() paid = true;
   @IsBoolean() active = true;
 }
 export class AllowanceDto {
@@ -153,4 +164,63 @@ export class LeaveQueryDto {
   @Min(2000)
   @Max(2200)
   year?: number;
+}
+
+export class CrewDto {
+  @IsOptional() @IsUUID() id?: string;
+  @IsInt() @Min(0) version: number;
+  @IsString() @MinLength(1) @MaxLength(120) name: string;
+  @IsString() @MinLength(1) @MaxLength(80) trade: string;
+  @IsOptional() @IsUUID() vendorId?: string | null;
+  @IsOptional() @IsUUID() leadMembershipId?: string | null;
+  @IsBoolean() active = true;
+}
+export class WorkerDto {
+  @IsOptional() @IsUUID() id?: string;
+  @IsInt() @Min(0) version: number;
+  @IsString() @MinLength(1) @MaxLength(120) name: string;
+  @IsString() @MinLength(1) @MaxLength(80) trade: string;
+  @IsOptional() @IsUUID() crewId?: string | null;
+  @IsString() @MaxLength(40) workerCode = "";
+  @IsString() @MaxLength(40) phone = "";
+  @IsOptional() @Matches(/^\d{1,14}(\.\d{1,4})?$/) dayRate?: string | null;
+  @IsOptional() @Matches(/^[A-Z]{3}$/) currency?: string | null;
+  @IsBoolean() active = true;
+}
+export class CrewDayWorkerDto {
+  @IsUUID() workerId: string;
+  @IsIn(["present", "half_day", "absent"]) presence: "present" | "half_day" | "absent";
+  @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(16) overtimeHours = 0;
+}
+export class CrewDayDto {
+  @IsInt() @Min(0) version: number;
+  @IsUUID() crewId: string;
+  @IsOptional() @IsUUID() projectId?: string | null;
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) workDate: string;
+  @IsString() @MaxLength(2000) note = "";
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => CrewDayWorkerDto)
+  workers: CrewDayWorkerDto[];
+}
+export class CrewDaySubmitDto {
+  @IsInt() @Min(1) version: number;
+  @IsOptional() @IsUUID() captureId?: string | null;
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PositionDto)
+  position?: PositionDto | null;
+  @IsString() @MaxLength(2000) exceptionReason = "";
+}
+export class CrewDayDecisionDto {
+  @IsInt() @Min(1) version: number;
+  @IsIn(["approve", "return"]) decision: "approve" | "return";
+  @IsString() @MaxLength(2000) note = "";
+}
+export class CrewDayQueryDto {
+  @IsOptional() @IsUUID() projectId?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) from?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) to?: string;
 }

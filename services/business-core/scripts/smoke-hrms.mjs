@@ -26,10 +26,13 @@ try{
  }
  const staffId=await member(staff),managerId=await member(manager),otherId=await member(other);await member(viewer,'viewer');
  const managerRole=randomUUID();await db.query(`INSERT INTO roles(id,workspace_id,code,name,is_system) VALUES($1,$2,'hr-reviewer','HR reviewer',false)`,[managerRole,w]);await db.query(`INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code IN ('hrms.team','hrms.evidence')`,[w,managerRole]);await db.query(`INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3)`,[w,managerId,managerRole]);
- await request(`${root}/bootstrap`,{headers:viewer,expected:403});
- const calendar=await request(`${root}/calendars`,{body:{name:'Six-day studio',timezone:'Asia/Kolkata',workingDays:[1,2,3,4,5,6],holidays:['2027-01-05'],dayStart:'09:00',halfDay:'13:00',dayEnd:'18:00'}});
- await request(`${root}/settings`,{method:'PUT',body:{version:0,defaultCalendarId:calendar.id,fallbackApproverId:own.id}});
- for(const [id,reporting] of [[own.id,null],[managerId,own.id],[staffId,managerId],[otherId,own.id]])await request(`${root}/people/${id}`,{method:'PUT',body:{version:0,calendarId:calendar.id,managerId:reporting,activeFrom:'2020-01-01',enabled:true,remoteAllowed:false,employeeCode:id.slice(0,8),designation:'Staff',department:'Design'}});
+ // Everyone uses their own attendance and leave from day one: the first call sets HRMS up and enrols them.
+ assert.equal((await request(`${root}/bootstrap`,{headers:viewer})).permissions.self,true);
+ const calendar=await request(`${root}/calendars`,{body:{name:'Six-day studio',timezone:'Asia/Kolkata',workingDays:[1,2,3,4,5,6],dayStart:'09:00',halfDay:'13:00',dayEnd:'18:00'}});
+ await request(`${root}/calendars/${calendar.id}/holidays`,{body:{name:'Holiday',startsOn:'2027-01-05',endsOn:'2027-01-05'}});
+ await request(`${root}/settings`,{method:'PUT',body:{version:(await request(`${root}/bootstrap`)).settings.version,defaultCalendarId:calendar.id,fallbackApproverId:own.id}});
+ const enrolled=Object.fromEntries((await request(`${root}/people`)).map(p=>[p.membershipId,p.version]));
+ for(const [id,reporting] of [[own.id,null],[managerId,own.id],[staffId,managerId],[otherId,own.id]])await request(`${root}/people/${id}`,{method:'PUT',body:{version:enrolled[id],calendarId:calendar.id,managerId:reporting,activeFrom:'2020-01-01',enabled:true,remoteAllowed:false,employeeCode:id.slice(0,8),designation:'Staff',department:'Design'}});
  const boot=await request(`${root}/bootstrap`,{headers:staff});assert.equal(boot.employee.membershipId,staffId);assert.equal(boot.permissions.self,true);assert.equal(boot.permissions.manage,false);
  assert.deepEqual((await request(`${root}/people`,{headers:manager})).map(p=>p.membershipId),[staffId]);await request(`${root}/people`,{headers:staff,expected:403});
  const office=await request(`${projects}/locations`,{method:'PUT',body:{version:0,name:'Studio',kind:'office',latitude:12.9716,longitude:77.5946,radiusM:150}});

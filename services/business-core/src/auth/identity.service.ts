@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { ActorUser, RequestActor } from "./actor";
 import { DatabaseService } from "../database/database.service";
-import { allowedTenantModules } from "./module-access";
+import { allowedTenantModules, MEMBER_PERMISSIONS } from "./module-access";
 import { deriveBillingAccessPolicy, effectiveEntitledModules } from "../workspaces/tenant-operations.domain";
 import { effectiveTenantPermissionCodes } from "../workspaces/tenant-access.domain";
 
@@ -119,6 +119,9 @@ export class IdentityService {
         workspaceSecondaryColor: string | null;
         workspaceHeadingFont: string | null;
         workspaceBodyFont: string | null;
+        workspaceLocale: string | null;
+        workspaceCurrency: string | null;
+        workspaceTimezone: string | null;
         accountId: string | null;
         accountName: string | null;
         accountRole: string | null;
@@ -137,7 +140,10 @@ export class IdentityService {
                 branding.primary_color AS "workspacePrimaryColor",
                 branding.secondary_color AS "workspaceSecondaryColor",
                 branding.heading_font AS "workspaceHeadingFont",
-                branding.body_font AS "workspaceBodyFont"
+                branding.body_font AS "workspaceBodyFont",
+                workspace.default_locale AS "workspaceLocale",
+                workspace.default_currency AS "workspaceCurrency",
+                workspace.default_timezone AS "workspaceTimezone"
          FROM workspace_memberships membership
          JOIN workspaces workspace ON workspace.id = membership.workspace_id
          LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id
@@ -233,6 +239,10 @@ export class IdentityService {
         workspaceSecondaryColor: membership.workspaceSecondaryColor,
         workspaceHeadingFont: membership.workspaceHeadingFont,
         workspaceBodyFont: membership.workspaceBodyFont,
+        // Every member formats money, dates and times the workspace's way.
+        workspaceLocale: membership.workspaceLocale,
+        workspaceCurrency: membership.workspaceCurrency,
+        workspaceTimezone: membership.workspaceTimezone,
         accountId: membership.accountId,
         accountName: membership.accountName,
         accountRole: membership.accountRole,
@@ -241,11 +251,13 @@ export class IdentityService {
         roles: tenantAccess.roles.map((role) => role.code),
         allowedPermissions: effectiveTenantPermissionCodes({
           status: membership.status,
-          grantedPermissions: tenantAccess.permissions.map((permission) => permission.code),
+          grantedPermissions: [...tenantAccess.permissions.map((permission) => permission.code), ...MEMBER_PERMISSIONS],
           entitlements: tenantAccess.entitlements,
         }),
         allowedModules: effectiveEntitledModules(
-          allowedTenantModules(tenantAccess.permissions.map((permission) => permission.code)),
+          allowedTenantModules(membership.status === "active"
+            ? [...tenantAccess.permissions.map((permission) => permission.code), ...MEMBER_PERMISSIONS]
+            : tenantAccess.permissions.map((permission) => permission.code)),
           tenantAccess.entitlements,
         ),
         entitlement: tenantAccess.entitlements

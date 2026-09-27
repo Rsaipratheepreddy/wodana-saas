@@ -10,12 +10,14 @@ const at = (date: string) => Date.parse(`${date}T00:00:00Z`);
 const iso = (time: number) => new Date(time).toISOString().slice(0, 10);
 
 /**
- * The workspace's working week: its own work calendar (with holidays) when it has one, otherwise its
+ * The workspace's working week: its default work calendar (with holidays) when it has one, otherwise its
  * country's region pack, otherwise Monday to Friday.
  */
 export async function readCalendar(db: Db, workspaceId: string): Promise<WorkCalendar> {
   const own = (await db.query<{ workingDays: number[]; holidays: string[] }>(
-    `SELECT working_days AS "workingDays", holidays::text[] AS holidays FROM hrms_calendars WHERE workspace_id = $1 ORDER BY created_at, id LIMIT 1`, [workspaceId])).rows[0];
+    `SELECT calendar.working_days AS "workingDays", calendar.holidays::text[] AS holidays FROM hrms_calendars calendar
+       LEFT JOIN hrms_settings settings ON settings.workspace_id = calendar.workspace_id
+      WHERE calendar.workspace_id = $1 ORDER BY (calendar.id = settings.default_calendar_id) DESC NULLS LAST, calendar.created_at, calendar.id LIMIT 1`, [workspaceId])).rows[0];
   if (own?.workingDays?.length) return { workingDays: own.workingDays, holidays: own.holidays ?? [] };
   const pack = (await db.query<{ workingDays: unknown }>(
     `SELECT profile.configuration->'calendarPolicy'->'workingDays' AS "workingDays"

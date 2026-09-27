@@ -9,7 +9,34 @@ export type WorkCalendar = {
   dayStart: string;
   halfDay: string;
   dayEnd: string;
+  version?: number;
 };
+/** A named day or run of days off on a calendar (e.g. a three-day public holiday). */
+export type HrmsHoliday = {
+  id: string;
+  calendarId: string;
+  name: string;
+  startsOn: string;
+  endsOn: string;
+  days: number;
+  version: number;
+};
+/** A work calendar as its settings show it: its named holidays and how many people follow it. */
+export type HrmsCalendar = WorkCalendar & {
+  version: number;
+  holidayList: HrmsHoliday[];
+  people: number;
+  isDefault: boolean;
+};
+export type CalendarInput = {
+  name: string;
+  timezone: string;
+  workingDays: number[];
+  dayStart: string;
+  halfDay: string;
+  dayEnd: string;
+};
+export type HolidayInput = { name: string; startsOn: string; endsOn: string };
 export type HrmsEmployee = {
   membershipId: string;
   userId: string;
@@ -25,6 +52,7 @@ export type HrmsEmployee = {
 export type HrmsPerson = {
   membershipId: string;
   name: string;
+  email: string;
   status: string;
   enabled: boolean | null;
   employeeCode: string;
@@ -178,6 +206,12 @@ export type AttendanceDay = {
   rejectedCount: number;
   leaveDays: number;
   leaveStatus: string | null;
+  /** The leave type's name when the day has leave. */
+  leaveType: string | null;
+  /** A working day on the person's calendar (not a weekend or holiday). */
+  scheduled: boolean;
+  /** Where the person is working right now, while checked in. */
+  place: string | null;
   status: string;
   breakdown: { name: string; mode: string; minutes: number }[];
 };
@@ -207,24 +241,31 @@ export type AttendanceHistory = {
   reviews: AttendanceReview[];
   days: AttendanceDay[];
 };
+/** A kind of leave. Limited types count against a yearly allowance; unlimited ones (sick, unpaid) don't. */
 export type LeaveType = {
   id: string;
   name: string;
+  limited: boolean;
   annualDays: number;
   allowHalfDay: boolean;
+  paid: boolean;
   active: boolean;
   version: number;
 };
+export type LeaveTypeInput = Omit<LeaveType, "id"> & { id?: string };
 export type LeaveBalance = {
   membershipId: string;
   name: string;
   leaveTypeId: string;
   leaveTypeName: string;
   year: number;
-  allowance: number;
+  limited: boolean;
+  /** Days a year; null for unlimited types. */
+  allowance: number | null;
   used: number;
   pending: number;
-  available: number;
+  /** Days still free to ask for; null for unlimited types. */
+  available: number | null;
   version: number;
 };
 export type LeaveRequest = {
@@ -255,3 +296,62 @@ export type ProjectSiteAttendance = {
   locationStatus: string;
   minutes: number | null;
 };
+
+/** H2 — crews and workers without logins. */
+export type HrmsCrew = {
+  id: string;
+  name: string;
+  trade: string;
+  vendorId: string | null;
+  vendorName: string | null;
+  leadMembershipId: string | null;
+  leadName: string | null;
+  active: boolean;
+  version: number;
+  workers: number;
+};
+export type HrmsWorker = {
+  id: string;
+  name: string;
+  trade: string;
+  crewId: string | null;
+  workerCode: string;
+  phone: string;
+  /** Only for people who run HR. */
+  dayRate: string | null;
+  currency: string | null;
+  active: boolean;
+  version: number;
+};
+export type HrmsCrewState = { crews: HrmsCrew[]; workers: HrmsWorker[]; canManage: boolean };
+export type CrewInput = { id?: string; version: number; name: string; trade: string; vendorId?: string | null; leadMembershipId?: string | null; active: boolean };
+export type WorkerInput = { id?: string; version: number; name: string; trade: string; crewId?: string | null; workerCode: string; phone: string; dayRate?: string | null; currency?: string | null; active: boolean };
+export type CrewPresence = "present" | "half_day" | "absent";
+export type CrewDay = {
+  id: string;
+  crewId: string;
+  crewName: string;
+  trade: string;
+  projectId: string | null;
+  projectName: string | null;
+  workDate: string;
+  status: "draft" | "submitted" | "approved" | "returned";
+  markedBy: string;
+  markedByName: string;
+  captureId: string | null;
+  evidence: { position?: CapturePosition | null; site?: { name: string } | null; arrival?: LocationEvidence; photoCaptured?: boolean; issues?: string[] };
+  note: string;
+  exceptionReason: string;
+  submittedAt: string | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionNote: string;
+  version: number;
+  /** Days of work: a whole day each, half for half a day. */
+  present: number;
+  workers: Array<{ workerId: string; name: string; trade: string; presence: CrewPresence; overtimeHours: string; dayRate: string | null; currency: string | null }>;
+  canMark: boolean;
+  canDecide: boolean;
+};
+export type CrewDayInput = { version: number; crewId: string; projectId?: string | null; workDate: string; note: string; workers: Array<{ workerId: string; presence: CrewPresence; overtimeHours: number }> };
+export type CrewDaySubmit = { version: number; captureId?: string | null; position?: CapturePosition | null; exceptionReason: string };

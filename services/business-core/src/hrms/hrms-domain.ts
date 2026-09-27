@@ -99,7 +99,9 @@ export function zonedInstant(
   }
   return new Date(value);
 }
-export function validateCalendar(calendar: Calendar): void {
+export function validateCalendar(
+  calendar: Omit<Calendar, "holidays" | "id"> & { holidays?: string[] },
+): void {
   if (!calendar.name.trim())
     throw new BadRequestException("Name the work calendar.");
   try {
@@ -115,7 +117,19 @@ export function validateCalendar(calendar: Calendar): void {
     throw new BadRequestException(
       "Working hours must run from start, through half-day, to end.",
     );
-  calendar.holidays.forEach(dateOnly);
+  calendar.holidays?.forEach(dateOnly);
+}
+/** Every date of a holiday, in order. */
+export function holidayDates(startsOn: string, endsOn: string): string[] {
+  dateOnly(startsOn);
+  dateOnly(endsOn);
+  if (endsOn < startsOn)
+    throw new BadRequestException("A holiday ends on or after the day it starts.");
+  const dates = dateRange(startsOn, endsOn, 31);
+  const years = [startsOn, endsOn].map((date) => Number(date.slice(0, 4)));
+  if (years.some((year) => year < 2000 || year > 2200))
+    throw new BadRequestException("Choose a date between 2000 and 2200.");
+  return dates;
 }
 export function leaveUnits(
   start: string,
@@ -226,4 +240,42 @@ export function csvCell(value: unknown): string {
   return (
     '"' + (/^[=+@\-\t\r]/.test(s) ? "'" : "") + s.replace(/"/g, '""') + '"'
   );
+}
+
+function knownLocale(locale: string | null | undefined): string {
+  try {
+    return new Intl.DateTimeFormat(locale || "en").resolvedOptions().locale;
+  } catch {
+    return "en";
+  }
+}
+/** A date or a run of dates for a notice, in the workspace's locale ("5–7 Oct 2026"). */
+export function formatDates(start: string, end: string, locale?: string | null): string {
+  const format = new Intl.DateTimeFormat(knownLocale(locale), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  const from = new Date(`${dateOnly(start)}T00:00:00Z`);
+  return start === end
+    ? format.format(from)
+    : format.formatRange(from, new Date(`${dateOnly(end)}T00:00:00Z`));
+}
+/** A moment for a notice, on the person's clock ("27 Sep, 09:12"). */
+export function formatWhen(
+  instant: Date | string,
+  timeZone: string,
+  locale?: string | null,
+): string {
+  return new Intl.DateTimeFormat(knownLocale(locale), {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(instant));
+}
+export function formatDays(days: number): string {
+  return `${days} ${days === 1 ? "day" : "days"}`;
 }

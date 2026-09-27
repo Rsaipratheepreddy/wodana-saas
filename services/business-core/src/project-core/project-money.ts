@@ -140,6 +140,34 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
       packageId: line.packageId, packageName: line.packageName, amount: amount.round(places(home)).toFixed(4) });
   }
 
+  // Crew days: each worker marked present (a whole day) or for half a day on an approved crew day, at the
+  // day rate fixed when it was approved. Named people replace the report's headcount for their trades that day.
+  const named = (await db.query<{ id: string; on: string; crew: string; trade: string; presence: string; rate: string | null; currency: string | null; marker: string }>(
+    `SELECT day.id, day.work_date::text AS on, crew.name AS crew, worker.trade, line.presence, line.day_rate::text AS rate, line.currency, marker.display_name AS marker
+       FROM hrms_crew_days day
+       JOIN hrms_crews crew ON crew.workspace_id = day.workspace_id AND crew.id = day.crew_id
+       JOIN hrms_crew_day_workers line ON line.workspace_id = day.workspace_id AND line.crew_day_id = day.id AND line.presence <> 'absent'
+       JOIN hrms_workers worker ON worker.workspace_id = line.workspace_id AND worker.id = line.worker_id
+       JOIN users marker ON marker.id = day.marked_by
+      WHERE day.workspace_id = $1 AND day.project_id = $2 AND day.status = 'approved'
+      ORDER BY day.work_date, day.id`, [workspaceId, projectId])).rows;
+  const covered = new Set(named.map((line) => `${line.on}:${tradeKey(line.trade)}`));
+  const days = new Map<string, { on: string; crew: string; marker: string; people: number; total: Dec | null }>();
+  for (const line of named) {
+    const day = days.get(line.id) ?? { on: line.on, crew: line.crew, marker: line.marker, people: 0, total: Dec.ZERO };
+    days.set(line.id, day);
+    day.people += 1;
+    const share = line.presence === "half_day" ? "0.5" : "1";
+    const amount = line.rate && line.currency ? await convert(labourCost(share, line.rate, line.currency), line.currency, line.on) : null;
+    if (amount === null) uncosted += 1;
+    else if (day.total) day.total = day.total.add(amount);
+  }
+  for (const [id, day] of days) {
+    if (!day.total || day.total.isZero()) continue;
+    entries.push({ key: `crew:${id}`, on: day.on, source: "labour", description: `Crew: ${day.crew}, ${day.people} ${day.people === 1 ? "person" : "people"}`,
+      reference: day.marker, packageId: null, packageName: null, amount: day.total.round(places(home)).toFixed(4) });
+  }
+
   // Site labour: the people per trade on each approved report, at the trade's day rate on the report's day.
   // Site reports belong to the project, not to a package.
   const tradeRates = await readTradeRates(db, workspaceId);
@@ -151,6 +179,7 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
       WHERE workforce.workspace_id = $1 AND report.project_id = $2
       ORDER BY report.report_date, workforce.id`, [workspaceId, projectId])).rows;
   for (const crew of crews) {
+    if (covered.has(`${crew.on}:${tradeKey(crew.trade)}`)) continue;
     const rate = rateOn(tradeRates, tradeKey(crew.trade), crew.on);
     const amount = rate ? await convert(labourCost(crew.people, rate.rate, rate.currency), rate.currency, crew.on) : null;
     if (amount === null) { uncosted += 1; continue; }

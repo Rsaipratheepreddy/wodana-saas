@@ -27,6 +27,9 @@ export class MembershipSummaryResponseDto {
   workspaceHeadingFont!: string | null;
   @ApiPropertyOptional({ example: "montserrat", type: String, nullable: true })
   workspaceBodyFont!: string | null;
+  @ApiPropertyOptional({ example: "en-AE", type: String, nullable: true }) workspaceLocale!: string | null;
+  @ApiPropertyOptional({ example: "AED", type: String, nullable: true }) workspaceCurrency!: string | null;
+  @ApiPropertyOptional({ example: "Asia/Dubai", type: String, nullable: true }) workspaceTimezone!: string | null;
   @ApiPropertyOptional({ type: String, format: "uuid", nullable: true }) accountId!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) accountName!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true, enum: ["owner", "administrator", "member"] })

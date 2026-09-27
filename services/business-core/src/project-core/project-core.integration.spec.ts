@@ -571,7 +571,8 @@ integration("projects core (plan §6.10)", () => {
       await accept(w);
       const { projectId } = await w.as(w.manager).start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership, promiseDate: "2026-10-20" });
       // Sunday to Thursday, with a holiday on Tuesday 6 October.
-      await w.client.query("INSERT INTO hrms_calendars(workspace_id,name,timezone,working_days,holidays) VALUES($1,'Office','Asia/Dubai','{0,1,2,3,4}','{2026-10-06}')", [w.workspaceId]);
+      const calendar = (await w.client.query("INSERT INTO hrms_calendars(workspace_id,name,timezone,working_days) VALUES($1,'Office','Asia/Dubai','{0,1,2,3,4}') RETURNING id", [w.workspaceId])).rows[0].id;
+      await w.client.query("INSERT INTO hrms_holidays(workspace_id,calendar_id,name,starts_on,ends_on) VALUES($1,$2,'Holiday','2026-10-06','2026-10-06')", [w.workspaceId, calendar]);
       const lead = w.work(w.manager);
       const drawings = randomUUID(), production = randomUUID(), install = randomUUID();
       await lead.command(actor, w.workspaceId, projectId, { action: "create", id: drawings, title: "Shop drawings", startDate: "2026-10-01", dueDate: "2026-10-04" });

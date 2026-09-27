@@ -24,17 +24,28 @@ import {
   AllowanceDto,
   AttendanceActionDto,
   CalendarDto,
+  CalendarUpdateDto,
   CancelLeaveDto,
   CaptureDto,
+  CrewDayDecisionDto,
+  CrewDayDto,
+  CrewDayQueryDto,
+  CrewDaySubmitDto,
+  CrewDto,
   DecisionDto,
   EmployeeDto,
   HistoryDto,
+  HolidayDto,
+  HolidayUpdateDto,
   LeaveDto,
   LeaveQueryDto,
   LeaveTypeDto,
   ReviewDto,
   SettingsDto,
+  VersionDto,
+  WorkerDto,
 } from "./hrms.dto";
+import { HrmsCrewsService } from "./hrms-crews.service";
 import { HrmsAccessService } from "./hrms-access.service";
 import { HrmsSettingsService } from "./hrms-settings.service";
 import {
@@ -51,12 +62,70 @@ export class HrmsController {
     private readonly settings: HrmsSettingsService,
     private readonly attendance: HrmsAttendanceService,
     private readonly leave: HrmsLeaveService,
+    private readonly crewsService: HrmsCrewsService,
   ) {}
+  @Get("crews") crews(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+  ) {
+    return this.crewsService.crews(a, w);
+  }
+  @Put("crews") saveCrew(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Body() b: CrewDto,
+  ) {
+    return this.crewsService.saveCrew(a, w, b);
+  }
+  @Put("workers") saveWorker(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Body() b: WorkerDto,
+  ) {
+    return this.crewsService.saveWorker(a, w, b);
+  }
+  @Get("crew-days") crewDays(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Query() q: CrewDayQueryDto,
+  ) {
+    return this.crewsService.crewDays(a, w, q);
+  }
+  @Put("crew-days/:id") saveCrewDay(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: CrewDayDto,
+  ) {
+    return this.crewsService.saveDay(a, w, id, b);
+  }
+  @Post("crew-days/:id/submit") submitCrewDay(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: CrewDaySubmitDto,
+  ) {
+    return this.crewsService.submitDay(a, w, id, b);
+  }
+  @Post("crew-days/:id/decision") decideCrewDay(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: CrewDayDecisionDto,
+  ) {
+    return this.crewsService.decideDay(a, w, id, b);
+  }
   @Get("bootstrap") bootstrap(
     @CurrentActor() a: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) w: string,
   ) {
     return this.settings.bootstrap(a, w);
+  }
+  @Get("calendars") calendars(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+  ) {
+    return this.settings.calendars(a, w);
   }
   @Post("calendars") calendar(
     @CurrentActor() a: RequestActor,
@@ -64,6 +133,38 @@ export class HrmsController {
     @Body() b: CalendarDto,
   ) {
     return this.settings.createCalendar(a, w, b);
+  }
+  @Put("calendars/:id") updateCalendar(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: CalendarUpdateDto,
+  ) {
+    return this.settings.updateCalendar(a, w, id, b);
+  }
+  @Post("calendars/:id/holidays") addHoliday(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: HolidayDto,
+  ) {
+    return this.settings.addHoliday(a, w, id, b);
+  }
+  @Put("holidays/:id") updateHoliday(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: HolidayUpdateDto,
+  ) {
+    return this.settings.updateHoliday(a, w, id, b);
+  }
+  @Post("holidays/:id/remove") removeHoliday(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: VersionDto,
+  ) {
+    return this.settings.removeHoliday(a, w, id, b);
   }
   @Put("settings") configure(
     @CurrentActor() a: RequestActor,
@@ -243,6 +344,7 @@ export class HrmsController {
     HrmsSettingsService,
     HrmsAttendanceService,
     HrmsLeaveService,
+    HrmsCrewsService,
     BrandAssetStorageService,
   ],
 })

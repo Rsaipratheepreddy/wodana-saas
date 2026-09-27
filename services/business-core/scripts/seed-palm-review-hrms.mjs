@@ -120,7 +120,7 @@ const calendar = {
   name: "Palm Living · Sunday to Thursday",
   timezone: "Asia/Dubai",
   workingDays: [0, 1, 2, 3, 4],
-  holidays: ["2026-12-02", "2026-12-03"],
+  holidays: [{ name: "National Day", startsOn: "2026-12-02", endsOn: "2026-12-03" }],
   dayStart: "08:30:00",
   halfDay: "13:00:00",
   dayEnd: "17:30:00",
@@ -232,20 +232,26 @@ try {
   }
 
   await client.query(
-    `INSERT INTO hrms_calendars(id,workspace_id,name,timezone,working_days,holidays,day_start,half_day,day_end)
-     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO NOTHING`,
+    `INSERT INTO hrms_calendars(id,workspace_id,name,timezone,working_days,day_start,half_day,day_end)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO NOTHING`,
     [
       calendar.id,
       workspace.id,
       calendar.name,
       calendar.timezone,
       calendar.workingDays,
-      calendar.holidays,
       calendar.dayStart,
       calendar.halfDay,
       calendar.dayEnd,
     ],
   );
+  // A calendar's days off come from its named holidays.
+  for (const holiday of calendar.holidays)
+    await client.query(
+      `INSERT INTO hrms_holidays(workspace_id,calendar_id,name,starts_on,ends_on)
+       SELECT $1,$2,$3,$4,$5 WHERE NOT EXISTS (SELECT 1 FROM hrms_holidays WHERE calendar_id=$2 AND starts_on<=$5 AND ends_on>=$4)`,
+      [workspace.id, calendar.id, holiday.name, holiday.startsOn, holiday.endsOn],
+    );
   await client.query(
     `INSERT INTO hrms_settings(workspace_id,default_calendar_id,fallback_approver_id,max_gps_accuracy_m,max_capture_age_seconds,media_retention_days)
      VALUES($1,$2,$3,100,180,365)

@@ -18,11 +18,16 @@ import {
 import {
   Calendar,
   fingerprint,
+  formatDates,
+  formatDays,
   LeaveUnit,
   leaveUnits,
   localDate,
   zonedInstant,
 } from "./hrms-domain";
+
+const unitDays = (units: LeaveUnit[]) =>
+  units.reduce((sum, unit) => sum + unit.days, 0);
 
 @Injectable()
 export class HrmsLeaveService {
@@ -32,7 +37,7 @@ export class HrmsLeaveService {
       this.access.require(ctx, "hrms.self", "hrms.team", "hrms.manage");
       return (
         await ctx.client.query(
-          `SELECT id,name,annual_days::float AS "annualDays",allow_half_day AS "allowHalfDay",active,version FROM hrms_leave_types WHERE workspace_id=$1 ORDER BY name`,
+          `SELECT id,name,limited,annual_days::float AS "annualDays",allow_half_day AS "allowHalfDay",paid,active,version FROM hrms_leave_types WHERE workspace_id=$1 ORDER BY name`,
           [workspaceId],
         )
       ).rows;
@@ -48,6 +53,8 @@ export class HrmsLeaveService {
         throw new BadRequestException(
           "Enter a leave name and allowance in half-day increments.",
         );
+      // Unlimited leave (sick, unpaid) has no yearly allowance.
+      const annualDays = input.limited ? input.annualDays : 0;
       const id = input.id ?? randomUUID();
       await ctx.client.query(
         `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
@@ -65,13 +72,15 @@ export class HrmsLeaveService {
       if (sameName.rowCount)
         throw new ConflictException("A leave type with this name exists.");
       const result = await ctx.client.query(
-        `INSERT INTO hrms_leave_types(id,workspace_id,name,annual_days,allow_half_day,active) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,annual_days=EXCLUDED.annual_days,allow_half_day=EXCLUDED.allow_half_day,active=EXCLUDED.active,version=hrms_leave_types.version+1 WHERE hrms_leave_types.workspace_id=EXCLUDED.workspace_id RETURNING version`,
+        `INSERT INTO hrms_leave_types(id,workspace_id,name,limited,annual_days,allow_half_day,paid,active) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,limited=EXCLUDED.limited,annual_days=EXCLUDED.annual_days,allow_half_day=EXCLUDED.allow_half_day,paid=EXCLUDED.paid,active=EXCLUDED.active,version=hrms_leave_types.version+1 WHERE hrms_leave_types.workspace_id=EXCLUDED.workspace_id RETURNING version`,
         [
           id,
           workspaceId,
           input.name.trim(),
-          input.annualDays,
+          input.limited,
+          annualDays,
           input.allowHalfDay,
+          input.paid,
           input.active,
         ],
       );
@@ -81,10 +90,10 @@ export class HrmsLeaveService {
         ctx,
         "leave_type_updated",
         id,
-        { ...input },
+        { ...input, annualDays },
         row.rows[0],
       );
-      return { ...input, id, version: result.rows[0].version };
+      return { ...input, annualDays, id, version: result.rows[0].version };
     });
   }
   balances(actor: RequestActor, workspaceId: string, input: LeaveQueryDto) {
@@ -108,7 +117,7 @@ export class HrmsLeaveService {
       }
       const types = (
         await ctx.client.query(
-          `SELECT id,name,annual_days::float AS days FROM hrms_leave_types WHERE workspace_id=$1 AND active`,
+          `SELECT id,name,limited,annual_days::float AS days FROM hrms_leave_types WHERE workspace_id=$1 AND active ORDER BY name`,
           [workspaceId],
         )
       ).rows;
@@ -126,17 +135,19 @@ export class HrmsLeaveService {
             )
           ).rows[0];
           const usage = await this.usage(ctx, member, type.id, year);
-          const allowance = row?.days ?? type.days;
+          const allowance = type.limited ? (row?.days ?? type.days) : null;
           result.push({
             membershipId: member,
             name: e.name,
             leaveTypeId: type.id,
             leaveTypeName: type.name,
             year,
+            limited: type.limited,
             allowance,
             used: usage.used,
             pending: usage.pending,
-            available: allowance - usage.used - usage.pending,
+            available:
+              allowance === null ? null : allowance - usage.used - usage.pending,
             version: row?.version ?? 0,
           });
         }
@@ -151,11 +162,13 @@ export class HrmsLeaveService {
       await this.access.lock(ctx, input.membershipId);
       if (input.days * 2 !== Math.floor(input.days * 2))
         throw new BadRequestException("Allowances use half-day increments.");
-      const type = await ctx.client.query(
-        `SELECT 1 FROM hrms_leave_types WHERE workspace_id=$1 AND id=$2`,
+      const type = await ctx.client.query<{ limited: boolean }>(
+        `SELECT limited FROM hrms_leave_types WHERE workspace_id=$1 AND id=$2`,
         [workspaceId, input.leaveTypeId],
       );
       if (!type.rowCount) throw new NotFoundException("Leave type not found.");
+      if (!type.rows[0].limited)
+        throw new BadRequestException("This leave type has no allowance.");
       const before = (
         await ctx.client.query(
           `SELECT * FROM hrms_leave_allowances WHERE workspace_id=$1 AND membership_id=$2 AND leave_type_id=$3 AND year=$4`,
@@ -192,6 +205,31 @@ export class HrmsLeaveService {
       );
       return { ...input, version: result.rows[0].version };
     });
+  }
+  /** The words a notice about one leave request uses. */
+  private async detail(ctx: HrmsContext, id: string) {
+    const row = (
+      await ctx.client.query<{
+        person: string;
+        leaveType: string;
+        startDate: string;
+        endDate: string;
+        units: LeaveUnit[];
+      }>(
+        `SELECT u.display_name AS person,t.name AS "leaveType",l.start_date::text AS "startDate",l.end_date::text AS "endDate",l.units
+           FROM hrms_leave_requests l JOIN hrms_leave_types t ON t.workspace_id=l.workspace_id AND t.id=l.leave_type_id
+           JOIN workspace_memberships m ON m.workspace_id=l.workspace_id AND m.id=l.membership_id JOIN users u ON u.id=m.user_id
+          WHERE l.workspace_id=$1 AND l.id=$2`,
+        [ctx.workspaceId, id],
+      )
+    ).rows[0];
+    const locale = await this.access.locale(ctx);
+    return {
+      person: row.person,
+      leaveType: row.leaveType,
+      dates: formatDates(row.startDate, row.endDate, locale),
+      days: formatDays(unitDays(row.units)),
+    };
   }
   private async usage(
     ctx: HrmsContext,
@@ -233,8 +271,14 @@ export class HrmsLeaveService {
       }
       if (input.reason.trim().length < 3)
         throw new BadRequestException("Give a reason for your leave.");
-      const type = await ctx.client.query(
-        `SELECT id,annual_days::float AS days,allow_half_day FROM hrms_leave_types WHERE workspace_id=$1 AND id=$2 AND active FOR SHARE`,
+      const type = await ctx.client.query<{
+        id: string;
+        name: string;
+        days: number;
+        limited: boolean;
+        allow_half_day: boolean;
+      }>(
+        `SELECT id,name,annual_days::float AS days,limited,allow_half_day FROM hrms_leave_types WHERE workspace_id=$1 AND id=$2 AND active FOR SHARE`,
         [workspaceId, input.leaveTypeId],
       );
       if (!type.rowCount)
@@ -272,6 +316,7 @@ export class HrmsLeaveService {
       )) {
         if (year < 2000 || year > 2200)
           throw new BadRequestException("Choose a supported leave year.");
+        if (!type.rows[0].limited) continue;
         await ctx.client.query(
           `INSERT INTO hrms_leave_allowances(workspace_id,membership_id,leave_type_id,year,days) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
           [
@@ -320,6 +365,23 @@ export class HrmsLeaveService {
         ...input,
         units,
       });
+      const locale = await this.access.locale(ctx);
+      await this.access.notify(ctx, [
+        {
+          code: "hrms.leave_requested",
+          users: await this.access.approvers(ctx, ctx.membershipId),
+          variables: {
+            person: employee.name,
+            leaveType: type.rows[0].name,
+            dates: formatDates(input.startDate, input.endDate, locale),
+            days: formatDays(unitDays(units)),
+            note: input.reason.trim(),
+          },
+          deepLink: `/workspace/hrms/team?leave=${result.rows[0].id}`,
+          key: `hrms.leave_requested:${result.rows[0].id}`,
+          email: true,
+        },
+      ]);
       return result.rows[0];
     });
   }
@@ -391,6 +453,18 @@ export class HrmsLeaveService {
         { status, reason: input.reason },
         row,
       );
+      if (status === "cancellation_pending") {
+        const detail = await this.detail(ctx, id);
+        await this.access.notify(ctx, [
+          {
+            code: "hrms.leave_cancellation_requested",
+            users: await this.access.approvers(ctx, ctx.membershipId),
+            variables: { ...detail, note: input.reason.trim() },
+            deepLink: `/workspace/hrms/team?leave=${id}`,
+            key: `hrms.leave_cancellation_requested:${id}`,
+          },
+        ]);
+      }
       return { id, status };
     });
   }
@@ -462,6 +536,27 @@ export class HrmsLeaveService {
         { status, reason: input.reason },
         row,
       );
+      const code =
+        row.status === "cancellation_pending"
+          ? status === "cancelled"
+            ? "hrms.leave_cancelled"
+            : "hrms.leave_cancellation_refused"
+          : status === "approved"
+            ? "hrms.leave_approved"
+            : "hrms.leave_rejected";
+      await this.access.notify(ctx, [
+        {
+          code,
+          users: await this.access.userOf(ctx, row.membership_id),
+          variables: {
+            ...(await this.detail(ctx, id)),
+            note: input.reason.trim(),
+          },
+          deepLink: `/workspace/hrms/leave?request=${id}`,
+          key: `${code}:${id}`,
+          email: code === "hrms.leave_approved" || code === "hrms.leave_rejected",
+        },
+      ]);
       return { id, status };
     });
   }

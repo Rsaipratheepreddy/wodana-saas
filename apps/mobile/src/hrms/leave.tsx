@@ -195,8 +195,10 @@ export function Leave({
 function LeaveBalanceCard({ balance: b, team }: { balance: LeaveBalance; team: boolean }) {
   const { colors } = useTheme();
   const circumference = 2 * Math.PI * 34;
-  const used = Math.min(1, Math.max(0, b.allowance > 0 ? b.used / b.allowance : 0));
-  const pending = Math.min(1 - used, Math.max(0, b.allowance > 0 ? b.pending / b.allowance : 0));
+  // Unlimited leave (sick, unpaid) has no allowance: only what was taken and what waits.
+  const allowance = b.allowance ?? 0;
+  const used = Math.min(1, Math.max(0, allowance > 0 ? b.used / allowance : 0));
+  const pending = Math.min(1 - used, Math.max(0, allowance > 0 ? b.pending / allowance : 0));
   return <Card>
     <View style={{ gap: 3 }}>
       <Text weight="semibold">{b.leaveTypeName}</Text>
@@ -213,11 +215,11 @@ function LeaveBalanceCard({ balance: b, team }: { balance: LeaveBalance; team: b
               strokeDasharray={`${pending * circumference} ${circumference}`} strokeDashoffset={-used * circumference} rotation={-90} origin="44, 44" />}
           </Svg>
         </View>
-        <Text weight="semibold" size="xl">{b.available}</Text>
-        <Text size="2xs" tone="textSecondary">available</Text>
+        <Text weight="semibold" size="xl">{b.available ?? b.used}</Text>
+        <Text size="2xs" tone="textSecondary">{b.available === null ? "used" : "available"}</Text>
       </View>
       <View style={{ gap: 7, flex: 1 }}>
-        <Text size="sm" weight="medium">{b.allowance} days annually</Text>
+        <Text size="sm" weight="medium">{b.allowance === null ? "No yearly limit" : `${b.allowance} days annually`}</Text>
         {[{ label: 'Used', value: b.used, color: colors.actionPrimary }, { label: 'Pending', value: b.pending, color: colors.textSecondary }].map(item =>
           <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
             <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: item.color }} />
