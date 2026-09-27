@@ -108,7 +108,8 @@
 @media(max-width:90rem){.scheduleLayout{grid-template-columns:minmax(0,1fr)}.calendarSide{display:none}}
 
 /* Unified workspace calendar: the surrounding workspace shell keeps its sidebar. */
-.calendar { --cal-event-blue:color-mix(in srgb,var(--wd-color-surface) 80%,#9bbcff); --cal-event-warm:color-mix(in srgb,var(--wd-color-surface) 80%,#ffb98d); --cal-event-purple:color-mix(in srgb,var(--wd-color-surface) 80%,#baa9f7); padding:0 var(--wd-space-5) var(--wd-space-2); background:var(--wd-color-surface); }
+.provider, .calendar { --cal-event-blue:color-mix(in srgb,var(--wd-color-surface) 80%,#9bbcff); --cal-event-warm:color-mix(in srgb,var(--wd-color-surface) 80%,#ffb98d); --cal-event-purple:color-mix(in srgb,var(--wd-color-surface) 80%,#baa9f7); }
+.calendar { padding:0 var(--wd-space-5) var(--wd-space-2); background:var(--wd-color-surface); }
 .pageHeader { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--wd-space-1-5) var(--wd-space-4); min-block-size:3.2rem; padding-block:var(--wd-space-1) var(--wd-space-2); margin-block-end:var(--wd-space-2); border-block-end:1px solid var(--wd-color-structural-divider); }
 .topActions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:var(--wd-space-2); }
 .topActions .search { inline-size:12rem; }
@@ -188,3 +189,12 @@
 .formActions { display:flex; justify-content:flex-end; gap:var(--wd-space-2); }
 @media (max-width:55rem) { .pageHeader { align-items:flex-start; } .topActions { justify-content:flex-start; inline-size:100%; } .topActions .search { inline-size:min(100%,12rem); } .calendarLayout { block-size:calc(100dvh - 3.5rem); } }
 @media (max-width:35rem) { .calendar { padding-inline:var(--wd-space-2); } .periodBar { align-items:flex-start; } .scopeFilters { inline-size:100%; } .formColumns { grid-template-columns:1fr; } }
+
+/* Overlap folds: the lanes past the readable limit sit behind one quiet "+N" strip at the inline end. */
+.moreLane { position:absolute; inset-inline-end:3px; inline-size:calc(2.25rem - 6px); display:flex; align-items:flex-start; justify-content:center; padding-block-start:var(--wd-space-1); border:0; border-radius:var(--wd-radius-sm); background:var(--wd-color-surface-muted); color:var(--wd-color-text-secondary); font:inherit; font-size:var(--wd-text-2xs); font-weight:650; line-height:1.2; cursor:pointer; }
+.moreLane:hover { background:var(--crm-accent-soft); color:var(--crm-accent); }
+.moreLane:focus-visible { outline:2px solid var(--wd-color-focus); outline-offset:-2px; }
+.moreList { display:grid; gap:var(--wd-space-1); }
+.moreList .event { margin-block:0; padding:var(--wd-space-2); border-radius:var(--wd-radius-xs); background:var(--cal-event-blue); color:var(--wd-color-text); }
+.moreList .event[data-provider=project] { background:var(--cal-event-warm); }
+.moreList .event[data-kind=call] { background:var(--cal-event-purple); }
