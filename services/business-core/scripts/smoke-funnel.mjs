@@ -378,9 +378,10 @@ await request(`${workflowPath}/${projectWorkflowTemplateId}`, {
   },
 });
 
+// Every workspace is provisioned with a default "sales" pipeline; the smoke keeps its own next to it.
 const pipeline = await request(`/workspaces/${workspaceId}/crm/pipelines`, {
   body: {
-    code: "sales",
+    code: "smoke_sales",
     name: "Sales",
     isDefault: true,
     stages: [

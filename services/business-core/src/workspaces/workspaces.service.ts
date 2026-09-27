@@ -67,6 +67,7 @@ import {
 import { ConfigurationRevisionsService } from "./configuration-revisions.service";
 import { invitationGreetingName, placeholderDisplayName } from "./invitation-recipient";
 import { parseRoleTemplateCodes, roleTemplatesFor } from "./role-templates";
+import { parseSalesPipelineTemplate, seedDefaultSalesPipeline } from "../crm/default-sales-pipeline";
 import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
 
 interface WorkspaceRow {
@@ -210,6 +211,7 @@ export class WorkspacesService {
           await this.insertOnboarding(client, workspaceId);
           await this.insertDefaultSequences(client, workspaceId, legalEntityId, input.firstLegalEntity.code);
           await this.insertDefaultCrmAutomations(client, workspaceId);
+          await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(undefined));
           await seedDefaultNotificationTemplates(client, workspaceId);
           await client.query(
             `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
@@ -396,6 +398,8 @@ export class WorkspacesService {
         );
         await this.insertDefaultCrmAutomations(client, workspaceId);
         await seedDefaultNotificationTemplates(client, workspaceId);
+        // The kit's Sales pipeline, so a salesperson's first conversion needs no CRM-settings permission.
+        await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(setup?.firmKit.configuration.salesPipeline));
         if (setup) {
           const workflow = parseProjectWorkflowTemplate(setup.firmKit.configuration.projectWorkflow);
           await client.query(
@@ -599,6 +603,7 @@ export class WorkspacesService {
       input.firstLegalEntity.code,
     );
     await this.insertDefaultCrmAutomations(client, workspaceId);
+    await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(undefined));
           await seedDefaultNotificationTemplates(client, workspaceId);
     await client.query(
       `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
@@ -4317,6 +4322,7 @@ export class WorkspacesService {
     const plan = profiles.rows.find((profile) => profile.kind === "plan")!;
     parseProjectWorkflowTemplate(firmKit.configuration.projectWorkflow);
     parseRoleTemplateCodes(firmKit.configuration.roleTemplates);
+    parseSalesPipelineTemplate(firmKit.configuration.salesPipeline);
     if (!Number.isInteger(plan.configuration.seatLimit) || Number(plan.configuration.seatLimit) < 1
       || !Number.isInteger(plan.configuration.projectLimit) || Number(plan.configuration.projectLimit) < 1
       || !["monthly", "yearly", "custom"].includes(String(plan.configuration.billingCycle))) {

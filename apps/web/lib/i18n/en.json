@@ -9367,5 +9367,6 @@
   "No limit set": "No limit set",
   "Storage by area": "Storage by area",
   "Return for changes": "Return for changes",
-  "The discount is above {percent}% and needs approval": "The discount is above {percent}% and needs approval"
+  "The discount is above {percent}% and needs approval": "The discount is above {percent}% and needs approval",
+  "No sales pipeline is set up yet. Ask a workspace administrator to add one in Sales settings.": "No sales pipeline is set up yet. Ask a workspace administrator to add one in Sales settings."
 }

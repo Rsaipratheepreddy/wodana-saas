@@ -63,7 +63,7 @@ const slaPolicy = await request(`/workspaces/${workspaceId}/crm/sla-policies`, {
 const updatedSlaPolicy = await request(`/workspaces/${workspaceId}/crm/sla-policies/${slaPolicy.id}`, { method: "PATCH", expected: 200, body: { version: slaPolicy.version, name: "First response SLA", warningAfterMinutes: 0, breachAfterMinutes: 45 } });
 assert.equal(updatedSlaPolicy.breachAfterMinutes, 45);
 
-const pipeline = await request(`/workspaces/${workspaceId}/crm/pipelines`, { body: { code: "sales", name: "Sales", isDefault: true, stages: [{ code: "qualified", name: "Qualified", position: 1, probability: 30, forecastCategory: "pipeline", entryRequirements: { nextAction: true } }, { code: "commit", name: "Commit", position: 2, probability: 80, forecastCategory: "commit", entryRequirements: { amount: true, expectedCloseAt: true, owner: true } }] } });
+const pipeline = await request(`/workspaces/${workspaceId}/crm/pipelines`, { body: { code: "smoke_sales", name: "Sales", isDefault: true, stages: [{ code: "qualified", name: "Qualified", position: 1, probability: 30, forecastCategory: "pipeline", entryRequirements: { nextAction: true } }, { code: "commit", name: "Commit", position: 2, probability: 80, forecastCategory: "commit", entryRequirements: { amount: true, expectedCloseAt: true, owner: true } }] } });
 assert.equal(pipeline.stages.length, 2);
 const updatedPipeline = await request(`/workspaces/${workspaceId}/crm/pipelines/${pipeline.id}`, { method: "PATCH", expected: 200, body: { version: pipeline.version, name: "Global sales", isDefault: true } });
 assert.equal(updatedPipeline.name, "Global sales");

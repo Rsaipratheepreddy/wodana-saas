@@ -151,6 +151,32 @@ integration("control plane with PostgreSQL", () => {
     await owner.query(`UPDATE workspace_invitations SET status = 'accepted', accepted_at = now() WHERE workspace_id = $1`, [workspaceId]);
   });
 
+  it("opens with the firm's people to invite into and a default Sales pipeline", async () => {
+    const roles = await owner.query<{ code: string; isSystem: boolean; permissions: number }>(
+      `SELECT role.code, role.is_system AS "isSystem", count(granted.permission_id)::int AS permissions
+         FROM roles role LEFT JOIN role_permissions granted ON granted.role_id = role.id
+        WHERE role.workspace_id = $1 GROUP BY role.id ORDER BY role.code`, [workspaceId]);
+    expect(roles.rows.map((role) => role.code)).toEqual([
+      "administrator", "finance_reviewer", "member", "operations_approver", "owner", "project_manager", "quantity_surveyor", "sales", "site_supervisor", "viewer",
+    ]);
+    const byCode = Object.fromEntries(roles.rows.map((role) => [role.code, role]));
+    expect(byCode.sales).toMatchObject({ isSystem: false, permissions: 19 });
+    expect(byCode.project_manager.permissions).toBeGreaterThan(byCode.site_supervisor.permissions);
+    const salesPermissions = await owner.query<{ code: string }>(
+      `SELECT permission.code FROM role_permissions granted JOIN roles role ON role.id = granted.role_id
+         JOIN permissions permission ON permission.id = granted.permission_id
+        WHERE role.workspace_id = $1 AND role.code = 'sales' ORDER BY permission.code`, [workspaceId]);
+    const codes = salesPermissions.rows.map((row) => row.code);
+    expect(codes).toEqual(expect.arrayContaining(["crm.leads.manage", "crm.opportunities.manage", "pre_projects.create", "pre_projects.edit"]));
+    expect(codes.some((code) => code.startsWith("commercial.") || code === "crm.settings.manage")).toBe(false);
+
+    const pipelines = await owner.query<{ code: string; isDefault: boolean; status: string; stages: number }>(
+      `SELECT pipeline.code, pipeline.is_default AS "isDefault", pipeline.status,
+              (SELECT count(*)::int FROM crm_pipeline_stages stage WHERE stage.pipeline_id = pipeline.id AND stage.status = 'active') AS stages
+         FROM crm_pipelines pipeline WHERE pipeline.workspace_id = $1`, [workspaceId]);
+    expect(pipelines.rows).toEqual([{ code: "sales", isDefault: true, status: "active", stages: 5 }]);
+  });
+
   it("lists the account for operators only", async () => {
     const listed = await directory.list(operatorA, { search: slug });
     expect(listed.accounts).toHaveLength(1);

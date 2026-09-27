@@ -249,6 +249,8 @@ export type LeadsPageData = {
   currentMembershipId?: string;
   /** Role codes of the signed-in member; sources limited to roles are hidden from others. */
   currentRoles?: string[];
+  /** Whether the signed-in member may create a Sales pipeline (CRM settings); everyone else converts into the seeded one. */
+  canManagePipelines?: boolean;
   leadOptions?: LeadOptions;
   enquiryFields?: EnquiryFieldsState;
   canView: boolean;
