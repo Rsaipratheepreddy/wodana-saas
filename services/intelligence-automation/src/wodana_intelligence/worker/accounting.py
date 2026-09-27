@@ -55,3 +55,15 @@ async def poll_project_reminders(core: Any) -> None:
         except Exception:
             logger.warning("Project reminders will retry; check business-core health")
         await asyncio.sleep(900)
+
+
+async def poll_control_plane(core: Any) -> None:
+    """Grace, suspension, support-session expiry and custom-domain checks, every five minutes."""
+    while True:
+        try:
+            await core._internal_request("POST", "/internal/control-plane/sweep")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("Control-plane sweep will retry; check business-core health")
+        await asyncio.sleep(300)

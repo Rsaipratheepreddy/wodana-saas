@@ -159,8 +159,10 @@ export class IdentityService {
         [actorUser.userId],
       ),
     );
+    // A suspended organization stays readable (changes are refused by the write-block guard).
+    const readable = (status: string) => status === "active" || status === "suspended";
     const unavailableOrganizations = memberships.rows
-      .filter((membership) => membership.workspaceStatus !== "active")
+      .filter((membership) => !readable(membership.workspaceStatus))
       .map((membership) => ({
         workspaceId: membership.workspaceId,
         workspaceName: membership.workspaceName,
@@ -169,7 +171,7 @@ export class IdentityService {
         accountName: membership.accountName,
       }));
     const withRoles = [];
-    for (const membership of memberships.rows.filter((item) => item.workspaceStatus === "active")) {
+    for (const membership of memberships.rows.filter((item) => readable(item.workspaceStatus))) {
       const tenantAccess = await this.database.tenantTransaction(
         membership.workspaceId,
         actorUser.userId,

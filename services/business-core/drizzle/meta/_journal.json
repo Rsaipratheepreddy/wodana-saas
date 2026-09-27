@@ -547,6 +547,13 @@
       "when": 1796040000000,
       "tag": "0077_quote_custom_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1796126400000,
+      "tag": "0078_control_plane_console",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,7 @@ import { EmailModule } from "../email/email.module";
 import { MfaService } from "./mfa.service";
 import { PlatformAuthController } from "./platform-auth.controller";
 import { PlatformAuthService } from "./platform-auth.service";
+import { TenantWriteBlockGuard } from "./tenant-write-block.guard";
 
 @Global()
 @Module({
@@ -23,6 +24,11 @@ import { PlatformAuthService } from "./platform-auth.service";
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
+    },
+    // Runs after sign-in is checked: a suspended organization reads and exports but does not change.
+    {
+      provide: APP_GUARD,
+      useClass: TenantWriteBlockGuard,
     },
   ],
   exports: [IdentityService, LocalAuthService, PlatformAuthService],

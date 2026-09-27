@@ -7,7 +7,11 @@ import redis.asyncio as redis
 from wodana_intelligence.config import get_settings
 from wodana_intelligence.container import get_google_integration_service, get_provider_service
 from wodana_intelligence.integrations.business_core import BusinessCoreClient
-from wodana_intelligence.worker.accounting import poll_accounting, poll_project_reminders
+from wodana_intelligence.worker.accounting import (
+    poll_accounting,
+    poll_control_plane,
+    poll_project_reminders,
+)
 from wodana_intelligence.worker.accounting_sync import poll_postings
 from wodana_intelligence.worker.adapters import notification_adapter
 from wodana_intelligence.worker.runtime import CrmWorker
@@ -58,6 +62,7 @@ async def run() -> None:
         accounting_task = asyncio.create_task(poll_accounting(business_core, providers))
         postings_task = asyncio.create_task(poll_postings(business_core, providers))
         project_reminders_task = asyncio.create_task(poll_project_reminders(business_core))
+        control_plane_task = asyncio.create_task(poll_control_plane(business_core))
         try:
             while not stop.is_set():
                 await worker.consume_once()
@@ -66,11 +71,13 @@ async def run() -> None:
             accounting_task.cancel()
             postings_task.cancel()
             project_reminders_task.cancel()
+            control_plane_task.cancel()
             await asyncio.gather(
                 timer_task,
                 accounting_task,
                 postings_task,
                 project_reminders_task,
+                control_plane_task,
                 return_exceptions=True,
             )
     finally:

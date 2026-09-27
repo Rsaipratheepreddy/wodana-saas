@@ -177,7 +177,7 @@ export class LocalAuthService {
          WHERE membership.workspace_id = $1
            AND membership.user_id = $2
            AND membership.status = 'active'
-           AND workspace.status = 'active'`,
+           AND workspace.status IN ('active', 'suspended')`,
         [branding.rows[0].workspaceId, user.id],
       ))
       : null;
@@ -209,7 +209,7 @@ export class LocalAuthService {
        FROM workspace_memberships membership
        JOIN workspaces workspace ON workspace.id = membership.workspace_id
        JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id
-       WHERE membership.user_id = $1 AND membership.status = 'active' AND workspace.status = 'active'
+       WHERE membership.user_id = $1 AND membership.status = 'active' AND workspace.status IN ('active', 'suspended')
        ORDER BY lower(COALESCE(branding.display_name, workspace.name))`,
       [userId],
     ));
@@ -697,7 +697,7 @@ export class LocalAuthService {
          WHERE membership.workspace_id = $1
            AND membership.user_id = $2
            AND membership.status = 'active'
-           AND workspace.status = 'active'`,
+           AND workspace.status IN ('active', 'suspended')`,
         [branding.rows[0].workspaceId, user.rows[0].id],
       ))
       : null;
@@ -827,7 +827,7 @@ export class LocalAuthService {
        WHERE membership.workspace_id = $1
          AND membership.user_id = $2
          AND membership.status = 'active'
-         AND workspace.status = 'active'`,
+         AND workspace.status IN ('active', 'suspended')`,
       [workspaceId, userId],
     ));
     if (!membership.rowCount) throw new ForbiddenException("Workspace access is required");

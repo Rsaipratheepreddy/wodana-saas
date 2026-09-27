@@ -162,6 +162,23 @@ export class TransactionalEmailService {
     return this.send({ to: input.to, subject: input.subject, text, html, fromName: brand.name });
   }
 
+  /**
+   * A control-plane alert for Wodana operators (a tenant went into grace, was suspended, lost its domain).
+   * Operators are Wodana staff, so the message carries the Wodana brand and links to the control console.
+   */
+  async sendOperatorNotice(input: { to: string; subject: string; body: string; consolePath?: string | null }): Promise<EmailDeliveryResult> {
+    const paragraphs = input.body.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+    const url = input.consolePath ? new URL(input.consolePath, this.origin()).toString() : null;
+    const { html, text } = renderBrandedEmail({
+      brand: WODANA_BRAND,
+      preheader: input.subject,
+      heading: input.subject,
+      paragraphs,
+      ...(url ? { action: { label: "Open in Wodana Control", url } } : {}),
+    });
+    return this.send({ to: input.to, subject: input.subject, text, html, fromName: WODANA_BRAND.name });
+  }
+
   /** A client portal code by email (to sign in, or to confirm a decision), in the tenant's brand. */
   async sendPortalCode(input: { workspaceId: string; to: string; code: string; purpose: "sign_in" | "decision" }): Promise<EmailDeliveryResult> {
     const brand = await this.brand({ workspaceId: input.workspaceId });

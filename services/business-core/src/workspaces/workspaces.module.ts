@@ -9,6 +9,7 @@ import { InternalTenantsController } from "./internal-tenants.controller";
 import { BrandAssetStorageService } from "./brand-asset-storage.service";
 import { PublicBrandingController } from "./public-branding.controller";
 import { EmailModule } from "../email/email.module";
+import { ControlPlaneModule } from "../control-plane/control-plane.module";
 import { TenantManagementService } from "./tenant-management.service";
 import { WorkspaceBillingController } from "./workspace-billing.controller";
 import { CustomerAccountsController } from "./customer-accounts.controller";
@@ -26,7 +27,7 @@ import { TaxNumberingController } from "./tax-numbering.controller";
 import { TaxNumberingService } from "./tax-numbering.service";
 
 @Module({
-  imports: [EmailModule],
+  imports: [EmailModule, ControlPlaneModule],
   controllers: [
     MemberProfileController,
     WorkspacesController,

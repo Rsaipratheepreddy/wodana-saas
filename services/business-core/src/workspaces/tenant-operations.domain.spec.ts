@@ -159,7 +159,8 @@ describe("account billing authority", () => {
       now: new Date("2026-09-18T08:00:00.000Z"),
     };
     expect(planBillingAllocation(allocation)).toMatchObject({ seatLimit: 10, projectLimit: 80 });
-    expect(() => planBillingAllocation({ ...allocation, seatLimit: 5 })).toThrow("reserved seats");
+    // A downgrade below the seats in use is allowed: members stay, new invites are refused by the seat check.
+    expect(planBillingAllocation({ ...allocation, seatLimit: 5 })).toMatchObject({ seatLimit: 5 });
     expect(() => planBillingAllocation({ ...allocation, allocatedAmount: 90000 })).toThrow("exceed");
   });
 

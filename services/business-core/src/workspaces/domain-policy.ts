@@ -1,7 +1,8 @@
 import { isIP } from "node:net";
 import { BadRequestException } from "@nestjs/common";
 
-const BASE_DOMAIN = "wodana.ai";
+/** The platform domain every organization signs in under (`<slug>.wodana.ai`) until its own domain is live. */
+export const BASE_DOMAIN = "wodana.ai";
 const DOMAIN_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 export function normalizeCustomDomain(value: string): string {

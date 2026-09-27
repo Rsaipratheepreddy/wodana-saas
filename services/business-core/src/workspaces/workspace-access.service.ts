@@ -144,7 +144,7 @@ export class WorkspaceAccessService {
        WHERE membership.workspace_id = $1
          AND membership.user_id = $2
          AND membership.status = 'active'
-         AND workspace.status = 'active'`,
+         AND workspace.status IN ('active', 'suspended')`,
       [workspaceId, userId],
     );
     if (!membership.rowCount) {

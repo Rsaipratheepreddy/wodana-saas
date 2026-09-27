@@ -10,6 +10,7 @@ import { HealthModule } from "./health/health.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
 import { ReferenceModule } from "./reference/reference.module";
 import { WorkspacesModule } from "./workspaces/workspaces.module";
+import { ControlPlaneModule } from "./control-plane/control-plane.module";
 import { validateRuntimeConfig } from "./config/runtime-config";
 import { CrmPartiesModule } from "./crm/parties/crm-parties.module";
 import { CrmSharedModule } from "./crm/shared/crm-shared.module";
@@ -77,6 +78,7 @@ import { InventoryModule } from "./inventory/inventory.module";
     IntegrationsModule,
     ReferenceModule,
     WorkspacesModule,
+    ControlPlaneModule,
     PreProjectsModule,
     CommercialModule,
     ClientPortalModule,
