@@ -1615,14 +1615,32 @@ class ShowcaseSeed {
           return;
         }
         const contact = enquiry.outcome;
-        if (current.status !== "new") { this.kept(`${reference} · ${current.status}`); return; }
         const followUp = contact.followUp ? dateAt(contact.followUp.days, contact.followUp.hour).toISOString() : undefined;
-        await this.advance(`${reference} · ${contact.channel} logged (${contact.outcome.replace(/_/g, " ")})${followUp ? `, follow-up ${followUp.slice(0, 10)}` : ""}`, false, async () =>
-          this.tryAs(owner, async (actor) => leads.logContact(actor, this.w, lead.id, await this.validated(LogContactDto, {
-            version: current.version, channel: contact.channel, outcome: contact.outcome, note: contact.note, ...(contact.reason ? { reason: contact.reason } : {}), ...(followUp ? { nextActionAt: followUp } : {}),
-          }))));
+        if (current.status === "new") {
+          await this.advance(`${reference} · ${contact.channel} logged (${contact.outcome.replace(/_/g, " ")})`, false, async () =>
+            this.tryAs(owner, async (actor) => leads.logContact(actor, this.w, lead.id, await this.validated(LogContactDto, {
+              version: current.version, channel: contact.channel, outcome: contact.outcome, note: contact.note, ...(contact.reason ? { reason: contact.reason } : {}), ...(followUp ? { nextActionAt: followUp } : {}),
+            }))));
+        } else this.kept(`${reference} · ${current.status}`);
+        // The follow-up is a task on the enquiry, its next action, so it shows in Today and the overdue list.
+        if (followUp && current.status !== "disqualified") await this.followUp(lead.id, lead.partyId, owner, `Follow up with ${enquiry.displayName}`, followUp);
       });
     }
+  }
+
+  /** A pending follow-up task on the lead, due at the given time, marked as its next action (found again by title). */
+  private async followUp(leadId: string, partyId: string, owner: Actor, title: string, dueAt: string) {
+    const { CrmActivitiesService } = await import("../crm/activities/crm-activities.service");
+    const { CreateActivityDto } = await import("../crm/activities/dto/activities.dto");
+    const activities = this.get(CrmActivitiesService);
+    const find = async () => {
+      const list = (await activities.list(owner, this.w, { leadId, limit: 100 } as never)) as unknown as { data: Array<{ id: string; title: string; status: string }> };
+      return list.data.find((row) => row.title === title && row.status === "pending") ?? null;
+    };
+    await this.step(`follow-up task · ${title} (${dueAt.slice(0, 10)})`, find, async () =>
+      this.tryAs(owner, async (actor) => activities.create(actor, this.w, await this.validated(CreateActivityDto, {
+        leadId, partyId, type: "task", title, description: "Call back and book the showroom visit.", ...(owner.membershipId ? { ownerMembershipId: owner.membershipId } : {}), priority: "normal", dueAt, isNextAction: true,
+      }))));
   }
 }
 
