@@ -280,7 +280,8 @@ integration("projects core (plan §6.10)", () => {
       const production = detail.stages.find((stage) => stage.key === "production")!;
       expect(production.checks.find((check) => check.kind === "payment_verified")?.passed).toBe(false);
       expect(detail.next).toMatchObject({ text: "Production payment verified", owner: null });
-      detail = await manager.command(actor, w.workspaceId, projectId, { action: "confirm_check", stageId: production.id, checkKey: "done", version: detail.project.version });
+      // Nothing is made in the factory on this project, so that check passes by itself.
+      expect(production.checks.find((check) => check.kind === "everything_made")?.passed).toBe(true);
       await expect(manager.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: production.id, version: detail.project.version })).rejects.toThrow(/Production payment verified/);
     });
   });
@@ -2322,6 +2323,38 @@ integration("projects core (plan §6.10)", () => {
       await buyer.stock.transferCommand(actor, w.workspaceId, trip, { action: "receive", lines: [{ id: move.lines[0].id, received: "2" }] });
       order = await maker.order(actor, w.workspaceId, wo);
       expect(order.dispatches.map((row) => [row.status, row.received, row.short])).toEqual([["received", "2.0000", false]]);
+    });
+  });
+
+  it("finishes the production stage from the factory's records: everything made and checked", async () => {
+    await world(async (w) => {
+      const { core, projectId, access, all } = await buying(w);
+      const maker = factoryAs(access, w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]);
+      const checker = factoryAs(access, w.manager, ["factory.view", "factory.approve"]);
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const [kitchen, general] = scope.packages;
+      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
+      const worktop = scope.lines.find((line) => line.title === "Worktop")!;
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      // Only the cabinets are made here; the worktop is bought.
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "assign_lines", lineIds: [worktop.id], packageId: general.id, version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: kitchen.id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
+      const settings = await maker.settings(actor, w.workspaceId);
+      await maker.saveSettings(actor, w.workspaceId, { version: settings.settings.version, requireDrawing: false, requirePayment: false, requireMaterials: false, requireCheck: false });
+      await w.client.query("UPDATE project_stages SET status = 'done', completed_at = now(), completed_by = $2 WHERE project_id = $1 AND position < 4", [projectId, w.manager]);
+      await w.client.query("UPDATE project_stages SET status = 'current', started_at = now() WHERE project_id = $1 AND key = 'production'", [projectId]);
+      const made = async () => (await core.get(actor, w.workspaceId, projectId)).stages.find((stage) => stage.key === "production")!.checks.find((check) => check.kind === "everything_made")!.passed;
+      expect(await made()).toBe(false);
+      const joinery = randomUUID(), wo = randomUUID(), report = randomUUID();
+      await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery" });
+      let order = await maker.plan(actor, w.workspaceId, { id: wo, lineId: cabinets.id, quantity: "4.5", workcenterId: joinery, plannedStart: "2026-10-05", plannedEnd: "2026-10-09" });
+      order = await maker.command(actor, w.workspaceId, wo, { action: "release", version: order.order.version });
+      order = await maker.command(actor, w.workspaceId, wo, { action: "start", version: order.order.version });
+      order = await maker.command(actor, w.workspaceId, wo, { action: "report", id: report, good: "4.5" });
+      // With no separate check, approving the output passes it.
+      order = await checker.command(actor, w.workspaceId, wo, { action: "decide_report", reportId: report, decision: "approve", version: order.order.version });
+      expect(order.order.status).toBe("ready");
+      expect(await made()).toBe(true);
     });
   });
 

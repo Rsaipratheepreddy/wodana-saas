@@ -722,6 +722,7 @@ function checkLabel(check: Evaluated["checks"][number], roles: Array<{ key: stri
   if (check.kind === "role_assigned") return `Name the ${roles.find((role) => role.key === check.role)?.label.toLowerCase() ?? "role"}`;
   if (check.kind === "material_list_signed_off") return "Client signed off the material list";
   if (check.kind === "everything_ordered") return "Everything is ordered";
+  if (check.kind === "everything_made") return "Everything is made and checked";
   return "Production payment verified";
 }
 

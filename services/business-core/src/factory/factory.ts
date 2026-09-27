@@ -221,3 +221,16 @@ export function capacity(orders: WorkOrderRow[], workcenters: Workcenter[], cale
     conflicts,
   };
 }
+
+/** Every active scope line of the project's packages made in the factory has passed its checks in full (true when there are none). */
+export async function everythingMade(db: Db, workspaceId: string, projectId: string) {
+  return (await db.query<{ done: boolean }>(
+    `SELECT NOT EXISTS (
+       SELECT 1 FROM project_boq_lines line
+         JOIN project_packages package ON package.workspace_id = line.workspace_id AND package.id = line.package_id AND package.supply = 'make'
+        WHERE line.workspace_id = $1 AND line.project_id = $2 AND line.status = 'active'
+          AND coalesce((SELECT sum(checked.passed) FROM work_order_checks checked
+                          JOIN work_orders wo ON wo.workspace_id = checked.workspace_id AND wo.id = checked.work_order_id
+                         WHERE wo.workspace_id = line.workspace_id AND wo.boq_line_id = line.id AND wo.status <> 'cancelled'), 0) < line.quantity) AS done`,
+    [workspaceId, projectId])).rows[0].done;
+}

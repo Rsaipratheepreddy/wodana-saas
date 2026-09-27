@@ -2723,5 +2723,7 @@
   "{name} (not approved)": "{name} (not approved)",
   "Up to {quantity}.": "Up to {quantity}.",
   "Back by": "Back by",
-  "Only {quantity} at the factory.": "Only {quantity} at the factory."
+  "Only {quantity} at the factory.": "Only {quantity} at the factory.",
+  "Everything is made and checked": "Everything is made and checked",
+  "Open the factory": "Open the factory"
 }

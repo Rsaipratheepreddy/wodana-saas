@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { financeGatePaymentsReady } from "../commercial/release-integrity";
 import { commercialRepository } from "../commercial/commercial-repository";
 import type { CommercialData } from "../commercial/commercial.types";
+import { everythingMade } from "../factory/factory";
 import { everythingOrdered } from "../purchasing/orders";
 import { materialsSignedOff } from "./project-materials";
 import { checkPasses, DEFAULT_ROLES, DEFAULT_STAGES, LEAD_ROLE, type ProjectRole, type StageCheck, type TemplateStage } from "./project-checks";
@@ -146,9 +147,12 @@ export async function evaluateStages(db: Db, workspaceId: string, project: Pick<
   const materialsDone = needsMaterials ? await materialsSignedOff(db, workspaceId, project.id) : false;
   const needsOrders = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "everything_ordered"));
   const ordered = needsOrders ? await everythingOrdered(db, workspaceId, project.id) : false;
+  const needsMade = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "everything_made"));
+  const made = needsMade ? await everythingMade(db, workspaceId, project.id) : false;
   return stages.map((stage) => {
     const mine = confirmations.filter((confirmation) => confirmation.stageId === stage.id);
-    const facts = { filledRoles, confirmed: new Set(mine.map((confirmation) => confirmation.checkKey)), productionPaid: paid, materialsSignedOff: materialsDone, everythingOrdered: ordered };
+    const facts = { filledRoles, confirmed: new Set(mine.map((confirmation) => confirmation.checkKey)), productionPaid: paid, materialsSignedOff: materialsDone, everythingOrdered: ordered,
+      everythingMade: made };
     const checks = stage.checks.map((check) => {
       const confirmation = mine.find((item) => item.checkKey === check.key);
       return { ...check, passed: stage.status === "done" ? true : checkPasses(check, facts), confirmedBy: confirmation?.byName ?? null, confirmedAt: confirmation?.at ?? null, note: confirmation?.note ?? "" };
