@@ -6,7 +6,6 @@ import Image from "next/image";
 import { ArrowLeft, Check, CheckCheck, Clock3, FileText, ImageIcon, Info, MessageCircle, Plus, RefreshCw, Send, Video } from "lucide-react";
 import { MessagingMark } from "@/components/brand/messaging-mark";
 import { ProviderMark } from "@/components/brand/provider-mark";
-import { Globe2 } from "lucide-react";
 import { Avatar, Button, Callout, ControlledModalDialog, EmptyState, IconButton, InspectorSheet, SearchInput, SegmentedControl, SelectField, TextInput, ToggleButton, Skeleton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, label, rows, type RecordData } from "@/lib/crm/client";
@@ -62,7 +61,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
       <section aria-label={t("Customer conversations")} className={styles.threadList}>
         <header className={styles.listHeading}><h1>{t("Inbox")}</h1><div className={styles.actions}><IconButton aria-label={t("Refresh inbox")} size="compact" isLoading={busy} onPress={() => void reload()}><RefreshCw size={16} /></IconButton><IconButton aria-label={t("New conversation")} className={styles.brandButton} variant="primary" size="compact" onPress={() => setCreating(true)}><Plus size={19} /></IconButton></div></header>
         <div className={styles.searchArea}><SearchInput label={t("Search inbox")} placeholder={t("Search conversations")} value={search} maxLength={200} onChange={setSearch} /></div>
-        <div className={styles.channels} aria-label={t("Conversation channels")}>{["all", "whatsapp", "portal"].map(channel => <button key={channel} aria-pressed={channelFilter === channel} onClick={() => setChannelFilter(channel)}>{channel === "whatsapp" ? <span className={styles.channelMark}><ProviderMark provider="whatsapp" /></span> : channel === "portal" ? <Globe2 size={15} /> : null}{channel === "all" ? t("All") : channel === "portal" ? t("Client portal") : "WhatsApp"}</button>)}</div>
+        <div className={styles.channels} aria-label={t("Conversation channels")}>{["all", "whatsapp"].map(channel => <button key={channel} aria-pressed={channelFilter === channel} onClick={() => setChannelFilter(channel)}>{channel === "whatsapp" ? <span className={styles.channelMark}><ProviderMark provider="whatsapp" /></span> : null}{channel === "all" ? t("All") : "WhatsApp"}</button>)}</div>
         <div className={styles.filters}><SegmentedControl label={t("Inbox filters")} options={[{ id: "all", label: t("All") }, { id: "unread", label: t("Unread") }, { id: "closed", label: t("Resolved") }]} value={filter} onChange={setFilter} /></div>
         {failure ? <p className={styles.error} role="alert">{failure} <Button size="compact" variant="quiet" onPress={() => void reload()}>{t("Retry")}</Button></p> : null}
         <div aria-busy={busy} className={styles.threadItems}>{items.map((item) => <ToggleButton key={item.id} className={styles.threadItem} isSelected={selected === item.id} onPress={() => setSelected(item.id)} variant="quiet">
@@ -160,7 +159,7 @@ function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onCl
   const t = useT();
   const [search, setSearch] = useState(""), [contacts, setContacts] = useState<RecordData[]>([]), [failure, setFailure] = useState("");
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
-  const [channel, setChannel] = useState<"email" | "whatsapp" | "portal">("whatsapp");
+  const [channel, setChannel] = useState<"email" | "whatsapp">("whatsapp");
   const saving = useRef(false);
   useEffect(() => {
     const controller = new AbortController(); const timer = setTimeout(() => {
@@ -173,12 +172,10 @@ function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onCl
   }, [workspaceId, search]);
   return <ControlledModalDialog title={t("New conversation")} description={t("Choose the customer and channel. An enquiry is not required.")} isOpen isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
     <div className={styles.newChat}>
-      <SelectField label={t("Channel")} items={[{ id: "whatsapp", label: "WhatsApp" }, { id: "portal", label: t("Client portal") }, { id: "email", label: t("Email") }]} selectedKey={channel} onSelectionChange={(key) => key && setChannel(String(key) as "email" | "whatsapp" | "portal")} />
-      {channel === "portal" ? <Callout title={t("Client portal")}><p>{t("Starting a live portal chat is not available yet.")}</p><Link href="/workspace/settings/client-portal">{t("Open client portal settings")}</Link></Callout> : <>
+      <SelectField label={t("Channel")} items={[{ id: "whatsapp", label: "WhatsApp" }, { id: "email", label: t("Email") }]} selectedKey={channel} onSelectionChange={(key) => key && setChannel(String(key) as "email" | "whatsapp")} />
       <TextInput label={t("Search customers")} value={search} onChange={setSearch} placeholder={channel === "whatsapp" ? t("Name or phone number") : t("Name or email")} />
       {failure ? <Callout title={t("Could not open conversation")} tone="warning">{failure}</Callout> : null}
       {loading ? <Skeleton lines={6} /> : !contacts.length ? <p>{t("No matching customers.")}</p> : <div className={styles.contacts}>{contacts.map((contact) => <Button className={styles.contactItem} key={contact.id} variant="quiet" isDisabled={busy} onPress={async () => { if (saving.current) return; saving.current = true; setBusy(true); setFailure(""); try { const result = await crmRequest(workspaceId, "conversations", "POST", { channel, partyId: contact.id }, timeout()); onOpened(result.id); } catch (error) { setFailure((error as Error).message); saving.current = false; setBusy(false); } }}><Avatar name={String(contact.displayName)} size="sm" /><span>{String(contact.displayName)}</span><MessageCircle size={16} /></Button>)}</div>}
-      </>}
       <small>{t("Only connected channels can deliver outbound messages. Incoming provider messages appear automatically.")}</small>
     </div>
   </ControlledModalDialog>;

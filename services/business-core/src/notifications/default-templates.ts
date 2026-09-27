@@ -134,6 +134,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "handover.refused", channel: "in_app", subject: "{{title}}: handover refused", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "warranty.claim", channel: "in_app", subject: "Warranty claim on {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "warranty.claim", channel: "email", subject: "Warranty claim on {{title}}", body: "{{actor}} recorded a warranty claim for {{clientName}}:\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "request.client_raised", channel: "in_app", subject: "{{actor}} sent a request on {{title}}", body: "{{request}}: {{note}}", variables: ["title", "clientName", "actor", "request", "note"] },
+  { code: "request.client_replied", channel: "in_app", subject: "{{actor}} replied on {{title}}", body: "{{request}}: {{note}}", variables: ["title", "clientName", "actor", "request", "note"] },
   { code: "warranty.expiring", channel: "in_app", subject: "Warranty ending soon · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.over_budget", channel: "in_app", subject: "Over budget · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.cancelled", channel: "in_app", subject: "{{title}} is cancelled", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },

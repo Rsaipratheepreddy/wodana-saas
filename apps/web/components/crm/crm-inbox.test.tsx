@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { crmScreenFixture } from "@/lib/crm/screens";
@@ -33,6 +33,14 @@ describe("CRM inbox", () => {
   });
   it.each([{ lastInboundAt: null }, { lastInboundAt: new Date(Date.now() - 86400001).toISOString() }, { whatsappConnected: false }, { canSend: false }, { status: "closed" }])("blocks replies when the chat is not eligible: %j", async (overrides) => {
     const user = userEvent.setup(), { data, record, fetcher } = setup(overrides);render(<CrmInbox initialData={data} initialRecordId={record.id} />);const input = await screen.findByRole("textbox", { name: "Message" });if (!input.hasAttribute("readonly")) await user.type(input, "Draft");expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();expect(fetcher.mock.calls.some(([url]) => url.includes("/messages?"))).toBe(false);
+  });
+  it("starts a conversation only on a channel that can hold one: WhatsApp or email, never the client portal", async () => {
+    const user = userEvent.setup(), { data, record } = setup();render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await user.click((await screen.findAllByRole("button", { name: "New conversation" }))[0]);
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /Channel/ }));
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["WhatsApp", "Email"]);
+    expect(screen.queryByText(/portal/i)).not.toBeInTheDocument();
   });
   it("resolves using the current conversation version", async () => {
     const user = userEvent.setup(), { data, record, fetcher } = setup();render(<CrmInbox initialData={data} initialRecordId={record.id} />);await user.click(await screen.findByRole("button", { name: "Resolve" }));await waitFor(() => expect(fetcher.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(true));expect(JSON.parse(String(fetcher.mock.calls.find(([, init]) => init?.method === "PATCH")?.[1]?.body))).toEqual({ version: 3, status: "closed" });

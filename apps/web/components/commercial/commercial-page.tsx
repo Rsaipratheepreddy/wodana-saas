@@ -64,6 +64,7 @@ export function CommercialPage({
   quotationPresentation = "table",
   embedded = false,
   projectId,
+  openRequestId,
 }: {
   initial: CommercialState;
   record: PreProjectCase;
@@ -74,6 +75,8 @@ export function CommercialPage({
   quotationPresentation?: "cards" | "table";
   embedded?: boolean;
   projectId?: string;
+  /** A change request to open as the page loads (a notification's link). */
+  openRequestId?: string;
 }) {
   const t = useT();
   const router = useRouter();
@@ -487,6 +490,7 @@ export function CommercialPage({
             run={run}
             busy={busy}
             error={error}
+            openRequestId={openRequestId}
           />
         ) : ["contracts", "payment-plan"].includes(section) ? (
           <AgreementPayments
