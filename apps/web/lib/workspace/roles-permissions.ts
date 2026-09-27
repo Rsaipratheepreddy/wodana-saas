@@ -86,7 +86,7 @@ const ACTION_LABELS: Record<string, string> = {
 
 const EXACT_LABELS: Record<string, string> = {
   "ai.suggestions.use": "Use AI suggestions",
-  "commercial.deal.approve": "Approve Deal File (Owner/Admin for Palm Living)",
+  "commercial.deal.approve": "Approve deal file",
   "commercial.estimate": "Approve QS quotation estimate",
   "commercial.finance.verify": "Verify payment evidence",
   "commercial.override_price": "Override quotation prices",
