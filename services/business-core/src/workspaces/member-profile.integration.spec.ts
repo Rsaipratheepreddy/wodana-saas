@@ -56,6 +56,18 @@ integration("member profile: avatar and photo", () => {
     });
   });
 
+  it("saves the interface language on the user, once, and audits it", async () => {
+    await withMember(async (client, { workspaceId, userId, service }) => {
+      await expect(service.setLanguage(actor, workspaceId, "arabic")).rejects.toThrow(/listed languages/);
+      expect(await service.setLanguage(actor, workspaceId, "ar-AE")).toEqual({ preferredLocale: "ar-AE" });
+      expect(await service.setLanguage(actor, workspaceId, "ar-AE")).toEqual({ preferredLocale: "ar-AE" });
+      const user = await client.query("SELECT preferred_locale FROM users WHERE id=$1", [userId]);
+      expect(user.rows[0].preferred_locale).toBe("ar-AE");
+      const audit = await client.query("SELECT action, before, after FROM audit_events WHERE workspace_id=$1", [workspaceId]);
+      expect(audit.rows).toEqual([{ action: "member.language_changed", before: { preferredLocale: "en" }, after: { preferredLocale: "ar-AE" } }]);
+    });
+  });
+
   it("stores a square photo, replaces the old file, and removes it", async () => {
     await withMember(async (_client, { workspaceId, userId, service, stored }) => {
       const png = await sharp({ create: { width: 400, height: 300, channels: 3, background: "#c0a080" } }).png().toBuffer();

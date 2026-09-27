@@ -1,10 +1,10 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Req, Res } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsIn, IsInt, IsOptional, Min, ValidateIf } from "class-validator";
+import { IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min, ValidateIf } from "class-validator";
 import type { Request, Response } from "express";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
-import { MemberProfileService, PROFILE_PHOTO_MAX_BYTES } from "./member-profile.service";
+import { LANGUAGE_LOCALE_PATTERN, MemberProfileService, PROFILE_PHOTO_MAX_BYTES } from "./member-profile.service";
 
 const PRESETS = [..."ab"].flatMap((set) => Array.from({ length: 10 }, (_, index) => `${set}${String(index + 1).padStart(2, "0")}`));
 
@@ -15,6 +15,11 @@ export class SetAvatarDto {
 
   @IsOptional() @IsInt() @Min(0)
   version?: number;
+}
+
+export class SetLanguageDto {
+  @IsString() @MaxLength(35) @Matches(LANGUAGE_LOCALE_PATTERN)
+  preferredLocale!: string;
 }
 
 @ApiTags("workspace members")
@@ -34,6 +39,12 @@ export class MemberProfileController {
   @ApiOperation({ summary: "Choose a default avatar (null clears the choice)" })
   setAvatar(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: SetAvatarDto) {
     return this.profiles.setAvatar(actor, workspaceId, input);
+  }
+
+  @Put("me/language")
+  @ApiOperation({ summary: "Save my interface language (it follows me to every device)" })
+  setLanguage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: SetLanguageDto) {
+    return this.profiles.setLanguage(actor, workspaceId, input.preferredLocale);
   }
 
   @Post("me/photo")
