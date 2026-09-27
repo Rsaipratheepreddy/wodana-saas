@@ -1,5 +1,6 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { syncBrand } from '../../../packages/brand/sync.mjs';
 
 const app = new URL('../', import.meta.url);
 const web = new URL('../../web/', import.meta.url);
@@ -71,6 +72,8 @@ export async function syncDesign() {
   for (const file of ['wodana-logo-v4.png', 'woddy-mark-v4.png']) {
     await copyFile(new URL(`public/brand/wodana/${file}`, web), new URL(`assets/brand/${file}`, app));
   }
+  // The role avatars and Woddy come from packages/brand (the same copy the web serves).
+  await syncBrand();
   console.log('Synced web colors, type scale, spacing, radii, motion, and original brand assets.');
 }
 
