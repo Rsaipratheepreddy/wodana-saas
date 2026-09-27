@@ -21,6 +21,8 @@ export type BuilderLine = {
   length: string | null; width: string | null; height: string | null; count: string | null; dimensionUnit: string | null;
   /** What it's made of, as written on the quote. */
   material: string;
+  /** Its values in the firm's own columns, by column id. */
+  values: Record<string, string>;
   rate: string; unitCost: string | null; markupPercent: string | null; pricingMode: "rate" | "build_up";
   discountKind: "percent" | "amount" | null; discountValue: string | null; taxCode: string | null; taxRate: string | null;
   optional: boolean | null; optionGroup: string | null; note: string; catalogItemId: string | null;
@@ -47,6 +49,8 @@ export type PaymentMilestone = { id: string; title: string; percent: number; tri
 export type QuoteDiscount = { scope: "quote" | "area" | "trade"; target: string; kind: "percent" | "amount"; value: string; reason: string };
 
 export type BuilderState = {
+  /** The firm's own quote columns, in order. */
+  columns?: QuoteColumn[];
   /** The terms and exclusions the proposal prints. */
   proposal?: { terms: string; exclusions: string };
   /** The unit sizes are written in unless a line says otherwise ("cm", "in"). */
@@ -129,3 +133,6 @@ export type TemplateLine = {
   catalogItemId: string | null; workPackageId: string | null; optional: boolean; components: Array<Partial<BuildUpRow>>; areaName: string | null;
 };
 export type QuoteTemplate = { id: string; name: string; lines: TemplateLine[] };
+
+/** One of the firm's own quote columns ("Brand", "Lead time"); every quote shows it. */
+export type QuoteColumn = { id: string; name: string; kind: "text" | "number"; showInProposal: boolean; version: number };

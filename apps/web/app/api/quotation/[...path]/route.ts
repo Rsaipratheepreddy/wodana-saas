@@ -9,6 +9,8 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "work-packages") return method === "POST";
   if (path.length === 1 && path[0] === "templates") return method === "GET";
   if (path.length === 2 && path[0] === "work-packages" && UUID.test(path[1])) return method === "PATCH";
+  if (path.length === 1 && path[0] === "columns") return method === "POST";
+  if (path.length === 2 && path[0] === "columns" && UUID.test(path[1])) return method === "PATCH";
   if (path[0] !== "cases" || !UUID.test(path[1] ?? "") || path[2] !== "quotes" || !QUOTE_ID.test(path[3] ?? "")) return false;
   if (path.length === 4) return method === "GET";
   if (path.length === 5 && ["catalog", "boq"].includes(path[4])) return method === "GET";

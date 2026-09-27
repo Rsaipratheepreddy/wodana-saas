@@ -44,6 +44,8 @@ type LineRow = {
   imageAssetId: string | null; catalogImageId: string | null;
   /** What it's made of, as written on the quote. */
   material: string;
+  /** Its values in the firm's own columns, by column id. */
+  values: Record<string, string>;
   /** On a variation: what the line does to the agreed scope, and the live BOQ line it changes. */
   changeOp: "add" | "omit" | "move" | null; boqLineId: string | null;
   /** The client requirement this line covers (requirement trace). */
@@ -188,6 +190,7 @@ export class QuotationBuilderService {
       const codes = await taxCodes(client, workspaceId, caseId);
       const taxes = new Map(codes.map((tax) => [tax.code, tax.rate]));
       const requirements = new Set((await caseRequirements(client, workspaceId, caseId)).filter((item) => item.status === "included").map((item) => item.id));
+      const columns = new Map((await quoteColumns(client, workspaceId)).map((column) => [column.id, column.kind]));
       // New lines take the firm's default tax; without tax codes the quote's own rate applies.
       const standard = codes.find((tax) => tax.isDefault);
       const defaultTax = standard ? { taxCode: standard.code, taxRate: standard.rate } : {};
@@ -256,7 +259,7 @@ export class QuotationBuilderService {
             ? { ...current, components: null }
             : { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), markupPercent: settings.defaultMarkupPercent, components: null, ...defaultTax };
           if (kind === "catalog") next = await this.fromCatalog(client, workspaceId, quote, settings, decimals, next, uuid(op.itemId, "Catalog item"));
-          next = applyFields(next, fields, { canEditCosts, areas, trades, taxes, requirements });
+          next = applyFields(next, fields, { canEditCosts, areas, trades, taxes, requirements, columns });
           if (current?.changeOp === "omit") {
             // A removal keeps what it removes; only how much (and its note) can change.
             next = { ...current, components: null, quantity: next.quantity, note: next.note };
@@ -363,6 +366,46 @@ export class QuotationBuilderService {
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.proposal_changed.v1", entityType: "commercial_case", entityId: caseId, after: { quoteId, fields: Object.keys(change) } });
       const quote = (await client.query<{ quote: Record<string, unknown> }>(`SELECT commercial_quote_json(quote) AS quote FROM commercial_quotes quote WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, quoteId])).rows[0].quote;
       return { quote, revision };
+    });
+  }
+
+  /** Adds one of the firm's own quote columns ("Brand", "Lead time"); every quote shows it. */
+  addColumn(actor: RequestActor, workspaceId: string, input: Record<string, unknown>) {
+    return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
+      const id = uuid(input.id, "Column");
+      const name = text(input.name, "Name", 60).trim();
+      const kind = oneOf(input.kind ?? "text", ["text", "number"] as const, "column type");
+      if ((await client.query(`SELECT 1 FROM quotation_columns WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rowCount) return { columns: await quoteColumns(client, workspaceId) };
+      if ((await client.query(`SELECT 1 FROM quotation_columns WHERE workspace_id = $1 AND archived_at IS NULL AND lower(name) = lower($2)`, [workspaceId, name])).rowCount)
+        throw new ConflictException("There's already a column with that name.");
+      if (Number((await client.query<{ count: string }>(`SELECT count(*) FROM quotation_columns WHERE workspace_id = $1 AND archived_at IS NULL`, [workspaceId])).rows[0].count) >= 12)
+        throw new ConflictException("Use up to 12 columns of your own.");
+      await client.query(`INSERT INTO quotation_columns (workspace_id, id, name, kind, position, created_by) VALUES ($1, $2, $3, $4, (SELECT coalesce(max(position), 0) + 1 FROM quotation_columns WHERE workspace_id = $1), $5)`, [workspaceId, id, name, kind, user.userId]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.column_added.v1", entityType: "quotation_column", entityId: id, after: { name, kind } });
+      return { columns: await quoteColumns(client, workspaceId) };
+    });
+  }
+
+  /** Renames one of the firm's quote columns, or removes it (its values stay on sent quotes' records). */
+  changeColumn(actor: RequestActor, workspaceId: string, columnId: string, input: Record<string, unknown>) {
+    return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
+      const current = (await client.query<{ name: string; version: number }>(`SELECT name, version FROM quotation_columns WHERE workspace_id = $1 AND id = $2 AND archived_at IS NULL FOR UPDATE`, [workspaceId, uuid(columnId, "Column")])).rows[0];
+      if (!current) throw new NotFoundException("Column not found.");
+      if (Number(input.version) !== current.version) throw new ConflictException("Someone changed this column. Reload and try again.");
+      if (typeof input.showInProposal === "boolean") {
+        await client.query(`UPDATE quotation_columns SET show_in_proposal = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, columnId, input.showInProposal]);
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.column_shown.v1", entityType: "quotation_column", entityId: columnId, after: { name: current.name, showInProposal: input.showInProposal } });
+      } else if (input.archived === true) {
+        await client.query(`UPDATE quotation_columns SET archived_at = now(), version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, columnId]);
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.column_removed.v1", entityType: "quotation_column", entityId: columnId, before: { name: current.name } });
+      } else {
+        const name = text(input.name, "Name", 60).trim();
+        if ((await client.query(`SELECT 1 FROM quotation_columns WHERE workspace_id = $1 AND archived_at IS NULL AND lower(name) = lower($2) AND id <> $3`, [workspaceId, name, columnId])).rowCount)
+          throw new ConflictException("There's already a column with that name.");
+        await client.query(`UPDATE quotation_columns SET name = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, columnId, name]);
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.column_renamed.v1", entityType: "quotation_column", entityId: columnId, before: { name: current.name }, after: { name } });
+      }
+      return { columns: await quoteColumns(client, workspaceId) };
     });
   }
 
@@ -550,7 +593,11 @@ export class QuotationBuilderService {
           [workspaceId, caseId, quoteId, line.id, position, component.kind, component.catalogItemId, component.name, component.quantityFormula, component.quantity,
             component.unit, component.unitCost, component.rate, component.wastePercent, component.suppliedByClient]);
     }
-    void current;
+    if (JSON.stringify(line.values ?? {}) !== JSON.stringify(current?.values ?? {})) {
+      await client.query(`DELETE FROM commercial_quote_line_values WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND line_id = $4`, [workspaceId, caseId, quoteId, line.id]);
+      for (const [columnId, value] of Object.entries(line.values ?? {}))
+        await client.query(`INSERT INTO commercial_quote_line_values (workspace_id, case_id, quote_id, line_id, column_id, value) VALUES ($1, $2, $3, $4, $5, $6)`, [workspaceId, caseId, quoteId, line.id, columnId, value]);
+    }
   }
 
   /** Prices the quote with the shared engine and keeps its header (total, discount, pricing policy) in step. */
@@ -619,6 +666,8 @@ export class QuotationBuilderService {
       taxCodes: await taxCodes(client, workspaceId, caseId),
       // The choices in the line's unit and material cells: the workspace's units, and its catalog
       // materials with what estimators have written before.
+      // The firm's own columns, in order.
+      columns: await quoteColumns(client, workspaceId),
       // Sizes (length × depth × height) are written in the workspace's unit system unless a line says otherwise.
       sizeUnit: (await client.query<{ unitSystem: string }>(`SELECT unit_system::text AS "unitSystem" FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.unitSystem === "imperial" ? "in" : "cm",
       units: (await client.query<{ code: string; label: string }>(`SELECT code, label FROM catalog_units WHERE workspace_id = $1 ORDER BY label`, [workspaceId])).rows,
@@ -719,8 +768,16 @@ const LINE_SELECT = `SELECT line.id, line.sort_order AS position, line.version, 
   line.discount_kind AS "discountKind", line.discount_value::text AS "discountValue", line.tax_code AS "taxCode", line.tax_rate::text AS "taxRate",
   line.optional, line.option_group AS "optionGroup", line.note, line.catalog_item_id AS "catalogItemId", line.catalog_snapshot AS "catalogSnapshot",
   line.updated_at AS "updatedAt", editor.display_name AS "updatedByName", line.image_asset_id AS "imageAssetId", line.catalog_image_id AS "catalogImageId",
-  line.change_op AS "changeOp", line.boq_line_id AS "boqLineId", line.scope_id AS "scopeId", coalesce(line.material, '') AS material
+  line.change_op AS "changeOp", line.boq_line_id AS "boqLineId", line.scope_id AS "scopeId", coalesce(line.material, '') AS material,
+  coalesce((SELECT jsonb_object_agg(cell.column_id::text, cell.value) FROM commercial_quote_line_values cell
+    WHERE cell.case_id = line.case_id AND cell.quote_id = line.quote_id AND cell.line_id = line.id), '{}'::jsonb) AS values
   FROM commercial_quote_lines line LEFT JOIN users editor ON editor.id = line.updated_by`;
+
+/** The firm's own quote columns still in use, in order. */
+async function quoteColumns(db: Db, workspaceId: string) {
+  return (await db.query<{ id: string; name: string; kind: "text" | "number"; showInProposal: boolean; version: number }>(
+    `SELECT id, name, kind, show_in_proposal AS "showInProposal", version FROM quotation_columns WHERE workspace_id = $1 AND archived_at IS NULL ORDER BY position, lower(name)`, [workspaceId])).rows;
+}
 
 async function readLines(db: Db, workspaceId: string, caseId: string, quoteId: string) {
   return (await db.query<LineRow>(`${LINE_SELECT} WHERE line.workspace_id = $1 AND line.case_id = $2 AND line.quote_id = $3 ORDER BY line.sort_order, line.id`, [workspaceId, caseId, quoteId])).rows.map(tidyLine);
@@ -764,11 +821,11 @@ const blankLine = (id: string): LineRow => ({
   quantity: "1", formula: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: null,
   markupPercent: null, pricingMode: "rate", discountKind: null, discountValue: null, taxCode: null, taxRate: null, optional: null,
   optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, updatedAt: "", updatedByName: null, imageAssetId: null, catalogImageId: null,
-  changeOp: null, boqLineId: null, scopeId: null, material: "",
+  changeOp: null, boqLineId: null, scopeId: null, material: "", values: {},
 });
 
 /** Validates and applies the editor's fields to a line. Costs and markup change only with cost permission. */
-function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fields: Record<string, unknown>, context: { canEditCosts: boolean; areas: Map<string, string>; trades: Set<string>; taxes: Map<string, string>; requirements: Set<string> }) {
+function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fields: Record<string, unknown>, context: { canEditCosts: boolean; areas: Map<string, string>; trades: Set<string>; taxes: Map<string, string>; requirements: Set<string>; columns: Map<string, "text" | "number"> }) {
   const next = { ...line };
   const has = (key: string) => Object.prototype.hasOwnProperty.call(fields, key);
   if (has("kind")) next.kind = oneOf(fields.kind, LINE_KINDS, "line kind");
@@ -777,6 +834,18 @@ function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fie
   if (has("unit")) next.unit = text(fields.unit, "Unit", 20, true);
   if (has("note")) next.note = text(fields.note, "Note", 4000, true);
   if (has("material")) next.material = text(fields.material, "Material", 500, true);
+  // Values in the firm's own columns: only known columns; a number column takes a number; empty clears it.
+  if (has("values")) {
+    const patch = object(fields.values);
+    const values = { ...next.values };
+    for (const [id, raw] of Object.entries(patch)) {
+      const kind = context.columns.get(id);
+      if (!kind) throw new BadRequestException("That column isn't in this workspace's quote columns.");
+      const value = raw === null || raw === undefined ? "" : kind === "number" ? (decimal(raw === "" ? null : raw, "Value", { max: "100000000000", nullable: true }) ?? "") : text(raw, "Value", 1000, true).trim();
+      if (value) values[id] = value; else delete values[id];
+    }
+    next.values = values;
+  }
   if (has("areaId")) next.areaId = area(fields.areaId, context.areas);
   if (has("fromAreaId")) next.fromAreaId = area(fields.fromAreaId, context.areas);
   if (has("workPackageId")) {

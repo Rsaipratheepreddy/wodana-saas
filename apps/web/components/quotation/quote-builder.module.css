@@ -68,6 +68,11 @@
 .columns > span[data-numeric] { justify-content: flex-end; }
 .columns small { color: var(--wd-color-text-tertiary); font-weight: var(--wd-weight-regular); }
 .columns svg { flex: none; color: var(--wd-color-icon-subtle); }
+.headLabel { overflow: hidden; text-overflow: ellipsis; }
+.headMenu { display: inline-flex; margin-inline-start: auto; opacity: 0; }
+.columns > span:hover .headMenu, .headMenu:focus-within { opacity: 1; }
+.columns > .gutter { justify-content: center; }
+.row > .textCell { min-inline-size: 0; }
 .resizer { position: absolute; z-index: 2; inset-block: 0; inset-inline-end: calc(-1 * var(--wd-space-1)); inline-size: var(--wd-space-2); cursor: col-resize; touch-action: none; }
 .resizer::after { position: absolute; inset-block: var(--wd-space-1); inset-inline-start: calc(var(--wd-space-1) - 1px); inline-size: 2px; border-radius: var(--wd-radius-pill); content: ""; }
 .resizer:hover::after, .resizer:focus-visible::after { background: var(--wd-color-focus); }

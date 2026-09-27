@@ -3,10 +3,12 @@ import type {Quote} from '@/lib/commercial/types';
 import {money,quoteTotals,paymentMilestoneAmounts} from '@/lib/commercial/client';
 import {quotationDescription,quotationDimensionsText} from '@/lib/commercial/presentation';
 import s from './quotation-linked-block.module.css';
-import {Fragment} from 'react';
+import {Fragment, useContext} from 'react';
+import {ProposalColumnsContext} from '@/lib/commercial/proposal-columns';
 import {referenceItemGroups} from '@/lib/commercial/quotation-reference-template';
 import artwork from '@/lib/commercial/proposal-reference.json';
 export function QuotationLinkedBlock({id,quote}:{id:string;quote:Quote}){
+ const extra=useContext(ProposalColumnsContext);
  const totals=quoteTotals(quote);
  const details=quote.presentation?.details??{};
  if(id==='data:cover-client')return <div className={s.coverClient}>Client: {details.clientName||quote.cover?.preparedFor||''}<br/>Quote No: {details.reference}</div>;
@@ -20,7 +22,20 @@ export function QuotationLinkedBlock({id,quote}:{id:string;quote:Quote}){
  if(id==='data:item-letterhead')return <div className={s.letterhead}><div className={s.letterheadBrand}>{/palm living/i.test(details.companyName??'')?<img src={artwork.tableLogo} alt={details.companyName}/>:details.companyName}{details.clientLogo&&<img src={details.clientLogo} alt="Client logo"/>}</div><div className={s.letterheadColumns}><div>Client Full Name: {details.clientName}<br/>Contact Number: {details.clientPhone||'—'}<br/>Delivery Address: {details.location||'—'}<br/>Email Address: {details.clientEmail||'—'}<br/>Project Name: {details.projectName}</div><div>Interior Designer / Sales: {details.preparedBy||'—'}<br/>Estimator: {details.estimator||'—'}<br/>Manager Approval: {details.manager||'—'}</div><div>Ref. Estimate Number: {details.reference}<br/>Date: {details.date}</div></div></div>;
  if(id.startsWith('data:reference-items:')){
   const start=Number(id.slice('data:reference-items:'.length))||0,count=referenceItemGroups(quote.lines).find(group=>group.start===start)?.count??7,lines=quote.lines.slice(start,start+count);
-  return <div className={s.referenceSchedule}><table><colgroup>{[4,19,23,6,6,6,16,4,8,8].map((width,index)=><col key={index} style={{width:`${width}%`}}/>)}</colgroup><thead style={{display:start?'none':undefined}}><tr>{['SN','DESCRIPTION OF ITEM','INSPO PICTURE','LENGTH','HEIGHT','DEPTH','MATERIALS REQUESTED','QTY','UNIT PRICE','TOTAL AMOUNT'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{lines.map((line,index)=><Fragment key={line.id}>{(index===0||lines[index-1].room!==line.room)&&<tr className={s.room}><td colSpan={10}>{line.room}</td></tr>}<tr className={s.referenceItem}><td>{start+index+1}</td><td>{line.title}{line.optional&&<small>Optional · not included</small>}</td><td>{line.photo?<img src={line.photo} alt={line.title}/>:<span className={s.noImage}>Image not supplied</span>}</td>{(['length','height','depth'] as const).map(key=><td key={key}>{line.dimensions?.[key]??'—'}{line.dimensions?.[key]!==undefined&&<small>{line.dimensions.unit}</small>}</td>)}<td>{quotationDescription(line)||'—'}</td><td>{line.quantity}</td><td>{money(line.rate,quote.currency)}</td><td>{money(line.quantity*line.rate,quote.currency)}</td></tr></Fragment>)}</tbody></table>{!lines.length&&<p className={s.empty}>Add items in Scope & Items to populate this schedule.</p>}{start+count>=quote.lines.length&&<><div className={s.referenceTotals}><QuotationLinkedBlock id="data:proposal-totals" quote={quote}/></div><p className={s.note}>NOTE: Any changes to the items quoted may result in price variation adjustments.</p></>}</div>;
+  // The columns: the firm's schedule, with its own client-visible columns before the quantity. Widths share the page, so more columns means narrower ones (and smaller type past ten).
+  const schedule:[string,number,(line:typeof lines[number],index:number)=>React.ReactNode][]=[
+   ['SN',4,(_line,index)=>start+index+1],
+   ['DESCRIPTION OF ITEM',19,line=><>{line.title}{line.optional&&<small>Optional · not included</small>}</>],
+   ['INSPO PICTURE',23,line=>line.photo?<img src={line.photo} alt={line.title}/>:<span className={s.noImage}>Image not supplied</span>],
+   ...(['length','height','depth'] as const).map((key):[string,number,(line:typeof lines[number])=>React.ReactNode]=>[key.toUpperCase(),6,line=><>{line.dimensions?.[key]??'—'}{line.dimensions?.[key]!==undefined&&<small>{line.dimensions.unit}</small>}</>]),
+   ['MATERIALS REQUESTED',16,line=>quotationDescription(line)||'—'],
+   ...extra.map((column):[string,number,(line:typeof lines[number])=>React.ReactNode]=>[column.name.toUpperCase(),10,line=>(line as {values?:Record<string,string>}).values?.[column.id]||'—']),
+   ['QTY',4,line=>line.quantity],
+   ['UNIT PRICE',8,line=>money(line.rate,quote.currency)],
+   ['TOTAL AMOUNT',8,line=>money(line.quantity*line.rate,quote.currency)],
+  ];
+  const weight=schedule.reduce((sum,[,share])=>sum+share,0);
+  return <div className={s.referenceSchedule} data-dense={schedule.length>10||undefined}><table><colgroup>{schedule.map(([,share],index)=><col key={index} style={{width:`${(share/weight*100).toFixed(2)}%`}}/>)}</colgroup><thead style={{display:start?'none':undefined}}><tr>{schedule.map(([label],index)=><th key={index}>{label}</th>)}</tr></thead><tbody>{lines.map((line,index)=><Fragment key={line.id}>{(index===0||lines[index-1].room!==line.room)&&<tr className={s.room}><td colSpan={schedule.length}>{line.room}</td></tr>}<tr className={s.referenceItem}>{schedule.map(([,,cell],column)=><td key={column}>{cell(line,index)}</td>)}</tr></Fragment>)}</tbody></table>{!lines.length&&<p className={s.empty}>Add items in Scope & Items to populate this schedule.</p>}{start+count>=quote.lines.length&&<><div className={s.referenceTotals}><QuotationLinkedBlock id="data:proposal-totals" quote={quote}/></div><p className={s.note}>NOTE: Any changes to the items quoted may result in price variation adjustments.</p></>}</div>;
  }
  if(id==='data:summary')return <div className={s.summary}>{[['Subtotal',totals.subtotal],['Discount',quote.discount],['Tax',totals.tax],['Total',totals.total]].map(([label,value])=><div key={label}><span>{label}</span><strong>{money(Number(value),quote.currency)}</strong></div>)}</div>;
  if(id==='data:payments'&&!quote.paymentTerms.length)return <p>No payment milestones yet. Use Edit payment schedule to add them.</p>;

@@ -10,11 +10,11 @@ const subscribe = (notify: () => void) => { window.addEventListener(KEY, notify)
  * Column widths someone set by dragging a heading's edge, remembered on this device. While dragging,
  * the width follows the pointer; it's saved when the pointer lets go. A double-click puts it back.
  */
-export function useColumnWidths(defaults: Record<string, number>, minimum = 48) {
+export function useColumnWidths(defaults: Record<string, number>, minimum = 48, fallback = 140) {
   const saved = useSyncExternalStore(subscribe, read, () => "{}");
   const [dragging, setDragging] = useState<{ key: string; width: number } | null>(null);
   const stored = JSON.parse(saved) as Record<string, number>;
-  const width = (key: string) => (dragging?.key === key ? dragging.width : stored[key] ?? defaults[key] ?? minimum);
+  const width = (key: string) => (dragging?.key === key ? dragging.width : stored[key] ?? defaults[key] ?? fallback);
   const save = useCallback((key: string, value: number | null) => {
     const next = { ...(JSON.parse(read()) as Record<string, number>) };
     if (value === null) delete next[key]; else next[key] = Math.round(value);

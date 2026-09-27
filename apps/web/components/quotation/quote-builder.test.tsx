@@ -11,7 +11,7 @@ const KITCHEN = "11111111-1111-4111-8111-111111111111", JOINERY = "44444444-4444
 const line = (fields: Partial<BuilderLine>): BuilderLine => ({
   id: "a", position: 0, version: 3, kind: "item", areaId: KITCHEN, fromAreaId: null, workPackageId: JOINERY, title: "Base cabinets", description: "", unit: "lm", quantity: "4", formula: null, formulaError: null,
   length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "100", unitCost: "60", markupPercent: null, pricingMode: "rate", discountKind: null, discountValue: null,
-  taxCode: null, taxRate: null, optional: null, optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], imageAssetId: null, catalogImageId: null, material: "", ...fields,
+  taxCode: null, taxRate: null, optional: null, optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], imageAssetId: null, catalogImageId: null, material: "", values: {}, ...fields,
 });
 const state = (lines: BuilderLine[]): BuilderState => ({
   quote: { id: "q1", number: 2, title: "Main quote", status: "draft", kind: "quotation", round: "main", currency: "AED", decimals: 2, validUntil: null, taxRate: "5", revision: 1, paymentTerms: [], approvedBy: null, clientDecision: null },

@@ -6,7 +6,7 @@ import { GripVertical, ImagePlus, Plus, Sigma, X } from "lucide-react";
 import { Avatar, Badge, IconMenuButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { LINE_KIND_LABEL, money, plain } from "@/lib/quotation/format";
-import type { BuilderLine, CatalogHit, QuotePerson, QuoteThread } from "@/lib/quotation/types";
+import type { BuilderLine, CatalogHit, QuoteColumn, QuotePerson, QuoteThread } from "@/lib/quotation/types";
 import { CommentButton } from "./quote-collab";
 import { CellPicker } from "./cell-picker";
 import styles from "./quote-builder.module.css";
@@ -38,8 +38,10 @@ function ImageCell({ url, canEdit, title, onPick }: { url: string | null; canEdi
 /** Which optional columns the table shows. */
 export type RowColumns = { picture: boolean; size: boolean; material: boolean };
 
-export function QuoteRow({ line, draft, serial, column, columns, areas, trades, units = [], materials = [], sizeUnit = "cm", amount, currency, decimals, canEdit, canAsk, search, comments = [], editingBy = [], imageUrl, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea, onDiscard, flash }: {
+export function QuoteRow({ line, draft, serial, column, columns, customColumns = [], areas, trades, units = [], materials = [], sizeUnit = "cm", amount, currency, decimals, canEdit, canAsk, search, comments = [], editingBy = [], imageUrl, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea, onDiscard, flash }: {
   line: BuilderLine; draft?: boolean; serial?: number; column: RowColumn; columns: RowColumns; areas: Option[]; trades: Option[];
+  /** The firm's own columns, after material. */
+  customColumns?: QuoteColumn[];
   units?: Array<{ code: string; label: string }>; materials?: string[]; sizeUnit?: string;
   amount: string | null; currency: string; decimals: number; canEdit: boolean;
   /** The assistant can be asked about this line (⌘K). */
@@ -99,6 +101,10 @@ export function QuoteRow({ line, draft, serial, column, columns, areas, trades, 
     {columns.material ? <span role="gridcell" className={styles.materialCell}>
       <MaterialCell value={line.material} options={materials} disabled={locked} onCommit={(material) => onChange({ material })} />
     </span> : null}
+    {customColumns.map((custom) => <span key={custom.id} role="gridcell" className={custom.kind === "number" ? styles.numberCell : styles.textCell}>
+      <CellInput label={custom.name} value={line.values?.[custom.id] ?? ""} disabled={locked} numeric={custom.kind === "number"} allowEmpty
+        onCommit={(value) => onChange({ values: { ...(line.values ?? {}), [custom.id]: value } })} />
+    </span>)}
     <span role="gridcell" className={styles.numberCell}>
       {line.formula ? <button type="button" className={styles.formulaChip} onClick={onOpen} title={line.formula} data-error={line.formulaError ? true : undefined}>ƒ {plain(line.quantity, locale)}</button>
         : <CellInput label={t("Quantity")} value={plain(line.quantity, locale, 4)} disabled={!canEdit || draft} numeric onCommit={(value) => onChange({ quantity: value })} />}

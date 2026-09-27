@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Bookmark, CircleAlert, Columns3, Image as ImageIcon, Layers, MapPin, MessageCircle, Plus, Sparkles, Store, Type, X } from "lucide-react";
-import { Badge, Button, EmptyState, ErrorState, IconButton, IconMenuButton, InlineNotice, MenuButton, SegmentedControl, Skeleton, useDesignSystem } from "@/design-system";
+import { Badge, Button, EmptyState, ErrorState, IconButton, IconMenuButton, InlineNotice, MenuButton, SegmentedControl, Skeleton, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { catalogImageUrl, quoteApi, QuotationRequestError } from "@/lib/quotation/client";
+import { catalogImageUrl, quoteApi, quoteColumnsApi, QuotationRequestError } from "@/lib/quotation/client";
 import { caseApi, caseRequest, saveCaseRoom, type CaseAsset, type CaseRoom } from "@/lib/pre-project/content";
 import { groupLines, money, QUOTE_STATUS, VIEW_LABEL, type LineGroup } from "@/lib/quotation/format";
-import type { BuilderLine, BuilderState, CatalogHit, LineOp, QuoteAnchor, QuoteThread, QuoteView } from "@/lib/quotation/types";
+import type { BuilderLine, BuilderState, CatalogHit, LineOp, QuoteAnchor, QuoteColumn, QuoteThread, QuoteView } from "@/lib/quotation/types";
 import { GENERAL, NO_TRADE } from "@/lib/quotation/types";
 import { RoomPicker } from "@/components/pre-project/room-manager";
 import { LineDetails } from "./line-details";
@@ -22,6 +22,7 @@ import { InsertTemplate, SaveTemplate } from "./quote-templates";
 import { QuoteChat, type AssistantCommands } from "./quote-chat";
 import { QuoteCatalog } from "./quote-catalog";
 import { NameDialog } from "./name-dialog";
+import { ColumnDialog } from "./column-dialog";
 import { useColumnWidths } from "./use-column-widths";
 import { ChangeAgreedItem } from "./quote-variation";
 import { CommentButton, CommentPanel, CommentsList, PeopleHere, threadsAt, usePulse } from "./quote-collab";
@@ -86,6 +87,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const [catalogArea, setCatalogArea] = useState<string | null>(null);
   const [roomFor, setRoomFor] = useState<BuilderLine | "new" | null>(null);
   const [tradeFor, setTradeFor] = useState<BuilderLine | "new" | null>(null);
+  const [columnFor, setColumnFor] = useState<QuoteColumn | "new" | null>(null);
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
+  const columnsApi = useMemo(() => quoteColumnsApi(workspaceId), [workspaceId]);
   const latest = useRef(state);
   useEffect(() => { latest.current = state; }, [state]);
   const queue = useRef<LineOp[]>([]);
@@ -280,6 +284,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const contextLine = state.lines.find((line) => line.id === contextLineId) ?? null;
   const canAsk = state.canEdit && state.assistant?.available !== false;
   const openThreads = threads.filter((thread) => thread.status === "open").length;
+  const customColumns = state.columns ?? [];
   const toFix = state.quote.status === "draft" ? state.checks.length : 0;
   const views: Array<{ id: Panel; label: string }> = [
     ...(state.canEdit ? [{ id: "assistant" as const, label: t("Assistant") }, { id: "catalog" as const, label: t("Catalog") }] : []),
@@ -307,7 +312,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     data-stick={key === "picture" || key === "item" ? key : undefined}
     aria-label={options.label} title={options.label}>
     {content}
-    {RESIZABLE.has(key) ? <span role="separator" aria-orientation="vertical" aria-label={t("Resize {column}", { column: options.label ?? String(content) })} tabIndex={0} className={styles.resizer}
+    {RESIZABLE.has(key) || key.startsWith("custom:") ? <span role="separator" aria-orientation="vertical" aria-label={t("Resize {column}", { column: options.label ?? String(content) })} tabIndex={0} className={styles.resizer}
       onPointerDown={widths.startResize(key)} onDoubleClick={() => widths.reset(key)}
       onKeyDown={(event) => { if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); widths.nudge(key, ((event.key === "ArrowRight") !== (direction === "rtl") ? 1 : -1) * 16); } }} /> : null}
   </span>;
@@ -323,11 +328,18 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       {heading("height", <>{t("H")}<small>{state.sizeUnit ?? "cm"}</small></>, { numeric: true, label: t("Height") })}
     </> : null}
     {columns.material ? heading("material", <><Layers aria-hidden="true" size={13} />{t("Material")}</>, { label: t("Material") }) : null}
+    {customColumns.map((custom) => heading(`custom:${custom.id}`, <><span className={styles.headLabel}>{custom.name}</span>
+      {state.canEdit ? <span className={styles.headMenu}><IconMenuButton ariaLabel={t("Actions for {name}", { name: custom.name })} items={[{ id: "rename", label: t("Rename") }, { id: "proposal", label: custom.showInProposal ? t("Hide from the client's proposal") : t("Show on the client's proposal") }, { id: "remove", label: t("Remove column"), tone: "danger" }]}
+        onAction={(action) => action === "rename" ? setColumnFor(custom)
+          : action === "proposal" ? void columnsApi.change(custom.id, { showInProposal: !custom.showInProposal, version: custom.version }).then(({ columns: next }) => setState((current) => (current ? { ...current, columns: next } : current))).catch((cause: Error) => setError(cause.message))
+          : requestConfirmation({ title: t("Remove “{name}”?", { name: custom.name }), body: t("It goes from every quote. Values already on sent quotes stay on their records."), confirmLabel: t("Remove column"),
+          onConfirm: () => void columnsApi.change(custom.id, { archived: true, version: custom.version }).then(({ columns: next }) => setState((current) => (current ? { ...current, columns: next } : current))).catch((cause: Error) => setError(cause.message)) })} /></span> : null}</>,
+      { numeric: custom.kind === "number", label: custom.name }))}
     {heading("qty", t("Qty"), { numeric: true, label: t("Qty") })}
     {heading("unit", t("Unit"), { label: t("Unit") })}
     {heading("rate", t("Rate"), { numeric: true, label: t("Rate") })}
     {heading("amount", t("Amount"), { numeric: true, label: t("Amount") })}
-    <span role="columnheader" className={styles.gutter} />
+    <span role="columnheader" className={styles.gutter}>{state.canEdit ? <IconButton aria-label={t("Add a column")} size="compact" onPress={() => setColumnFor("new")}><Plus aria-hidden="true" size={15} /></IconButton> : null}</span>
   </div>;
 
   const renderGroup = (group: LineGroup, context: { areaId: string | null; workPackageId: string | null }, depth: number, tone?: string) => {
@@ -352,7 +364,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       </div>
       {depth === 0 ? headerRow() : null}
       {group.children ? group.children.map((child) => renderGroup(child, { ...context, workPackageId: child.key === NO_TRADE ? null : child.key }, depth + 1)) : <>
-        {group.lines.map((line, index) => <QuoteRow key={line.id} line={line} serial={index + 1} column={column} columns={columns} units={state.units} materials={state.materials} sizeUnit={state.sizeUnit}
+        {group.lines.map((line, index) => <QuoteRow key={line.id} line={line} serial={index + 1} column={column} columns={columns} customColumns={customColumns} units={state.units} materials={state.materials} sizeUnit={state.sizeUnit}
           areas={state.areas} trades={state.workPackages} amount={amountOf.get(line.id) ?? null}
           currency={currency} decimals={decimals} canEdit={state.canEdit} canAsk={canAsk} search={search} flash={flash.has(line.id)}
           comments={threadsAt(threads, { kind: "line", key: line.id })} editingBy={people.filter((person) => person.lineId === line.id)}
@@ -363,7 +375,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           onOpen={() => setOpen(line.id)} onMenu={(action) => menu(line, action)} onDragStart={() => setDragged(line.id)}
           onDropBefore={() => dropBefore({ lineId: line.id, areaId: line.areaId, workPackageId: line.workPackageId }, view)} onNewTrade={() => setTradeFor(line)} />)}
         {groupDrafts.map((draft, index) => <QuoteRow key={draft.id} draft serial={group.lines.length + index + 1} line={{ ...EMPTY_LINE, id: draft.id, areaId: draft.areaId, workPackageId: draft.workPackageId }}
-          column={column} columns={columns} units={state.units} materials={state.materials} sizeUnit={state.sizeUnit} areas={state.areas} trades={state.workPackages} catalogThumb={catalogThumb}
+          column={column} columns={columns} customColumns={customColumns} units={state.units} materials={state.materials} sizeUnit={state.sizeUnit} areas={state.areas} trades={state.workPackages} catalogThumb={catalogThumb}
           amount={null} currency={currency} decimals={decimals} canEdit={state.canEdit} search={search}
           onChange={(fields) => { if (fields.title) createFromDraft(draft, fields); }} onCatalog={(hit) => createFromDraft(draft, {}, hit)}
           onNewCatalogItem={(title) => void newCatalogLine(draft, title)} onDiscard={() => discardDraft(draft)}
@@ -435,7 +447,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         {error ? <InlineNotice tone="error" message={error} /> : null}
         {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={t("This quote has been sent. Start a new revision to change it.")} /> : null}
 
-        {tab === "document" ? <QuoteProposal workspaceId={workspaceId} caseId={caseId} quoteId={quoteId} api={api} sizeUnit={state.sizeUnit ?? "cm"} onPayments={() => setTab("payments")} />
+        {tab === "document" ? <QuoteProposal workspaceId={workspaceId} caseId={caseId} quoteId={quoteId} api={api} sizeUnit={state.sizeUnit ?? "cm"} onPayments={() => setTab("payments")}
+          columns={customColumns.filter((custom) => custom.showInProposal).map(({ id, name }) => ({ id, name }))} />
           : tab === "terms" ? <QuoteTerms key={`terms:${state.quote.id}`} state={state} api={api} onError={setError}
             onSaved={(proposal) => setState((current) => (current ? { ...current, proposal } : current))} />
             : tab === "payments" ? <QuotePayments key={`payments:${state.quote.id}:${JSON.stringify(state.quote.paymentTerms)}`} state={state} api={api} onState={setState} onError={setError} /> : <>
@@ -446,7 +459,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
             <button type="button" onClick={() => openPanel("catalog")}><Store aria-hidden="true" size={18} /><strong>{t("Pick from the catalog")}</strong><small>{t("Search and add")}</small></button>
             <button type="button" onClick={() => setInserting(true)}><Bookmark aria-hidden="true" size={18} /><strong>{t("Insert a template")}</strong><small>{t("Saved areas and quotes")}</small></button>
           </div> : null}
-          <div ref={scroller} className={styles.gridScroll} style={{ "--visible": visible ? `${visible}px` : "100%" } as React.CSSProperties}><div role="grid" aria-label={t("Quote lines")} className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width), "--stick-serial": `${widths.width("gutter")}px`, "--stick-picture": `${widths.width("gutter") + widths.width("serial")}px`,
+          <div ref={scroller} className={styles.gridScroll} style={{ "--visible": visible ? `${visible}px` : "100%" } as React.CSSProperties}><div role="grid" aria-label={t("Quote lines")} className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width, customColumns), "--stick-serial": `${widths.width("gutter")}px`, "--stick-picture": `${widths.width("gutter") + widths.width("serial")}px`,
             "--stick-item": `${widths.width("gutter") + widths.width("serial") + (columns.picture ? widths.width("picture") : 0)}px` } as React.CSSProperties}
             onFocusCapture={(event) => {
               const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");
@@ -502,6 +515,12 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     {savingTemplate ? <SaveTemplate api={api} scope={savingTemplate.scope} target={savingTemplate.target} name={savingTemplate.name} onClose={() => setSavingTemplate(null)} onError={setError} /> : null}
     {roomFor ? <RoomPicker data={{ workspaceId, caseId, canEdit: state.canEdit, rooms: state.areas.map((area) => ({ ...area, version: 1 }) as unknown as CaseRoom) }}
       onClose={() => setRoomFor(null)} onPick={(room) => void roomPicked(room)} /> : null}
+    {columnFor ? <ColumnDialog column={columnFor === "new" ? undefined : columnFor} onClose={() => setColumnFor(null)}
+      onSave={async ({ name, kind }) => {
+        const { columns: next } = columnFor === "new" ? await columnsApi.add(crypto.randomUUID(), name, kind) : await columnsApi.change(columnFor.id, { name, version: columnFor.version });
+        setState((current) => (current ? { ...current, columns: next } : current));
+      }} /> : null}
+    {confirmationDialog}
     {tradeFor ? <NameDialog title={t("New work package")} label={t("Name")} onClose={() => setTradeFor(null)} onSave={newTrade} /> : null}
     {openLine ? <LineDetails key={`${openLine.id}-${openLine.version}`} line={openLine} state={state} onClose={() => setOpen(null)}
       onSave={async (fields) => {
@@ -528,15 +547,15 @@ const subscribeColumns = (notify: () => void) => { window.addEventListener(COLUM
 const COLUMN_WIDTHS: Record<string, number> = { gutter: 20, serial: 44, picture: 96, item: 300, pick: 160, length: 84, width: 84, height: 84, material: 220, qty: 72, unit: 92, rate: 112, amount: 132, menu: 56 };
 const RESIZABLE = new Set(["picture", "item", "pick", "length", "width", "height", "material", "qty", "unit", "rate", "amount"]);
 /** The grid's columns, in the order the cells are drawn. */
-const gridColumns = (column: RowColumn, columns: RowColumns, width: (key: string) => number) => ["gutter", "serial", ...(columns.picture ? ["picture"] : []), "item", ...(column ? ["pick"] : []),
-  ...(columns.size ? ["length", "width", "height"] : []), ...(columns.material ? ["material"] : []), "qty", "unit", "rate", "amount", "menu"]
+const gridColumns = (column: RowColumn, columns: RowColumns, width: (key: string) => number, custom: QuoteColumn[]) => ["gutter", "serial", ...(columns.picture ? ["picture"] : []), "item", ...(column ? ["pick"] : []),
+  ...(columns.size ? ["length", "width", "height"] : []), ...(columns.material ? ["material"] : []), ...custom.map((item) => `custom:${item.id}`), "qty", "unit", "rate", "amount", "menu"]
   .map((key) => (key === "item" ? `minmax(${width(key)}px, 1fr)` : `${width(key)}px`)).join(" ");
 
 const EMPTY_LINE: BuilderLine = {
   id: "", position: 0, version: 0, kind: "item", areaId: null, fromAreaId: null, workPackageId: null, title: "", description: "", unit: "", quantity: "1",
   formula: null, formulaError: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: null, markupPercent: null,
   pricingMode: "rate", discountKind: null, discountValue: null, taxCode: null, taxRate: null, optional: null, optionGroup: null, note: "", catalogItemId: null,
-  catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], imageAssetId: null, catalogImageId: null, material: "",
+  catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], imageAssetId: null, catalogImageId: null, material: "", values: {},
 };
 
 /** Combines queued changes: several edits to one line become one upsert with the version we last saw. */

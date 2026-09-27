@@ -133,6 +133,33 @@ integration("quotation builder (plan §6.8)", () => {
     }, { costs: false });
   });
 
+  it("keeps the firm's own column values on a line, checks them, and carries them through a case save and a revision", async () => {
+    await withQuote(async (client, ids, service) => {
+      const brand = randomUUID(), lead = randomUUID();
+      await service.addColumn(actor, ids.workspaceId, { id: brand, name: "Brand", kind: "text" });
+      const { columns } = await service.addColumn(actor, ids.workspaceId, { id: lead, name: "Lead time (weeks)", kind: "number" });
+      expect(columns.map((column) => column.name)).toEqual(["Brand", "Lead time (weeks)"]);
+      await expect(service.addColumn(actor, ids.workspaceId, { id: randomUUID(), name: "brand" })).rejects.toThrow(/already a column/);
+
+      let state = await service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [{ op: "upsert", line: { id: "v", title: "Sofa", values: { [brand]: "Minotti", [lead]: "12" } } }] });
+      expect(state.lines[0].values).toEqual({ [brand]: "Minotti", [lead]: "12" });
+      await expect(service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [{ op: "upsert", line: { id: "v", version: state.lines[0].version, values: { [lead]: "soon" } } }] })).rejects.toThrow();
+      await expect(service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [{ op: "upsert", line: { id: "v", version: state.lines[0].version, values: { [randomUUID()]: "x" } } }] })).rejects.toThrow(/isn't in this workspace/);
+      state = await service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [{ op: "upsert", line: { id: "v", version: state.lines[0].version, values: { [brand]: "" } } }] });
+      expect(state.lines[0].values).toEqual({ [lead]: "12" });
+
+      // The older case save writes the quote back from its JSON: the values survive it.
+      const loaded = (await commercialRepository.load(client, ids.workspaceId, ids.caseId))!;
+      await commercialRepository.save(client, ids.workspaceId, ids.caseId, { ...loaded.content, revision: loaded.revision + 1 } as never);
+      state = await service.builder(actor, ids.workspaceId, ids.caseId, ids.quoteId);
+      expect(state.lines[0].values).toEqual({ [lead]: "12" });
+
+      // Removing a column hides it from quotes; its values stay on the lines' records.
+      await service.changeColumn(actor, ids.workspaceId, brand, { archived: true, version: 1 });
+      expect((await service.builder(actor, ids.workspaceId, ids.caseId, ids.quoteId)).columns.map((column) => column.name)).toEqual(["Lead time (weeks)"]);
+    });
+  });
+
   it("won't edit a sent quote", async () => {
     await withQuote(async (client, ids, service) => {
       await client.query("UPDATE commercial_quotes SET status = 'issued' WHERE id = $1", [ids.quoteId]);

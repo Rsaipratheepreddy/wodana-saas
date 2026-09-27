@@ -4217,5 +4217,15 @@
   "Abandoned": "Abandoned",
   "On the way": "On the way",
   "Add “{name}”": "Add “{name}”",
-  "The proposal didn't load": "The proposal didn't load"
+  "The proposal didn't load": "The proposal didn't load",
+  "Rename column": "Rename column",
+  "New column": "New column",
+  "Add column": "Add column",
+  "e.g. Brand, Finish, Lead time": "e.g. Brand, Finish, Lead time",
+  "Remove column": "Remove column",
+  "Remove “{name}”?": "Remove “{name}”?",
+  "It goes from every quote. Values already on sent quotes stay on their records.": "It goes from every quote. Values already on sent quotes stay on their records.",
+  "Add a column": "Add a column",
+  "Hide from the client's proposal": "Hide from the client's proposal",
+  "Show on the client's proposal": "Show on the client's proposal"
 }

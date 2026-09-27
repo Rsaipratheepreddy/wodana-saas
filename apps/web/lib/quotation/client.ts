@@ -1,5 +1,11 @@
 import type { Quote } from "@/lib/commercial/types";
-import type { AiProposal, BoqPick, BuilderState, QuoteDocument, QuoteTemplate, CatalogHit, LineOp, PaymentMilestone, QuoteAnchor, QuoteDiscount, QuotePerson, QuoteThread } from "./types";
+import type { AiProposal, BoqPick, BuilderState, QuoteColumn, QuoteDocument, QuoteTemplate, CatalogHit, LineOp, PaymentMilestone, QuoteAnchor, QuoteDiscount, QuotePerson, QuoteThread } from "./types";
+
+/** The firm's own quote columns (workspace-wide). */
+export const quoteColumnsApi = (workspaceId: string) => ({
+  add: (id: string, name: string, kind: "text" | "number") => request<{ columns: QuoteColumn[] }>(quotationPath(workspaceId, "columns"), "POST", { id, name, kind }),
+  change: (id: string, change: { name?: string; archived?: boolean; showInProposal?: boolean; version: number }) => request<{ columns: QuoteColumn[] }>(quotationPath(workspaceId, `columns/${id}`), "PATCH", change),
+});
 
 export const quotationPath = (workspaceId: string, path: string, query?: Record<string, string>) =>
   `/api/quotation/${path}?${new URLSearchParams({ workspaceId, ...query })}`;
