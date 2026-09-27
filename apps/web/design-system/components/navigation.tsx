@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Tab, TabList, TabPanel, Tabs as AriaTabs } from "react-aria-components";
 import { Button, IconButton } from "./actions";
 
-export type TabItem = { id: string; label: ReactNode; panel: ReactNode };
+export type TabItem = { id: string; label: ReactNode; panel: ReactNode; count?: number };
 export type ModuleNavigationItem = { id: string; href: string; label: string };
 
 export function ModuleNavigation({ activeId, className, items }: { activeId: string; className?: string; items: ModuleNavigationItem[] }) {
@@ -19,7 +19,7 @@ export function ModuleNavigation({ activeId, className, items }: { activeId: str
 
 export function Tabs({ defaultSelectedKey, items, selectedKey, onSelectionChange, variant = "underline" }: { defaultSelectedKey?: string; items: TabItem[]; selectedKey?: string; onSelectionChange?: (key: string) => void; variant?: "underline" | "segmented" }) {
   const t = useT();
-  return <AriaTabs className="wd-tabs" data-variant={variant} defaultSelectedKey={defaultSelectedKey} selectedKey={selectedKey} onSelectionChange={(key) => onSelectionChange?.(String(key))}><div aria-label={t("Scrollable sections")} className="wd-tab-scroll" role="region" tabIndex={0}><TabList aria-label={t("Sections")} className="wd-tab-list" items={items}>{(item) => <Tab className="wd-tab" id={item.id}>{item.label}</Tab>}</TabList></div>{items.map((item) => <TabPanel className="wd-tab-panel" id={item.id} key={item.id}>{item.panel}</TabPanel>)}</AriaTabs>;
+  return <AriaTabs className="wd-tabs" data-variant={variant} defaultSelectedKey={defaultSelectedKey} selectedKey={selectedKey} onSelectionChange={(key) => onSelectionChange?.(String(key))}><div aria-label={t("Scrollable sections")} className="wd-tab-scroll" role="region" tabIndex={0}><TabList aria-label={t("Sections")} className="wd-tab-list" items={items}>{(item) => <Tab className="wd-tab" id={item.id}>{item.label}{typeof item.count === "number" ? <span className="wd-count-chip">{item.count}</span> : null}</Tab>}</TabList></div>{items.map((item) => <TabPanel className="wd-tab-panel" id={item.id} key={item.id}>{item.panel}</TabPanel>)}</AriaTabs>;
 }
 
 export type PillTabItem = { id: string; label: ReactNode; done?: boolean };
