@@ -4230,5 +4230,9 @@
   "Show on the client's proposal": "Show on the client's proposal",
   "This quote is in review. It can be changed again if it's sent back.": "This quote is in review. It can be changed again if it's sent back.",
   "Rename to “{name}”": "Rename to “{name}”",
-  "Tax must be a number from 0 to 100.": "Tax must be a number from 0 to 100."
+  "Tax must be a number from 0 to 100.": "Tax must be a number from 0 to 100.",
+  "Deleted “{name}”": "Deleted “{name}”",
+  "Send {quote} to {client}?": "Send {quote} to {client}?",
+  "They'll see it in their portal and get an email.": "They'll see it in their portal and get an email.",
+  "Each milestone needs a name, a share and when it's due": "Each milestone needs a name, a share and when it's due"
 }

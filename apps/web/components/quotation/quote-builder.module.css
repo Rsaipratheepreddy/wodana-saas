@@ -369,3 +369,8 @@
 
 /* The proposal designer inside the Document tab. */
 .proposal { min-inline-size: 0; margin: calc(-1 * var(--wd-space-3)) calc(-1 * var(--wd-phi-3)) 0; }
+
+/* "Deleted … Undo", for a few seconds after a line goes. */
+.undoBar { position: fixed; z-index: 40; inset-block-end: var(--wd-space-6); inset-inline-start: 50%; display: flex; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-2) var(--wd-space-2) var(--wd-space-2) var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-text); color: var(--wd-color-text-inverse); font-size: var(--wd-text-sm); box-shadow: var(--wd-shadow-md); transform: translateX(-50%); }
+[dir="rtl"] .undoBar { transform: translateX(50%); }
+.undoBar :global(.wd-button) { color: var(--wd-color-text-inverse); }

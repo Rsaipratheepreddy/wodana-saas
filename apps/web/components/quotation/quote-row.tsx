@@ -38,7 +38,7 @@ function ImageCell({ url, canEdit, title, onPick }: { url: string | null; canEdi
 /** Which optional columns the table shows. */
 export type RowColumns = { picture: boolean; size: boolean; material: boolean };
 
-export function QuoteRow({ line, draft, serial, column, columns, customColumns = [], areas, trades, units = [], materials = [], sizeUnit = "cm", amount, currency, decimals, canEdit, canAsk, search, comments = [], editingBy = [], imageUrl, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea, onDiscard, flash }: {
+export function QuoteRow({ line, draft, serial, column, columns, customColumns = [], areas, trades, units = [], materials = [], sizeUnit = "cm", amount, currency, decimals, canEdit, canAsk, search, comments = [], editingBy = [], imageUrl, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea, onDiscard, onPasteRows, flash }: {
   line: BuilderLine; draft?: boolean; serial?: number; column: RowColumn; columns: RowColumns; areas: Option[]; trades: Option[];
   /** The firm's own columns, after material. */
   customColumns?: QuoteColumn[];
@@ -54,6 +54,8 @@ export function QuoteRow({ line, draft, serial, column, columns, customColumns =
   onMenu: (action: string) => void; onDragStart: () => void; onDropBefore: () => void; onNewTrade: () => void;
   /** A new row left empty goes away. */
   onDiscard?: () => void;
+  /** Rows pasted from a spreadsheet into a new row (tab-separated). */
+  onPasteRows?: (text: string) => void;
   /** Just changed by the assistant: highlighted for a moment. */
   flash?: boolean;
 }) {
@@ -78,7 +80,7 @@ export function QuoteRow({ line, draft, serial, column, columns, customColumns =
       <ImageCell url={imageUrl ?? null} canEdit={canEdit && !draft} title={line.title} onPick={(file) => onImage?.(file)} />
     </span> : null}
     <span role="gridcell" className={styles.itemCell} data-stick="item">
-      <ItemCell line={line} canEdit={canEdit && !fixed} search={search} thumb={catalogThumb} onCommit={(title) => onChange({ title })} onCatalog={onCatalog} onNewCatalogItem={onNewCatalogItem} draft={draft} onDiscard={onDiscard} />
+      <ItemCell line={line} canEdit={canEdit && !fixed} search={search} thumb={catalogThumb} onCommit={(title) => onChange({ title })} onCatalog={onCatalog} onNewCatalogItem={onNewCatalogItem} draft={draft} onDiscard={onDiscard} onPasteRows={onPasteRows} />
       <span className={styles.itemMeta}>
         {line.changeOp === "omit" ? <Badge tone="danger">{t("Removes")}</Badge> : line.changeOp === "move" ? <Badge tone="info">{t("Moves")}</Badge> : null}
         {line.kind === "client_supplied" || line.kind === "relocate" ? <Badge tone="info">{t(LINE_KIND_LABEL[line.kind] as never)}</Badge> : null}
@@ -282,7 +284,7 @@ function moveDown(event: KeyboardEvent<HTMLInputElement>) {
 }
 
 /** The item name: typing searches the catalog; pick a result to fill the row, or keep the typed name as a custom line. */
-function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCatalogItem, draft, onDiscard }: { line: BuilderLine; canEdit: boolean; search: (text: string, signal: AbortSignal, limit?: number) => Promise<CatalogHit[]>; thumb?: (imageId: string) => string; onCommit: (title: string) => void; onCatalog: (hit: CatalogHit, title: string) => void; onNewCatalogItem?: (title: string) => void; draft?: boolean; onDiscard?: () => void }) {
+function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCatalogItem, draft, onDiscard, onPasteRows }: { line: BuilderLine; canEdit: boolean; search: (text: string, signal: AbortSignal, limit?: number) => Promise<CatalogHit[]>; thumb?: (imageId: string) => string; onCommit: (title: string) => void; onCatalog: (hit: CatalogHit, title: string) => void; onNewCatalogItem?: (title: string) => void; draft?: boolean; onDiscard?: () => void; onPasteRows?: (text: string) => void }) {
   const t = useT();
   const { locale } = useDesignSystem();
   const listId = useId();
@@ -320,6 +322,13 @@ function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCata
       className={styles.cell} data-title placeholder={t("Type to find an item…")} disabled={!canEdit} value={shown} title={line.title || undefined}
       onFocus={(event) => { setText(line.title); setFocused(true); event.currentTarget.select(); }}
       onChange={(event) => { setText(event.target.value); setOpen(true); }}
+      onPaste={(event) => {
+        // Rows copied from a spreadsheet become lines, one per row.
+        const pasted = event.clipboardData.getData("text/plain");
+        if (!draft || !onPasteRows || !/[\t\n]/.test(pasted.trim())) return;
+        event.preventDefault(); cancelled.current = true; setOpen(false);
+        onPasteRows(pasted);
+      }}
       onBlur={() => {
         setFocused(false); setOpen(false);
         if (cancelled.current) { cancelled.current = false; return; }

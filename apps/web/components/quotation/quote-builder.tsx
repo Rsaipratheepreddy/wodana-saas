@@ -13,7 +13,7 @@ import type { BuilderLine, BuilderState, CatalogHit, LineOp, QuoteAnchor, QuoteC
 import { GENERAL, NO_TRADE } from "@/lib/quotation/types";
 import { RoomPicker } from "@/components/pre-project/room-manager";
 import { LineDetails } from "./line-details";
-import { QuoteRow, type RowColumn, type RowColumns } from "./quote-row";
+import { QuoteRow, readNumber, type RowColumn, type RowColumns } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
 import { FlowActions, QuotePayments, RevisionChanges } from "./quote-flow";
 import { QuoteTerms } from "./quote-terms";
@@ -173,6 +173,54 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); void load(); }
   };
   const addDraft = (group: { areaId: string | null; workPackageId: string | null }) => setDrafts((current) => [...current, { id: crypto.randomUUID(), ...group }]);
+  /**
+   * Rows pasted from a spreadsheet into a new row: one line per row. A header row (Description, Length,
+   * Height, Depth, Materials, Qty, Unit, Unit price…) maps the columns by name, so an estimator's own
+   * sheet pastes straight in; without one, the cells follow this sheet's column order.
+   */
+  const pasteRows = (draft: Draft, text: string) => {
+    const current = latest.current;
+    if (!current) return;
+    const custom = current.columns ?? [];
+    const rows = text.replace(/\r/g, "").split("\n").map((row) => row.split("\t").map((cell) => cell.trim())).filter((cells) => cells.some(Boolean));
+    const header = rows[0]?.some((cell) => /^(description|item|items|name|qty|quantity|unit price|rate|material)/i.test(cell)) ? rows.shift() : undefined;
+    const byName = (cell: string) => {
+      const name = cell.toLowerCase();
+      if (/^(sn|s\.?no|#|no\.?)$|picture|image|photo|total|amount/.test(name)) return null;
+      if (/description|^item|name/.test(name)) return "title";
+      if (/^l(ength)?\b/.test(name)) return "length";
+      if (/^d(epth)?\b|width/.test(name)) return "width";
+      if (/^h(eight)?\b/.test(name)) return "height";
+      if (/material/.test(name)) return "material";
+      if (/^(qty|quantity)/.test(name)) return "quantity";
+      if (/^(unit|uom)$/.test(name)) return "unit";
+      if (/price|rate/.test(name)) return "rate";
+      return custom.find((column) => column.name.toLowerCase() === name) ? `custom:${custom.find((column) => column.name.toLowerCase() === name)!.id}` : null;
+    };
+    const order = header ? header.map(byName)
+      : ["title", ...(columns.size ? ["length", "width", "height"] : []), ...(columns.material ? ["material"] : []), ...custom.map((column) => `custom:${column.id}`), "quantity", "unit", "rate"];
+    const numeric = new Set(["length", "width", "height", "quantity", "rate"]);
+    const ops: LineOp[] = rows.slice(0, 200).flatMap((cells): LineOp[] => {
+      const line: Record<string, unknown> = { id: crypto.randomUUID(), areaId: draft.areaId, workPackageId: draft.workPackageId };
+      const values: Record<string, string> = {};
+      order.forEach((key, index) => {
+        const cell = cells[index];
+        if (!key || !cell || cell === "-" || cell === "—") return;
+        if (numeric.has(key) || custom.some((column) => key === `custom:${column.id}` && column.kind === "number")) {
+          const value = readNumber(cell.replace(/[^\d.,\s]/g, ""), locale);
+          if (value === null) return;
+          if (key.startsWith("custom:")) values[key.slice(7)] = value; else line[key] = value;
+        } else if (key.startsWith("custom:")) values[key.slice(7)] = cell;
+        else line[key] = key === "title" ? cell.slice(0, 240) : cell;
+      });
+      if (!line.title) return [];
+      if (line.length || line.width || line.height) line.dimensionUnit = current.sizeUnit ?? "cm";
+      if (Object.keys(values).length) line.values = values;
+      return [{ op: "upsert", line: line as never }];
+    });
+    discardDraft(draft);
+    if (ops.length) applyOps(ops);
+  };
   const addFromCatalog = (hit: CatalogHit, areaId: string | null) => applyOps([{ op: "catalog", itemId: hit.id, line: { id: crypto.randomUUID(), areaId, workPackageId: null } }]);
 
   const loadThreads = useCallback(async () => {
@@ -235,6 +283,22 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const search = useCallback(async (text: string, signal: AbortSignal, limit?: number) => (await api.search(text, signal, limit)).items, [api]);
   const catalogThumb = useCallback((id: string) => catalogImageUrl(workspaceId, id), [workspaceId]);
 
+  // A line as a new one: the same fields, pictures, values and build-up; a catalog line keeps its catalog link.
+  const copyOf = (line: BuilderLine, id: string): Extract<LineOp, { op: "upsert" | "catalog" }> => {
+    const skip = new Set(["id", "version", "position", "components", "updatedAt", "updatedByName", "formulaError", "buildUpComplete", "catalogSnapshot", "catalogItemId", "taxRate", ...(line.formula ? ["quantity"] : []), ...(state?.canEditCosts ? [] : ["unitCost", "markupPercent"])]);
+    const fields = Object.fromEntries(Object.entries(line).filter(([key, value]) => !skip.has(key) && value !== null));
+    const copy = { ...fields, id, title: line.title, ...(line.components.length ? { components: line.components.map((part) => Object.fromEntries(Object.entries(part).filter(([key]) => key !== "worked" && key !== "id"))) } : {}) };
+    return line.catalogItemId ? { op: "catalog", itemId: line.catalogItemId, line: copy as never } : { op: "upsert", line: copy as never };
+  };
+  const [undo, setUndo] = useState<{ label: string; ops: LineOp[] } | null>(null);
+  const undoTimer = useRef<number | undefined>(undefined);
+  const offerUndo = (label: string, ops: LineOp[]) => {
+    window.clearTimeout(undoTimer.current);
+    setUndo({ label, ops });
+    undoTimer.current = window.setTimeout(() => setUndo(null), 8000);
+  };
+  useEffect(() => () => window.clearTimeout(undoTimer.current), []);
+
   const menu = (line: BuilderLine, action: string) => {
     if (action === "details") setOpen(line.id);
     else if (action === "ask") askAbout(line.id);
@@ -246,12 +310,12 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     else if (action === "delete") {
       setState((current) => current ? { ...current, lines: current.lines.filter((item) => item.id !== line.id) } : current);
       send([{ op: "delete", id: line.id, version: line.version }]);
+      // A deleted line can come back for a few seconds (as a copy, with its catalog link).
+      offerUndo(t("Deleted “{name}”", { name: line.title || t("Untitled line") }), [copyOf(line, line.id)]);
     } else if (action === "duplicate") {
-      const skip = new Set(["id", "version", "position", "components", "updatedAt", "updatedByName", "formulaError", "buildUpComplete", "catalogSnapshot", "catalogItemId", "taxRate", ...(line.formula ? ["quantity"] : []), ...(state?.canEditCosts ? [] : ["unitCost", "markupPercent"])]);
-      const fields = Object.fromEntries(Object.entries(line).filter(([key, value]) => !skip.has(key) && value !== null));
-      const copy = { ...fields, id: crypto.randomUUID(), title: line.title, ...(line.components.length ? { components: line.components.map((part) => Object.fromEntries(Object.entries(part).filter(([key]) => key !== "worked" && key !== "id"))) } : {}) };
-      send([{ op: "upsert", line: copy }, { op: "reorder", ids: reordered(latest.current?.lines ?? [], copy.id, line.id, "after") }]);
-      highlight([copy.id]);
+      const copy = copyOf(line, crypto.randomUUID());
+      send([copy, { op: "reorder", ids: reordered(latest.current?.lines ?? [], copy.line.id, line.id, "after") }]);
+      highlight([copy.line.id]);
     }
   };
 
@@ -386,7 +450,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           column={column} columns={columns} customColumns={customColumns} units={state.units} materials={state.materials} sizeUnit={state.sizeUnit} areas={state.areas} trades={state.workPackages} catalogThumb={catalogThumb}
           amount={null} currency={currency} decimals={decimals} canEdit={state.canEdit} search={search}
           onChange={(fields) => { if (fields.title) createFromDraft(draft, fields); }} onCatalog={(hit) => createFromDraft(draft, {}, hit)}
-          onNewCatalogItem={(title) => void newCatalogLine(draft, title)} onDiscard={() => discardDraft(draft)}
+          onNewCatalogItem={(title) => void newCatalogLine(draft, title)} onDiscard={() => discardDraft(draft)} onPasteRows={(text) => pasteRows(draft, text)}
           onOpen={() => undefined} onMenu={() => undefined} onDragStart={() => undefined} onDropBefore={() => undefined} onNewTrade={() => undefined} />)}
         {state.canEdit && (depth > 0 || !group.children) ? <div role="row" className={styles.addRow}>
           <button type="button" onClick={() => addDraft(context)}><Plus aria-hidden="true" size={14} />{t("New line")}</button>
@@ -531,6 +595,10 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         setState((current) => (current ? { ...current, columns: next } : current));
       }} /> : null}
     {confirmationDialog}
+    {undo ? <div className={styles.undoBar} role="status">
+      <span>{undo.label}</span>
+      <Button size="compact" variant="quiet" onPress={() => { applyOps(undo.ops); setUndo(null); }}>{t("Undo")}</Button>
+    </div> : null}
     {tradeFor ? <NameDialog title={t("New work package")} label={t("Name")} onClose={() => setTradeFor(null)} onSave={newTrade} /> : null}
     {openLine ? <LineDetails key={`${openLine.id}-${openLine.version}`} line={openLine} state={state} onClose={() => setOpen(null)}
       onSave={async (fields) => {

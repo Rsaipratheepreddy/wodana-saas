@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { Button, Checkbox, ControlledModalDialog, EmptyState, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { Button, Checkbox, ControlledModalDialog, EmptyState, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { StartProjectDialog } from "@/components/project-core/start-project-dialog";
@@ -28,6 +28,15 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   const [starting, setStarting] = useState(false);
   const { status } = state.quote;
   const { flow } = state;
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
+  // What must be fixed first blocks sending (the "to fix" count beside the button says what).
+  const blocking = state.checks.filter((check) => check.tone === "danger").length;
+  // Sending to the client is the one step they see at once: it asks first.
+  const confirmSend = (label: string, steps: Array<[string, Record<string, unknown>?]>) => requestConfirmation({
+    title: t("Send {quote} to {client}?", { quote: t("Q-{number}", { number: state.quote.number }), client: state.client.name }),
+    body: t("They'll see it in their portal and get an email."), confirmLabel: t("Send to client"), confirmVariant: "primary",
+    onConfirm: () => void run(label, steps),
+  });
   const run = async (label: string, steps: Array<[string, Record<string, unknown>?]>) => {
     setBusy(label); onError("");
     try {
@@ -46,8 +55,8 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   let actions: React.ReactNode = null;
   if (status === "draft" && state.canEdit) {
     const direct = !flow.internalReview && flow.canReview;
-    actions = <Button size="compact" variant="primary" isLoading={Boolean(busy)} isDisabled={!state.lines.length}
-      onPress={() => void run("send", direct ? [["submit"], [flow.reviewAction], ["issue"]] : [["submit"]])}>{direct ? t("Send to client") : t("Send for review")}</Button>;
+    actions = <Button size="compact" variant="primary" isLoading={Boolean(busy)} isDisabled={!state.lines.length || blocking > 0}
+      onPress={() => (direct ? confirmSend("send", [["submit"], [flow.reviewAction], ["issue"]]) : void run("send", [["submit"]]))}>{direct ? t("Send to client") : t("Send for review")}</Button>;
   } else if (status === "internal_review") {
     actions = flow.canReview ? <>
       <Button size="compact" isLoading={busy === "return"} onPress={() => void run("return", [["return"]])}>{t("Return")}</Button>
@@ -56,7 +65,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   } else if (status === "internal_approved") {
     actions = <>
       {flow.canReview ? <Button size="compact" isLoading={busy === "return"} onPress={() => void run("return", [["return"]])}>{t("Return")}</Button> : null}
-      <Button size="compact" variant="primary" isLoading={busy === "issue"} onPress={() => void run("issue", [["issue"]])}>{t("Send to client")}</Button>
+      <Button size="compact" variant="primary" isLoading={busy === "issue"} onPress={() => confirmSend("issue", [["issue"]])}>{t("Send to client")}</Button>
     </>;
   } else if (status === "issued") {
     actions = <>
@@ -85,6 +94,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   }
   return <>
     {actions}
+    {confirmationDialog}
     {starting ? <StartProjectDialog workspaceId={workspaceId} caseId={caseId} onClose={() => setStarting(false)} /> : null}
     {deciding ? <DecisionDialog state={state} onClose={() => setDeciding(false)}
       onSave={async (input) => { await run("decide", [["record_decision", input]]); setDeciding(false); }} busy={busy === "decide"} /> : null}
@@ -138,7 +148,9 @@ export function QuotePayments({ state, api, onState, onError }: { state: Builder
   const total = Number(state.pricing.total);
   const sum = rows.reduce((acc, row) => acc + (Number(row.text) || 0), 0);
   const update = (id: string, patch: Partial<PaymentMilestone & { text: string }>) => setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
-  const valid = rows.length > 0 && Math.abs(sum - 100) < 0.001 && rows.every((row) => row.title.trim() && row.trigger.trim() && Number(row.text) > 0);
+  const complete = rows.every((row) => row.title.trim() && row.trigger.trim() && Number(row.text) > 0);
+  // No milestones is allowed (clearing them); otherwise every one is complete and the shares make 100%.
+  const valid = rows.length === 0 || (Math.abs(sum - 100) < 0.001 && complete);
   const dirty = JSON.stringify(rows.map(({ text, ...row }) => ({ ...row, percent: Number(text) }))) !== JSON.stringify(state.quote.paymentTerms);
   const amount = (percent: string) => money((total * (Number(percent) || 0)) / 100, state.quote.currency, state.quote.decimals, locale);
   const save = async () => {
@@ -160,7 +172,7 @@ export function QuotePayments({ state, api, onState, onError }: { state: Builder
       <thead><tr><th>{t("Milestone")}</th><th data-numeric>{t("%")}</th><th data-numeric>{t("Amount")}</th><th>{t("When")}</th><th>{t("Before the project starts")}</th><th><span className={styles.srOnly}>{t("Remove")}</span></th></tr></thead>
       <tbody>{rows.map((row) => <tr key={row.id}>
         <td><input aria-label={t("Milestone")} value={row.title} onChange={(event) => update(row.id, { title: event.target.value })} placeholder={t("Advance")} /></td>
-        <td><input aria-label={t("%")} data-numeric inputMode="decimal" value={row.text} onChange={(event) => update(row.id, { text: event.target.value.replace(/[^\d.]/g, "") })} /></td>
+        <td><input aria-label={t("%")} data-numeric inputMode="decimal" value={row.text} onChange={(event) => update(row.id, { text: event.target.value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1") })} /></td>
         <td data-numeric>{amount(row.text)}</td>
         <td><input aria-label={t("When")} value={row.trigger} onChange={(event) => update(row.id, { trigger: event.target.value })} placeholder={t("On acceptance")} /></td>
         <td><Checkbox aria-label={t("Before the project starts")} isSelected={row.requiredForRelease} onChange={(value) => update(row.id, { requiredForRelease: value })} /></td>
@@ -170,6 +182,7 @@ export function QuotePayments({ state, api, onState, onError }: { state: Builder
     {rows.length || dirty ? <div className={styles.formActions}>
       {rows.length ? <Button size="compact" variant="quiet" onPress={() => setRows((current) => [...current, { id: crypto.randomUUID(), title: "", percent: 0, text: String(Math.max(0, Math.round((100 - sum) * 100) / 100)), trigger: "", requiredForRelease: current.length === 0 }])}><Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button> : null}
       <span className={styles.spacer} />
+      {rows.length && !complete ? <span className={styles.mutedText} data-alert>{t("Each milestone needs a name, a share and when it's due")}</span> : null}
       <span className={styles.mutedText} data-alert={(rows.length && Math.abs(sum - 100) >= 0.001) || undefined}>{t("Total {percent}%", { percent: Math.round(sum * 100) / 100 })}</span>
       {dirty ? <Button size="compact" onPress={() => setRows(initial())}>{t("Cancel")}</Button> : null}
       <Button size="compact" variant="primary" isLoading={busy} isDisabled={!valid || !dirty} onPress={() => void save()}>{t("Save")}</Button>

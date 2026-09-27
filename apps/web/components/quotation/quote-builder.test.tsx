@@ -129,6 +129,20 @@ describe("quotation builder", () => {
     await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "upsert", line: { id: "a", quantity: "1250.5", version: 3 } }] }]));
   });
 
+  it("turns rows pasted from the estimator's own sheet into lines, mapping its headings", async () => {
+    const fetcher = mount({ ...state([line({})]), sizeUnit: "cm" });
+    await userEvent.click(screen.getAllByRole("button", { name: "New line" })[0]);
+    const cell = screen.getAllByRole("combobox", { name: "Item" }).at(-1)!;
+    const sheet = ["SN\tDESCRIPTION OF ITEM\tINSPO PICTURE\tLENGTH (cm)\tHEIGHT (cm)\tDEPTH (cm)\tMATERIALS REQUESTED\tQTY\tUNIT PRICE\tTOTAL AMOUNT",
+      "1\tDining Chairs\t\t-\t-\t-\tPL Core Fabric / Veneer wood\t6\tAED3,500.00\tAED21,000.00",
+      "2\tDining Table\t\t220\t75\t100\tTaj mahal marble / veneer wood\t1\tAED29,000.00\tAED29,000.00"].join("\n");
+    fireEvent.paste(cell, { clipboardData: { getData: () => sheet } });
+    await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [
+      { op: "upsert", line: expect.objectContaining({ title: "Dining Chairs", material: "PL Core Fabric / Veneer wood", quantity: "6", rate: "3500", areaId: KITCHEN }) },
+      { op: "upsert", line: expect.objectContaining({ title: "Dining Table", length: "220", height: "75", width: "100", dimensionUnit: "cm", quantity: "1", rate: "29000" }) },
+    ] }]));
+  });
+
   it("puts the cell back on Escape without saving", async () => {
     const fetcher = mount(state([line({})]));
     const rate = screen.getByRole("textbox", { name: "Rate" });
