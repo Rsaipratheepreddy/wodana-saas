@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/react';
+import { tKey } from '../i18n/keys';
 import type { CaseAsset, ScopeEntry } from '../pre-project/content';
 
 export type NoteDocument = { version: 1; content: JSONContent };
@@ -22,7 +23,7 @@ export function safeNoteLink(value: string): string {
     const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`);
     if (!raw || raw.length > 2000 || !['https:', 'http:'].includes(u.protocol) || u.username || u.password || !u.hostname.includes('.')) throw new Error();
     return u.href;
-  } catch { throw new Error('Use an http or https website link without login details.'); }
+  } catch { throw new Error(tKey('Use an http or https website link without login details.')); }
 }
 export function videoSource(value: string): { url: string; embed?: string } {
   const url = safeNoteLink(value), u = new URL(url), host = u.hostname.toLowerCase().replace(/^www\./, '');
@@ -31,7 +32,7 @@ export function videoSource(value: string): { url: string; embed?: string } {
   const vimeo = host === 'vimeo.com' ? u.pathname.match(/^\/(\d+)$/)?.[1] : '';
   if (vimeo) return { url: `https://vimeo.com/${vimeo}`, embed: `https://player.vimeo.com/video/${vimeo}` };
   if (u.protocol === 'https:' && /\.(mp4|webm)$/i.test(u.pathname)) return { url };
-  throw new Error('Use a YouTube, Vimeo, or HTTPS MP4/WebM video link.');
+  throw new Error(tKey('Use a YouTube, Vimeo, or HTTPS MP4/WebM video link.'));
 }
 export function noteMedia(asset: CaseAsset): JSONContent {
   return { type: 'noteMedia', attrs: { id: crypto.randomUUID(), assetId: asset.id, kind: asset.mimeType.startsWith('image/') ? 'image' : asset.mimeType.startsWith('video/') ? 'video' : 'file', url: null, caption: '' } };
@@ -61,7 +62,7 @@ export function requirementNoteLinks(note: RequirementNote): string[] {
 
 /** Title-only edits keep existing rich content intact; edited text becomes plain text. */
 export function plainNoteDraft(original: RequirementNote, draft: RequirementNote): RequirementNote {
-  if (draft.note.length > 60000) throw new Error('Keep each note under 60,000 characters.');
+  if (draft.note.length > 60000) throw new Error(tKey('Keep each note under 60,000 characters.'));
   const assetIds = new Set((draft.assets ?? []).map(asset => asset.id));
   const links = new Set(draft.links ?? []);
   const hasLink = (value: unknown) => { try { return typeof value === 'string' && links.has(safeNoteLink(value)); } catch { return false; } };

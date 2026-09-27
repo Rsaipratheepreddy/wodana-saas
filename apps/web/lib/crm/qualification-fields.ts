@@ -1,4 +1,5 @@
 import type { FieldSpec } from "@/components/crm/crm-workbench";
+import { tKey } from "@/lib/i18n/keys";
 
 export type QualificationQuestion = {
   key: string;
@@ -47,7 +48,7 @@ export function qualificationFields(questions: QualificationQuestion[]): FieldSp
       : question.dataType === "multi_select" ? { type: "multi-select" as const }
       : question.dataType === "boolean" || question.dataType === "select" ? { type: "text" as const }
       : { type: "text" as const }),
-    ...(question.dataType === "boolean" ? { options: [{ id: "true", label: "Yes" }, { id: "false", label: "No" }] }
+    ...(question.dataType === "boolean" ? { options: [{ id: "true", label: tKey("Yes") }, { id: "false", label: tKey("No") }] }
       : question.dataType === "select" || question.dataType === "multi_select"
         ? { options: (question.configuration?.options ?? []).map((option) => ({ id: option, label: option })) }
         : {}),
@@ -70,9 +71,10 @@ export function qualificationValues(questions: QualificationQuestion[], values: 
   }));
 }
 
+/** The answer as text; "Yes", "No" and "Not provided" are i18n keys (show them with `translateKnown`). */
 export function qualificationAnswerText(answer: unknown) {
-  if (answer === true) return "Yes";
-  if (answer === false) return "No";
-  if (Array.isArray(answer)) return answer.length ? answer.join(", ") : "Not provided";
-  return answer === null || answer === undefined || answer === "" ? "Not provided" : String(answer);
+  if (answer === true) return tKey("Yes");
+  if (answer === false) return tKey("No");
+  if (Array.isArray(answer)) return answer.length ? answer.join(", ") : tKey("Not provided");
+  return answer === null || answer === undefined || answer === "" ? tKey("Not provided") : String(answer);
 }

@@ -1,3 +1,4 @@
+import { tKey } from "@/lib/i18n/keys";
 export const PRE_PROJECT_ROOT = "/workspace/pre-projects";
 export type PreProjectCase = {
   id: string; title: string; description: string | null; status: "draft" | "active" | "on_hold" | "released" | "cancelled";
@@ -25,10 +26,10 @@ export type PreProjectListItem = Pick<PreProjectCase, "id" | "title" | "descript
 export type PreProjectList = { items: PreProjectListItem[]; canStartLead?: boolean; total: number; canCreate: boolean; workspaceId: string; error?: string };
 export type PreProjectCandidate = { id: string; title: string; customerName: string; status: string; caseId: string | null };
 export const requirementViews = [
-  { section: "requirements", view: "requirement", label: "Requirements" },
-  { section: "measurements", view: "measurements", label: "Measurements" },
-  { section: "inspiration", view: "inspiration", label: "Client inspirations" },
-  { section: "site-layouts", view: "file", label: "Site layouts" },
+  { section: "requirements", view: "requirement", label: tKey("Requirements") },
+  { section: "measurements", view: "measurements", label: tKey("Measurements") },
+  { section: "inspiration", view: "inspiration", label: tKey("Client inspirations") },
+  { section: "site-layouts", view: "file", label: tKey("Site layouts") },
 ] as const;
 export const caseSections = ["overview", ...requirementViews.map(item => item.section), "site", "designs", "definition", "boq", "quotations", "contracts", "payment-plan", "variations", "approvals", "execution-release", "client-portal", "documents"];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

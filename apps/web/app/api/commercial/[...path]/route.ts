@@ -4,10 +4,12 @@ import {
   isSameOrigin,
   workspaceJsonResponse,
 } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 async function handle(
   request: Request,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
+  const t = await getServerT();
   const { path } = await params,
     w = new URL(request.url).searchParams.get("workspaceId") ?? "";
   const valid =
@@ -29,23 +31,23 @@ async function handle(
         (path.length === 5 && path[2] === "quotation-proposals" && UUID.test(path[3]) && ["apply","dismiss"].includes(path[4]) && request.method === "POST")));
   if (!UUID.test(w) || !valid)
     return NextResponse.json(
-      { message: "Invalid commercial resource." },
+      { message: t("Invalid commercial resource.") },
       { status: 400 },
     );
   if (request.method !== "GET" && !isSameOrigin(request))
     return NextResponse.json(
-      { message: "Use your workspace to make this change." },
+      { message: t("Use your workspace to make this change.") },
       { status: 403 },
     );
   const body = request.method === "GET" ? undefined : await request.text();
   if (body && body.length > 1500000)
     return NextResponse.json(
-      { message: "The request is too large." },
+      { message: t("The request is too large.") },
       { status: 413 },
     );
   const query=new URLSearchParams();
   if(path[2]==="catalog-options")for(const key of ["kind","search","linkedTo","catalogId"]) {const value=new URL(request.url).searchParams.get(key);if(value)query.set(key,value);}
-  if(path[2]==="quotation-composer") {const quoteId=new URL(request.url).searchParams.get("quoteId");if(!quoteId || !UUID.test(quoteId)) return NextResponse.json({message:"Choose a valid quotation."},{status:400});query.set("quoteId",quoteId);}
+  if(path[2]==="quotation-composer") {const quoteId=new URL(request.url).searchParams.get("quoteId");if(!quoteId || !UUID.test(quoteId)) return NextResponse.json({message:t("Choose a valid quotation.")},{status:400});query.set("quoteId",quoteId);}
   if (
     process.env.NODE_ENV !== "production" &&
     process.env.E2E_AUTH_BYPASS === "true" &&
@@ -74,7 +76,7 @@ async function handle(
       headers: { "content-type": "application/json" },
       body,
     },
-    "Could not complete the commercial action.",
+    t("Could not complete the commercial action."),
   );
 }
 export { handle as GET, handle as POST, handle as PUT };

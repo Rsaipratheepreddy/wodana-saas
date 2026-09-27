@@ -1,5 +1,6 @@
 import type { WorkspaceSearchResponse, WorkspaceSearchResult } from "@wodana/contracts";
 import { invalidRequest, UUID, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 const fixtureItems: WorkspaceSearchResult[] = [
   { id: "71000000-0000-4000-8000-000000000001", kind: "customer", title: "Amira Al Mansoori", subtitle: "Person · customer", reference: null, route: "/workspace/crm/customers?record=71000000-0000-4000-8000-000000000001" },
@@ -10,14 +11,15 @@ const fixtureItems: WorkspaceSearchResult[] = [
 ];
 
 export async function GET(request: Request) {
+  const t = await getServerT();
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
   const query = (url.searchParams.get("q") ?? "").trim();
   const rawLimit = url.searchParams.get("limit") ?? "20";
   const limit = Number(rawLimit);
-  if (!UUID.test(workspaceId)) return invalidRequest("A valid workspace is required.");
-  if (query.length < 2 || query.length > 120) return invalidRequest("Enter between 2 and 120 characters.");
-  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) return invalidRequest("Use a result limit between 1 and 50.");
+  if (!UUID.test(workspaceId)) return invalidRequest(t("A valid workspace is required."));
+  if (query.length < 2 || query.length > 120) return invalidRequest(t("Enter between 2 and 120 characters."));
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) return invalidRequest(t("Use a result limit between 1 and 50."));
 
   if (process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") {
     const normalized = query.toLocaleLowerCase();
@@ -30,6 +32,6 @@ export async function GET(request: Request) {
   return workspaceJsonResponse(
     `/workspaces/${workspaceId}/search?${params}`,
     { method: "GET" },
-    "Workspace search could not be loaded.",
+    t("Workspace search could not be loaded."),
   );
 }

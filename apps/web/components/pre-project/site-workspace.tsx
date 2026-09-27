@@ -80,7 +80,7 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
         added.push({ entry, asset });
       } catch { failed.push(file.name); }
     }
-    if (failed.length) setError(`${t("These could not be added")}: ${failed.join(", ")}. ${t("Add photos or PDF plans.")}`);
+    if (failed.length) setError(t("These could not be added: {files}. Add photos or PDF plans.", { files: failed.join(", ") }));
     const photos = added.filter((item) => item.asset.mimeType.startsWith("image/"));
     if (photos.length && canEdit) { setMarking(photos[0]); setQueue(photos.slice(1)); }
     else if (added.length) setNotice(t("{count} added.", { count: added.length }));

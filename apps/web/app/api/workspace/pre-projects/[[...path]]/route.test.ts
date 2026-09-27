@@ -1,4 +1,5 @@
 import {beforeEach,expect,it,vi} from 'vitest';
+vi.mock('@/lib/i18n/server', async () => { const { translator } = await import('@/lib/i18n/messages'); return { getServerT: async () => translator('en'), getServerLanguage: async () => 'en' }; });
 import {NextResponse} from 'next/server';
 vi.mock('@/lib/auth/backend-session',()=>({applyRotatedSession:vi.fn(),authenticatedBackendFetch:vi.fn()}));
 vi.mock('@/lib/workspace/workspace-api',()=>({UUID:/^[0-9a-f-]{36}$/i,isSameOrigin:(r:Request)=>r.headers.get('origin')==='http://localhost',invalidRequest:(message:string)=>NextResponse.json({message},{status:400}),workspaceJsonResponse:vi.fn()}));

@@ -181,6 +181,8 @@
 .poweredBy { display: flex; align-items: center; justify-content: center; gap: var(--wd-space-1); margin-block-start: var(--wd-space-6); color: var(--login-muted); }
 .poweredBy > span { font-size: var(--wd-text-2xs); }
 .poweredLogo { opacity: 0.72; }
+.languageChoice { inline-size: min(100%, 11rem); margin: var(--wd-space-3) auto 0; }
+.languageChoice :global(.wd-select-button) { min-block-size: 2rem; border-color: transparent; background: transparent; color: var(--login-muted); font-size: var(--wd-text-xs); }
 
 /* Security setup retains every step while sharing the same card and controls. */
 .formArea[data-security="true"] .formIntro { margin-block-end: var(--wd-space-3); }

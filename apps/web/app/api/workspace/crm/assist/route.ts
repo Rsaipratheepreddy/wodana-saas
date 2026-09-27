@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { UUID, invalidRequest, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 const requestWindows = new Map<string, { startedAt: number; count: number }>();
 function withinAiBudget(workspaceId: string) {
@@ -12,25 +13,26 @@ function withinAiBudget(workspaceId: string) {
 }
 
 export async function POST(request: Request) {
-  if (!isSameOrigin(request)) return NextResponse.json({ message: "This request must come from your workspace." }, { status: 403 });
+  const t = await getServerT();
+  if (!isSameOrigin(request)) return NextResponse.json({ message: t("This request must come from your workspace.") }, { status: 403 });
   const body = await request.json().catch(() => null);
-  if (!UUID.test(body?.workspaceId ?? "") || !UUID.test(body?.leadId ?? "")) return invalidRequest("Choose a lead in this workspace.");
+  if (!UUID.test(body?.workspaceId ?? "") || !UUID.test(body?.leadId ?? "")) return invalidRequest(t("Choose a lead in this workspace."));
   const requestId = UUID.test(body?.requestId ?? "") ? body.requestId : randomUUID();
-  const upstream = await workspaceJsonResponse(`/workspaces/${body.workspaceId}/crm/leads/${body.leadId}`, { method: "GET" }, "The lead could not be loaded.");
+  const upstream = await workspaceJsonResponse(`/workspaces/${body.workspaceId}/crm/leads/${body.leadId}`, { method: "GET" }, t("The lead could not be loaded."));
   if (!upstream.ok) return upstream;
   const lead = await upstream.json();
   const checks: string[] = [];
-  if (!lead.ownerMembershipId) checks.push("Assign a lead manager so this enquiry has a responsible person.");
-  if (!lead.nextActionAt && !["qualified", "disqualified", "paused"].includes(lead.status)) checks.push("Schedule the next follow-up.");
-  if (lead.nextActionAt && Date.parse(lead.nextActionAt) < Date.now()) checks.push("The next action is overdue. Review it and record the outcome.");
-  if (!lead.qualification?.length) checks.push("Capture the budget, timeline and decision maker.");
-  if (lead.status === "qualified") checks.push(lead.opportunities?.length ? "Continue work in the linked opportunity." : "Create an opportunity to continue the sales process.");
-  if (!checks.length) checks.push("Review the latest customer activity and confirm the next milestone.");
+  if (!lead.ownerMembershipId) checks.push(t("Assign a lead manager so this enquiry has a responsible person."));
+  if (!lead.nextActionAt && !["qualified", "disqualified", "paused"].includes(lead.status)) checks.push(t("Schedule the next follow-up."));
+  if (lead.nextActionAt && Date.parse(lead.nextActionAt) < Date.now()) checks.push(t("The next action is overdue. Review it and record the outcome."));
+  if (!lead.qualification?.length) checks.push(t("Capture the budget, timeline and decision maker."));
+  if (lead.status === "qualified") checks.push(lead.opportunities?.length ? t("Continue work in the linked opportunity.") : t("Create an opportunity to continue the sales process."));
+  if (!checks.length) checks.push(t("Review the latest customer activity and confirm the next milestone."));
   let mode = "checklist";
   let summary = `${lead.enquiry?.title ?? "This enquiry"} is ${String(lead.status).replaceAll("_", " ")}.`;
-  let note = "Record-based checklist. AI is not configured.";
+  let note = t("Record-based checklist. AI is not configured.");
   const available = process.env.GEMINI_API_KEY ? withinAiBudget(body.workspaceId) : false;
-  if (process.env.GEMINI_API_KEY && !available) note = "The AI review limit was reached. Try again in a minute. Showing the record-based checklist.";
+  if (process.env.GEMINI_API_KEY && !available) note = t("The AI review limit was reached. Try again in a minute. Showing the record-based checklist.");
   if (process.env.GEMINI_API_KEY && available) {
     try {
       const model = process.env.GEMINI_MODEL ?? "gemini-3.5-flash";
@@ -46,8 +48,8 @@ export async function POST(request: Request) {
       const candidate = result.candidates?.[0];
       const generated = (candidate?.content?.parts ?? []).filter((part: { thought?: boolean; text?: string }) => !part.thought && part.text).map((part: { text: string }) => part.text).join("\n");
       if (!generated || candidate?.finishReason !== "STOP") throw new Error(`Gemini response incomplete: ${candidate?.finishReason ?? "empty"}`);
-      summary = generated; mode = "ai"; note = "AI suggestion based on this lead. Review before acting.";
-    } catch (error) { console.warn("Woddy provider unavailable:", error instanceof Error ? error.message : "Request failed"); note = "AI is temporarily unavailable. Showing the record-based checklist."; }
+      summary = generated; mode = "ai"; note = t("AI suggestion based on this lead. Review before acting.");
+    } catch (error) { console.warn("Woddy provider unavailable:", error instanceof Error ? error.message : "Request failed"); note = t("AI is temporarily unavailable. Showing the record-based checklist."); }
   }
   const evidence = [
     { label: "Enquiry stage", value: String(lead.status).replaceAll("_", " "), source: "CRM lead status" },
@@ -80,7 +82,7 @@ export async function POST(request: Request) {
       uncertainty,
       provenance: { mode, provider: mode === "ai" ? "gemini" : "wodana_rules", model: mode === "ai" ? process.env.GEMINI_MODEL ?? "gemini-3.5-flash" : "crm_checklist_v1", generatedAt: new Date().toISOString() },
     }),
-  }, "The review was generated but could not be saved for staff review.");
+  }, t("The review was generated but could not be saved for staff review."));
   if (!saved.ok) return saved;
   const suggestion = await saved.json();
   const response = NextResponse.json({ ...suggestion, mode, summary: suggestion.suggestionText, checks, note }, { headers: { "cache-control": "no-store" } });

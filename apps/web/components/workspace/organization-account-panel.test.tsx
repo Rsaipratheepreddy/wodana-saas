@@ -61,7 +61,7 @@ describe("OrganizationAccountPanel", () => {
     const dialog = await screen.findByRole("dialog", { name: "Cancel organization request?" });
     await interaction.click(within(dialog).getByRole("button", { name: "Cancel request" }));
     expect(await screen.findByText("Request changed. Refresh and try again.")).toBeVisible();
-    expect(screen.getByText("pending")).toBeInTheDocument();
+    expect(screen.getByText("Pending")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel Palm Living Projects request" })).toBeEnabled();
   });
   it("explains that workspaces are independent companies", () => {
@@ -124,6 +124,6 @@ describe("OrganizationAccountPanel", () => {
     expect(fetchMock.mock.calls[0][0]).toBe(`/api/workspace/organization-requests/${pending.id}/cancel`);
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ workspaceId: companyProfileFixture.workspace.id, expectedVersion: 1 });
     expect(await screen.findByText("Palm Living Projects request cancelled.")).toBeInTheDocument();
-    expect(screen.getByText("cancelled")).toBeInTheDocument();
+    expect(screen.getByText("Cancelled")).toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import { businessApiUrl, safeBackendMessage } from "@/lib/auth/server";
 import { forwardedDeviceHeaders } from "@/lib/auth/device-request";
 import { getOperatorSession, OPERATOR_COOKIE, operatorCookieOptions } from "@/lib/internal/auth";
 import { invalidRequest, isSameOrigin } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 const actions = {
   login: "/auth/platform/login",
@@ -15,7 +16,8 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ action: string }> },
 ) {
-  if (!isSameOrigin(request)) return invalidRequest("The request origin is not allowed.");
+  const t = await getServerT();
+  if (!isSameOrigin(request)) return invalidRequest(t("The request origin is not allowed."));
   const { action } = await context.params;
   if (action === "logout") {
     const session = await getOperatorSession();
@@ -32,9 +34,9 @@ export async function POST(
     return response;
   }
   const path = actions[action as keyof typeof actions];
-  if (!path) return NextResponse.json({ message: "Unknown sign-in action." }, { status: 404 });
+  if (!path) return NextResponse.json({ message: t("Unknown sign-in action.") }, { status: 404 });
   const body = await request.json().catch(() => null);
-  if (!body || typeof body !== "object") return invalidRequest("Enter valid sign-in details.");
+  if (!body || typeof body !== "object") return invalidRequest(t("Enter valid sign-in details."));
   const upstream = await fetch(businessApiUrl(path), {
     method: "POST",
     headers: { "content-type": "application/json", ...forwardedDeviceHeaders(request.headers) },
@@ -42,11 +44,11 @@ export async function POST(
     cache: "no-store",
     signal: AbortSignal.timeout(12_000),
   }).catch(() => null);
-  if (!upstream) return NextResponse.json({ message: "Sign-in is temporarily unavailable." }, { status: 503 });
+  if (!upstream) return NextResponse.json({ message: t("Sign-in is temporarily unavailable.") }, { status: 503 });
   const payload = await upstream.json().catch(() => null) as Record<string, unknown> | null;
   if (!upstream.ok) {
     return NextResponse.json(
-      { message: safeBackendMessage(payload, "Sign-in could not be completed.") },
+      { message: safeBackendMessage(payload, t("Sign-in could not be completed.")) },
       { status: upstream.status, headers: { "cache-control": "no-store" } },
     );
   }

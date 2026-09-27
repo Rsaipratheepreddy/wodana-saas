@@ -1,8 +1,10 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { ACCESS_COOKIE, REFRESH_COOKIE, businessApiUrl } from "@/lib/auth/server";
+import { getServerT } from "@/lib/i18n/server";
 
 export async function GET() {
+  const t = await getServerT();
   const cookieStore = await cookies();
   const accessToken = cookieStore.get(ACCESS_COOKIE)?.value;
   if (!accessToken) {
@@ -14,7 +16,7 @@ export async function GET() {
     signal: AbortSignal.timeout(12_000),
   }).catch(() => null);
   if (!upstream || upstream.status >= 500) {
-    return NextResponse.json({ message: "Authentication service is unavailable." }, { status: 503 });
+    return NextResponse.json({ message: t("Authentication service is unavailable.") }, { status: 503 });
   }
   if (upstream.status === 401) {
     // JWT decoding here only decides whether to ask the page proxy to refresh.
@@ -30,6 +32,6 @@ export async function GET() {
     response.headers.set("cache-control", "no-store");
     return response;
   }
-  if (!upstream.ok) return NextResponse.json({ message: "Session could not be checked." }, { status: upstream.status });
+  if (!upstream.ok) return NextResponse.json({ message: t("Session could not be checked.") }, { status: upstream.status });
   return NextResponse.json({ authenticated: true, profile: await upstream.json() }, { headers: { "cache-control": "no-store" } });
 }

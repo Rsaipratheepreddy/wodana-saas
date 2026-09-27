@@ -8,8 +8,10 @@ import styles from './case-content.module.css';
 import { AssetMarkup } from './asset-markup';
 import { NoteRichEditor } from '../crm/note-rich-editor';
 import { documentText, mediaIds, textDocument } from '@/lib/crm/note-document';
+import { useT } from '@/lib/i18n/i18n-provider';
+import { tKey } from '@/lib/i18n/keys';
 
-const recordNames = { requirement: 'requirement', inspiration: 'inspiration', file: 'site plan', note: 'project note' };
+const saveLabels = { requirement: tKey('Save requirement'), inspiration: tKey('Save inspiration'), file: tKey('Save site plan'), note: tKey('Save project note') };
 
 type Props = {
   entry: ScopeEntry;
@@ -23,6 +25,7 @@ type Props = {
 };
 
 export function ScopeEditor({ entry, data, onClose, onSave, assetUrl, uploadFile }: Props) {
+  const t = useT();
   const [draft, setDraft] = useState(entry);
   const [baseline, setBaseline] = useState(entry);
   const [marking, setMarking] = useState<CaseAsset | null>(null);
@@ -37,16 +40,16 @@ export function ScopeEditor({ entry, data, onClose, onSave, assetUrl, uploadFile
   const change = (key: keyof ScopeEntry, value: unknown) => setDraft(d => ({ ...d, [key]: value }));
   const invalid = (_at: number, text: string) => { setError(text); return false; };
   const validate = () => {
-    if (draft.note.length > 6000) return invalid(0, 'Keep the requirement text within 6,000 characters.');
-    if (!draft.title.trim()) return invalid(0, 'Enter a short title for the client’s request.');
+    if (draft.note.length > 6000) return invalid(0, t('Keep the requirement text within 6,000 characters.'));
+    if (!draft.title.trim()) return invalid(0, t('Enter a short title for the client’s request.'));
     if (draft.referenceUrl) {
       try { const url = new URL(draft.referenceUrl); if (!['https:', 'http:'].includes(url.protocol)) throw new Error(); }
-      catch { return invalid(1, 'Enter a complete reference link, starting with https://.'); }
+      catch { return invalid(1, t('Enter a complete reference link, starting with https://.')); }
     }
-    if (draft.kind === 'file' && !draft.assets.length) return invalid(1, 'Attach a site layout before saving.');
+    if (draft.kind === 'file' && !draft.assets.length) return invalid(1, t('Attach a site layout before saving.'));
     {
-      if (draft.quantity !== null && (!Number.isFinite(draft.quantity) || draft.quantity <= 0 || draft.quantity > 1e9 || !/^\d+(\.\d{1,4})?$/.test(String(draft.quantity)))) return invalid(2, 'Enter a positive quantity with up to 4 decimals, or leave it empty.');
-      if (!draft.unit.trim() || !draft.category.trim()) return invalid(2, 'Enter a unit and category, or keep the suggested values.');
+      if (draft.quantity !== null && (!Number.isFinite(draft.quantity) || draft.quantity <= 0 || draft.quantity > 1e9 || !/^\d+(\.\d{1,4})?$/.test(String(draft.quantity)))) return invalid(2, t('Enter a positive quantity with up to 4 decimals, or leave it empty.'));
+      if (!draft.unit.trim() || !draft.category.trim()) return invalid(2, t('Enter a unit and category, or keep the suggested values.'));
     }
     setError('');
     return true;
@@ -59,23 +62,23 @@ export function ScopeEditor({ entry, data, onClose, onSave, assetUrl, uploadFile
       const saved = await onSave(draft);
       if (addAnother) {
         const next = { ...blankEntry(saved.roomId), kind: saved.kind, source: saved.source, category: saved.category };
-        setDraft(next); setBaseline(next); setMessage('Saved. Add the next request.');
+        setDraft(next); setBaseline(next); setMessage(t('Saved. Add the next request.'));
       } else onClose();
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not save. Your entry is still here.'); }
+    } catch (err) { setError(err instanceof Error ? err.message : t('Could not save. Your entry is still here.')); }
     finally { setSaving(false); }
   };
 
-  return <><CaseModal layout="sheet" size="lg" title={draft.kind === "requirement" ? "Inquiry Requirements" : draft.kind === "inspiration" ? "Inspiration" : draft.kind === "file" ? "Site plan" : "Project note"} onClose={onClose} dirty={dirty} busy={busy} footer={writable ? <Button size="compact" form="scope-form" type="submit" variant="primary" isDisabled={uploading} isLoading={saving}>Save {recordNames[draft.kind]}</Button> : undefined}>
+  return <><CaseModal layout="sheet" size="lg" title={t(draft.kind === "requirement" ? "Inquiry Requirements" : draft.kind === "inspiration" ? "Inspiration" : draft.kind === "file" ? "Site plan" : "Project note")} onClose={onClose} dirty={dirty} busy={busy} footer={writable ? <Button size="compact" form="scope-form" type="submit" variant="primary" isDisabled={uploading} isLoading={saving}>{t(saveLabels[draft.kind])}</Button> : undefined}>
     <form id="scope-form" noValidate onSubmit={save} className={styles.captureForm}>
 
       {error && <p className={styles.error} role="alert">{error}</p>}{message && <p role="status" className={styles.notice}>{message}</p>}
       {<fieldset disabled={!writable || busy} className={styles.captureFields}>
-        <label className={styles.documentHeading}><span>{draft.kind === 'requirement' ? 'Client requirement' : 'Title'}</span><input style={{border:0,boxShadow:"none",background:"transparent",fontSize:16,fontWeight:600}} required maxLength={240} value={draft.title} onChange={e => change('title', e.target.value)} placeholder={draft.kind === 'requirement' ? 'e.g. Need more wardrobe storage' : 'Give this reference a short title'} /></label>
-        <NoteRichEditor compact label={draft.kind === "file" ? "Site plan notes" : draft.kind === "inspiration" ? "Inspiration notes" : "Requirement notes"} placeholder={draft.kind === "file" ? "Add the plan, then note its rooms, measurements or references…" : draft.kind === "inspiration" ? "Add photos, links and what the client likes about them…" : undefined} key={draft.id} document={draft.document ?? textDocument(draft.note)} assets={draft.assets} writable={Boolean(writable)} disabled={busy} onDraw={writable && !busy && draft.assets.length < 20 ? setMarking : undefined} assetUrl={assetUrl ?? ((asset, preview) => caseApi(data.workspaceId, data.caseId, `assets/${asset.id}${preview ? '?preview=1' : ''}`))} onChange={document => setDraft(current => ({ ...current, document, note: documentText(document.content) }))} onAsset={asset => setDraft(current => ({ ...current, assets: [...current.assets.filter(item => item.id !== asset.id), asset] }))} onBusy={setUploading} onError={setError} onUpload={uploadFile ?? (async (file, id) => { if (file.type.startsWith('video/')) throw new Error('Use a video reference link, or upload an image or PDF.'); const body = new FormData(); body.set('file', file); return caseRequest<CaseAsset>(data.workspaceId, data.caseId, `assets/${id}`, 'POST', body); })}/>
+        <label className={styles.documentHeading}><span>{t(draft.kind === 'requirement' ? 'Client requirement' : 'Title')}</span><input style={{border:0,boxShadow:"none",background:"transparent",fontSize:16,fontWeight:600}} required maxLength={240} value={draft.title} onChange={e => change('title', e.target.value)} placeholder={t(draft.kind === 'requirement' ? 'e.g. Need more wardrobe storage' : 'Give this reference a short title')} /></label>
+        <NoteRichEditor compact label={t(draft.kind === "file" ? "Site plan notes" : draft.kind === "inspiration" ? "Inspiration notes" : "Requirement notes")} placeholder={draft.kind === "file" ? t("Add the plan, then note its rooms, measurements or references…") : draft.kind === "inspiration" ? t("Add photos, links and what the client likes about them…") : undefined} key={draft.id} document={draft.document ?? textDocument(draft.note)} assets={draft.assets} writable={Boolean(writable)} disabled={busy} onDraw={writable && !busy && draft.assets.length < 20 ? setMarking : undefined} assetUrl={assetUrl ?? ((asset, preview) => caseApi(data.workspaceId, data.caseId, `assets/${asset.id}${preview ? '?preview=1' : ''}`))} onChange={document => setDraft(current => ({ ...current, document, note: documentText(document.content) }))} onAsset={asset => setDraft(current => ({ ...current, assets: [...current.assets.filter(item => item.id !== asset.id), asset] }))} onBusy={setUploading} onError={setError} onUpload={uploadFile ?? (async (file, id) => { if (file.type.startsWith('video/')) throw new Error(t('Use a video reference link, or upload an image or PDF.')); const body = new FormData(); body.set('file', file); return caseRequest<CaseAsset>(data.workspaceId, data.caseId, `assets/${id}`, 'POST', body); })}/>
 
       </fieldset>}
       <AssetFiles onDraw={writable && !busy && draft.assets.length < 20 ? setMarking : undefined} workspaceId={data.workspaceId} caseId={data.caseId} assets={draft.assets.filter(asset => !mediaIds((draft.document ?? textDocument(draft.note)).content).has(asset.id))} assetUrl={assetUrl} onRemove={writable && !busy ? id => change('assets', draft.assets.filter(a => a.id !== id)) : undefined} />
-      {writable && entry.version === 0 && <div className={styles.captureAnother}><Checkbox isDisabled={busy} isSelected={addAnother} onChange={setAddAnother}>Add another after saving</Checkbox></div>}
+      {writable && entry.version === 0 && <div className={styles.captureAnother}><Checkbox isDisabled={busy} isSelected={addAnother} onChange={setAddAnother}>{t('Add another after saving')}</Checkbox></div>}
     </form>
-  </CaseModal>{marking && <AssetMarkup workspaceId={data.workspaceId} caseId={data.caseId} asset={marking} assetUrl={assetUrl} uploadFile={uploadFile} onClose={() => setMarking(null)} onSaved={asset => { setDraft(current => ({ ...current, assets: [...current.assets, asset] })); setMarking(null); setMessage('Marked copy attached. Save the requirement to keep it.'); }}/> }</>;
+  </CaseModal>{marking && <AssetMarkup workspaceId={data.workspaceId} caseId={data.caseId} asset={marking} assetUrl={assetUrl} uploadFile={uploadFile} onClose={() => setMarking(null)} onSaved={asset => { setDraft(current => ({ ...current, assets: [...current.assets, asset] })); setMarking(null); setMessage(t('Marked copy attached. Save the requirement to keep it.')); }}/> }</>;
 }

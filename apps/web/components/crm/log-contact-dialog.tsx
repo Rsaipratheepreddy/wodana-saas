@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CalendarClock, CircleSlash, Mail, MessageCircle, MessageSquareText, Phone, PhoneMissed, ThumbsUp, Users, type LucideIcon } from "lucide-react";
 import { Button, ControlledModalDialog, InlineNotice, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { translateKnown } from "@/lib/i18n/keys";
 import { logLeadContact, type ContactChannel, type ContactOutcome, type LoggedContact } from "@/lib/crm/contact";
 import { CrmDateTimeField } from "./crm-date-time-field";
 import styles from "./log-contact-dialog.module.css";
@@ -68,7 +69,7 @@ export function LogContactDialog({ workspaceId, lead, onClose, onLogged }: {
         ...(next ? { nextActionAt: next.toISOString() } : {}),
       });
       onLogged(saved, outcome);
-    } catch (reasonError) { setError(reasonError instanceof Error ? reasonError.message : t("The contact could not be logged.")); }
+    } catch (reasonError) { setError(reasonError instanceof Error ? translateKnown(t, reasonError.message) : t("The contact could not be logged.")); }
     finally { setSaving(false); }
   };
 

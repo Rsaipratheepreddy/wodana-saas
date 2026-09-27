@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, SegmentedControl, SelectField, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, SegmentedControl, SelectField, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
 import { crmRequest } from "@/lib/crm/client";
 import { enquiryFields, isShown } from "@/lib/crm/enquiry-fields";
 import { leadOptionLabel } from "@/lib/crm/lead-options";
@@ -14,13 +15,13 @@ type Row = Record<string, unknown>;
 type Result = { rows?: Row[]; summary?: Row; walkIns?: Row[] };
 type GridRow = { id: string; title: string; detail: string; value: string };
 
-const REPORTS: { id: ReportId; label: string }[] = [
-  { id: "lead-flow", label: "Enquiries" }, { id: "funnel", label: "Funnel" }, { id: "pipeline", label: "Pipeline" },
-  { id: "sla", label: "Response" }, { id: "assignment", label: "Assignment" }, { id: "forecast", label: "Forecast" },
+const REPORTS: { id: ReportId; label: MessageKey }[] = [
+  { id: "lead-flow", label: tKey("Enquiries") }, { id: "funnel", label: tKey("Funnel") }, { id: "pipeline", label: tKey("Pipeline") },
+  { id: "sla", label: tKey("Response") }, { id: "assignment", label: tKey("Assignment") }, { id: "forecast", label: tKey("Forecast") },
 ];
-const PERIODS = [{ id: "7", label: "Last 7 days" }, { id: "30", label: "Last 30 days" }, { id: "90", label: "Last 90 days" }, { id: "365", label: "Last 12 months" }];
+const PERIODS = [{ id: "7", label: tKey("Last 7 days") }, { id: "30", label: tKey("Last 30 days") }, { id: "90", label: tKey("Last 90 days") }, { id: "365", label: tKey("Last 12 months") }];
 const num = (value: unknown) => { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; };
-const humanize = (value: unknown, fallback = "Not set") => { const text = String(value ?? "").trim(); return text ? text.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase()) : fallback; };
+const humanize = (value: unknown, fallback: string) => { const text = String(value ?? "").trim(); return text ? text.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase()) : fallback; };
 const sum = (rows: Row[], key: string, filter: (row: Row) => boolean = () => true) => rows.filter(filter).reduce((total, row) => total + num(row[key]), 0);
 
 /**
@@ -29,7 +30,8 @@ const sum = (rows: Row[], key: string, filter: (row: Row) => boolean = () => tru
  */
 export function SalesReports({ initialData, regionLabel }: { initialData: LeadsPageData; regionLabel: string }) {
   const t = useT();
-  const locale = initialData.defaultLocale;
+  const { locale } = useDesignSystem();
+  const human = (value: unknown) => translateKnown(t, humanize(value, t("Not set")));
   const [report, setReport] = useState<ReportId>("lead-flow");
   const [period, setPeriod] = useState("30");
   const [groupBy, setGroupBy] = useState("source");
@@ -81,9 +83,9 @@ export function SalesReports({ initialData, regionLabel }: { initialData: LeadsP
     if (activeGroup === "budget") return leadOptionLabel(options?.budgetRanges, text);
     if (activeGroup === "customerType") return leadOptionLabel(options?.customerTypes, text);
     if (activeGroup === "emirate") return leadOptionLabel(options?.emirates, text);
-    if (activeGroup === "intake") return text === "form" ? t("Form or QR") : text === "manual" ? t("Staff entry") : humanize(text);
+    if (activeGroup === "intake") return text === "form" ? t("Form or QR") : text === "manual" ? t("Staff entry") : human(text);
     if (activeGroup === "source") { const [source, channel] = text.split(" / "); return `${leadOptionLabel(options?.sources, source)} · ${leadOptionLabel(options?.channels[source], channel)}`; }
-    if (["freshness"].includes(activeGroup)) return humanize(text);
+    if (["freshness"].includes(activeGroup)) return human(text);
     return text;
   };
 
@@ -109,11 +111,11 @@ export function SalesReports({ initialData, regionLabel }: { initialData: LeadsP
   ];
   const gridRows: GridRow[] = rows.map((row, index) => {
     const id = String(row.id ?? `${report}-${index}`);
-    if (report === "funnel") return { id, title: String(row.stage ?? humanize(row.status)), detail: humanize(row.status), value: String(num(row.count)) };
-    if (report === "pipeline") return { id, title: `${String(row.pipeline ?? "")} · ${String(row.stage ?? t("Not set"))}`, detail: `${humanize(row.status)} · ${num(row.count)}`, value: money(row.value, row.currency) };
-    if (report === "sla") return { id, title: humanize(row.status), detail: `${num(row.responded)} ${t("responded")} · ${num(row.breached)} ${t("breached")}`, value: row.averageMinutes == null ? "—" : t("{count} min", { count: Math.round(num(row.averageMinutes)) }) };
-    if (report === "assignment") return { id, title: String(row.owner ?? t("Unassigned")), detail: humanize(row.method), value: String(num(row.count)) };
-    return { id, title: `${String(row.currency ?? "")} · ${humanize(row.status)}`, detail: `${num(row.count)} · ${t("Weighted")} ${money(row.weightedAmount, row.currency)}`, value: money(row.amount, row.currency) };
+    if (report === "funnel") return { id, title: String(row.stage ?? human(row.status)), detail: human(row.status), value: String(num(row.count)) };
+    if (report === "pipeline") return { id, title: `${String(row.pipeline ?? "")} · ${String(row.stage ?? t("Not set"))}`, detail: `${human(row.status)} · ${num(row.count)}`, value: money(row.value, row.currency) };
+    if (report === "sla") return { id, title: human(row.status), detail: t("{responded} responded · {breached} breached", { responded: num(row.responded), breached: num(row.breached) }), value: row.averageMinutes == null ? "—" : t("{count} min", { count: Math.round(num(row.averageMinutes)) }) };
+    if (report === "assignment") return { id, title: String(row.owner ?? t("Unassigned")), detail: human(row.method), value: String(num(row.count)) };
+    return { id, title: `${String(row.currency ?? "")} · ${human(row.status)}`, detail: t("{count} · Weighted {amount}", { count: num(row.count), amount: money(row.weightedAmount, row.currency) }), value: money(row.amount, row.currency) };
   });
   const otherColumns: DataGridColumn<GridRow>[] = [
     { accessorKey: "title", header: t("Breakdown"), size: 320, meta: { primary: true } },
@@ -124,14 +126,14 @@ export function SalesReports({ initialData, regionLabel }: { initialData: LeadsP
 
   return <section className={styles.page} aria-label={t("Sales reports")}>
     <div className={styles.toolbar}>
-      <SegmentedControl label={t("Report")} value={report} onChange={(key) => setReport(key as ReportId)} options={REPORTS.map((item) => ({ id: item.id, label: t(item.label as never) }))} />
+      <SegmentedControl label={t("Report")} value={report} onChange={(key) => setReport(key as ReportId)} options={REPORTS.map((item) => ({ id: item.id, label: t(item.label) }))} />
       <span className={styles.spacer} />
       {report === "lead-flow" ? <SelectField aria-label={t("Break down by")} accent="neutral" label={null} items={groupings} selectedKey={activeGroup} onSelectionChange={(key) => setGroupBy(String(key ?? "source"))} /> : null}
-      <SelectField aria-label={t("Period")} accent="neutral" label={null} items={PERIODS.map((item) => ({ ...item, label: t(item.label as never) }))} selectedKey={period} onSelectionChange={(key) => setPeriod(String(key ?? "30"))} />
+      <SelectField aria-label={t("Period")} accent="neutral" label={null} items={PERIODS.map((item) => ({ ...item, label: t(item.label) }))} selectedKey={period} onSelectionChange={(key) => setPeriod(String(key ?? "30"))} />
     </div>
     {failure ? failure.status === 403
       ? <EmptyState illustration="locked" title={t("You can't see this report")} description={t("Ask an owner for access to deal values.")} />
-      : <EmptyState illustration="error" title={t("This report didn't load")} description={failure.message} action={<Button size="compact" onPress={() => setReload((value) => value + 1)}>{t("Retry")}</Button>} />
+      : <EmptyState illustration="error" title={t("This report didn't load")} description={translateKnown(t, failure.message)} action={<Button size="compact" onPress={() => setReload((value) => value + 1)}>{t("Retry")}</Button>} />
       : <>
         <dl className={styles.metrics} aria-label={t("{name} summary", { name: t(title as never) })}>{metrics.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{loading ? "…" : value}</dd></div>)}</dl>
         {report === "lead-flow"

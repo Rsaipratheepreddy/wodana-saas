@@ -1,8 +1,13 @@
+"use client";
+
+import { useT } from "@/lib/i18n/i18n-provider";
 import type { ReactNode } from "react";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { formatMoney, formatNumber } from "../foundations/formatters";
+import { useDesignSystem } from "../foundations/provider";
 
-export function Kpi({ change, formatter = "number", label, suffix, value }: { change?: number; formatter?: "number" | "money" | "percent"; label: string; suffix?: string; value: number | null }) { const formatted = value === null ? "—" : formatter === "money" ? formatMoney(value) : formatter === "percent" ? `${formatNumber(value)}%` : formatNumber(value); return <div className="wd-kpi"><span>{label}</span><strong>{formatted}{value !== null && suffix ? <small className="wd-kpi-unit"> {suffix}</small> : null}</strong>{change != null ? <small data-positive={change >= 0}>{change >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{Math.abs(change)}% from prior period</small> : null}</div>; }
+export function Kpi({ change, formatter = "number", label, suffix, value }: { change?: number; formatter?: "number" | "money" | "percent"; label: string; suffix?: string; value: number | null }) {
+  const t = useT(); const { locale, currency } = useDesignSystem(); const formatted = value === null ? "—" : formatter === "money" ? formatMoney(value, { locale, currency }) : formatter === "percent" ? `${formatNumber(value, { locale })}%` : formatNumber(value, { locale }); return <div className="wd-kpi"><span>{label}</span><strong>{formatted}{value !== null && suffix ? <small className="wd-kpi-unit"> {suffix}</small> : null}</strong>{change != null ? <small data-positive={change >= 0}>{change >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{t("{change}% from prior period", { change: Math.abs(change) })}</small> : null}</div>; }
 
 export type SeriesPoint = { label: string; value: number };
 export function LineChart({ ariaLabel, data }: { ariaLabel: string; data: SeriesPoint[] }) { const max = Math.max(...data.map((point) => point.value), 1); const points = data.map((point, index) => `${(index / Math.max(1, data.length - 1)) * 100},${100 - (point.value / max) * 90}`).join(" "); return <figure className="wd-chart"><svg aria-label={ariaLabel} preserveAspectRatio="none" role="img" viewBox="0 0 100 100"><line x1="0" x2="100" y1="100" y2="100" /><polyline fill="none" points={points} /></svg><figcaption>{data.map((point) => <span key={point.label}>{point.label}<strong>{point.value}</strong></span>)}</figcaption></figure>; }

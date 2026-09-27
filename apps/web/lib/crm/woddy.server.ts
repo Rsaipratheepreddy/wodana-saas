@@ -1,14 +1,15 @@
 import "server-only";
+import { tKey } from "@/lib/i18n/keys";
 
 export type WoddyMessage = { role: "user" | "assistant"; text: string };
 const windows = new Map<string, { start: number; count: number }>();
 
 export async function askWoddy(workspaceId: string, facts: unknown, messages: WoddyMessage[]) {
-  if (!process.env.GEMINI_API_KEY) throw new Error("Woddy is not configured yet. Your CRM records are unchanged.");
+  if (!process.env.GEMINI_API_KEY) throw new Error(tKey("Woddy is not configured yet. Your CRM records are unchanged."));
   const now = Date.now();
   for (const [key, value] of windows) if (now - value.start >= 60_000) windows.delete(key);
   const window = windows.get(workspaceId) ?? { start: now, count: 0 };
-  if (window.count >= 12) throw new Error("Woddy is busy. Please try again in a minute.");
+  if (window.count >= 12) throw new Error(tKey("Woddy is busy. Please try again in a minute."));
   window.count += 1;
   windows.set(workspaceId, window);
   const model = process.env.GEMINI_MODEL ?? "gemini-3.5-flash";
@@ -25,10 +26,10 @@ export async function askWoddy(workspaceId: string, facts: unknown, messages: Wo
       ],
     }),
   });
-  if (!response.ok) throw new Error("Woddy is temporarily unavailable. Please try again. No CRM records were changed.");
+  if (!response.ok) throw new Error(tKey("Woddy is temporarily unavailable. Please try again. No CRM records were changed."));
   const result = await response.json();
   const candidate = result.candidates?.[0];
   const answer = (candidate?.content?.parts ?? []).filter((part: { thought?: boolean; text?: string }) => !part.thought && part.text).map((part: { text: string }) => part.text).join("\n");
-  if (!answer || candidate.finishReason !== "STOP") throw new Error("Woddy could not finish that reply. Please try a shorter question.");
+  if (!answer || candidate.finishReason !== "STOP") throw new Error(tKey("Woddy could not finish that reply. Please try a shorter question."));
   return answer;
 }

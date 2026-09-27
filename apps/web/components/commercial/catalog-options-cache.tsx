@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { CatalogChoice } from "@/lib/pre-project/content";
 import { commercialPath } from "@/lib/commercial/client";
+import { tKey } from "@/lib/i18n/keys";
 type Choice = CatalogChoice & { description?: string };
 const TTL = 30_000;
 type Entry = { items: Choice[]; at: number };
@@ -30,9 +31,9 @@ export class CatalogOptionsCache {
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok)
-          throw new Error(data.message ?? "Catalogs could not be loaded.");
+          throw new Error(data.message ?? tKey("Catalogs could not be loaded."));
         if (!Array.isArray(data.items))
-          throw new Error("Catalogs could not be loaded.");
+          throw new Error(tKey("Catalogs could not be loaded."));
         if (this.entries.size >= 100)
           this.entries.delete(this.entries.keys().next().value!);
         this.entries.set(key, { items: data.items, at: Date.now() });

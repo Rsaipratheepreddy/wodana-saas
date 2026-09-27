@@ -10,6 +10,7 @@ import { FileCover } from "./design-file-preview";
 import { DesignUpload, FolderEditor, DesignMetadata, RevisionUpload, type DesignUploadTarget } from "./design-forms";
 import styles from "./case-content.module.css";
 import view from "./designs.module.css";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 const emptyOptions: DesignOptions = { folders: [], reviewers: [], actorId: "", canReview: false, canRecordClient: false };
 
@@ -23,6 +24,7 @@ export function DesignsPage({ initialData, initialDesigns, options = emptyOption
   options?: DesignOptions;
 }) {
   const params = useSearchParams();
+  const t = useT();
   const pathname = usePathname();
   const [data, setData] = useState(initialData);
   const [designs, setDesigns] = useState(initialDesigns);
@@ -37,7 +39,7 @@ export function DesignsPage({ initialData, initialDesigns, options = emptyOption
   const virtualFolders: DesignFolder[] = [];
   for (const d of designs.filter(d => !d.archivedAt && !d.folderId)) {
     const id = `linked:${d.scopeEntryId ?? d.roomId ?? 'general'}`;
-    if (!virtualFolders.some(f => f.id === id)) virtualFolders.push({ id, version: 0, name: d.scopeTitle ?? data.entries.find(e => e.id === d.scopeEntryId)?.title ?? d.roomName ?? data.rooms.find(r => r.id === d.roomId)?.name ?? 'Project designs', description: '', roomId: d.roomId, scopeEntryId: d.scopeEntryId });
+    if (!virtualFolders.some(f => f.id === id)) virtualFolders.push({ id, version: 0, name: d.scopeTitle ?? data.entries.find(e => e.id === d.scopeEntryId)?.title ?? d.roomName ?? data.rooms.find(r => r.id === d.roomId)?.name ?? t('Project designs'), description: '', roomId: d.roomId, scopeEntryId: d.scopeEntryId });
   }
   const displayFolders = [...folders, ...virtualFolders];
   const activeFolder = displayFolders.find((f) => f.id === folderId) ?? null;
@@ -61,13 +63,13 @@ export function DesignsPage({ initialData, initialDesigns, options = emptyOption
       try {
         const listing = await caseRequest<DesignOptions & { items: CaseDesign[] }>(initialData.workspaceId, initialData.caseId, "designs");
         if (active) { applyListing(listing); setError(""); }
-      } catch { if (active) setError("Could not refresh designs. Your files are still shown below. Try Reload designs."); }
+      } catch { if (active) setError(t("Could not refresh designs. Your files are still shown below. Try Reload designs.")); }
       finally { pending = false; }
     };
     const timer = window.setInterval(() => void refresh(), 15000);
     window.addEventListener("focus", refresh);
     return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
-  }, [initialData.workspaceId, initialData.caseId, applyListing]);
+  }, [initialData.workspaceId, initialData.caseId, applyListing, t]);
 
   const navigate = (file: string | null) => {
     const query = new URLSearchParams(params.toString());
@@ -85,62 +87,62 @@ export function DesignsPage({ initialData, initialDesigns, options = emptyOption
         caseRequest<DesignOptions & { items: CaseDesign[] }>(data.workspaceId, data.caseId, "designs"),
       ]);
       setData(fresh); applyListing(listing);
-    } catch (e) { setError(e instanceof Error ? e.message : "Could not load designs. Please try Reload designs."); }
+    } catch (e) { setError(e instanceof Error ? e.message : t("Could not load designs. Please try Reload designs.")); }
     finally { setLoading(false); }
   };
 
   const roomName = useCallback((roomId: string | null) => data.rooms.find((room) => room.id === roomId)?.name ?? null, [data.rooms]);
-  return <div className={view.board} aria-label="Design board">
+  return <div className={view.board} aria-label={t("Design board")}>
     {selected && <DesignViewer data={{...data,canEdit:data.canEdit || Boolean(reviewOptions.canReview && reviewOptions.folders.find(f=>f.id===selected.folderId)?.reviewerId===reviewOptions.actorId)}} design={selected} options={reviewOptions} onClose={() => navigate(null)} onUpdate={update} />}
     {message ? <p role="status" className={styles.notice}>{message}</p> : null}
-    {error ? <p role="alert" className={styles.error}>{error}<Button size="compact" isLoading={loading} onPress={()=>void reload()}>Reload designs</Button></p> : null}
-    {fileId && !selected ? <p role="alert" className={styles.error}>This file could not be found. Reload designs or choose a row below.</p> : null}
+    {error ? <p role="alert" className={styles.error}>{error}<Button size="compact" isLoading={loading} onPress={()=>void reload()}>{t("Reload designs")}</Button></p> : null}
+    {fileId && !selected ? <p role="alert" className={styles.error}>{t("This file could not be found. Reload designs or choose a row below.")}</p> : null}
     <div className={view.organize}>
-      <strong>Design files</strong>
+      <strong>{t("Design files")}</strong>
       <div className={view.displaySwitch}>
-        {!activeFolder && data.canEdit && <Button size="compact" onPress={()=>setFolderEditor({id:crypto.randomUUID(),version:0,name:'',description:'',roomId:null,scopeEntryId:null})}><FolderPlus size={14}/>Add folder</Button>}
-        {!activeFolder && data.canEdit && <Button size="compact" variant="primary" onPress={()=>setUpload({folderId:null,roomId:null,scopeEntryId:null,name:'Project designs'})}>Add files</Button>}
+        {!activeFolder && data.canEdit && <Button size="compact" onPress={()=>setFolderEditor({id:crypto.randomUUID(),version:0,name:'',description:'',roomId:null,scopeEntryId:null})}><FolderPlus size={14}/>{t('Add folder')}</Button>}
+        {!activeFolder && data.canEdit && <Button size="compact" variant="primary" onPress={()=>setUpload({folderId:null,roomId:null,scopeEntryId:null,name:t('Project designs')})}>{t('Add files')}</Button>}
       </div>
     </div>
-    {!activeFolder && folderId !== "unfiled" ? <div aria-label="Design folders" className={view.folderGrid}>
+    {!activeFolder && folderId !== "unfiled" ? <div aria-label={t("Design folders")} className={view.folderGrid}>
       {displayFolders.map((f) => {
         const files = designs.filter((d) => !d.archivedAt && inFolder(d, f.id));
         const approved = files.filter((d) => d.versions[0]?.status === "approved").length;
         const attention = files.filter((d) => ["changes_requested", "rejected", "expired"].includes(d.versions[0]?.status ?? "")).length;
-        return <button aria-label={"Open folder " + f.name} className={view.folder} key={f.id} onClick={() => setFolderId(f.id)} type="button">
+        return <button aria-label={t("Open folder {name}", { name: f.name })} className={view.folder} key={f.id} onClick={() => setFolderId(f.id)} type="button">
           <span className={view.folderArtwork} aria-hidden="true"><span /></span>
           <strong>{f.name}</strong>
           <small>{f.roomName ?? roomName(f.roomId) ?? ""}{f.scopeTitle ? ` · ${f.scopeTitle}` : ""}</small>
-          <Badge tone={attention ? "warning" : files.length && approved === files.length ? "success" : "neutral"}>{folderReady(f) ? "Ready to send to client" : f.reviewerId ? "In review" : attention ? "Changes requested" : files.length && approved === files.length ? "Approved" : files.length ? "In progress" : "Empty"}</Badge>
-          <span className={view.folderOwner} title={ownerName ? `Case owner: ${ownerName}` : 'No case owner assigned'}>{ownerName ? <><Avatar name={ownerName} size="sm"/><span>{ownerName}</span></> : <span>Unassigned</span>}</span>
+          <Badge tone={attention ? "warning" : files.length && approved === files.length ? "success" : "neutral"}>{t(folderReady(f) ? "Ready to send to client" : f.reviewerId ? "In review" : attention ? "Changes requested" : files.length && approved === files.length ? "Approved" : files.length ? "In progress" : "Empty")}</Badge>
+          <span className={view.folderOwner} title={ownerName ? t('Case owner: {name}', { name: ownerName }) : t('No case owner assigned')}>{ownerName ? <><Avatar name={ownerName} size="sm"/><span>{ownerName}</span></> : <span>{t('Unassigned')}</span>}</span>
 
         </button>;
       })}
-      {!folders.length && !designs.some((d) => !d.archivedAt) ? <p className={view.muted}>No files yet. Add a folder or upload your first drawing.</p> : null}
+      {!folders.length && !designs.some((d) => !d.archivedAt) ? <p className={view.muted}>{t("No files yet. Add a folder or upload your first drawing.")}</p> : null}
     </div> : null}
     {(activeFolder || folderId === "unfiled") ? <div className={view.location}>
-      <Button onPress={() => setFolderId(null)} size="compact" variant="quiet"><ChevronRight aria-hidden="true" data-directional="true" size={14} style={{ transform: "rotate(180deg)" }} />All folders</Button>
-      <strong>{activeFolder?.name ?? "Unfiled"}</strong>
-      {!data.canEdit && <small id="design-add-reason" className={view.muted}>{readOnlyReason ?? "Your role does not have permission to add files."}</small>}
-      {activeFolder && !activeFolder.id.startsWith("linked:") && data.canEdit ? <Button aria-label="Edit folder" onPress={() => setFolderEditor(activeFolder)} size="compact" variant="quiet"><Pencil size={14} /></Button> : null}
-      {activeFolder ? <Button isDisabled={!data.canEdit} aria-describedby={!data.canEdit ? "design-add-reason" : undefined} onPress={() => setUpload({ folderId: activeFolder.id.startsWith("linked:") ? null : activeFolder.id, roomId: activeFolder.roomId, scopeEntryId: activeFolder.scopeEntryId, name: activeFolder.name })} size="compact" variant="primary"><Upload aria-hidden="true" size={14} />Add files</Button> : null}
+      <Button onPress={() => setFolderId(null)} size="compact" variant="quiet"><ChevronRight aria-hidden="true" data-directional="true" size={14} style={{ transform: "rotate(180deg)" }} />{t("All folders")}</Button>
+      <strong>{activeFolder?.name ?? t("Unfiled")}</strong>
+      {!data.canEdit && <small id="design-add-reason" className={view.muted}>{readOnlyReason ?? t("Your role does not have permission to add files.")}</small>}
+      {activeFolder && !activeFolder.id.startsWith("linked:") && data.canEdit ? <Button aria-label={t("Edit folder")} onPress={() => setFolderEditor(activeFolder)} size="compact" variant="quiet"><Pencil size={14} /></Button> : null}
+      {activeFolder ? <Button isDisabled={!data.canEdit} aria-describedby={!data.canEdit ? "design-add-reason" : undefined} onPress={() => setUpload({ folderId: activeFolder.id.startsWith("linked:") ? null : activeFolder.id, roomId: activeFolder.roomId, scopeEntryId: activeFolder.scopeEntryId, name: activeFolder.name })} size="compact" variant="primary"><Upload aria-hidden="true" size={14} />{t("Add files")}</Button> : null}
     </div> : null}
-    {activeFolder ? <div className={view.fileGrid} aria-label="Folder files">
+    {activeFolder ? <div className={view.fileGrid} aria-label={t("Folder files")}>
       {folderFiles.map(design => {
         const asset = design.versions[0]?.asset;
         const extension = asset?.name.split('.').pop()?.toUpperCase() ?? 'FILE';
-        return <div key={design.id}><button type="button" className={view.fileTile} onClick={() => navigate(design.id)} aria-label={`Open file ${asset?.name ?? design.title}`}>
+        return <div key={design.id}><button type="button" className={view.fileTile} onClick={() => navigate(design.id)} aria-label={t('Open file {name}', { name: asset?.name ?? design.title })}>
           <div className={view.fileThumbnail}><FileCover data={data} design={design}/></div>
           <strong title={asset?.name ?? design.title}>{asset?.name ?? design.title}</strong>
           <span className={view.fileType}>{extension} · R{design.versions[0]?.number ?? 1}</span>
           {design.description && <p title={design.description}>{design.description}</p>}
-        </button>{data.canEdit && <MenuButton label="File actions" items={[{id:'edit',label:'Edit details'},{id:'revision',label:'Upload revision'}]} onAction={key=>key==='edit'?setEditingFile(design):setRevisionFile(design)}/>}</div>;
+        </button>{data.canEdit && <MenuButton label={t('File actions')} items={[{id:'edit',label:t('Edit details')},{id:'revision',label:t('Upload revision')}]} onAction={key=>key==='edit'?setEditingFile(design):setRevisionFile(design)}/>}</div>;
       })}
-      {!folderFiles.length && <p className={view.muted}>No files in this folder yet.</p>}
+      {!folderFiles.length && <p className={view.muted}>{t("No files in this folder yet.")}</p>}
     </div> : null}
     {editingFile&&<DesignMetadata data={data} design={editingFile} folders={folders} onClose={()=>setEditingFile(null)} onSaved={saved=>{update(saved);setEditingFile(null);}}/>}
     {revisionFile&&<RevisionUpload data={data} design={revisionFile} onClose={()=>setRevisionFile(null)} onSaved={saved=>{update(saved);setRevisionFile(null);}}/>}
-    {folderEditor ? <FolderEditor onContentChange={setData} key={folderEditor.id} data={data} initial={folderEditor} folders={folders} onClose={() => setFolderEditor(null)} onSaved={(f) => { setReviewOptions((o) => ({ ...o, folders: [f, ...o.folders.filter((row) => row.id !== f.id)].sort((a, b) => a.name.localeCompare(b.name)) })); setFolderEditor(null); setFolderId(f.id); setMessage("Folder saved."); }} /> : null}
-    {upload ? <DesignUpload data={data} target={upload} onClose={() => setUpload(null)} onSaved={(saved) => { setDesigns((current) => mergeDesigns(current, saved)); setUpload(null); setMessage(`${saved.length} ${saved.length === 1 ? "design" : "designs"} added.`); }} /> : null}
+    {folderEditor ? <FolderEditor onContentChange={setData} key={folderEditor.id} data={data} initial={folderEditor} folders={folders} onClose={() => setFolderEditor(null)} onSaved={(f) => { setReviewOptions((o) => ({ ...o, folders: [f, ...o.folders.filter((row) => row.id !== f.id)].sort((a, b) => a.name.localeCompare(b.name)) })); setFolderEditor(null); setFolderId(f.id); setMessage(t("Folder saved.")); }} /> : null}
+    {upload ? <DesignUpload data={data} target={upload} onClose={() => setUpload(null)} onSaved={(saved) => { setDesigns((current) => mergeDesigns(current, saved)); setUpload(null); setMessage(t(saved.length === 1 ? "{count} design added." : "{count} designs added.", { count: saved.length })); }} /> : null}
   </div>;
 }

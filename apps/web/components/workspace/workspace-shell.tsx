@@ -31,6 +31,8 @@ import { WorkspaceFocusProvider, useWorkspaceFocus } from "./workspace-focus";
 import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 import { WorkspaceBreadcrumbProvider, useWorkspaceBreadcrumb } from "./workspace-breadcrumb";
 import { WorkspaceIdentityProvider } from "./workspace-identity";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey } from "@/lib/i18n/keys";
 
 export type WorkspaceShellProps = {
   children: ReactNode;
@@ -46,6 +48,7 @@ export function WorkspaceShell({ children, modules, user, workspaces, unavailabl
 }
 
 function WorkspaceShellContent({ children, modules, user, workspaces, unavailableOrganizations = [] }: WorkspaceShellProps) {
+  const t = useT();
   const pathname = usePathname();
   const breadcrumb = useWorkspaceBreadcrumb();
   // A project page names itself in the breadcrumb (Projects › its name) once it has loaded.
@@ -66,8 +69,8 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
   const settingsPage = activeModule.id === "workspace" && activeModule.navigation.some((group) => group.items.some((item) => item.href !== "/workspace" && (pathname === item.href || pathname.startsWith(`${item.href}/`))));
   // Sales sub-sections share /workspace/crm/leads; name the breadcrumb after the tab the person is on.
   const salesSection = pathname === "/workspace/crm/leads" ? builderSearch.get("section") : null;
-  const salesSectionLabel = salesSection && ["forms", "sources"].includes(salesSection) ? "Campaigns" : salesSection && ["assignment", "sla", "options", "automations"].includes(salesSection) ? "Settings" : salesSection === "reports" ? "Reports" : null;
-  const currentScreen = salesSectionLabel ? { label: salesSectionLabel } : pathname === "/workspace/crm/follow-ups" && ["schedule", "calendar"].includes(builderSearch.get("view") ?? "") ? { label: "Calendar" } : pathname === "/workspace/crm/preparation" ? { label: "Preparation" } : pathname === "/workspace/projects/clients" ? { label: "Clients" } : pathname === "/workspace/tasks" || pathname === "/workspace/approvals" ? { label: "Home" } : pathname.startsWith("/workspace/projects/") ? { label: "Project" } : preProjectRoute ? activeModule.navigation.flatMap((group) => group.items).find((item) => item.href.split("?")[0] === pathname) ?? findWorkspaceScreen(pathname, modules) : findWorkspaceScreen(pathname, modules);
+  const salesSectionLabel = salesSection && ["forms", "sources"].includes(salesSection) ? tKey("Campaigns") : salesSection && ["assignment", "sla", "options", "automations"].includes(salesSection) ? tKey("Settings") : salesSection === "reports" ? tKey("Reports") : null;
+  const currentScreen = salesSectionLabel ? { label: salesSectionLabel } : pathname === "/workspace/crm/follow-ups" && ["schedule", "calendar"].includes(builderSearch.get("view") ?? "") ? { label: tKey("Calendar") } : pathname === "/workspace/crm/preparation" ? { label: tKey("Preparation") } : pathname === "/workspace/projects/clients" ? { label: tKey("Clients") } : pathname === "/workspace/tasks" || pathname === "/workspace/approvals" ? { label: tKey("Home") } : pathname.startsWith("/workspace/projects/") ? { label: tKey("Project") } : preProjectRoute ? activeModule.navigation.flatMap((group) => group.items).find((item) => item.href.split("?")[0] === pathname) ?? findWorkspaceScreen(pathname, modules) : findWorkspaceScreen(pathname, modules);
   const [mobileNavigationPath, setMobileNavigationPath] = useState<string | null>(null);
   const woddy = useWoddy();
   const { theme, toggleTheme } = useWorkspaceTheme();
@@ -109,7 +112,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
         onOpenChange={(open) => setMobileNavigationPath(open ? pathname : null)}
       >
         <Modal className={styles.mobileModal}>
-          <Dialog aria-label="Mobile workspace navigation" className={styles.mobileDialog}>
+          <Dialog aria-label={t("Mobile workspace navigation")} className={styles.mobileDialog}>
             <WorkspaceSidebar
               activeModule={activeModule}
                   key={`mobile-${activeModule.id}-${preProjectRoute?.id ?? "module"}`}
@@ -130,30 +133,30 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
         <header className={styles.topbar}>
           <button
             aria-expanded={mobileOpen}
-            aria-label="Open navigation"
+            aria-label={t("Open navigation")}
             className={styles.mobileMenu}
             onClick={() => setMobileNavigationPath(pathname)}
             type="button"
           >
             <Menu size={19} />
           </button>
-          {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label="All planning" className={styles.focusBack} href="/workspace/pre-projects"><ArrowLeft size={16} data-directional="true" /><span>Planning</span></Link>{selectedCase ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
-          {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? "Back to quotations" : "Back to planning") : "Back to CRM"}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
-          <nav aria-label="Breadcrumb" className={styles.breadcrumbs}>
+          {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label={t("All planning")} className={styles.focusBack} href="/workspace/pre-projects"><ArrowLeft size={16} data-directional="true" /><span>{t("Planning")}</span></Link>{selectedCase ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
+          {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? t("Back to quotations") : t("Back to planning")) : t("Back to CRM")}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
+          <nav aria-label={t("Breadcrumb")} className={styles.breadcrumbs}>
             <ol>
-              {projectPage ? <li><Link href="/workspace/projects">Projects</Link><ChevronRight aria-hidden="true" data-directional="true" size={13}/></li> : pathname !== "/workspace" && pathname !== "/workspace/tasks" && pathname !== "/workspace/approvals" && !pathname.startsWith("/workspace/catalogs") && !pathname.startsWith("/workspace/purchasing") && !pathname.startsWith("/workspace/inventory") && !pathname.startsWith("/workspace/factory") && currentScreen.label !== activeModule.label ? <li><Link href={activeModule.href}>{activeModule.label}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li> : null}
-              <li aria-current="page">{projectPage ? breadcrumb?.title ?? <span aria-busy="true">{currentScreen.label}</span> : pathname === "/workspace" ? "Home" : currentScreen.label}</li>
+              {projectPage ? <li><Link href="/workspace/projects">{t("Projects")}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13}/></li> : pathname !== "/workspace" && pathname !== "/workspace/tasks" && pathname !== "/workspace/approvals" && !pathname.startsWith("/workspace/catalogs") && !pathname.startsWith("/workspace/purchasing") && !pathname.startsWith("/workspace/inventory") && !pathname.startsWith("/workspace/factory") && currentScreen.label !== activeModule.label ? <li><Link href={activeModule.href}>{t(activeModule.label as never)}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li> : null}
+              <li aria-current="page">{projectPage ? breadcrumb?.title ?? <span aria-busy="true">{t(currentScreen.label as never)}</span> : pathname === "/workspace" ? t("Home") : t(currentScreen.label as never)}</li>
             </ol>
           </nav>
           {HOME_ROUTES.includes(pathname) ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} /> : null}
           <div className={styles.globalUtilities}>
             <div className={styles.woddyControl}>
               <button
-                aria-label="Ask Woddy"
+                aria-label={t("Ask Woddy")}
                 aria-haspopup="dialog"
                 className={styles.woddyButton}
                 onClick={woddy?.open}
-                title="Ask Woddy"
+                title={t("Ask Woddy")}
                 type="button"
               >
                 <WoddyMark
@@ -162,25 +165,25 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
                   priority
                   size={34}
                 />
-                <span className={styles.woddyLabel}>Ask Woddy</span>
+                <span className={styles.woddyLabel}>{t("Ask Woddy")}</span>
               </button>
             </div>
             <WorkspaceNotifications workspaceId={workspaceId} />
             {settingsModule ? <Link
               aria-current={activeModule.id === "workspace" ? "page" : undefined}
-              aria-label="Settings"
+              aria-label={t("Settings")}
               className={styles.themeToggle}
               data-active={activeModule.id === "workspace" || undefined}
               href={settingsModule.href}
-              title="Settings"
+              title={t("Settings")}
             >
               <Settings aria-hidden="true" size={16} />
             </Link> : null}
             <button
-              aria-label={theme === "light" ? "Use dark mode" : "Use light mode"}
+              aria-label={theme === "light" ? t("Use dark mode") : t("Use light mode")}
               className={styles.themeToggle}
               onClick={toggleTheme}
-              title={theme === "light" ? "Use dark mode" : "Use light mode"}
+              title={theme === "light" ? t("Use dark mode") : t("Use light mode")}
               type="button"
             >
               {theme === "light" ? <Moon aria-hidden="true" size={16} /> : <Sun aria-hidden="true" size={16} />}

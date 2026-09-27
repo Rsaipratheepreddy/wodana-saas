@@ -2,19 +2,23 @@
 
 import type { WorkflowStage } from "@/design-system";
 import type { PreProjectCase } from "@/lib/pre-project/types";
+import { tKey, type MessageKey, type Translate } from "@/lib/i18n/keys";
 
 export const casePhases = ["discover", "define", "design", "price", "agree", "release"] as const;
 export type CasePhase = (typeof casePhases)[number];
 
 /** One label per phase, reused by the list, the spine and the overview. */
-export const casePhaseLabel: Record<CasePhase, string> = {
-  discover: "Discover",
-  define: "Define",
-  design: "Design",
-  price: "Price",
-  agree: "Agree",
-  release: "Release",
+export const casePhaseLabel: Record<CasePhase, MessageKey> = {
+  discover: tKey("Discover"),
+  define: tKey("Define"),
+  design: tKey("Design"),
+  price: tKey("Price"),
+  agree: tKey("Agree"),
+  release: tKey("Release"),
 };
+
+export const casePriorityLabel: Record<PreProjectCase["priority"], MessageKey> = { low: tKey("Low"), normal: tKey("Normal"), high: tKey("High"), urgent: tKey("Urgent") };
+export const caseRiskLabel: Record<PreProjectCase["riskLevel"], MessageKey> = { none: tKey("None"), low: tKey("Low"), medium: tKey("Medium"), high: tKey("High"), critical: tKey("Critical") };
 
 
 const sectionPhase: Record<string, CasePhase> = {
@@ -36,11 +40,13 @@ const sectionPhase: Record<string, CasePhase> = {
   "client-portal": "release",
 };
 
-export function caseStatusLabel(status: PreProjectCase["status"] | "qualified" | undefined) {
-  if (!status) return "Draft";
-  if (status === "active") return "In progress";
-  if (status === "on_hold") return "On hold";
-  return status[0].toUpperCase() + status.slice(1);
+const caseStatusLabels: Record<PreProjectCase["status"] | "qualified", MessageKey> = {
+  qualified: tKey("Qualified"), draft: tKey("Draft"), active: tKey("In progress"), on_hold: tKey("On hold"), released: tKey("Released"), cancelled: tKey("Cancelled"),
+};
+
+/** The status label key; translate it where it renders: `t(caseStatusLabel(status))`. */
+export function caseStatusLabel(status: PreProjectCase["status"] | "qualified" | undefined): MessageKey {
+  return caseStatusLabels[status ?? "draft"] ?? tKey("Draft");
 }
 
 export function caseStatusTone(status: PreProjectCase["status"] | "qualified" | undefined): "neutral" | "success" | "warning" | "danger" | "info" {
@@ -58,7 +64,7 @@ export function riskTone(risk: PreProjectCase["riskLevel"] | undefined): "neutra
   return "neutral";
 }
 
-export function casePhaseStages(record: Partial<Pick<PreProjectCase, "phase" | "status">>, viewing?: string): WorkflowStage[] {
+export function casePhaseStages(t: Translate, record: Partial<Pick<PreProjectCase, "phase" | "status">>, viewing?: string): WorkflowStage[] {
   const current = Math.max(0, casePhases.indexOf(record.phase ?? "discover"));
   const viewed = viewing ? sectionPhase[viewing] : undefined;
   return casePhases.map((phase, index) => {
@@ -68,7 +74,7 @@ export function casePhaseStages(record: Partial<Pick<PreProjectCase, "phase" | "
       : index === current
         ? record.status === "on_hold" || record.status === "cancelled" ? "blocked" : "current"
         : "upcoming";
-    return { id: phase, label: viewed === phase && phase !== record.phase ? `${casePhaseLabel[phase]} · viewing` : casePhaseLabel[phase], state };
+    return { id: phase, label: viewed === phase && phase !== record.phase ? t("{phase} · viewing", { phase: t(casePhaseLabel[phase]) }) : t(casePhaseLabel[phase]), state };
   });
 }
 

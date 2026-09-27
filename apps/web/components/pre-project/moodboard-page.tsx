@@ -75,7 +75,7 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
         await create({ title: file.name.replace(/\.[^.]+$/, "").slice(0, 240) || t("Photo"), assets: [asset] });
       } catch { failed.push(file.name); }
     }
-    if (failed.length) setError(`${t("These could not be added")}: ${failed.join(", ")}. ${t("Add photos here; share videos as links.")}`);
+    if (failed.length) setError(t("These could not be added: {files}. Add photos here; share videos as links.", { files: failed.join(", ") }));
     setBusy(false);
     if (upload.current) upload.current.value = "";
   };

@@ -9,8 +9,9 @@ import type { DefinitionPageData, DefinitionState } from "@/lib/pre-project/defi
 import styles from "./definition-page.module.css";
 import { parseDateTime } from "@internationalized/date";
 import { CaseModal } from "./case-controls";
+import { tKey } from "@/lib/i18n/keys";
 
-const HISTORY_LABEL: Record<string, string> = { awaiting_confirmation: "Waiting for the client", confirmed: "Signed off", changes_requested: "Asked for changes", superseded: "Out of date" };
+const HISTORY_LABEL: Record<string, string> = { awaiting_confirmation: tKey("Waiting for the client"), confirmed: tKey("Signed off"), changes_requested: tKey("Asked for changes"), superseded: tKey("Out of date") };
 const localDecisionTime = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000 + 999).toISOString().slice(0, 19);
 
 export function DefinitionPage({ initial }: { initial: DefinitionPageData }) {

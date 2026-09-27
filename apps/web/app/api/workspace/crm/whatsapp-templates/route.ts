@@ -22,15 +22,18 @@ import {
   type MetaTemplate,
   type StoredTemplate,
 } from "@/lib/crm/whatsapp-templates";
+import { getServerT } from "@/lib/i18n/server";
+import { translateKnown } from "@/lib/i18n/keys";
 
 export async function POST(request: Request) {
-  if (!isSameOrigin(request)) return invalidRequest("Invalid request origin.");
+  const t = await getServerT();
+  if (!isSameOrigin(request)) return invalidRequest(t("Invalid request origin."));
   const input = await request.json().catch(() => null);
   if (
     !UUID.test(input?.workspaceId ?? "") ||
     !UUID.test(input?.connectionId ?? "")
   )
-    return invalidRequest("Choose a WhatsApp connection.");
+    return invalidRequest(t("Choose a WhatsApp connection."));
   const { workspaceId, connectionId } = input;
   const path = `/workspaces/${workspaceId}/crm/notification-templates`;
   const initial = await authenticatedBackendFetch(path);
@@ -44,14 +47,14 @@ export async function POST(request: Request) {
   };
   if (initial.unauthenticated)
     return respond(
-      { message: "Sign in again to load WhatsApp templates." },
+      { message: t("Sign in again to load WhatsApp templates.") },
       401,
     );
   if (!initial.upstream?.ok)
     return respond(
       {
         message:
-          "WhatsApp templates could not be loaded. Check your workspace permissions.",
+          t("WhatsApp templates could not be loaded. Check your workspace permissions."),
       },
       initial.upstream?.status ?? 503,
     );
@@ -81,7 +84,7 @@ export async function POST(request: Request) {
         {
           message: safeBackendMessage(
             data,
-            "Meta templates could not be loaded. Check the WhatsApp connection.",
+            t("Meta templates could not be loaded. Check the WhatsApp connection."),
           ),
         },
         provider.status,
@@ -90,7 +93,7 @@ export async function POST(request: Request) {
       return respond(
         {
           message:
-            "Meta returned an invalid template list. Refresh to try again.",
+            t("Meta returned an invalid template list. Refresh to try again."),
         },
         502,
       );
@@ -103,7 +106,7 @@ export async function POST(request: Request) {
     for (const meta of approved) {
       const reason = inboxTemplateReason(meta);
       if (reason) {
-        unavailable.push({ name: meta.name, reason });
+        unavailable.push({ name: meta.name, reason: translateKnown(t, reason) });
         continue;
       }
       let match =
@@ -140,8 +143,8 @@ export async function POST(request: Request) {
             name: meta.name,
             reason:
               created.status === 403
-                ? "A workspace administrator needs to sync this template"
-                : "Could not sync. Refresh to try again",
+                ? t("A workspace administrator needs to sync this template")
+                : t("Could not sync. Refresh to try again"),
           });
           continue;
         }
@@ -164,7 +167,7 @@ export async function POST(request: Request) {
           if (!existing) {
             unavailable.push({
               name: meta.name,
-              reason: "A workspace administrator needs to sync this template",
+              reason: t("A workspace administrator needs to sync this template"),
             });
             continue;
           }
@@ -183,7 +186,7 @@ export async function POST(request: Request) {
     return respond(
       {
         message:
-          "WhatsApp templates could not be refreshed. Try again in a moment.",
+          t("WhatsApp templates could not be refreshed. Try again in a moment."),
       },
       503,
     );

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Building2, Plus, RefreshCw, UserRound } from "lucide-react";
 import { Badge, Button, Callout, DataGrid, IconButton, ControlledModalDialog, ListTabs, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import type { Translate } from "@/lib/i18n/keys";
 import type { CrmRecord, CrmScreenPageData } from "@/lib/crm/screens";
 import { crmRequest, rows } from "@/lib/crm/client";
 import { CrmCreateDialog, LinkedRecordWorkbench } from "./crm-record-workbench";
@@ -19,26 +20,27 @@ function contact(record: CrmRecord, type: "email" | "phone") {
   return typeof found?.rawValue === "string" ? found.rawValue : null;
 }
 
-function lifecycle(value: unknown) {
-  if (typeof value !== "string" || !value) return "Not set";
-  if (value === "lead") return "Enquiry";
+function lifecycle(value: unknown, t: Translate) {
+  if (typeof value !== "string" || !value) return t("Not set");
+  if (value === "lead") return t("Enquiry");
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-const columns: DataGridColumn<CrmRecord>[] = [
-  { accessorKey: "displayName", header: "Customer", size: 265, meta: { primary: true }, cell: ({ row }) => {
+const customerColumns = (t: Translate): DataGridColumn<CrmRecord>[] => [
+  { accessorKey: "displayName", header: t("Customer"), size: 265, meta: { primary: true }, cell: ({ row }) => {
     const record = row.original;
     const Icon = record.type === "organization" ? Building2 : UserRound;
-    return <span className={styles.identity}><span className={styles.icon}><Icon aria-hidden="true" size={16} /></span><span><strong>{String(record.displayName ?? "Unnamed customer")}</strong><small>{record.type === "organization" ? "Company" : "Person"}</small></span></span>;
+    return <span className={styles.identity}><span className={styles.icon}><Icon aria-hidden="true" size={16} /></span><span><strong>{String(record.displayName ?? t("Unnamed customer"))}</strong><small>{record.type === "organization" ? t("Company") : t("Person")}</small></span></span>;
   } },
-  { id: "email", accessorFn: (record) => contact(record, "email") ?? "", header: "Email", size: 235, cell: ({ row }) => contact(row.original, "email") ?? <span className={styles.muted}>Not added</span> },
-  { id: "phone", accessorFn: (record) => contact(record, "phone") ?? "", header: "Phone", size: 165, cell: ({ row }) => contact(row.original, "phone") ?? <span className={styles.muted}>Not added</span> },
-  { accessorKey: "lifecycle", header: "Relationship", size: 130, cell: ({ row }) => lifecycle(row.original.lifecycle) },
-  { accessorKey: "status", header: "Status", size: 110, cell: ({ row }) => <Badge tone={row.original.status === "archived" ? "neutral" : "success"}>{row.original.status === "archived" ? "Archived" : "Active"}</Badge> },
+  { id: "email", accessorFn: (record) => contact(record, "email") ?? "", header: t("Email"), size: 235, cell: ({ row }) => contact(row.original, "email") ?? <span className={styles.muted}>{t("Not added")}</span> },
+  { id: "phone", accessorFn: (record) => contact(record, "phone") ?? "", header: t("Phone"), size: 165, cell: ({ row }) => contact(row.original, "phone") ?? <span className={styles.muted}>{t("Not added")}</span> },
+  { accessorKey: "lifecycle", header: t("Relationship"), size: 130, cell: ({ row }) => lifecycle(row.original.lifecycle, t) },
+  { accessorKey: "status", header: t("Status"), size: 110, cell: ({ row }) => <Badge tone={row.original.status === "archived" ? "neutral" : "success"}>{row.original.status === "archived" ? t("Archived") : t("Active")}</Badge> },
 ];
 
 export function CrmCustomers({ initialData, initialRecordId, initialView = "all" }: { initialData: CrmScreenPageData; initialRecordId?: string; initialView?: CustomerView }) {
   const t = useT();
+  const columns = useMemo(() => customerColumns(t), [t]);
   const [items, setItems] = useState(initialData.items);
   const [nextCursor, setNextCursor] = useState(initialData.nextCursor);
   const [view, setView] = useState<CustomerView>(initialView);
@@ -64,20 +66,20 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
       const incoming = rows(result) as CrmRecord[];
       setItems((current) => more ? [...current, ...incoming.filter((record) => !current.some((item) => item.id === record.id))] : incoming);
       setNextCursor(result.nextCursor ?? null);
-    } catch (error) { setFailure(error instanceof Error ? error.message : "Customers could not be refreshed."); }
+    } catch (error) { setFailure(error instanceof Error ? error.message : t("Customers could not be refreshed.")); }
     finally { setBusy(false); }
   };
 
-  return <CrmProductShell title="Customers" description="" canView={initialData.canView} useWorkspaceColors>
-    {failure ? <Callout title="Could not refresh customers" tone="warning">{failure}</Callout> : null}
+  return <CrmProductShell title={t("Customers")} description="" canView={initialData.canView} useWorkspaceColors>
+    {failure ? <Callout title={t("Could not refresh customers")} tone="warning">{failure}</Callout> : null}
     <div data-sales-grid className={styles.clientsGrid}><DataGrid
-      ariaLabel="Customer records"
+      ariaLabel={t("Customer records")}
       columns={columns}
       data={visible}
-      emptyTitle={view === "archived" ? "No archived customers" : "No customers in this view"}
-      emptyDescription="Customers are created from enquiries or added here before commercial work begins."
+      emptyTitle={view === "archived" ? t("No archived customers") : t("No customers in this view")}
+      emptyDescription={t("Customers are created from enquiries or added here before commercial work begins.")}
       exportFileName="wodana-customers.csv"
-      footerActions={nextCursor ? <Button size="compact" isLoading={busy} onPress={() => void reload(true)}>Load more customers</Button> : undefined}
+      footerActions={nextCursor ? <Button size="compact" isLoading={busy} onPress={() => void reload(true)}>{t("Load more customers")}</Button> : undefined}
       getRowId={(record) => record.id}
       hasMoreRows={Boolean(nextCursor)}
       onRowAction={(record) => setSelected(record.id)}
@@ -91,10 +93,10 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
         { id: "archived", label: t("Archived"), count: counts.archived },
       ]} />}
       toolbarActions={<><IconButton aria-label={t("Refresh")} isDisabled={busy} isLoading={busy} size="compact" onPress={() => void reload()}><RefreshCw size={15} /></IconButton><Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />{t("Add client")}</Button></>}
-      searchLabel="Search customers"
+      searchLabel={t("Search customers")}
       selectable={false}
     /></div>
     {creating ? <CrmCreateDialog id="customers" workspaceId={initialData.workspaceId} onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); await reload(); }} /> : null}
-    {selected ? <ControlledModalDialog isOpen title="Customer details" hideTitle size="xl" className={styles.customerModal} onOpenChange={(open) => { if (!open) setSelected(undefined); }}><LinkedRecordWorkbench id="customers" workspaceId={initialData.workspaceId} recordId={selected} onChanged={reload} /></ControlledModalDialog> : null}
+    {selected ? <ControlledModalDialog isOpen title={t("Customer details")} hideTitle size="xl" className={styles.customerModal} onOpenChange={(open) => { if (!open) setSelected(undefined); }}><LinkedRecordWorkbench id="customers" workspaceId={initialData.workspaceId} recordId={selected} onChanged={reload} /></ControlledModalDialog> : null}
   </CrmProductShell>;
 }

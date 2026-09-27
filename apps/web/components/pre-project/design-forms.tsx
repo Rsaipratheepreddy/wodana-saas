@@ -29,6 +29,8 @@ import {
   type FolderKind,
 } from "@/lib/pre-project/design-folders";
 import styles from "./case-content.module.css";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
 
 export function FolderEditor({
   data: initialData,
@@ -45,6 +47,7 @@ export function FolderEditor({
   onClose: () => void;
   onSaved: (folder: DesignFolder) => void;
 }) {
+  const t = useT();
   const [data, setData] = useState(initialData);
   const [catalogRoom, setCatalogRoom] = useState<CatalogChoice|null>(null);
   const [catalogItem, setCatalogItem] = useState<CatalogChoice|null>(null);
@@ -78,7 +81,7 @@ export function FolderEditor({
   return (
     <CaseModal
       size="md"
-      title={initial.version ? "Edit design folder" : "New design folder"}
+      title={t(initial.version ? "Edit design folder" : "New design folder")}
 
       onClose={onClose}
       busy={busy}
@@ -95,7 +98,7 @@ export function FolderEditor({
           isLoading={busy}
           isDisabled={busy || !data.canEdit || !selection.valid || Boolean(duplicate)}
         >
-          {initial.version ? "Save folder" : "Create folder"}
+          {t(initial.version ? "Save folder" : "Create folder")}
         </Button>
       }
     >
@@ -140,20 +143,20 @@ export function FolderEditor({
               ),
             );
           } catch (e) {
-            setError(e instanceof Error ? e.message : "Could not save folder.");
+            setError(e instanceof Error ? e.message : t("Could not save folder."));
           } finally {
             setBusy(false);
           }
         }}
       >
         <SelectField
-          label="Folder for"
+          label={t("Folder for")}
           selectedKey={kind}
           isDisabled={busy}
           items={[
-            { id: "room", label: "Room" },
-            { id: "item", label: "Item" },
-            { id: "room-item", label: "Room + item" },
+            { id: "room", label: t("Room") },
+            { id: "item", label: t("Item") },
+            { id: "room-item", label: t("Room + item") },
           ]}
           onSelectionChange={(key) => {
             if (key) {
@@ -163,17 +166,16 @@ export function FolderEditor({
             }
           }}
         />
-        {kind !== 'item' && <FolderChoice data={data} kind="room" label="Room" disabled={busy || !data.canEdit} selectedKey={catalogRoom?.id ?? roomId} existing={data.rooms.map(r=>({id:r.id,name:r.name,catalogId:r.catalogRecordId}))} onSelect={(id,choice)=>{setRoomId(choice?null:id);setCatalogRoom(choice);setItemId(null);setCatalogItem(null);}}/>}
-        {kind !== 'room' && <FolderChoice data={data} kind="work" label="Item" disabled={busy || !data.canEdit || (kind==='room-item'&&!selectedRoomId)} selectedKey={catalogItem?.id ?? itemId} existing={requirements.map(e=>({id:e.id,name:e.title,catalogId:e.catalogLinks.find(l=>l.role==='work')?.recordId}))} onSelect={(id,choice)=>{setItemId(choice?null:id);setCatalogItem(choice);}}/>}
+        {kind !== 'item' && <FolderChoice data={data} kind="room" label={t("Room")} disabled={busy || !data.canEdit} selectedKey={catalogRoom?.id ?? roomId} existing={data.rooms.map(r=>({id:r.id,name:r.name,catalogId:r.catalogRecordId}))} onSelect={(id,choice)=>{setRoomId(choice?null:id);setCatalogRoom(choice);setItemId(null);setCatalogItem(null);}}/>}
+        {kind !== 'room' && <FolderChoice data={data} kind="work" label={t("Item")} disabled={busy || !data.canEdit || (kind==='room-item'&&!selectedRoomId)} selectedKey={catalogItem?.id ?? itemId} existing={requirements.map(e=>({id:e.id,name:e.title,catalogId:e.catalogLinks.find(l=>l.role==='work')?.recordId}))} onSelect={(id,choice)=>{setItemId(choice?null:id);setCatalogItem(choice);}}/>}
         {selection.valid && (
           <p className={styles.muted}>
-            Folder name: <strong>{selection.name}</strong>
+            {t("Folder name:")} <strong>{selection.name}</strong>
           </p>
         )}
         {duplicate && (
           <p role="status" className={styles.notice}>
-            This folder already exists: {duplicate.name}. Close this form to
-            open it from the folder list.
+            {t("This folder already exists: {name}. Close this form to open it from the folder list.", { name: duplicate.name })}
           </p>
         )}
       </form>
@@ -182,10 +184,11 @@ export function FolderEditor({
 }
 
 function FolderChoice({data,kind,label,disabled,selectedKey,existing,onSelect}:{data:CaseContent;kind:string;label:string;disabled:boolean;selectedKey:string|null;existing:Array<{id:string;name:string;catalogId?:string|null}>;onSelect:(id:string|null,choice:CatalogChoice|null)=>void}) {
+ const t=useT();
  const [search,setSearch]=useState(''),[items,setItems]=useState<CatalogChoice[]>([]),[error,setError]=useState('');
- useEffect(()=>{const controller=new AbortController();const timer=setTimeout(()=>{fetch(caseApi(data.workspaceId,data.caseId,`catalog-options?kind=${kind}&search=${encodeURIComponent(search)}`),{signal:controller.signal}).then(async r=>{if(!r.ok)throw Error('Could not load options. Try searching again.');return r.json();}).then(result=>{setItems(result.items);setError('');}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});},180);return()=>{clearTimeout(timer);controller.abort();};},[data.workspaceId,data.caseId,kind,search]);
+ useEffect(()=>{const controller=new AbortController();const timer=setTimeout(()=>{fetch(caseApi(data.workspaceId,data.caseId,`catalog-options?kind=${kind}&search=${encodeURIComponent(search)}`),{signal:controller.signal}).then(async r=>{if(!r.ok)throw Error(t('Could not load options. Try searching again.'));return r.json();}).then(result=>{setItems(result.items);setError('');}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});},180);return()=>{clearTimeout(timer);controller.abort();};},[data.workspaceId,data.caseId,kind,search,t]);
  const options=[...existing.map(r=>({id:r.id,label:r.name})),...items.filter(c=>!existing.some(r=>r.catalogId===c.id)).map(c=>({id:c.id,label:c.name}))];
- return <div><ComboboxField label={label} placeholder={`Choose ${label.toLowerCase()}`} selectedKey={selectedKey} isDisabled={disabled} items={options} onInputChange={setSearch} onSelectionChange={key=>{const id=key?String(key):null;onSelect(id,items.find(c=>c.id===id)??null);}}/>{error&&<small role="alert">{error}</small>}</div>;
+ return <div><ComboboxField label={label} placeholder={t(kind==='room'?'Choose room':'Choose item')} selectedKey={selectedKey} isDisabled={disabled} items={options} onInputChange={setSearch} onSelectionChange={key=>{const id=key?String(key):null;onSelect(id,items.find(c=>c.id===id)??null);}}/>{error&&<small role="alert">{error}</small>}</div>;
 }
 
 export type DesignUploadTarget = { folderId: string | null; roomId: string | null; scopeEntryId: string | null; name: string };
@@ -203,7 +206,8 @@ export function DesignUpload({
   onClose: () => void;
   onSaved: (designs: CaseDesign[]) => void;
 }) {
-  const destination: DesignUploadTarget = target ?? { folderId: folder?.id ?? null, roomId: folder?.roomId ?? null, scopeEntryId: folder?.scopeEntryId ?? null, name: folder?.name ?? "Whole home" };
+  const t = useT();
+  const destination: DesignUploadTarget = target ?? { folderId: folder?.id ?? null, roomId: folder?.roomId ?? null, scopeEntryId: folder?.scopeEntryId ?? null, name: folder?.name ?? t("Whole home") };
   const [files, setFiles] = useState<
     Array<{
       id: string;
@@ -247,7 +251,7 @@ export function DesignUpload({
       );
       onSaved(result.items);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save files.");
+      setError(e instanceof Error ? e.message : t("Could not save files."));
     } finally {
       setBusy(false);
     }
@@ -255,7 +259,7 @@ export function DesignUpload({
   return (
     <CaseModal
       size="md"
-      title="Add design files"
+      title={t("Add design files")}
       description={destination.name}
       onClose={onClose}
       busy={disabled}
@@ -267,7 +271,7 @@ export function DesignUpload({
           isDisabled={!files.length || uploading}
           onPress={() => void save()}
         >
-          Save {files.length || ""} {files.length === 1 ? "file" : "files"}
+          {files.length ? t(files.length === 1 ? "Save {count} file" : "Save {count} files", { count: files.length }) : t("Save files")}
         </Button>
       }
     >
@@ -310,7 +314,7 @@ export function DesignUpload({
                 id: crypto.randomUUID(),
                 versionId: crypto.randomUUID(),
                 asset,
-                title: `${f.title} · marked copy`.slice(0, 240),
+                title: t("{title} · marked copy", { title: f.title }).slice(0, 240),
                 documentType: f.documentType,
                 note: f.note,
                 includedClientRounds: f.includedClientRounds,
@@ -326,9 +330,9 @@ export function DesignUpload({
           <div className={styles.uploadFields}>
           <SelectField
             isDisabled={disabled}
-            label="Design type"
+            label={t("Design type")}
             selectedKey={f.documentType}
-            items={documentTypes.map((id) => ({ id, label: id }))}
+            items={documentTypes.map((id) => ({ id, label: t(id) }))}
             onSelectionChange={(key) =>
               key &&
               setFiles((rows) =>
@@ -340,8 +344,8 @@ export function DesignUpload({
           />
           <NumericInput
             isDisabled={disabled}
-            label="Review rounds · optional"
-            description="Leave blank for no limit."
+            label={t("Review rounds · optional")}
+            description={t("Leave blank for no limit.")}
             minValue={0}
             maxValue={99}
             value={f.includedClientRounds ?? NaN}
@@ -363,7 +367,7 @@ export function DesignUpload({
           </div>
           <TextAreaField
             isDisabled={disabled}
-            label="Description · optional"
+            label={t("Description · optional")}
             maxLength={5000}
             value={f.note}
             onChange={(value) =>
@@ -393,6 +397,7 @@ export function DesignMetadata({
   onClose: () => void;
   onSaved: (d: CaseDesign) => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState(design);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -410,7 +415,7 @@ export function DesignMetadata({
   return (
     <CaseModal
       size="md"
-      title="Edit file details"
+      title={t("Edit file details")}
       description={design.versions[0]?.asset.name ?? design.title}
       onClose={onClose}
       busy={busy}
@@ -423,7 +428,7 @@ export function DesignMetadata({
           isLoading={busy}
           isDisabled={!dirty || locked}
         >
-          Save details
+          {t("Save details")}
         </Button>
       }
     >
@@ -453,7 +458,7 @@ export function DesignMetadata({
             setError(
               e instanceof Error
                 ? e.message
-                : "Could not save. Your changes are still here.",
+                : t("Could not save. Your changes are still here."),
             );
           } finally {
             setBusy(false);
@@ -461,11 +466,11 @@ export function DesignMetadata({
         }}
       >
         <SelectField
-          label="Folder"
+          label={t("Folder")}
           isDisabled={busy || locked}
           selectedKey={draft.folderId ?? "unfiled"}
           items={[
-            { id: "unfiled", label: "Unfiled" },
+            { id: "unfiled", label: t("Unfiled") },
             ...folders.map((f) => ({ id: f.id, label: f.name })),
           ]}
           onSelectionChange={(key) => {
@@ -480,17 +485,17 @@ export function DesignMetadata({
           }}
         />
         <SelectField
-          label="Design type"
+          label={t("Design type")}
           isDisabled={busy || locked}
           selectedKey={draft.documentType}
-          items={types.map((id) => ({ id, label: id }))}
+          items={types.map((id) => ({ id, label: translateKnown(t, id) }))}
           onSelectionChange={(key) =>
             key && setDraft((d) => ({ ...d, documentType: String(key) }))
           }
         />
         <NumericInput
-          label="Included client review rounds"
-          description="Leave empty when the agreement does not define a limit."
+          label={t("Included client review rounds")}
+          description={t("Leave empty when the agreement does not define a limit.")}
           isDisabled={busy || locked}
           minValue={0}
           maxValue={99}
@@ -512,7 +517,7 @@ export function DesignMetadata({
           }
         />
         <TextAreaField
-          label="Note"
+          label={t("Note")}
           maxLength={5000}
           isDisabled={busy || locked}
           value={draft.description}
@@ -522,8 +527,7 @@ export function DesignMetadata({
         />
         {locked && (
           <p className={styles.muted}>
-            This revision has entered review. Upload a new revision before
-            changing its details.
+            {t("This revision has entered review. Upload a new revision before changing its details.")}
           </p>
         )}
       </form>
@@ -542,6 +546,7 @@ export function RevisionUpload({
   onClose: () => void;
   onSaved: (d: CaseDesign) => void;
 }) {
+  const t = useT();
   const [asset, setAsset] = useState<CaseAsset | null>(null);
   const [note, setNote] = useState("");
   const [id] = useState(() => crypto.randomUUID());
@@ -551,7 +556,7 @@ export function RevisionUpload({
   return (
     <CaseModal
       size="md"
-      title={`Upload revision ${(design.versions[0]?.number ?? 0) + 1}`}
+      title={t("Upload revision {number}", { number: (design.versions[0]?.number ?? 0) + 1 })}
       description={design.title}
       onClose={onClose}
       busy={busy || uploading}
@@ -576,14 +581,14 @@ export function RevisionUpload({
               );
             } catch (e) {
               setError(
-                e instanceof Error ? e.message : "Could not save revision.",
+                e instanceof Error ? e.message : t("Could not save revision."),
               );
             } finally {
               setBusy(false);
             }
           }}
         >
-          Save draft revision
+          {t("Save draft revision")}
         </Button>
       }
     >
@@ -612,27 +617,26 @@ export function RevisionUpload({
         />
       )}
       <TextAreaField
-        label="What changed?"
+        label={t("What changed?")}
         maxLength={5000}
         isDisabled={busy || uploading}
         value={note}
         onChange={setNote}
       />
       <p className={styles.muted}>
-        Earlier files and decisions stay in history. This revision begins a new
-        review.
+        {t("Earlier files and decisions stay in history. This revision begins a new review.")}
       </p>
     </CaseModal>
   );
 }
 
-export const reviewActionLabels: Record<string, string> = {
-  comment: "Add comment",
-  internal_review: "Send for review",
-  internal_approved: "Approve",
-  client_review: "Send to client",
-  approved: "Client approved",
-  changes_requested: "Reject / remarks",
+export const reviewActionLabels: Record<string, MessageKey> = {
+  comment: tKey("Add comment"),
+  internal_review: tKey("Send for review"),
+  internal_approved: tKey("Approve"),
+  client_review: tKey("Send to client"),
+  approved: tKey("Client approved"),
+  changes_requested: tKey("Reject / remarks"),
 };
 export function DesignReview({
   data,
@@ -649,6 +653,7 @@ export function DesignReview({
   onClose: () => void;
   onSaved: (d: CaseDesign) => void;
 }) {
+  const t = useT();
   const { timeZone } = useDesignSystem();
   const [note, setNote] = useState("");
   const defaultReviewer =
@@ -662,6 +667,7 @@ export function DesignReview({
     today(timeZone).add({ days: 7 }),
   );
   const latest = design.versions[0];
+  const actionLabel = reviewActionLabels[action] ? t(reviewActionLabels[action]) : action;
   const sending = action === "client_review";
   const usedRounds = design.clientRoundsUsed ?? 0;
   const includedRounds = latest?.includedClientRounds;
@@ -713,7 +719,7 @@ export function DesignReview({
       setError(
         e instanceof Error
           ? e.message
-          : "Could not save review. Your remarks are still here.",
+          : t("Could not save review. Your remarks are still here."),
       );
     } finally {
       setBusy(false);
@@ -722,8 +728,8 @@ export function DesignReview({
   return (
     <CaseModal
       size="md"
-      title={reviewActionLabels[action]}
-      description={design.title + " · Revision " + latest.number}
+      title={actionLabel}
+      description={t("{title} · Revision {number}", { title: design.title, number: latest.number })}
       onClose={onClose}
       busy={busy}
       dirty={Boolean(note || reviewer !== defaultReviewer)}
@@ -735,7 +741,7 @@ export function DesignReview({
           isLoading={busy}
           isDisabled={!valid}
         >
-          {reviewActionLabels[action]}
+          {actionLabel}
         </Button>
       }
     >
@@ -754,13 +760,13 @@ export function DesignReview({
         {action === "internal_review" && (
           <>
             <dl className={styles.reviewContext}>
-              <div><dt>File</dt><dd>{latest.asset.name}</dd></div>
-              <div><dt>Design type</dt><dd>{design.documentType}</dd></div>
-              <div><dt>Room</dt><dd>{design.roomName || "—"}</dd></div>
-              <div><dt>Item</dt><dd>{design.scopeTitle || "General design"}</dd></div>
+              <div><dt>{t("File")}</dt><dd>{latest.asset.name}</dd></div>
+              <div><dt>{t("Design type")}</dt><dd>{translateKnown(t, design.documentType)}</dd></div>
+              <div><dt>{t("Room")}</dt><dd>{design.roomName || "—"}</dd></div>
+              <div><dt>{t("Item")}</dt><dd>{design.scopeTitle || t("General design")}</dd></div>
             </dl>
             <SelectField
-              label="Internal reviewer"
+              label={t("Internal reviewer")}
               isRequired
               isDisabled={busy}
               selectedKey={reviewer}
@@ -771,24 +777,22 @@ export function DesignReview({
               onSelectionChange={(key) => setReviewer(key ? String(key) : null)}
             />
             <p className={styles.muted}>
-              The selected reviewer can approve this revision or request
-              changes.
+              {t("The selected reviewer can approve this revision or request changes.")}
             </p>
             <Checkbox
               isSelected={contextConfirmed}
               isDisabled={busy}
               onChange={setContextConfirmed}
             >
-              I checked the preview and it matches this folder, room, item and
-              design type.
+              {t("I checked the preview and it matches this folder, room, item and design type.")}
             </Checkbox>
           </>
         )}
         {portalBlocked ? (
           <p role="alert" className={styles.notice}>
-            {!options.portal?.enabled
+            {t(!options.portal?.enabled
               ? "Enable the client portal before sending designs."
-              : "Add an active client approver before sending designs."}{" "}
+              : "Add an active client approver before sending designs.")}{" "}
             <a
               href={
                 "/workspace/pre-projects/cases/" +
@@ -796,14 +800,14 @@ export function DesignReview({
                   "/client-portal"
               }
             >
-              Set up client access
+              {t("Set up client access")}
             </a>
           </p>
         ) : (
           sending && (
             <>
               <DateField
-                label="Client decision due"
+                label={t("Client decision due")}
                 isRequired
                 minValue={today(timeZone).add({ days: 1 })}
                 value={reviewExpiresOn}
@@ -811,36 +815,31 @@ export function DesignReview({
               />
               {overAllowance ? (
                 <p role="alert" className={styles.notice}>
-                  {usedRounds} of {includedRounds} included client review rounds
-                  are already used. This is a guided exception, not a silent
-                  block. Record the approved reason below before continuing.
+                  {t("{used} of {included} included client review rounds are already used. This is a guided exception, not a silent block. Record the approved reason below before continuing.", { used: usedRounds, included: includedRounds ?? 0 })}
                 </p>
               ) : null}
               <p className={styles.muted}>
-                This exact revision will be available in the client portal until
-                the selected date. The client can approve it, request changes or
-                reject it. Share the portal link with them; this does not claim a
-                notification was sent.
+                {t("This exact revision will be available in the client portal until the selected date. The client can approve it, request changes or reject it. Share the portal link with them; this does not claim a notification was sent.")}
               </p>
             </>
           )
         )}
         <TextAreaField
-          label={
+          label={t(
             action === "changes_requested"
               ? "Changes needed"
               : overAllowance
                 ? "Approved exception reason"
                 : "Review note · optional"
-          }
+          )}
           isRequired={action === "changes_requested" || overAllowance}
           maxLength={5000}
           isDisabled={busy}
-          placeholder={
+          placeholder={t(
             action === "changes_requested"
               ? "Tell the designer what needs to change."
               : "Add context if needed."
-          }
+          )}
           value={note}
           onChange={setNote}
         />
@@ -850,13 +849,12 @@ export function DesignReview({
             target="_blank"
             rel="noreferrer"
           >
-            Open client portal ↗
+            {t("Open client portal")} ↗
           </a>
         )}
         {action === "internal_approved" && (
           <p className={styles.muted}>
-            This approves the internal review only. You can send it to the
-            client next.
+            {t("This approves the internal review only. You can send it to the client next.")}
           </p>
         )}
       </form>

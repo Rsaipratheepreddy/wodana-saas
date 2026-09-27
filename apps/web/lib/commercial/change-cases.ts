@@ -1,12 +1,13 @@
 import type { CommercialData, ControlledChangeKind } from "./types";
+import { tKey } from "@/lib/i18n/keys";
 
 export const changeKinds: { value: ControlledChangeKind; label: string }[] = [
-  { value: "addition", label: "Add work" },
-  { value: "removal", label: "Remove work" },
-  { value: "replacement", label: "Replace work" },
-  { value: "clarification", label: "Clarify scope" },
-  { value: "date_change", label: "Change dates" },
-  { value: "price_correction", label: "Correct price" },
+  { value: "addition", label: tKey("Add work") },
+  { value: "removal", label: tKey("Remove work") },
+  { value: "replacement", label: tKey("Replace work") },
+  { value: "clarification", label: tKey("Clarify scope") },
+  { value: "date_change", label: tKey("Change dates") },
+  { value: "price_correction", label: tKey("Correct price") },
 ];
 
 export function availableContractLines(data: CommercialData) {

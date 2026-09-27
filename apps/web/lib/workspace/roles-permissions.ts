@@ -1,4 +1,8 @@
+import { tKey, translatorFor, type MessageKey, type Translate } from "@/lib/i18n/keys";
 import type { WorkspaceRole } from "./members";
+
+/** English labels when no translator is passed (tests, server code). */
+const english: Translate = translatorFor({});
 
 export type WorkspacePermissionDefinition = {
   code: string;
@@ -7,103 +11,103 @@ export type WorkspacePermissionDefinition = {
 
 export type PermissionAreaId = "all" | "company" | "sales" | "planning" | "commercial" | "projects" | "supply" | "clients" | "people" | "platform";
 
-export const PERMISSION_AREAS: Array<{ id: PermissionAreaId; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "company", label: "Company" },
-  { id: "sales", label: "Sales" },
-  { id: "planning", label: "Planning & design" },
-  { id: "commercial", label: "Quotations & finance" },
-  { id: "projects", label: "Projects & work" },
-  { id: "supply", label: "Supply & catalog" },
-  { id: "clients", label: "Client portal" },
-  { id: "people", label: "People" },
-  { id: "platform", label: "AI & platform" },
+export const PERMISSION_AREAS: Array<{ id: PermissionAreaId; label: MessageKey }> = [
+  { id: "all", label: tKey("All") },
+  { id: "company", label: tKey("Company") },
+  { id: "sales", label: tKey("Sales") },
+  { id: "planning", label: tKey("Planning & design") },
+  { id: "commercial", label: tKey("Quotations & finance") },
+  { id: "projects", label: tKey("Projects & work") },
+  { id: "supply", label: tKey("Supply & catalog") },
+  { id: "clients", label: tKey("Client portal") },
+  { id: "people", label: tKey("People") },
+  { id: "platform", label: tKey("AI & platform") },
 ];
 
-const RESOURCE_LABELS: Record<string, string> = {
-  "module.organization": "organization profile",
-  "module.members": "people",
-  "module.teams": "work groups",
-  "module.roles": "roles and permissions",
-  "module.integrations": "integrations",
-  "workspace.members": "people",
-  "workspace.roles": "roles and permissions",
-  "workspace.settings": "workspace settings",
-  legal_entities: "business records",
-  integrations: "integrations",
-  "crm.parties": "customers",
-  "crm.leads": "enquiries",
-  "crm.opportunities": "opportunities",
-  "crm.activities": "activities and follow-ups",
-  "crm.automations": "smart rules",
-  "crm.communications": "customer communications",
-  "crm.consent": "customer consent",
-  "crm.notifications": "CRM notifications",
-  "crm.privacy": "CRM privacy",
-  "crm.reports": "CRM reports",
-  "crm.settings": "CRM settings",
-  jobs: "Jobs",
-  "jobs.stage": "Job stages",
-  pre_projects: "planning cases",
-  commercial: "quotations and agreements",
-  "commercial.costs": "internal quotation costs",
-  "commercial.finance": "payment evidence",
-  catalog: "master data",
-  supplier_offers: "supplier offers",
-  vendors: "vendors",
-  portal: "client portal",
-  projects: "projects",
-  "projects.schedule": "project schedules",
-  hrms: "HRMS",
-  audit: "audit history",
-  "finance.settings": "finance settings",
-  "ai.suggestions": "AI suggestions",
+const RESOURCE_LABELS: Record<string, MessageKey> = {
+  "module.organization": tKey("organization profile"),
+  "module.members": tKey("people"),
+  "module.teams": tKey("work groups"),
+  "module.roles": tKey("roles and permissions"),
+  "module.integrations": tKey("integrations"),
+  "workspace.members": tKey("people"),
+  "workspace.roles": tKey("roles and permissions"),
+  "workspace.settings": tKey("workspace settings"),
+  legal_entities: tKey("business records"),
+  integrations: tKey("integrations"),
+  "crm.parties": tKey("customers"),
+  "crm.leads": tKey("enquiries"),
+  "crm.opportunities": tKey("opportunities"),
+  "crm.activities": tKey("activities and follow-ups"),
+  "crm.automations": tKey("smart rules"),
+  "crm.communications": tKey("customer communications"),
+  "crm.consent": tKey("customer consent"),
+  "crm.notifications": tKey("CRM notifications"),
+  "crm.privacy": tKey("CRM privacy"),
+  "crm.reports": tKey("CRM reports"),
+  "crm.settings": tKey("CRM settings"),
+  jobs: tKey("Jobs"),
+  "jobs.stage": tKey("Job stages"),
+  pre_projects: tKey("planning cases"),
+  commercial: tKey("quotations and agreements"),
+  "commercial.costs": tKey("internal quotation costs"),
+  "commercial.finance": tKey("payment evidence"),
+  catalog: tKey("master data"),
+  supplier_offers: tKey("supplier offers"),
+  vendors: tKey("vendors"),
+  portal: tKey("client portal"),
+  projects: tKey("projects"),
+  "projects.schedule": tKey("project schedules"),
+  hrms: tKey("HRMS"),
+  audit: tKey("audit history"),
+  "finance.settings": tKey("finance settings"),
+  "ai.suggestions": tKey("AI suggestions"),
 };
 
-const ACTION_LABELS: Record<string, string> = {
-  read: "View",
-  view: "View",
-  write: "Create",
-  create: "Create",
-  edit: "Edit",
-  manage: "Manage",
-  delete: "Delete",
-  assign: "Assign",
-  export: "Export",
-  merge: "Merge",
-  publish: "Publish",
-  send: "Send",
-  transition: "Move",
-  approve: "Approve",
-  release: "Release",
-  verify: "Verify",
-  buy: "Manage procurement for",
-  report: "Report progress for",
-  review: "Review",
-  repair: "Repair",
-  use: "Use",
+const ACTION_LABELS: Record<string, MessageKey> = {
+  read: tKey("View"),
+  view: tKey("View"),
+  write: tKey("Create"),
+  create: tKey("Create"),
+  edit: tKey("Edit"),
+  manage: tKey("Manage"),
+  delete: tKey("Delete"),
+  assign: tKey("Assign"),
+  export: tKey("Export"),
+  merge: tKey("Merge"),
+  publish: tKey("Publish"),
+  send: tKey("Send"),
+  transition: tKey("Move"),
+  approve: tKey("Approve"),
+  release: tKey("Release"),
+  verify: tKey("Verify"),
+  buy: tKey("Manage procurement for"),
+  report: tKey("Report progress for"),
+  review: tKey("Review"),
+  repair: tKey("Repair"),
+  use: tKey("Use"),
 };
 
-const EXACT_LABELS: Record<string, string> = {
-  "ai.suggestions.use": "Use AI suggestions",
-  "commercial.deal.approve": "Approve Deal File (Owner/Admin for Palm Living)",
-  "commercial.estimate": "Approve QS quotation estimate",
-  "commercial.finance.verify": "Verify payment evidence",
-  "commercial.override_price": "Override quotation prices",
-  "crm.opportunities.sensitive_values": "View sensitive opportunity values",
-  "crm.privacy.erase": "Erase customer data",
-  "hrms.evidence": "Record attendance evidence",
-  "hrms.manage": "Manage HRMS",
-  "hrms.self": "Use own attendance and leave",
-  "hrms.team": "Review team attendance and leave",
-  "jobs.stage.manage": "Manage Job stages",
-  "pre_projects.manage_lifecycle": "Manage planning lifecycle",
-  "pre_projects.publish_definition": "Publish scope confirmation",
-  "pre_projects.record_client_definition_decisions": "Record client scope decisions",
-  "pre_projects.record_client_design_decisions": "Record client design decisions",
-  "pre_projects.review_designs": "Review design revisions",
-  "pre_projects.verify_measurements": "Verify site measurements",
-  "projects.schedule.override": "Override project schedule conflicts",
+const EXACT_LABELS: Record<string, MessageKey> = {
+  "ai.suggestions.use": tKey("Use AI suggestions"),
+  "commercial.deal.approve": tKey("Approve Deal File (Owner/Admin for Palm Living)"),
+  "commercial.estimate": tKey("Approve QS quotation estimate"),
+  "commercial.finance.verify": tKey("Verify payment evidence"),
+  "commercial.override_price": tKey("Override quotation prices"),
+  "crm.opportunities.sensitive_values": tKey("View sensitive opportunity values"),
+  "crm.privacy.erase": tKey("Erase customer data"),
+  "hrms.evidence": tKey("Record attendance evidence"),
+  "hrms.manage": tKey("Manage HRMS"),
+  "hrms.self": tKey("Use own attendance and leave"),
+  "hrms.team": tKey("Review team attendance and leave"),
+  "jobs.stage.manage": tKey("Manage Job stages"),
+  "pre_projects.manage_lifecycle": tKey("Manage planning lifecycle"),
+  "pre_projects.publish_definition": tKey("Publish scope confirmation"),
+  "pre_projects.record_client_definition_decisions": tKey("Record client scope decisions"),
+  "pre_projects.record_client_design_decisions": tKey("Record client design decisions"),
+  "pre_projects.review_designs": tKey("Review design revisions"),
+  "pre_projects.verify_measurements": tKey("Verify site measurements"),
+  "projects.schedule.override": tKey("Override project schedule conflicts"),
 };
 
 function words(value: string) {
@@ -122,20 +126,20 @@ export function permissionArea(code: string): Exclude<PermissionAreaId, "all"> {
   return "company";
 }
 
-export function permissionAreaLabel(code: string) {
+export function permissionAreaLabel(code: string, t: Translate = english) {
   const area = permissionArea(code);
-  return PERMISSION_AREAS.find((item) => item.id === area)?.label ?? "Company";
+  return t(PERMISSION_AREAS.find((item) => item.id === area)?.label ?? tKey("Company"));
 }
 
-export function permissionLabel(code: string) {
-  if (EXACT_LABELS[code]) return EXACT_LABELS[code];
+export function permissionLabel(code: string, t: Translate = english) {
+  if (EXACT_LABELS[code]) return t(EXACT_LABELS[code]);
   const resourceCode = Object.keys(RESOURCE_LABELS)
     .sort((left, right) => right.length - left.length)
     .find((candidate) => code.startsWith(`${candidate}.`));
   if (!resourceCode) return words(code);
   const action = code.slice(resourceCode.length + 1);
-  const verb = ACTION_LABELS[action] ?? words(action);
-  return `${verb} ${RESOURCE_LABELS[resourceCode]}`;
+  const verb = ACTION_LABELS[action] ? t(ACTION_LABELS[action]) : words(action);
+  return t("{action} {resource}", { action: verb, resource: t(RESOURCE_LABELS[resourceCode]) });
 }
 
 export type RolesPermissionsPageData = {

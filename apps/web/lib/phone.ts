@@ -1,5 +1,6 @@
 import { getCountries, getCountryCallingCode, getExampleNumber, isSupportedCountry, parsePhoneNumberFromString, validatePhoneNumberLength, type CountryCode } from "libphonenumber-js/max";
 import mobileExamples from "libphonenumber-js/examples.mobile.json";
+import { tKey } from "@/lib/i18n/keys";
 
 /** Resolve a contact's country first, then the workspace locale. Never guess a country from digits alone. */
 export function phoneCountry(contactCountry?: string | null, workspaceLocale?: string | null): CountryCode | undefined {
@@ -26,7 +27,7 @@ export function whatsappUrl(rawNumber: string, defaultCountry?: CountryCode): st
 /** Format only the visible value; keep the original number unchanged for storage and links. */
 export function formatPhoneForDisplay(rawNumber?: string | null, defaultCountry?: CountryCode): string {
   const input = rawNumber?.trim() ?? "";
-  if (!input) return "Not provided";
+  if (!input) return tKey("Not provided");
   const parsed = parsePhoneNumberFromString(input, { defaultCountry, extract: false });
   return parsed?.isValid() ? parsed.formatInternational() : input;
 }
@@ -36,10 +37,11 @@ export function countryForPhone(rawNumber?: string | null): CountryCode | undefi
   return parsePhoneNumberFromString(rawNumber, { extract: false })?.country;
 }
 
-export function phoneCountryOptions(locale = "en") {
+/** Country codes with their names in `locale` (the person's language with the workspace region). */
+export function phoneCountryOptions(locale: string) {
   let displayNames: Intl.DisplayNames;
   try { displayNames = new Intl.DisplayNames([locale], { type: "region" }); }
-  catch { displayNames = new Intl.DisplayNames(["en"], { type: "region" }); }
+  catch { displayNames = new Intl.DisplayNames([], { type: "region" }); }
   return getCountries().map(id => {
     const name = displayNames.of(id) ?? id;
     const flag = [...id].map(letter => String.fromCodePoint(0x1f1e6 + letter.charCodeAt(0) - 65)).join("");
@@ -96,7 +98,7 @@ export function phoneProblem(national: string, country: string, text: PhoneProbl
   if (!upper || !isSupportedCountry(upper)) return text.chooseCountry;
   const code = `+${getCountryCallingCode(upper as CountryCode)}`;
   let name: string = upper;
-  try { name = new Intl.DisplayNames([options.locale ?? "en"], { type: "region" }).of(upper) ?? upper; } catch { /* keep the code */ }
+  try { name = new Intl.DisplayNames(options.locale ? [options.locale] : [], { type: "region" }).of(upper) ?? upper; } catch { /* keep the code */ }
   const example = getExampleNumber(upper as CountryCode, mobileExamples);
   const expected = example ? String(example.nationalNumber).length : 0;
   const length = validatePhoneNumberLength(value, upper as CountryCode);

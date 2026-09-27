@@ -1,5 +1,6 @@
 import "server-only";
 
+import { tKey } from "@/lib/i18n/keys";
 import { NextResponse } from "next/server";
 import { applyRotatedSession, authenticatedBackendFetch } from "@/lib/auth/backend-session";
 import { safeBackendMessage } from "@/lib/auth/server";
@@ -27,14 +28,14 @@ export async function workspaceJsonResponse(
   const result = await authenticatedBackendFetch(path, init);
   if (result.unauthenticated) {
     const response = NextResponse.json(
-      { message: "Your session has expired. Sign in again." },
+      { message: tKey("Your session has expired. Sign in again.") },
       { status: 401 },
     );
     applyRotatedSession(response, result.rotatedSession);
     return response;
   }
   if (!result.upstream) {
-    return NextResponse.json({ message: "The workspace service is unavailable." }, { status: 503 });
+    return NextResponse.json({ message: tKey("The workspace service is unavailable.") }, { status: 503 });
   }
 
   const payload = await result.upstream.json().catch(() => null);

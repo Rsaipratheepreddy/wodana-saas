@@ -1,10 +1,12 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useState, type FormEvent } from "react";
 import type { QuoteLine } from "@/lib/commercial/types";
-import { commercialPath, jsonRequest } from "@/lib/commercial/client";
+import { commercialPath, jsonRequest, money } from "@/lib/commercial/client";
+import { translateKnown } from "@/lib/i18n/keys";
 import { catalogPriceInput, catalogPriceProvenance, catalogResolvedRate, priceBasisCurrent, type CatalogPriceResult } from "@/lib/commercial/catalog-price";
-import { Button, ControlledModalDialog, Form, MoneyInput, TextInput } from "@/design-system";
+import { Button, ControlledModalDialog, Form, MoneyInput, TextInput, useDesignSystem } from "@/design-system";
 import styles from "./quotation-catalog-price.module.css";
 
 export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, caseId, readOnly, canOverride, showRate = true, onApply }: {
@@ -18,6 +20,8 @@ export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, ca
   showRate?: boolean;
   onApply: (basis: QuoteLine, currency: string, taxRate: number, patch: Partial<QuoteLine>) => boolean;
 }) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [override, setOverride] = useState(false);
@@ -27,8 +31,8 @@ export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, ca
   const current = priceBasisCurrent(line, currency, taxRate);
   const input = catalogPriceInput(line, currency, taxRate);
   const pendingOverride = line.catalogPriceRequest?.action === "override";
-  const status = !input ? "Choose a catalog item" : pendingOverride ? "Override · save to confirm" : !current ? "Price needs refresh" : line.catalogPrice?.status === "resolved" ? line.catalogPrice.source === "manual_override" ? "Approved override" : "Catalog price" : "Price unavailable";
-  const provenance = catalogPriceProvenance(line.catalogPrice);
+  const status = t(!input ? "Choose a catalog item" : pendingOverride ? "Override · save to confirm" : !current ? "Price needs refresh" : line.catalogPrice?.status === "resolved" ? line.catalogPrice.source === "manual_override" ? "Approved override" : "Catalog price" : "Price unavailable");
+  const provenance = catalogPriceProvenance(line.catalogPrice, { t, locale, timeZone });
 
   async function resolve() {
     if (!input || busy) return;
@@ -39,8 +43,8 @@ export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, ca
         catalogPrice: result.snapshot,
         catalogPriceRequest: { action: "resolve" },
         rate: catalogResolvedRate(result.snapshot),
-      })) setError("The item changed while its price was checked. Check it again.");
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not check the selling price."); }
+      })) setError(t("The item changed while its price was checked. Check it again."));
+    } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not check the selling price.")); }
     finally { setBusy(false); }
   }
 
@@ -50,7 +54,7 @@ export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, ca
     if (!input || !Number.isFinite(rate) || rate <= 0 || rate > 1e8 || !reason.trim()) return;
     setError("");
     if (!onApply(line, currency, taxRate, { rate, pricingMode: "item", catalogPriceRequest: { action: "override", reason: reason.trim() } })) {
-      setError("The item changed. Reopen the price override and try again.");
+      setError(t("The item changed. Reopen the price override and try again."));
       return;
     }
     setOverride(false);
@@ -61,27 +65,27 @@ export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, ca
     <div className={styles.cell}>
       {showRate ? <strong className={styles.rate}>{line.rate.toFixed(2)}</strong> : null}
       <span className={styles.status} data-issue={needsAttention || undefined}>{status}</span>
-      <button type="button" className={styles.reviewButton} onClick={() => setReviewOpen(true)} aria-label={`Review price for ${line.title}`}>Review price</button>
+      <button type="button" className={styles.reviewButton} onClick={() => setReviewOpen(true)} aria-label={t("Review price for {title}", { title: line.title })}>{t("Review price")}</button>
     </div>
-    <ControlledModalDialog title={`Price review · ${line.title}`} isOpen={reviewOpen} onOpenChange={open => { if (!busy) { setReviewOpen(open); if (!open) setOverride(false); } }} size="md" footer={<div className={styles.footer}>
-      <Button size="compact" variant="quiet" onPress={() => { setReviewOpen(false); setOverride(false); }} isDisabled={busy}>Close</Button>
-      {!readOnly && line.pricingMode !== "materials" ? <Button size="compact" variant="secondary" isDisabled={!input} isLoading={busy} onPress={() => void resolve()}>{current ? "Refresh price" : "Check price"}</Button> : null}
-      {!readOnly && canOverride && input ? <Button size="compact" variant="primary" onPress={() => { setAmount(line.rate > 0 ? String(line.rate) : ""); setReason(""); setOverride(open => !open); }}>{override ? "Cancel override" : "Override price"}</Button> : null}
+    <ControlledModalDialog title={t("Price review · {title}", { title: line.title })} isOpen={reviewOpen} onOpenChange={open => { if (!busy) { setReviewOpen(open); if (!open) setOverride(false); } }} size="md" footer={<div className={styles.footer}>
+      <Button size="compact" variant="quiet" onPress={() => { setReviewOpen(false); setOverride(false); }} isDisabled={busy}>{t("Close")}</Button>
+      {!readOnly && line.pricingMode !== "materials" ? <Button size="compact" variant="secondary" isDisabled={!input} isLoading={busy} onPress={() => void resolve()}>{t(current ? "Refresh price" : "Check price")}</Button> : null}
+      {!readOnly && canOverride && input ? <Button size="compact" variant="primary" onPress={() => { setAmount(line.rate > 0 ? String(line.rate) : ""); setReason(""); setOverride(open => !open); }}>{t(override ? "Cancel override" : "Override price")}</Button> : null}
     </div>}>
       <div className={styles.review}>
-        <div className={styles.reviewSummary}><span>Unit rate</span><strong>{currency} {line.rate.toFixed(2)}</strong></div>
+        <div className={styles.reviewSummary}><span>{t("Unit rate")}</span><strong>{money(line.rate, currency, locale)}</strong></div>
         <p className={styles.reviewStatus} data-issue={needsAttention || undefined}>{status}</p>
         {provenance ? <div className={styles.provenance}>
           <strong>{provenance.basis}</strong>
           <p>{provenance.detail}</p>
           {provenance.issue ? <p className={styles.issue}>{provenance.issue}</p> : null}
-        </div> : <p className={styles.explanation}>Check this catalogue item to retrieve its current selling price.</p>}
+        </div> : <p className={styles.explanation}>{t("Check this catalogue item to retrieve its current selling price.")}</p>}
         {override ? <Form className={styles.override} onSubmit={applyOverride}>
-          <MoneyInput aria-label={`Override rate for ${line.title}`} currency={currency} label="Unit rate" minValue={0.01} maxValue={100000000} step={0.01} isRequired value={amount ? Number(amount) : undefined} onChange={(value) => setAmount(String(value))} />
-          <TextInput aria-label={`Override reason for ${line.title}`} label="Reason" maxLength={500} isRequired value={reason} onChange={setReason} />
-          <Button type="submit" size="compact" variant="primary">Use override</Button>
+          <MoneyInput aria-label={t("Override rate for {title}", { title: line.title })} currency={currency} label={t("Unit rate")} minValue={0.01} maxValue={100000000} step={0.01} isRequired value={amount ? Number(amount) : undefined} onChange={(value) => setAmount(String(value))} />
+          <TextInput aria-label={t("Override reason for {title}", { title: line.title })} label={t("Reason")} maxLength={500} isRequired value={reason} onChange={setReason} />
+          <Button type="submit" size="compact" variant="primary">{t("Use override")}</Button>
         </Form> : null}
-        {error ? <p role="alert" className={styles.error}>{error}</p> : null}
+        {error ? <p role="alert" className={styles.error}>{translateKnown(t, error)}</p> : null}
       </div>
     </ControlledModalDialog>
   </>;

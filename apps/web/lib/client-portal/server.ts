@@ -3,6 +3,7 @@ import "server-only";
 import { businessApiUrl } from "@/lib/auth/server";
 import { classifyTenantHost } from "@/lib/auth/tenant-host";
 import type { PortalSite } from "./types";
+import { getServerT } from "@/lib/i18n/server";
 
 export const PORTAL_SLUG = /^[a-z0-9-]{1,80}$/;
 /** The signed-in client's session, per portal. */
@@ -12,9 +13,9 @@ export const portalCookie = (slug: string) => `wodana_client_${slug}`;
 export async function loadSite(slug: string): Promise<PortalSite | null> {
   if (!PORTAL_SLUG.test(slug)) return null;
   const response = await fetch(businessApiUrl(`/client-portal/${slug}/site`), { cache: "no-store", signal: AbortSignal.timeout(8_000) }).catch(() => null);
-  if (!response) throw new Error("The portal is temporarily unavailable. Please try again.");
+  if (!response) throw new Error((await getServerT())("The portal is temporarily unavailable. Please try again."));
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error("The portal is temporarily unavailable. Please try again.");
+  if (!response.ok) throw new Error((await getServerT())("The portal is temporarily unavailable. Please try again."));
   return response.json() as Promise<PortalSite>;
 }
 

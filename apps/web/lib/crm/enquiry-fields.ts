@@ -1,3 +1,4 @@
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { crmRequest } from "./client";
 import type { LeadFormQuestion } from "./lead-forms";
 
@@ -22,17 +23,18 @@ export type EnquiryField = {
 };
 
 type Fixed = Omit<EnquiryField, "kind" | "visible" | "version" | "locked"> & { locked?: boolean };
+/** Fixed labels are i18n keys: translate them with t() where they render. */
 const FIXED: Fixed[] = [
-  { key: "displayName", label: "Customer name", type: "text", locked: true, formField: "displayName" },
-  { key: "mobile", label: "Mobile", type: "phone", locked: true, formField: "mobile" },
-  { key: "email", label: "Email", type: "email", formField: "email" },
-  { key: "region", label: "Region", type: "select", locked: true, lists: ["emirate"], formField: "emirate" },
-  { key: "area", label: "Area / city", type: "select", lists: ["lead_area_"], formField: "area" },
-  { key: "serviceType", label: "Enquiry type", type: "select", locked: true, lists: ["enquiry_type"], formField: "serviceType" },
-  { key: "customerType", label: "Customer type", type: "select", lists: ["customer_type"] },
-  { key: "budgetRange", label: "Budget", type: "select", lists: ["budget_range"], formField: "budgetRange" },
-  { key: "summary", label: "Project details", type: "paragraph", formField: "summary" },
-  { key: "source", label: "Source & channel", type: "select", locked: true, lists: ["lead_source", "lead_channel_"] },
+  { key: "displayName", label: tKey("Customer name"), type: "text", locked: true, formField: "displayName" },
+  { key: "mobile", label: tKey("Mobile"), type: "phone", locked: true, formField: "mobile" },
+  { key: "email", label: tKey("Email"), type: "email", formField: "email" },
+  { key: "region", label: tKey("Region"), type: "select", locked: true, lists: ["emirate"], formField: "emirate" },
+  { key: "area", label: tKey("Area / city"), type: "select", lists: ["lead_area_"], formField: "area" },
+  { key: "serviceType", label: tKey("Enquiry type"), type: "select", locked: true, lists: ["enquiry_type"], formField: "serviceType" },
+  { key: "customerType", label: tKey("Customer type"), type: "select", lists: ["customer_type"] },
+  { key: "budgetRange", label: tKey("Budget"), type: "select", lists: ["budget_range"], formField: "budgetRange" },
+  { key: "summary", label: tKey("Project details"), type: "paragraph", formField: "summary" },
+  { key: "source", label: tKey("Source & channel"), type: "select", locked: true, lists: ["lead_source", "lead_channel_"] },
 ];
 
 export const customFieldRef = (id: string) => `cf:${id}`;
@@ -52,7 +54,7 @@ export const customEnquiryField = (field: CustomEnquiryField): EnquiryField => (
 
 export const isShown = (fields: EnquiryField[], key: string) => fields.find((field) => field.key === key)?.visible !== false;
 
-export const FIELD_TYPE_LABELS: Record<EnquiryFieldType, string> = { text: "Short answer", paragraph: "Long answer", email: "Email", phone: "Phone number", number: "Number", date: "Date", select: "Dropdown", multi_select: "Checkboxes" };
+export const FIELD_TYPE_LABELS: Record<EnquiryFieldType, MessageKey> = { text: tKey("Short answer"), paragraph: tKey("Long answer"), email: tKey("Email"), phone: tKey("Phone number"), number: tKey("Number"), date: tKey("Date"), select: tKey("Dropdown"), multi_select: tKey("Checkboxes") };
 /** Types a new custom field can take. */
 export const NEW_FIELD_TYPES: EnquiryFieldType[] = ["text", "paragraph", "number", "date", "select", "multi_select"];
 

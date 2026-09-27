@@ -3,7 +3,8 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState, type FormEvent } from "react";
 import { Copy, Download } from "lucide-react";
-import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, TextInput, ValidationSummary, formatDate, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import type { Translate } from "@/lib/i18n/keys";
 import {
   readableRole,
   type MembersPageData,
@@ -44,9 +45,9 @@ function responseMessage(response: Response, fallback: string) {
     .catch(() => fallback);
 }
 
-function dateLabel(value: string | null, prefix?: string) {
-  if (!value) return "Not recorded";
-  return `${prefix ? `${prefix} ` : ""}${formatDate(value, { locale: "en-GB", timeZone: "Asia/Dubai" })}`;
+function dateLabel(value: string | null, t: Translate, context: { locale: string; timeZone: string }) {
+  if (!value) return t("Not recorded");
+  return formatDate(value, context);
 }
 
 function inviteeFallback(email: string) {
@@ -59,6 +60,7 @@ function sameRoles(roles: readonly string[], selected: ReadonlySet<string>) {
 
 export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [members, setMembers] = useState(initialData.members);
   const [invitations, setInvitations] = useState(initialData.invitations);
@@ -114,7 +116,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const exportRows = (selectedRows: DirectoryRow[]) => {
     const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const csv = [
-      ["Name", "Email", "Access", "Team", "Status", "Added"].map(quote).join(","),
+      [t("Name"), t("Email"), t("Access"), t("Team"), t("Status"), t("Added")].map(quote).join(","),
       ...selectedRows.map((row) => {
         const record = row.kind === "member" ? row.member : row.invitation;
         const roleCodes = row.kind === "member" ? [...row.member.roles, ...(row.member.inheritedRoles ?? [])] : row.invitation.roles;
@@ -168,7 +170,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ workspaceId: initialData.workspaceId, displayName, email, roleCodes, teamIds }),
     });
-    if (!response.ok) throw new Error(await responseMessage(response, "The invitation could not be created."));
+    if (!response.ok) throw new Error(await responseMessage(response, t("The invitation could not be created.")));
     const payload = await response.json() as {
       id: string;
       displayName: string;
@@ -211,15 +213,15 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     const emails = parseEmailList(quickEmail);
     setQuickFailure("");
     if (!emails.length || emails.some((email) => !EMAIL_PATTERN.test(email))) {
-      setQuickFailure("Enter valid work email addresses separated by commas or spaces.");
+      setQuickFailure(t("Enter valid work email addresses separated by commas or spaces."));
       return;
     }
     if (emails.length > MAX_BULK_INVITATIONS) {
-      setQuickFailure(`Invite up to ${MAX_BULK_INVITATIONS} people at a time.`);
+      setQuickFailure(t("Invite up to {count} people at a time.", { count: MAX_BULK_INVITATIONS }));
       return;
     }
     if (!quickAccess) {
-      setQuickFailure("Choose a team or role.");
+      setQuickFailure(t("Choose a team or role."));
       return;
     }
     setIsQuickInviting(true);
@@ -243,7 +245,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         }));
       }
       if (!created.length) {
-        setQuickFailure("None of the invitations could be created. Check for existing members or pending invitations.");
+        setQuickFailure(t("None of the invitations could be created. Check for existing members or pending invitations."));
         return;
       }
       setQuickEmail("");
@@ -257,12 +259,14 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       }
       setInviteOpen(true);
       const emailed = created.filter((item) => item.deliveryStatus === "sent").length;
-      setStatus(`${created.length} invitation${created.length === 1 ? "" : "s"} created${emailed ? `; ${emailed} emailed` : ""}.`);
+      setStatus(emailed
+        ? (created.length === 1 ? t("1 invitation created; {emailed} emailed.", { emailed }) : t("{count} invitations created; {emailed} emailed.", { count: created.length, emailed }))
+        : (created.length === 1 ? t("1 invitation created.") : t("{count} invitations created.", { count: created.length })));
       if (failedEmails.length) {
-        setQuickFailure(`${failedEmails.length} address${failedEmails.length === 1 ? "" : "es"} could not be invited.`);
+        setQuickFailure(failedEmails.length === 1 ? t("1 address could not be invited.") : t("{count} addresses could not be invited.", { count: failedEmails.length }));
       }
     } catch (error) {
-      setQuickFailure(error instanceof Error ? error.message : "The invitation could not be created.");
+      setQuickFailure(error instanceof Error ? error.message : t("The invitation could not be created."));
     } finally {
       setIsQuickInviting(false);
     }
@@ -273,18 +277,18 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     if (!file) return;
     setQuickFailure("");
     if (file.size > 1024 * 1024) {
-      setQuickFailure("Choose a CSV file smaller than 1 MB.");
+      setQuickFailure(t("Choose a CSV file smaller than 1 MB."));
       return;
     }
     const emails = Array.from(new Set(
       (await file.text()).match(CSV_EMAIL_PATTERN)?.map((email) => email.toLowerCase()) ?? [],
     ));
     if (!emails.length) {
-      setQuickFailure("No valid email addresses were found in that CSV file.");
+      setQuickFailure(t("No valid email addresses were found in that CSV file."));
       return;
     }
     if (emails.length > MAX_BULK_INVITATIONS) {
-      setQuickFailure(`The CSV contains ${emails.length} addresses. Invite up to ${MAX_BULK_INVITATIONS} at a time.`);
+      setQuickFailure(t("The CSV contains {count} addresses. Invite up to {max} at a time.", { count: emails.length, max: MAX_BULK_INVITATIONS }));
       return;
     }
     setQuickEmail(emails.join(", "));
@@ -293,9 +297,9 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const createInvitation = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const errors = [
-      inviteName.trim().length < 2 ? "Enter the member's full name." : "",
-      /^\S+@\S+\.\S+$/.test(inviteEmail) ? "" : "Enter a valid work email address.",
-      inviteRoles.size || inviteTeamIds.size ? "" : "Choose a team or a direct role.",
+      inviteName.trim().length < 2 ? t("Enter the member's full name.") : "",
+      /^\S+@\S+\.\S+$/.test(inviteEmail) ? "" : t("Enter a valid work email address."),
+      inviteRoles.size || inviteTeamIds.size ? "" : t("Choose a team or a direct role."),
     ].filter(Boolean);
     setInviteErrors(errors);
     setInviteFailure("");
@@ -313,10 +317,10 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       setBulkInvitationResult(null);
       setCopyStatus("");
       setStatus(created.result.deliveryStatus === "sent"
-        ? `Invitation emailed to ${created.result.email}.`
-        : `Invitation created for ${created.result.email}.`);
+        ? t("Invitation emailed to {email}.", { email: created.result.email })
+        : t("Invitation created for {email}.", { email: created.result.email }));
     } catch (error) {
-      setInviteFailure(error instanceof Error ? error.message : "The invitation could not be created.");
+      setInviteFailure(error instanceof Error ? error.message : t("The invitation could not be created."));
     } finally {
       setIsInviting(false);
     }
@@ -326,9 +330,9 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     if (!invitationResult) return;
     try {
       await navigator.clipboard.writeText(invitationResult.link);
-      setCopyStatus("Activation link copied.");
+      setCopyStatus(t("Activation link copied."));
     } catch {
-      setCopyStatus("Copy failed. Select and copy the link manually.");
+      setCopyStatus(t("Copy failed. Select and copy the link manually."));
     }
   };
 
@@ -337,7 +341,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     const fallbackLinks = bulkInvitationResult.created.filter((item) => item.deliveryStatus !== "sent");
     const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const csv = [
-      ["Email", "Activation link", "Email delivery"].map(quote).join(","),
+      [t("Email"), t("Activation link"), t("Email delivery")].map(quote).join(","),
       ...fallbackLinks.map((item) => [item.email, item.link, item.deliveryStatus].map(quote).join(",")),
     ].join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -360,15 +364,15 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     event.preventDefault();
     if (!editingMember) return;
     if (!editRoles.size && !(editingMember.inheritedRoles?.length)) {
-      setEditFailure("Select a direct role or assign an active team role first.");
+      setEditFailure(t("Select a direct role or assign an active team role first."));
       return;
     }
     if (editingMember.userId === initialData.currentUserId && editStatus === "suspended") {
-      setEditFailure("You cannot suspend your own active session here.");
+      setEditFailure(t("You cannot suspend your own active session here."));
       return;
     }
     if (sameRoles(editingMember.roles, editRoles) && editStatus === editingMember.status) {
-      setEditFailure("No access changes to review.");
+      setEditFailure(t("No access changes to review."));
       return;
     }
     setEditFailure("");
@@ -390,14 +394,14 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           roleCodes: Array.from(editRoles),
         }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The member could not be updated."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The member could not be updated.")));
       const updated = await response.json() as WorkspaceMember;
       setMembers((current) => current.map((member) => member.id === updated.id ? updated : member));
       setMemberReviewOpen(false);
       setEditingMember(null);
-      setStatus(`${updated.displayName}'s access was updated.`);
+      setStatus(t("{name}'s access was updated.", { name: updated.displayName }));
     } catch (error) {
-      setEditFailure(error instanceof Error ? error.message : "The member could not be updated.");
+      setEditFailure(error instanceof Error ? error.message : t("The member could not be updated."));
       setMemberReviewOpen(false);
     } finally {
       setIsSavingMember(false);
@@ -413,7 +417,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ workspaceId: initialData.workspaceId }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The invitation could not be renewed."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The invitation could not be renewed.")));
       const payload = await response.json() as {
         email: string;
         expiresAt: string;
@@ -435,10 +439,10 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       setCopyStatus("");
       setInviteOpen(true);
       setStatus(payload.emailDelivery?.status === "sent"
-        ? `Invitation re-emailed to ${payload.email}.`
-        : `Invitation renewed for ${payload.email}.`);
+        ? t("Invitation re-emailed to {email}.", { email: payload.email })
+        : t("Invitation renewed for {email}.", { email: payload.email }));
     } catch (error) {
-      setActionFailure(error instanceof Error ? error.message : "The invitation could not be renewed.");
+      setActionFailure(error instanceof Error ? error.message : t("The invitation could not be renewed."));
     } finally {
       setIsResending(false);
     }
@@ -454,14 +458,14 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ workspaceId: initialData.workspaceId }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The invitation could not be cancelled."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The invitation could not be cancelled.")));
       setInvitations((current) => current.map((item) => item.id === cancellingInvitation.id
         ? { ...item, status: "cancelled", cancelledAt: new Date().toISOString() }
         : item));
-      setStatus(`Invitation for ${cancellingInvitation.email} was cancelled.`);
+      setStatus(t("Invitation for {email} was cancelled.", { email: cancellingInvitation.email }));
       setCancellingInvitation(null);
     } catch (error) {
-      setActionFailure(error instanceof Error ? error.message : "The invitation could not be cancelled.");
+      setActionFailure(error instanceof Error ? error.message : t("The invitation could not be cancelled."));
       setCancellingInvitation(null);
     } finally {
       setIsCancelling(false);
@@ -471,7 +475,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const columns: GroupedTableColumn<DirectoryRow>[] = [
     {
       id: "person",
-      label: "Person",
+      label: t("Person"),
       mobileWidth: "14rem",
       width: "25%",
       render: (item) => {
@@ -480,19 +484,19 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           : item.invitation.displayName || inviteeFallback(item.invitation.email);
         const email = item.kind === "member" ? item.member.email : item.invitation.email;
         const isCurrentUser = item.kind === "member" && item.member.userId === initialData.currentUserId;
-        return <span className={styles.identity}>{item.kind === "member" ? <Avatar name={name} preset={item.member.avatarPreset ?? "auto"} seed={item.member.userId} src={item.member.photoUrl} /> : <Avatar name={name} />}<span className={styles.identityDetails}><strong>{name}{isCurrentUser ? " (You)" : ""}</strong><small>{email}</small></span></span>;
+        return <span className={styles.identity}>{item.kind === "member" ? <Avatar name={name} preset={item.member.avatarPreset ?? "auto"} seed={item.member.userId} src={item.member.photoUrl} /> : <Avatar name={name} />}<span className={styles.identityDetails}><strong>{isCurrentUser ? t("{name} (You)", { name }) : name}</strong><small>{email}</small></span></span>;
       },
     },
     {
       id: "date",
-      label: "Created at",
+      label: t("Created at"),
       mobileHidden: true,
       width: "17%",
-      render: (item) => dateLabel(item.kind === "member" ? item.member.joinedAt : item.invitation.createdAt),
+      render: (item) => dateLabel(item.kind === "member" ? item.member.joinedAt : item.invitation.createdAt, t, { locale, timeZone }),
     },
     {
       id: "email",
-      label: "Email",
+      label: t("Email"),
       mobileHidden: true,
       width: "25%",
       render: (item) => {
@@ -502,30 +506,30 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     },
     {
       id: "role",
-      label: "Access",
+      label: t("Access"),
       mobileWidth: "7rem",
       width: "15%",
       render: (item) => {
         const roleCodes = item.kind === "member" ? item.member.roles : item.invitation.roles;
         const inherited = item.kind === "member" ? item.member.inheritedRoles ?? [] : [];
-        return <span className={styles.roleText}>{[...roleCodes, ...inherited].map((role) => readableRole(role, initialData.roles)).filter((role, index, all) => all.indexOf(role) === index).join(", ") || "Via team"}</span>;
+        return <span className={styles.roleText}>{[...roleCodes, ...inherited].map((role) => readableRole(role, initialData.roles)).filter((role, index, all) => all.indexOf(role) === index).join(", ") || t("Via team")}</span>;
       },
     },
     {
       id: "team",
-      label: "Team",
+      label: t("Team"),
       mobileHidden: true,
       width: "15%",
       render: (item) => (item.kind === "member" ? item.member.teams : item.invitation.teams)?.map((team) => team.name).join(", ") || "—",
     },
     {
       id: "status",
-      label: "Status",
+      label: t("Status"),
       mobileWidth: "6rem",
       width: "12%",
       render: (item) => {
         const value = item.kind === "member" ? item.member.status : item.invitation.status;
-        const label = value === "pending" ? "Pending" : value[0].toUpperCase() + value.slice(1);
+        const label = ({ pending: t("Pending"), active: t("Active"), suspended: t("Suspended"), expired: t("Expired"), accepted: t("Accepted"), cancelled: t("Cancelled") } as Record<string, string>)[value] ?? value[0].toUpperCase() + value.slice(1);
         const tone = value === "active" ? "success" : value === "pending" ? "info" : value === "expired" ? "warning" : "neutral";
         return <Badge tone={tone}>{label}</Badge>;
       },
@@ -538,23 +542,23 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       render: (item) => {
         if (item.kind === "member") {
           if (!canEdit || !canChangeAssignment([...item.member.roles, ...(item.member.inheritedRoles ?? [])], item.member.teams ?? [])) return null;
-          return <IconMenuButton ariaLabel={`Actions for ${item.member.displayName}`} items={[{ id: "edit", label: "Edit access" }]} onAction={() => openMemberEditor(item.member)} />;
+          return <IconMenuButton ariaLabel={t("Actions for {name}", { name: item.member.displayName })} items={[{ id: "edit", label: t("Edit access") }]} onAction={() => openMemberEditor(item.member)} />;
         }
         if (!canChangeAssignment(item.invitation.roles, item.invitation.teams ?? [])) return null;
         const actions = [
-          ...(canInvite ? [{ id: "resend", label: item.invitation.status === "expired" ? "Renew invitation" : "Create a new link", isDisabled: isResending }] : []),
-          ...(canCancelInvitations ? [{ id: "cancel", label: "Cancel invitation", tone: "danger" as const }] : []),
+          ...(canInvite ? [{ id: "resend", label: item.invitation.status === "expired" ? t("Renew invitation") : t("Create a new link"), isDisabled: isResending }] : []),
+          ...(canCancelInvitations ? [{ id: "cancel", label: t("Cancel invitation"), tone: "danger" as const }] : []),
         ];
-        return actions.length ? <IconMenuButton ariaLabel={`Actions for invitation to ${item.invitation.email}`} items={actions} onAction={(action) => action === "resend" ? void resendInvitation(item.invitation) : setCancellingInvitation(item.invitation)} /> : null;
+        return actions.length ? <IconMenuButton ariaLabel={t("Actions for invitation to {email}", { email: item.invitation.email })} items={actions} onAction={(action) => action === "resend" ? void resendInvitation(item.invitation) : setCancellingInvitation(item.invitation)} /> : null;
       },
     },
   ];
 
   const selectedRows = rows.filter((row) => selectedIds.has(row.id));
   const sectionDefinitions: GroupedTableSection<DirectoryRow>[] = [
-    { id: "invited", label: "Invited", emptyMessage: "No pending invitations.", rows: invitedRows, headerLabels: { date: "Invited at", role: "Access", status: "Invitation" } },
-    { id: "guests", label: "Guest", emptyMessage: "No guests have access.", rows: guestRows, headerLabels: { date: "Created at", role: "Permission", status: "Status" } },
-    { id: "members", label: "Member", emptyMessage: "No members have joined yet.", rows: memberRows, headerLabels: { date: "Created at", role: "Role", status: "Status" } },
+    { id: "invited", label: t("Invited"), emptyMessage: t("No pending invitations."), rows: invitedRows, headerLabels: { date: t("Invited at"), role: t("Access"), status: t("Invitation") } },
+    { id: "guests", label: t("Guest"), emptyMessage: t("No guests have access."), rows: guestRows, headerLabels: { date: t("Created at"), role: t("Permission"), status: t("Status") } },
+    { id: "members", label: t("Member"), emptyMessage: t("No members have joined yet."), rows: memberRows, headerLabels: { date: t("Created at"), role: t("Role"), status: t("Status") } },
   ];
   const tableSections = sectionDefinitions.some((section) => section.rows.length)
     ? sectionDefinitions.filter((section) => section.rows.length)
@@ -580,14 +584,14 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             <TextInput autoComplete="off" label={t("Work emails")} onChange={setQuickEmail} placeholder={t("name@company.com")} value={quickEmail} />
             <SelectField
               items={[
-                ...assignableTeams.map((team) => ({ id: `team:${team.id}`, label: `${team.name} team` })),
-                ...assignableRoles.map((role) => ({ id: `role:${role.code}`, label: `${role.name} role` })),
+                ...assignableTeams.map((team) => ({ id: `team:${team.id}`, label: t("{name} team", { name: team.name }) })),
+                ...assignableRoles.map((role) => ({ id: `role:${role.code}`, label: t("{name} role", { name: role.name }) })),
               ]}
               label={t("Access")}
               onSelectionChange={(key) => key && setQuickAccess(String(key))}
               selectedKey={quickAccess}
             />
-            <Button variant="primary" isLoading={isQuickInviting} type="submit">{t("Invite")}{quickInviteEmails.length ? ` (${quickInviteEmails.length})` : ""}</Button>
+            <Button variant="primary" isLoading={isQuickInviting} type="submit">{quickInviteEmails.length ? t("Invite ({count})", { count: quickInviteEmails.length }) : t("Invite")}</Button>
           </Form>
           <div className={styles.inviteComposerFooter}>
             <div className={styles.inviteComposerActions}>
@@ -603,13 +607,13 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         {actionFailure ? <Callout title={t("Member action failed")} tone="danger">{actionFailure}</Callout> : null}
 
         {selectedRows.length ? <div className={styles.selectionBar}>
-          <span><strong>{selectedRows.length}</strong> {t("selected")}</span>
+          <span>{t("{count} selected", { count: selectedRows.length })}</span>
           <Button onPress={() => exportRows(selectedRows)} size="compact"><Download aria-hidden="true" size={14} />{t("Export selected")}</Button>
         </div> : null}
 
         <div className={styles.tableRegion}>
           <GroupedTable appearance="plain"
-            ariaLabel="Workspace members"
+            ariaLabel={t("Workspace members")}
             columns={columns}
             getRowId={(row) => row.id}
             getRowLabel={(row) => row.kind === "member" ? row.member.displayName : row.invitation.email}
@@ -624,31 +628,31 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       <ControlledModalDialog
         description={invitationResult
           ? invitationResult.deliveryStatus === "sent"
-            ? "The invitation was emailed. The secure copy link is shown only now."
-            : "Email was not delivered. Share this secure link with the invited member; it is shown only now."
+            ? t("The invitation was emailed. The secure copy link is shown only now.")
+            : t("Email was not delivered. Share this secure link with the invited member; it is shown only now.")
           : bulkInvitationResult
-            ? "Bulk invitation processing is complete."
-            : "The member will receive access after activating the invitation."}
+            ? t("Bulk invitation processing is complete.")
+            : t("The member will receive access after activating the invitation.")}
         footer={hasInvitationOutcome
           ? <div className="wd-dialog-actions"><Button onPress={() => setInviteOpen(false)}>{t("Done")}</Button></div>
           : <div className="wd-dialog-actions"><Button isDisabled={isInviting} onPress={() => setInviteOpen(false)}>{t("Cancel")}</Button><Button form="invite-member-form" isLoading={isInviting} type="submit" variant="primary">{t("Create invitation")}</Button></div>}
         isDismissable={!isInviting}
         isOpen={inviteOpen}
         onOpenChange={(open) => { if (!isInviting) setInviteOpen(open); }}
-        title={invitationResult ? "Invitation ready" : bulkInvitationResult ? "Bulk invitations ready" : "Invite a member"}
+        title={invitationResult ? t("Invitation ready") : bulkInvitationResult ? t("Bulk invitations ready") : t("Invite a member")}
       >
         {invitationResult ? <div className={styles.invitationReady}>
-          <Callout title={`${invitationResult.deliveryStatus === "sent" ? "Invitation emailed to" : "Invitation created for"} ${invitationResult.email}`} tone="success">{t("The link expires")}{" "}{dateLabel(invitationResult.expiresAt)}.</Callout>
+          <Callout title={invitationResult.deliveryStatus === "sent" ? t("Invitation emailed to {email}", { email: invitationResult.email }) : t("Invitation created for {email}", { email: invitationResult.email })} tone="success">{t("The link expires {date}.", { date: dateLabel(invitationResult.expiresAt, t, { locale, timeZone }) })}</Callout>
           <div className={styles.linkField}><TextInput isReadOnly label={t("Activation link")} onFocus={(event) => event.currentTarget.select()} value={invitationResult.link} /><Button onPress={copyInvitation} size="compact"><Copy aria-hidden="true" size={14} />{t("Copy")}</Button></div>
           <p aria-live="polite">{copyStatus}</p>
         </div> : bulkInvitationResult ? <div className={styles.invitationReady}>
-          <Callout title={`${bulkInvitationResult.created.length} invitation${bulkInvitationResult.created.length === 1 ? "" : "s"} created`} tone="success">
-            {bulkInvitationResult.created.length - bulkFallbackCount} {t("email")}{bulkInvitationResult.created.length - bulkFallbackCount === 1 ? " was" : "s were"} {t("accepted for delivery.")}</Callout>
-          {bulkFallbackCount ? <Callout title={`${bulkFallbackCount} fallback link${bulkFallbackCount === 1 ? "" : "s"} need sharing`} tone="warning">
+          <Callout title={bulkInvitationResult.created.length === 1 ? t("1 invitation created") : t("{count} invitations created", { count: bulkInvitationResult.created.length })} tone="success">
+            {bulkInvitationResult.created.length - bulkFallbackCount === 1 ? t("1 email was accepted for delivery.") : t("{count} emails were accepted for delivery.", { count: bulkInvitationResult.created.length - bulkFallbackCount })}</Callout>
+          {bulkFallbackCount ? <Callout title={bulkFallbackCount === 1 ? t("1 fallback link needs sharing") : t("{count} fallback links need sharing", { count: bulkFallbackCount })} tone="warning">
             {t("Email was not delivered for these invitations. Download their one-time activation links before closing.")}</Callout> : null}
           {bulkFallbackCount ? <Button onPress={downloadBulkFallbackLinks}><Download aria-hidden="true" size={14} />{t("Download fallback links")}</Button> : null}
-          {bulkInvitationResult.failedEmails.length ? <Callout title={`${bulkInvitationResult.failedEmails.length} invitation${bulkInvitationResult.failedEmails.length === 1 ? "" : "s"} failed`} tone="danger">
-            {bulkInvitationResult.failedEmails.slice(0, 5).join(", ")}{bulkInvitationResult.failedEmails.length > 5 ? ` and ${bulkInvitationResult.failedEmails.length - 5} more` : ""}
+          {bulkInvitationResult.failedEmails.length ? <Callout title={bulkInvitationResult.failedEmails.length === 1 ? t("1 invitation failed") : t("{count} invitations failed", { count: bulkInvitationResult.failedEmails.length })} tone="danger">
+            {bulkInvitationResult.failedEmails.length > 5 ? t("{emails} and {count} more", { emails: bulkInvitationResult.failedEmails.slice(0, 5).join(", "), count: bulkInvitationResult.failedEmails.length - 5 }) : bulkInvitationResult.failedEmails.join(", ")}
           </Callout> : null}
         </div> : <Form className={styles.form} data-wd-density="compact" id="invite-member-form" noValidate onSubmit={createInvitation}>
           <ValidationSummary errors={inviteErrors} />
@@ -661,7 +665,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       </ControlledModalDialog>
 
       <ControlledModalDialog
-        description={editingMember ? `Update workspace access for ${editingMember.email}.` : undefined}
+        description={editingMember ? t("Update workspace access for {email}.", { email: editingMember.email }) : undefined}
         footer={<div className="wd-dialog-actions"><Button isDisabled={isSavingMember} onPress={() => { setMemberReviewOpen(false); setEditingMember(null); }}>{t("Cancel")}</Button><Button form="edit-member-form" isLoading={isSavingMember} type="submit" variant="primary">{t("Review changes")}</Button></div>}
         isDismissable={!isSavingMember}
         isOpen={Boolean(editingMember)}
@@ -674,9 +678,9 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           <RoleChoices onChange={setEditRoles} roles={assignableRoles} selected={editRoles} />
           <SelectField
             accent="neutral"
-            description={editingMember.userId === initialData.currentUserId ? "You cannot suspend your own active session here." : "Suspended members cannot sign in to this workspace."}
+            description={editingMember.userId === initialData.currentUserId ? t("You cannot suspend your own active session here.") : t("Suspended members cannot sign in to this workspace.")}
             isDisabled={editingMember.userId === initialData.currentUserId}
-            items={[{ id: "active", label: "Active" }, { id: "suspended", label: "Suspended" }]}
+            items={[{ id: "active", label: t("Active") }, { id: "suspended", label: t("Suspended") }]}
             label={t("Member status")}
             onSelectionChange={(key) => key && setEditStatus(String(key) as "active" | "suspended")}
             selectedKey={editStatus}
@@ -686,16 +690,16 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
 
       <ConfirmationDialog
         body={editingMember ? <div className={styles.accessReview}>
-          <p>{t("Confirm the effective access change for")}{" "}<strong>{editingMember.displayName}</strong>.</p>
+          <p>{t("Confirm the effective access change for {name}.", { name: editingMember.displayName })}</p>
           <dl>
-            {editStatus !== editingMember.status ? <div><dt>{t("Status")}</dt><dd><span>{editingMember.status === "active" ? "Active" : "Suspended"}</span><span aria-hidden="true">→</span><strong>{editStatus === "active" ? "Active" : "Suspended"}</strong></dd></div> : null}
-            {!sameRoles(editingMember.roles, editRoles) ? <div><dt>{t("Direct roles")}</dt><dd><span>{editingMember.roles.map((role) => readableRole(role, initialData.roles)).join(", ") || "None"}</span><span aria-hidden="true">→</span><strong>{Array.from(editRoles).map((role) => readableRole(role, initialData.roles)).join(", ") || "None"}</strong></dd></div> : null}
-            <div><dt>{t("Team access")}</dt><dd><strong>{editingMember.teams?.map((team) => team.name).join(", ") || "No assigned teams"}</strong></dd></div>
+            {editStatus !== editingMember.status ? <div><dt>{t("Status")}</dt><dd><span>{editingMember.status === "active" ? t("Active") : t("Suspended")}</span><span aria-hidden="true">→</span><strong>{editStatus === "active" ? t("Active") : t("Suspended")}</strong></dd></div> : null}
+            {!sameRoles(editingMember.roles, editRoles) ? <div><dt>{t("Direct roles")}</dt><dd><span>{editingMember.roles.map((role) => readableRole(role, initialData.roles)).join(", ") || t("None")}</span><span aria-hidden="true">→</span><strong>{Array.from(editRoles).map((role) => readableRole(role, initialData.roles)).join(", ") || t("None")}</strong></dd></div> : null}
+            <div><dt>{t("Team access")}</dt><dd><strong>{editingMember.teams?.map((team) => team.name).join(", ") || t("No assigned teams")}</strong></dd></div>
           </dl>
           {editStatus === "suspended" && editingMember.status !== "suspended" ? <Callout title={t("This releases a licensed seat")} tone="warning">{t("The member will lose workspace access immediately. Their records remain available, and reactivation will require a free seat.")}</Callout> : null}
           {editingMember.inheritedRoles?.length ? <p className={styles.reviewNote}>{t("Team-inherited roles remain managed from Teams.")}</p> : null}
         </div> : null}
-        confirmLabel="Apply access changes"
+        confirmLabel={t("Apply access changes")}
         confirmVariant="primary"
         isConfirming={isSavingMember}
         isOpen={memberReviewOpen}
@@ -711,7 +715,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         onOpenChange={(open) => { if (!open && !isCancelling) setCancellingInvitation(null); }}
         title={t("Cancel invitation?")}
       >
-        {cancellingInvitation ? <>{t("The activation link for")}{" "}<strong>{cancellingInvitation.email}</strong> {t("will stop working immediately.")}</> : null}
+        {cancellingInvitation ? t("The activation link for {email} will stop working immediately.", { email: cancellingInvitation.email }) : null}
       </ControlledModalDialog>
     </DesignSystemProvider>
   );

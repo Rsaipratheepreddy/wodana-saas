@@ -30,13 +30,14 @@ import {
 import { WhatsAppSignup, isWhatsAppSetup, type WhatsAppSetup } from "./whatsapp-signup";
 import { IntegrationTools } from "./integration-tools";
 import styles from "./integrations-page.module.css";
+import { tKey, type Translate } from "@/lib/i18n/keys";
 
 const STATUS_LABELS = {
-  draft: "Draft",
-  pending: "Connecting",
-  connected: "Connected",
-  degraded: "Needs attention",
-  revoked: "Revoked",
+  draft: tKey("Draft"),
+  pending: tKey("Connecting"),
+  connected: tKey("Connected"),
+  degraded: tKey("Needs attention"),
+  revoked: tKey("Revoked"),
 } as const;
 
 function statusTone(status: IntegrationConnection["status"]) {
@@ -47,12 +48,12 @@ function statusTone(status: IntegrationConnection["status"]) {
   return "neutral" as const;
 }
 
-function verificationLabel(status: ProviderCapabilityState["verificationState"]) {
-  if (status === "delivery_verified") return "Delivery verified";
-  if (status === "operation_confirmed") return "Provider operation confirmed";
-  if (status === "failed") return "Latest check failed";
-  if (status === "not_applicable") return "Built in";
-  return "Not tested";
+function verificationLabel(status: ProviderCapabilityState["verificationState"], t: Translate) {
+  if (status === "delivery_verified") return t("Delivery verified");
+  if (status === "operation_confirmed") return t("Provider operation confirmed");
+  if (status === "failed") return t("Latest check failed");
+  if (status === "not_applicable") return t("Built in");
+  return t("Not tested");
 }
 
 function responseMessage(response: Response, fallback: string) {
@@ -105,20 +106,20 @@ export function IntegrationsPage({
   const [revokingId, setRevokingId] = useState("");
   const [failure, setFailure] = useState(oauthResult?.result === "error"
     ? oauthResult.code === "oauth_denied"
-      ? "Provider authorization was cancelled."
-      : "The provider could not be connected. Check its setup and try again."
+      ? t("Provider authorization was cancelled.")
+      : t("The provider could not be connected. Check its setup and try again.")
     : "");
   const [status, setStatus] = useState(oauthResult?.result === "connected"
-    ? "The account was connected successfully."
+    ? t("The account was connected successfully.")
     : "");
   const providerCatalog = initialData.providerCapabilities.providers.filter(provider => onlyIds ? onlyIds.includes(provider.id) : provider.implementation === "available");
 
   const visibleCatalog = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return providerCatalog.filter((item) =>
-      (purpose === "all" || item.category === purpose) && (!normalized || `${item.label} ${item.source} ${item.description} ${item.category} ${item.capabilities.map((capability) => capability.label).join(" ")}`.toLowerCase().includes(normalized)),
+      (purpose === "all" || item.category === purpose) && (!normalized || `${item.label} ${t(item.source as never)} ${t(item.description as never)} ${item.category} ${item.capabilities.map((capability) => t(capability.label as never)).join(" ")}`.toLowerCase().includes(normalized)),
     );
-  }, [providerCatalog, query, purpose]);
+  }, [providerCatalog, query, purpose, t]);
   const availableCatalog = visibleCatalog.filter((item) => item.implementation === "available" && item.setupMode === "tenant_connection");
   const includedCatalog = visibleCatalog.filter((item) => item.implementation === "available" && item.setupMode === "platform_managed");
   const plannedCatalog = visibleCatalog.filter((item) => item.implementation === "planned");
@@ -153,7 +154,7 @@ export function IntegrationsPage({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ workspaceId: initialData.workspaceId, provider: connection.provider, version: connection.version, ...(connection.provider === "google_workspace" ? { gmailSend: connection.configuration?.gmailSend === true, driveFiles: connection.configuration?.driveFiles === true } : {}) }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The connection could not be started."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The connection could not be started.")));
       const payload = await response.json() as unknown;
       if (isWhatsAppSetup(payload)) {
         setWhatsappSetup({ ...payload, connectionId: connection.id });
@@ -162,17 +163,17 @@ export function IntegrationsPage({
       if (isAuthorizationStart(payload)) {
         const authorizationUrl = new URL(payload.authorizationUrl);
         if (authorizationUrl.protocol !== "https:" || !["accounts.google.com", "appcenter.intuit.com", "accounts.zoho.com", "accounts.zoho.in", "accounts.zoho.eu", "accounts.zoho.com.au", "accounts.zohocloud.ca", "accounts.zoho.jp", "accounts.zoho.sa"].includes(authorizationUrl.hostname)) {
-          throw new Error("The provider returned an invalid authorization address.");
+          throw new Error(t("The provider returned an invalid authorization address."));
         }
-        setStatus("Opening provider authorization…");
+        setStatus(t("Opening provider authorization…"));
         window.location.assign(authorizationUrl.toString());
         return;
       }
       const saved = payload as IntegrationConnection;
       mergeConnection(saved);
-      setStatus(`${saved.displayName} is connecting.`);
+      setStatus(t("{name} is connecting.", { name: saved.displayName }));
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "The connection could not be started.");
+      setFailure(error instanceof Error ? error.message : t("The connection could not be started."));
     } finally {
       setConnectingId("");
     }
@@ -184,13 +185,13 @@ export function IntegrationsPage({
     setFailure("");
     try {
       const response = await fetch(`/api/workspace/integration-connections/${revoking.id}?workspaceId=${initialData.workspaceId}&version=${revoking.version}`, { method: "DELETE" });
-      if (!response.ok) throw new Error(await responseMessage(response, "The connection could not be revoked."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The connection could not be revoked.")));
       const saved = await response.json() as IntegrationConnection;
       mergeConnection(saved);
-      setStatus(`${saved.displayName} was disconnected.`);
+      setStatus(t("{name} was disconnected.", { name: saved.displayName }));
       setRevoking(null);
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "The connection could not be revoked.");
+      setFailure(error instanceof Error ? error.message : t("The connection could not be revoked."));
       setRevoking(null);
     } finally {
       setRevokingId("");
@@ -200,38 +201,38 @@ export function IntegrationsPage({
   const accountColumns: DataGridColumn<IntegrationConnection>[] = [
     {
       accessorKey: "displayName",
-      header: "Account",
+      header: t("Account"),
       size: 200,
       cell: ({ row }) => <span className={styles.accountIdentity}>
         <strong title={row.original.displayName}>{row.original.displayName}</strong>
-        <small>{row.original.externalAccountId ?? row.original.externalDomain ?? "Account details pending"}</small>
-        <small className={styles.accountMobileStatus}>{STATUS_LABELS[row.original.status]}</small>
+        <small>{row.original.externalAccountId ?? row.original.externalDomain ?? t("Account details pending")}</small>
+        <small className={styles.accountMobileStatus}>{t(STATUS_LABELS[row.original.status])}</small>
       </span>,
     },
     {
       id: "providerName",
       accessorFn: (connection) => providerCatalog.find((item) => item.provider === connection.provider)?.label ?? connection.provider,
-      header: "App",
+      header: t("App"),
       size: 165,
       meta: { mobileHidden: true },
     },
     {
       id: "legalEntityName",
-      accessorFn: (connection) => connection.legalEntityName ?? "Not assigned",
-      header: "Organization",
+      accessorFn: (connection) => connection.legalEntityName ?? t("Not assigned"),
+      header: t("Organization"),
       size: 180,
       meta: { mobileHidden: true },
     },
     {
       accessorKey: "status",
-      header: "Status",
+      header: t("Status"),
       size: 150,
       meta: { mobileHidden: true },
-      cell: ({ row }) => <Badge tone={statusTone(row.original.status)}>{STATUS_LABELS[row.original.status]}</Badge>,
+      cell: ({ row }) => <Badge tone={statusTone(row.original.status)}>{t(STATUS_LABELS[row.original.status])}</Badge>,
     },
     {
       id: "actions",
-      header: "Actions",
+      header: t("Actions"),
       size: 150,
       enableSorting: false,
       meta: {
@@ -239,13 +240,13 @@ export function IntegrationsPage({
         renderCell: (connection) => <span className={styles.accountActions}>
           {connection.status === "connected" || connection.status === "degraded"
             ? <Button onPress={() => setToolConnection(connection)} size="compact">{t("Open tools")}</Button>
-            : <Button isDisabled={!initialData.canManage || connection.status === "pending"} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact">{connection.status === "pending" ? "Connecting" : "Connect"}</Button>}
+            : <Button isDisabled={!initialData.canManage || connection.status === "pending"} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact">{connection.status === "pending" ? t("Connecting") : t("Connect")}</Button>}
           <IconMenuButton
-            ariaLabel={`Actions for ${connection.displayName}`}
+            ariaLabel={t("Actions for {name}", { name: connection.displayName })}
             items={[
-              { id: "manage", label: "Manage settings" },
-              ...(connection.status === "degraded" ? [{ id: "reconnect", label: "Reconnect" }] : []),
-              { id: "disconnect", label: "Disconnect", isDisabled: !initialData.canManage, tone: "danger" },
+              { id: "manage", label: t("Manage settings") },
+              ...(connection.status === "degraded" ? [{ id: "reconnect", label: t("Reconnect") }] : []),
+              { id: "disconnect", label: t("Disconnect"), isDisabled: !initialData.canManage, tone: "danger" },
             ]}
             onAction={(action) => {
               if (action === "manage") setEditor({ provider: connection.provider, connection });
@@ -259,7 +260,7 @@ export function IntegrationsPage({
   ];
 
   return <DesignSystemProvider className={[styles.provider, embedded ? styles.embedded : ""].join(" ")} portalContainer={portalContainer} ref={setPortalContainer}>
-    <section aria-label={embedded ? "Connect your tools" : undefined} aria-labelledby={embedded ? undefined : "integrations-heading"} className={[styles.page, embedded ? styles.embedded : ""].join(" ")}>
+    <section aria-label={embedded ? t("Connect your tools") : undefined} aria-labelledby={embedded ? undefined : "integrations-heading"} className={[styles.page, embedded ? styles.embedded : ""].join(" ")}>
       {!embedded && <><header className={styles.pageHeading}>
         <h1 id="integrations-heading">{t("Connections")}</h1>
         <p>{t("Connect calendars, messaging and accounting to your workspace.")}</p>
@@ -267,15 +268,15 @@ export function IntegrationsPage({
 
       <div className={styles.toolbar}>
         <div className={styles.summary}>
-          <span><strong>{initialData.loadError ? "—" : connectedCount}</strong> {t("connected")}</span>
-          <span><strong>{initialData.loadError ? "—" : activeConnections.length}</strong> {t("configured")}</span>
-          {attentionCount ? <span data-attention><strong>{attentionCount}</strong> {t("need attention")}</span> : null}
+          <span>{t("{count} connected", { count: initialData.loadError ? "—" : connectedCount })}</span>
+          <span>{t("{count} configured", { count: initialData.loadError ? "—" : activeConnections.length })}</span>
+          {attentionCount ? <span data-attention>{t("{count} need attention", { count: attentionCount })}</span> : null}
         </div>
         <div className={styles.searchField}><SearchInput label={t("Search integrations")} onChange={setQuery} placeholder={t("Search apps")} value={query} /></div>
       </div>
 
       <div className={styles.purposes} role="group" aria-label={t("Connection purpose")}>{[
-        ['all', 'All apps'], ['communication', 'Talk to clients'], ['finance', 'Invoices & payments'], ['productivity', 'Calendar & files'],
+        ['all', t('All apps')], ['communication', t('Talk to clients')], ['finance', t('Invoices & payments')], ['productivity', t('Calendar & files')],
       ].map(([id, label]) => <button key={id} aria-pressed={purpose === id} onClick={() => setPurpose(id)}>{label}</button>)}</div>
       </>}
       {initialData.loadError && <Callout title={t("Connections unavailable")} tone="warning">{initialData.loadError} <Button size="compact" onPress={() => window.location.reload()}>{t("Reload connections")}</Button></Callout>}
@@ -284,11 +285,11 @@ export function IntegrationsPage({
       {failure ? <Callout title={t("Integration action failed")} tone="danger">{failure}</Callout> : null}
 
       {availableCatalog.length ? <section aria-labelledby="available-apps-heading" className={styles.catalogSection}>
-        <div className={styles.sectionHeading}><h2 id="available-apps-heading">{t("Available")}</h2><span>{availableCatalog.length} {t("app")}{availableCatalog.length === 1 ? "" : "s"}</span></div>
+        <div className={styles.sectionHeading}><h2 id="available-apps-heading">{t("Available")}</h2><span>{availableCatalog.length === 1 ? t("1 app") : t("{count} apps", { count: availableCatalog.length })}</span></div>
         <div className={styles.catalogGrid}>{availableCatalog.map((item) => {
           const connection = item.provider ? newestActiveConnection(connections, item.provider) : undefined;
           if (!item.provider) return null;
-          return <Surface as="article" aria-label={`${item.label} integration`} className={styles.integrationCard} key={item.id} tone="raised">
+          return <Surface as="article" aria-label={t("{name} integration", { name: item.label })} className={styles.integrationCard} key={item.id} tone="raised">
             <div className={styles.cardBody}>
               <div className={styles.cardHeader}>
                 <span className={styles.providerIcon}><ProviderMark provider={item.id} /></span>
@@ -296,11 +297,11 @@ export function IntegrationsPage({
                   <strong>{item.label}</strong>
                   {item.href ? <a href={item.href} rel="noreferrer" target="_blank">{item.source}<ExternalLink aria-hidden="true" size={10} /></a> : <small>{item.source}</small>}
                 </div>
-                <Badge tone={connection ? statusTone(connection.status) : "neutral"}>{initialData.loadError ? "Status unavailable" : connection ? STATUS_LABELS[connection.status] : "Not connected"}</Badge>
+                <Badge tone={connection ? statusTone(connection.status) : "neutral"}>{initialData.loadError ? t("Status unavailable") : connection ? t(STATUS_LABELS[connection.status]) : t("Not connected")}</Badge>
               </div>
-              <p>{item.description}</p>
+              <p>{t(item.description as never)}</p>
               {connection ? <small className={styles.connectionName}>{connection.displayName}{connection.legalEntityName ? ` · ${connection.legalEntityName}` : ""}</small> : null}
-              {connection ? <small className={styles.capabilityTruth}>{connection?.id === item.connection?.id ? verificationLabel(item.verificationState) : "Not tested"}</small> : null}
+              {connection ? <small className={styles.capabilityTruth}>{connection?.id === item.connection?.id ? verificationLabel(item.verificationState, t) : t("Not tested")}</small> : null}
               {connection?.healthIssues?.length ? <small className={styles.healthIssue}>{connection.healthIssues[0]}</small> : null}
             </div>
             <div className={styles.cardFooter}>
@@ -317,36 +318,36 @@ export function IntegrationsPage({
       </section> : null}
 
       {!embedded && includedCatalog.length ? <section aria-labelledby="included-apps-heading" className={styles.catalogSection}>
-        <div className={styles.sectionHeading}><h2 id="included-apps-heading">{t("Built into Wodana")}</h2><span>{includedCatalog.length} {t("capability")}</span></div>
-        <div className={styles.plannedGrid}>{includedCatalog.map((item) => <Surface as="article" aria-label={`${item.label} integration`} className={styles.plannedCard} key={item.id}>
+        <div className={styles.sectionHeading}><h2 id="included-apps-heading">{t("Built into Wodana")}</h2><span>{includedCatalog.length === 1 ? t("1 capability") : t("{count} capabilities", { count: includedCatalog.length })}</span></div>
+        <div className={styles.plannedGrid}>{includedCatalog.map((item) => <Surface as="article" aria-label={t("{name} integration", { name: item.label })} className={styles.plannedCard} key={item.id}>
           <span className={styles.plannedIcon}><ProviderMark provider={item.id} /></span>
-          <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{item.description}</small></span>
+          <span className={styles.plannedIdentity}><strong>{t(item.label as never)}</strong><small>{t(item.description as never)}</small></span>
           <Badge tone="info">{t("Included")}</Badge>
         </Surface>)}</div>
       </section> : null}
 
       {plannedCatalog.length ? <section aria-labelledby="planned-apps-heading" className={styles.catalogSection}>
-        <div className={styles.sectionHeading}><h2 id="planned-apps-heading">{t("Planned")}</h2><span>{plannedCatalog.length} {t("app")}{plannedCatalog.length === 1 ? "" : "s"}</span></div>
-        <div className={styles.plannedGrid}>{plannedCatalog.map((item) => <Surface as="article" aria-label={`${item.label} integration`} className={styles.plannedCard} key={item.id}>
+        <div className={styles.sectionHeading}><h2 id="planned-apps-heading">{t("Planned")}</h2><span>{plannedCatalog.length === 1 ? t("1 app") : t("{count} apps", { count: plannedCatalog.length })}</span></div>
+        <div className={styles.plannedGrid}>{plannedCatalog.map((item) => <Surface as="article" aria-label={t("{name} integration", { name: item.label })} className={styles.plannedCard} key={item.id}>
           <span className={styles.plannedIcon}><ProviderMark provider={item.id} /></span>
-          <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{item.source}</small></span>
+          <span className={styles.plannedIdentity}><strong>{t(item.label as never)}</strong><small>{t(item.source as never)}</small></span>
           <Badge>{t("Planned")}</Badge>
         </Surface>)}</div>
       </section> : null}
 
       {unavailableCatalog.length ? <section aria-labelledby="unavailable-apps-heading" className={styles.catalogSection}>
-        <div className={styles.sectionHeading}><div><h2 id="unavailable-apps-heading">{t("External lead capture")}</h2><p>{t("Shared enquiry links and QR codes work now. These native sources need provider access before they can be enabled.")}</p></div><span>{unavailableCatalog.length} {t("source")}{unavailableCatalog.length === 1 ? "" : "s"}</span></div>
-        <div className={styles.plannedGrid}>{unavailableCatalog.map((item) => <Surface as="article" aria-label={`${item.label} integration`} className={styles.plannedCard} key={item.id}>
+        <div className={styles.sectionHeading}><div><h2 id="unavailable-apps-heading">{t("External lead capture")}</h2><p>{t("Shared enquiry links and QR codes work now. These native sources need provider access before they can be enabled.")}</p></div><span>{unavailableCatalog.length === 1 ? t("1 source") : t("{count} sources", { count: unavailableCatalog.length })}</span></div>
+        <div className={styles.plannedGrid}>{unavailableCatalog.map((item) => <Surface as="article" aria-label={t("{name} integration", { name: item.label })} className={styles.plannedCard} key={item.id}>
           <span className={styles.plannedIcon}><ProviderMark provider={item.id} /></span>
-          <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{embedded ? item.source : item.description}</small></span>
+          <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{embedded ? t(item.source as never) : t(item.description as never)}</small></span>
           <Badge tone="warning">{t("Details required")}</Badge>
         </Surface>)}</div>
       </section> : null}
 
       {!visibleCatalog.length ? <EmptyState title={t("No integrations found")} description={t("Try another search term.")} /> : null}
       {!embedded && filteredConnections.length ? <section aria-label={t("Configured accounts")} className={styles.accounts}>
-        <div className={styles.sectionHeading}><h2>{t("Configured accounts")}</h2><span>{filteredConnections.length} {t("account")}{filteredConnections.length === 1 ? "" : "s"}</span></div>
-        <DataGrid appearance="flush" ariaLabel="Configured accounts" columns={accountColumns} data={filteredConnections} getRowId={(connection) => connection.id} pinFirstColumn={false} rowNumbers={false} selectable={false} showToolbar={false} />
+        <div className={styles.sectionHeading}><h2>{t("Configured accounts")}</h2><span>{filteredConnections.length === 1 ? t("1 account") : t("{count} accounts", { count: filteredConnections.length })}</span></div>
+        <DataGrid appearance="flush" ariaLabel={t("Configured accounts")} columns={accountColumns} data={filteredConnections} getRowId={(connection) => connection.id} pinFirstColumn={false} rowNumbers={false} selectable={false} showToolbar={false} />
       </section> : null}
     </section>
 
@@ -363,12 +364,12 @@ export function IntegrationsPage({
         if (shouldConnect) void connect(connection);
         else setStatus(
           connection.status === "draft"
-            ? `${connection.displayName} was saved as a draft.`
-            : `${connection.displayName} settings were saved.`,
+            ? t("{name} was saved as a draft.", { name: connection.displayName })
+            : t("{name} settings were saved.", { name: connection.displayName }),
         );
       }}
     />
-    <ConfirmationDialog body={revoking ? <>{t("Disconnect")}{" "}<strong>{revoking.displayName}</strong>{t("? Syncing will stop and the connection must be configured again.")}</> : null} confirmLabel={revokingId ? "Disconnecting…" : "Disconnect"} isOpen={Boolean(revoking)} onConfirm={() => void revoke()} onOpenChange={(open) => { if (!open && !revokingId) setRevoking(null); }} title={t("Disconnect integration?")} />
+    <ConfirmationDialog body={revoking ? t("Disconnect {name}? Syncing will stop and the connection must be configured again.", { name: revoking.displayName }) : null} confirmLabel={revokingId ? t("Disconnecting…") : t("Disconnect")} isOpen={Boolean(revoking)} onConfirm={() => void revoke()} onOpenChange={(open) => { if (!open && !revokingId) setRevoking(null); }} title={t("Disconnect integration?")} />
   </DesignSystemProvider>;
 }
 
@@ -377,7 +378,7 @@ export function IntegrationDialog({ initialData, item, onClose, onSaved }: { ini
   const connection = item?.connection;
   const provider = item?.provider ?? "google_workspace";
   const catalogItem = initialData.providerCapabilities.providers.find((entry) => entry.provider === provider) ?? { label: provider.replaceAll("_", " ") };
-  const [displayName, setDisplayName] = useState(connection?.displayName ?? `${catalogItem.label} connection`);
+  const [displayName, setDisplayName] = useState(connection?.displayName ?? t("{name} connection", { name: catalogItem.label }));
   const [legalEntityId, setLegalEntityId] = useState(connection?.legalEntityId ?? (initialData.legalEntities.length === 1 ? initialData.legalEntities[0].id : "none"));
   const [accountEmail, setAccountEmail] = useState(String(connection?.configuration?.accountEmail ?? ""));
   const [region, setRegion] = useState(String(connection?.configuration?.region ?? "us"));
@@ -394,11 +395,11 @@ export function IntegrationDialog({ initialData, item, onClose, onSaved }: { ini
     event.preventDefault();
     const shouldConnect = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "connect";
     if (provider === "google_workspace" && (legalEntityId === "none" || (!externalDomain.trim() && !accountEmail.trim()))) {
-      setFailure("Google requires an organization and a domain or exact Gmail address.");
+      setFailure(t("Google requires an organization and a domain or exact Gmail address."));
       return;
     }
     if (["quickbooks", "zoho_books", "whatsapp"].includes(provider) && legalEntityId === "none") {
-      setFailure("Select the organization that owns this account.");
+      setFailure(t("Select the organization that owns this account."));
       return;
     }
     setSaving(true);
@@ -416,30 +417,30 @@ export function IntegrationDialog({ initialData, item, onClose, onSaved }: { ini
           configuration: provider === "google_workspace" ? { ...(connection?.configuration ?? {}), ...(accountEmail ? { accountEmail: accountEmail.trim().toLowerCase() } : {}), ...(gmailSend || connection?.configuration?.gmailSend !== undefined ? { gmailSend } : {}), ...(driveFiles || connection?.configuration?.driveFiles !== undefined ? { driveFiles } : {}) } : provider === "zoho_books" ? { ...(connection?.configuration ?? {}), region, ...(organizationId ? { organizationId } : {}) } : provider === "custom" ? { ...(connection?.configuration ?? {}), endpointUrl: endpointUrl.trim() || undefined } : (connection?.configuration ?? {}),
         }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The integration connection could not be saved."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The integration connection could not be saved.")));
       onSaved(await response.json() as IntegrationConnection, shouldConnect);
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "The integration connection could not be saved.");
+      setFailure(error instanceof Error ? error.message : t("The integration connection could not be saved."));
     } finally {
       setSaving(false);
     }
   };
 
-  return <ControlledModalDialog description={t("Choose an organization and account. Credentials are never stored in this form.")} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button>{connection ? <Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} type="submit" variant="primary">{t("Save changes")}</Button> : <><Button form={formId} isDisabled={!initialData.canManage || saving} name="intent" type="submit" value="draft">{t("Save draft")}</Button><Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} name="intent" type="submit" value="connect" variant="primary">{t("Save and connect")}</Button></>}</div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={connection ? `Manage ${catalogItem.label}` : `Connect ${catalogItem.label}`}>
+  return <ControlledModalDialog description={t("Choose an organization and account. Credentials are never stored in this form.")} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button>{connection ? <Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} type="submit" variant="primary">{t("Save changes")}</Button> : <><Button form={formId} isDisabled={!initialData.canManage || saving} name="intent" type="submit" value="draft">{t("Save draft")}</Button><Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} name="intent" type="submit" value="connect" variant="primary">{t("Save and connect")}</Button></>}</div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={connection ? t("Manage {name}", { name: catalogItem.label }) : t("Connect {name}", { name: catalogItem.label })}>
     <form className={styles.form} id={formId} onSubmit={save}>
       <div className={styles.setupIdentity}><span className={styles.providerIcon}><ProviderMark provider={provider} /></span><div><strong>{catalogItem.label}</strong><small>{t("Choose the account your team will use.")}</small></div></div>
       {failure ? <Callout title={t("Could not save connection")} tone="danger">{failure}</Callout> : null}
-      {connection ? <div className={styles.dialogStatus}><Badge tone={statusTone(connection.status)}>{STATUS_LABELS[connection.status]}</Badge><span>{connection.displayName}</span></div> : null}
+      {connection ? <div className={styles.dialogStatus}><Badge tone={statusTone(connection.status)}>{t(STATUS_LABELS[connection.status])}</Badge><span>{connection.displayName}</span></div> : null}
       <TextInput prefix={<Tag size={16} aria-hidden="true" />} isRequired label={t("Connection name")} onChange={setDisplayName} value={displayName} />
-      <SelectField prefix={<Building2 size={16} aria-hidden="true" />} items={[{ id: "none", label: "Choose organization" }, ...initialData.legalEntities.map((entity) => ({ id: entity.id, label: entity.displayName }))]} label={t("Organization")} onSelectionChange={(key) => key && setLegalEntityId(String(key))} selectedKey={legalEntityId} />
-      {provider === "google_workspace" || provider === "custom" ? <TextInput prefix={<Globe2 size={16} aria-hidden="true" />} description={provider === "google_workspace" ? "Verified company domain, without https://" : "Optional external domain"} isRequired={provider === "google_workspace" && !accountEmail} label={t("Domain")} onChange={setExternalDomain} placeholder={t("igloarchitects.com")} value={externalDomain} /> : null}
+      <SelectField prefix={<Building2 size={16} aria-hidden="true" />} items={[{ id: "none", label: t("Choose organization") }, ...initialData.legalEntities.map((entity) => ({ id: entity.id, label: entity.displayName }))]} label={t("Organization")} onSelectionChange={(key) => key && setLegalEntityId(String(key))} selectedKey={legalEntityId} />
+      {provider === "google_workspace" || provider === "custom" ? <TextInput prefix={<Globe2 size={16} aria-hidden="true" />} description={provider === "google_workspace" ? t("Verified company domain, without https://") : t("Optional external domain")} isRequired={provider === "google_workspace" && !accountEmail} label={t("Domain")} onChange={setExternalDomain} placeholder={t("igloarchitects.com")} value={externalDomain} /> : null}
       {provider === "google_workspace" ? <>
         <TextInput prefix={<Mail size={16} aria-hidden="true" />} label={t("Google account email")} description={t("For a personal Gmail account, enter its exact address. Domain can be left empty.")} type="email" value={accountEmail} onChange={setAccountEmail} />
         <Switch isSelected={gmailSend} onChange={setGmailSend}>{t("Send email with Gmail")}</Switch>
         <Switch isSelected={driveFiles} onChange={setDriveFiles}>{t("Create project documents in Drive")}</Switch>
       </> : null}
       {provider === "zoho_books" ? <>
-        <SelectField label={t("Zoho data center")} selectedKey={region} onSelectionChange={(key) => key && setRegion(String(key))} items={[{ id: "us", label: "United States / Global (.com)" }, { id: "in", label: "India (.in)" }, { id: "eu", label: "Europe (.eu)" }, { id: "au", label: "Australia" }, { id: "ca", label: "Canada" }, { id: "jp", label: "Japan" }, { id: "sa", label: "Saudi Arabia" }]} />
+        <SelectField label={t("Zoho data center")} selectedKey={region} onSelectionChange={(key) => key && setRegion(String(key))} items={[{ id: "us", label: t("United States / Global (.com)") }, { id: "in", label: t("India (.in)") }, { id: "eu", label: t("Europe (.eu)") }, { id: "au", label: t("Australia") }, { id: "ca", label: t("Canada") }, { id: "jp", label: t("Japan") }, { id: "sa", label: t("Saudi Arabia") }]} />
         <TextInput label={t("Zoho organization ID")} description={t("Required if your Zoho account has multiple organizations.")} value={organizationId} onChange={setOrganizationId} />
       </> : null}
       {provider === "whatsapp" ? <p>{t("Connect the organization’s own WhatsApp Business account and phone number through Meta. Wodana’s number is not shared between tenants.")}</p> : null}

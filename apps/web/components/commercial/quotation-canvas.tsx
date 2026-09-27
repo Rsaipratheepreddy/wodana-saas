@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, type Translate } from "@/lib/i18n/keys";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   applyNodeChanges,
@@ -89,6 +91,7 @@ function QuotePageNode({ data }: NodeProps<PageNode>) {
 }
 
 function QuoteElementNode({ id, data, selected }: NodeProps<ElementNode>) {
+  const t = useT();
   const element = data.element;
   return (
     <div className={styles.elementNode} data-selected={selected || undefined}>
@@ -106,9 +109,9 @@ function QuoteElementNode({ id, data, selected }: NodeProps<ElementNode>) {
       {element.type === "image" ? (
         element.src ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img alt="Quotation artwork" draggable={false} src={element.src} />
+          <img alt={t("Quotation artwork")} draggable={false} src={element.src} />
         ) : (
-          <span className={styles.imagePlaceholder}><ImagePlus size={24} />Image</span>
+          <span className={styles.imagePlaceholder}><ImagePlus size={24} />{t("Image")}</span>
         )
       ) : (
         <div
@@ -119,7 +122,7 @@ function QuoteElementNode({ id, data, selected }: NodeProps<ElementNode>) {
             textAlign: element.align ?? "left",
           }}
         >
-          {element.text || "Text"}
+          {element.text || t("Text")}
         </div>
       )}
     </div>
@@ -141,18 +144,18 @@ function pageOverride(presentation: QuotePresentation, id: string) {
   return presentation.pages.find((page) => page.id === id);
 }
 
-function fileData(file: File): Promise<string> {
+function fileData(file: File, t: Translate): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) {
-      reject(new Error("Choose a PNG, JPEG or WebP under 8 MB."));
+      reject(new Error(t("Choose a PNG, JPEG or WebP under 8 MB.")));
       return;
     }
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("The image could not be read."));
+    reader.onerror = () => reject(new Error(t("The image could not be read.")));
     reader.onload = () => {
       const source = String(reader.result ?? "");
       const image = new Image();
-      image.onerror = () => reject(new Error("The image could not be opened."));
+      image.onerror = () => reject(new Error(t("The image could not be opened.")));
       image.onload = () => {
         const max = 1800;
         const scale = Math.min(1, max / Math.max(image.width, image.height));
@@ -164,7 +167,7 @@ function fileData(file: File): Promise<string> {
           const result = canvas.toDataURL("image/jpeg", quality);
           if (result.length <= 450000) { resolve(result); return; }
         }
-        reject(new Error("Choose a smaller or simpler image."));
+        reject(new Error(t("Choose a smaller or simpler image.")));
       };
       image.src = source;
     };
@@ -195,9 +198,10 @@ function SequentialWorkspace({ quote, brand, customerName, readOnly = false, onC
   toolbarStart?: ReactNode;
   toolbarEnd?: ReactNode;
 }) {
+  const t = useT();
   const neutralBrand = brand ? { ...brand, primaryColor: "#E4E3DE", accentColor: "#000000" } : brand;
   const presentation = useMemo(() => safePresentation(quote), [quote.presentation]);
-  const pages = useMemo(() => quotationPages(quote), [quote]);
+  const pages = useMemo(() => quotationPages(quote, t), [quote, t]);
   const [activePageId, setActivePageId] = useState(pages[0]?.id ?? "cover");
   const [notice, setNotice] = useState("");
   const backgroundInput = useRef<HTMLInputElement>(null);
@@ -236,15 +240,15 @@ function SequentialWorkspace({ quote, brand, customerName, readOnly = false, onC
   async function addImage(file?: File, background = false) {
     if (!activePage || !file || readOnly) return;
     try {
-      const src = await fileData(file);
+      const src = await fileData(file, t);
       if (background) updatePage(activePage.id, { backgroundImage: src });
       else {
         const element: QuoteCanvasElement = { id: crypto.randomUUID(), type: "image", x: 110, y: 170, width: 460, height: 310, src };
         updatePage(activePage.id, { elements: [...(activeOverride?.elements ?? []), element] });
       }
-      setNotice(background ? "Page background updated." : "Image added to the selected page.");
+      setNotice(t(background ? "Page background updated." : "Image added to the selected page."));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The image could not be added.");
+      setNotice(error instanceof Error ? error.message : t("The image could not be added."));
     }
   }
 
@@ -252,26 +256,26 @@ function SequentialWorkspace({ quote, brand, customerName, readOnly = false, onC
     if (!activePage || readOnly) return;
     const element: QuoteCanvasElement = {
       id: crypto.randomUUID(), type: "text", x: 110, y: 120, width: 420, height: 90,
-      text: "Add your message", color: presentation.textColor, fontSize: 30, align: "left",
+      text: t("Add your message"), color: presentation.textColor, fontSize: 30, align: "left",
     };
     updatePage(activePage.id, { elements: [...(activeOverride?.elements ?? []), element] });
   }
 
   return (
-    <section className={styles.sequentialWorkspace} aria-label="Quotation page designer">
+    <section className={styles.sequentialWorkspace} aria-label={t("Quotation page designer")}>
       <header className={styles.toolbar}>
         <div>
           {toolbarStart}
-          {!readOnly ? <button type="button" className={styles.addItem} onClick={onEditItems}><Plus size={15} />Add item</button> : null}
-          {!readOnly ? <button type="button" onClick={addText}><Type size={15} />Text</button> : null}
-          {!readOnly ? <button type="button" onClick={() => imageInput.current?.click()}><ImagePlus size={15} />Image</button> : null}
+          {!readOnly ? <button type="button" className={styles.addItem} onClick={onEditItems}><Plus size={15} />{t("Add item")}</button> : null}
+          {!readOnly ? <button type="button" onClick={addText}><Type size={15} />{t("Text")}</button> : null}
+          {!readOnly ? <button type="button" onClick={() => imageInput.current?.click()}><ImagePlus size={15} />{t("Image")}</button> : null}
           <input ref={imageInput} hidden type="file" accept="image/*" onChange={(event) => { void addImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
         </div>
         <div>
           {toolbarEnd}
-          {!readOnly && activePage ? <label className={styles.colorTool}>Page <input aria-label="Page background colour" type="color" value={activeOverride?.background ?? presentation.pageBackground} onChange={(event) => updatePage(activePage.id, { background: event.target.value })} /></label> : null}
-          {!readOnly ? <button type="button" onClick={() => backgroundInput.current?.click()}><Upload size={14} />Background</button> : null}
-          {activeOverride?.backgroundImage && !readOnly ? <button type="button" onClick={() => activePage && updatePage(activePage.id, { backgroundImage: undefined })}><X size={14} />Remove</button> : null}
+          {!readOnly && activePage ? <label className={styles.colorTool}>{t("Page")}{" "}<input aria-label={t("Page background colour")} type="color" value={activeOverride?.background ?? presentation.pageBackground} onChange={(event) => updatePage(activePage.id, { background: event.target.value })} /></label> : null}
+          {!readOnly ? <button type="button" onClick={() => backgroundInput.current?.click()}><Upload size={14} />{t("Background")}</button> : null}
+          {activeOverride?.backgroundImage && !readOnly ? <button type="button" onClick={() => activePage && updatePage(activePage.id, { backgroundImage: undefined })}><X size={14} />{t("Remove")}</button> : null}
           <input ref={backgroundInput} hidden type="file" accept="image/*" onChange={(event) => { void addImage(event.target.files?.[0], true); event.currentTarget.value = ""; }} />
         </div>
       </header>
@@ -283,7 +287,7 @@ function SequentialWorkspace({ quote, brand, customerName, readOnly = false, onC
               key={page.id}
               className={styles.editorPage}
               data-active={page.id === activePage?.id || undefined}
-              aria-label={`${page.title} page`}
+              aria-label={t("{title} page", { title: page.title })}
               style={{
                 backgroundColor: override?.background ?? presentation.pageBackground,
                 backgroundImage: override?.backgroundImage ? `url(${JSON.stringify(override.backgroundImage).slice(1, -1)})` : undefined,
@@ -300,20 +304,20 @@ function SequentialWorkspace({ quote, brand, customerName, readOnly = false, onC
               {(override?.elements ?? []).map((element) => (
                 <div key={element.id} className={styles.editableElement} style={{ left: element.x, top: element.y, width: element.width, height: element.height }}>
                   {element.type === "image" ? (
-                    element.src ? <img alt="Quotation artwork" src={element.src} /> : null
+                    element.src ? <img alt={t("Quotation artwork")} src={element.src} /> : null
                   ) : readOnly ? (
                     <span style={{ color: element.color ?? presentation.textColor, fontSize: element.fontSize ?? 28, textAlign: element.align ?? "left" }}>{element.text}</span>
                   ) : (
-                    <textarea aria-label="Custom quotation text" value={element.text ?? ""} style={{ color: element.color ?? presentation.textColor, fontSize: element.fontSize ?? 28, textAlign: element.align ?? "left" }} onChange={(event) => updateElement(page.id, element.id, { text: event.target.value })} />
+                    <textarea aria-label={t("Custom quotation text")} value={element.text ?? ""} style={{ color: element.color ?? presentation.textColor, fontSize: element.fontSize ?? 28, textAlign: element.align ?? "left" }} onChange={(event) => updateElement(page.id, element.id, { text: event.target.value })} />
                   )}
-                  {!readOnly ? <button type="button" aria-label="Remove custom element" onClick={(event) => { event.stopPropagation(); updatePage(page.id, { elements: (override?.elements ?? []).filter((candidate) => candidate.id !== element.id) }); }}><Trash2 size={13} /></button> : null}
+                  {!readOnly ? <button type="button" aria-label={t("Remove custom element")} onClick={(event) => { event.stopPropagation(); updatePage(page.id, { elements: (override?.elements ?? []).filter((candidate) => candidate.id !== element.id) }); }}><Trash2 size={13} /></button> : null}
                 </div>
               ))}
             </section>
           );
         })}
       </div>
-      <footer className={styles.status}><span>{pages.length} client-facing pages</span><span role="status">{notice || "Pages flow in the same order your client will read them"}</span></footer>
+      <footer className={styles.status}><span>{t("{count} client-facing pages", { count: pages.length })}</span><span role="status">{notice || t("Pages flow in the same order your client will read them")}</span></footer>
     </section>
   );
 }
@@ -324,22 +328,23 @@ export function QuotationCanvasPreview({ quote, brand, customerName }: {
   brand?: PortalBrand;
   customerName: string;
 }) {
+  const t = useT();
   const neutralBrand = brand ? { ...brand, primaryColor: "#E4E3DE", accentColor: "#000000" } : brand;
   const presentation = useMemo(
     () => safePresentation(quote),
     [quote.presentation],
   );
-  const systemPages = quotationPages(quote);
+  const systemPages = quotationPages(quote, t);
   const pages: CanvasPage[] = systemPages;
   return (
-    <div className={styles.previewStack} aria-label="Quotation page preview">
+    <div className={styles.previewStack} aria-label={t("Quotation page preview")}>
       {pages.map((page, index) => {
         const override = pageOverride(presentation, page.id);
         return (
           <section
             className={styles.staticPage}
             key={page.id}
-            aria-label={`${page.title} page`}
+            aria-label={t("{title} page", { title: page.title })}
             style={{
               minHeight: page.kind === "custom" ? 1329 : 1150,
               backgroundColor: override?.background ?? presentation.pageBackground,
@@ -367,7 +372,7 @@ export function QuotationCanvasPreview({ quote, brand, customerName }: {
                 style={{ left: element.x, top: element.y, width: element.width, height: element.height, fontFamily: page.kind === "custom" ? "Arial, sans-serif" : undefined, lineHeight: page.kind === "custom" ? 1.25 : undefined }}
               >
                 {element.type === "image" ? (
-                  element.src ? <img alt="Quotation artwork" src={element.src} /> : null
+                  element.src ? <img alt={t("Quotation artwork")} src={element.src} /> : null
                 ) : (
                   <div style={{ color: element.color ?? presentation.textColor, fontSize: element.fontSize ?? 28, textAlign: element.align ?? "left" }}>{element.richText?<QuoteRichText node={element.richText}/>:element.text}</div>
                 )}
@@ -397,11 +402,12 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
   toolbarStart?: ReactNode;
   toolbarEnd?: ReactNode;
 }) {
+  const t = useT();
   const presentation = useMemo(
     () => safePresentation(quote),
     [quote.presentation],
   );
-  const systemPages = useMemo(() => quotationPages(quote), [quote]);
+  const systemPages = useMemo(() => quotationPages(quote, t), [quote, t]);
   const pages = useMemo<CanvasPage[]>(() => systemPages, [systemPages]);
   const [activePageId, setActivePageId] = useState(pages[0]?.id ?? "cover");
   const [selectedId, setSelectedId] = useState("");
@@ -521,7 +527,7 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
       y: 120,
       width: 380,
       height: 90,
-      text: "Add your message",
+      text: t("Add your message"),
       color: presentation.textColor,
       fontSize: 30,
       align: "left",
@@ -533,7 +539,7 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
   async function addImage(file?: File) {
     if (!activePage || !file || readOnly) return;
     try {
-      const src = await fileData(file);
+      const src = await fileData(file, t);
       const element: QuoteCanvasElement = {
         id: crypto.randomUUID(),
         type: "image",
@@ -545,25 +551,25 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
       };
       updatePage(activePage.id, { elements: [...(activeOverride?.elements ?? []), element] });
       setSelectedId(element.id);
-      setNotice("Image added. Drag or resize it on the page.");
+      setNotice(t("Image added. Drag or resize it on the page."));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The image could not be added.");
+      setNotice(error instanceof Error ? error.message : t("The image could not be added."));
     }
   }
 
   async function setBackground(file?: File) {
     if (!activePage || !file || readOnly) return;
     try {
-      updatePage(activePage.id, { backgroundImage: await fileData(file) });
-      setNotice("Page background updated.");
+      updatePage(activePage.id, { backgroundImage: await fileData(file, t) });
+      setNotice(t("Page background updated."));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The background could not be added.");
+      setNotice(error instanceof Error ? error.message : t("The background could not be added."));
     }
   }
 
   return (
-    <section className={styles.workspace} aria-label="Quotation page designer" data-inspector={Boolean(selected) || pageSelected || undefined} data-standalone={hidePages || undefined}>
-      {!hidePages && <aside className={styles.pages} aria-label="Quotation pages">
+    <section className={styles.workspace} aria-label={t("Quotation page designer")} data-inspector={Boolean(selected) || pageSelected || undefined} data-standalone={hidePages || undefined}>
+      {!hidePages && <aside className={styles.pages} aria-label={t("Quotation pages")}>
         <div className={styles.pageList}>
           {pages.map((page, index) => {
             const override = pageOverride(presentation, page.id);
@@ -590,19 +596,19 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
         <header className={styles.toolbar}>
           <div>
             {toolbarStart}
-            {!readOnly ? <button type="button" className={styles.addItem} onClick={onEditItems}><Plus size={15} />Add item</button> : null}
-            {!readOnly ? <button type="button" onClick={addText}><Type size={15} />Text</button> : null}
-            {!readOnly ? <button type="button" onClick={() => imageInput.current?.click()}><ImagePlus size={15} />Image</button> : null}
+            {!readOnly ? <button type="button" className={styles.addItem} onClick={onEditItems}><Plus size={15} />{t("Add item")}</button> : null}
+            {!readOnly ? <button type="button" onClick={addText}><Type size={15} />{t("Text")}</button> : null}
+            {!readOnly ? <button type="button" onClick={() => imageInput.current?.click()}><ImagePlus size={15} />{t("Image")}</button> : null}
             <input ref={imageInput} hidden type="file" accept="image/*" onChange={(event) => { void addImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
           </div>
           <div className={styles.pageTools}>
             {toolbarEnd}
-            <button type="button" aria-expanded={pageMenu} onClick={() => setPageMenu(!pageMenu)}><Palette size={15} />Page</button>
+            <button type="button" aria-expanded={pageMenu} onClick={() => setPageMenu(!pageMenu)}><Palette size={15} />{t("Page")}</button>
             {pageMenu ? (
               <div className={styles.pagePopover}>
-                <label>Background <input type="color" value={activeOverride?.background ?? presentation.pageBackground} disabled={readOnly} onChange={(event) => activePage && updatePage(activePage.id, { background: event.target.value })} /></label>
-                {!readOnly ? <button type="button" onClick={() => backgroundInput.current?.click()}><Upload size={14} />Upload background</button> : null}
-                {activeOverride?.backgroundImage && !readOnly ? <button type="button" onClick={() => activePage && updatePage(activePage.id, { backgroundImage: undefined })}><X size={14} />Remove image</button> : null}
+                <label>{t("Background")}{" "}<input type="color" value={activeOverride?.background ?? presentation.pageBackground} disabled={readOnly} onChange={(event) => activePage && updatePage(activePage.id, { background: event.target.value })} /></label>
+                {!readOnly ? <button type="button" onClick={() => backgroundInput.current?.click()}><Upload size={14} />{t("Upload background")}</button> : null}
+                {activeOverride?.backgroundImage && !readOnly ? <button type="button" onClick={() => activePage && updatePage(activePage.id, { backgroundImage: undefined })}><X size={14} />{t("Remove image")}</button> : null}
                 <input ref={backgroundInput} hidden type="file" accept="image/*" onChange={(event) => { void setBackground(event.target.files?.[0]); event.currentTarget.value = ""; }} />
               </div>
             ) : null}
@@ -639,38 +645,38 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
             <Controls showInteractive={false} position="bottom-right" />
           </ReactFlow>
         </div>
-        <footer className={styles.status}><span>{activePage?.title}</span><span role="status">{notice || "Drag to position · Select to edit"}</span></footer>
+        <footer className={styles.status}><span>{activePage?.title}</span><span role="status">{notice || t("Drag to position · Select to edit")}</span></footer>
       </div>
 
       {selected || pageSelected ? (
-        <aside className={styles.inspector} aria-label="Selected element properties">
-          <header><strong>{pageSelected ? "Page" : selected?.type === "text" ? "Text" : "Image"}</strong><button type="button" aria-label="Close properties" onClick={() => setSelectedId("")}><X size={15} /></button></header>
+        <aside className={styles.inspector} aria-label={t("Selected element properties")}>
+          <header><strong>{t(pageSelected ? "Page" : selected?.type === "text" ? "Text" : "Image")}</strong><button type="button" aria-label={t("Close properties")} onClick={() => setSelectedId("")}><X size={15} /></button></header>
           {pageSelected ? (
             <div className={styles.inspectorBody}>
-              <label>Background<input type="color" value={activeOverride?.background ?? presentation.pageBackground} disabled={readOnly} onChange={(event) => activePage && updatePage(activePage.id, { background: event.target.value })} /></label>
-              {!readOnly ? <button type="button" onClick={() => backgroundInput.current?.click()}><Upload size={14} />Background image</button> : null}
-              {activePage?.kind === "room" ? <button type="button" className={styles.editItems} onClick={onEditItems}><Plus size={14} />Edit quotation items</button> : null}
-              <p>Smart content is synced from the quotation. Add free text and images from the top toolbar.</p>
+              <label>{t("Background")}<input type="color" value={activeOverride?.background ?? presentation.pageBackground} disabled={readOnly} onChange={(event) => activePage && updatePage(activePage.id, { background: event.target.value })} /></label>
+              {!readOnly ? <button type="button" onClick={() => backgroundInput.current?.click()}><Upload size={14} />{t("Background image")}</button> : null}
+              {activePage?.kind === "room" ? <button type="button" className={styles.editItems} onClick={onEditItems}><Plus size={14} />{t("Edit quotation items")}</button> : null}
+              <p>{t("Smart content is synced from the quotation. Add free text and images from the top toolbar.")}</p>
             </div>
           ) : selected?.type === "text" ? (
             <div className={styles.inspectorBody}>
-              <label>Content<textarea value={selected.text ?? ""} disabled={readOnly} onChange={(event) => updateElement(selected.id, { text: event.target.value })} /></label>
-              <label>Size<input type="number" min="10" max="96" value={selected.fontSize ?? 28} disabled={readOnly} onChange={(event) => updateElement(selected.id, { fontSize: Math.max(10, Math.min(96, Number(event.target.value) || 10)) })} /></label>
-              <label>Colour<input type="color" value={selected.color ?? presentation.textColor} disabled={readOnly} onChange={(event) => updateElement(selected.id, { color: event.target.value })} /></label>
-              <div className={styles.align} aria-label="Text alignment">
+              <label>{t("Content")}<textarea value={selected.text ?? ""} disabled={readOnly} onChange={(event) => updateElement(selected.id, { text: event.target.value })} /></label>
+              <label>{t("Size")}<input type="number" min="10" max="96" value={selected.fontSize ?? 28} disabled={readOnly} onChange={(event) => updateElement(selected.id, { fontSize: Math.max(10, Math.min(96, Number(event.target.value) || 10)) })} /></label>
+              <label>{t("Colour")}<input type="color" value={selected.color ?? presentation.textColor} disabled={readOnly} onChange={(event) => updateElement(selected.id, { color: event.target.value })} /></label>
+              <div className={styles.align} aria-label={t("Text alignment")}>
                 {(["left", "center", "right"] as const).map((align) => {
                   const Icon = align === "left" ? AlignLeft : align === "center" ? AlignCenter : AlignRight;
-                  return <button type="button" key={align} aria-label={`Align ${align}`} aria-pressed={(selected.align ?? "left") === align} disabled={readOnly} onClick={() => updateElement(selected.id, { align })}><Icon size={15} /></button>;
+                  return <button type="button" key={align} aria-label={t(align === "left" ? "Align left" : align === "center" ? "Align center" : "Align right")} aria-pressed={(selected.align ?? "left") === align} disabled={readOnly} onClick={() => updateElement(selected.id, { align })}><Icon size={15} /></button>;
                 })}
               </div>
             </div>
           ) : (
-            <div className={styles.inspectorBody}><p>Move and resize the image directly on the page.</p><button type="button" disabled={readOnly} onClick={() => imageInput.current?.click()}><Upload size={14} />Add another image</button></div>
+            <div className={styles.inspectorBody}><p>{t("Move and resize the image directly on the page.")}</p><button type="button" disabled={readOnly} onClick={() => imageInput.current?.click()}><Upload size={14} />{t("Add another image")}</button></div>
           )}
           {selected ? <div className={styles.inspectorBody}>
-            {([['x', 'Horizontal position'], ['y', 'Vertical position'], ['width', 'Width'], ['height', 'Height']] as const).map(([key, label]) => <label key={key}>{label}<input type="number" min={key === 'width' || key === 'height' ? 24 : 0} max={key === 'x' || key === 'width' ? PAGE_WIDTH : PAGE_HEIGHT} value={Math.round(selected[key])} disabled={readOnly} onChange={event => updateElement(selected.id, { [key]: Math.max(key === 'width' || key === 'height' ? 24 : 0, Math.min(key === 'x' || key === 'width' ? PAGE_WIDTH : PAGE_HEIGHT, Number(event.target.value) || 0)) })}/></label>)}
+            {([['x', tKey('Horizontal position')], ['y', tKey('Vertical position')], ['width', tKey('Width')], ['height', tKey('Height')]] as const).map(([key, label]) => <label key={key}>{t(label)}<input type="number" min={key === 'width' || key === 'height' ? 24 : 0} max={key === 'x' || key === 'width' ? PAGE_WIDTH : PAGE_HEIGHT} value={Math.round(selected[key])} disabled={readOnly} onChange={event => updateElement(selected.id, { [key]: Math.max(key === 'width' || key === 'height' ? 24 : 0, Math.min(key === 'x' || key === 'width' ? PAGE_WIDTH : PAGE_HEIGHT, Number(event.target.value) || 0)) })}/></label>)}
           </div> : null}
-          {selected && !readOnly ? <button type="button" className={styles.deleteElement} onClick={() => { updatePage(activePage!.id, { elements: (activeOverride?.elements ?? []).filter((element) => element.id !== selected.id) }); setSelectedId(""); }}><Trash2 size={14} />Delete element</button> : null}
+          {selected && !readOnly ? <button type="button" className={styles.deleteElement} onClick={() => { updatePage(activePage!.id, { elements: (activeOverride?.elements ?? []).filter((element) => element.id !== selected.id) }); setSelectedId(""); }}><Trash2 size={14} />{t("Delete element")}</button> : null}
         </aside>
       ) : null}
     </section>

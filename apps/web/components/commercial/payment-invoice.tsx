@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { Search, RefreshCw, ExternalLink, Check, FileText } from "lucide-react";
@@ -63,6 +64,7 @@ export function PaymentInvoice({
   currency?: string;
   customerName?: string;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false),
     [connectionId, setConnectionId] = useState(
       payment.invoice?.connectionId ?? "",
@@ -162,7 +164,7 @@ export function PaymentInvoice({
     <>
       {payment.invoice?.lastError && (
         <p className={s.error} role="status">
-          Refresh needs attention: {payment.invoice.lastError}
+          {t("Refresh needs attention:")}{" "}{payment.invoice.lastError}
         </p>
       )}
       <div className={s.actions}>
@@ -175,8 +177,8 @@ export function PaymentInvoice({
               · {payment.invoice.number || payment.invoice.id}
             </strong>
             <small className={s.detail}>
-              Balance {money(payment.invoice.balance, payment.invoice.currency)}{" "}
-              · Checked {new Date(payment.invoice.refreshedAt).toLocaleString()}
+              {t("Balance")}{" "}{money(payment.invoice.balance, payment.invoice.currency)}{" "}
+              {t("· Checked")}{" "}{new Date(payment.invoice.refreshedAt).toLocaleString()}
             </small>
           </span>
         )}
@@ -205,7 +207,7 @@ export function PaymentInvoice({
             rel="noreferrer"
             className={s.button}
           >
-            Open payment link <ExternalLink size={13} />
+            {t("Open payment link")}{" "}<ExternalLink size={13} />
           </a>
         )}
       </div>
@@ -216,7 +218,7 @@ export function PaymentInvoice({
           if (!value) requestSequence.current++;
           setOpen(value);
         }}
-        title="Connect accounting invoice"
+        title={t("Connect accounting invoice")}
       >
         <form
           className={s.form}
@@ -250,8 +252,7 @@ export function PaymentInvoice({
             </p>
           )}
           <label>
-            Accounting company
-            <select
+            {t("Accounting company")}<select
               required
               value={connectionId}
               onChange={(e) => {
@@ -264,7 +265,7 @@ export function PaymentInvoice({
                 if (c) void loadInvoices(c);
               }}
             >
-              <option value="">Choose QuickBooks or Zoho Books…</option>
+              <option value="">{t("Choose QuickBooks or Zoho Books…")}</option>
               {connections.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.displayName} ·{" "}
@@ -275,18 +276,17 @@ export function PaymentInvoice({
           </label>
           {!loading && !connections.length && (
             <p className={s.notice}>
-              Connect an accounting company in{" "}
-              <Link href="/workspace/integrations">Workspace integrations</Link>{" "}
-              to load its invoices.
-            </p>
+              {t("Connect an accounting company in")}{" "}
+              <Link href="/workspace/integrations">{t("Workspace integrations")}</Link>{" "}
+              {t("to load its invoices.")}</p>
           )}
           {connectionId && (
             <>
               <label className={s.invoiceSearch}>
                 <Search size={15} />
                 <input
-                  aria-label="Search accounting invoices"
-                  placeholder="Search invoice number or customer…"
+                  aria-label={t("Search accounting invoices")}
+                  placeholder={t("Search invoice number or customer…")}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -294,7 +294,7 @@ export function PaymentInvoice({
               <div
                 className={s.invoiceChoices}
                 role="radiogroup"
-                aria-label="Accounting invoices"
+                aria-label={t("Accounting invoices")}
               >
                 {visible.map((i) => (
                   <label
@@ -332,7 +332,7 @@ export function PaymentInvoice({
                         )}
                       </strong>
                       <small>
-                        Open{" "}
+                        {t("Open")}{" "}
                         {displayAmount(
                           i.balance,
                           /^[A-Z]{3}$/.test(i.currency) ? i.currency : currency,
@@ -344,14 +344,12 @@ export function PaymentInvoice({
                 ))}
                 {!loading && !visible.length && (
                   <p className={s.muted}>
-                    No matching invoices in the loaded pages.
-                  </p>
+                    {t("No matching invoices in the loaded pages.")}</p>
                 )}
               </div>
               {loading && (
                 <p role="status" className={s.muted}>
-                  Loading invoices from your accounting company…
-                </p>
+                  {t("Loading invoices from your accounting company…")}</p>
               )}
               {hasMore && (
                 <button
@@ -363,8 +361,7 @@ export function PaymentInvoice({
                     if (c) void loadInvoices(c, page + 1);
                   }}
                 >
-                  Load more invoices
-                </button>
+                  {t("Load more invoices")}</button>
               )}
               <button
                 type="button"
@@ -375,22 +372,19 @@ export function PaymentInvoice({
               </button>
               {manual && (
                 <label>
-                  Invoice ID
-                  <input
+                  {t("Invoice ID")}<input
                     required
                     value={invoiceId}
                     onChange={(e) => {
                       setInvoiceId(e.target.value);
                       setChecked(false);
                     }}
-                    placeholder="Invoice identifier from the accounting company"
+                    placeholder={t("Invoice identifier from the accounting company")}
                   />
                 </label>
               )}
               <p className={s.muted}>
-                The invoice total must equal this milestone in {currency}. The
-                provider supplies its outstanding balance and payment link.
-              </p>
+                {t("The invoice total must equal this milestone in")}{" "}{currency}{t(". The provider supplies its outstanding balance and payment link.")}</p>
             </>
           )}
           {invoiceId && (
@@ -401,9 +395,8 @@ export function PaymentInvoice({
                 checked={checked}
                 onChange={(e) => setChecked(e.target.checked)}
               />
-              I checked that {selected?.number || "this invoice"} belongs to{" "}
-              {customerName || "this client"} and this milestone.
-            </label>
+              {t("I checked that")}{" "}{selected?.number || "this invoice"} {t("belongs to")}{" "}
+              {customerName || "this client"} {t("and this milestone.")}</label>
           )}
           <div className={s.actions}>
             <button
@@ -415,7 +408,7 @@ export function PaymentInvoice({
               Verify & connect invoice
             </button>
             <Link href="/workspace/integrations" className={s.button}>
-              Accounting connections <ExternalLink size={13} />
+              {t("Accounting connections")}{" "}<ExternalLink size={13} />
             </Link>
           </div>
         </form>

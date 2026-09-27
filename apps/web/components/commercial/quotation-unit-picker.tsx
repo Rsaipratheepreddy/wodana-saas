@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useState } from "react";
 import {
   Button,
@@ -45,6 +46,7 @@ export function QuotationUnitPicker({
   onEditStart?: () => void;
   onCancel?: () => void;
 }) {
+  const t = useT();
   const [custom, setCustom] = useState<string | null>(null);
   const catalog = useCatalogOptions(
     workspaceId,
@@ -75,7 +77,7 @@ export function QuotationUnitPicker({
           selectedKey={value}
           items={[
             ...options.map((unit) => ({ id: unit, label: unit })),
-            { id: CUSTOM_UNIT, label: "Custom unit…" },
+            { id: CUSTOM_UNIT, label: t("Custom unit…") },
           ]}
           onSelectionChange={(key) => {
             if (key === CUSTOM_UNIT) setCustom(value);
@@ -84,14 +86,14 @@ export function QuotationUnitPicker({
         />
       </div>
       <ControlledModalDialog
-        title="Custom unit"
+        title={t("Custom unit")}
         isOpen={custom !== null}
         onOpenChange={(open) => {
           if (!open) setCustom(null);
         }}
         footer={
           <div className="wd-dialog-actions">
-            <Button onPress={() => setCustom(null)}>Cancel</Button>
+            <Button onPress={() => setCustom(null)}>{t("Cancel")}</Button>
             <Button
               variant="primary"
               isDisabled={!custom?.trim()}
@@ -100,18 +102,17 @@ export function QuotationUnitPicker({
                 setCustom(null);
               }}
             >
-              Apply unit
-            </Button>
+              {t("Apply unit")}</Button>
           </div>
         }
       >
         <TextInput
-          label="Unit name"
+          label={t("Unit name")}
           value={custom ?? ""}
           onChange={setCustom}
           maxLength={20}
           autoFocus
-          placeholder="e.g. box or panel"
+          placeholder={t("e.g. box or panel")}
         />
       </ControlledModalDialog>
     </>

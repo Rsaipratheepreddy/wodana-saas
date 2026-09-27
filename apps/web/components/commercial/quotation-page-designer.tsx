@@ -1,4 +1,6 @@
 'use client';
+import { useT } from "@/lib/i18n/i18n-provider";
+import { translateKnown } from "@/lib/i18n/keys";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AlignCenter, AlignLeft, AlignRight, Copy, ImagePlus, Minus, Plus, Trash2, Type, Move, Check, Palette, Bold, Italic, Underline, List, ListOrdered, ImageOff } from 'lucide-react';
@@ -22,6 +24,7 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
     onEditDetails?: () => void;
     onEditScope?: () => void;
 }) {
+  const t = useT();
     const design = quote.presentation!;
     const page = (design.pages.find(page => page.id === pageId) ?? (design.template === 'palm-reference-v1' && pageId.startsWith('items:') ? referenceItemPage(Number(pageId.slice(6))) : undefined))!;
     const [richEditor, setRichEditor] = useState<Editor | null>(null);
@@ -58,7 +61,7 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
             return;
         }
     } patchPage({ elements }, checkpoint); }
-    function addText() { const element: QuoteCanvasElement = { id: crypto.randomUUID(), type: 'text', x: 100, y: 170, width: 650, height: 110, text: 'Your text', fontSize: 36, color: '#25382f', align: 'left' }; patchPage({ elements: [...page.elements, element] }, true); setSelected(element.id); setEditing(element.id); }
+    function addText() { const element: QuoteCanvasElement = { id: crypto.randomUUID(), type: 'text', x: 100, y: 170, width: 650, height: 110, text: t('Your text'), fontSize: 36, color: '#25382f', align: 'left' }; patchPage({ elements: [...page.elements, element] }, true); setSelected(element.id); setEditing(element.id); }
     function remove() { if (!current)
         return; patchPage({ elements: page.elements.filter(element => element.id !== current.id) }, true); setSelected(''); setEditing(''); }
     function duplicate() { if (!current || page.elements.length >= 100)
@@ -92,7 +95,7 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
         setUploading(true);
         try {
             if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 8 * 1024 * 1024)
-                throw new Error('Choose a PNG, JPEG or WebP under 8 MB.');
+                throw new Error(t('Choose a PNG, JPEG or WebP under 8 MB.'));
             const bitmap = await createImageBitmap(file);
             const scale = Math.min(1, 1500 / Math.max(bitmap.width, bitmap.height));
             const canvas = document.createElement('canvas');
@@ -107,11 +110,11 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
                     break;
             }
             if (src.length > 450000)
-                throw new Error('This image is too large. Try a smaller image.');
+                throw new Error(t('This image is too large. Try a smaller image.'));
             const base = latest.current, latestPage = base.presentation!.pages.find(item => item.id === pageId) ?? page!;
             const used = base.presentation!.pages.reduce((total, item) => total + (item.backgroundImage?.length ?? 0) + item.elements.reduce((sum, element) => sum + (element.src?.length ?? 0), 0), base.presentation!.details?.clientLogo?.length??0);
             if (used + src.length - (background ? (latestPage.backgroundImage?.length ?? 0) : 0) > 1500000)
-                throw new Error('These page images exceed the quotation limit. Use smaller images.');
+                throw new Error(t('These page images exceed the quotation limit. Use smaller images.'));
             if (background) {
                 patchPage({ backgroundImage: src }, true);
                 setSelected('__page__');
@@ -125,7 +128,7 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
             setEditing('');
         }
         catch (error) {
-            setError(error instanceof Error ? error.message : 'Could not add image.');
+            setError(error instanceof Error ? error.message : t('Could not add image.'));
         }
         finally {
             setUploading(false);
@@ -136,38 +139,38 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
     if (!page)
         return null;
     const controls = <>
-  {!readOnly && <div className={styles.tools} aria-label="Page tools">
-   <button type="button" onClick={addText} disabled={page.elements.length >= 100}><Type size={16}/>Text</button>
-   <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading || page.elements.length >= 100}><ImagePlus size={16}/>{uploading ? 'Adding…' : 'Image'}</button>
-   <button type="button" aria-pressed={selected === '__page__'} onClick={() => { setSelected('__page__'); setEditing(''); }}><Palette size={16}/>Page</button>
-   <input ref={fileInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="Upload page image" onChange={event => void upload(event.target.files?.[0])}/>
+  {!readOnly && <div className={styles.tools} aria-label={t("Page tools")}>
+   <button type="button" onClick={addText} disabled={page.elements.length >= 100}><Type size={16}/>{t("Text")}</button>
+   <button type="button" onClick={() => fileInput.current?.click()} disabled={uploading || page.elements.length >= 100}><ImagePlus size={16}/>{t(uploading ? 'Adding…' : 'Image')}</button>
+   <button type="button" aria-pressed={selected === '__page__'} onClick={() => { setSelected('__page__'); setEditing(''); }}><Palette size={16}/>{t("Page")}</button>
+   <input ref={fileInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label={t("Upload page image")} onChange={event => void upload(event.target.files?.[0])}/>
   </div>}
-  {selected === '__page__' && !readOnly && <div className={styles.context} aria-label="Page background controls">
-   <label className={styles.colour}><input aria-label="Page colour" type="color" value={page.background ?? design.pageBackground} onChange={event => patchPage({ background: event.target.value })}/>Background</label>
-   <button type="button" disabled={uploading} onClick={() => backgroundInput.current?.click()}><ImagePlus size={15}/>{uploading ? 'Adding…' : 'Background image'}</button>
-   {page.backgroundImage && <button type="button" onClick={() => patchPage({ backgroundImage: undefined }, true)}><ImageOff size={15}/>Remove image</button>}
+  {selected === '__page__' && !readOnly && <div className={styles.context} aria-label={t("Page background controls")}>
+   <label className={styles.colour}><input aria-label={t("Page colour")} type="color" value={page.background ?? design.pageBackground} onChange={event => patchPage({ background: event.target.value })}/>{t("Background")}</label>
+   <button type="button" disabled={uploading} onClick={() => backgroundInput.current?.click()}><ImagePlus size={15}/>{t(uploading ? 'Adding…' : 'Background image')}</button>
+   {page.backgroundImage && <button type="button" onClick={() => patchPage({ backgroundImage: undefined }, true)}><ImageOff size={15}/>{t("Remove image")}</button>}
   </div>}
-  <input ref={backgroundInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label="Upload background image" onChange={event => { void upload(event.target.files?.[0], true); event.currentTarget.value = ''; }}/>
-  {current && !readOnly && <div className={styles.context} aria-label="Selection controls">
+  <input ref={backgroundInput} hidden type="file" accept="image/png,image/jpeg,image/webp" aria-label={t("Upload background image")} onChange={event => { void upload(event.target.files?.[0], true); event.currentTarget.value = ''; }}/>
+  {current && !readOnly && <div className={styles.context} aria-label={t("Selection controls")}>
    {current.type === 'text' && !current.id.startsWith('data:') && <>
     {editing && <>
-     <button type="button" aria-label="Bold" aria-pressed={richEditor?.isActive('bold') ?? false} onClick={() => richEditor?.chain().focus().toggleBold().run()}><Bold size={15}/></button>
-     <button type="button" aria-label="Italic" aria-pressed={richEditor?.isActive('italic') ?? false} onClick={() => richEditor?.chain().focus().toggleItalic().run()}><Italic size={15}/></button>
-     <button type="button" aria-label="Underline" aria-pressed={richEditor?.isActive('underline') ?? false} onClick={() => richEditor?.chain().focus().toggleUnderline().run()}><Underline size={15}/></button>
-     <button type="button" aria-label="Bullet list" aria-pressed={richEditor?.isActive('bulletList') ?? false} onClick={() => richEditor?.chain().focus().toggleBulletList().run()}><List size={15}/></button>
-     <button type="button" aria-label="Numbered list" aria-pressed={richEditor?.isActive('orderedList') ?? false} onClick={() => richEditor?.chain().focus().toggleOrderedList().run()}><ListOrdered size={15}/></button>
+     <button type="button" aria-label={t("Bold")} aria-pressed={richEditor?.isActive('bold') ?? false} onClick={() => richEditor?.chain().focus().toggleBold().run()}><Bold size={15}/></button>
+     <button type="button" aria-label={t("Italic")} aria-pressed={richEditor?.isActive('italic') ?? false} onClick={() => richEditor?.chain().focus().toggleItalic().run()}><Italic size={15}/></button>
+     <button type="button" aria-label={t("Underline")} aria-pressed={richEditor?.isActive('underline') ?? false} onClick={() => richEditor?.chain().focus().toggleUnderline().run()}><Underline size={15}/></button>
+     <button type="button" aria-label={t("Bullet list")} aria-pressed={richEditor?.isActive('bulletList') ?? false} onClick={() => richEditor?.chain().focus().toggleBulletList().run()}><List size={15}/></button>
+     <button type="button" aria-label={t("Numbered list")} aria-pressed={richEditor?.isActive('orderedList') ?? false} onClick={() => richEditor?.chain().focus().toggleOrderedList().run()}><ListOrdered size={15}/></button>
     </>}
-    <label className={styles.size}><input aria-label="Font size" type="number" min={8} max={96} value={current.fontSize ?? 28} onChange={event => patchElement(current.id, { fontSize: Math.min(96, Math.max(8, Number(event.target.value) || 8)) })}/>px</label>
-    <input aria-label="Text colour" type="color" value={current.color ?? '#25382f'} onChange={event => patchElement(current.id, { color: event.target.value })}/>
-    {(['left', 'center', 'right'] as const).map(align => { const Icon = align === 'left' ? AlignLeft : align === 'center' ? AlignCenter : AlignRight; return <button type="button" key={align} aria-label={`Align ${align}`} aria-pressed={(current.align ?? 'left') === align} onClick={() => patchElement(current.id, { align })}><Icon size={15}/></button>; })}
-    <button type="button" onClick={() => setEditing(editing ? '' : current.id)}>{editing ? <Check size={15}/> : <Type size={15}/>} {editing ? 'Done' : 'Edit text'}</button>
+    <label className={styles.size}><input aria-label={t("Font size")} type="number" min={8} max={96} value={current.fontSize ?? 28} onChange={event => patchElement(current.id, { fontSize: Math.min(96, Math.max(8, Number(event.target.value) || 8)) })}/>px</label>
+    <input aria-label={t("Text colour")} type="color" value={current.color ?? '#25382f'} onChange={event => patchElement(current.id, { color: event.target.value })}/>
+    {(['left', 'center', 'right'] as const).map(align => { const Icon = align === 'left' ? AlignLeft : align === 'center' ? AlignCenter : AlignRight; return <button type="button" key={align} aria-label={t(align === 'left' ? 'Align left' : align === 'center' ? 'Align center' : 'Align right')} aria-pressed={(current.align ?? 'left') === align} onClick={() => patchElement(current.id, { align })}><Icon size={15}/></button>; })}
+    <button type="button" onClick={() => setEditing(editing ? '' : current.id)}>{editing ? <Check size={15}/> : <Type size={15}/>} {t(editing ? 'Done' : 'Edit text')}</button>
    </>}
-   <button type="button" aria-label="Duplicate element" onClick={duplicate} disabled={page.elements.length >= 100}><Copy size={15}/></button><button type="button" aria-label="Delete element" onClick={remove}><Trash2 size={15}/></button>
+   <button type="button" aria-label={t("Duplicate element")} onClick={duplicate} disabled={page.elements.length >= 100}><Copy size={15}/></button><button type="button" aria-label={t("Delete element")} onClick={remove}><Trash2 size={15}/></button>
   </div>}
-  {error && <p className={styles.error} role="alert">{error}<button type="button" onClick={() => setError('')}>Dismiss</button></p>}
-  {current?.id.startsWith('data:') && <button type="button" onClick={() => current.id.includes('items:') ? onEditScope?.() : onEditDetails?.()}>{current.id.includes('items:') ? 'Edit scope & items' : 'Edit client & project details'}</button>}
+  {error && <p className={styles.error} role="alert">{translateKnown(t, error)}<button type="button" onClick={() => setError('')}>{t("Dismiss")}</button></p>}
+  {current?.id.startsWith('data:') && <button type="button" onClick={() => current.id.includes('items:') ? onEditScope?.() : onEditDetails?.()}>{t(current.id.includes('items:') ? 'Edit scope & items' : 'Edit client & project details')}</button>}
   </>;
-    return <div className={styles.designer} data-continuous={continuous || undefined} ref={stage} aria-label={`Page editor ${pageId}`} onFocusCapture={onActivate} onPointerDownCapture={onActivate} onPointerDown={event => { if (event.target === event.currentTarget) {
+    return <div className={styles.designer} data-continuous={continuous || undefined} ref={stage} aria-label={t('Page editor {id}', { id: pageId })} onFocusCapture={onActivate} onPointerDownCapture={onActivate} onPointerDown={event => { if (event.target === event.currentTarget) {
         setSelected('__page__');
         setEditing('');
     } }}>
@@ -177,7 +180,7 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
         setEditing('');
     } }}>
    <div className={styles.paperSpace} style={{ width: WIDTH * zoom, height: HEIGHT * zoom }}>
-    <div className={styles.paper} dir="ltr" style={{ width: WIDTH, height: HEIGHT, transform: `scale(${zoom})`, background: page.background ?? design.pageBackground, ...(page.backgroundImage ? { backgroundImage: `url(${page.backgroundImage})` } : {}) }} role="group" tabIndex={0} data-page-selected={selected === '__page__' || undefined} aria-label="Design page" onKeyDown={event => { if (event.target === event.currentTarget && event.key === 'Enter') {
+    <div className={styles.paper} dir="ltr" style={{ width: WIDTH, height: HEIGHT, transform: `scale(${zoom})`, background: page.background ?? design.pageBackground, ...(page.backgroundImage ? { backgroundImage: `url(${page.backgroundImage})` } : {}) }} role="group" tabIndex={0} data-page-selected={selected === '__page__' || undefined} aria-label={t("Design page")} onKeyDown={event => { if (event.target === event.currentTarget && event.key === 'Enter') {
         setSelected('__page__');
         setEditing('');
     } }} onPointerDown={event => { if (event.target === event.currentTarget) {
@@ -186,7 +189,7 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
     } }}>
      {page.elements.map(savedElement => {
             const element = moving?.id === savedElement.id ? moving : savedElement;
-            return <div key={element.id} data-quotation-element={element.id} role="group" aria-label={element.type === 'image' ? 'Page image' : element.id.startsWith('data:')?'Linked quotation details':element.text || 'Text element'} tabIndex={readOnly ? -1 : 0} className={styles.element} data-selected={!readOnly && active && selected === element.id || undefined} data-editing={editing === element.id || undefined} style={{ left: element.x, top: element.y, width: element.width, height: element.height, color: element.color ?? design.textColor, fontSize: element.fontSize ?? 28, textAlign: element.align ?? 'left' }} onFocus={() => { if (!readOnly)
+            return <div key={element.id} data-quotation-element={element.id} role="group" aria-label={element.type === 'image' ? t('Page image') : element.id.startsWith('data:')?t('Linked quotation details'):element.text || t('Text element')} tabIndex={readOnly ? -1 : 0} className={styles.element} data-selected={!readOnly && active && selected === element.id || undefined} data-editing={editing === element.id || undefined} style={{ left: element.x, top: element.y, width: element.width, height: element.height, color: element.color ?? design.textColor, fontSize: element.fontSize ?? 28, textAlign: element.align ?? 'left' }} onFocus={() => { if (!readOnly)
                 setSelected(element.id); }} onClick={event => { event.stopPropagation(); if (!readOnly)
                 setSelected(element.id); }} onDoubleClick={() => { if (element.id === 'data:payments') {
                 onEditPayments?.();
@@ -222,11 +225,11 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
                         patchElement(element.id, { x: Math.max(0, Math.min(WIDTH - element.width, element.x + delta[0])), y: Math.max(0, Math.min(HEIGHT - element.height, element.y + delta[1])) });
                     }
                 }}>
-      {element.id.startsWith('data:') ? <QuotationLinkedBlock id={element.id} quote={quote}/> : element.type === 'image' ? <img src={element.src} draggable={false} alt="Quotation artwork"/> : editing === element.id && !readOnly ? <div className={styles.rich} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') {
+      {element.id.startsWith('data:') ? <QuotationLinkedBlock id={element.id} quote={quote}/> : element.type === 'image' ? <img src={element.src} draggable={false} alt={t("Quotation artwork")}/> : editing === element.id && !readOnly ? <div className={styles.rich} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') {
                 setEditing('');
                 event.stopPropagation();
             } }}><QuotationRichTextEditor value={element.richText} text={element.text ?? ''} onReady={setRichEditor} onChange={(richText, text) => patchElement(element.id, { richText, text })}/></div> : <div className={`${styles.text} ${styles.rich}`}>{element.richText ? <QuoteRichText node={element.richText}/> : element.text}</div>}
-      {!readOnly && selected === element.id && editing !== element.id && <><span className={styles.move}><Move size={16}/></span><div role="slider" tabIndex={0} aria-label="Resize selected element" aria-valuemin={24} aria-valuemax={WIDTH} aria-valuenow={Math.round(element.width)} className={styles.handle} onPointerDown={event => start(event, element, true)} onKeyDown={event => { if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      {!readOnly && selected === element.id && editing !== element.id && <><span className={styles.move}><Move size={16}/></span><div role="slider" tabIndex={0} aria-label={t("Resize selected element")} aria-valuemin={24} aria-valuemax={WIDTH} aria-valuenow={Math.round(element.width)} className={styles.handle} onPointerDown={event => start(event, element, true)} onKeyDown={event => { if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
                 event.preventDefault();
                 event.stopPropagation();
                 patchElement(element.id, { width: Math.max(24, Math.min(WIDTH - element.x, element.width + (event.key === 'ArrowRight' ? 10 : -10))) }, true);
@@ -241,7 +244,7 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
     </div>
    </div>
   </div>
-  <div className={styles.zoom}><button type="button" aria-label="Zoom out" onClick={() => setZoom(value => Math.max(.2, value - .1))}><Minus size={15}/></button><span>{Math.round(zoom * 100)}%</span><button type="button" aria-label="Zoom in" onClick={() => setZoom(value => Math.min(2, value + .1))}><Plus size={15}/></button><button type="button" onClick={fit}>Fit</button></div>
-  {!readOnly && <span className={styles.hint}>{editing ? 'Type directly on the page' : selected === '__page__' ? 'Choose a background colour or image' : current ? 'Drag to move · Double-click text to edit' : 'Click an element to edit · Add text or images above'}</span>}
+  <div className={styles.zoom}><button type="button" aria-label={t("Zoom out")} onClick={() => setZoom(value => Math.max(.2, value - .1))}><Minus size={15}/></button><span>{Math.round(zoom * 100)}%</span><button type="button" aria-label={t("Zoom in")} onClick={() => setZoom(value => Math.min(2, value + .1))}><Plus size={15}/></button><button type="button" onClick={fit}>{t("Fit")}</button></div>
+  {!readOnly && <span className={styles.hint}>{t(editing ? 'Type directly on the page' : selected === '__page__' ? 'Choose a background colour or image' : current ? 'Drag to move · Double-click text to edit' : 'Click an element to edit · Add text or images above')}</span>}
  </div>;
 }

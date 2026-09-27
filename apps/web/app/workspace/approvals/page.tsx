@@ -6,10 +6,12 @@ import { DesignQueue } from "@/components/pre-project/design-queue";
 import { projectRead } from "@/lib/projects/server";
 import type { ApprovalQueuePage } from "../../../../../services/business-core/src/projects/project-approval-queue";
 import styles from "./page.module.css";
+import { getServerT } from "@/lib/i18n/server";
 
 
 export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<{ source?: string }> }) {
   const profile = await getAuthenticatedProfile();
+  const t = await getServerT();
   const membership = profile.memberships[0];
   const owner = membership?.roles.some(role => role === "owner" || role === "administrator") ?? false;
   const canReviewCases = owner || Boolean(membership?.allowedModules.includes("pre-project"));
@@ -31,21 +33,21 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
     try {
       initial = (await projectRead<ApprovalQueuePage>("approvals?view=mine")).data;
     } catch {
-      error = "Project approvals could not be loaded. Check your access or retry.";
+      error = t("Project approvals could not be loaded. Check your access or retry.");
     }
     projectContent = <GlobalApprovalTasks workspaceId={membership?.workspaceId ?? ""} initial={initial} initialError={error} embedded />;
   }
 
   return <div className={styles.page}>
-    <h1 className={styles.visuallyHidden}>Approvals</h1>
+    <h1 className={styles.visuallyHidden}>{t("Approvals")}</h1>
     {canReviewCases || canReviewProjects ? <>
-      <nav className={styles.tabs} aria-label="Approval sources">
-        {canReviewCases ? <Link href="/workspace/approvals" aria-current={source === "cases" ? "page" : undefined}>Designs</Link> : null}
-        {canReviewProjects ? <Link href="/workspace/approvals?source=projects" aria-current={source === "projects" ? "page" : undefined}>Project requests</Link> : null}
+      <nav className={styles.tabs} aria-label={t("Approval sources")}>
+        {canReviewCases ? <Link href="/workspace/approvals" aria-current={source === "cases" ? "page" : undefined}>{t("Designs")}</Link> : null}
+        {canReviewProjects ? <Link href="/workspace/approvals?source=projects" aria-current={source === "projects" ? "page" : undefined}>{t("Project requests")}</Link> : null}
       </nav>
-      <section className={styles.content} aria-label={source === "cases" ? "Designs" : "Project requests"}>
+      <section className={styles.content} aria-label={source === "cases" ? t("Designs") : t("Project requests")}>
         {source === "cases" ? caseContent : projectContent}
       </section>
-    </> : <p role="alert" className={styles.message}>You do not have access to case or project approvals.</p>}
+    </> : <p role="alert" className={styles.message}>{t("You do not have access to case or project approvals.")}</p>}
   </div>;
 }

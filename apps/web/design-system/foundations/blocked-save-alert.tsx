@@ -59,7 +59,7 @@ export function useBlockedSaveAlert() {
       <CircleAlert aria-hidden="true" size={16} />
       <div>
         <strong>{t("Not saved yet")}</strong>
-        <span>{blocked.fields.length ? `${t("Complete the required fields:")} ${blocked.fields.join(", ")}` : t("Check the highlighted fields.")}</span>
+        <span>{blocked.fields.length ? t("Complete the required fields: {fields}", { fields: blocked.fields.join(", ") }) : t("Check the highlighted fields.")}</span>
       </div>
       <button aria-label={t("Dismiss")} className="wd-blocked-save-close" onClick={() => setBlocked(null)} type="button"><X aria-hidden="true" size={14} /></button>
     </div>,

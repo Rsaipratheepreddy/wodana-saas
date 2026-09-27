@@ -1,4 +1,5 @@
 import {expect,it,vi} from 'vitest';
+vi.mock('@/lib/i18n/server', async () => { const { translator } = await import('@/lib/i18n/messages'); return { getServerT: async () => translator('en'), getServerLanguage: async () => 'en' }; });
 const proxy=vi.hoisted(()=>vi.fn().mockResolvedValue(new Response('{}')));
 vi.mock('@/lib/workspace/workspace-api',()=>({UUID:/^[a-f0-9-]{36}$/i,isSameOrigin:()=>true,workspaceJsonResponse:proxy}));
 import {GET} from './route';

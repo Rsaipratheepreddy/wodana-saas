@@ -1,12 +1,14 @@
 import { invalidRequest, isSameOrigin, UUID, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 export async function GET(request: Request) {
+  const t = await getServerT();
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
   const cursor = url.searchParams.get("cursor");
-  if (!UUID.test(workspaceId)) return invalidRequest("A valid workspace is required.");
+  if (!UUID.test(workspaceId)) return invalidRequest(t("A valid workspace is required."));
   if (cursor && (cursor.length > 500 || !/^[A-Za-z0-9_-]+$/.test(cursor))) {
-    return invalidRequest("The leads cursor is invalid.");
+    return invalidRequest(t("The leads cursor is invalid."));
   }
 
   const query = new URLSearchParams({ limit: "100" });
@@ -14,14 +16,15 @@ export async function GET(request: Request) {
   return workspaceJsonResponse(
     `/workspaces/${workspaceId}/crm/leads?${query}`,
     { method: "GET" },
-    "Leads could not be loaded.",
+    t("Leads could not be loaded."),
   );
 }
 
 export async function POST(request: Request) {
-  if (!isSameOrigin(request)) return Response.json({ message: "This request must come from your workspace." }, { status: 403 });
+  const t = await getServerT();
+  if (!isSameOrigin(request)) return Response.json({ message: t("This request must come from your workspace.") }, { status: 403 });
   const raw = await request.text();
-  if (raw.length > 30000) return invalidRequest("The enquiry is too large.");
+  if (raw.length > 30000) return invalidRequest(t("The enquiry is too large."));
   const body = await Promise.resolve().then(() => JSON.parse(raw)).catch(() => null) as Record<string, unknown> | null;
   const workspaceId = typeof body?.workspaceId === "string" ? body.workspaceId : "";
   const requestId = typeof body?.requestId === "string" ? body.requestId : "";
@@ -38,19 +41,19 @@ export async function POST(request: Request) {
   const emirate = typeof details.emirate === "string" ? details.emirate.trim() : "";
 
   if (!UUID.test(workspaceId) || !UUID.test(requestId)) {
-    return invalidRequest("A valid workspace and request identifier are required.");
+    return invalidRequest(t("A valid workspace and request identifier are required."));
   }
   if (!displayName || displayName.length > 240 || title.length > 240) {
-    return invalidRequest("Enter a valid customer name and an optional title up to 240 characters.");
+    return invalidRequest(t("Enter a valid customer name and an optional title up to 240 characters."));
   }
   if (email && (email.length > 500 || !/^\S+@\S+\.\S+$/.test(email))) {
-    return invalidRequest("Enter a valid email address.");
+    return invalidRequest(t("Enter a valid email address."));
   }
   if (phone.length > 80 || summary.length > 10_000) {
-    return invalidRequest("The phone number or enquiry notes are too long.");
+    return invalidRequest(t("The phone number or enquiry notes are too long."));
   }
-  if (!source || !channel || !serviceType) return invalidRequest("Select a source, channel and enquiry type.");
-  if (!mobile || !emirate) return invalidRequest("Enter a mobile number and select an emirate.");
+  if (!source || !channel || !serviceType) return invalidRequest(t("Select a source, channel and enquiry type."));
+  if (!mobile || !emirate) return invalidRequest(t("Enter a mobile number and select a region."));
   const extraContact = Object.fromEntries(["mobile", "mobileCountryCode", "phoneCountryCode", "company", "jobPosition", "website", "address"].flatMap(key => typeof body?.[key] === "string" ? [[key, body[key]]] : []));
 
   return workspaceJsonResponse(
@@ -79,6 +82,6 @@ export async function POST(request: Request) {
         originalPayload: { origin: "wodana_leads_ui" },
       }),
     },
-    "The lead could not be created.",
+    t("The lead could not be created."),
   );
 }

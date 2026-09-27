@@ -7,6 +7,9 @@ import { QuotationCover } from "./quotation-cover";
 import { BrandLogo } from "./brand-logo";
 import d from "./quotation-studio.module.css";
 import {referenceItemGroups} from '@/lib/commercial/quotation-reference-template';
+import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, translatorFor, type Translate } from "@/lib/i18n/keys";
+import { formatDate, useDesignSystem } from "@/design-system";
 
 export type DocumentPage = {
   id: string;
@@ -15,9 +18,9 @@ export type DocumentPage = {
   room?: string;
   lines?: QuoteLine[];
 };
-export function quotationPages(q: Quote): DocumentPage[] {
+export function quotationPages(q: Quote, t: Translate = translatorFor({})): DocumentPage[] {
   const pages: DocumentPage[] = [
-    { id: "cover", kind: "cover", title: "Cover" },
+    { id: "cover", kind: "cover", title: t("Cover") },
   ];
   const reference=q.presentation?.template==='palm-reference-v1';
   const groups=reference?referenceItemGroups(q.lines):Array.from({length:Math.max(1,Math.ceil(q.lines.length/3))},(_,index)=>({start:index*3,count:3}));
@@ -25,22 +28,22 @@ export function quotationPages(q: Quote): DocumentPage[] {
     pages.push({
       id: `items:${start}`,
       kind: q.presentation?.template==='palm-reference-v1'?"custom":"room",
-      title: start ? `Scope & Items · ${groups.findIndex(group=>group.start===start)+1}` : "Scope & Items",
+      title: start ? t("Scope & Items · {number}", { number: groups.findIndex(group=>group.start===start)+1 }) : t("Scope & Items"),
       lines: q.lines.slice(start, start + count),
     });
   const all: DocumentPage[] = [
     ...pages,
-    { id: "summary", kind: "summary", title: "Summary" },
-    { id: "payments", kind: "payments", title: "Payment schedule" },
-    { id: "terms", kind: "terms", title: "Terms & scope" },
-    { id: "acceptance", kind: "acceptance", title: "Acceptance" },
-    ...(q.presentation?.pages.filter(page => page.kind === "custom" && !page.id.startsWith("items:") && !["cover","summary","payments","terms","acceptance"].includes(page.id)).map(page => ({ id: page.id, kind: "custom" as const, title: page.title || "Custom page" })) ?? []),
+    { id: "summary", kind: "summary", title: t("Summary") },
+    { id: "payments", kind: "payments", title: t("Payment schedule") },
+    { id: "terms", kind: "terms", title: t("Terms & scope") },
+    { id: "acceptance", kind: "acceptance", title: t("Acceptance") },
+    ...(q.presentation?.pages.filter(page => page.kind === "custom" && !page.id.startsWith("items:") && !["cover","summary","payments","terms","acceptance"].includes(page.id)).map(page => ({ id: page.id, kind: "custom" as const, title: page.title || t("Custom page") })) ?? []),
   ];
   const rendered = all.map(page => q.presentation?.pages.some(override => override.id === page.id && override.kind === "custom") ? { ...page, kind: "custom" as const } : page);
   const ordered = q.presentation?.pageOrder
     ? q.presentation.pageOrder.flatMap(id => id === "scope" ? rendered.filter(page => page.id.startsWith("items:")) : rendered.filter(page => page.id === id))
     : rendered;
-  return ordered.filter(page=>!q.presentation?.hiddenPages?.includes(page.id)&&!(page.id.startsWith("items:")&&q.presentation?.hiddenPages?.includes("scope"))).map((page,index)=>reference?{...page,title:page.id.startsWith('items:')?'Scope & Items':`Page ${index+1}`}:page);
+  return ordered.filter(page=>!q.presentation?.hiddenPages?.includes(page.id)&&!(page.id.startsWith("items:")&&q.presentation?.hiddenPages?.includes("scope"))).map((page,index)=>reference?{...page,title:page.id.startsWith('items:')?t('Scope & Items'):t('Page {number}',{number:index+1})}:page);
 }
 
 export function QuotationDocumentPage({
@@ -66,6 +69,8 @@ export function QuotationDocumentPage({
   onAdd: (room: string) => void;
   preview: boolean;
 }) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const selectedOptionIds = new Set(quote.clientDecision?.selectedOptionLineIds ?? []),
     totals = quote.status === "accepted" ? acceptedQuoteTotals(quote) : quoteTotals(quote),
     rooms = [...new Set([...(quote.rooms ?? []).map(r => r.name), ...quote.lines.map((l) => l.room)])].filter(room => quote.lines.some(l => l.room === room));
@@ -84,33 +89,32 @@ export function QuotationDocumentPage({
   return (
     <article
       className={d.documentPage}
-      aria-label={`${page.title} document page`}
+      aria-label={t("{title} document page", { title: page.title })}
     >
       <header className={d.documentHeader}>
-        {brand ? <BrandLogo brand={brand} /> : <strong>Quotation</strong>}
+        {brand ? <BrandLogo brand={brand} /> : <strong>{t("Quotation")}</strong>}
         <span>
-          QUOTATION<strong>QT-{quote.id.slice(0, 8).toUpperCase()}</strong>
-          <small>Version {quote.number}</small>
+          {t("QUOTATION")}<strong>QT-{quote.id.slice(0, 8).toUpperCase()}</strong>
+          <small>{t("Version {number}", { number: quote.number })}</small>
         </span>
       </header>
       <div className={d.documentBody}>
         <span className={d.eyebrow}>
-          {page.kind === "room"
+          {t(page.kind === "room"
             ? "Estimate proposal · item schedule"
-            : "Your project, clearly defined"}
+            : "Your project, clearly defined")}
         </span>
         <h2>{page.title}</h2>
         {page.kind === "room" && (
           <>
             <div className={d.roomCaption}>
               <span>
-                {page.lines?.length}{" "}
-                {page.lines?.length === 1 ? "item" : "items"} · {quote.currency}
+                {t(page.lines?.length === 1 ? "{count} item · {currency}" : "{count} items · {currency}", { count: page.lines?.length ?? 0, currency: quote.currency })}
               </span>
               {!preview && (
                 <button onClick={() => onAdd(page.lines?.[0]?.room ?? "General")}>
                   <Plus size={13} />
-                  Add item
+                  {t("Add item")}
                 </button>
               )}
             </div>
@@ -122,16 +126,16 @@ export function QuotationDocumentPage({
               </colgroup>
               <thead>
                 <tr>
-                  <th>SN</th>
-                  <th>Description of item</th>
-                  <th>Inspiration</th>
-                  <th>Length</th>
-                  <th>Height</th>
-                  <th>Depth</th>
-                  <th>Materials requested</th>
-                  <th>Qty</th>
-                  <th>Unit price</th>
-                  <th>Total amount</th>
+                  <th>{t("SN")}</th>
+                  <th>{t("Description of item")}</th>
+                  <th>{t("Inspiration")}</th>
+                  <th>{t("Length")}</th>
+                  <th>{t("Height")}</th>
+                  <th>{t("Depth")}</th>
+                  <th>{t("Materials requested")}</th>
+                  <th>{t("Qty")}</th>
+                  <th>{t("Unit price")}</th>
+                  <th>{t("Total amount")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -149,21 +153,21 @@ export function QuotationDocumentPage({
                       ) : (
                         <button
                           className={d.documentItem}
-                          aria-label={`Edit ${line.title}`}
+                          aria-label={t("Edit {title}", { title: line.title })}
                           onClick={() => onSelect(line.id)}
                         >
                           <strong>{line.title}</strong>
                           <Pencil size={12} />
                         </button>
                       )}
-                      {line.optional ? <small>{selectedOptionIds.has(line.id) ? "Selected option · included in accepted total" : "Option · not included in total"}</small> : null}
+                      {line.optional ? <small>{t(selectedOptionIds.has(line.id) ? "Selected option · included in accepted total" : "Option · not included in total")}</small> : null}
                       {line.variant ? <small>{line.variant}</small> : null}
                       <small>{line.room}</small>
                     </td>
-                    <td>{line.photo ? <img className={d.itemImage} src={line.photo} alt={`Inspiration for ${line.title}`} /> : <span>—</span>}</td>
-                    <td>{line.dimensions?.length != null ? `L ${line.dimensions.length} ${line.dimensions.unit}` : "—"}</td>
-                    <td>{line.dimensions?.height != null ? `H ${line.dimensions.height} ${line.dimensions.unit}` : "—"}</td>
-                    <td>{line.dimensions?.depth != null ? `D ${line.dimensions.depth} ${line.dimensions.unit}` : "—"}</td>
+                    <td>{line.photo ? <img className={d.itemImage} src={line.photo} alt={t("Inspiration for {title}", { title: line.title })} /> : <span>—</span>}</td>
+                    <td>{line.dimensions?.length != null ? t("L {value} {unit}", { value: line.dimensions.length, unit: line.dimensions.unit }) : "—"}</td>
+                    <td>{line.dimensions?.height != null ? t("H {value} {unit}", { value: line.dimensions.height, unit: line.dimensions.unit }) : "—"}</td>
+                    <td>{line.dimensions?.depth != null ? t("D {value} {unit}", { value: line.dimensions.depth, unit: line.dimensions.unit }) : "—"}</td>
                     <td>
                       {line.catalogLinks?.find((l) => l.role === "variant") && (
                         <small>
@@ -174,16 +178,16 @@ export function QuotationDocumentPage({
                         </small>
                       )}
                       <div className={d.materialText}>
-                        {quotationDescription(line) || "As specified"}
+                        {quotationDescription(line) || t("As specified")}
                       </div>
                       {!preview && (
                         <button
                           className={d.editMaterial}
-                          aria-label={`Edit material for ${line.title}`}
+                          aria-label={t("Edit material for {title}", { title: line.title })}
                           onClick={() => onSelect(line.id, true)}
                         >
                           <Pencil size={11} />
-                          Edit materials
+                          {t("Edit materials")}
                         </button>
                       )}
                     </td>
@@ -211,20 +215,20 @@ export function QuotationDocumentPage({
             </table>
             {!page.lines?.length && (
               <p className={d.emptyDocument}>
-                Add the first quoted item from the Items view.
+                {t("Add the first quoted item from the Items view.")}
               </p>
             )}
             <div className={d.roomTotal}>
               <span>
-                Items subtotal
-                {quote.lines.length !== page.lines?.length
-                  ? " · all item pages"
-                  : ""}
+                {t(quote.lines.length !== page.lines?.length
+                  ? "Items subtotal · all item pages"
+                  : "Items subtotal")}
               </span>
               <strong>
                 {money(
                   quoteTotals({ ...quote, discount: 0, taxRate: 0, lines: quote.lines.map(line => line.optional && selectedOptionIds.has(line.id) ? {...line, optional:false} : line) }).total,
                   quote.currency,
+                  locale,
                 )}
               </strong>
             </div>
@@ -233,14 +237,14 @@ export function QuotationDocumentPage({
         {page.kind === "summary" && (
           <>
             <p className={d.documentIntro}>
-              The investment for your space, room by room.
+              {t("The investment for your space, room by room.")}
             </p>
             <table className={d.documentTable}>
               <thead>
                 <tr>
-                  <th>Room</th>
-                  <th>Items</th>
-                  <th>Amount</th>
+                  <th>{t("Room")}</th>
+                  <th>{t("Items")}</th>
+                  <th>{t("Amount")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -257,6 +261,7 @@ export function QuotationDocumentPage({
                           lines: quote.lines.filter((l) => l.room === room).map(line => line.optional && selectedOptionIds.has(line.id) ? {...line, optional:false} : line),
                         }).total,
                         quote.currency,
+                        locale,
                       )}
                     </td>
                   </tr>
@@ -265,65 +270,66 @@ export function QuotationDocumentPage({
             </table>
             <dl className={d.documentTotals}>
               <div>
-                <dt>Subtotal</dt>
-                <dd>{money(totals.subtotal, quote.currency)}</dd>
+                <dt>{t("Subtotal")}</dt>
+                <dd>{money(totals.subtotal, quote.currency, locale)}</dd>
               </div>
               {quote.discount > 0 && (
                 <div>
-                  <dt>Discount</dt>
-                  <dd>−{money(quote.discount, quote.currency)}</dd>
+                  <dt>{t("Discount")}</dt>
+                  <dd>−{money(quote.discount, quote.currency, locale)}</dd>
                 </div>
               )}
               <div>
-                <dt>Tax · {quote.taxRate}%</dt>
-                <dd>{money(totals.tax, quote.currency)}</dd>
+                <dt>{t("Tax · {rate}%", { rate: quote.taxRate })}</dt>
+                <dd>{money(totals.tax, quote.currency, locale)}</dd>
               </div>
               <div>
                 <dt>
-                  {quote.direction === "deduction"
+                  {t(quote.direction === "deduction"
                     ? "Client credit"
-                    : quote.status === "accepted" ? "Accepted total" : "Quotation total"}
+                    : quote.status === "accepted" ? "Accepted total" : "Quotation total")}
                 </dt>
-                <dd>{money(totals.total, quote.currency)}</dd>
+                <dd>{money(totals.total, quote.currency, locale)}</dd>
               </div>
             </dl>
           </>
         )}
         {page.kind === "payments" &&
           (quote.direction === "deduction" ? (
-            <p>Client credit · {money(totals.total, quote.currency)}</p>
+            <p>{t("Client credit · {amount}", { amount: money(totals.total, quote.currency, locale) })}</p>
           ) : (
             <>
               <p className={d.documentIntro}>
-                Payments are linked to the agreed milestones below.
+                {t("Payments are linked to the agreed milestones below.")}
               </p>
               <table className={d.documentTable}>
                 <thead>
                   <tr>
-                    <th>Milestone</th>
-                    <th>When due</th>
+                    <th>{t("Milestone")}</th>
+                    <th>{t("When due")}</th>
                     <th>%</th>
-                    <th>Amount</th>
+                    <th>{t("Amount")}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {quote.paymentTerms.map((t, i) => (
-                    <tr key={t.id}>
+                  {quote.paymentTerms.map((term, i) => (
+                    <tr key={term.id}>
                       <td>
-                        <strong>{t.title || "Milestone"}</strong>
-                        {t.requiredForRelease && (
-                          <small>Before project release</small>
+                        <strong>{term.title || t("Milestone")}</strong>
+                        {term.requiredForRelease && (
+                          <small>{t("Before project release")}</small>
                         )}
-                        {t.requiredForProduction && (
-                          <small>Before manufacturing starts</small>
+                        {term.requiredForProduction && (
+                          <small>{t("Before manufacturing starts")}</small>
                         )}
                       </td>
-                      <td>{t.trigger}</td>
-                      <td>{t.percent}%</td>
+                      <td>{term.trigger}</td>
+                      <td>{term.percent}%</td>
                       <td>
                         {money(
                           paymentMilestoneAmounts(totals.total, quote.paymentTerms)[i],
                           quote.currency,
+                          locale,
                         )}
                       </td>
                     </tr>
@@ -332,20 +338,20 @@ export function QuotationDocumentPage({
               </table>
               {!quote.paymentTerms.length && (
                 <p className={d.emptyDocument}>
-                  No payment schedule added yet.
+                  {t("No payment schedule added yet.")}
                 </p>
               )}
             </>
           ))}
         {page.kind === "terms" && (
           <div className={d.documentTerms}>
-            {[
-              ["Included", quote.inclusions],
-              ["Excluded", quote.exclusions],
-              ["Terms & conditions", quote.terms],
-            ].map(([label, content]) => (
+            {([
+              [tKey("Included"), quote.inclusions],
+              [tKey("Excluded"), quote.exclusions],
+              [tKey("Terms & conditions"), quote.terms],
+            ] as const).map(([label, content]) => (
               <section key={label}>
-                <h3>{label}</h3>
+                <h3>{t(label)}</h3>
                 <p>{content || "—"}</p>
               </section>
             ))}
@@ -354,22 +360,23 @@ export function QuotationDocumentPage({
         {page.kind === "acceptance" && (
           <>
             <p className={d.documentIntro}>
-              Review the scope, selected materials, prices and payment schedule
-              before confirming this version.
+              {t("Review the scope, selected materials, prices and payment schedule before confirming this version.")}
             </p>
             <div className={d.acceptance}>
               <ShieldCheck size={28} />
               <h3>
-                {quote.status === "accepted"
+                {t(quote.status === "accepted"
                   ? "Quotation accepted"
-                  : "Client acceptance"}
+                  : "Client acceptance")}
               </h3>
               <p>
                 {quote.status === "accepted"
-                  ? `Accepted by ${quote.decidedBy ?? "the client"}${quote.decidedAt ? ` on ${new Date(quote.decidedAt).toLocaleDateString("en-GB")}` : ""}.`
-                  : "Your client can approve this quotation or request changes through the client portal after it is issued."}
+                  ? quote.decidedAt
+                    ? t("Accepted by {name} on {date}.", { name: quote.decidedBy ?? t("the client"), date: formatDate(quote.decidedAt, { locale, timeZone }, { dateStyle: "short" }) })
+                    : t("Accepted by {name}.", { name: quote.decidedBy ?? t("the client") })
+                  : t("Your client can approve this quotation or request changes through the client portal after it is issued.")}
               </p>
-              <strong>{money(quote.clientDecision?.acceptedTotal ?? totals.total, quote.currency)}</strong>
+              <strong>{money(quote.clientDecision?.acceptedTotal ?? totals.total, quote.currency, locale)}</strong>
             </div>
           </>
         )}
@@ -394,7 +401,8 @@ function DocumentAmount({
   value: number;
   currency: string;
 }) {
-  const formatted = new Intl.NumberFormat("en", {
+  const { locale } = useDesignSystem();
+  const formatted = new Intl.NumberFormat(locale, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);

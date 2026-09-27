@@ -8,6 +8,7 @@ import { projectPath } from "@/lib/projects/execution";
 import type { PortfolioRow } from "../projects/project-portfolio";
 import type { PreProjectList } from "@/lib/pre-project/types";
 import styles from "./project-shortcuts.module.css";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 const changeEvent = "wodana-project-shortcuts";
 function subscribe(callback: () => void) {
@@ -17,6 +18,7 @@ function subscribe(callback: () => void) {
 type Choice = { id: string; label: string; title: string; href: string };
 
 export function ProjectShortcuts({ workspaceId, pathname, visible, onNavigate }: { workspaceId: string; pathname: string; visible: boolean; onNavigate?: () => void }) {
+  const t = useT();
   const key = `wodana:project-shortcuts:${workspaceId}`;
   const stored = useSyncExternalStore(subscribe, () => { try { return localStorage.getItem(key) ?? "[]"; } catch { return "[]"; } }, () => "[]");
   const ids = useMemo<string[]>(() => { try { const value = JSON.parse(stored); return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string").slice(0, 30) : []; } catch { return []; } }, [stored]);
@@ -61,7 +63,7 @@ export function ProjectShortcuts({ workspaceId, pathname, visible, onNavigate }:
   return <div className={styles.shortcuts}>
     {ids.map(id => choices?.find(choice => choice.id === id)).filter((item): item is Choice => Boolean(item)).map(item => <div className={styles.row} key={item.id}>
       <Link href={item.href} title={item.title} aria-current={pathname.startsWith(item.href.replace(/\/overview$/, "")) ? "page" : undefined} tabIndex={visible ? undefined : -1} onClick={onNavigate}>{item.title}</Link>
-      <button type="button" aria-label={`Remove ${item.title} from sidebar`} tabIndex={visible ? undefined : -1} onClick={() => save(ids.filter(id => id !== item.id))}><X size={12} /></button>
+      <button type="button" aria-label={t("Remove {name} from sidebar", { name: item.title })} tabIndex={visible ? undefined : -1} onClick={() => save(ids.filter(id => id !== item.id))}><X size={12} /></button>
     </div>)}
   </div>;
 }

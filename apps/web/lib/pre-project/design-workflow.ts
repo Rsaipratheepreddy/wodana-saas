@@ -1,10 +1,11 @@
 import type { CaseDesign } from "./content";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 
 export const designTabs = [
-  { id: "designs", label: "Designs" },
-  { id: "internal-approval", label: "Internal approval" },
-  { id: "client-approval", label: "Client approval" },
-  { id: "approved", label: "Approved" },
+  { id: "designs", label: tKey("Designs") },
+  { id: "internal-approval", label: tKey("Internal approval") },
+  { id: "client-approval", label: tKey("Client approval") },
+  { id: "approved", label: tKey("Approved") },
 ] as const;
 export type DesignTab = (typeof designTabs)[number]["id"];
 export function designStage(status?: string): DesignTab {
@@ -18,27 +19,27 @@ export function designStage(status?: string): DesignTab {
 export function inDesignTab(design: CaseDesign, tab: DesignTab) {
   return tab === "designs" || designStage(design.versions[0]?.status) === tab;
 }
-export const designStateLabels: Record<string, string> = {
-  draft: "Draft",
-  internal_review: "Needs internal review",
-  internal_approved: "Ready to send to client",
-  client_review: "Awaiting client",
-  approved: "Approved",
-  changes_requested: "Changes requested",
-  rejected: "Rejected",
-  expired: "Review expired",
-  superseded: "Superseded",
-  no_file: "File needed",
+export const designStateLabels: Record<string, MessageKey> = {
+  draft: tKey("Draft"),
+  internal_review: tKey("Needs internal review"),
+  internal_approved: tKey("Ready to send to client"),
+  client_review: tKey("Awaiting client"),
+  approved: tKey("Approved"),
+  changes_requested: tKey("Changes requested"),
+  rejected: tKey("Rejected"),
+  expired: tKey("Review expired"),
+  superseded: tKey("Superseded"),
+  no_file: tKey("File needed"),
 };
-export const designTabHints: Record<DesignTab, string> = {
+export const designTabHints: Record<DesignTab, MessageKey> = {
   designs:
-    "All your design files, organized by room or item. Files stay here through every review.",
+    tKey("All your design files, organized by room or item. Files stay here through every review."),
   "internal-approval":
-    "Review submitted files, then send internally approved revisions to the client.",
+    tKey("Review submitted files, then send internally approved revisions to the client."),
   "client-approval":
-    "Shared with the client. Their portal decision updates the file here automatically.",
+    tKey("Shared with the client. Their portal decision updates the file here automatically."),
   approved:
-    "Latest revisions approved by the client. Earlier decisions remain in each file’s history.",
+    tKey("Latest revisions approved by the client. Earlier decisions remain in each file’s history."),
 };
 /** A background read started before a save must never roll that save back. */
 export function mergeDesigns(current: CaseDesign[], incoming: CaseDesign[]) {

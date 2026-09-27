@@ -25,7 +25,7 @@ const toDraft = (settings: PortalSettings, country: string): Draft => ({
 export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
   const t = useT();
   const labels = usePortalLabels();
-  const api = useMemo(() => staffPortalApi(workspaceId), [workspaceId]);
+  const api = useMemo(() => staffPortalApi(workspaceId, t), [workspaceId, t]);
   const [site, setSite] = useState<PortalSite | null>(null);
   const [saved, setSaved] = useState<Draft | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
