@@ -328,7 +328,7 @@ export const tours: Tour[] = [
         target: "home-widget-attention",
         action: "point",
         woddy: "thinking",
-        narration: "Needs attention is your list for today: follow-ups that are due and clients waiting for a reply. Work from the top, and nobody is left waiting for a call back.",
+        narration: "Today is your list: what's late first, then what's due today, then what waits on your decision. Each row has one button that deals with it.",
       },
       {
         id: "sales",
@@ -356,7 +356,7 @@ export const tours: Tour[] = [
         target: "home-edit",
         action: "point",
         woddy: "hello",
-        narration: "And Home is yours to shape. Edit Home lets each person choose the widgets they care about, so an owner and a site supervisor each see their own day.",
+        narration: "And search is always here: type a client, a quote or a project and jump straight to it. Home follows your role, so an owner and a site supervisor each see their own day.",
       },
       {
         id: "recap",

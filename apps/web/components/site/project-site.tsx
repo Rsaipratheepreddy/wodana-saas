@@ -40,7 +40,8 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
   const [state, setState] = useState<SiteState | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [editing, setEditing] = useState<SiteReport | "new" | null>(null);
+  // Home's "Site report" opens a new report on arrival (`?new=report`) for someone who reports on this project.
+  const [editing, setEditing] = useState<SiteReport | "new" | null>(() => params?.get("new") === "report" ? "new" : null);
   const [returning, setReturning] = useState<SiteReport | null>(null);
   const load = useCallback(async () => {
     try { setState(await api.state()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The site didn't load.")); }
@@ -136,7 +137,7 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
     </section> : null}
     {!state.reports.length ? <EmptyState illustration={null} title={t("No site reports yet")} description={t("Each day on site: who worked, what was installed and photos.")} />
       : <section className={styles.stack} aria-label={t("Reports")}><ul className={styles.reports}>{state.reports.filter((report) => !waiting.includes(report)).map(card)}</ul></section>}
-    {editing ? <ReportDialog state={state} report={editing === "new" ? null : editing} onClose={() => setEditing(null)}
+    {editing && (editing !== "new" || state.canReport) ? <ReportDialog state={state} report={editing === "new" ? null : editing} onClose={() => setEditing(null)}
       onSave={async (input, photos, submit) => {
         const id = editing === "new" ? crypto.randomUUID() : editing.id;
         const version = editing === "new" ? undefined : editing.version;

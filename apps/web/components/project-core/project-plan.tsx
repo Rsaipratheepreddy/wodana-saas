@@ -40,7 +40,8 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [who, setWho] = useState<string>("everyone");
-  const [creating, setCreating] = useState(false);
+  // Home's "New task" opens the new-task dialog on arrival (`?new=task`).
+  const [creating, setCreating] = useState(() => params.get("new") === "task");
   const requested = params.get("view");
   const view: View = VIEWS.includes(requested as View) ? requested as View : "list";
   const [sprintFilter, setSprintFilter] = useState<string>("all");
@@ -158,7 +159,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
         try { setBoard(await api.workCommand(projectId, "plan_package", { packageId, startDate })); return true; }
         catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
       }} /> : null}
-    {creating ? <NewWorkDialog board={board} onClose={() => setCreating(false)} onCreate={async (input) => {
+    {creating && board.canEdit ? <NewWorkDialog board={board} onClose={() => setCreating(false)} onCreate={async (input) => {
       try { setBoard(await api.workCommand(projectId, "create", input)); return true; }
       catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
     }} /> : null}
