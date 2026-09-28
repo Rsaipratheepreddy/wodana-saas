@@ -694,6 +694,20 @@
       "when": 1801160600000,
       "tag": "0155_ai_credit_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1801170000000,
+      "tag": "0152_operations_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1801170000001,
+      "tag": "0153_factory_rework",
+      "breakpoints": true
     }
   ]
 }

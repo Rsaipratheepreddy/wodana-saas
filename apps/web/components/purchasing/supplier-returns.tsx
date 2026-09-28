@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, type DataGridColumn } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import { addExact } from "@/lib/purchasing/amounts";
@@ -14,7 +14,7 @@ import styles from "./purchasing.module.css";
 export function ReturnStatus({ row }: { row: Pick<SupplierReturnRow, "status"> }) {
   const t = useT();
   const label = row.status === "open" ? t("Waiting for pickup") : row.status === "sent" ? t("Gone back") : t("Cancelled");
-  return <span className={styles.orderStatus} data-status={row.status === "open" ? "pending_approval" : row.status === "sent" ? "confirmed" : "cancelled"}>{label}</span>;
+  return <Badge tone={row.status === "open" ? "warning" : row.status === "sent" ? "success" : "neutral"}>{label}</Badge>;
 }
 
 /** Goods going back to suppliers, the ones waiting for pickup first. A row opens the return. */

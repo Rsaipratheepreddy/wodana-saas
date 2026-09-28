@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Checkbox, ControlledModalDialog, FileUploader, InlineNotice, SelectField, Skeleton } from "@/design-system";
+import { Badge, Button, Checkbox, ControlledModalDialog, FileUploader, InlineNotice, SelectField, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { readCatalogImportFile } from "@/lib/workspace/catalog-import-file";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import { guessCompany, readSupplierSheet, supplierRows, type SupplierColumn, type SupplierSheet } from "@/lib/purchasing/import";
 import type { SupplierImportPlan, SupplierState } from "@/lib/purchasing/types";
-import { useSupplierLabels } from "./supplier-labels";
+import { APPROVAL_TONE, useSupplierLabels } from "./supplier-labels";
 import styles from "./purchasing.module.css";
 
 type Sheet = SupplierSheet & { use: boolean; entityId: string | null };
@@ -80,7 +80,7 @@ export function SupplierImport({ api, state, onClose, onImported }: { api: Purch
             {plan.plan.map((item) => <li key={item.name}>
               <span className={styles.nameCell}><span>{item.name}</span><small>{item.categories.join(", ")}</small></span>
               <span className={styles.muted}>{item.action === "merge" ? t("Already in the register") : t("New")}</span>
-              <span className={styles.approval} data-approval={item.approval}>{labels.approval[item.approval]}</span>
+              <Badge tone={APPROVAL_TONE[item.approval]}>{labels.approval[item.approval]}</Badge>
               <span className={styles.muted}>{labels.termsText(item)}</span>
             </li>)}
           </ul>

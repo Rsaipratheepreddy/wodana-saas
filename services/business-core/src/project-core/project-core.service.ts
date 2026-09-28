@@ -20,6 +20,7 @@ import {
   readTemplates, setRole, writeTemplate, type ProjectRow, type StageRow, type TeamMember,
 } from "./project-core.store";
 import { tellScopeChanges } from "../factory/factory-changes";
+import { tellOverOrdered } from "../purchasing/purchasing-changes";
 import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeout";
 import { readProgress } from "./project-work";
 import { noticeProject, type ProjectNotice } from "./project-notices";
@@ -559,6 +560,8 @@ export class ProjectCoreService {
         await applyVariation(client, workspaceId, projectId, { id: sealId, label }, scope.lines, user.userId);
         // Work orders the variation removed or reduced stop; the factory hears which.
         await tellScopeChanges(client, workspaceId, projectId, user.userId, sealId);
+        // Orders it leaves past what the project needs: the people who buy hear which (D-41).
+        await tellOverOrdered(client, workspaceId, projectId, user.userId, { id: sealId, label });
         notices.push({ key: `variation:${quote.id}`, notice: { code: "project.variation_applied", variation: label, amount: `${scope.quote.currency} ${scope.pricing.total}`, memberships: teamIds() } });
         audit = { quoteId: quote.id, label, total: scope.pricing.total };
       } else if (["confirm_check", "unconfirm_check", "complete_stage", "skip_stage", "reopen_stage"].includes(action)) {

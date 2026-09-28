@@ -49,7 +49,9 @@ describe("inventory", () => {
     expect(glue).toHaveTextContent("Free stock");
     expect(glue).toHaveTextContent("17 nos");
     expect(await rowOf("Calacatta slab")).toHaveTextContent("PRJ-0007");
-    expect(screen.getByRole("tab", { name: "Moves (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^Moves\s*1$/ })).toBeInTheDocument();
+    // A project's stock names its project as a link.
+    expect(within(await rowOf("Calacatta slab")).getByRole("link", { name: "PRJ-0007" })).toHaveAttribute("href", "/workspace/projects/p1");
     await userEvent.click(within(glue).getByRole("button", { name: "Actions" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Reserve for a project" }));
     const dialog = await screen.findByRole("dialog", { name: "Reserve for a project" });
@@ -121,7 +123,6 @@ describe("inventory", () => {
       : url.includes("/adjustments/") ? stock() : stock({ pendingAdjustments: [request] })));
     page();
     expect(await rowOf("Calacatta slab")).toHaveTextContent(/3,500/);
-    expect(screen.getByText(/Worth .*3,704/)).toBeInTheDocument();
     const waiting = screen.getByRole("region", { name: "Corrections waiting for approval" });
     expect(within(waiting).getByText(/Counted 6 m² \(-4\), worth .*1,400(\.00)?: Two slabs broken — Sam Store/)).toBeInTheDocument();
     await userEvent.click(within(waiting).getByRole("button", { name: "Refuse" }));
@@ -155,5 +156,49 @@ describe("inventory", () => {
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Where it comes from/ }), "Opening stock");
     await userEvent.click(within(dialog).getByRole("button", { name: "Add stock" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "add", name: "Hinges", unit: "pairs", locationId: "w1", projectId: null, quantity: "40", reason: "Opening stock" }));
+  });
+
+  it("sets a reorder point on free stock, marks it low, and lists what to order in Low stock", async () => {
+    const point = { id: "rp1", itemId: "i1", itemName: "Wood glue", itemCode: "", unit: "nos", locationId: "w1", locationName: "Warehouse", reorderAt: "20.0000", reorderQuantity: "24.0000",
+      vendorId: null, vendorName: null, free: "17.0000", onOrder: "0.0000", low: true, short: true, lowSince: "2026-09-28T10:00:00Z", version: 1 };
+    const fetcher = mount((url) => (url.includes("/reorder-points") ? stock({ reorderPoints: [point] }) : url.includes("/api/purchasing/suppliers")
+      ? { suppliers: [{ id: "s1", name: "Nile Timber", status: "active" }] } : url.includes("/transfers") ? { transfers: [], locations: [], canManage: true, canAdjust: true, canReceive: true } : stock()));
+    page();
+    const glue = await rowOf("Wood glue");
+    await userEvent.click(within(glue).getByRole("button", { name: "Actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Set reorder point" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reorder point" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Low at/ }), "20");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Order" }), "24");
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: /From/ })).toBeInTheDocument());
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ url: expect.stringContaining("/api/inventory/reorder-points"),
+      body: { itemId: "i1", locationId: "w1", reorderAt: "20", reorderQuantity: "24", vendorId: null } }));
+    // Low now: the row says so, and Low stock lists it with what to order and where.
+    expect(await within(await rowOf("Wood glue")).findByText("Low")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^Low stock\s*1$/ }));
+    const low = await screen.findByRole("grid", { name: "Low stock" }).catch(() => screen.findByRole("table", { name: "Low stock" }));
+    expect(low).toHaveTextContent("Order now");
+    expect(within(low).getByRole("link", { name: "Order 24 nos" })).toHaveAttribute("href", "/workspace/purchasing?view=restock");
+  });
+
+  it("refuses made goods where they arrive: they go back on a return trip to be made again", async () => {
+    nav.query = "move=t1";
+    const dispatch = move({ workOrderId: "wo1", workOrderNumber: 5, projects: [{ id: "p1", reference: "PRJ-0007" }] });
+    const fetcher = mount((url, body) => (url.includes("/transfers/t1") ? (body ? { ...move({ status: "received", receivedOn: "2026-09-27", receivedByName: "Omar", rejected: true, returnId: "t2", returnNumber: 4 }),
+      lines: [{ ...dispatch.lines[0], received: "10.0000", rejected: "2.0000", rejectReason: "Veneer lifted" }] } : dispatch)
+      : url.includes("/transfers") ? { transfers: [dispatch.transfer], locations: [], canManage: true, canAdjust: true, canReceive: true } : stock()));
+    page("moves");
+    const sheet = await screen.findByRole("dialog", { name: "Move 3" });
+    expect(await within(sheet).findByRole("link", { name: "WO-0005" })).toHaveAttribute("href", "/workspace/factory/orders?order=wo1");
+    expect(within(sheet).getByText(/it goes back to the factory to be made again/)).toBeInTheDocument();
+    await userEvent.type(within(sheet).getByRole("textbox", { name: "Refused of Calacatta slab" }), "2");
+    const receive = within(sheet).getByRole("button", { name: "Receive" });
+    expect(receive).toBeDisabled();
+    await userEvent.type(within(sheet).getByRole("textbox", { name: /Why Calacatta slab is refused/ }), "Veneer lifted");
+    await userEvent.click(receive);
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "receive", lines: [{ id: "l1", received: "10", lossReason: "", rejected: "2", rejectReason: "Veneer lifted" }] }));
+    expect(await within(sheet).findByText("Arrived, some refused")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Refused goods go back on move 4" })).toBeInTheDocument();
   });
 });

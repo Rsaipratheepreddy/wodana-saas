@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import {
+import { Badge,
   Button, ControlledModalDialog, DateField, EmptyState, FileUploader, InlineNotice, SelectField, Skeleton, Switch, Tabs, TextAreaField, TextInput,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -126,7 +126,7 @@ function Bank({ api, state, onState }: { api: PurchasingApi; state: SupplierCont
           <small>{[account.accountName, account.swift, account.currency, labels.source[account.source], t("by {name}", { name: account.requestedByName })].filter(Boolean).join(" · ")}</small>
           {account.callbackByName ? <small>{t("Called back by {name}: {note}", { name: account.callbackByName, note: account.callbackNote })}</small> : null}
           {account.rejectReason ? <small>{t("Refused: {reason}", { reason: account.rejectReason })}</small> : null}</span>
-        <span className={styles.orderStatus} data-status={account.status === "approved" ? "confirmed" : account.status === "pending" ? "pending_approval" : "cancelled"}>{labels.bank[account.status]}</span>
+        <Badge tone={account.status === "approved" ? "success" : account.status === "pending" ? "warning" : "neutral"}>{labels.bank[account.status]}</Badge>
         {account.status === "pending" && state.canApprove && !mine ? <span className={styles.filters}>
           {!account.callbackByName ? <Button size="compact" onPress={() => setDialog({ account, action: "callback" })}>{t("Record the call-back")}</Button>
             : <Button size="compact" variant="primary" onPress={() => void run(account, { action: "approve" })}>{t("Approve")}</Button>}
@@ -194,7 +194,7 @@ function Contracts({ api, state, onState }: { api: PurchasingApi; state: Supplie
         {contract.lines.map((line) => <small key={line.id}>{[`${line.itemName}: ${format.money(line.unitPrice, contract.currency)} / ${line.unit}`,
           line.packSize ? t("packs of {pack}", { pack: quantityText(line.packSize) }) : "", line.minimum ? t("at least {minimum}", { minimum: quantityText(line.minimum) }) : ""].filter(Boolean).join(" · ")}</small>)}
         {contract.cancelReason ? <small>{t("Cancelled: {reason}", { reason: contract.cancelReason })}</small> : null}</span>
-      <span className={styles.orderStatus} data-status={contract.state === "valid" ? "confirmed" : contract.state === "upcoming" ? "sent" : "cancelled"}>{stateLabel[contract.state]}</span>
+      <Badge tone={contract.state === "valid" ? "success" : contract.state === "upcoming" ? "info" : "neutral"}>{stateLabel[contract.state]}</Badge>
       {state.canManage && contract.status === "active" ? <Button size="compact" variant="quiet" onPress={() => setCancelling(contract.id)}>{t("Cancel")}</Button> : null}
     </li>)}</ul>}
     {state.canManage ? <div><Button size="compact" onPress={() => setAdding(true)}>{t("Add rate contract")}</Button></div> : null}

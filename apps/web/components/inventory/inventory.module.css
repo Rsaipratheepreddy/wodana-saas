@@ -1,5 +1,8 @@
 /* Inventory: stock by place, moves between places and the ledger. */
-.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; max-inline-size: 72rem; }
+.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; }
+.rowLink { color: var(--wd-color-action-primary); font-size: var(--wd-text-sm); white-space: nowrap; text-decoration: none; }
+.rowLink:hover { text-decoration: underline; }
+.rowLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
 .muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .spacer { flex: 1; }
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
@@ -29,6 +32,7 @@
 
 .lines { display: grid; min-inline-size: 0; }
 .lineHead, .line { display: grid; grid-template-columns: minmax(8rem, 1fr) 7rem 9rem; gap: var(--wd-space-2); align-items: center; }
+.lines[data-columns="4"] :is(.lineHead, .line) { grid-template-columns: minmax(8rem, 1fr) 6rem 8rem 7rem; }
 .lineHead { padding-block: var(--wd-space-1-5); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .line { padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
 .lineHead > :nth-child(n+2), .line > [role="cell"]:nth-child(n+2) { text-align: end; }
@@ -44,6 +48,6 @@
 @media (max-width: 640px) {
   .page { padding: var(--wd-space-4); }
   .pair { grid-template-columns: minmax(0, 1fr); }
-  .lineHead, .line { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lineHead, .line, .lines[data-columns="4"] :is(.lineHead, .line) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lineHead > :first-child, .line > :first-child { grid-column: 1 / -1; text-align: start; }
 }

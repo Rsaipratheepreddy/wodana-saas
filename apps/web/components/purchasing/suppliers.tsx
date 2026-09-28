@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Upload } from "lucide-react";
-import { Button, DataGrid, EmptyState, ErrorState, NoAccessState, MenuButton, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, EmptyState, ErrorState, NoAccessState, MenuButton, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { formatPhoneForDisplay } from "@/lib/phone";
 import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { Approval, Supplier, SupplierState } from "@/lib/purchasing/types";
-import { useSupplierLabels } from "./supplier-labels";
+import { APPROVAL_TONE, useSupplierLabels } from "./supplier-labels";
 import { SupplierImport } from "./supplier-import";
 import { SupplierSheet } from "./supplier-sheet";
 import styles from "./purchasing.module.css";
@@ -47,7 +47,7 @@ export function Suppliers({ api, adding, onAddingChange }: { api: PurchasingApi;
     { id: "name", header: t("Supplier"), accessorFn: (row) => row.name, size: 260, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{row.name}</span>{row.categories.length ? <small>{row.categories.join(", ")}</small> : null}</span> } },
     { id: "approval", header: t("Approval"), accessorFn: (row) => labels.approval[row.approval], size: 170, meta: { renderCell: (row) => <span className={styles.nameCell}>
-      <span className={styles.approval} data-approval={row.approval}>{labels.approval[row.approval]}</span>
+      <Badge tone={APPROVAL_TONE[row.approval]}>{labels.approval[row.approval]}</Badge>
       {row.preferredFor.length ? <small>{t("Preferred for {categories}", { categories: row.preferredFor.join(", ") })}</small> : null}</span> } },
     { id: "terms", header: t("Payment"), accessorFn: (row) => labels.termsText(row), size: 170 },
     { id: "deal", header: t("Deal"), accessorFn: (row) => labels.dealText(row), size: 140, meta: { mobileHidden: true } },
