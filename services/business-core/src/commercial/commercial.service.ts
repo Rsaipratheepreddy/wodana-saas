@@ -111,6 +111,7 @@ import type {
 import type { ProjectData } from "../projects/execution.types";
 import { ConfigurationRevisionsService } from "../workspaces/configuration-revisions.service";
 import type { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-configuration-revision.dto";
+import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
 
 /** Remove internal cost and margin truth without mutating the persisted commercial aggregate. */
 export function commercialDataForCostAccess(data: CommercialData, canViewCosts: boolean): CommercialData {
@@ -319,7 +320,18 @@ export class CommercialService {
       quoteId,
       note,
     });
+    const verifiedBefore = new Set((await client.query<{ id: string }>(
+      `SELECT id FROM commercial_payments WHERE workspace_id = $1 AND case_id = $2 AND status = 'verified'`, [workspaceId, caseId])).rows.map((row) => row.id));
     await commercialRepository.save(client, workspaceId, caseId, data);
+    // A payment verified in this save: the client gets the receipt on WhatsApp (once per payment).
+    const received = data.payments.filter((payment) => payment.status === "verified" && !verifiedBefore.has(payment.id));
+    if (received.length) {
+      const owner = await partyOfCase(client, workspaceId, caseId);
+      for (const payment of received) {
+        const result = await sendClientEvent(client, { workspaceId, event: "receivables.payment_received", partyId: owner.partyId, leadId: owner.leadId, recordKey: payment.id, record: { paymentId: payment.id }, config: this.config, actorUserId });
+        if (!result.sent) await recordClientMessageSkipped(client, workspaceId, "receivables.payment_received", payment.id, result, false);
+      }
+    }
     for (const quote of data.quotes)
       await ensureJobForSource(client, workspaceId, { type: "quote", id: quote.id, caseId }, actorUserId);
     for (const payment of data.payments) {

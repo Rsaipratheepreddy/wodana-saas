@@ -19,6 +19,7 @@ import {
   inboxTemplateReason,
   matchesMetaTemplate,
   templateBody,
+  templatePositions,
   type MetaTemplate,
   type StoredTemplate,
 } from "@/lib/crm/whatsapp-templates";
@@ -123,7 +124,7 @@ export async function POST(request: Request) {
           channel: "whatsapp",
           locale: meta.language,
           bodyTemplate: templateBody(meta),
-          variables: [],
+          variables: templatePositions(templateBody(meta)).map(String),
           providerTemplateId: meta.id,
         });
         if (created.ok) match = (await created.json()) as StoredTemplate;

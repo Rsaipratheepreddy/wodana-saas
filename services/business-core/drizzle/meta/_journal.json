@@ -642,12 +642,54 @@
     {
       "idx": 91,
       "version": "7",
+      "when": 1801121000000,
+      "tag": "0144_team_inbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1801124600000,
+      "tag": "0145_whatsapp_template_manager",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1801128200000,
+      "tag": "0146_client_event_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1801131800000,
+      "tag": "0147_payment_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1801135400000,
+      "tag": "0148_block_and_hide",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1801139000000,
+      "tag": "0149_number_health",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
       "when": 1801115200000,
       "tag": "0152_operations_v2",
       "breakpoints": true
     },
     {
-      "idx": 92,
+      "idx": 98,
       "version": "7",
       "when": 1801115300000,
       "tag": "0153_factory_rework",

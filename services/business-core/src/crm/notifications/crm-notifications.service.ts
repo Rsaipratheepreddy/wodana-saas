@@ -11,6 +11,8 @@ import { WorkspaceAccessService } from "../../workspaces/workspace-access.servic
 import { CrmEventsService } from "../shared/crm-events.service";
 import { ApproveTemplateDto, ClaimNotificationJobsDto, ClaimPushReceiptsDto, CreateNotificationPolicyDto, CreateNotificationTemplateDto, EnqueueNotificationDto, NotificationPolicyStatusDto, NotificationResultDto, PushPreferenceDto, PushReceiptResultDto, RecordDeviceConsentDto, RegisterDeviceEndpointDto, RevokeDeviceEndpointDto, UpsertPreferenceDto } from "./dto/notifications.dto";
 import { CrmMessageReceiptService } from "../conversations/crm-message-receipt.service";
+import { normalizeTemplateParameter, renderTemplate, templateParametersProblem, templatePlaceholders, type TemplateVariableSource } from "../conversations/inbox/inbox-rules";
+import { resolveTemplateSources } from "../conversations/inbox/template-variables";
 import { DeviceTokenStoreService } from "./device-token-store.service";
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
@@ -214,8 +216,16 @@ export class CrmNotificationsService {
     const template = await this.findTemplate(client, input);
     const declared = Array.isArray(template.variables) ? template.variables.map(String) : [];
     for (const variable of declared) if (!(variable in input.variables)) throw new UnprocessableEntityException(`Missing template variable: ${variable}`);
+    // A provider template with {{1}}…{{n}} (WhatsApp) takes its values from the inbox's variable mapping and the client's records.
+    const positions = input.channel === "whatsapp" ? templatePlaceholders(String(template.body_template)) : [];
+    let templateParameters: string[] = [];
+    if (positions.length) {
+      const filled = await this.templateParameters(client, input, String(template.code), positions);
+      if (!filled) return this.suppressed(client, input, "template_value_missing");
+      templateParameters = filled;
+    }
     const subject = template.subject_template ? this.render(String(template.subject_template), input.variables) : null;
-    const body = this.render(String(template.body_template), input.variables);
+    const body = positions.length ? renderTemplate(String(template.body_template), templateParameters) : this.render(String(template.body_template), input.variables);
     let scheduledFor = input.scheduledFor ? new Date(input.scheduledFor) : new Date();
     if (Number.isNaN(scheduledFor.getTime())) throw new BadRequestException("scheduledFor is invalid");
     const timezone = await this.recipientTimezone(client, input);
@@ -223,7 +233,7 @@ export class CrmNotificationsService {
       if (quietHours && typeof quietHours === "object") scheduledFor = this.afterQuietHours(scheduledFor, quietHours as Record<string, unknown>, timezone);
     }
     try {
-      const result = await client.query(`INSERT INTO notifications (workspace_id,policy_id,template_id,recipient_type,recipient_id,channel,event_type,status,scheduled_for,subject,body,deep_link,idempotency_key,correlation_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id,status,scheduled_for AS "scheduledFor",subject,body,deep_link AS "deepLink",version`, [input.workspaceId, policy?.id ?? null, template.id, input.recipientType, input.recipientId, input.channel, input.eventType, input.channel === "in_app" ? "delivered" : scheduledFor > new Date() ? "scheduled" : "pending", scheduledFor, subject, body, input.deepLink ?? null, input.idempotencyKey, input.correlationId]);
+      const result = await client.query(`INSERT INTO notifications (workspace_id,policy_id,template_id,recipient_type,recipient_id,channel,event_type,status,scheduled_for,subject,body,deep_link,idempotency_key,correlation_id,template_parameters) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id,status,scheduled_for AS "scheduledFor",subject,body,deep_link AS "deepLink",version`, [input.workspaceId, policy?.id ?? null, template.id, input.recipientType, input.recipientId, input.channel, input.eventType, input.channel === "in_app" ? "delivered" : scheduledFor > new Date() ? "scheduled" : "pending", scheduledFor, subject, body, input.deepLink ?? null, input.idempotencyKey, input.correlationId, templateParameters]);
       const response = result.rows[0] as Row;
       if (input.channel === "in_app") await client.query(`UPDATE notifications SET delivered_at=now() WHERE id=$1`, [response.id]);
       if (input.channel !== "in_app") await this.events.record(client, { workspaceId: input.workspaceId, actorUserId: null, source: "automation", action: "notification.delivery_requested.v1", entityType: "notification", entityId: String(response.id), correlationId: input.correlationId, after: { ...response, channel: input.channel } });
@@ -305,7 +315,7 @@ export class CrmNotificationsService {
       UPDATE notifications notification
       SET status='processing',processing_started_at=now(),version=version+1
       FROM due WHERE notification.id=due.id
-      RETURNING notification.id,notification.recipient_type AS "recipientType",notification.recipient_id AS "recipientId",notification.channel,notification.event_type AS "eventType",notification.subject,notification.body,notification.deep_link AS "deepLink",notification.correlation_id AS "correlationId",notification.idempotency_key AS "idempotencyKey",notification.template_id AS "templateId",notification.version,due.attempt`, [input.workspaceId, Math.min(input.limit ?? 50, 100)]);
+      RETURNING notification.id,notification.recipient_type AS "recipientType",notification.recipient_id AS "recipientId",notification.channel,notification.event_type AS "eventType",notification.subject,notification.body,notification.deep_link AS "deepLink",notification.correlation_id AS "correlationId",notification.idempotency_key AS "idempotencyKey",notification.template_id AS "templateId",notification.template_parameters AS "templateParameters",notification.version,due.attempt`, [input.workspaceId, Math.min(input.limit ?? 50, 100)]);
       const items: Row[] = [];
       for (const row of result.rows as Row[]) {
         const currentInput = { workspaceId: input.workspaceId, recipientType: String(row.recipientType), recipientId: String(row.recipientId), channel: String(row.channel), eventType: String(row.eventType) };
@@ -332,6 +342,15 @@ export class CrmNotificationsService {
       if (!notification.rowCount) throw new NotFoundException("Notification not found");
       const prior = await client.query(`SELECT status,provider_message_id AS "providerMessageId" FROM notification_delivery_attempts WHERE workspace_id=$1 AND notification_id=$2 AND attempt=$3`, [input.workspaceId, notificationId, input.attempt]);
       if (prior.rowCount) return { id: notificationId, status: notification.rows[0].status, idempotentReplay: true };
+      if (input.result === "accepted" && notification.rows[0].channel === "whatsapp") {
+        // Meta accepted the message: it is sent (one tick). Only its own delivered/read receipts say more.
+        if (!input.providerMessageId) throw new BadRequestException("An accepted WhatsApp message needs the provider's message id");
+        await client.query(`INSERT INTO notification_delivery_attempts(workspace_id,notification_id,attempt,provider,status,provider_message_id,completed_at) VALUES($1,$2,$3,$4,'accepted',$5,now())`, [input.workspaceId, notificationId, input.attempt, input.provider, input.providerMessageId]);
+        const sent = await client.query(`UPDATE notifications SET status='sent',processing_started_at=NULL,version=version+1 WHERE workspace_id=$1 AND id=$2 RETURNING id,status,version`, [input.workspaceId, notificationId]);
+        const messageId = /^message:([0-9a-f-]{36})$/i.exec(String(notification.rows[0].idempotency_key ?? ""))?.[1];
+        if (messageId) await this.receipts.record(client, messageId, { workspaceId: input.workspaceId, status: "sent", providerMessageId: input.providerMessageId }, { ignoreMissing: true, ignoreNonOutbound: true });
+        return { ...sent.rows[0], providerAccepted: true, delivered: false };
+      }
       if (input.result === "accepted") {
         if (notification.rows[0].channel !== "push" || !input.providerMessageId || !input.endpointReference) throw new BadRequestException("Only push delivery may wait for a provider receipt");
         await client.query(`INSERT INTO notification_delivery_attempts(workspace_id,notification_id,attempt,provider,status,provider_message_id,destination_reference,error_code,error_message) VALUES($1,$2,$3,$4,'accepted',$5,$6,$7,$8)`, [input.workspaceId, notificationId, input.attempt, input.provider, input.providerMessageId, input.endpointReference, input.errorCode ?? null, input.errorMessage ?? null]);
@@ -428,8 +447,8 @@ export class CrmNotificationsService {
       if (!leadId || (await client.query(`SELECT 1 FROM crm_leads WHERE workspace_id=$1 AND id=$2`, [workspaceId, leadId])).rowCount) return { module: "crm", screen: "leads", recordId: leadId };
       return null;
     }
-    if (path === "/workspace/crm/inbox" && await this.access.hasPermission(client, workspaceId, userId, "crm.communications.view")) {
-      const recordId = url.searchParams.get("conversation");
+    if ((path === "/workspace/crm/inbox" || path === "/workspace/crm/conversations") && await this.access.hasPermission(client, workspaceId, userId, "crm.communications.view")) {
+      const recordId = url.searchParams.get("conversation") ?? url.searchParams.get("record");
       if (!recordId || (await client.query(`SELECT 1 FROM crm_conversations WHERE workspace_id=$1 AND id=$2`, [workspaceId, recordId])).rowCount) return { module: "crm", screen: "inbox", recordId };
       return null;
     }
@@ -468,6 +487,19 @@ export class CrmNotificationsService {
   }
   private async suppressed(client: PoolClient, input: EnqueueNotificationDto, reason: string, policyId: string | null = null) { const result = await client.query(`INSERT INTO notifications (workspace_id,policy_id,recipient_type,recipient_id,channel,event_type,status,subject,body,deep_link,idempotency_key,correlation_id,suppressed_reason) VALUES ($1,$2,$3,$4,$5,$6,'suppressed',NULL,'Suppressed',$7,$8,$9,$10) ON CONFLICT (workspace_id,idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING id,status,suppressed_reason AS "suppressedReason",version`, [input.workspaceId,policyId,input.recipientType,input.recipientId,input.channel,input.eventType,input.deepLink??null,input.idempotencyKey,input.correlationId,reason]); return result.rows[0]; }
   private async findTemplate(client: import("pg").PoolClient, input: EnqueueNotificationDto): Promise<Row> { const result = await client.query<Row>(`SELECT template.* FROM notification_templates template JOIN workspaces workspace ON workspace.id=template.workspace_id WHERE template.workspace_id=$1 AND template.code=$2 AND template.channel=$3 AND template.status='approved' AND template.locale::text IN ($4::text,split_part($4::text,'-',1),workspace.default_locale::text,'en') ORDER BY CASE WHEN template.locale::text=$4::text THEN 0 WHEN template.locale::text=split_part($4::text,'-',1) THEN 1 WHEN template.locale=workspace.default_locale THEN 2 ELSE 3 END,template.version_number DESC LIMIT 1`, [input.workspaceId,input.templateCode,input.channel,input.locale??"en"]); if (!result.rowCount) throw new UnprocessableEntityException("No approved notification template matches the channel and locale"); return result.rows[0]; }
+  /** Explicit `parameters` in the variables win; otherwise each {{n}} is filled through the inbox mapping for this client. Null when one is missing. */
+  private async templateParameters(client: PoolClient, input: EnqueueNotificationDto, code: string, positions: number[]): Promise<string[] | null> {
+    const explicit = Array.isArray(input.variables.parameters) ? (input.variables.parameters as unknown[]).map((value) => normalizeTemplateParameter(String(value ?? ""))) : null;
+    if (explicit) return templateParametersProblem(positions, explicit) ? null : explicit;
+    if (input.recipientType !== "party") return null;
+    const mapping = await client.query<{ position: number; source: TemplateVariableSource }>(`SELECT position, source FROM crm_template_variables WHERE workspace_id=$1 AND channel='whatsapp' AND template_code=$2`, [input.workspaceId, code]);
+    const sources = new Map(mapping.rows.map((row) => [Number(row.position), row.source]));
+    if (positions.some((position) => !sources.has(position))) return null;
+    const leadId = typeof input.variables.leadId === "string" && /^[0-9a-f-]{36}$/i.test(input.variables.leadId) ? input.variables.leadId : null;
+    const values = await resolveTemplateSources(client, { workspaceId: input.workspaceId, partyId: input.recipientId, leadId, staffUserId: null, config: this.config }, sources.values());
+    const parameters = positions.map((position) => values[sources.get(position)!] ?? "").map(normalizeTemplateParameter);
+    return templateParametersProblem(positions, parameters) ? null : parameters;
+  }
   private render(template: string, variables: Record<string, unknown>) { return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all,key:string) => { const value=variables[key]; return value==null?"":String(value); }); }
   private assertTemplateVariables(subject: string, body: string, declared: string[]) { const found=[...`${subject} ${body}`.matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g)].map((match)=>match[1]); const missing=[...new Set(found)].filter((key)=>!declared.includes(key)); if(missing.length) throw new UnprocessableEntityException(`Undeclared template variables: ${missing.join(", ")}`); }
   private async hasConsent(client: PoolClient, input: Pick<EnqueueNotificationDto, "workspaceId" | "recipientId" | "eventType" | "channel">) { const consent=await client.query<{ status: string; expires_at: Date | null }>(`SELECT status,expires_at FROM crm_consents WHERE workspace_id=$1 AND party_id=$2 AND purpose IN ($3,'service','marketing') AND channel IN ($4,'all') ORDER BY (purpose=$3) DESC,(channel=$4) DESC,captured_at DESC LIMIT 1`,[input.workspaceId,input.recipientId,input.eventType,input.channel]); const row=consent.rows[0]; return Boolean(row?.status==="granted"&&(!row.expires_at||row.expires_at>new Date())); }

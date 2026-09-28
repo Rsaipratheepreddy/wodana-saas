@@ -1,3 +1,4 @@
+export type PaymentReminder = { on: string; channel: "whatsapp" | "email" };
 /** A tax invoice to a client for a project's payment milestone, with what's paid on it. Amounts are exact decimal strings. */
 export type ClientInvoice = {
   id: string; legalEntityId: string; projectId: string; projectReference: string; caseId: string; paymentId: string; number: string; issueDate: string; dueDate: string;
@@ -5,6 +6,8 @@ export type ClientInvoice = {
   companyName: string; companyAddress: string; companyTaxNumber: string; note: string; status: "issued" | "credited"; issuedByName: string; issuedAt: string; version: number;
   creditNoteId: string | null; creditNoteNumber: string | null; creditReason: string | null; creditedOn: string | null;
   paid: string; balance: string; overdue: boolean;
+  /** When the client was last reminded to pay (Send reminder or the automatic schedule). */
+  lastReminder?: PaymentReminder | null;
 };
 
 export type InvoiceLine = { id: string; position: number; description: string; taxRate: string; net: string; tax: string; total: string };
@@ -13,6 +16,7 @@ export type InvoiceLine = { id: string; position: number; description: string; t
 export type MilestoneToInvoice = {
   projectId: string; projectReference: string; projectName: string; caseId: string; paymentId: string; title: string; amount: string; currency: string | null;
   dueDate: string | null; clientName: string; paid: string;
+  lastReminder?: PaymentReminder | null;
 };
 
 export type ReceivablesState = { invoices: ClientInvoice[]; toInvoice: MilestoneToInvoice[]; canManage: boolean };
