@@ -374,3 +374,13 @@
 .undoBar { position: fixed; z-index: 40; inset-block-end: var(--wd-space-6); inset-inline-start: 50%; display: flex; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-2) var(--wd-space-2) var(--wd-space-2) var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-text); color: var(--wd-color-text-inverse); font-size: var(--wd-text-sm); box-shadow: var(--wd-shadow-md); transform: translateX(-50%); }
 [dir="rtl"] .undoBar { transform: translateX(50%); }
 .undoBar :global(.wd-button) { color: var(--wd-color-text-inverse); }
+
+/* After the client accepts: the steps to the project, in order, each with who holds it. */
+.nextSteps ol { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--wd-space-1); }
+.nextSteps li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-space-8); padding-block: var(--wd-space-1); }
+.nextStepIcon { display: inline-flex; color: var(--wd-color-text-tertiary); }
+.nextSteps li[data-state="done"] .nextStepIcon { color: var(--wd-color-success); }
+.nextSteps li[data-state="current"] .nextStepIcon { color: var(--wd-color-action-primary); }
+.nextStepCopy { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; font-size: var(--wd-text-sm); }
+.nextStepCopy small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.nextSteps li[data-state="later"] .nextStepCopy strong { color: var(--wd-color-text-tertiary); font-weight: var(--wd-weight-regular); }

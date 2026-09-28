@@ -171,7 +171,8 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
   const t = useT();
   const leads = useTargets(workspaceId, "leads");
   const parties = useTargets(workspaceId, "parties");
-  const members = useCrmResource<unknown>(workspaceId, "members");
+  // The people who can own CRM work (the same list and rule the server checks), readable by Sales.
+  const members = useCrmResource<unknown>(workspaceId, "sales-owners");
   const initialRelation = initialLead ? `lead:${initialLead.id}` : "";
   const [created, setCreated] = useState(false);
   const [relation, setRelation] = useState(initialRelation);

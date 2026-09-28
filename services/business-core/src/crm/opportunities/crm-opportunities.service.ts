@@ -10,6 +10,7 @@ import { canonicalHash, decodeCursor, encodeCursor, normalizeName } from "../sha
 import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvidence } from "../leads/qualification-evidence";
 import { hasResolvedEnquiryType } from "../leads/lead-options";
+import { ELIGIBLE_SALES_OWNERS_SQL, SALES_OWNER_PERMISSIONS } from "../leads/crm-leads.service";
 import {
   AddStakeholderDto,
   CreateOpportunityDto,
@@ -305,7 +306,8 @@ export class CrmOpportunitiesService {
     return this.access.withPermissions(actor, workspaceId, permissions, async (client, actorUser) => {
       const before = await this.requireOpportunity(client, workspaceId, opportunityId, true);
       if (Number(before.version) !== input.version) throw new ConflictException("Opportunity changed; reload and try again");
-      if (input.ownerMembershipId !== undefined && input.ownerMembershipId) await this.requireMembership(client, workspaceId, input.ownerMembershipId);
+      // A new owner is someone who can own enquiries (the same rule as the owner pickers); an unchanged one stays.
+      if (input.ownerMembershipId && input.ownerMembershipId !== before.owner_membership_id) await this.requireSalesOwner(client, workspaceId, input.ownerMembershipId);
       const hasAmount = input.amount !== undefined;
       const hasCurrency = input.currencyCode !== undefined;
       const amount = hasAmount ? input.amount ?? null : before.amount;
@@ -646,6 +648,12 @@ export class CrmOpportunitiesService {
   private async requireCurrency(client: PoolClient, code: string) {
     const result = await client.query(`SELECT 1 FROM currencies WHERE code = $1 AND active`, [code]);
     if (!result.rowCount) throw new UnprocessableEntityException(`Unsupported currency: ${code}`);
+  }
+
+  /** Someone who can own an enquiry: active, with the sales-owner permissions (what the owner pickers list). */
+  private async requireSalesOwner(client: PoolClient, workspaceId: string, membershipId: string) {
+    const eligible = await client.query(ELIGIBLE_SALES_OWNERS_SQL, [workspaceId, membershipId, SALES_OWNER_PERMISSIONS, SALES_OWNER_PERMISSIONS.length, null]);
+    if (!eligible.rowCount) throw new UnprocessableEntityException("Choose a sales owner: someone who works enquiries in this workspace.");
   }
 
   private async requireMembership(client: PoolClient, workspaceId: string, membershipId: string) {

@@ -16,6 +16,7 @@ import { LineDetails } from "./line-details";
 import { QuoteRow, readNumber, type RowColumn, type RowColumns } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
 import { FlowActions, QuotePayments, RevisionChanges } from "./quote-flow";
+import { QuoteNextSteps } from "./quote-next-steps";
 import { QuoteTerms } from "./quote-terms";
 import { QuoteProposal } from "./quote-proposal";
 import { InsertTemplate, SaveTemplate } from "./quote-templates";
@@ -43,6 +44,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const [state, setState] = useState<BuilderState | null>(initial ?? null);
   const [loadError, setLoadError] = useState("");
   const [error, setError] = useState("");
+  // What the last step actually did (who the quote went to, and how).
+  const [flowNotice, setFlowNotice] = useState<{ tone: "success" | "info"; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [view, setView] = useState<QuoteView>(initial?.settings.defaultView ?? "area");
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -481,7 +484,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <WorkspaceNotifications workspaceId={workspaceId} />
       {state.canEdit ? <button type="button" className={styles.askAi} aria-pressed={panelShown && activePanel === "assistant"} aria-keyshortcuts="Meta+K Control+K"
         onClick={() => (panelShown && activePanel === "assistant" ? showSide(false) : askAbout(null))}><Sparkles aria-hidden="true" size={15} />{t("Ask AI")}</button> : null}
-      <FlowActions state={state} api={api} workspaceId={workspaceId} caseId={caseId} onDone={load} onError={setError} onRevision={(id) => router.push(quoteHref(id))} />
+      <FlowActions state={state} api={api} workspaceId={workspaceId} caseId={caseId} onDone={load} onError={setError} onNotice={setFlowNotice} onRevision={(id) => router.push(quoteHref(id))} />
     </header>
 
     <div className={styles.workbench}>
@@ -518,7 +521,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           how: state.quote.clientDecision.recordedBy ? t(" · recorded by {name}", { name: state.quote.clientDecision.recordedBy }) : "",
         }) + (state.quote.clientDecision.note ? ` — ${state.quote.clientDecision.note}` : "")} /> : null}
         <RevisionChanges key={state.quote.id} state={state} api={api} />
+        {state.quote.status === "accepted" && state.quote.kind === "quotation" ? <QuoteNextSteps key={`next:${state.quote.id}:${state.quote.revision}`} workspaceId={workspaceId} caseId={caseId} quote={{ id: state.quote.id, round: state.quote.round }} projectStarted={Boolean(state.project)} /> : null}
         {error ? <InlineNotice tone="error" message={error} /> : null}
+        {flowNotice ? <InlineNotice tone={flowNotice.tone} message={flowNotice.message} /> : null}
         {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={["internal_review", "internal_approved"].includes(state.quote.status)
           ? t("This quote is in review. It can be changed again if it's sent back.") : t("This quote has been sent. Start a new revision to change it.")} /> : null}
 

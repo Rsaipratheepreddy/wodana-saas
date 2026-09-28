@@ -59,6 +59,7 @@ it("does not create a pipeline or opportunity while the enquiry type is unresolv
 it("lets the enquiry's own owner convert it when the team list is hidden from their role", async () => {
   const data = structuredClone(leadsPageFixture);
   data.members = [];
+  data.salesOwners = [];
   const lead = { ...data.items[0], ownerName: "Sara Sales", nextActionAt: "2026-10-01T09:00:00.000Z" };
   // The live pipeline list is the seeded one; a salesperson never creates a pipeline here.
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, json: async () => url.includes("/pipelines") && init?.method !== "POST" ? data.pipelines : { id: "opportunity" } }));
@@ -74,4 +75,15 @@ it("lets the enquiry's own owner convert it when the team list is hidden from th
   const write = fetchMock.mock.calls.find(([url]) => url.includes("/qualify"));
   if (!write) throw new Error("The enquiry was not converted");
   expect(JSON.parse(String(write[1]?.body))).toMatchObject({ ownerMembershipId: lead.ownerMembershipId });
+});
+
+it("offers Sales the same owner list as the enquiry form, even when it can't read the member directory (S-24)", () => {
+  const data = structuredClone(leadsPageFixture);
+  data.members = [];
+  data.salesOwners = [{ ...leadsPageFixture.members[0], id: "sales-owner-1", displayName: "Nadia Sales", status: "active" }];
+  const lead = { ...data.items[0], ownerMembershipId: null, ownerName: null };
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => data.pipelines })));
+  render(<WorkspaceRegionProvider currency="AED"><CreateDealDialog lead={lead} initialData={data} onClose={vi.fn()} onCreated={vi.fn()} /></WorkspaceRegionProvider>);
+  expect(screen.queryByText("A sales owner is needed")).not.toBeInTheDocument();
+  expect(screen.getAllByText("Nadia Sales").length).toBeGreaterThan(0);
 });

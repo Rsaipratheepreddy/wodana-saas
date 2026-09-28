@@ -43,13 +43,13 @@ import {
 
 const ACTIVE_LEAD_STATUSES = ["new", "attempting_contact", "connected", "nurturing", "paused"];
 /** Who can own an enquiry: an active member (with an active account) holding enquiry view and manage and follow-up access. */
-const SALES_OWNER_PERMISSIONS = ["crm.leads.view", "crm.leads.manage", "crm.activities.manage"];
+export const SALES_OWNER_PERMISSIONS = ["crm.leads.view", "crm.leads.manage", "crm.activities.manage"];
 /**
  * The sales owners one rule decides, for both the list people pick from and the check on save:
  * $1 workspace, $2 one membership or null for all, $3/$4 the permissions and their count,
  * $5 a queue (available in it) or null.
  */
-const ELIGIBLE_SALES_OWNERS_SQL = `SELECT membership.id, coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS "displayName",
+export const ELIGIBLE_SALES_OWNERS_SQL = `SELECT membership.id, coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS "displayName",
          account.primary_email AS email
        FROM workspace_memberships membership
        JOIN users account ON account.id=membership.user_id AND account.status='active'

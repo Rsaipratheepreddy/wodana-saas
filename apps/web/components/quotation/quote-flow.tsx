@@ -6,6 +6,7 @@ import { Button, Checkbox, ControlledModalDialog, EmptyState, IconButton, Inline
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { StartProjectDialog } from "@/components/project-core/start-project-dialog";
+import { SendQuoteDialog, deliveryMessage } from "./send-quote-dialog";
 import { projectApi } from "@/lib/project-core/client";
 import Link from "next/link";
 import { money, plain } from "@/lib/quotation/format";
@@ -18,9 +19,11 @@ type Api = ReturnType<typeof quoteApi>;
  * The one next step for this quote, by its state: send for review → approve → send to the client →
  * record the client's decision → start the project. Returned, declined or changed quotes start a new revision.
  */
-export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, onRevision }: {
+export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, onRevision, onNotice }: {
   state: BuilderState; api: Api; workspaceId: string; caseId: string;
   onDone: () => Promise<unknown>; onError: (message: string) => void; onRevision: (quoteId: string) => void;
+  /** What a step actually did, in one line (who the quote went to, and how). */
+  onNotice?: (notice: { tone: "success" | "info"; message: string } | null) => void;
 }) {
   const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
@@ -29,17 +32,14 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   const [returning, setReturning] = useState(false);
   const { status } = state.quote;
   const { flow } = state;
-  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
+  const { confirmationDialog } = useConfirmationDialog();
   // What must be fixed first blocks sending (the "to fix" count beside the button says what).
   const blocking = state.checks.filter((check) => check.tone === "danger").length;
-  // Sending to the client is the one step they see at once: it asks first.
-  const confirmSend = (label: string, steps: Array<[string, Record<string, unknown>?]>) => requestConfirmation({
-    title: t("Send {quote} to {client}?", { quote: t("Q-{number}", { number: state.quote.number }), client: state.client.name }),
-    body: t("They'll see it in their portal and get an email."), confirmLabel: t("Send to client"), confirmVariant: "primary",
-    onConfirm: () => void run(label, steps),
-  });
+  // Sending to the client is the one step they see at once: it asks who decides first.
+  const [sending, setSending] = useState<{ label: string; steps: Array<[string, Record<string, unknown>?]> } | null>(null);
+  const confirmSend = (label: string, steps: Array<[string, Record<string, unknown>?]>) => setSending({ label, steps });
   const run = async (label: string, steps: Array<[string, Record<string, unknown>?]>) => {
-    setBusy(label); onError("");
+    setBusy(label); onError(""); onNotice?.(null);
     try {
       let revision = state.quote.revision;
       let created: string | null = null;
@@ -47,6 +47,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
         const result = await api.step(action, revision, extra);
         revision = result.data.revision;
         if (action === "revise") created = [...result.data.quotes].sort((a, b) => b.number - a.number)[0]?.id ?? null;
+        if (action === "issue" && result.sent) onNotice?.(deliveryMessage(result.sent, t));
       }
       if (created) onRevision(created); else await onDone();
     } catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not save.")); await onDone(); }
@@ -96,6 +97,13 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   return <>
     {actions}
     {confirmationDialog}
+    {sending ? <SendQuoteDialog workspaceId={workspaceId} caseId={caseId} quoteLabel={t("Q-{number}", { number: state.quote.number })} clientName={state.client.name}
+      busy={Boolean(busy)} onClose={() => setSending(null)}
+      onSend={async (approverId) => {
+        // The issue step goes to the chosen decision-maker.
+        await run(sending.label, sending.steps.map(([action, extra]) => (action === "issue" ? [action, { ...extra, approverId }] : [action, extra])));
+        setSending(null);
+      }} /> : null}
     {starting ? <StartProjectDialog workspaceId={workspaceId} caseId={caseId} onClose={() => setStarting(false)} /> : null}
     {returning ? <ReturnDialog busy={busy === "return"} onClose={() => setReturning(false)}
       onSave={async (note) => { await run("return", [["return", { note }]]); setReturning(false); }} /> : null}
