@@ -19,6 +19,7 @@ import {
   InspectorSheet,
   MultiSelectField,
   SelectField,
+  SettingsPage,
   Surface,
   Tabs,
   TextAreaField,
@@ -194,7 +195,10 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-      <section aria-label={t("Teams and departments")} className={styles.page}>
+      <SettingsPage aria-label={t("Teams and departments")} title={t("Teams")} width="wide" actions={initialData.canManage ? <>
+        <Button onPress={() => setEditingUnit("new")}><Plus aria-hidden="true" size={14} />{t("Department")}</Button>
+        <Button isDisabled={!units.length} onPress={() => setEditingTeam("new")} variant="primary"><Plus aria-hidden="true" size={14} />{t("Team")}</Button>
+      </> : null}>
 
         <section aria-label={t("Organization structure summary")} className={styles.actionStrip}>
           <div className={styles.summary}>
@@ -202,10 +206,6 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
             <span><Building2 aria-hidden="true" size={16} />{units.length === 1 ? t("1 department") : t("{count} departments", { count: units.length })}</span>
             <span><Users aria-hidden="true" size={16} />{initialData.members.length === 1 ? t("1 member") : t("{count} members", { count: initialData.members.length })}</span>
           </div>
-          {initialData.canManage ? <div className={styles.actions}>
-            <Button isDisabled={!units.length} onPress={() => setEditingTeam("new")} variant="primary"><Plus aria-hidden="true" size={14} />{t("Team")}</Button>
-            <Button onPress={() => setEditingUnit("new")}><Plus aria-hidden="true" size={14} />{t("Department")}</Button>
-          </div> : null}
         </section>
 
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
@@ -222,7 +222,7 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
           />
         </div>
         {!initialData.canManage ? <p className={styles.permissionNote}>{t("Only workspace owners and administrators can change organization structure.")}</p> : null}
-      </section>
+      </SettingsPage>
 
       <UnitDialog initialData={initialData} item={editingUnit} key={editingUnit === "new" ? "unit-new" : editingUnit?.id ?? "unit-closed"} onClose={() => setEditingUnit(null)} onSaved={(unit) => { setUnits((current) => [unit, ...current.filter((item) => item.id !== unit.id)]); setEditingUnit(null); setStatus(t("{name} was saved.", { name: unit.name })); }} units={units} />
       <TeamDialog initialData={initialData} item={editingTeam} key={editingTeam === "new" ? "team-new" : editingTeam?.id ?? "team-closed"} onClose={() => setEditingTeam(null)} onSaved={(team) => { setTeams((current) => [team, ...current.filter((item) => item.id !== team.id)]); setEditingTeam(null); setStatus(t("{name} was saved.", { name: team.name })); }} units={units} />

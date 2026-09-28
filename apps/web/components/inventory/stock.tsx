@@ -74,7 +74,7 @@ export function Stock({ api, state, error, onReload, onChanged, onMoved, onHisto
           <Button size="compact" variant="quiet" onPress={() => setRefusing(request)}>{t("Refuse")}</Button></span> : <small className={styles.muted}>{t("Someone else approves it.")}</small>}
       </li>)}</ul>
     </section> : null}
-    <DataGrid<StockRow> appearance="flush" ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
+    <DataGrid<StockRow> ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText
       toolbarLeading={<div className={styles.filters}>
         <SegmentedControl label={t("Show")} value={owner} onChange={(value) => setOwner(value as Owner)}

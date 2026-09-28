@@ -62,7 +62,7 @@ export function ProjectSiteAccess({ workspaceId, projectId, projectName, members
     {access.canManage ? <Button variant="primary" onPress={() => setEditing(true)}>{t("Edit list")}</Button> : null}
   </> : undefined;
   return <>
-    <DataGrid<SiteClearance> appearance="flush" ariaLabel={t("Site access")} columns={columns} data={rows} getRowId={rowId} isLoading={!access}
+    <DataGrid<SiteClearance> ariaLabel={t("Site access")} columns={columns} data={rows} getRowId={rowId} isLoading={!access}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search people")} rowNumbers={false} selectable={false} wrapText toolbarLeading={switcher} toolbarActions={actions}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No one on this site's list yet")} />} />
     {access && editing ? <SiteListDialog api={api} access={access} members={members} onChanged={setAccess} onClose={() => setEditing(false)} /> : null}

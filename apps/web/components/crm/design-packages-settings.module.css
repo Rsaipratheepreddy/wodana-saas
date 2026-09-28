@@ -1,4 +1,3 @@
-.page { display: grid; gap: var(--wd-space-6); max-inline-size: 64rem; }
 .name { display: grid; gap: var(--wd-space-0-5); }
 .name strong { font-weight: var(--wd-weight-medium); }
 .name small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }

@@ -30,7 +30,7 @@ export function Batches({ api, state, error, openId, onReload, onOpen, onOpenOrd
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   const batch = state?.batches.find((row) => row.id === openId) ?? null;
   return <>
-    <DataGrid<Batch> appearance="flush" ariaLabel={t("Batches")} columns={columns} data={state?.batches ?? []} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<Batch> ariaLabel={t("Batches")} columns={columns} data={state?.batches ?? []} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       rowNumbers={false} selectable={false} wrapText
       emptyContent={<EmptyState title={t("No batches yet")} description={t("Select work orders in Work orders to run them together.")} />} />
     {batch && state ? <BatchSheet api={api} batch={batch} state={state} onChanged={onReload} onClose={() => onOpen(null)} onOpenOrder={onOpenOrder} /> : null}

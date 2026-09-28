@@ -66,7 +66,7 @@ export function CrmPriorityQueue({ items, total }: { items: RecordData[]; total:
     <div className={styles.body}>
       <div className={styles.tabs}><Tabs selectedKey={tab} onSelectionChange={(key) => { setTab(key); setExpanded(false); }} items={groups.map((group) => ({ id: group.id, label: `${group.label} (${items.filter((item) => matches(item, group.id)).length})`, panel: null }))} /></div>
       {total > items.length ? <p className={styles.limitNotice}>Showing the {items.length} highest-priority items of {total}. Open the related CRM section for the full queue.</p> : null}
-      {visible.length ? <DataGrid ariaLabel="Client priorities" appearance="flush" columns={columns} data={visible} getRowId={(item) => String(item.id)} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} /> : <div className={styles.empty}><CheckCheck aria-hidden="true" size={28} /><h3>You’re caught up in this view</h3><p>New replies and scheduled work appear here when you refresh.</p></div>}
+      {visible.length ? <DataGrid ariaLabel="Client priorities" columns={columns} data={visible} getRowId={(item) => String(item.id)} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} /> : <div className={styles.empty}><CheckCheck aria-hidden="true" size={28} /><h3>You’re caught up in this view</h3><p>New replies and scheduled work appear here when you refresh.</p></div>}
       {filtered.length ? <footer className={styles.footer} aria-live="polite">{visible.length} of {filtered.length} {tab === "all" ? "priorities" : "in this view"}</footer> : null}
     </div>
   </section>;

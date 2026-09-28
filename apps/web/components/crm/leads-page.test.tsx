@@ -66,7 +66,7 @@ describe("LeadsPage", () => {
     expect(within(table).queryByRole("columnheader", { name: /Channel/i })).not.toBeInTheDocument();
     expect(within(table).queryByRole("columnheader", { name: /Captured via/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Kanban" })).not.toBeInTheDocument();
-    expect(table.closest(".wd-data-grid")).toHaveAttribute("data-appearance", "flush");
+    expect(table.closest(".wd-table-scroll")).not.toBeNull();
     expect(within(table).getByRole("button",{name:/Open Dr Maya Nair/})).toBeInTheDocument();
     const search = screen.getByRole("searchbox", { name: "Search enquiries" });
     fireEvent.change(search, { target: { value: "Amira Al Mansoori" } });

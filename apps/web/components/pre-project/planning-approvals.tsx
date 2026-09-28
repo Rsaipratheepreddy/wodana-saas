@@ -58,7 +58,7 @@ export function PlanningApprovals({ record, content, definition, commercial, sea
       {"error" in content && <Callout tone="warning" title={t("Designs could not be loaded")}>{content.error}</Callout>}
       {"error" in definition && <Callout tone="warning" title={t("Requirements could not be loaded")}>{definition.error}</Callout>}
       <div className={tableStyles.recordTablePanel}>
-        <DataGrid ariaLabel={t("Planning approvals")} appearance="flush" compactToolbar selectable={false} toolbarActions={<Link className="wd-button" data-size="compact" href={`${root}/client-portal`}>{t("Client access")}</Link>}
+        <DataGrid ariaLabel={t("Planning approvals")} compactToolbar selectable={false} toolbarActions={<Link className="wd-button" data-size="compact" href={`${root}/client-portal`}>{t("Client access")}</Link>}
           data={rows.filter(row => filter === "all" || row.type === filter)} getRowId={row => row.id}
           selectedView={filter} onViewChange={setFilter}
           savedViews={[{id:"all",label:t("All items")}, ...["Requirements", "Designs", "Quotations"].map(type => ({id:type,label:t(typeLabels[type])}))]}

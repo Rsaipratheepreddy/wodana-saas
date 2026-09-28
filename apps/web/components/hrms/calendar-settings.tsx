@@ -45,7 +45,7 @@ export function CalendarSettings({ api, boot, creating, onCreateDone, onChanged 
     onCreateDone(); setOpenId(calendar.id); void load(); onChanged();
   };
   return <>
-    <DataGrid<HrmsCalendar> appearance="flush" ariaLabel={t("Calendars")} columns={columns} data={calendars ?? []} getRowId={(row) => row.id} isLoading={!calendars}
+    <DataGrid<HrmsCalendar> ariaLabel={t("Calendars")} columns={columns} data={calendars ?? []} getRowId={(row) => row.id} isLoading={!calendars}
       onRowAction={(row) => setOpenId(row.id)} rowNumbers={false} selectable={false} wrapText searchLabel={t("Search calendars")} emptyContent={<EmptyState title={t("No calendars yet")} />} />
     {open ? <CalendarSheet key={open.id} api={api} calendar={open} template={template} zone={boot.workspace.timezone} onClose={() => setOpenId(null)} onSaved={saved}
       onHolidaysChanged={() => void load()} /> : null}

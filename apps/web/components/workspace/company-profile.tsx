@@ -351,7 +351,7 @@ export function CompanyProfile({
       </SettingsPage>
 
       {entity ? <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isSaving} onPress={() => requestEditorChange(false)}>{t("Cancel")}</Button><Button form="company-profile-form" isLoading={isSaving} type="submit" variant="primary">{t("Save")}</Button></div>} isOpen={isOpen} onOpenChange={requestEditorChange} size="lg" title={t("Edit profile")}>
-        <form className={styles.editor} data-wd-density="compact" id="company-profile-form" noValidate onSubmit={submit}>
+        <form className={styles.editor} id="company-profile-form" noValidate onSubmit={submit}>
           <ValidationSummary errors={Object.values(errors).filter((error): error is string => Boolean(error))} />
           {saveError ? <Callout title={t("Could not save changes")} tone="danger">{saveError}</Callout> : null}
           {logoError ? <Callout title={t("Could not update logo")} tone="danger">{logoError}</Callout> : null}

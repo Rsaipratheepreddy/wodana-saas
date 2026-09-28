@@ -36,7 +36,7 @@ export function PaymentRuns({ api, state, error, openId, creating, onReload, onO
   ], [t, format]);
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   return <>
-    <DataGrid<PaymentRun> appearance="flush" ariaLabel={t("Payment runs")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<PaymentRun> ariaLabel={t("Payment runs")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search runs")} rowNumbers={false} wrapText
       toolbarLeading={<SegmentedControl label={t("Show")} value={show} onChange={(value) => setShow(value as Show)} options={[{ id: "open", label: t("To finish") }, { id: "all", label: t("All") }]} />}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={show === "open" ? t("No runs to finish") : t("No payment runs yet")} />} />
