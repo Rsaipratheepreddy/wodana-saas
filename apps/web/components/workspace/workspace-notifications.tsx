@@ -7,6 +7,7 @@ import styles from "./workspace-notifications.module.css";
 import { useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
+import { CHANNEL_LABELS, asDeliveryHealth, deliveryAlert } from "@/lib/workspace/delivery-health";
 
 type Notification = {
   id: string;
@@ -29,6 +30,7 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
   const [marking, setMarking] = useState(false);
   const [open, setOpen] = useState(false);
   const [failure, setFailure] = useState(false);
+  const [undelivered, setUndelivered] = useState<ReturnType<typeof deliveryAlert>>(null);
   const endpoint = `/api/workspace/crm/data/notifications?workspaceId=${workspaceId}`;
   const load = useCallback(async () => {
     if (!UUID.test(workspaceId)) return;
@@ -50,6 +52,17 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
     document.addEventListener("visibilitychange", refresh);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
   }, [load]);
+
+  // When the panel opens, the people who run delivery see whether notices reach anyone (others get nothing).
+  useEffect(() => {
+    if (!open || !UUID.test(workspaceId)) return;
+    const controller = new AbortController();
+    fetch(`/api/workspace/delivery-health?workspaceId=${workspaceId}`, { cache: "no-store", signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { const health = asDeliveryHealth(data); setUndelivered(health ? deliveryAlert(health) : null); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [open, workspaceId]);
 
   useEffect(() => {
     if (!open) return;
@@ -92,6 +105,7 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
     {open ? <section className={styles.panel} role="dialog" aria-label={t("Notifications")}>
       <header className={styles.header}><h2>{t("Your notifications")}</h2><button className={styles.markAll} type="button" disabled={!unread || marking} onClick={() => void markAllRead()}><CheckCheck size={17} aria-hidden="true" />{marking ? t('Marking…') : t('Mark all as read')}</button><button className={styles.close} type="button" aria-label={t("Close notifications")} onClick={() => { setOpen(false); trigger.current?.focus(); }}><X size={17} /></button></header>
       <div className={styles.filters} role="group" aria-label={t("Filter notifications")}>{filters.map(tab => <button type="button" key={tab.id} aria-label={`${tab.label} ${tab.count}`} aria-pressed={filter === tab.id} onClick={() => setFilter(tab.id)}>{tab.label}<span data-pending={tab.id === "unread" && tab.count > 0 || undefined}>{tab.count}</span></button>)}</div>
+      {undelivered ? <p className={styles.message} role="status" data-undelivered="">{undeliveredText(t, undelivered, locale, timeZone)} <Link href="/workspace/settings/delivery" onClick={() => setOpen(false)}>{t("Open delivery")}</Link></p> : null}
       {failure ? <p className={styles.message} role="alert">{t("Notifications could not be updated.")} <button type="button" onClick={() => void load()}>{t("Retry")}</button></p> : null}
       <div className={styles.list}>
         {!visible.length && !failure ? <div className={styles.empty}><Inbox size={28} aria-hidden="true" /><strong>{filter === 'unread' ? t('You’re all caught up') : t('No notifications yet')}</strong><p>{filter === 'unread' ? t('New updates will appear here.') : t('Updates for this view will appear here.')}</p></div> : null}
@@ -107,6 +121,14 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
       </div>
     </section> : null}
   </div>;
+}
+
+/** "Email notices not delivered since 28 Sep, 10:40", or every notice when the delivery service is silent. */
+function undeliveredText(t: Translate, alert: NonNullable<ReturnType<typeof deliveryAlert>>, locale: string, timeZone: string) {
+  const time = alert.since ? new Date(alert.since).toLocaleString(locale, { timeZone, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  if (!alert.channel) return time ? t("Notices not delivered since {time}", { time }) : t("Notices aren't being delivered");
+  const channel = t(CHANNEL_LABELS[alert.channel] as never);
+  return time ? t("{channel} notices not delivered since {time}", { channel, time }) : t("{channel} notices aren't being delivered", { channel });
 }
 
 function relativeTime(value: string, t: Translate, locale: string) {

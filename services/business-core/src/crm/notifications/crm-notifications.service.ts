@@ -2,6 +2,7 @@ import { TransactionalEmailService } from "../../email/transactional-email.servi
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { deliveryAllowlist, NOT_ALLOWLISTED } from "../../notifications/delivery-allowlist";
+import { staffEmailAction } from "../../notifications/staff-email-actions";
 import { createHash } from "node:crypto";
 import { PoolClient } from "pg";
 import { DatabaseService } from "../../database/database.service";
@@ -245,18 +246,27 @@ export class CrmNotificationsService {
     });
     let delivered = 0;
     for (const row of claimed) {
-      const actionLabel = row.recipientType === "portal_contact" ? "Open your project" : row.eventType === "crm.lead.assigned" ? "Open enquiry" : undefined;
-      const outcome = row.email
-        ? await (this.mailer ? this.mailer.sendStaffNotice({ workspaceId: input.workspaceId, to: row.email, subject: row.subject ?? "Update", body: row.body, deepLink: row.deepLink, actionLabel }) : Promise.resolve({ status: "not_configured" as const, provider: null, messageId: null })).catch(() => ({ status: "failed" as const, provider: null, messageId: null }))
-        : { status: "failed" as const, provider: null, messageId: null };
+      const actionLabel = staffEmailAction(row.eventType, row.recipientType);
+      type Outcome = { status: "sent" | "not_configured" | "failed"; provider: string | null; messageId: string | null; suppressedReason?: string; errorCode?: string };
+      const outcome: Outcome = row.email
+        ? await (this.mailer ? this.mailer.sendStaffNotice({ workspaceId: input.workspaceId, to: row.email, subject: row.subject ?? "Update", body: row.body, deepLink: row.deepLink, actionLabel }) : Promise.resolve<Outcome>({ status: "not_configured", provider: null, messageId: null })).catch((): Outcome => ({ status: "failed", provider: null, messageId: null, errorCode: "MAILER_ERROR" }))
+        : { status: "failed", provider: null, messageId: null };
       const status = outcome.status === "sent" ? "delivered" : outcome.status === "not_configured" ? "suppressed" : "failed";
-      const suppressedReason = "suppressedReason" in outcome && outcome.suppressedReason ? outcome.suppressedReason : "email_not_configured";
+      const suppressedReason = outcome.suppressedReason ?? "email_not_configured";
       if (status === "delivered") delivered += 1;
-      await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, (client) => client.query(
-        `UPDATE notifications SET status=$1::notification_status, delivered_at=CASE WHEN $1='delivered' THEN now() ELSE delivered_at END,
-           suppressed_reason=CASE WHEN $1='suppressed' THEN $5 WHEN $2::boolean THEN 'destination_missing' ELSE suppressed_reason END,
-           processing_started_at=NULL, version=version+1 WHERE workspace_id=$3 AND id=$4`,
-        [status, !row.email, input.workspaceId, row.id, suppressedReason]));
+      await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
+        await client.query(
+          `UPDATE notifications SET status=$1::notification_status, delivered_at=CASE WHEN $1='delivered' THEN now() ELSE delivered_at END,
+             suppressed_reason=CASE WHEN $1='suppressed' THEN $5 WHEN $2::boolean THEN 'destination_missing' ELSE suppressed_reason END,
+             processing_started_at=NULL, version=version+1 WHERE workspace_id=$3 AND id=$4`,
+          [status, !row.email, input.workspaceId, row.id, suppressedReason]);
+        // A real send attempt is recorded like the worker's, so delivery health can show when email last
+        // worked and why it last failed.
+        if (outcome.status !== "not_configured" && row.email) await client.query(
+          `INSERT INTO notification_delivery_attempts (workspace_id,notification_id,attempt,provider,status,provider_message_id,error_code,completed_at)
+           SELECT $1,$2,COALESCE(max(attempt),0)+1,$3,$4,$5,$6,now() FROM notification_delivery_attempts WHERE workspace_id=$1 AND notification_id=$2`,
+          [input.workspaceId, row.id, outcome.provider ?? "mailgun", status === "delivered" ? "delivered" : "permanent_failure", outcome.messageId, status === "delivered" ? null : outcome.errorCode ?? "EMAIL_SEND_FAILED"]);
+      });
     }
     return { claimed: claimed.length, delivered };
   }
