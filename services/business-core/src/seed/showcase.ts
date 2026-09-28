@@ -6,6 +6,10 @@ import { ClientPortalAdminService } from "../client-portal/client-portal-admin.s
 import { ClientPortalService } from "../client-portal/client-portal.service";
 import { CommercialService } from "../commercial/commercial.service";
 import { isOperationalEvidence } from "../commercial/release-integrity";
+import { CrmActivitiesService } from "../crm/activities/crm-activities.service";
+import { CreateActivityDto } from "../crm/activities/dto/activities.dto";
+import { CrmConversationsService } from "../crm/conversations/crm-conversations.service";
+import { ProviderInboundMessageDto } from "../crm/conversations/dto/conversations.dto";
 import { CrmIntakeService } from "../crm/intake/crm-intake.service";
 import { CreateIntakeEventDto, UpdateLeadDetailsDto } from "../crm/intake/dto/intake.dto";
 import { CrmLeadsService } from "../crm/leads/crm-leads.service";
@@ -19,7 +23,8 @@ import { FactoryService } from "../factory/factory.service";
 import { BriefService } from "../pre-projects/brief.service";
 import { MoodboardPinDto, SaveBriefEntryDto, SaveRoomDto } from "../pre-projects/brief.dto";
 import { DesignService } from "../pre-projects/design.service";
-import { DesignActivityDto, UploadDesignFilesDto } from "../pre-projects/design.dto";
+import { AddDesignVersionDto, DesignActivityDto, UploadDesignFilesDto } from "../pre-projects/design.dto";
+import { ExecutionService } from "../projects/execution.service";
 import { ItemSpecificationService } from "../pre-projects/item-specification.service";
 import { SaveItemSpecificationDto } from "../pre-projects/item-specification.dto";
 import { PreProjectsService } from "../pre-projects/pre-projects.service";
@@ -79,18 +84,29 @@ export type ScenarioIds = { leadId?: string; partyId?: string; opportunityId?: s
 // ---------------------------------------------------------------- the scenarios
 
 /** Where a scenario's story stops. */
-type Stop = "enquiry" | "qualified" | "planning" | "quotation_draft" | "quotation_issued" | "accepted" | "project" | "site" | "handover";
+type Stop = "enquiry" | "qualified" | "planning" | "quotation_draft" | "quotation_review" | "quotation_issued" | "accepted" | "project" | "site" | "handover";
+/** A message in the portal conversation: the client writes through the portal, the team replies on the case. */
+type Message = { from: "client" | "team"; title?: string; text: string };
 
 type Requirement = { key: string; room: string; title: string; note: string; category: string; priority: string; quantity: number; unit: string; catalog?: string[] };
 type QuoteLine = { key: string; room: string; catalog: string[]; title?: string; quantity: string; unit: string; unitCost: string; rate: string };
 type Term = { title: string; percent: number; trigger: string; requiredForRelease: boolean; requiredForProduction: boolean };
 type Task = { key: string; title: string; role: ShowcaseRole; start: number; due: number; made: boolean; needsMaterials?: boolean; status?: "done" | "in_progress" };
 type Snag = { key: string; title: string; severity: string; source: string; room: string; close: boolean };
-type Order = { key: string; label: string; pick: "materials" | RegExp; supplier: number; receive: boolean; expected: number; promised: number };
+type OrderState = "draft" | "pending_approval" | "approved" | "sent" | "confirmed" | "partly_received" | "received" | "closed" | "cancelled";
+type Order = {
+  key: string; label: string;
+  /** What goes on it: the project's material needs, its bought lines whose titles match, or free lines written on the order. */
+  pick: "materials" | RegExp | Array<{ description: string; quantity: string; unit: string; unitPrice: string }>;
+  supplier: number; expected: number; promised: number;
+  /** How far the order gets. */
+  state: OrderState;
+};
+const receive = (state: OrderState) => ["partly_received", "received", "closed"].includes(state);
 
-const ORDERS_RECEIVED = (expected: number, promised: number): Order[] => [
-  { key: "joinery-materials", label: "joinery materials", pick: "materials", supplier: 0, receive: true, expected, promised },
-  { key: "fit-out-supplies", label: "fit-out supplies", pick: /./, supplier: 1, receive: true, expected, promised },
+const ORDERS_RECEIVED = (expected: number, promised: number, last: OrderState = "received"): Order[] => [
+  { key: "joinery-materials", label: "joinery materials", pick: "materials", supplier: 0, state: "received", expected, promised },
+  { key: "fit-out-supplies", label: "fit-out supplies", pick: /./, supplier: 1, state: last, expected, promised },
 ];
 
 type Scenario = {
@@ -118,11 +134,19 @@ type Scenario = {
   /** Titles of the quotation lines the factory makes. */
   made: RegExp;
   materials: Array<{ name: string; code: string; specification: string; quantity: string; unit: string }>;
+  /** The conversation the client sees in the portal (Messages), in order. */
+  messages: Message[];
   execution: {
     startDaysAgo: number; promiseDays: number;
     productionPayment: boolean;
+    /** The last milestone: reported by Sales and waiting for Finance, or verified. */
+    finalPayment?: "reported" | "verified";
     /** A milestone that fell due and wasn't paid: its title and how many days ago it was due. */
     overdue?: { title: string; daysAgo: number };
+    /** Progress updates published to the client, oldest first. */
+    updates: string[];
+    /** A warranty claim the client raises in the portal (left open for the team). */
+    claim?: { description: string; item: RegExp };
     tasks: Task[];
     /** Purchase orders in sequence: the project's material needs, or its bought lines whose titles match (the rest with /./). */
     orders: Order[];
@@ -184,15 +208,26 @@ const SCENARIOS: Scenario[] = [
     ],
     measurement: { requirement: "living-media", title: "Media wall opening", width: 4500, height: 2800 },
     design: "accepted", lines: VILLA_LINES, terms: TERMS_50_40_10, stop: "handover", made: /media wall|wardrobe/i, materials: joineryMaterials,
+    messages: [
+      { from: "client", title: "Reading light in the master bedroom", text: "Could we add a small reading light on the left side of the bed? Same brass as the pendant." },
+      { from: "team", text: "Yes. A wall-mounted brass reading light fits the headboard; I'll send the option with the price tomorrow." },
+      { from: "client", text: "Perfect, thank you. And please confirm the handover visit for Saturday morning." },
+    ],
     execution: {
-      startDaysAgo: 21, promiseDays: 75, productionPayment: true,
+      startDaysAgo: 21, promiseDays: 75, productionPayment: true, finalPayment: "verified",
+      updates: [
+        "Shop drawings approved; the veneer and hardware are ordered and the factory starts next week.",
+        "Media wall and wardrobe carcasses are made and checked; flooring is laid and the first coat of paint is on.",
+        "Installation complete. One small snag on the media wall's shadow gap was fixed the next day; the site is cleaned for handover.",
+      ],
+      claim: { description: "The left door of the media wall doesn't close flush any more.", item: /media wall/i },
       tasks: [
         { key: "task:drawings", title: "Shop drawings for the media wall and wardrobe", role: "designer", start: -18, due: -12, made: true, status: "done" },
         { key: "task:ordering", title: "Order veneer and hardware", role: "buyer", start: -12, due: -8, made: true, needsMaterials: true, status: "done" },
         { key: "task:flooring", title: "Lay the engineered oak flooring", role: "site", start: -6, due: -2, made: false, status: "done" },
         { key: "task:installation", title: "Install the media wall and wardrobe", role: "site", start: 3, due: 6, made: true, status: "done" },
       ],
-      orders: ORDERS_RECEIVED(-10, -9), factory: "done", siteStartDaysAgo: 6, reports: 1,
+      orders: ORDERS_RECEIVED(-10, -9, "closed"), factory: "done", siteStartDaysAgo: 6, reports: 3,
       snags: [{ key: "snag:1", title: "Shadow gap uneven on the media wall's left return", severity: "minor", source: "inspection", room: "Living room", close: true }],
       stagesUntil: null, handover: true,
     },
@@ -239,8 +274,13 @@ const SCENARIOS: Scenario[] = [
       { name: "Walnut veneer, natural", code: "WAL-NAT", specification: "Quarter cut, matt lacquer, 0.6 mm on 18 mm MDF", quantity: "10", unit: "sheet" },
       { name: "LED strip 3000K with drivers", code: "LED-3K", specification: "Warm white, dimmable, 5 m reels", quantity: "6", unit: "nos" },
     ],
+    messages: [
+      { from: "client", title: "Delivery date for the sofa", text: "When does the sofa arrive? We travel on the 15th." },
+      { from: "team", text: "The supplier confirmed delivery for next week; we'll install the TV wall first so the sofa goes straight into place." },
+    ],
     execution: {
       startDaysAgo: 14, promiseDays: 60, productionPayment: true, overdue: { title: "On delivery to site", daysAgo: 5 },
+      updates: ["Shop drawings approved and the veneer is in the factory; the TV wall is in production.", "Furniture and lighting are on order; the first fix for the niche lighting starts this week."],
       tasks: [
         { key: "task:drawings", title: "Shop drawings for the TV wall and wardrobe", role: "designer", start: -12, due: -7, made: true, status: "done" },
         { key: "task:ordering", title: "Order veneer, LED strips and furniture", role: "buyer", start: -7, due: -3, made: true, needsMaterials: true, status: "done" },
@@ -249,9 +289,11 @@ const SCENARIOS: Scenario[] = [
       ],
       // The veneer is in (the factory has started); the furniture and the lighting are on order, still to receive.
       orders: [
-        { key: "joinery-materials", label: "veneer and LED strips", pick: "materials", supplier: 0, receive: true, expected: -8, promised: -6 },
-        { key: "furniture", label: "furniture", pick: /sofa|chair|bed/i, supplier: 1, receive: false, expected: 5, promised: 7 },
-        { key: "lighting-and-flooring", label: "lighting and flooring", pick: /./, supplier: 2, receive: false, expected: 6, promised: 8 },
+        { key: "joinery-materials", label: "veneer and LED strips", pick: "materials", supplier: 0, state: "received", expected: -8, promised: -6 },
+        { key: "furniture", label: "furniture", pick: /sofa|chair|bed/i, supplier: 1, state: "confirmed", expected: 5, promised: 7 },
+        { key: "lighting-and-flooring", label: "lighting and flooring", pick: /./, supplier: 2, state: "confirmed", expected: 6, promised: 8 },
+        { key: "brass-handles", label: "brass handles", pick: [{ description: "Brushed brass handle 160 mm", quantity: "18", unit: "nos", unitPrice: "42" }], supplier: 3, state: "approved", expected: 9, promised: 9 },
+        { key: "spare-veneer", label: "spare veneer", pick: [{ description: "Walnut veneer, natural (spare sheets)", quantity: "2", unit: "sheet", unitPrice: "180" }], supplier: 0, state: "draft", expected: 12, promised: 12 },
       ],
       factory: "in_production", siteStartDaysAgo: null, reports: 0, snags: [],
       stagesUntil: "procurement", handover: false,
@@ -290,15 +332,26 @@ const SCENARIOS: Scenario[] = [
       { name: "Oak veneer, natural", code: "OAK-NAT", specification: "Crown cut, matt lacquer, 0.6 mm on 18 mm MDF", quantity: "9", unit: "sheet" },
       { name: "Soft-close hinges and drawer runners", code: "HW-SC", specification: "Concealed 110° hinges; full-extension runners", quantity: "36", unit: "nos" },
     ],
+    messages: [
+      { from: "client", title: "Worktop chip", text: "There's a chip on the worktop edge next to the hob. Can it be repaired?" },
+      { from: "team", text: "Yes, it's logged as a snag; the stone supplier polishes it on Thursday." },
+    ],
     execution: {
-      startDaysAgo: 25, promiseDays: 20, productionPayment: true,
+      startDaysAgo: 25, promiseDays: 20, productionPayment: true, finalPayment: "reported",
+      updates: ["Kitchen cabinets and study shelving are made and delivered; tiling in the family room has started.", "Cabinets are installed; the worktop goes on this week and painting follows."],
       tasks: [
         { key: "task:drawings", title: "Shop drawings for the kitchen and study", role: "designer", start: -22, due: -17, made: true, status: "done" },
         { key: "task:ordering", title: "Order veneer, hardware, tiles and lighting", role: "buyer", start: -17, due: -13, made: true, needsMaterials: true, status: "done" },
         { key: "task:tiling", title: "Tile the family room floor", role: "site", start: -7, due: -4, made: false, status: "in_progress" },
         { key: "task:installation", title: "Install the kitchen cabinets and study shelving", role: "site", start: -3, due: 2, made: true, status: "in_progress" },
       ],
-      orders: ORDERS_RECEIVED(-12, -10), factory: "done", siteStartDaysAgo: 8, reports: 3,
+      orders: [
+        ...ORDERS_RECEIVED(-12, -10),
+        { key: "paint-top-up", label: "paint top-up", pick: [{ description: "Premium emulsion, warm white (5 L)", quantity: "6", unit: "nos", unitPrice: "95" }, { description: "Masking and protection film", quantity: "4", unit: "roll", unitPrice: "35" }], supplier: 2, state: "partly_received", expected: -2, promised: -1 },
+        { key: "study-lamp", label: "study desk lamp", pick: [{ description: "Brass desk lamp", quantity: "1", unit: "nos", unitPrice: "640" }], supplier: 3, state: "pending_approval", expected: 6, promised: 6 },
+        { key: "wrong-tiles", label: "tiles ordered twice", pick: [{ description: "Porcelain tile 60x120 matte", quantity: "10", unit: "sqm", unitPrice: "95" }], supplier: 1, state: "cancelled", expected: 4, promised: 4 },
+      ],
+      factory: "done", siteStartDaysAgo: 8, reports: 3,
       snags: [
         { key: "snag:1", title: "Chip on the worktop edge by the hob", severity: "major", source: "inspection", room: "Kitchen", close: false },
         { key: "snag:2", title: "Study shelf 3 not level", severity: "minor", source: "client", room: "Study", close: false },
@@ -335,7 +388,11 @@ const SCENARIOS: Scenario[] = [
       { title: "On completion", percent: 50, trigger: "At handover", requiredForRelease: false, requiredForProduction: false },
     ],
     stop: "quotation_issued", made: /reception desk|credenza/i, materials: joineryMaterials,
-    execution: { startDaysAgo: 0, promiseDays: 60, productionPayment: false, tasks: [], orders: [], factory: "in_production", siteStartDaysAgo: null, reports: 0, snags: [], stagesUntil: null, handover: false },
+    messages: [
+      { from: "client", title: "Start date", text: "If we approve this week, when could the fit-out start? Our lease begins on the 1st." },
+      { from: "team", text: "The factory can start the reception desk two weeks after approval; site works start once the ceiling contractor is booked, about three weeks." },
+    ],
+    execution: { startDaysAgo: 0, promiseDays: 60, productionPayment: false, updates: [], tasks: [], orders: [], factory: "in_production", siteStartDaysAgo: null, reports: 0, snags: [], stagesUntil: null, handover: false },
   },
   {
     key: "penthouse", ns: "penthouse:", reference: "SHOWCASE-EH-PENTHOUSE", owner: "sales",
@@ -364,8 +421,8 @@ const SCENARIOS: Scenario[] = [
       { key: "bar-joinery", room: "Bar", catalog: ["TV unit", "media"], title: "Fitted bar · fluted oak, brass rail, back-lit shelving", quantity: "1", unit: "nos", unitCost: "24000", rate: "41000" },
       { key: "bar-paint", room: "Bar", catalog: ["Wall painting, 2 coats", "paint"], quantity: "90", unit: "sqm", unitCost: "14", rate: "28" },
     ],
-    terms: TERMS_50_40_10, stop: "quotation_draft", made: /fitted bar/i, materials: joineryMaterials,
-    execution: { startDaysAgo: 0, promiseDays: 90, productionPayment: false, tasks: [], orders: [], factory: "in_production", siteStartDaysAgo: null, reports: 0, snags: [], stagesUntil: null, handover: false },
+    terms: TERMS_50_40_10, stop: "quotation_review", made: /fitted bar/i, materials: joineryMaterials, messages: [],
+    execution: { startDaysAgo: 0, promiseDays: 90, productionPayment: false, updates: [], tasks: [], orders: [], factory: "in_production", siteStartDaysAgo: null, reports: 0, snags: [], stagesUntil: null, handover: false },
   },
 ];
 
@@ -393,7 +450,64 @@ const TEAM_ROLES: Record<string, ShowcaseRole> = {
   PRODUCTION: "factory", PROJECT_MANAGERS: "projectManager", OPS_ADMIN: "manager",
 };
 
-const STOPS: Stop[] = ["enquiry", "qualified", "planning", "quotation_draft", "quotation_issued", "accepted", "project", "site", "handover"];
+const STOPS: Stop[] = ["enquiry", "qualified", "planning", "quotation_draft", "quotation_review", "quotation_issued", "accepted", "project", "site", "handover"];
+
+/** What each role is doing this week on the running projects: one task due today, one overdue, one coming up. */
+const HOME_TASKS: Array<{ role: ShowcaseRole; project: string; key: string; title: string; due: number; location: "site" | "factory" | "office" }> = [
+  { role: "owner", project: "marina-1804", key: "owner-1", title: "Sign off the Marina delivery plan", due: 0, location: "office" },
+  { role: "owner", project: "ranches-7", key: "owner-2", title: "Approve the worktop replacement cost", due: -2, location: "office" },
+  { role: "owner", project: "ranches-7", key: "owner-3", title: "Handover walk-through with the Haddads", due: 4, location: "site" },
+  { role: "manager", project: "marina-1804", key: "manager-1", title: "Confirm the sofa delivery slot with the supplier", due: 0, location: "office" },
+  { role: "manager", project: "ranches-7", key: "manager-2", title: "Chase the tiling crew's revised dates", due: -1, location: "office" },
+  { role: "manager", project: "marina-1804", key: "manager-3", title: "Weekly progress call with Reem", due: 3, location: "office" },
+  { role: "sales", project: "marina-1804", key: "sales-1", title: "Send the reading-light option to Reem", due: 0, location: "office" },
+  { role: "sales", project: "ranches-7", key: "sales-2", title: "Collect the signed variation for the study lighting", due: -3, location: "office" },
+  { role: "sales", project: "marina-1804", key: "sales-3", title: "Book the styling visit", due: 5, location: "site" },
+  { role: "salesAdmin", project: "marina-1804", key: "salesadmin-1", title: "Issue the delivery milestone invoice", due: 0, location: "office" },
+  { role: "salesAdmin", project: "ranches-7", key: "salesadmin-2", title: "File the supplier confirmations on the deal", due: -2, location: "office" },
+  { role: "salesAdmin", project: "marina-1804", key: "salesadmin-3", title: "Prepare the handover pack template", due: 6, location: "office" },
+  { role: "designer", project: "marina-1804", key: "designer-1", title: "Niche lighting detail for the TV wall", due: 0, location: "office" },
+  { role: "designer", project: "ranches-7", key: "designer-2", title: "Study shelf spacing drawing", due: -2, location: "office" },
+  { role: "designer", project: "marina-1804", key: "designer-3", title: "Styling board for the living room", due: 4, location: "office" },
+  { role: "estimator", project: "ranches-7", key: "qs-1", title: "Cost the worktop replacement", due: 0, location: "office" },
+  { role: "estimator", project: "marina-1804", key: "qs-2", title: "Reconcile the veneer invoice against the order", due: -1, location: "office" },
+  { role: "estimator", project: "marina-1804", key: "qs-3", title: "Price the reading-light variation", due: 3, location: "office" },
+  { role: "projectManager", project: "ranches-7", key: "pm-1", title: "Inspect the installed kitchen cabinets", due: 0, location: "site" },
+  { role: "projectManager", project: "marina-1804", key: "pm-2", title: "Chase the two open purchase orders", due: -2, location: "office" },
+  { role: "projectManager", project: "ranches-7", key: "pm-3", title: "Plan the painting sequence", due: 5, location: "site" },
+  { role: "finance", project: "marina-1804", key: "finance-1", title: "Verify the delivery milestone receipt", due: 0, location: "office" },
+  { role: "finance", project: "ranches-7", key: "finance-2", title: "Release the veneer supplier payment", due: -3, location: "office" },
+  { role: "finance", project: "marina-1804", key: "finance-3", title: "Month-end project cost review", due: 7, location: "office" },
+  { role: "buyer", project: "marina-1804", key: "buyer-1", title: "Confirm the lighting delivery date", due: 0, location: "office" },
+  { role: "buyer", project: "ranches-7", key: "buyer-2", title: "Order the replacement worktop slab", due: -1, location: "office" },
+  { role: "buyer", project: "marina-1804", key: "buyer-3", title: "Book the furniture delivery truck", due: 4, location: "office" },
+  { role: "factory", project: "marina-1804", key: "factory-1", title: "Veneer the TV wall doors", due: 0, location: "factory" },
+  { role: "factory", project: "ranches-7", key: "factory-2", title: "Replacement study shelf", due: -1, location: "factory" },
+  { role: "factory", project: "marina-1804", key: "factory-3", title: "Wardrobe carcasses", due: 6, location: "factory" },
+  { role: "site", project: "ranches-7", key: "site-1", title: "Level study shelf 3", due: 0, location: "site" },
+  { role: "site", project: "ranches-7", key: "site-2", title: "Protect the new tiles before painting", due: -2, location: "site" },
+  { role: "site", project: "marina-1804", key: "site-3", title: "First fix for the niche lighting", due: 3, location: "site" },
+];
+
+/** Follow-ups that need the owner's and the manager's attention: due today, overdue, and coming up. */
+const FOLLOW_UPS: Array<{ role: "owner" | "manager" | "sales"; on: { scenario?: string; enquiry?: string }; key: string; type: "task" | "call" | "meeting"; title: string; due: number; hour: number; minutes?: number }> = [
+  { role: "owner", on: { scenario: "penthouse" }, key: "owner-penthouse-margin", type: "task", title: "Review the Penthouse quotation margin before it goes out", due: 0, hour: 15 },
+  { role: "owner", on: { scenario: "jlt-office" }, key: "owner-jlt-call", type: "call", title: "Call Faris about the JLT decision", due: -2, hour: 11 },
+  { role: "owner", on: { enquiry: "enq-4" }, key: "owner-enq4-meeting", type: "meeting", title: "Meet Yusuf Rahman at the Business Bay office", due: 2, hour: 10, minutes: 60 },
+  { role: "manager", on: { scenario: "jlt-office" }, key: "manager-jlt-ceiling", type: "task", title: "Get the acoustic ceiling contractor's dates for JLT", due: 0, hour: 12 },
+  { role: "manager", on: { scenario: "penthouse" }, key: "manager-penthouse-visit", type: "call", title: "Book the Penthouse site visit with Sofia", due: -1, hour: 16 },
+  { role: "manager", on: { enquiry: "enq-1" }, key: "manager-enq1-brochure", type: "task", title: "Send Hessa the majlis brochure", due: 1, hour: 9 },
+  { role: "manager", on: { scenario: "penthouse" }, key: "manager-penthouse-site", type: "meeting", title: "Site visit at Emirates Hills with Sofia", due: 3, hour: 10, minutes: 90 },
+  { role: "sales", on: { enquiry: "enq-5" }, key: "sales-enq5-showroom", type: "meeting", title: "Showroom visit with Aisha Karim", due: 1, hour: 11, minutes: 60 },
+  { role: "sales", on: { scenario: "jlt-office" }, key: "sales-jlt-walkthrough", type: "meeting", title: "Walk the JLT office with Faris", due: 0, hour: 16, minutes: 60 },
+];
+
+/** Client replies waiting in the inbox: WhatsApp messages from clients, as the provider delivers them. */
+const CLIENT_REPLIES: Array<{ scenario: string; key: string; text: string }> = [
+  { scenario: "villa-12", key: "villa-12-1", text: "Hi, the reading light looks great. Can you send the price so we can add it?" },
+  { scenario: "villa-12", key: "villa-12-2", text: "Also, Saturday 10am works for the handover visit." },
+  { scenario: "marina-1804", key: "marina-1", text: "Hello, any news on the sofa delivery? We leave on the 15th." },
+];
 
 type Any = Record<string, any>;
 type Actor = RequestActor & { userId: string; membershipId: string | null };
@@ -488,7 +602,18 @@ class ShowcaseSeed {
       if (role && entry?.userId && entry.active !== false && !this.roles[role]) this.roles[role] = entry.userId;
     }
     for (const [role, userId] of Object.entries(this.input.actors ?? {})) if (userId) this.roles[role as ShowcaseRole] = userId;
-    if (this.roles.factory && !this.roles.site) this.roles.site = this.roles.factory;
+    // The site supervisor: production and site share a team, so it's the member with that role, else the team's
+    // other member (the factory lead is the first), else the factory lead.
+    if (!this.roles.site) {
+      const candidates = (await this.db.tenantTransaction(this.w, this.input.actorUserId, (client) => client.query<{ userId: string; supervisor: boolean }>(
+        `SELECT membership.user_id AS "userId",
+                EXISTS (SELECT 1 FROM member_roles assigned JOIN roles role ON role.id = assigned.role_id WHERE assigned.membership_id = membership.id AND role.code = 'site_supervisor') AS supervisor
+           FROM workspace_memberships membership
+           JOIN workspace_team_members link ON link.membership_id = membership.id JOIN workspace_teams team ON team.id = link.team_id
+          WHERE membership.workspace_id = $1 AND membership.status = 'active' AND team.code = 'PRODUCTION'
+          ORDER BY membership.joined_at NULLS LAST, membership.id`, [this.w]))).rows;
+      this.roles.site = candidates.find((row) => row.supervisor)?.userId ?? candidates.find((row) => row.userId !== this.roles.factory)?.userId ?? this.roles.factory;
+    }
     await this.actor(this.input.actorUserId);
   }
 
@@ -590,6 +715,8 @@ class ShowcaseSeed {
     try { await work(); } catch (error) {
       if (error instanceof Skip) { this.skip(name, error.reason); return; }
       this.skip(name, describe(error));
+      const cause = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+      if (process.env.SEED_DEBUG === "1" && cause instanceof Error && cause.stack) this.log(`           ${cause.stack.split("\n").slice(0, 6).join("\n           ")}`);
     }
   }
 
@@ -606,7 +733,378 @@ class ShowcaseSeed {
       this.log("── Enquiries across the pipeline");
       await this.stage("enquiries", () => this.enquiries());
     }
+    if (!only || only.has("home")) {
+      this.log("── Everyone's week: tasks, follow-ups and client replies");
+      await this.stage("home · tasks", () => this.homeTasks());
+      await this.stage("home · follow-ups", () => this.followUps());
+      await this.stage("home · client replies", () => this.clientReplies());
+    }
+    if (!only || only.has("operations")) {
+      this.log("── Operations: sourcing, deliveries, stock");
+      await this.stage("purchasing · price request", () => this.priceRequest());
+      await this.stage("purchasing · deliveries without an order and returns", () => this.deliveriesExtras());
+      await this.stage("inventory", () => this.inventory());
+    }
+    if (!only || only.has("finance")) {
+      this.log("── Finance: bills, payments, invoices, petty cash");
+      await this.stage("finance · supplier bills and payments", () => this.supplierBills());
+      await this.stage("finance · client invoices", () => this.clientInvoices());
+      await this.stage("finance · petty cash", () => this.pettyCash());
+    }
+    if (!only || only.has("people")) {
+      this.log("── Factory batch and people");
+      await this.stage("factory · batch", () => this.batch());
+      await this.stage("people · leave", () => this.leave());
+      await this.stage("people · timesheets", () => this.timesheets());
+      await this.stage("people · attendance", () => this.attendance());
+    }
     return this.result;
+  }
+
+  // ---------------------------------------------------------------- Factory batch and people (HRMS)
+
+  /** The planned work orders grouped into a production batch on the joinery workcenter. */
+  private async batch() {
+    const factory = this.get(FactoryService);
+    const maker = await this.as("factory");
+    const state = (await factory.state(maker, this.w)) as unknown as { orders: Array<{ id: string; status: string; batchId?: string | null; title: string }>; workcenters: Array<{ id: string; name: string }>; batches: Array<{ id: string; name: string; status: string }> };
+    const batchId = this.id("operations:", "batch:joinery-week");
+    if (state.batches.some((row) => row.id === batchId)) { this.kept("factory batch · Joinery · next week"); return; }
+    const orders = state.orders.filter((row) => ["planned", "released"].includes(row.status) && !row.batchId).map((row) => row.id);
+    if (!orders.length) throw new Skip("no planned or released work order to batch");
+    await this.advance(`factory batch · Joinery · next week (${orders.length} work orders)`, false, () =>
+      factory.saveBatch(maker, this.w, { id: batchId, action: "create", name: "Joinery · next week", workcenterId: state.workcenters[0]?.id, plannedOn: dayFrom(3), orderIds: orders }));
+  }
+
+  /** People's leave: one request waiting for the manager, one approved last week. */
+  private async leave() {
+    const { HrmsSettingsService } = await import("../hrms/hrms-settings.service");
+    const { HrmsLeaveService } = await import("../hrms/hrms-leave.service");
+    const actor = await this.actor(this.input.actorUserId);
+    await this.get(HrmsSettingsService).bootstrap(actor, this.w); // provisions HRMS and enrols every active member
+    const leave = this.get(HrmsLeaveService);
+    const room = (row: { limited?: boolean; annualDays?: number | string | null }) => row.limited === false ? 999 : Number(row.annualDays ?? 0);
+    const types = firstArray<{ id: string; name: string; active?: boolean; limited?: boolean; annualDays?: number | string | null }>(await leave.types(actor, this.w))
+      .filter((row) => row.active !== false && room(row) > 0)
+      .sort((a, b) => room(b) - room(a));
+    // The type with the largest yearly allowance (annual leave), so the requests fit in it.
+    const type = types.find((row) => /annual|vacation/i.test(row.name)) ?? types[0];
+    if (!type) throw new Skip("no leave type is configured");
+    const requests: Array<{ role: ShowcaseRole; key: string; start: number; days: number; reason: string; approve: boolean }> = [
+      { role: "site", key: "site-next-week", start: 7, days: 2, reason: "Family visit", approve: false },
+      { role: "designer", key: "designer-appointment", start: 3, days: 1, reason: "Medical appointment", approve: true },
+      { role: "buyer", key: "buyer-eid", start: 14, days: 3, reason: "Travel", approve: false },
+    ];
+    for (const item of requests) {
+      const person = await this.as(item.role);
+      if (!person.membershipId) continue;
+      const actionId = this.id("people:", `leave:${item.key}`);
+      const find = async () => firstArray<{ id: string; status: string; reason: string; startDate: string }>(await leave.list(person, this.w, { scope: "self" } as never).catch(() => ({})))
+        .find((row) => row.reason === item.reason && row.startDate === dayFrom(item.start)) ?? null;
+      const request = await this.step(`leave · ${person.displayName}: ${item.days} day(s) from ${dayFrom(item.start)}`, find, async () => {
+        const made = (await leave.request(person, this.w, { actionId, leaveTypeId: type.id, startDate: dayFrom(item.start), endDate: dayFrom(item.start + item.days - 1), dayPart: "full", reason: item.reason } as never)) as unknown as { id: string; status: string; reason: string; startDate: string };
+        return made.id ? made : (await find())!;
+      });
+      if (item.approve && request?.status === "pending") {
+        const reviewer = await this.other(person, ["manager", "owner", "projectManager"]);
+        await this.advance(`leave · ${person.displayName}'s request approved`, false, () => leave.decide(reviewer, this.w, request.id, { decision: "approve", reason: "Approved." } as never));
+      }
+    }
+  }
+
+  /** This week's timesheets: hours on the running projects; one submitted and approved, one still open. */
+  private async timesheets() {
+    const { HrmsTimeService } = await import("../hrms/hrms-time.service");
+    const { HrmsSettingsService } = await import("../hrms/hrms-settings.service");
+    const time = this.get(HrmsTimeService);
+    const marina = this.projectOf("marina-1804"), ranches = this.projectOf("ranches-7");
+    if (!marina || !ranches) throw new Skip("the running projects aren't there");
+    // Hours start from the day each person joined: days before that are left out.
+    const people = firstArray<{ membershipId?: string; id?: string; activeFrom?: string | null }>(await this.get(HrmsSettingsService).people(await this.actor(this.input.actorUserId), this.w).catch(() => ({})));
+    const joined = (membershipId: string) => people.find((row) => (row.membershipId ?? row.id) === membershipId)?.activeFrom?.slice(0, 10) ?? "0000-00-00";
+    const weekStart = mondayOf(0), lastWeek = mondayOf(-7);
+    const sheets: Array<{ role: ShowcaseRole; week: string; entries: Array<{ day: number; projectId: string; minutes: number; note: string }>; submit: boolean; approve: boolean }> = [
+      { role: "designer", week: lastWeek, submit: true, approve: true, entries: [{ day: 0, projectId: marina, minutes: 420, note: "Niche lighting detail" }, { day: 1, projectId: marina, minutes: 480, note: "Styling board" }, { day: 2, projectId: ranches, minutes: 360, note: "Study shelf drawing" }] },
+      { role: "site", week: weekStart, submit: false, approve: false, entries: [{ day: 0, projectId: ranches, minutes: 540, note: "Cabinet installation" }, { day: 1, projectId: ranches, minutes: 510, note: "Cabinet installation" }] },
+      { role: "factory", week: lastWeek, submit: true, approve: false, entries: [{ day: 0, projectId: marina, minutes: 480, note: "TV wall doors" }, { day: 1, projectId: marina, minutes: 480, note: "TV wall doors" }, { day: 3, projectId: ranches, minutes: 420, note: "Study shelving" }] },
+    ];
+    for (const sheet of sheets) {
+      const person = await this.as(sheet.role);
+      if (!person.membershipId) continue;
+      const from = joined(person.membershipId);
+      const entries = sheet.entries.map((entry) => ({ workDate: addDays(sheet.week, entry.day), projectId: entry.projectId, minutes: entry.minutes, note: entry.note })).filter((entry) => entry.workDate <= dayFrom(0) && entry.workDate >= from);
+      if (!entries.length) { this.kept(`timesheet · ${person.displayName}, week of ${sheet.week} (no days since they joined)`); continue; }
+      const mine = async () => (await time.mine(person, this.w, sheet.week).catch(() => null)) as unknown as { timesheet?: { id: string; version: number; status: string } | null; id?: string; version?: number; status?: string } | null;
+      let current = await mine();
+      let sheetRow = current?.timesheet ?? (current?.id ? current as { id: string; version: number; status: string } : null);
+      if (!sheetRow) {
+        await this.advance(`timesheet · ${person.displayName}, week of ${sheet.week} (${entries.reduce((sum, entry) => sum + entry.minutes, 0) / 60} h)`, false, () => time.saveWeek(person, this.w, sheet.week, { version: 0, entries } as never));
+        current = await mine();
+        sheetRow = current?.timesheet ?? (current?.id ? current as { id: string; version: number; status: string } : null);
+      } else this.kept(`timesheet · ${person.displayName}, week of ${sheet.week}`);
+      if (!sheetRow) continue;
+      if (sheet.submit && sheetRow.status === "draft") {
+        await this.advance(`timesheet · ${person.displayName} submitted`, false, () => time.submit(person, this.w, sheetRow!.id, { version: sheetRow!.version } as never));
+        current = await mine();
+        sheetRow = (current?.timesheet ?? (current?.id ? current : null)) as { id: string; version: number; status: string } | null;
+      }
+      if (sheet.approve && sheetRow?.status === "submitted") {
+        const reviewer = await this.other(person, ["manager", "owner", "projectManager"]);
+        await this.advance(`timesheet · ${person.displayName} approved`, false, () => time.decide(reviewer, this.w, sheetRow!.id, { version: sheetRow!.version, decision: "approve", note: "" } as never));
+      }
+    }
+  }
+
+  /** Attendance: the site and factory people checked in this morning (a photo exception, as a phone without a camera would). */
+  private async attendance() {
+    const { HrmsAttendanceService } = await import("../hrms/hrms-attendance.service");
+    const attendance = this.get(HrmsAttendanceService);
+    for (const role of ["site", "factory", "projectManager"] as ShowcaseRole[]) {
+      const person = await this.as(role);
+      if (!person.membershipId) continue;
+      const current = (await attendance.current(person, this.w).catch(() => null)) as unknown as { id?: string; session?: unknown | null; open?: boolean } | null;
+      if (current?.id || current?.session || current?.open) { this.kept(`attendance · ${person.displayName} is checked in`); continue; }
+      // Captures belong to a person: their ids carry the membership, so a role that changed hands doesn't collide.
+      const captureId = this.id("people:", `capture:${person.membershipId}:${dayFrom(0)}`), actionId = this.id("people:", `check-in:${person.membershipId}:${dayFrom(0)}`);
+      await this.advance(`attendance · ${person.displayName} checked in (${role === "factory" ? "factory" : "site"})`, false, async () => {
+        try { await attendance.capture(person, this.w, captureId); } catch (error) { throw new Skip(`${person.displayName} can't check in: ${describe(error)}`); }
+        const at = new Date(); at.setHours(8, 30, 0, 0);
+        await attendance.action(person, this.w, { actionId, captureId, kind: "check_in", mode: "field", deviceAt: (at.getTime() > Date.now() ? new Date() : at).toISOString(), note: role === "factory" ? "Factory floor" : "On site", exceptionReason: "Showcase check-in without a phone photo" } as never);
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------- Operations (purchasing extras, stock)
+
+  private projectOf(key: string) { return this.result.scenarios[key]?.projectId ?? null; }
+  private async suppliers() {
+    const buyer = await this.as("buyer");
+    const register = (await this.get(SuppliersService).list(buyer, this.w)) as unknown as { suppliers: Array<{ id: string; name: string; approval: string; status: string }> };
+    return register.suppliers.filter((row) => row.status !== "archived" && row.approval === "approved");
+  }
+
+  /** A price request for the Marina lighting, sent to two suppliers, both replied: the buyer compares before awarding. */
+  private async priceRequest() {
+    const { PriceRequestsService } = await import("../purchasing/price-requests.service");
+    const service = this.get(PriceRequestsService);
+    const buyer = await this.as("buyer");
+    const projectId = this.projectOf("marina-1804");
+    if (!projectId) throw new Skip("the Marina project isn't there");
+    const usable = await this.suppliers();
+    if (usable.length < 2) throw new Skip("two approved suppliers are needed");
+    const requestId = this.id("operations:", "price-request:marina-lighting");
+    const detail = async () => { try { return (await service.get(buyer, this.w, requestId)) as unknown as Any; } catch { return null; } };
+    let current = await this.step("price request · Marina niche lighting (2 suppliers)", detail, async () => {
+      await service.create(buyer, this.w, { id: requestId, vendorIds: [usable[1].id, usable[2 % usable.length].id].filter((id, index, all) => all.indexOf(id) === index), neededBy: dayFrom(10),
+        notes: "Back-lit niches for the TV wall: LED profiles and drivers.",
+        lines: [{ source: "free", projectId, description: "Aluminium LED profile with diffuser, 2 m", quantity: "8", unit: "nos" }, { source: "free", projectId, description: "24 V dimmable LED driver, 60 W", quantity: "4", unit: "nos" }] });
+      return (await detail())!;
+    });
+    const request = current.request ?? current;
+    const lines = (current.lines ?? request.lines ?? []) as Array<{ id: string }>;
+    const suppliers = (current.suppliers ?? request.suppliers ?? []) as Array<{ vendorId: string; status: string }>;
+    for (const [index, supplier] of suppliers.entries()) {
+      if (request.status !== "open") break;
+      await this.advance(`price request · reply from supplier ${index + 1}`, supplier.status === "replied", async () => {
+        const fresh = (await detail())!;
+        const version = (fresh.request ?? fresh).version;
+        await service.command(buyer, this.w, requestId, { action: "record_reply", version, vendorId: supplier.vendorId, leadTimeDays: 7 + index * 5, validUntil: dayFrom(21), note: index ? "Ex stock, delivery included." : "Two weeks; drivers on order.",
+          prices: lines.map((line, at) => ({ lineId: line.id, unitPrice: String((at ? 95 : 48) + index * 6) })) });
+      });
+      current = (await detail())!;
+    }
+  }
+
+  /** A delivery that arrived without an order (to match), and goods sent back to a supplier for credit. */
+  private async deliveriesExtras() {
+    const receiving = this.get(ReceivingService);
+    const buyer = await this.as("buyer");
+    const usable = await this.suppliers();
+    const unmatchedId = this.id("operations:", "unmatched:sample-boards");
+    const deliveries = async () => (await receiving.deliveries(buyer, this.w)) as unknown as { unmatched: Array<{ id: string }>; received: Array<{ id: string; orderId: string }> };
+    await this.step("delivery without an order · sample boards at the factory", async () => (await deliveries()).unmatched.find((row) => row.id === unmatchedId) ?? null, async () => {
+      await receiving.recordUnmatched(buyer, this.w, { id: unmatchedId, ...(usable[0] ? { vendorId: usable[0].id } : { supplierName: "Sample courier" }), place: "factory", receivedOn: dayFrom(-1), handedOverBy: "Courier",
+        deliveryNote: "DN-SAMPLES-77", notes: "Veneer and laminate sample boards; no order number on the note.", lines: [{ description: "Veneer sample boards A4", quantity: "12", unit: "nos" }, { description: "Laminate sample chips", quantity: "40", unit: "nos" }] });
+      return { id: unmatchedId };
+    });
+    // A return for credit from the Ranches fit-out delivery: one scratched tile box goes back.
+    const { SupplierReturnsService } = await import("../purchasing/returns.service");
+    const returns = this.get(SupplierReturnsService);
+    const returnId = this.id("operations:", "return:ranches-tiles");
+    const receiptId = this.id("ranches-7:", "receipt:fit-out-supplies");
+    const list = async () => ((await returns.list(buyer, this.w)) as unknown as { returns?: Array<{ id: string }>; items?: Array<{ id: string }> });
+    await this.step("return to the supplier · scratched tiles for credit", async () => { const all = await list(); return [...(all.returns ?? []), ...(all.items ?? [])].find((row) => row.id === returnId) ?? null; }, async () => {
+      const receipt = (await receiving.receipt(buyer, this.w, receiptId).catch(() => null)) as unknown as { receipt: { orderId: string }; lines: Array<{ id: string; accepted: string; description?: string }> } | null;
+      if (!receipt) throw new Skip("the Ranches fit-out delivery isn't there");
+      const line = receipt.lines.find((row) => Number(row.accepted) >= 2) ?? receipt.lines.find((row) => Number(row.accepted) > 0);
+      if (!line) throw new Skip("nothing accepted on the delivery to send back");
+      await returns.create(buyer, this.w, { id: returnId, receiptId, outcome: "credit", note: "Two boxes scratched in transit.", lines: [{ receiptLineId: line.id, source: "accepted", quantity: "1", reasonKind: "damaged", reason: "Scratched in transit" }] });
+      return { id: returnId };
+    });
+  }
+
+  /** Stock: a warehouse with free stock, a reservation for Marina, an issue to the Ranches site, and a transfer on its way to the factory. */
+  private async inventory() {
+    const { InventoryService } = await import("../inventory/inventory.service");
+    const inventory = this.get(InventoryService);
+    const actor = await this.actor(this.input.actorUserId);
+    const state = async () => {
+      const stock = (await inventory.stock(actor, this.w)) as unknown as { rows: Array<{ itemId: string; itemName: string; locationId: string; projectId: string | null; onHand: string }>; locations: Array<{ id: string; kind: string; name: string }> };
+      return { ...stock, rows: stock.rows.map((row) => ({ ...row, name: row.itemName })) };
+    };
+    let current = await state();
+    let warehouse = current.locations.find((row) => row.kind === "warehouse");
+    if (!warehouse) {
+      const id = this.id("operations:", "location:main-warehouse");
+      await this.advance("stock location · Main warehouse", false, () => inventory.saveLocation(actor, this.w, { id, kind: "warehouse", name: "Main warehouse", isDefault: true }));
+      current = await state();
+      warehouse = current.locations.find((row) => row.id === id) ?? current.locations.find((row) => row.kind === "warehouse");
+    } else this.kept(`stock location · ${warehouse.name}`);
+    if (!warehouse) throw new Skip("no warehouse location");
+    const free = [
+      { key: "oak-veneer", name: "Oak veneer, natural", unit: "sheet", quantity: "20", unitCost: "180", reason: "Opening stock count" },
+      { key: "hinges", name: "Soft-close hinges and drawer runners", unit: "nos", quantity: "120", unitCost: "12", reason: "Opening stock count" },
+      { key: "mdf", name: "MDF 18 mm (MR)", unit: "sheet", quantity: "30", unitCost: "95", reason: "Opening stock count" },
+      { key: "led-strip", name: "LED strip 3000K with drivers", unit: "nos", quantity: "3", unitCost: "95", reason: "Left over from a previous job" },
+    ];
+    for (const item of free) {
+      const id = this.id("operations:", `stock:add:${item.key}`);
+      const have = current.rows.find((row) => row.name === item.name && row.locationId === warehouse!.id && !row.projectId);
+      await this.advance(`free stock · ${item.name} ×${item.quantity}`, Boolean(have), () => inventory.command(actor, this.w, { id, action: "add", locationId: warehouse!.id, name: item.name, unit: item.unit, quantity: item.quantity, unitCost: item.unitCost, reason: item.reason, movedOn: dayFrom(-6) }));
+    }
+    current = await state();
+    const veneer = current.rows.find((row) => row.name === free[0].name && row.locationId === warehouse.id && !row.projectId);
+    const hinges = current.rows.find((row) => row.name === free[1].name && row.locationId === warehouse.id && !row.projectId);
+    const marina = this.projectOf("marina-1804"), ranches = this.projectOf("ranches-7");
+    if (veneer && marina) {
+      const reserved = current.rows.some((row) => row.itemId === veneer.itemId && row.locationId === warehouse!.id && row.projectId === marina);
+      await this.advance("stock reserved for Marina · 4 sheets of oak veneer", reserved, () => inventory.command(actor, this.w, { id: this.id("operations:", "stock:allocate:marina-veneer"), action: "allocate", locationId: warehouse!.id, itemId: veneer.itemId, projectId: null, forProjectId: marina, quantity: "4", reason: "Reserved for the TV wall shelves" }));
+    }
+    if (hinges && ranches) {
+      const issued = this.id("operations:", "stock:issue:ranches-hinges");
+      const known = (await this.db.tenantTransaction(this.w, actor.userId, (client) => client.query(`SELECT 1 FROM stock_commands WHERE workspace_id = $1 AND id = $2`, [this.w, issued]))).rowCount;
+      await this.advance("stock issued to the Ranches site · 24 hinges", Boolean(known), () => inventory.command(actor, this.w, { id: issued, action: "issue", locationId: warehouse!.id, itemId: hinges.itemId, projectId: null, forProjectId: ranches, quantity: "24", reason: "Kitchen cabinet doors", movedOn: dayFrom(-3) }));
+    }
+    const factory = current.locations.find((row) => row.kind === "factory");
+    const mdf = current.rows.find((row) => row.name === free[2].name && row.locationId === warehouse.id && !row.projectId);
+    if (factory && mdf) {
+      const transferId = this.id("operations:", "transfer:mdf-to-factory");
+      const transfers = (await inventory.transfers(actor, this.w)) as unknown as { transfers?: Array<{ id: string }>; items?: Array<{ id: string }> };
+      const known = [...(transfers.transfers ?? []), ...(transfers.items ?? [])].some((row) => row.id === transferId);
+      await this.advance("transfer on its way · 10 MDF sheets to the factory", known, () => inventory.send(actor, this.w, { id: transferId, fromLocationId: warehouse!.id, toLocationId: factory.id, note: "For the Marina wardrobe carcasses", sentOn: dayFrom(-1), lines: [{ itemId: mdf.itemId, projectId: null, quantity: "10" }] }));
+    } else this.skip("stock transfer", "no factory location or no MDF in the warehouse");
+  }
+
+  // ---------------------------------------------------------------- Finance
+
+  /** Bills from suppliers against the received orders, matched and approved; paid, part paid, overdue and to pay; and the payments behind them. */
+  private async supplierBills() {
+    const { PayablesService } = await import("../purchasing/payables.service");
+    const payables = this.get(PayablesService);
+    const orders = this.get(OrdersService);
+    const finance = await this.as("finance"), buyer = await this.as("buyer");
+    const overview = async () => (await payables.overview(finance, this.w).catch(() => payables.overview(buyer, this.w))) as unknown as { bills: Array<{ id: string; version: number; status: string; total: string; paid: string; balance: string; vendorId: string; legalEntityId: string; currency: string }>; payments: Array<{ id: string }> };
+    const plans: Array<{ scenario: string; order: string; key: string; number: string; invoiceDaysAgo: number; dueDays: number; pay: "full" | "half" | "none" }> = [
+      { scenario: "villa-12", order: "joinery-materials", key: "villa-joinery", number: "AB-2026-0341", invoiceDaysAgo: 8, dueDays: 22, pay: "full" },
+      { scenario: "villa-12", order: "fit-out-supplies", key: "villa-fit-out", number: "EST-26-1187", invoiceDaysAgo: 20, dueDays: 10, pay: "none" },
+      { scenario: "ranches-7", order: "joinery-materials", key: "ranches-joinery", number: "AB-2026-0358", invoiceDaysAgo: 9, dueDays: 21, pay: "half" },
+      { scenario: "ranches-7", order: "fit-out-supplies", key: "ranches-fit-out", number: "EST-26-1204", invoiceDaysAgo: 4, dueDays: 26, pay: "none" },
+    ];
+    let current = await overview();
+    for (const plan of plans) {
+      const orderId = this.id(`${plan.scenario === "villa-12" ? "" : `${plan.scenario}:`}`, `purchase-order:${plan.order}`);
+      const order = (await orders.get(buyer, this.w, orderId).catch(() => null)) as unknown as { order: { id: string; vendorId: string; legalEntityId: string; currency: string; status: string }; lines: Array<{ id: string; quantity: string; unitPrice: string; taxRate?: string | null; received?: string; accepted?: string }> } | null;
+      if (!order || !["received", "closed", "partly_received"].includes(order.order.status)) { this.skip(`bill · ${plan.key}`, "its order isn't received"); continue; }
+      const billId = this.id("finance:", `bill:${plan.key}`);
+      const invoiceDate = dayFrom(-plan.invoiceDaysAgo), dueDate = dayFrom(-plan.invoiceDaysAgo + plan.dueDays);
+      let bill = current.bills.find((row) => row.id === billId);
+      if (!bill) {
+        await this.advance(`bill · ${plan.number} for ${plan.key}`, false, () => this.tryAs(finance, (actor) => payables.command(actor, this.w, { action: "save", commandId: this.id("finance:", `bill:${plan.key}:save`), id: billId, vendorId: order.order.vendorId, legalEntityId: order.order.legalEntityId, currency: order.order.currency, number: plan.number, invoiceDate, dueDate,
+          lines: order.lines.filter((line) => Number(line.accepted ?? line.received ?? line.quantity) > 0).map((line) => ({ orderLineId: line.id, quantity: String(line.accepted ?? line.received ?? line.quantity), unitPrice: line.unitPrice, ...(line.taxRate !== undefined && line.taxRate !== null ? { taxRate: line.taxRate } : {}) })) })));
+        current = await overview();
+        bill = current.bills.find((row) => row.id === billId);
+      } else this.kept(`bill · ${plan.number}`);
+      if (!bill) continue;
+      if (bill.status === "draft") {
+        await this.advance(`bill · ${plan.number} submitted (matched to the delivery)`, false, () => this.tryAs(finance, (actor) => payables.command(actor, this.w, { action: "submit", commandId: this.id("finance:", `bill:${plan.key}:submit:${bill!.version}`), id: billId, version: bill!.version })));
+        current = await overview(); bill = current.bills.find((row) => row.id === billId)!;
+      }
+      if (bill.status === "held") {
+        const approver = await this.other(finance, ["owner", "manager"]);
+        await this.advance(`bill · ${plan.number} approved despite the hold`, false, () => payables.command(approver, this.w, { action: "approve", commandId: this.id("finance:", `bill:${plan.key}:approve:${bill!.version}`), id: billId, version: bill!.version, note: "Price difference agreed with the supplier." }));
+        current = await overview(); bill = current.bills.find((row) => row.id === billId)!;
+      }
+      if (bill.status !== "approved" || plan.pay === "none") continue;
+      const paymentId = this.id("finance:", `payment:${plan.key}`);
+      const amount = plan.pay === "full" ? Number(bill.total) : Math.round(Number(bill.total) / 2);
+      await this.advance(`payment · ${plan.pay === "full" ? "in full" : "half"} of ${plan.number} by cheque`, current.payments.some((row) => row.id === paymentId) || Number(bill.paid) > 0, () => this.tryAs(finance, (actor) => payables.command(actor, this.w, { action: "pay", commandId: this.id("finance:", `payment:${plan.key}:pay`), id: paymentId, vendorId: bill!.vendorId, legalEntityId: bill!.legalEntityId, currency: bill!.currency,
+        paidOn: dayFrom(-2), amount: String(amount), method: "cheque", reference: `CHQ-${plan.number.replace(/[^A-Z0-9]/gi, "").slice(-6)}`, allocations: [{ invoiceId: billId, amount: String(amount) }] })));
+      current = await overview();
+    }
+    // This week's payment run, still being prepared: the approved bills with a balance go on it.
+    const { PaymentRunsService } = await import("../purchasing/payment-runs.service");
+    const runs = this.get(PaymentRunsService);
+    const runId = this.id("finance:", "payment-run:this-week");
+    const open = current.bills.filter((bill) => plans.some((plan) => bill.id === this.id("finance:", `bill:${plan.key}`)) && bill.status === "approved" && Number(bill.balance) > 0);
+    const listed = ((await payables.overview(finance, this.w).catch(() => payables.overview(buyer, this.w))) as unknown as { runs: Array<{ id: string }> }).runs;
+    if (!open.length) this.kept("payment run (nothing left to pay)");
+    else await this.advance(`payment run · this week's suppliers (${open.length} bills, draft)`, listed.some((run) => run.id === runId), () =>
+      this.tryAs(finance, (actor) => runs.command(actor, this.w, { action: "save", commandId: this.id("finance:", "payment-run:this-week:save"), id: runId, note: "Supplier payments for this week.", items: open.map((bill) => ({ invoiceId: bill.id, amount: bill.balance })) })));
+  }
+
+  /** Client invoices for the milestones of the started projects: paid ones, one overdue (Marina's delivery), one awaiting Finance (Ranches' last). */
+  private async clientInvoices() {
+    const { ReceivablesService } = await import("../receivables/receivables.service");
+    const receivables = this.get(ReceivablesService);
+    const finance = await this.as("finance");
+    const overview = async () => (await this.tryAs(finance, (actor) => receivables.overview(actor, this.w))) as unknown as { invoices: Array<{ id: string; paymentId?: string; status: string; overdue?: boolean }>; toInvoice: Array<{ caseId: string; paymentId: string; title: string; amount: string; dueDate: string | null; projectName?: string }> };
+    let current = await overview();
+    // Only the showcase's own projects are invoiced; other cases in the workspace keep their milestones as they are.
+    const mine = new Set(Object.values(this.result.scenarios).map((ids) => ids.caseId).filter(Boolean));
+    const milestones = current.toInvoice.filter((milestone) => mine.has(milestone.caseId));
+    if (!milestones.length) { this.kept(`client invoices (${current.invoices.length} issued)`); return; }
+    for (const milestone of milestones) {
+      const invoiceId = this.id("finance:", `invoice:${milestone.paymentId}`);
+      const overdue = /delivery/i.test(milestone.title);
+      const issueDate = dayFrom(overdue ? -12 : -3), dueDate = overdue ? dayFrom(-5) : dayFrom(11);
+      await this.advance(`client invoice · ${milestone.projectName ?? milestone.caseId.slice(0, 8)} · ${milestone.title}${overdue ? " (overdue)" : ""}`, false, () =>
+        this.tryAs(finance, (actor) => receivables.command(actor, this.w, { action: "issue", commandId: this.id("finance:", `invoice:${milestone.paymentId}:issue`), id: invoiceId, caseId: milestone.caseId, paymentId: milestone.paymentId, issueDate, dueDate })));
+    }
+    current = await overview();
+    this.log(`  note     client invoices: ${current.invoices.length} issued, ${current.invoices.filter((row) => row.overdue).length} overdue`);
+  }
+
+  /** Petty cash on the Ranches site: one reimbursed, one approved and waiting for the money, one waiting for the project manager. */
+  private async pettyCash() {
+    const { PettyCashService } = await import("../petty-cash/petty-cash.service");
+    const petty = this.get(PettyCashService);
+    const projectId = this.projectOf("ranches-7");
+    if (!projectId) throw new Skip("the Ranches project isn't there");
+    const claimant = await this.as("site"), finance = await this.as("finance");
+    const decider = await this.other(claimant, ["projectManager", "owner", "manager"]);
+    const claims: Array<{ key: string; description: string; category: string; amount: string; daysAgo: number; to: "reimbursed" | "approved" | "submitted" }> = [
+      { key: "taxi", description: "Taxi to the stone supplier and back", category: "transport", amount: "60", daysAgo: 6, to: "reimbursed" },
+      { key: "fixings", description: "Screws, wall plugs and silicone from the hardware shop", category: "materials", amount: "85", daysAgo: 3, to: "approved" },
+      { key: "lunch", description: "Lunch for the crew on the long tiling day", category: "food", amount: "120", daysAgo: 1, to: "submitted" },
+    ];
+    for (const claim of claims) {
+      const id = this.id("finance:", `petty:${claim.key}`);
+      // Whoever decides sees every claim on the project; a claim an earlier site person made stays theirs.
+      const read = async () => { try { const state = (await petty.state(decider, this.w, projectId)) as unknown as { claims: Array<{ id: string; status: string; version: number; claimedBy?: string }> }; return state.claims.find((row) => row.id === id) ?? null; } catch { return null; } };
+      let row = await this.step(`petty cash · ${claim.description} (${claim.amount})`, read, async () => {
+        await petty.command(claimant, this.w, projectId, { action: "save", commandId: this.id("finance:", `petty:${claim.key}:save`), id, spentOn: dayFrom(-claim.daysAgo), amount: claim.amount, description: claim.description, category: claim.category, noReceiptReason: "Receipt handed to the office; copy to follow." });
+        const made = await read();
+        if (!made) throw new Skip(`the claim ${claim.key} was recorded but is not listed`);
+        return made;
+      });
+      if (row.claimedBy && row.claimedBy !== claimant.userId) { this.kept(`petty cash · ${claim.key} (claimed by someone else)`); continue; }
+      const ladder = ["draft", "submitted", "approved", "reimbursed"];
+      const wants = (status: string) => ladder.indexOf(claim.to) >= ladder.indexOf(status);
+      if (row.status === "draft" && wants("submitted")) { await this.advance(`petty cash · ${claim.key} submitted`, false, () => petty.command(claimant, this.w, projectId, { action: "submit", commandId: this.id("finance:", `petty:${claim.key}:submit:${row!.version}`), claimId: id, version: row!.version })); row = (await read())!; }
+      if (row.status === "submitted" && wants("approved")) { await this.advance(`petty cash · ${claim.key} approved by ${decider.displayName}`, false, () => petty.command(decider, this.w, projectId, { action: "approve", commandId: this.id("finance:", `petty:${claim.key}:approve:${row!.version}`), claimId: id, version: row!.version })); row = (await read())!; }
+      if (row.status === "approved" && wants("reimbursed")) await this.advance(`petty cash · ${claim.key} reimbursed`, false, () => this.tryAs(finance, (actor) => petty.reimburse(actor, this.w, { commandId: this.id("finance:", `petty:${claim.key}:reimburse:${row!.version}`), claimId: id, version: row!.version, reference: "Cash box" })));
+      if (row.status === claim.to) this.kept(`petty cash · ${claim.key} ${claim.to}`);
+    }
   }
 
   /** The story up to the scenario's stop, one stage at a time. */
@@ -629,7 +1127,9 @@ class ShowcaseSeed {
     await this.stage(at("quotation"), async () => { ids.quoteId = await this.quotation(ctx, caseId); });
     if (!ids.quoteId || !after("quotation_draft")) return;
     const quoteId = ids.quoteId;
-    await this.stage(at("quotation review and issue"), () => this.issue(ctx, caseId, quoteId, ids.grantId ?? ""));
+    await this.stage(at("quotation review and issue"), () => this.issue(ctx, caseId, quoteId, ids.grantId ?? "", { submitOnly: !after("quotation_review") }));
+    if (!after("quotation_review")) return;
+    if (s.messages.length) await this.stage(at("messages"), () => this.messages(ctx, caseId));
     if (!after("quotation_issued")) return;
     await this.stage(at("client acceptance and deal"), () => this.approvals(ctx, caseId, quoteId, ids.opportunityId!));
     if (!after("accepted")) return;
@@ -642,10 +1142,14 @@ class ShowcaseSeed {
     await this.stage(at("material list"), () => this.materials(ctx, projectId, caseId));
     await this.stage(at("purchasing"), async () => { ids.orderId = await this.purchasing(ctx, projectId); });
     await this.stage(at("factory"), async () => { ids.workOrderId = await this.factory(ctx, projectId); });
+    // A project already completed (an earlier run) opens again for what the story still publishes, then closes again below.
+    await this.stage(at("reopen"), () => this.reopenIfClosed(ctx, projectId));
     if (s.execution.siteStartDaysAgo !== null) await this.stage(at("site"), () => this.site(ctx, projectId));
+    await this.stage(at("progress published to the client"), () => this.progress(ctx, projectId));
     await this.stage(at("stages"), () => this.stages(ctx, projectId));
     if (!after("site") || !s.execution.handover) return;
     await this.stage(at("handover and warranty"), () => this.handover(ctx, projectId, caseId));
+    if (s.execution.claim) await this.stage(at("warranty claim"), () => this.claim(ctx, caseId));
   }
 
   // ---------------------------------------------------------------- CRM
@@ -837,36 +1341,41 @@ class ShowcaseSeed {
         async () => brief.saveRoom(designer, this.w, caseId, await this.validated(SaveRoomDto, { id, version: 0, name })) as Promise<{ id: string }>);
       rooms.set(name, room.id);
     }
-    const entries = async () => ((await brief.get(designer, this.w, caseId)) as { entries: Array<{ id: string; board?: unknown | null }> }).entries;
+    type Entry = { id: string; version: number; board?: unknown | null; assets?: Array<{ id: string }> };
+    const entries = async () => ((await brief.get(designer, this.w, caseId)) as { entries: Entry[] }).entries;
     let current = await entries();
     for (const item of s.requirements) {
       const id = this.id(ctx, `requirement:${item.key}`);
       const record = await this.catalogRecord(item.catalog);
-      await this.step(`requirement ${item.title}`, async () => current.find((row) => row.id === id) ?? null, async () => {
-        const body = await this.validated(SaveBriefEntryDto, {
-          id, version: 0, kind: "requirement", title: item.title, roomId: rooms.get(item.room) ?? null, note: item.note, category: item.category, priority: item.priority,
-          scopeStatus: "included", reviewStatus: "reviewed", quantity: item.quantity, unit: item.unit, referenceUrl: "", avoid: "", source: "client", assetIds: [],
-          ...(record?.kind === "work" ? { catalogLinks: [{ role: "work", recordId: record.id }] } : {}),
-        });
-        const saved = await brief.saveEntry(designer, this.w, caseId, body) as { id: string };
+      const assetId = item.catalog ? await this.picture(ctx, caseId, designer, `requirement:${item.key}`, item.catalog) : null;
+      const body = (version: number) => this.validated(SaveBriefEntryDto, {
+        id, version, kind: "requirement", title: item.title, roomId: rooms.get(item.room) ?? null, note: item.note, category: item.category, priority: item.priority,
+        scopeStatus: "included", reviewStatus: "reviewed", quantity: item.quantity, unit: item.unit, referenceUrl: "", avoid: "", source: "client", assetIds: assetId ? [assetId] : [],
+        ...(record?.kind === "work" ? { catalogLinks: [{ role: "work", recordId: record.id }] } : {}),
+      });
+      const found = await this.step(`requirement ${item.title}`, async () => current.find((row) => row.id === id) ?? null, async () => {
+        const saved = await brief.saveEntry(designer, this.w, caseId, await body(0)) as Entry;
         current = await entries();
         return saved;
       });
+      // A picture that arrived after the entry (the catalog was loaded later) goes on it now.
+      if (assetId && !(found.assets ?? []).length) await this.advance(`picture on ${item.title}`, false, async () => { await brief.saveEntry(designer, this.w, caseId, await body(found.version)); current = await entries(); });
     }
     // Inspiration on the moodboard: Core Collection pictures when the workspace has them, otherwise the ideas alone.
     const pins: Array<{ entryId: string; x: number; y: number; width: number; z: number; sentiment: "love" | "avoid" }> = [];
     for (const [index, item] of s.inspiration.entries()) {
       const id = this.id(ctx, `inspiration:${item.key}`);
       const assetId = await this.picture(ctx, caseId, designer, `inspiration:${item.key}`, item.catalog);
+      const body = (version: number) => this.validated(SaveBriefEntryDto, {
+        id, version, kind: "inspiration", title: item.title, roomId: null, note: item.catalog[0], category: "Inspiration", priority: "preferred",
+        scopeStatus: "included", reviewStatus: "reviewed", unit: "nos", referenceUrl: "", avoid: "", source: "team", assetIds: assetId ? [assetId] : [],
+      });
       const entry = await this.step(`inspiration ${item.title}`, async () => current.find((row) => row.id === id) ?? null, async () => {
-        const body = await this.validated(SaveBriefEntryDto, {
-          id, version: 0, kind: "inspiration", title: item.title, roomId: null, note: item.catalog[0], category: "Inspiration", priority: "preferred",
-          scopeStatus: "included", reviewStatus: "reviewed", unit: "nos", referenceUrl: "", avoid: "", source: "team", assetIds: assetId ? [assetId] : [],
-        });
-        const saved = await brief.saveEntry(designer, this.w, caseId, body) as { id: string };
+        const saved = await brief.saveEntry(designer, this.w, caseId, await body(0)) as Entry;
         current = await entries();
         return saved;
       });
+      if (assetId && !(entry.assets ?? []).length) await this.advance(`picture on ${item.title}`, false, async () => { await brief.saveEntry(designer, this.w, caseId, await body(entry.version)); current = await entries(); });
       pins.push({ entryId: entry.id, x: 40 + (index % 2) * 360, y: 40 + Math.floor(index / 2) * 300, width: 320, z: index, sentiment: "love" });
     }
     const pinned = new Set(current.filter((entry) => entry.board).map((entry) => entry.id));
@@ -994,44 +1503,65 @@ class ShowcaseSeed {
     });
   }
 
+  /**
+   * The concept board: a Core Collection picture when the workspace has them (the seed's tile otherwise), reviewed
+   * internally by the owner, shared with the client and accepted in the portal. A board made before the pictures
+   * existed gets a second revision with a real picture, through the same review.
+   */
   private async design(ctx: Ctx, caseId: string) {
     const { s, rooms } = ctx;
     const designer = await this.as("designer");
     const designs = this.get(DesignService);
-    const designId = this.id(ctx, "design:concept"), versionId = this.id(ctx, "design:concept:v1"), assetId = this.id(ctx, "asset:design-concept");
-    const list = async () => ((await designs.list(designer, this.w, caseId)) as { items: Array<{ id: string; version: number; versions: Array<{ id: string; status: string }> }> }).items;
+    const designId = this.id(ctx, "design:concept"), versionId = this.id(ctx, "design:concept:v1"), tileAssetId = this.id(ctx, "asset:design-concept");
+    type Design = { id: string; version: number; versions: Array<{ id: string; number: number; status: string; asset?: { id: string } | null }> };
+    const list = async () => ((await designs.list(designer, this.w, caseId)) as { items: Design[] }).items;
+    // The first inspiration with a Core Collection picture lends it to the board.
+    let picture: string | null = null;
+    for (const item of s.inspiration) { picture = await this.picture(ctx, caseId, designer, `inspiration:${item.key}`, item.catalog); if (picture) break; }
     let design = await this.step("concept board", async () => (await list()).find((row) => row.id === designId) ?? null, async () => {
-      await this.upload(caseId, designer, assetId, tile(`${s.key}-concept`));
+      const assetId = picture ?? await this.upload(caseId, designer, tileAssetId, tile(`${s.key}-concept`));
       await designs.uploadFiles(designer, this.w, caseId, await this.validated(UploadDesignFilesDto, {
         roomId: rooms.get(s.rooms[0]) ?? null, note: "Concept board: palette, key pieces and the made joinery.",
         files: [{ id: designId, versionId, assetId, title: `${s.rooms[0]} concept board`, documentType: "Concept / mood board", note: "Revision 1", includedClientRounds: 1 }],
       }));
       return (await list()).find((row) => row.id === designId)!;
     });
-    const status = () => design.versions.find((version) => version.id === versionId)?.status ?? "";
     const refresh = async () => { design = (await list()).find((row) => row.id === designId)!; };
-    const activity = async (actor: Actor, key: string, action: string, extra: Record<string, unknown> = {}) => {
-      await refresh();
-      return designs.activity(actor, this.w, caseId, designId, await this.validated(DesignActivityDto, { id: this.id(ctx, `design-activity:${key}`), version: design.version, versionId, action, note: "", decisionBy: "", ...extra }));
+    const reviewer = await this.other(designer, ["owner", "manager", "projectManager"]);
+    const ladder = async (version: string, suffix: string) => {
+      const status = () => design.versions.find((row) => row.id === version)?.status ?? "";
+      const activity = async (actor: Actor, key: string, action: string, extra: Record<string, unknown> = {}) => {
+        await refresh();
+        return designs.activity(actor, this.w, caseId, designId, await this.validated(DesignActivityDto, { id: this.id(ctx, `design-activity:${key}${suffix}`), version: design.version, versionId: version, action, note: "", decisionBy: "", ...extra }));
+      };
+      if (["draft", "uploaded"].includes(status())) {
+        await this.advance(`design${suffix} · internal review requested`, false, () => activity(designer, "internal_review", "internal_review", { reviewerId: reviewer.userId, contextConfirmed: true }));
+        await refresh();
+      }
+      if (s.design === "internal_review") { if (status() === "internal_review") this.kept(`design${suffix} · waiting for ${reviewer.displayName}'s review`); return; }
+      if (status() === "internal_review") { await this.advance(`design${suffix} · internally approved`, false, () => activity(reviewer, "internal_approved", "internal_approved", { note: "Layout and selections checked." })); await refresh(); }
+      if (status() === "internal_approved") { await this.advance(`design${suffix} · shared with the client`, false, () => activity(designer, "client_review", "client_review")); await refresh(); }
+      if (status() === "client_review") {
+        await this.advance(`design${suffix} · accepted by the client in the portal`, false, async () => {
+          const view = await this.portalView(ctx);
+          const project = view.projects.find((row) => row.id === caseId);
+          const shared = project?.decisions?.designs?.find((row: Any) => row.id === version);
+          if (!shared?.canDecide) throw new Skip("the design is not open for the client's decision in the portal");
+          await this.portalDecision(ctx, "design_decision", `design:${caseId}:${version}:accept`, { caseId, versionId: version, decision: "accept", note: "Love it. Go ahead." });
+        });
+      } else if (status() === "approved") this.kept(`design${suffix} · accepted by the client`);
+      else if (status()) this.skip("design", `the concept board is ${status()}`);
     };
-    const reviewer = await this.other(designer, ["manager", "owner", "projectManager"]);
-    if (["draft", "uploaded"].includes(status())) {
-      await this.advance("design · internal review requested", false, () => activity(designer, "internal_review", "internal_review", { reviewerId: reviewer.userId, contextConfirmed: true }));
+    await ladder(versionId, "");
+    // A board that only has the seed's tile gets the real picture as its next revision, once the pictures exist.
+    const latest = design.versions[0];
+    if (picture && latest?.asset?.id === tileAssetId && ["approved", "internal_review", "rejected", "changes_requested"].includes(latest.status)) {
+      const versionId2 = this.id(ctx, "design:concept:v2");
+      await this.advance("concept board · revision 2 with the Core Collection picture", design.versions.some((row) => row.id === versionId2), async () =>
+        designs.addVersion(designer, this.w, caseId, designId, await this.validated(AddDesignVersionDto, { id: versionId2, version: design.version, assetId: picture!, note: "Revision 2 · Core Collection pictures", includedClientRounds: 1 })));
       await refresh();
+      await ladder(versionId2, " (revision 2)");
     }
-    if (s.design === "internal_review") { if (status() === "internal_review") this.kept("design · waiting for internal review"); return; }
-    if (status() === "internal_review") { await this.advance("design · internally approved", false, () => activity(reviewer, "internal_approved", "internal_approved", { note: "Layout and selections checked." })); await refresh(); }
-    if (status() === "internal_approved") { await this.advance("design · shared with the client", false, () => activity(designer, "client_review", "client_review")); await refresh(); }
-    if (status() === "client_review") {
-      await this.advance("design · accepted by the client in the portal", false, async () => {
-        const view = await this.portalView(ctx);
-        const project = view.projects.find((row) => row.id === caseId);
-        const shared = project?.decisions?.designs?.find((row: Any) => row.id === versionId);
-        if (!shared?.canDecide) throw new Skip("the design is not open for the client's decision in the portal");
-        await this.portalDecision(ctx, "design_decision", `design:${caseId}:${versionId}:accept`, { caseId, versionId, decision: "accept", note: "Love it. Go ahead." });
-      });
-    } else if (status() === "approved") this.kept("design · accepted by the client");
-    else if (status()) this.skip("design", `the concept board is ${status()}`);
   }
 
   // ---------------------------------------------------------------- Quotation
@@ -1120,7 +1650,7 @@ class ShowcaseSeed {
   }
 
   /** Review and issue: submitted by Sales admin, the QS estimate, issued to the client's decision-maker. */
-  private async issue(ctx: Ctx, caseId: string, quoteId: string, grantId: string) {
+  private async issue(ctx: Ctx, caseId: string, quoteId: string, grantId: string, options: { submitOnly?: boolean } = {}) {
     const salesAdmin = await this.as("salesAdmin");
     const quote = async () => ((await this.commercialData(caseId)).quotes as Any[]).find((row) => row.id === quoteId)!;
     let status = (await quote()).status as string;
@@ -1132,6 +1662,7 @@ class ShowcaseSeed {
       status = "draft";
     }
     if (status === "draft") { await this.advance("quotation submitted for review", false, () => this.commercialCommand(caseId, salesAdmin, "submit", { quoteId })); status = "internal_review"; }
+    if (options.submitOnly) { if (status === "internal_review") this.kept("quotation waiting for the QS estimate review"); return; }
     if (status === "internal_review") {
       const estimator = await this.as("estimator");
       await this.advance("QS estimate approved", false, () => this.tryAs(estimator, (actor) => this.commercialCommand(caseId, actor, "qs_approve", { quoteId })));
@@ -1167,6 +1698,14 @@ class ShowcaseSeed {
     // Evidence reads as it would on a real file: the product refuses to execute or verify anything marked as a demonstration.
     await this.advance("agreement recorded", Boolean(data.agreement) && isOperationalEvidence(data.agreement), () => this.commercialCommand(caseId, salesAdmin, "agreement", { quoteId, reference,
       terms: "Accepted quotation terms; the firm's standard terms and conditions apply.", evidence: `Signed agreement ${reference} on file (showcase).`, evidenceKind: "operational" }));
+    data = await this.commercialData(caseId);
+    // The signed agreement itself, a document the client finds in the portal once the agreement is executed.
+    const fileId = this.id(ctx, "asset:signed-agreement");
+    await this.advance("signed agreement attached", ((data.agreement?.files ?? []) as Any[]).some((file) => file.id === fileId), async () => {
+      const pdf = Buffer.from(`%PDF-1.4\n% Signed agreement ${reference} (showcase)\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n`);
+      await this.upload(caseId, salesAdmin, fileId, { buffer: pdf, originalname: `${reference}.pdf`, mimetype: "application/pdf", size: pdf.length });
+      await this.commercialCommand(caseId, salesAdmin, "attach_agreement_file", { quoteId, assetId: fileId });
+    });
     data = await this.commercialData(caseId);
     const owner = await this.as("owner");
     await this.advance("agreement executed", data.agreement?.status === "executed", () => this.tryAs(owner, (actor) => this.commercialCommand(caseId, actor, "execute_agreement")));
@@ -1223,7 +1762,12 @@ class ShowcaseSeed {
     const client = ctx.s.client;
     let token = this.portalTokens.get(client.mobile);
     if (!token) {
-      const challenge = (await portal.challenge(this.slug, { phone: client.mobile }, "", `seed:${ctx.s.key}`)) as { challengeId: string };
+      let challenge: { challengeId: string };
+      try { challenge = (await portal.challenge(this.slug, { phone: client.mobile }, "", `seed:${ctx.s.key}`)) as { challengeId: string }; } catch (error) {
+        // The portal hands out one code per number every 30 seconds and six in ten minutes; a rerun simply waits.
+        if (error instanceof HttpException && error.getStatus() === 429) throw new Skip(`the client portal is still rate-limiting codes for ${client.mobile}; run again in a few minutes`);
+        throw error;
+      }
       const session = (await portal.login(this.slug, { challengeId: challenge.challengeId, code: client.demoCode })) as { token: string };
       token = session.token;
       this.portalTokens.set(client.mobile, token);
@@ -1257,6 +1801,14 @@ class ShowcaseSeed {
       return this.tryAs(pm, (who) => projects.start(who, this.w, caseId, { quoteId, leadMembershipId: lead, name: s.title, startDate: dayFrom(-s.execution.startDaysAgo), promiseDate: dayFrom(s.execution.promiseDays) }) as Promise<{ projectId: string }>);
     });
     const projectId = started.projectId;
+    await this.team(projectId);
+    return projectId;
+  }
+
+  /** The project's team, one person per role from the workspace's people (only while the project is open). */
+  private async team(projectId: string) {
+    const projects = this.get(ProjectCoreService);
+    const actor = await this.actor(this.input.actorUserId);
     const roles: Array<[string, ShowcaseRole]> = [["quantity_surveyor", "estimator"], ["procurement", "buyer"], ["site_supervisor", "site"], ["factory_lead", "factory"], ["designer", "designer"]];
     for (const [role, key] of roles) {
       const person = await this.as(key);
@@ -1264,10 +1816,10 @@ class ShowcaseSeed {
       const detail = (await projects.get(actor, this.w, projectId)) as unknown as { project: { version: number; status: string }; team: Array<{ role: string; member: { membershipId: string } | null }> };
       if (!["active", "on_hold"].includes(detail.project.status)) { this.kept("project team (the project is closed)"); break; }
       const holder = detail.team.find((row) => row.role === role)?.member?.membershipId ?? null;
-      await this.advance(`team · ${role}`, holder === person.membershipId || (holder !== null && holder !== person.membershipId),
+      // The showcase's projects follow the workspace's people: a role that changed hands moves to the person who holds it now.
+      await this.advance(`team · ${role} (${person.displayName})`, holder === person.membershipId,
         () => projects.command(actor, this.w, projectId, { action: "set_member", role, membershipId: person.membershipId, version: detail.project.version }));
     }
-    return projectId;
   }
 
   private async invite(ctx: Ctx, projectId: string) {
@@ -1287,6 +1839,18 @@ class ShowcaseSeed {
     const production = (data.payments as Any[]).find((payment) => payment.sourceQuoteId === quoteId && payment.requiredForProduction);
     if (production && s.execution.productionPayment) await this.payment(ctx, caseId, production, "production", `RCPT-${s.key.toUpperCase().replace(/[^A-Z0-9]+/g, "")}-PROD-2`);
     else if (production) this.kept("production payment left unpaid");
+    // The last milestone: the client paid at handover (verified), or Sales reported it and Finance still has to verify.
+    const final = [...(data.payments as Any[])].filter((payment) => payment.sourceQuoteId === quoteId && !payment.requiredForRelease && !payment.requiredForProduction).at(-1);
+    if (final && s.execution.finalPayment) {
+      const reference = `RCPT-${s.key.toUpperCase().replace(/[^A-Z0-9]+/g, "")}-FINAL-3`;
+      if (s.execution.finalPayment === "verified") await this.payment(ctx, caseId, final, "final", reference);
+      else {
+        const receipts = ((await this.commercialData(caseId)).receipts ?? []) as Any[];
+        const salesAdmin = await this.as("salesAdmin");
+        await this.advance("final payment reported, waiting for Finance", final.status === "verified" || receipts.some((receipt) => receipt.paymentId === final.id), () =>
+          this.commercialCommand(caseId, salesAdmin, "report_payment_receipt", { paymentId: final.id, reference, evidence: "Bank transfer confirmation on file (showcase).", evidenceKind: "operational" }));
+      }
+    }
     if (s.execution.overdue) {
       const due = (data.payments as Any[]).find((payment) => payment.title === s.execution.overdue!.title);
       if (!due) { this.skip("overdue payment", `no milestone "${s.execution.overdue.title}"`); return; }
@@ -1401,7 +1965,7 @@ class ShowcaseSeed {
     let firstId = "";
     for (const [index, plan] of ctx.s.execution.orders.entries()) {
       const supplier = usable[plan.supplier % usable.length];
-      const pick = (need: { title: string; source: string }) => plan.pick === "materials" ? need.source === "material" : need.source !== "material" && plan.pick.test(need.title);
+      const pick = (need: { title: string; source: string }) => plan.pick === "materials" ? need.source === "material" : plan.pick instanceof RegExp ? need.source !== "material" && plan.pick.test(need.title) : false;
       const id = await this.order(ctx, projectId, plan, `${plan.label} to ${supplier.name}`, supplier, pick, price,
         { supplierReference: `SO-${tag}-${1201 + index * 17}`, deliveryNote: `DN-${tag}-${4471 + index * 31}`, notes: `${plan.label[0].toUpperCase()}${plan.label.slice(1)} for ${ctx.s.title} (showcase).` }, needs);
       firstId ||= id;
@@ -1417,14 +1981,19 @@ class ShowcaseSeed {
     const buyer = await this.as("buyer");
     const orderId = this.id(ctx, `purchase-order:${key}`);
     const get = async () => { try { return (await orders.get(buyer, this.w, orderId)) as unknown as { order: Any; lines: Any[]; receipts?: Any[] }; } catch { return null; } };
+    const free = Array.isArray(plan.pick) ? plan.pick : null;
     // Nothing left for this order (an earlier one covered it): nothing to do.
-    if (!(await get()) && !(await needs()).some((need) => pick(need) && Number(need.remaining ?? 0) > 0)) { this.kept(`${key} · nothing left to order`); return ""; }
+    if (!free && !(await get()) && !(await needs()).some((need) => pick(need) && Number(need.remaining ?? 0) > 0)) { this.kept(`${key} · nothing left to order`); return ""; }
     let order = await this.step(`purchase order · ${label}`, get, async () => {
-      const mine = (await needs()).filter((need) => pick(need) && Number(need.remaining ?? 0) > 0);
-      if (!mine.length) throw new Skip(`nothing left to order for ${key}`);
-      const blocked = mine.find((need) => need.blocked);
-      if (blocked) throw new Skip(`purchasing is blocked: ${blocked.blocked}`);
-      const lines = mine.map((need) => ({ source: need.source, ...(need.source === "material" ? { materialItemId: need.sourceId } : { boqLineId: need.sourceId }), quantity: need.remaining, unitPrice: price(need) }));
+      let lines: unknown[];
+      if (free) lines = free.map((line) => ({ source: "free", projectId, description: line.description, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice }));
+      else {
+        const mine = (await needs()).filter((need) => pick(need) && Number(need.remaining ?? 0) > 0);
+        if (!mine.length) throw new Skip(`nothing left to order for ${key}`);
+        const blocked = mine.find((need) => need.blocked);
+        if (blocked) throw new Skip(`purchasing is blocked: ${blocked.blocked}`);
+        lines = mine.map((need) => ({ source: need.source, ...(need.source === "material" ? { materialItemId: need.sourceId } : { boqLineId: need.sourceId }), quantity: need.remaining, unitPrice: price(need) }));
+      }
       await orders.create(buyer, this.w, { id: orderId, vendorId: supplier.id, expectedDate: dayFrom(plan.expected), notes: detail.notes, lines });
       return (await get())!;
     });
@@ -1432,29 +2001,43 @@ class ShowcaseSeed {
       const fresh = (await get())!;
       return orders.command(actor, this.w, orderId, { action, version: fresh.order.version, ...extra });
     };
+    const ladder: OrderState[] = ["draft", "pending_approval", "approved", "sent", "confirmed", "partly_received", "received", "closed"];
+    const wants = (state: OrderState) => ladder.indexOf(plan.state) >= ladder.indexOf(state);
     let status = order.order.status as string;
-    if (status === "draft") { await this.advance(`${key} · submitted`, false, () => command(buyer, "submit")); order = (await get())!; status = order.order.status; }
-    if (status === "pending_approval") {
+    if (plan.state === "cancelled") {
+      await this.advance(`${key} · cancelled`, status === "cancelled", () => command(buyer, "cancel", { reason: "Ordered twice by mistake; the first order covers it." }));
+      return orderId;
+    }
+    if (status === "draft" && wants("pending_approval")) { await this.advance(`${key} · submitted`, false, () => command(buyer, "submit")); order = (await get())!; status = order.order.status; }
+    if (status === "pending_approval" && wants("approved")) {
       const approver = await this.other(buyer, ["owner", "manager", "projectManager", "finance"]);
       await this.advance(`${key} · approved`, false, () => command(approver, "approve"));
       status = "approved";
     }
-    if (status === "approved") { await this.advance(`${key} · sent to the supplier (no email)`, false, () => command(buyer, "send", { to: null })); status = "sent"; }
-    if (status === "sent") { await this.advance(`${key} · supplier confirmation recorded`, false, () => command(buyer, "confirm", { promisedDate: dayFrom(plan.promised), supplierReference: detail.supplierReference })); status = "confirmed"; }
-    if (!plan.receive) { this.kept(`${key} · waiting for the delivery`); return orderId; }
+    if (status === "approved" && wants("sent")) { await this.advance(`${key} · sent to the supplier (no email)`, false, () => command(buyer, "send", { to: null })); status = "sent"; }
+    if (status === "sent" && wants("confirmed")) { await this.advance(`${key} · supplier confirmation recorded`, false, () => command(buyer, "confirm", { promisedDate: dayFrom(plan.promised), supplierReference: detail.supplierReference })); status = "confirmed"; }
+    if (!receive(plan.state)) { this.kept(`${key} · ${plan.state.replace("_", " ")}`); return orderId; }
     order = (await get())!;
     const receiptId = this.id(ctx, `receipt:${key}`);
-    await this.step(`${key} · delivery received at the factory`, async () => (order.receipts ?? []).find((row: Any) => row.id === receiptId) ?? null, async () => {
+    const partial = plan.state === "partly_received";
+    await this.step(`${key} · delivery received at the factory${partial ? " (part)" : ""}`, async () => (order.receipts ?? []).find((row: Any) => row.id === receiptId) ?? null, async () => {
       const form = (await receiving.receiving(buyer, this.w, orderId)) as unknown as { defaultPlace: string; places: Array<{ key: string; kind: string }>; lines: Array<{ id: string; outstanding: string }> };
       const place = form.places.find((row) => row.kind === "factory")?.key ?? form.places.find((row) => row.kind === "store")?.key ?? form.defaultPlace;
-      const lines = form.lines.filter((line) => Number(line.outstanding) > 0).map((line) => ({ orderLineId: line.id, received: line.outstanding }));
+      const open = form.lines.filter((line) => Number(line.outstanding) > 0);
+      const lines = (partial ? open.slice(0, 1) : open).map((line) => ({ orderLineId: line.id, received: line.outstanding }));
       if (!lines.length) throw new Skip("everything on the order has arrived");
       return receiving.receive(buyer, this.w, { id: receiptId, orderId, place, receivedOn: dayFrom(Math.min(plan.promised, 0)), deliveryNote: detail.deliveryNote, lines });
     });
+    // A part delivery waits for its inspection (the "To inspect" list); the rest is inspected by someone other than the receiver.
+    if (partial) { this.kept(`${key} · waiting for inspection`); return orderId; }
     const inspector = await this.other(buyer, ["owner", "manager", "projectManager", "factory"]);
     const full = (await receiving.receipt(inspector, this.w, receiptId)) as unknown as { lines: Array<{ id: string; pending: string }> };
     await this.advance(`${key} · delivery inspected and accepted`, !full.lines.some((line) => Number(line.pending) > 0), () =>
       receiving.inspect(inspector, this.w, receiptId, { lines: full.lines.filter((line) => Number(line.pending) > 0).map((line) => ({ id: line.id, accepted: line.pending, rejected: "0" })) }));
+    if (plan.state === "closed") {
+      order = (await get())!;
+      await this.advance(`${key} · closed`, order.order.status === "closed", () => command(buyer, "close", {}));
+    }
     return orderId;
   }
 
@@ -1546,19 +2129,26 @@ class ShowcaseSeed {
     ];
     for (let day = 1; day <= s.execution.reports; day += 1) {
       const reportId = this.id(ctx, `site-report:${day}`);
+      // The first days on site, one report each; a report a person already wrote for that day is theirs to keep.
+      const on = dayFrom(Math.min(-(s.execution.siteStartDaysAgo ?? 0) + day, -1));
       let report = current.reports.find((row) => row.id === reportId);
       if (!report) {
-        await this.step(`daily site report ${dayFrom(-day)} with a photo`, async () => null, async () => {
-          await site.command(supervisor, this.w, projectId, { id: reportId, action: "save_report", reportDate: dayFrom(-day), weather: day % 2 ? "Clear" : "Hazy", workforce: [{ trade: "Carpenters", people: 3 }, { trade: "Painters", people: 2 }],
-            notes: notes[(day - 1) % notes.length], lines: [] });
+        await this.step(`daily site report ${on} with a photo (${supervisor.email})`, async () => null, async () => {
+          try {
+            await site.command(supervisor, this.w, projectId, { id: reportId, action: "save_report", reportDate: on, weather: day % 2 ? "Clear" : "Hazy", workforce: [{ trade: "Carpenters", people: 3 }, { trade: "Painters", people: 2 }],
+              notes: notes[(day - 1) % notes.length], lines: [] });
+          } catch (error) {
+            if (error instanceof HttpException && error.getStatus() === 409) throw new Skip(`a report for ${on} already exists for ${supervisor.email}`);
+            throw error;
+          }
           await site.uploadPhoto(supervisor, this.w, projectId, reportId, this.id(ctx, `site-report:${day}:photo`), tile(`${s.key}-site-${day}`) as never);
           current = await state();
           return current.reports.find((row) => row.id === reportId)!;
-        });
+        }).catch((error) => { if (error instanceof Skip) this.skip(`site report ${on}`, error.reason); else throw error; });
         report = current.reports.find((row) => row.id === reportId);
-      } else this.kept(`daily site report ${dayFrom(-day)}`);
-      if (report && report.status === "draft") { await this.advance(`site report ${dayFrom(-day)} submitted`, false, () => site.command(supervisor, this.w, projectId, { action: "submit", reportId, version: report!.version })); current = await state(); report = current.reports.find((row) => row.id === reportId); }
-      if (report && report.status === "submitted") await this.advance(`site report ${dayFrom(-day)} approved`, false, () => site.command(approver, this.w, projectId, { action: "approve", reportId, version: report!.version }));
+      } else this.kept(`daily site report ${day}`);
+      if (report && report.status === "draft") { await this.advance(`site report ${day} submitted`, false, () => site.command(supervisor, this.w, projectId, { action: "submit", reportId, version: report!.version })); current = await state(); report = current.reports.find((row) => row.id === reportId); }
+      if (report && report.status === "submitted") await this.advance(`site report ${day} approved`, false, () => site.command(approver, this.w, projectId, { action: "approve", reportId, version: report!.version }));
     }
     // Snags found on site: some fixed and closed with a photo after, some still open.
     const board = async () => ((await work.board(pm, this.w, projectId)) as { items: Array<{ id: string; version: number; status: string }> }).items;
@@ -1583,6 +2173,189 @@ class ShowcaseSeed {
         const closer = pm.userId === supervisor.userId ? await this.other(supervisor, ["projectManager", "owner", "manager"]) : pm;
         await this.advance("snag closed by the project manager", false, () => work.command(closer, this.w, projectId, { action: "update", itemId: snagId, version: snag!.version, status: "done" }));
       } else if (snag?.status === "done") this.kept("snag closed");
+    }
+  }
+
+  /** A project an earlier run completed opens again (at its last stage) when the story still has things to publish. */
+  private async reopenIfClosed(ctx: Ctx, projectId: string) {
+    const projects = this.get(ProjectCoreService);
+    const actor = await this.actor(this.input.actorUserId);
+    const detail = (await projects.get(actor, this.w, projectId)) as unknown as { project: { version: number; status: string }; updates: Array<{ note: string; sharedAt: string | null }> };
+    if (detail.project.status !== "completed") return;
+    const approved = ((await this.get(SiteService).state(actor, this.w, projectId)) as unknown as { reports: Array<{ status: string; photos?: Array<{ sharedAt?: string | null; shared?: boolean }> }> }).reports.filter((row) => row.status === "approved");
+    const unshared = approved.some((report) => (report.photos ?? []).some((photo) => !(photo.sharedAt ?? photo.shared)));
+    const missing = ctx.s.execution.updates.some((note) => !detail.updates.some((update) => update.note === note && update.sharedAt)) || approved.length < ctx.s.execution.reports || unshared;
+    if (!missing) { this.kept("project completed"); return; }
+    await this.advance("project reopened to publish its record to the client", false, () =>
+      projects.command(actor, this.w, projectId, { action: "reopen", reason: "Publishing progress and photos to the client's portal.", version: detail.project.version }));
+    // People who joined after the project closed take their roles now, so their site reports and photos are theirs.
+    await this.team(projectId);
+  }
+
+  /** What the client reads under Progress: updates written for them, and the site photos shared from approved reports. */
+  private async progress(ctx: Ctx, projectId: string) {
+    const { s } = ctx;
+    const projects = this.get(ProjectCoreService), site = this.get(SiteService);
+    const pm = await this.as("projectManager");
+    const detail = async () => (await projects.get(pm, this.w, projectId)) as unknown as { project: { version: number; status: string }; updates: Array<{ id: string; note: string; sharedAt: string | null }> };
+    let current = await detail();
+    if (!["active", "on_hold"].includes(current.project.status)) { this.kept("progress (the project is closed)"); return; }
+    for (const note of s.execution.updates) {
+      const found = current.updates.find((update) => update.note === note);
+      if (found?.sharedAt) { this.kept(`update shared · ${note.slice(0, 40)}…`); continue; }
+      if (found) await this.advance(`update shared with the client · ${note.slice(0, 40)}…`, false, () => projects.command(pm, this.w, projectId, { action: "share_update", updateId: found.id, shared: true, version: current.project.version }));
+      else await this.advance(`update published to the client · ${note.slice(0, 40)}…`, false, () => projects.command(pm, this.w, projectId, { action: "post_update", health: "on_track", note, shareWithClient: true, version: current.project.version }));
+      current = await detail();
+    }
+    const state = (await site.state(pm, this.w, projectId)) as unknown as { reports: Array<{ id: string; status: string; photos?: Array<{ id: string; sharedAt?: string | null; shared?: boolean }> }> };
+    for (const report of state.reports.filter((row) => row.status === "approved"))
+      for (const photo of report.photos ?? [])
+        await this.advance(`site photo shared with the client`, Boolean(photo.sharedAt ?? photo.shared), () => site.command(pm, this.w, projectId, { action: "share_photo", photoId: photo.id, shared: true }));
+  }
+
+  /** The conversation in the portal: the client writes there; the team answers on the case (visible to the client). */
+  private async messages(ctx: Ctx, caseId: string) {
+    const { s } = ctx;
+    const portal = this.get(ClientPortalService);
+    const sales = await this.as(s.owner);
+    const requests = async () => ((await this.commercialData(caseId)).requests ?? []) as Array<{ id: string; title: string; decisionRequest?: unknown; comments: Array<{ text: string }> }>;
+    let requestId = "";
+    for (const [index, message] of s.messages.entries()) {
+      const current = await requests();
+      if (message.from === "client" && index === 0) {
+        const title = message.title ?? message.text.slice(0, 60);
+        const found = current.find((request) => request.title === title && !request.decisionRequest);
+        const made = await this.step(`client request · ${title}`, async () => found ?? null, async () => {
+          const { token } = await this.portalView(ctx);
+          const result = (await portal.command(this.slug, token, { commandId: randomUUID(), action: "request", caseId, title, detail: message.text })) as { ok?: boolean; requestId?: string };
+          if (!result.ok) throw new Error("the client's request did not go through");
+          return { id: result.requestId! };
+        });
+        requestId = made.id;
+        continue;
+      }
+      if (!requestId) requestId = current.find((request) => !request.decisionRequest)?.id ?? "";
+      if (!requestId) throw new Skip("no conversation to reply on");
+      const thread = current.find((request) => request.id === requestId);
+      const said = (thread?.comments ?? []).some((comment) => comment.text === message.text);
+      if (message.from === "client") {
+        await this.advance(`client reply · ${message.text.slice(0, 40)}…`, said, async () => {
+          const { token } = await this.portalView(ctx);
+          const result = (await portal.command(this.slug, token, { commandId: randomUUID(), action: "comment", caseId, requestId, text: message.text })) as { ok?: boolean };
+          if (!result.ok) throw new Error("the client's reply did not go through");
+        });
+      } else {
+        await this.advance(`team reply · ${message.text.slice(0, 40)}…`, said, () => this.commercialCommand(caseId, sales, "comment", { requestId, text: message.text, visibility: "client" }));
+      }
+    }
+  }
+
+  /** The client reports a problem under warranty in the portal; the claim waits for the project manager. */
+  private async claim(ctx: Ctx, caseId: string) {
+    const { s } = ctx;
+    const portal = this.get(ClientPortalService), warranty = this.get(WarrantyService);
+    const projectId = ctx.ids.projectId;
+    if (!projectId) throw new Skip("no project");
+    // The team's own view says whether the claim is there already; the client signs in only to raise it.
+    const known = (await warranty.state(await this.as("projectManager"), this.w, projectId)) as unknown as { claims?: Array<{ description: string }> };
+    await this.advance(`warranty claim · ${s.execution.claim!.description.slice(0, 40)}…`, (known.claims ?? []).some((claim) => claim.description === s.execution.claim!.description), async () => {
+      const view = await this.portalView(ctx);
+      const project = view.projects.find((row) => row.id === caseId);
+      const items = (project?.warranty as { items: Array<{ id: string; title: string; active: boolean }> } | null | undefined)?.items ?? [];
+      if (!items.length) throw new Skip("nothing is under warranty in the portal");
+      const item = items.find((row) => s.execution.claim!.item.test(row.title) && row.active) ?? items.find((row) => row.active);
+      const result = (await portal.command(this.slug, view.token, { commandId: randomUUID(), action: "warranty_claim", caseId, description: s.execution.claim!.description, ...(item ? { lineId: item.id } : {}) })) as { ok?: boolean };
+      if (!result.ok) throw new Error("the client's warranty claim did not go through");
+    });
+  }
+
+  // ---------------------------------------------------------------- Everyone's week (Home)
+
+  /** Two or three open tasks per person on the running projects, on their execution plan: due today, overdue, coming up. */
+  private async homeTasks() {
+    const execution = this.get(ExecutionService);
+    const actor = await this.actor(this.input.actorUserId);
+    const projects = new Map<string, string>();
+    for (const [key, ids] of Object.entries(this.result.scenarios)) if (ids.projectId) projects.set(key, ids.projectId);
+    for (const task of HOME_TASKS) {
+      const projectId = projects.get(task.project);
+      if (!projectId) continue;
+      const person = await this.as(task.role);
+      if (!person.membershipId) continue;
+      const id = this.id(`home:${task.role}:`, task.key);
+      const state = (await execution.state(actor, this.w, projectId)) as unknown as Any;
+      const data = state.data ?? state;
+      const existing = (data.tasks ?? []).find((row: Any) => row.id === id) as Any | undefined;
+      // The task is the person's; one made earlier for someone else in that role (the role changed hands) moves to them.
+      if (existing && existing.ownerId === person.membershipId) { this.kept(`task · ${task.title}`); continue; }
+      const start = existing?.start ?? dayFrom(Math.min(task.due, 0) - 2), end = existing?.end ?? dayFrom(task.due);
+      await this.advance(`task · ${task.title} (${person.displayName}, ${task.due === 0 ? "today" : task.due < 0 ? `${-task.due}d overdue` : `in ${task.due}d`})`, false, () =>
+        execution.command(actor, this.w, projectId, { action: "task", requestId: existing ? this.id(`home:${task.role}:`, `${task.key}:to:${person.membershipId}`) : id, revision: data.revision,
+          task: { id, title: task.title, package: "Coordination", area: "", location: task.location, ownerId: person.membershipId, assigneeIds: [person.membershipId], start, end, quantity: 1, unit: "nos", weight: 1,
+            priority: task.due < 0 ? "high" : "normal", readiness: { scope: true, access: true, materials: true } } }));
+    }
+  }
+
+  /** Follow-ups owned by the owner and the manager, so their Home shows what waits on them. */
+  private async followUps() {
+    const activities = this.get(CrmActivitiesService), leads = this.get(CrmLeadsService);
+    for (const item of FOLLOW_UPS) {
+      const person = await this.as(item.role);
+      if (!person.membershipId) continue;
+      let target: { opportunityId?: string; leadId?: string; partyId?: string } | null = null;
+      if (item.on.scenario) {
+        const ids = this.result.scenarios[item.on.scenario];
+        if (ids?.opportunityId) target = { opportunityId: ids.opportunityId, partyId: ids.partyId };
+      } else if (item.on.enquiry) {
+        const enquiry = ENQUIRIES.find((row) => row.key === item.on.enquiry);
+        const lead = enquiry ? await this.findLead(await this.actor(this.input.actorUserId), enquiry) : null;
+        if (lead && !["qualified", "disqualified", "paused"].includes(lead.status)) target = { leadId: lead.id, partyId: lead.partyId };
+        else if (lead?.status === "qualified") {
+          // A qualified enquiry's follow-ups live on its opportunity.
+          const opportunities = this.get(CrmOpportunitiesService);
+          const list = (await opportunities.list(person, this.w, { partyId: lead.partyId, status: "open", limit: 10 } as never)) as unknown as { data: Array<{ id: string }> };
+          if (list.data[0]) target = { opportunityId: list.data[0].id, partyId: lead.partyId };
+        }
+      }
+      if (!target) { this.skip(`follow-up · ${item.title}`, "its enquiry or opportunity is not open"); continue; }
+      const dueAt = dateAt(item.due, item.hour).toISOString();
+      const find = async () => {
+        const list = (await activities.list(person, this.w, { ...(target!.opportunityId ? { opportunityId: target!.opportunityId } : { leadId: target!.leadId }), limit: 100 } as never)) as unknown as { data: Array<{ id: string; title: string; status: string }> };
+        return list.data.find((row) => row.title === item.title && row.status === "pending") ?? null;
+      };
+      const activity = await this.step(`follow-up · ${item.title} (${person.displayName}, ${item.due === 0 ? "today" : item.due < 0 ? `${-item.due}d overdue` : `in ${item.due}d`})`, find, async () =>
+        this.tryAs(person, async (who) => activities.create(who, this.w, await this.validated(CreateActivityDto, {
+          ...target, type: item.type, title: item.title, description: "Showcase follow-up.", ownerMembershipId: person.membershipId, priority: item.due < 0 ? "high" : "normal", dueAt,
+        })) as Promise<{ id: string; title: string; status: string }>));
+      // A meeting gets its time on the calendar; scheduling it twice is refused by the product and counts as kept.
+      if (item.type === "meeting" && item.minutes) {
+        const endsAt = new Date(new Date(dueAt).getTime() + item.minutes * 60_000).toISOString();
+        try {
+          await this.tryAs(person, (who) => activities.createAppointment(who, this.w, activity.id, { startsAt: dueAt, endsAt, timezone: this.timezone, attendeeMembershipIds: [person.membershipId!] }));
+          this.made(`meeting scheduled · ${item.title}`);
+        } catch (error) {
+          if (error instanceof HttpException && error.getStatus() === 409) this.kept(`meeting scheduled · ${item.title}`);
+          else throw new Error(`meeting · ${item.title}: ${describe(error)}`, { cause: error });
+        }
+      }
+      void leads;
+    }
+  }
+
+  /** Client replies waiting in the inbox: WhatsApp messages as the provider integration delivers them (no reply yet). */
+  private async clientReplies() {
+    const conversations = this.get(CrmConversationsService);
+    for (const reply of CLIENT_REPLIES) {
+      const scenario = SCENARIOS.find((row) => row.key === reply.scenario);
+      if (!scenario) continue;
+      const providerMessageId = `showcase:whatsapp:${reply.key}`;
+      const known = (await this.db.tenantTransaction(this.w, this.input.actorUserId, (client) => client.query(
+        `SELECT 1 FROM crm_messages WHERE workspace_id = $1 AND provider_message_id = $2`, [this.w, providerMessageId]))).rowCount;
+      await this.advance(`client reply · ${scenario.client.displayName}: ${reply.text.slice(0, 40)}…`, Boolean(known), async () =>
+        conversations.ingestProviderMessage(await this.validated(ProviderInboundMessageDto, {
+          workspaceId: this.w, channel: "whatsapp", providerThreadId: `showcase:whatsapp:${scenario.client.mobile}`, providerMessageId,
+          contact: scenario.client.mobile, displayName: scenario.client.displayName, bodyText: reply.text, metadata: { seed: "showcase" },
+        })));
     }
   }
 
@@ -1724,6 +2497,25 @@ function daysAgo(days: number) {
 /** A calendar date `days` from today (negative: in the past). */
 function dayFrom(days: number) {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** The first array of records in a service's reply, whatever it is called. */
+function firstArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === "object") for (const entry of Object.values(value as Record<string, unknown>)) if (Array.isArray(entry) && entry.length && typeof entry[0] === "object") return entry as T[];
+  if (value && typeof value === "object") for (const entry of Object.values(value as Record<string, unknown>)) if (Array.isArray(entry)) return entry as T[];
+  return [];
+}
+
+/** The Monday of the week `offset` days from today (weeks start on Monday for the showcase's timesheets). */
+function mondayOf(offset: number) {
+  const day = new Date(Date.now() + offset * 86_400_000);
+  const weekday = (day.getUTCDay() + 6) % 7;
+  return new Date(day.getTime() - weekday * 86_400_000).toISOString().slice(0, 10);
+}
+
+function addDays(date: string, days: number) {
+  return new Date(new Date(`${date}T00:00:00Z`).getTime() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
 /** A moment `days` from today at the given hour (local to the process; enough for a follow-up). */
