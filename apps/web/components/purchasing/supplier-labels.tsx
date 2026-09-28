@@ -4,6 +4,9 @@ import { useMemo } from "react";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Approval, Deal, PaymentTerms, Supplier } from "@/lib/purchasing/types";
 
+/** A supplier's approval in its tone: approved, waiting, held, refused. */
+export const APPROVAL_TONE: Record<Approval, "neutral" | "success" | "warning" | "danger"> = { pending: "neutral", approved: "success", on_hold: "warning", not_approved: "danger" };
+
 /** "50.00" → "50", "12.50" → "12.5": a stored percentage as people write it. */
 export const percentText = (value: string | null) => (value ? value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") : "");
 

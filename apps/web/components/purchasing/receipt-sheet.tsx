@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, Checkbox, ControlledModalDialog, ErrorState, InlineNotice, InspectorSheet, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Badge, Button, Checkbox, ControlledModalDialog, ErrorState, InlineNotice, InspectorSheet, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { addExact, subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
@@ -20,10 +20,10 @@ const amount = (value: string, unit: string) => `${quantityText(value)} ${unit}`
 /** Whether a receipt still waits for inspection, and what came of it. */
 export function ReceiptResult({ receipt }: { receipt: ReceiptState["receipt"] }) {
   const t = useT();
-  const status = receipt.reversedAt ? "cancelled" : Number(receipt.pending) > 0 ? "pending_approval" : Number(receipt.rejected) > 0 || Number(receipt.missing) > 0 ? "cancelled" : "confirmed";
+  const tone = receipt.reversedAt ? "neutral" : Number(receipt.pending) > 0 ? "warning" : Number(receipt.rejected) > 0 || Number(receipt.missing) > 0 ? "danger" : "success";
   const label = receipt.reversedAt ? t("Reversed") : Number(receipt.pending) > 0 ? t("To inspect") : Number(receipt.rejected) > 0 ? t("Some rejected")
     : Number(receipt.missing) > 0 ? t("Some missing") : t("Accepted");
-  return <span className={styles.orderStatus} data-status={status}>{label}</span>;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 /**
