@@ -5,7 +5,7 @@ import { RequestActor } from "../../auth/actor";
 import { DatabaseService } from "../../database/database.service";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
-import { BulkConversationsDto, CreateLabelDto, CreateQuickReplyDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto } from "./dto/inbox.dto";
+import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessageDto, CreateQuickReplyDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto } from "./dto/inbox.dto";
 import { INBOX_MEMBERS_SQL } from "./inbox/inbox-assignment";
 import { applyConversationChange, recordChatEvent, type ConversationChange } from "./inbox/inbox-commands";
 import { inboxLink, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
@@ -92,6 +92,42 @@ export class CrmInboxService {
         if (result.changed) changed += 1;
       }
       return { action: input.action, requested: ids.length, changed, unchanged: ids.length - changed };
+    });
+  }
+
+  /**
+   * Blocks (or unblocks) the chat's number, optionally marking it as spam. A blocked client's messages are kept but
+   * raise no notice or assignment, and it gets no automatic messages. Safe to repeat.
+   */
+  blockConversation(actor: RequestActor, workspaceId: string, conversationId: string, input: BlockConversationDto) {
+    return this.access.withPermission(actor, workspaceId, "crm.communications.send", async (client, actorUser) => {
+      const chat = (await client.query<{ partyId: string | null }>(`SELECT party_id AS "partyId" FROM crm_conversations WHERE workspace_id = $1 AND id = $2`, [workspaceId, conversationId])).rows[0];
+      if (!chat) throw new NotFoundException("Conversation not found");
+      if (!chat.partyId) throw new UnprocessableEntityException("This chat has no client to block");
+      const before = (await client.query<{ blockedAt: Date | null; spamAt: Date | null }>(`SELECT blocked_at AS "blockedAt", spam_at AS "spamAt" FROM crm_parties WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, chat.partyId])).rows[0];
+      const spam = input.blocked && Boolean(input.spam);
+      if (Boolean(before?.blockedAt) === input.blocked && Boolean(before?.spamAt) === spam) return { conversationId, blocked: input.blocked, spam };
+      await client.query(
+        `UPDATE crm_parties SET blocked_at = CASE WHEN $3 THEN COALESCE(blocked_at, now()) END, blocked_by = CASE WHEN $3 THEN $4::uuid END,
+                spam_at = CASE WHEN $5 THEN COALESCE(spam_at, now()) END, version = version + 1, updated_at = now()
+          WHERE workspace_id = $1 AND id = $2`, [workspaceId, chat.partyId, input.blocked, actorUser.userId, spam]);
+      if (Boolean(before?.blockedAt) !== input.blocked) await recordChatEvent(client, { workspaceId, conversationId, kind: input.blocked ? "blocked" : "unblocked", actorUserId: actorUser.userId, method: "manual", reason: spam ? "Spam" : null });
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: input.blocked ? "crm.party.blocked.v1" : "crm.party.unblocked.v1", entityType: "crm_party", entityId: chat.partyId, before: { blocked: Boolean(before?.blockedAt), spam: Boolean(before?.spamAt) }, after: { blocked: input.blocked, spam } });
+      return { conversationId, blocked: input.blocked, spam };
+    });
+  }
+
+  /** Hides a message from Wodana's views (it stays on the client's phone); only an administrator shows it again. */
+  hideMessage(actor: RequestActor, workspaceId: string, conversationId: string, messageId: string, input: HideMessageDto) {
+    return this.access.withPermission(actor, workspaceId, input.hidden ? "crm.communications.send" : "crm.settings.manage", async (client, actorUser) => {
+      const before = (await client.query<{ hiddenAt: Date | null }>(`SELECT hidden_at AS "hiddenAt" FROM crm_messages WHERE workspace_id = $1 AND conversation_id = $2 AND id = $3 FOR UPDATE`, [workspaceId, conversationId, messageId])).rows[0];
+      if (!before) throw new NotFoundException("Message not found");
+      if (Boolean(before.hiddenAt) === input.hidden) return { messageId, hidden: input.hidden };
+      await client.query(`UPDATE crm_messages SET hidden_at = CASE WHEN $4 THEN now() END, hidden_by = CASE WHEN $4 THEN $5::uuid END, version = version + 1, updated_at = now()
+        WHERE workspace_id = $1 AND conversation_id = $2 AND id = $3`, [workspaceId, conversationId, messageId, input.hidden, actorUser.userId]);
+      await recordChatEvent(client, { workspaceId, conversationId, kind: input.hidden ? "hidden" : "unhidden", actorUserId: actorUser.userId, method: "manual" });
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: input.hidden ? "crm.message.hidden.v1" : "crm.message.unhidden.v1", entityType: "crm_message", entityId: messageId, before: { hidden: Boolean(before.hiddenAt) }, after: { hidden: input.hidden } });
+      return { messageId, hidden: input.hidden };
     });
   }
 

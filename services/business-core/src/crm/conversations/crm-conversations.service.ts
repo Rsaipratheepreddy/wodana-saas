@@ -112,15 +112,19 @@ export class CrmConversationsService {
       const messages = await client.query(
         `SELECT message.id, message.direction, message.status, message.authorship, message.sender_type AS "senderType", message.sender_id AS "senderId",
                 ${MEMBER_NAME("sender")} AS "senderName",
-                message.provider_message_id AS "providerMessageId", message.body_text AS "bodyText",
-                message.body_html AS "bodyHtml", message.sent_at AS "sentAt", message.delivered_at AS "deliveredAt",
-                message.read_at AS "readAt", message.failure_code AS "failureCode", message.metadata, message.version,
+                message.provider_message_id AS "providerMessageId",
+                -- A hidden message keeps its content for the audit; Wodana's views show who hid it instead.
+                CASE WHEN message.hidden_at IS NULL THEN message.body_text END AS "bodyText",
+                CASE WHEN message.hidden_at IS NULL THEN message.body_html END AS "bodyHtml", message.sent_at AS "sentAt", message.delivered_at AS "deliveredAt",
+                message.read_at AS "readAt", message.failure_code AS "failureCode",
+                CASE WHEN message.hidden_at IS NULL THEN message.metadata ELSE jsonb_strip_nulls(jsonb_build_object('automatic', message.metadata->'automatic')) END AS metadata, message.version,
+                message.hidden_at AS "hiddenAt", ${MEMBER_NAME("hider")} AS "hiddenByName",
                 message.created_at AS "createdAt", message.updated_at AS "updatedAt"
-         FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id
+         FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id LEFT JOIN users hider ON hider.id = message.hidden_by
          WHERE message.workspace_id = $1 AND message.conversation_id = $2
          ORDER BY message.created_at DESC, message.id DESC LIMIT 101`, [workspaceId, conversationId],
       );
-      const facts = await client.query<{ partyName: string | null; ownerName: string | null; leadReference: string | null; businessName: string; signatureEnabled: boolean | null }>(
+      const facts = await client.query<{ partyName: string | null; ownerName: string | null; leadReference: string | null; businessName: string; signatureEnabled: boolean | null; blockedAt: Date | null; spamAt: Date | null }>(
         `SELECT (SELECT display_name FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "partyName",
                 (SELECT ${MEMBER_NAME("account")} FROM workspace_memberships membership JOIN users account ON account.id = membership.user_id
                   WHERE membership.workspace_id = $1 AND membership.id = $3) AS "ownerName",
@@ -128,10 +132,13 @@ export class CrmConversationsService {
                   WHERE lead.workspace_id = $1 AND lead.id = $4) AS "leadReference",
                 (SELECT coalesce(nullif(btrim(branding.display_name), ''), workspace.name) FROM workspaces workspace
                    LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id WHERE workspace.id = $1) AS "businessName",
-                (SELECT signature_enabled FROM crm_inbox_settings WHERE workspace_id = $1) AS "signatureEnabled"`,
+                (SELECT signature_enabled FROM crm_inbox_settings WHERE workspace_id = $1) AS "signatureEnabled",
+                (SELECT blocked_at FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "blockedAt",
+                (SELECT spam_at FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "spamAt"`,
         [workspaceId, conversation.party_id ?? null, conversation.owner_membership_id ?? null, conversation.lead_id ?? null],
       );
       const canSend = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.communications.send");
+      const canManage = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.settings.manage");
       // The number every seat replies from: the workspace's default connected WhatsApp number.
       const connection = await client.query<{ number: string | null; accountName: string | null }>(
         `SELECT configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName"
@@ -161,7 +168,8 @@ export class CrmConversationsService {
         partyName: fact?.partyName ?? null, ownerName: fact?.ownerName ?? null, leadReference: fact?.leadReference ?? null,
         labels: labels.rows[0]?.labels ?? [], events: history.rows,
         replyingAs: { businessName: fact?.businessName ?? null, number: connection.rows[0]?.number ?? null, accountName: connection.rows[0]?.accountName ?? null },
-        signatureEnabled: fact?.signatureEnabled === true,
+        signatureEnabled: fact?.signatureEnabled === true, canManage,
+        blockedAt: fact?.blockedAt ?? null, spamAt: fact?.spamAt ?? null,
         windowClosesAt: lastInbound ? new Date(lastInbound.getTime() + 86_400_000).toISOString() : null,
         messages: page.reverse(),
         nextMessagesCursor: hasOlder && oldest ? encodeCursor({ value: new Date(oldest.createdAt).toISOString(), id: oldest.id }) : null,
@@ -176,8 +184,8 @@ export class CrmConversationsService {
       if (query.cursor && (!cursor || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(cursor.id) || !Number.isFinite(Date.parse(cursor.value)))) throw new BadRequestException("Invalid message cursor");
       // Internal notes are part of the team's thread (never sent to the client).
       const result = await client.query(`SELECT message.id,message.direction,message.status,message.authorship,message.sender_type AS "senderType",message.sender_id AS "senderId",
-          coalesce(nullif(btrim(sender.display_name), ''), sender.primary_email) AS "senderName",message.body_text AS "bodyText",message.metadata,message.created_at AS "createdAt",message.failure_code AS "failureCode"
-        FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id
+          coalesce(nullif(btrim(sender.display_name), ''), sender.primary_email) AS "senderName",CASE WHEN message.hidden_at IS NULL THEN message.body_text END AS "bodyText",CASE WHEN message.hidden_at IS NULL THEN message.metadata ELSE jsonb_strip_nulls(jsonb_build_object('automatic', message.metadata->'automatic')) END AS metadata,message.hidden_at AS "hiddenAt",coalesce(nullif(btrim(hider.display_name), ''), hider.primary_email) AS "hiddenByName",message.created_at AS "createdAt",message.failure_code AS "failureCode"
+        FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id LEFT JOIN users hider ON hider.id = message.hidden_by
         WHERE message.workspace_id=$1 AND message.conversation_id=$2 AND ($3::timestamptz IS NULL OR (message.created_at,message.id)<($3::timestamptz,$4::uuid))
         ORDER BY message.created_at DESC,message.id DESC LIMIT $5`, [workspaceId, conversationId, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1]);
       const data = result.rows.slice(0, query.limit), oldest = data.at(-1);
@@ -738,7 +746,10 @@ export class CrmConversationsService {
       ? String(conversation.lead_id ?? conversation.party_id ?? messageId)
       : messageId;
     await this.events.record(client, { workspaceId, actorUserId, source, action: input.direction === "inbound" ? "crm.customer.replied.v1" : "crm.message.created.v1", entityType: aggregateType, entityId: aggregateId, after: { ...response, partyId: conversation.party_id, leadId: conversation.lead_id } });
-    if (input.direction === "inbound") await this.routeInbound(client, workspaceId, conversation, touched.rows[0], messageId, bodyText);
+    // A blocked number's messages are kept, but raise no notice and no assignment.
+    const blocked = input.direction === "inbound" && conversation.party_id
+      ? (await client.query(`SELECT 1 FROM crm_parties WHERE workspace_id = $1 AND id = $2 AND blocked_at IS NOT NULL`, [workspaceId, conversation.party_id])).rowCount : 0;
+    if (input.direction === "inbound" && !blocked) await this.routeInbound(client, workspaceId, conversation, touched.rows[0], messageId, bodyText);
     if (input.direction === "internal" && input.mentions?.length) await this.noticeMentions(client, workspaceId, conversation, [...new Set(input.mentions)], messageId, bodyText, actorUserId);
     return response;
   }

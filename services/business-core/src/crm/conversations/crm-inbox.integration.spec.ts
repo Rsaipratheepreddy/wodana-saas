@@ -298,4 +298,28 @@ integration("team inbox", () => {
       expect(await sendClientEvent(client, { workspaceId, event: "crm.enquiry.created", partyId: stranger, recordKey: "other" })).toEqual({ sent: false, reason: "blocked" });
     });
   });
+
+  it("keeps a blocked number's messages without notices or assignment, and hides a message from views only", async () => {
+    await withInbox(async (client, { workspaceId, manager, sara, strangerChat, nouraChat, conversations, inbox, as }) => {
+      as(sara);
+      expect(await inbox.blockConversation(actor, workspaceId, strangerChat, { blocked: true, spam: true })).toMatchObject({ blocked: true, spam: true });
+      expect(await inbox.blockConversation(actor, workspaceId, strangerChat, { blocked: true, spam: true })).toMatchObject({ blocked: true });
+      await conversations.addInboundInternal(workspaceId, strangerChat, { direction: "inbound", bodyText: "Buy followers" } as never);
+      expect((await chat(client, strangerChat)).owner_membership_id).toBeNull();
+      expect(await notices(client, workspaceId, manager, "crm.inbox.unassigned")).toEqual([]);
+      expect((await client.query(`SELECT count(*)::int AS n FROM crm_messages WHERE conversation_id=$1`, [strangerChat])).rows[0].n).toBe(1);
+      await inbox.blockConversation(actor, workspaceId, strangerChat, { blocked: false });
+      await conversations.addInboundInternal(workspaceId, strangerChat, { direction: "inbound", bodyText: "Sorry, real question" } as never);
+      expect((await chat(client, strangerChat)).owner_membership_id).not.toBeNull();
+      expect((await client.query(`SELECT kind FROM crm_conversation_events WHERE conversation_id=$1 AND kind IN ('blocked','unblocked') ORDER BY created_at`, [strangerChat])).rows.map((row) => row.kind)).toEqual(["blocked", "unblocked"]);
+
+      const message = await conversations.addInboundInternal(workspaceId, nouraChat, { direction: "inbound", bodyText: "My card number is 4111…" } as never) as { id: string };
+      await inbox.hideMessage(actor, workspaceId, nouraChat, message.id, { hidden: true });
+      const thread = await conversations.get(actor, workspaceId, nouraChat);
+      expect(thread.messages.find((item: { id: string }) => item.id === message.id)).toMatchObject({ bodyText: null, hiddenByName: "Sara Khan" });
+      expect((await client.query(`SELECT body_text FROM crm_messages WHERE id=$1`, [message.id])).rows[0].body_text).toBe("My card number is 4111…");
+      await inbox.hideMessage(actor, workspaceId, nouraChat, message.id, { hidden: false });
+      expect((await conversations.get(actor, workspaceId, nouraChat)).messages.find((item: { id: string }) => item.id === message.id)).toMatchObject({ bodyText: "My card number is 4111…", hiddenAt: null });
+    });
+  });
 });

@@ -7,7 +7,7 @@ import { snoozeProblem, type ConversationState } from "./inbox-rules";
 
 type Db = Pick<PoolClient, "query">;
 export type ConversationRow = Record<string, unknown>;
-export type ChatEventKind = "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked";
+export type ChatEventKind = "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked" | "blocked" | "unblocked" | "hidden" | "unhidden";
 export type ChatEventMethod = "manual" | "bulk" | "relationship" | "queue" | "client_replied" | "schedule" | "enquiry";
 
 export type ConversationChange = {

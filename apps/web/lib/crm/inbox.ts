@@ -26,7 +26,7 @@ export type InboxSettings = {
   workday: { start: string | null; days: number[] | null };
 };
 export type ChatEvent = {
-  id: string; kind: "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked";
+  id: string; kind: "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked" | "blocked" | "unblocked" | "hidden" | "unhidden";
   method: string | null; reason: string | null; snoozedUntil: string | null; createdAt: string;
   actorName: string | null; ownerName: string | null; labelName: string | null; labelColor: LabelColor | null;
 };
@@ -167,5 +167,9 @@ export function eventLine(event: ChatEvent): { key: MessageKey; values: Record<s
     case "labelled": return { key: tKey("{actor} added the label {label}"), values: { actor, label: event.labelName ?? "" } };
     case "unlabelled": return { key: tKey("{actor} removed the label {label}"), values: { actor, label: event.labelName ?? "" } };
     case "linked": return { key: tKey("{actor} linked this chat to an enquiry"), values: { actor } };
+    case "blocked": return { key: event.reason ? tKey("{actor} blocked this number as spam") : tKey("{actor} blocked this number"), values: { actor } };
+    case "unblocked": return { key: tKey("{actor} unblocked this number"), values: { actor } };
+    case "hidden": return { key: tKey("{actor} hid a message"), values: { actor } };
+    case "unhidden": return { key: tKey("{actor} showed a hidden message again"), values: { actor } };
   }
 }

@@ -11,6 +11,16 @@ export class BulkConversationsDto {
   @IsOptional() @IsUUID() labelId?: string;
 }
 
+export class BlockConversationDto {
+  @IsBoolean() blocked!: boolean;
+  /** With blocked: also mark the number as spam. */
+  @IsOptional() @IsBoolean() spam?: boolean;
+}
+
+export class HideMessageDto {
+  @IsBoolean() hidden!: boolean;
+}
+
 export class SetConversationLabelsDto {
   @IsArray() @ArrayMaxSize(20) @IsUUID(undefined, { each: true }) labelIds!: string[];
 }

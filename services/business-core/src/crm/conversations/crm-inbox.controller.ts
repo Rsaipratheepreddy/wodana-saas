@@ -8,7 +8,7 @@ import { CrmInboxService } from "./crm-inbox.service";
 import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
 import { SendPaymentReminderDto, SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, UpdatePaymentReminderScheduleDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
 import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
-import { BulkConversationsDto, CreateLabelDto, CreateQuickReplyDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto } from "./dto/inbox.dto";
+import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessageDto, CreateQuickReplyDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto } from "./dto/inbox.dto";
 
 type Ws = string;
 
@@ -21,6 +21,8 @@ export class CrmInboxController {
   @Post("inbox/payment-reminders") remind(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: SendPaymentReminderDto) { return this.reminders.remind(actor, workspaceId, input); }
   @Get("inbox/payment-reminders/schedule") reminderSchedule(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.reminders.schedule(actor, workspaceId); }
   @Put("inbox/payment-reminders/schedule") updateReminderSchedule(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: UpdatePaymentReminderScheduleDto) { return this.reminders.updateSchedule(actor, workspaceId, input); }
+  @Put("conversations/:conversationId/block") block(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() input: BlockConversationDto) { return this.inbox.blockConversation(actor, workspaceId, conversationId, input); }
+  @Put("conversations/:conversationId/messages/:messageId/hidden") hide(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Param("messageId", ParseUUIDPipe) messageId: string, @Body() input: HideMessageDto) { return this.inbox.hideMessage(actor, workspaceId, conversationId, messageId, input); }
   @Get("inbox/client-messages") clientMessages(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.whatsappTemplates.clientMessages(actor, workspaceId); }
   @Put("inbox/client-messages/:event") setClientMessage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("event") event: string, @Body() input: UpdateClientMessageDto) { return this.whatsappTemplates.setClientMessage(actor, workspaceId, event, input); }
   @Get("inbox/summary") summary(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.summary(actor, workspaceId); }

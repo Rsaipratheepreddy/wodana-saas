@@ -181,6 +181,11 @@
 .metaText { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); white-space: nowrap; }
 .headingLabels { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); margin-block-start: var(--wd-space-1); }
 .stateBar { display: flex; align-items: center; gap: var(--wd-space-1-5); margin: 0 var(--wd-space-3) var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-info-subtle); color: var(--wd-color-info); font-size: var(--wd-text-xs); }
+.stateBar[data-tone="danger"] { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
+.hiddenText { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-style: italic; }
+.hideButton { position: absolute; inset-block-start: var(--wd-space-5); inset-inline-end: 0; opacity: 0; }
+.message:hover .hideButton, .message:focus-within .hideButton { opacity: 1; }
+@media (hover: none) { .hideButton { opacity: 1; } }
 
 /* The thread's own history and internal notes. */
 .systemLine { display: flex; justify-content: center; align-items: baseline; gap: var(--wd-space-2); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-align: center; }

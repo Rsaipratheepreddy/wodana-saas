@@ -128,6 +128,29 @@ describe("CRM inbox", () => {
     await user.click(await screen.findByRole("button", { name: "Resolve" }));
     await waitFor(() => expect(posted("conversations/email-chat?", "PATCH")).toEqual([{ version: 3, status: "closed" }]));
   });
+  it("blocks a number and hides a message only after saying what it does", async () => {
+    const user = userEvent.setup(), { data, record, posted } = setup({ partyId: "party-1", canManage: true }); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByText("Hello there");
+    await user.click(screen.getByRole("button", { name: "More chat actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Mark as spam" }));
+    const confirm = await screen.findByRole("dialog");
+    expect(confirm).toHaveTextContent("nobody is told");
+    await user.click(within(confirm).getByRole("button", { name: "Mark as spam" }));
+    await waitFor(() => expect(posted(`conversations/${record.id}/block`, "PUT")).toEqual([{ blocked: true, spam: true }]));
+    await user.click(screen.getAllByRole("button", { name: "Hide message" })[0]);
+    const hide = await screen.findByRole("dialog");
+    expect(hide).toHaveTextContent("stays on the client's phone");
+    await user.click(within(hide).getByRole("button", { name: "Hide message" }));
+    await waitFor(() => expect(posted("/hidden", "PUT")).toEqual([{ hidden: true }]));
+  });
+  it("shows who hid a message, and lets an administrator show it again", async () => {
+    const now = new Date().toISOString();
+    const user = userEvent.setup(), { data, record, posted } = setup({ canManage: true, messages: [{ id: "gone", direction: "inbound", status: "delivered", bodyText: null, hiddenAt: now, hiddenByName: "Sara Khan", createdAt: now }] });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    expect(await screen.findByText(/Hidden by Sara Khan/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show again" }));
+    await waitFor(() => expect(posted("conversations/" + record.id + "/messages/gone/hidden", "PUT")).toEqual([{ hidden: false }]));
+  });
   it("resolves several chats at once", async () => {
     const user = userEvent.setup(), { data, record, posted } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     await screen.findByText("Hello there");

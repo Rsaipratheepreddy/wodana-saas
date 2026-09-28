@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, CheckCheck, Clock3, FileText, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
-import { Avatar, Button, ControlledModalDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, MenuButton, useDesignSystem } from "@/design-system";
+import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
+import { Avatar, Button, ControlledModalDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
 import { CLIENT_EVENT_LABELS, eventLine, snoozePresets, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -57,6 +57,21 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     catch (error) { setFailure(error instanceof Error ? error.message : t("The chat could not be updated.")); }
     finally { saving.current = false; setBusy(false); }
   }, [thread, workspaceId, id, refresh, onChanged, onDone, t]);
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
+  const command = useCallback(async (path: string, body: Record<string, unknown>, fallback: string) => {
+    setBusy(true); setFailure("");
+    try { await crmRequest(workspaceId, path, "PUT", body, timeout()); await refresh(); await onChanged(); }
+    catch (error) { setFailure(error instanceof Error ? error.message : fallback); }
+    finally { setBusy(false); }
+  }, [workspaceId, refresh, onChanged]);
+  const block = (blocked: boolean, spam = false) => blocked
+    ? requestConfirmation({ title: spam ? t("Mark as spam and block?") : t("Block this number?"), confirmLabel: spam ? t("Mark as spam") : t("Block number"),
+      body: t("Their messages are still kept here, but nobody is told and they get no automatic messages."), onConfirm: () => void command(`conversations/${id}/block`, { blocked, spam }, t("The number could not be blocked.")) })
+    : void command(`conversations/${id}/block`, { blocked: false }, t("The number could not be unblocked."));
+  const hide = (messageId: string, hidden: boolean) => hidden
+    ? requestConfirmation({ title: t("Hide this message?"), confirmLabel: t("Hide message"), body: t("It's hidden in Wodana only. It stays on the client's phone, and an administrator can show it again."),
+      onConfirm: () => void command(`conversations/${id}/messages/${messageId}/hidden`, { hidden: true }, t("The message could not be hidden.")) })
+    : void command(`conversations/${id}/messages/${messageId}/hidden`, { hidden: false }, t("The message could not be shown again."));
   const setLabels = async (labelIds: string[]) => {
     setBusy(true); setFailure("");
     try { await crmRequest(workspaceId, `conversations/${id}/labels`, "PUT", { labelIds }, timeout()); await refresh(); await onChanged(); }
@@ -104,17 +119,22 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
         {thread.canSend ? <Button size="compact" variant={status === "closed" ? "secondary" : "primary"} isDisabled={busy} onPress={() => void change({ status: status === "closed" ? "open" : "closed" }, status !== "closed")}>{status === "closed" ? t("Reopen") : t("Resolve")}</Button> : null}
         <IconButton aria-label={t("Contact details")} className={styles.detailsToggle} size="compact" onPress={() => setDetailsOpen(true)}><Info size={16} /></IconButton>
         <IconButton aria-label={t("Refresh conversation")} size="compact" onPress={() => void refresh()}><RefreshCw size={16} /></IconButton>
+        {thread.canSend && thread.partyId ? <IconMenuButton ariaLabel={t("More chat actions")} items={thread.blockedAt ? [{ id: "unblock", label: t("Unblock number") }]
+          : [{ id: "block", label: t("Block number"), tone: "danger" }, { id: "spam", label: t("Mark as spam"), tone: "danger" }]}
+          onAction={(key) => key === "unblock" ? block(false) : block(true, key === "spam")} /> : null}
       </div>
     </header>
     {loadFailure || failure ? <p className={styles.error} role="alert">{failure || loadFailure} {loadFailure ? <Button size="compact" variant="quiet" onPress={() => void refresh()}>{t("Retry")}</Button> : null}</p> : null}
+    {thread.blockedAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{thread.spamAt ? t("Blocked as spam: messages are kept, nobody is told.") : t("Blocked: messages are kept, nobody is told.")}</p> : null}
     {status === "snoozed" && thread.snoozedUntil ? <p className={styles.stateBar}><Clock3 aria-hidden="true" size={14} />{t("Snoozed until {time}", { time: new Intl.DateTimeFormat(locale, { timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(String(thread.snoozedUntil))) })}</p> : null}
-    <MessageHistory workspaceId={workspaceId} thread={thread} />
+    <MessageHistory workspaceId={workspaceId} thread={thread} onHide={thread.canSend ? hide : undefined} canShowHidden={Boolean(thread.canManage)} />
     <InboxComposer workspaceId={workspaceId} thread={thread} now={now} blocked={blocked} draft={draft} onDraftChange={onDraftChange} variables={context?.variables ?? {}}
       lookups={{ quickReplies: lookups.quickReplies, templates: lookups.templates, owners, canManage: Boolean(lookups.settings?.canManage) }}
       onSent={async () => { await refresh(); await onChanged(); }} />
   </section>
     {detailsOpen ? <InspectorSheet isOpen title={t("Contact details")} onOpenChange={setDetailsOpen} size="sm"><ChatContextPanel workspaceId={workspaceId} thread={thread} context={context} owners={owners} membershipId={lookups.membershipId} onLinked={async () => { await refresh(); await loadContext(); await onChanged(); }} /></InspectorSheet> : null}
     {customSnooze ? <CustomSnooze timeZone={timeZone} onClose={() => setCustomSnooze(false)} onSnooze={async (until) => { setCustomSnooze(false); await change({ status: "snoozed", snoozedUntil: until }, true); }} /> : null}
+    {confirmationDialog}
   </div>;
 }
 
@@ -172,7 +192,7 @@ function groupPhotos(entries: Entry[]): Entry[] {
 }
 
 /** Messages and the chat's own history (who resolved, snoozed, assigned or labelled it) in one timeline. */
-function MessageHistory({ workspaceId, thread }: { workspaceId: string; thread: RecordData }) {
+function MessageHistory({ workspaceId, thread, onHide, canShowHidden }: { workspaceId: string; thread: RecordData; onHide?: (messageId: string, hidden: boolean) => void; canShowHidden: boolean }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const dateOf = (value: unknown) => inboxDate(value, locale, timeZone, t("New"));
@@ -197,7 +217,7 @@ function MessageHistory({ workspaceId, thread }: { workspaceId: string; thread: 
       {dateOf(entry.at) !== dateOf(entries[index - 1]?.at) ? <div className={styles.dateDivider}><span>{dateOf(entry.at)}</span></div> : null}
       {entry.kind === "event" ? <EventLine event={entry.event} time={inboxTime(entry.at, locale, timeZone)} />
         : entry.kind === "album" ? <PhotoAlbum messages={entry.messages} partyName={partyName} workspaceId={workspaceId} time={inboxTime(entry.at, locale, timeZone)} />
-        : <MessageBubble message={entry.message} partyName={partyName} workspaceId={workspaceId} time={inboxTime(entry.at, locale, timeZone)} />}
+        : <MessageBubble message={entry.message} partyName={partyName} workspaceId={workspaceId} time={inboxTime(entry.at, locale, timeZone)} onHide={onHide} canShowHidden={canShowHidden} />}
     </Fragment>)}
     {!entries.length ? <div className={styles.empty}><MessageCircle size={30} /><p>{t("No messages yet.")}</p></div> : null}
   </div>;
@@ -209,7 +229,7 @@ function EventLine({ event, time }: { event: ChatEvent; time: string }) {
   return <p className={styles.systemLine}><span>{t(line.key, { ...line.values, actor: line.values.actor || t("Someone") })}</span><time dateTime={event.createdAt}>{time}</time></p>;
 }
 
-function MessageBubble({ message, partyName, workspaceId, time }: { message: RecordData; partyName: string; workspaceId: string; time: string }) {
+function MessageBubble({ message, partyName, workspaceId, time, onHide, canShowHidden = false }: { message: RecordData; partyName: string; workspaceId: string; time: string; onHide?: (messageId: string, hidden: boolean) => void; canShowHidden?: boolean }) {
   const t = useT();
   const direction = String(message.direction);
   const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata as Record<string, unknown> : {};
@@ -218,7 +238,9 @@ function MessageBubble({ message, partyName, workspaceId, time }: { message: Rec
   return <article className={styles.message} data-direction={direction} data-automatic={automatic ? true : undefined} aria-label={direction === "inbound" ? t("Contact message") : direction === "internal" ? t("Team note") : t("Your message")}>
     <span className={styles.messageAvatar}><Avatar name={sender} size="sm" /></span>
     <strong className={styles.messageSender}>{sender}{direction === "internal" ? <span className={styles.noteTag}>{t("Note")}</span> : null}{automatic ? <span className={styles.automaticTag}>{t(CLIENT_EVENT_LABELS[automatic] ?? "Client message")}</span> : null}</strong>
-    <MessageContent message={message} workspaceId={workspaceId} />
+    {message.hiddenAt ? <p className={styles.hiddenText}>{t("Hidden by {name}", { name: String(message.hiddenByName ?? t("Someone")) })}{canShowHidden && onHide ? <> <Button size="compact" variant="quiet" onPress={() => onHide(message.id, false)}>{t("Show again")}</Button></> : null}</p>
+      : <MessageContent message={message} workspaceId={workspaceId} />}
+    {onHide && !message.hiddenAt ? <IconButton aria-label={t("Hide message")} className={styles.hideButton} size="compact" variant="quiet" onPress={() => onHide(message.id, true)}><EyeOff size={13} /></IconButton> : null}
     <footer><time dateTime={String(message.createdAt)}>{time}</time>{direction === "outbound" ? <DeliveryState status={String(message.status)} /> : null}</footer>
     {message.failureCode ? <small className={styles.error}>{t("Not delivered: {reason}", { reason: String(message.failureCode) })}</small> : null}
   </article>;
