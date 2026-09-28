@@ -420,6 +420,8 @@
    selected group shows a dash; focus is a visible ring on the box; disabled dims the whole row. */
 .wd-checkbox, .wd-switch, .wd-radio { position: relative; display: inline-flex; align-items: flex-start; gap: var(--wd-space-2-5); min-block-size: var(--wd-control-sm); padding-block: var(--wd-space-1-5); color: var(--wd-color-text); cursor: pointer; font-size: var(--wd-text-sm); line-height: var(--wd-choice-size); -webkit-tap-highlight-color: transparent; }
 .wd-checkbox > span:not(.wd-checkbox-box), .wd-switch > span:not(.wd-switch-track), .wd-radio > span:not(.wd-radio-dot) { min-inline-size: 0; }
+/* In a table's select column the box centres in its cell. */
+:is(th, td) > .wd-checkbox, .wd-row-index > .wd-checkbox { align-items: center; justify-content: center; }
 .wd-checkbox-box, .wd-radio-dot { box-sizing: border-box; display: grid; flex: none; place-items: center; inline-size: var(--wd-choice-size); block-size: var(--wd-choice-size); border: 1.5px solid var(--wd-color-border-choice); background: var(--wd-color-surface); color: transparent; pointer-events: none; transition: background var(--wd-duration-fast) var(--wd-ease-standard), border-color var(--wd-duration-fast) var(--wd-ease-standard), box-shadow var(--wd-duration-fast) var(--wd-ease-standard), transform var(--wd-duration-fast) var(--wd-ease-out); }
 .wd-checkbox-box { border-radius: var(--wd-radius-xs); }
 .wd-checkbox-box > svg { inline-size: 0.875rem; block-size: 0.875rem; stroke-width: 3; }
