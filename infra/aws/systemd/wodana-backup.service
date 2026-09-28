@@ -1,5 +1,5 @@
 [Unit]
-Description=Wodana database and files backup to S3
+Description=Wodana daily database and files backup to S3
 After=docker.service
 
 [Service]

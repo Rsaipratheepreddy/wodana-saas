@@ -2,6 +2,7 @@ import "server-only";
 
 import { authenticatedBackendFetch, type AuthenticatedBackendResult } from "@/lib/auth/backend-session";
 import { businessApiUrl } from "@/lib/auth/server";
+import { aiPauseOf } from "./pause";
 
 /**
  * The web assistants reach the model only through Business Core's AI gateway, which applies the
@@ -17,16 +18,22 @@ export type AiRequest = {
   generationConfig?: Record<string, unknown>;
 };
 
-export type AiRefusal = "off" | "not-configured" | "no-access" | "rate-limited" | "unavailable";
+export type AiRefusal = "off" | "not-configured" | "no-access" | "rate-limited" | "no-credits" | "paused-today" | "unavailable";
 export type AiAnswer =
-  | { ok: true; text: string; finishReason: string | null; model: string; rotatedSession?: AuthenticatedBackendResult["rotatedSession"] }
+  | { ok: true; text: string; finishReason: string | null; model: string; provider: string; rotatedSession?: AuthenticatedBackendResult["rotatedSession"] }
   | { ok: false; reason: AiRefusal; status: number; rotatedSession?: AuthenticatedBackendResult["rotatedSession"] };
 
-/** Why the gateway refused: the workspace switched AI off, the deployment has no key, the person can't use AI, the limit, or the provider. */
+/**
+ * Why the gateway refused: the workspace switched AI off, the deployment has no model (or may not call it),
+ * the person can't use AI, the per-minute limit or a busy provider, AI credits used up, today's AI limit,
+ * or the provider.
+ */
 export function refusalOf(status: number, payload: unknown): AiRefusal {
   const code = payload && typeof payload === "object" ? (payload as { code?: unknown }).code : undefined;
   if (code === "AI_OFF") return "off";
-  if (code === "AI_NOT_CONFIGURED") return "not-configured";
+  if (code === "AI_NOT_CONFIGURED" || code === "AI_NOT_AVAILABLE") return "not-configured";
+  const pause = aiPauseOf(status, payload);
+  if (pause) return pause === "AI_CREDITS_EXHAUSTED" ? "no-credits" : "paused-today";
   if (status === 403) return "no-access";
   if (status === 429) return "rate-limited";
   return "unavailable";
@@ -61,13 +68,14 @@ export async function generateThroughGateway(
     if (result.unauthenticated) return { ok: false, reason: "no-access", status: 401, rotatedSession };
   }
   if (!upstream) return { ok: false, reason: "unavailable", status: 503, rotatedSession };
-  const payload = await upstream.json().catch(() => null) as { text?: unknown; finishReason?: unknown; model?: unknown } | null;
+  const payload = await upstream.json().catch(() => null) as { text?: unknown; finishReason?: unknown; model?: unknown; provider?: unknown } | null;
   if (!upstream.ok) return { ok: false, reason: refusalOf(upstream.status, payload), status: upstream.status, rotatedSession };
   return {
     ok: true,
     text: typeof payload?.text === "string" ? payload.text : "",
     finishReason: typeof payload?.finishReason === "string" ? payload.finishReason : null,
     model: typeof payload?.model === "string" ? payload.model : "",
+    provider: typeof payload?.provider === "string" ? payload.provider : "",
     rotatedSession,
   };
 }

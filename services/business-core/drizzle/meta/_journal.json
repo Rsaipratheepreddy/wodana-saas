@@ -684,15 +684,43 @@
     {
       "idx": 97,
       "version": "7",
-      "when": 1801180000000,
-      "tag": "0150_project_delivery_v2",
+      "when": 1801157000000,
+      "tag": "0154_ai_credits",
       "breakpoints": true
     },
     {
       "idx": 98,
       "version": "7",
+      "when": 1801160600000,
+      "tag": "0155_ai_credit_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1801170000000,
+      "tag": "0152_operations_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1801170000001,
+      "tag": "0153_factory_rework",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1801180000000,
+      "tag": "0150_project_delivery_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
       "when": 1801180000001,
-      "tag": "0151_work_origin",
+      "tag": "0151_warranty_variation",
       "breakpoints": true
     }
   ]

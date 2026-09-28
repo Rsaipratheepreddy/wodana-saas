@@ -2161,7 +2161,7 @@ integration("projects core (plan §6.10)", () => {
       const joinery = randomUUID();
       await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery" });
       const wo = randomUUID();
-      let order = await maker.plan(actor, w.workspaceId, { id: wo, lineId: cabinets.lineId ?? cabinets.id, quantity: "3", workcenterId: joinery, plannedStart: "2026-10-05", plannedEnd: "2026-10-16" });
+      let order = await maker.plan(actor, w.workspaceId, { id: wo, lineId: cabinets.lineId ?? cabinets.id, quantity: "3", workcenterId: joinery, plannedStart: "2099-10-05", plannedEnd: "2099-10-16" });
 
       // Oak is used only on the cabinets: 3 of 4.5 m takes two thirds of 20 sheets, rounded up. Glue is shared, so it isn't suggested.
       expect(order.canSuggest).toBe(true);

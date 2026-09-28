@@ -42,6 +42,7 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "reminder-settings": [["crm.automations.view"]],
   "inbox-settings": [["crm.communications.view", "crm.settings.manage"]],
   "delivery-health": [["workspace.settings.manage", "integrations.manage"]],
+  "ai-credits": [["workspace.settings.manage"]],
   // Sales
   "crm-overview": [["crm.leads.view"]],
   leads: [["crm.leads.view"]],

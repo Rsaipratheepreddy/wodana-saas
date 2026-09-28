@@ -191,7 +191,6 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.stage_ready", channel: "in_app", subject: "{{stage}} can be finished · {{title}}", body: "Everything it needs is done.", variables: ["title", "clientName", "actor", "stage", "note"] },
   { code: "project.materials_waiting", channel: "in_app", subject: "Material list waiting on the client · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.milestone_due", channel: "in_app", subject: "To invoice · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
-  { code: "project.over_ordered", channel: "in_app", subject: "Ordered more than {{actor}} leaves · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.client_update_ready", channel: "in_app", subject: "Client update to approve · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "work.assigned", channel: "in_app", subject: "{{task}} is yours", body: "{{actor}} gave you {{task}} on {{title}}.", variables: ["title", "clientName", "actor", "task", "due"] },
   { code: "work.assigned", channel: "email", subject: "{{task}} is yours · {{title}}", body: "{{actor}} gave you {{task}} on {{title}} for {{clientName}}. {{due}}", variables: ["title", "clientName", "actor", "task", "due"] },
@@ -272,6 +271,15 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "stock.transfer_short", channel: "in_app", subject: "Move {{transfer}} arrived short", body: "{{actor}}: {{note}}", variables: ["transfer", "from", "to", "actor", "note"] },
   { code: "stock.adjustment_needs_approval", channel: "in_app", subject: "A stock correction needs your approval", body: "{{actor}} counted {{note}} at {{to}}.", variables: ["transfer", "from", "to", "actor", "note"] },
   { code: "stock.adjusted", channel: "in_app", subject: "Stock corrected at {{to}}", body: "{{actor}}: {{note}}", variables: ["transfer", "from", "to", "actor", "note"] },
+  { code: "stock.transfer_rejected", channel: "in_app", subject: "Move {{transfer}}: goods refused at {{to}}", body: "{{actor}}: {{note}}. They're on their way back.", variables: ["transfer", "from", "to", "actor", "note"] },
+  { code: "stock.low", channel: "in_app", subject: "Stock is low: {{item}}", body: "{{note}}", variables: ["item", "place", "note"] },
+  { code: "stock.low", channel: "email", subject: "Stock is low: {{item}}", body: "{{note}}", variables: ["item", "place", "note"] },
+  { code: "purchasing.shipment_late", channel: "in_app", subject: "{{order}} arrives later", body: "{{supplier}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "purchasing.blocking_work", channel: "in_app", subject: "{{order}} is holding up work", body: "{{supplier}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "purchasing.over_ordered", channel: "in_app", subject: "{{variation}} leaves orders past what {{project}} needs", body: "{{note}}", variables: ["variation", "project", "note"] },
+  { code: "purchasing.hold_override", channel: "in_app", subject: "{{order}} goes ahead while its project is on hold", body: "{{actor}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "factory.rework", channel: "in_app", subject: "{{order}} goes back into production", body: "{{note}}", variables: ["order", "item", "project", "actor", "note"] },
+  { code: "factory.drawing_stale", channel: "in_app", subject: "{{order}}: its drawing has a newer revision", body: "{{note}}", variables: ["order", "item", "project", "actor", "note"] },
   { code: "project.off_track", channel: "in_app", subject: "{{title}} is off track", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.signed_off", channel: "in_app", subject: "Design signed off · {{clientName}}", body: "The design is approved. It's ready to quote.", variables: ["clientName"] },
   { code: "design.signed_off", channel: "email", subject: "Design signed off: {{clientName}}", body: "The design for {{clientName}} is signed off and ready to quote.\n\nOpen the case to start the quotation.", variables: ["clientName"] },
@@ -314,6 +322,11 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "account.domain_ownership_lost", channel: "email", subject: "{{domain}} is not connected", body: "We could no longer find the DNS record that proves {{organization}} owns {{domain}}.\n\nSign in at {{address}} in the meantime, and restore the record to reconnect the domain.", variables: ["organization", "date", "domain", "address"] },
   { code: "account.domain_live", channel: "in_app", subject: "{{domain}} is live", body: "Sign in at {{domain}}.", variables: ["organization", "date", "domain", "address"] },
   { code: "account.domain_live", channel: "email", subject: "{{domain}} is live", body: "{{organization}} now signs in at {{domain}}.", variables: ["organization", "date", "domain", "address"] },
+  // AI credits (ai-gateway/ai-credits.ts): owners and administrators, once when credits run low and once when they run out.
+  { code: "ai.credits_low", channel: "in_app", subject: "AI credits are running low", body: "{{balance}} credits left. Contact support to top up.", variables: ["balance"] },
+  { code: "ai.credits_low", channel: "email", subject: "AI credits are running low", body: "Your workspace has {{balance}} AI credits left.\n\nContact support to top up before they run out. Woddy and AI suggestions pause when credits are used up.", variables: ["balance"] },
+  { code: "ai.credits_exhausted", channel: "in_app", subject: "AI credits are used up", body: "Woddy and AI suggestions are paused. Contact support to top up.", variables: ["balance"] },
+  { code: "ai.credits_exhausted", channel: "email", subject: "AI credits are used up", body: "Your workspace has used all of its AI credits.\n\nWoddy and AI suggestions are paused until credits are topped up. Contact support to top up.", variables: ["balance"] },
 ];
 
 export async function seedDefaultNotificationTemplates(db: Db, workspaceId: string) {
@@ -499,9 +512,9 @@ export async function wakeDelivery(db: Db, workspaceId: string, notificationId: 
 export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "site.report_missing", "site.report_returned", "site.incident", "site.blocked",
   "work.assigned", "work.overdue", "work.snag_reopened",
-  "factory.released", "factory.check_failed", "factory.material_short",
-  "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed",
-  "stock.transfer_sent", "stock.transfer_short",
+  "factory.released", "factory.check_failed", "factory.material_short", "factory.rework",
+  "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed", "purchasing.blocking_work",
+  "stock.transfer_sent", "stock.transfer_short", "stock.transfer_rejected",
   "purchasing.approval_needed", "stock.adjustment_needs_approval", "payables.run_submitted", "petty_cash.submitted",
   "hrms.leave_requested", "hrms.leave_approved", "hrms.leave_rejected", "hrms.timesheet_submitted", "hrms.crew_day_submitted", "hrms.attendance_to_review",
   "quotation.review_requested", "design.review_requested",

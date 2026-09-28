@@ -14,13 +14,14 @@ import { ProjectCrewDays } from "../hrms/crew-days";
 import { ProjectSiteAccess } from "../hrms/site-access";
 import { useProjectFormat } from "../project-core/format";
 import { PhotoPicker, SavedPhotos } from "../purchasing/delivery-photos";
+import { ProjectArrivals } from "../purchasing/project-arrivals";
 import { quantityText } from "../purchasing/order-labels";
 import { ClientIssues, useClientIssues } from "./client-issues";
 import styles from "./site.module.css";
 
 const numeric = (value: string) => value.replace(/[^\d.-]/g, "");
 
-type SiteView = "reports" | "deliveries" | "crew-days" | "access" | "issues";
+type SiteView = "reports" | "crew-days" | "deliveries" | "access" | "issues";
 
 /**
  * A project's site: whether site work is running, the reports waiting for approval, and the day-by-day
@@ -33,7 +34,7 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
   const params = useSearchParams();
   const linkedDay = params?.get("crewDay") ?? null;
   const linkedIssue = params?.get("issue") ?? null;
-  const [view, setView] = useState<SiteView>(linkedDay ? "crew-days" : linkedIssue ? "issues" : "reports");
+  const [view, setView] = useState<SiteView>(linkedDay ? "crew-days" : linkedIssue ? "issues" : params?.get("view") === "deliveries" ? "deliveries" : "reports");
   const issues = useClientIssues(workspaceId, projectId);
   const format = useProjectFormat();
   const api = useMemo(() => siteApi(workspaceId, projectId), [workspaceId, projectId]);
@@ -63,27 +64,19 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
   if (!state) return <Skeleton lines={6} shape="rows" />;
   const onTeam = state.canReport || state.canManage;
   const switcher = <SegmentedControl label={t("Show")} value={view} onChange={(value) => setView(value as SiteView)}
-    options={[{ id: "reports", label: t("Reports") }, ...(state.deliveries?.length || view === "deliveries" ? [{ id: "deliveries", label: t("Arriving"), count: state.deliveries?.length || undefined }] : []),
-      { id: "crew-days", label: t("Crew days") }, ...(onTeam ? [{ id: "access", label: t("Access") }] : []),
+    options={[{ id: "reports", label: t("Reports") }, { id: "crew-days", label: t("Crew days") },
+      // What's on its way to site, received where it arrives.
+      ...(onTeam ? [{ id: "deliveries", label: t("Deliveries") }, { id: "access", label: t("Access") }] : []),
       // Only once the client has reported something (or a notice links here).
       ...(issues.data?.issues.length || view === "issues" ? [{ id: "issues", label: t("Client issues"), count: issues.toTriage || undefined }] : [])]} />;
   if (view === "crew-days") return <div className={styles.site}>
     <ProjectCrewDays workspaceId={workspaceId} projectId={projectId} openId={linkedDay} switcher={switcher} me={state.me} onTeam={onTeam} />
   </div>;
+  if (view === "deliveries") return <div className={styles.site}>
+    <ProjectArrivals workspaceId={workspaceId} projectId={projectId} switcher={switcher} />
+  </div>;
   if (view === "issues") return <div className={styles.site}>
     <ClientIssues projectId={projectId} client={issues} switcher={switcher} openId={linkedIssue} />
-  </div>;
-  if (view === "deliveries") return <div className={styles.site}>
-    <div className={styles.toolbar}>{switcher}</div>
-    {state.deliveries?.length ? <ul className={styles.reports} aria-label={t("Arriving")}>{state.deliveries.map((row) => <li key={row.id} className={styles.report}>
-      <div className={styles.reportHead}>
-        <Link href={row.kind === "order" ? `/workspace/purchasing/orders?order=${row.id}` : `/workspace/inventory/moves?move=${row.id}`}><strong>{row.number}</strong></Link>
-        <span className={styles.muted}>{row.from}</span>
-        <span className={styles.spacer} />
-        <span className={styles.muted} data-late={row.due && row.due < state.today || undefined}>{row.due ? format.day(row.due) : t("No date yet")}</span>
-      </div>
-      <span className={styles.muted}>{row.lines === 1 ? t("1 line to receive") : t("{count} lines to receive", { count: row.lines })}</span>
-    </li>)}</ul> : <EmptyState illustration={null} title={t("Nothing on its way")} />}
   </div>;
   if (view === "access") return <div className={styles.site}>
     <ProjectSiteAccess workspaceId={workspaceId} projectId={projectId} projectName={projectName} members={state.members} switcher={switcher} />

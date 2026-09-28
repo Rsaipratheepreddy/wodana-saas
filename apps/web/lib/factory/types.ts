@@ -10,7 +10,12 @@ export type WorkcenterRate = { id: string; workcenterId: string; from: string; r
 export type MakeLine = {
   lineId: string; projectId: string; projectReference: string; projectName: string; packageId: string | null; packageName: string | null;
   title: string; specification: string; unit: string; quantity: string; planned: string; left: string; suggestedStart: string | null; suggestedEnd: string | null;
+  /** Its project is running, or on hold (nothing is planned for it until it runs again). */
+  projectStatus?: "active" | "on_hold";
 };
+
+/** The one step a work order waits for, and whether it's the viewer's to do. */
+export type WorkOrderNext = "fix" | "release" | "start" | "approve" | "check" | "report" | "send" | "resume" | "decide_drawing" | null;
 
 export type WorkOrderRow = {
   id: string; number: number; projectId: string; projectReference: string; projectName: string; packageId: string | null; packageName: string | null; boqLineId: string;
@@ -24,6 +29,12 @@ export type WorkOrderRow = {
   holdKind: "manual" | "drawing" | null;
   /** The hours it takes, spread over its working days; the run it's part of. */
   plannedHours: string | null; batchId: string | null; batchNumber: number | null; batchName: string | null;
+  /** Passed goods the site sent back to be made again (already taken off passed). */
+  reworked?: string;
+  /** The approved design revision it's made to, and a newer revision's number when there is one. */
+  drawingVersionId?: string | null; drawingNewer?: number | null;
+  /** In lists: why a planned work order can't be released, what's made and still at the factory, and its next step (mine when it's the viewer's to do). */
+  blocked?: Array<{ key: ReleaseCheck["key"]; missing: string }>; atFactory?: string; next?: WorkOrderNext; mine?: boolean;
 };
 
 /** Work orders from any projects run together on a workcenter and day. */
@@ -53,7 +64,9 @@ export type WorkOrderMaterial = {
   replacesId: string | null; replacesName: string | null; reason: string; requestedBy: string; requestedByName: string; decidedByName: string | null; decisionNote: string;
   issued: string; issuedValue: string; projectOnHand: string; freeOnHand: string;
 };
-export type FactoryState = FactoryRights & { toMake: MakeLine[]; orders: WorkOrderRow[]; workcenters: Workcenter[]; batches: Batch[] };
+export type FactoryState = FactoryRights & { toMake: MakeLine[]; orders: WorkOrderRow[]; workcenters: Workcenter[]; batches: Batch[]; requireCheck?: boolean; today?: string };
+/** Goods the site refused and sent back to be made again. */
+export type WorkOrderRework = { id: string; quantity: string; reason: string; source: "site" | "factory"; at: string; byName: string };
 export type WorkOrderState = FactoryRights & {
   order: WorkOrderRow & { drawingRef: string; drawingApprovedAt: string | null; drawingApprovedByName: string | null; holdReason: string | null; closeReason: string | null;
     closedAt: string | null; releasedAt: string | null; readyAt: string | null };
@@ -63,8 +76,14 @@ export type WorkOrderState = FactoryRights & {
   operations: Array<{ id: string; name: string; supplierName: string; orderId: string; orderNumber: string; orderStatus: string; orderLineId: string; quantity: string; back: string; out: boolean }>;
   suppliers: Array<{ id: string; name: string; approved: boolean }>;
   /** Moves of its made goods to the project's site, and what's still at the factory to send. */
-  dispatches: Array<{ id: string; number: number; status: "in_transit" | "received" | "cancelled"; sentOn: string; quantity: string; received: string | null; short: boolean }>;
+  dispatches: Array<{ id: string; number: number; status: "in_transit" | "received" | "cancelled"; sentOn: string; quantity: string; received: string | null; short: boolean;
+    /** Refused at site, why, and the trip that brings it back. */
+    rejected?: string | null; rejectReason?: string; returnId?: string | null; returnNumber?: number | null; returnStatus?: "in_transit" | "received" | "cancelled" | null }>;
   atFactory: string;
+  next?: WorkOrderNext; reworks?: WorkOrderRework[];
+  /** The project's designs with an approved revision (the latest of each), to make it to. */
+  designs?: Array<{ designId: string; versionId: string; title: string; number: number; documentType: string }>;
+  projectStatus?: string;
 };
 /** Settings → Factory; hourly rates (oldest first) only for people who set them or see costs. */
 export type FactorySettingsState = {

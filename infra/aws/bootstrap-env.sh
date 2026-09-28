@@ -1,6 +1,7 @@
 #!/bin/bash
 # Writes the production env files in /opt/wodana/prod once. Secrets are generated here and never leave
-# the host; platform app keys (Google, QuickBooks, Zoho, WhatsApp, Gemini) come from thirdparty.env.
+# the host; platform app keys (Google, QuickBooks, Zoho, WhatsApp, and Gemini only if used) come from
+# thirdparty.env. AI runs on Amazon Bedrock through the instance role: no AI key is needed.
 # Existing files are kept, so re-running is safe. Settings that are not secret can be re-applied with
 # `bootstrap-env.sh --refresh`.
 set -euo pipefail
@@ -12,6 +13,8 @@ AWS_REGION="${AWS_REGION:-ap-south-1}"
 BUCKET="${OBJECT_STORAGE_BUCKET:-wodana-prod-files-aps1}"
 SES_FROM="${SES_FROM:-Wodana <no-reply@$BASE_DOMAIN>}"
 GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.1-flash-lite}"
+AI_MODEL="${AI_MODEL:-apac.amazon.nova-lite-v1:0}"
+BEDROCK_REGION="${BEDROCK_REGION:-ap-south-1}"
 cd "$P"
 umask 077
 
@@ -60,8 +63,20 @@ set_var core.env SES_REGION "$AWS_REGION"
 set_var core.env AWS_REGION "$AWS_REGION"
 set_var core.env OBJECT_STORAGE_BUCKET "$BUCKET"
 set_var core.env OBJECT_STORAGE_REGION "$AWS_REGION"
-set_var core.env GEMINI_API_KEY "$(third GEMINI_API_KEY)"
-set_var core.env GEMINI_MODEL "$GEMINI_MODEL"
+# AI: Amazon Nova Lite on Bedrock (the instance role calls it), metered in credits per workspace.
+# 1 credit = US$0.001; new workspaces get the welcome credits; the daily caps stop runaway use.
+set_var core.env AI_PROVIDER bedrock
+set_var core.env AI_MODEL "$AI_MODEL"
+set_var core.env BEDROCK_REGION "$BEDROCK_REGION"
+set_var core.env AI_WELCOME_CREDITS "${AI_WELCOME_CREDITS:-1000}"
+set_var core.env AI_WORKSPACE_DAILY_CREDIT_LIMIT "${AI_WORKSPACE_DAILY_CREDIT_LIMIT:-1000}"
+set_var core.env AI_PLATFORM_DAILY_CREDIT_LIMIT "${AI_PLATFORM_DAILY_CREDIT_LIMIT:-5000}"
+# Gemini stays optional: only written when thirdparty.env has a key (and used only with AI_PROVIDER=gemini).
+GEMINI_KEY=$(third GEMINI_API_KEY)
+if [ -n "$GEMINI_KEY" ]; then
+  set_var core.env GEMINI_API_KEY "$GEMINI_KEY"
+  set_var core.env GEMINI_MODEL "$GEMINI_MODEL"
+fi
 
 # Web (server-side only; the browser always calls its own host)
 set_var web.env BUSINESS_CORE_URL http://127.0.0.1:8000/api/v1

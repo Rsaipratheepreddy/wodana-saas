@@ -16,6 +16,8 @@ export type MakeLine = {
   title: string; specification: string; unit: string; quantity: string; planned: string; left: string;
   /** When the package's work that needs its materials is planned: a work order's default dates. */
   suggestedStart: string | null; suggestedEnd: string | null;
+  /** The project is running, or on hold (its work orders can be planned but not released). */
+  projectStatus: "active" | "on_hold";
 };
 
 export type WorkOrderRow = {
@@ -24,6 +26,10 @@ export type WorkOrderRow = {
   plannedStart: string | null; plannedEnd: string | null; notes: string; version: number;
   /** Good output approved; waiting for approval; passed its check (ready); approved but not checked yet; still to make. */
   made: string; pending: string; passed: string; toCheck: string; left: string; scrapped: string;
+  /** Sent back to be made again (rejected at site): it no longer counts as passed. */
+  reworked: string;
+  /** The design revision picked as its approved drawing, and a newer revision of that design when one exists. */
+  drawingVersionId: string | null; drawingNewer: number | null;
   /** Its scope line now: removed by a variation, or how much more its work orders hold than the line needs. */
   lineStatus: "active" | "omitted"; lineQuantity: string; scopeOver: string;
   holdKind: "manual" | "drawing" | null;
@@ -37,24 +43,34 @@ const TOTALS = `
                             coalesce(sum(report.scrap) FILTER (WHERE report.status = 'approved'), 0) AS scrapped
                        FROM work_order_reports report WHERE report.workspace_id = wo.workspace_id AND report.work_order_id = wo.id) reported ON true
   LEFT JOIN LATERAL (SELECT coalesce(sum(checked.passed), 0) AS passed, coalesce(sum(checked.failed), 0) AS failed
-                       FROM work_order_checks checked WHERE checked.workspace_id = wo.workspace_id AND checked.work_order_id = wo.id) quality ON true`;
+                       FROM work_order_checks checked WHERE checked.workspace_id = wo.workspace_id AND checked.work_order_id = wo.id) quality ON true
+  LEFT JOIN LATERAL (SELECT coalesce(sum(rework.quantity), 0) AS quantity
+                       FROM work_order_reworks rework WHERE rework.workspace_id = wo.workspace_id AND rework.work_order_id = wo.id) reworked ON true`;
+
+/** What a work order's checks passed, less what came back to be made again (SQL over `checked`/`rework` for work order `other`). */
+const PASSED_NET = (alias: string) => `(coalesce((SELECT sum(checked.passed) FROM work_order_checks checked WHERE checked.workspace_id = ${alias}.workspace_id AND checked.work_order_id = ${alias}.id), 0)
+  - coalesce((SELECT sum(rework.quantity) FROM work_order_reworks rework WHERE rework.workspace_id = ${alias}.workspace_id AND rework.work_order_id = ${alias}.id), 0))`;
 
 const ORDER_SELECT = `SELECT wo.id, wo.number, wo.project_id AS "projectId", project.reference AS "projectReference", project.name AS "projectName", wo.package_id AS "packageId",
   package.name AS "packageName", wo.boq_line_id AS "boqLineId", wo.title, wo.specification, wo.quantity::text AS quantity, wo.unit, wo.status, wo.workcenter_id AS "workcenterId",
   center.name AS "workcenterName", wo.planned_start::text AS "plannedStart", wo.planned_end::text AS "plannedEnd", wo.notes, wo.version,
-  reported.made::text AS made, reported.pending::text AS pending, reported.scrapped::text AS scrapped, quality.passed::text AS passed,
+  reported.made::text AS made, reported.pending::text AS pending, reported.scrapped::text AS scrapped,
+  -- What passed its checks and is still good: anything sent back to be made again (rework) no longer counts.
+  (quality.passed - reworked.quantity)::text AS passed, reworked.quantity::text AS reworked,
   -- Approved good output that hasn't been checked yet (what failed is made again, so it isn't counted).
   greatest(reported.made - quality.passed - quality.failed, 0)::text AS "toCheck",
-  greatest(wo.quantity - quality.passed - greatest(reported.made - quality.passed - quality.failed, 0) - reported.pending, 0)::text AS "left",
+  greatest(wo.quantity - (quality.passed - reworked.quantity) - greatest(reported.made - quality.passed - quality.failed, 0) - reported.pending, 0)::text AS "left",
   line.status AS "lineStatus", line.quantity::text AS "lineQuantity",
   greatest(coalesce(on_line.quantity, 0) - CASE WHEN line.status = 'active' THEN line.quantity ELSE 0 END, 0)::text AS "scopeOver", wo.hold_kind AS "holdKind",
-  wo.planned_hours::text AS "plannedHours", wo.batch_id AS "batchId", batch.number AS "batchNumber", batch.name AS "batchName"
+  wo.planned_hours::text AS "plannedHours", wo.batch_id AS "batchId", batch.number AS "batchNumber", batch.name AS "batchName",
+  wo.drawing_version_id AS "drawingVersionId",
+  (SELECT newer.number FROM pre_project_design_versions newer JOIN pre_project_design_versions picked ON picked.id = wo.drawing_version_id
+    WHERE newer.workspace_id = wo.workspace_id AND newer.design_id = wo.drawing_design_id AND newer.number > picked.number AND newer.status NOT IN ('draft', 'rejected')
+    ORDER BY newer.number DESC LIMIT 1) AS "drawingNewer"
   FROM work_orders wo
   LEFT JOIN production_batches batch ON batch.workspace_id = wo.workspace_id AND batch.id = wo.batch_id
   JOIN project_boq_lines line ON line.workspace_id = wo.workspace_id AND line.id = wo.boq_line_id
-  LEFT JOIN LATERAL (SELECT sum(CASE WHEN other.status = 'short_closed'
-                                     THEN coalesce((SELECT sum(checked.passed) FROM work_order_checks checked WHERE checked.workspace_id = other.workspace_id AND checked.work_order_id = other.id), 0)
-                                     ELSE other.quantity END) AS quantity
+  LEFT JOIN LATERAL (SELECT sum(CASE WHEN other.status = 'short_closed' THEN ${PASSED_NET("other")} ELSE other.quantity END) AS quantity
                        FROM work_orders other WHERE other.workspace_id = wo.workspace_id AND other.boq_line_id = wo.boq_line_id AND other.status <> 'cancelled') on_line ON true
   JOIN delivery_projects project ON project.workspace_id = wo.workspace_id AND project.id = wo.project_id
   LEFT JOIN project_packages package ON package.workspace_id = wo.workspace_id AND package.id = wo.package_id
@@ -79,11 +95,11 @@ export async function readToMake(db: Db, workspaceId: string, lineId: string | n
     `SELECT line.id AS "lineId", project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName", package.id AS "packageId",
             package.name AS "packageName", line.title, coalesce(line.description, '') AS specification, line.unit, line.quantity::text AS quantity,
             coalesce(planned.quantity, 0)::text AS planned, (line.quantity - coalesce(planned.quantity, 0))::text AS "left",
-            needed.start::text AS "suggestedStart", needed.due::text AS "suggestedEnd"
+            needed.start::text AS "suggestedStart", needed.due::text AS "suggestedEnd", project.status AS "projectStatus"
        FROM project_boq_lines line
        JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
        JOIN project_packages package ON package.workspace_id = line.workspace_id AND package.id = line.package_id
-       LEFT JOIN LATERAL (SELECT sum(CASE WHEN wo.status = 'short_closed' THEN quality.passed ELSE wo.quantity END) AS quantity
+       LEFT JOIN LATERAL (SELECT sum(CASE WHEN wo.status = 'short_closed' THEN quality.passed - reworked.quantity ELSE wo.quantity END) AS quantity
                             FROM work_orders wo ${TOTALS}
                            WHERE wo.workspace_id = line.workspace_id AND wo.boq_line_id = line.id AND wo.status <> 'cancelled') planned ON true
        LEFT JOIN LATERAL (SELECT coalesce(work.start_date, work.due_date) AS start, coalesce(work.due_date, work.start_date) AS due
@@ -222,6 +238,37 @@ export function capacity(orders: WorkOrderRow[], workcenters: Workcenter[], cale
   };
 }
 
+/** A work order's hours when none are given: the workcenter's hours a day over its working days (null without both). */
+export function defaultHours(hoursPerDay: string | null, start: string | null, end: string | null, calendar: WorkCalendar) {
+  if (!hoursPerDay || !start || !end || Dec.of(hoursPerDay).cmp(0) <= 0) return null;
+  return Dec.of(hoursPerDay).mul(workdays(calendar).span(start, end)).toString();
+}
+
+export type WorkOrderNext = "fix" | "release" | "start" | "approve" | "check" | "report" | "send" | "resume" | "decide_drawing" | null;
+
+/**
+ * The one next step on a work order, and whether it's the viewer's to take: fix what blocks its release,
+ * release, start, approve reported output, check what was approved, report more, send what's ready to site,
+ * or resume it (someone else decides on a changed drawing).
+ */
+export function workOrderNext(order: Pick<WorkOrderRow, "status" | "pending" | "toCheck" | "left" | "holdKind">, context: {
+  blocked: boolean; atFactory: string; requireCheck: boolean; canManage: boolean; canReport: boolean; canApprove: boolean; canSend: boolean;
+}): { step: WorkOrderNext; mine: boolean } {
+  const some = (value: string) => Dec.of(value).cmp(0) > 0;
+  switch (order.status) {
+    case "planned": return context.blocked ? { step: "fix", mine: context.canManage } : { step: "release", mine: context.canManage };
+    case "released": return { step: "start", mine: context.canManage };
+    case "in_production":
+      if (some(order.pending)) return { step: "approve", mine: context.canApprove };
+      if (context.requireCheck && some(order.toCheck)) return { step: "check", mine: context.canApprove };
+      if (some(order.left)) return { step: "report", mine: context.canReport };
+      return some(context.atFactory) ? { step: "send", mine: context.canSend } : { step: null, mine: false };
+    case "ready": return some(context.atFactory) ? { step: "send", mine: context.canSend } : { step: null, mine: false };
+    case "on_hold": return order.holdKind === "drawing" ? { step: "decide_drawing", mine: context.canApprove } : { step: "resume", mine: context.canManage };
+    default: return { step: null, mine: false };
+  }
+}
+
 /** Every active scope line of the project's packages made in the factory has passed its checks in full (true when there are none). */
 export async function everythingMade(db: Db, workspaceId: string, projectId: string) {
   return (await db.query<{ done: boolean }>(
@@ -229,8 +276,7 @@ export async function everythingMade(db: Db, workspaceId: string, projectId: str
        SELECT 1 FROM project_boq_lines line
          JOIN project_packages package ON package.workspace_id = line.workspace_id AND package.id = line.package_id AND package.supply = 'make'
         WHERE line.workspace_id = $1 AND line.project_id = $2 AND line.status = 'active'
-          AND coalesce((SELECT sum(checked.passed) FROM work_order_checks checked
-                          JOIN work_orders wo ON wo.workspace_id = checked.workspace_id AND wo.id = checked.work_order_id
+          AND coalesce((SELECT sum(${PASSED_NET("wo")}) FROM work_orders wo
                          WHERE wo.workspace_id = line.workspace_id AND wo.boq_line_id = line.id AND wo.status <> 'cancelled'), 0) < line.quantity) AS done`,
     [workspaceId, projectId])).rows[0].done;
 }

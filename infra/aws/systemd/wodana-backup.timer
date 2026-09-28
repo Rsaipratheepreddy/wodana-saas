@@ -1,8 +1,8 @@
 [Unit]
-Description=Wodana backup every 6 hours
+Description=Wodana daily backup
 
 [Timer]
-OnCalendar=*-*-* 00/6:15:00
+OnCalendar=*-*-* 22:15:00
 Persistent=true
 
 [Install]

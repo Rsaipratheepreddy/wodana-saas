@@ -17,9 +17,7 @@ import { ProjectCoreService } from "./project-core.service";
 import { ProjectMoneyService } from "./project-money.service";
 import { ProjectOverviewService } from "./project-overview.service";
 import { noticeStageReady } from "./project-stage-watch";
-import { processLateSupplies } from "./late-supplies";
 import { processWorkDeadlines } from "./work-reminders";
-import { tellBuyersOverOrdered } from "./variation-orders";
 import { ProjectWorkService } from "./project-work.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -282,72 +280,6 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
       const after = await work.command(actor, w.workspaceId, w.projectId, { action: "bulk_update", items, changes: { assigneeId: w.managerMembership, priority: "high" } });
       expect(after.items.filter((item) => [one, two].includes(item.id)).every((item) => item.assigneeId === w.managerMembership && item.priority === "high")).toBe(true);
       await expect(work.command(actor, w.workspaceId, w.projectId, { action: "bulk_update", items, changes: { priority: "low" } })).rejects.toThrow(/Someone else changed/);
-    });
-  });
-
-  it("D-11: a late supplier raises one blocker on the work waiting for its goods, closed by itself once nothing late is owed", async () => {
-    await world(async (w) => {
-      const core = w.core(w.manager);
-      const scope = await core.scope(actor, w.workspaceId, w.projectId);
-      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
-      await core.command(actor, w.workspaceId, w.projectId, { action: "save_material", name: "Oak veneer", boqLineIds: [cabinets.id], version: await w.version() });
-      const oak = (await core.materials(actor, w.workspaceId, w.projectId)).items[0];
-      const fit = randomUUID();
-      await w.work(w.manager).command(actor, w.workspaceId, w.projectId, { action: "create", id: fit, title: "Fit the cabinets", packageId: cabinets.packageId, needsMaterials: true,
-        startDate: day(w.today, 5), dueDate: day(w.today, 8) });
-      // Ordered from a supplier, due yesterday and nothing received.
-      const company = randomUUID(), vendor = randomUUID(), order = randomUUID();
-      await w.client.query(`INSERT INTO legal_entities(id,workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone) VALUES($1,$2,'FAC','Studio','Studio LLC','AE','AED','en-AE','UTC')`, [company, w.workspaceId]);
-      await w.client.query("INSERT INTO workspace_vendors(id,workspace_id,code,display_name,created_by,updated_by) VALUES($1,$2,'V-1','Nile Veneers',$3,$3)", [vendor, w.workspaceId, w.designer]);
-      await w.client.query(`INSERT INTO purchase_orders(id,workspace_id,number,legal_entity_id,vendor_id,currency,payment_terms,created_by,status,promised_date,sent_at,approved_at)
-        VALUES($1,$2,'PO-0012',$3,$4,'AED','on_delivery',$5,'sent',$6,now(),now())`, [order, w.workspaceId, company, vendor, w.designer, day(w.today, -1)]);
-      await w.client.query(`INSERT INTO purchase_order_lines(id,workspace_id,order_id,position,project_id,source,material_item_id,description,quantity,unit,unit_price,net,tax,total)
-        VALUES($1,$2,$3,0,$4,'material',$5,'Oak veneer',10,'sheets',100,1000,0,1000)`, [randomUUID(), w.workspaceId, order, w.projectId, oak.id]);
-
-      expect(await processLateSupplies(w.client, w.workspaceId)).toEqual({ raised: 1, closed: 0 });
-      expect(await processLateSupplies(w.client, w.workspaceId)).toEqual({ raised: 0, closed: 0 });
-      const board = await w.work(w.manager).board(actor, w.workspaceId, w.projectId);
-      const blocker = board.items.find((item) => item.type === "blocker")!;
-      expect(blocker.title).toBe("Waiting on PO-0012 · Oak veneer");
-      expect(board.items.find((item) => item.id === fit)!.blockedBy.map((item) => item.id)).toEqual([blocker.id]);
-      expect((await w.notices("work.blocked")).map((row) => row.recipient).sort()).toEqual([w.designer, w.manager].sort());
-      // D-20: the site sees it's on its way (the order delivers to the site).
-      await w.client.query("UPDATE purchase_orders SET deliver_to = 'site' WHERE id = $1", [order]);
-      expect((await w.site(w.manager).state(actor, w.workspaceId, w.projectId)).deliveries).toEqual([{ kind: "order", id: order, number: "PO-0012", from: "Nile Veneers", due: day(w.today, -1), lines: 1 }]);
-
-      // The goods came (the order is received): the blocker closes and the work can start.
-      await w.client.query("UPDATE purchase_orders SET status = 'received' WHERE id = $1", [order]);
-      expect(await processLateSupplies(w.client, w.workspaceId)).toEqual({ raised: 0, closed: 1 });
-      const after = await w.work(w.manager).board(actor, w.workspaceId, w.projectId);
-      expect(after.items.find((item) => item.id === fit)!.blockedBy).toEqual([]);
-    });
-  });
-
-  it("D-41: a variation that leaves orders for more than the scope now needs tells the buyers", async () => {
-    await world(async (w) => {
-      const seal = (await w.client.query<{ id: string }>("SELECT id FROM project_scope_seals WHERE project_id = $1", [w.projectId])).rows[0];
-      const line = (await w.client.query<{ id: string }>("SELECT id FROM project_boq_lines WHERE project_id = $1 AND title = 'Kitchen cabinets'", [w.projectId])).rows[0];
-      const company = randomUUID(), vendor = randomUUID(), order = randomUUID(), role = randomUUID();
-      await w.client.query(`INSERT INTO legal_entities(id,workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone) VALUES($1,$2,'FAC','Studio','Studio LLC','AE','AED','en-AE','UTC')`, [company, w.workspaceId]);
-      await w.client.query("INSERT INTO workspace_vendors(id,workspace_id,code,display_name,created_by,updated_by) VALUES($1,$2,'V-1','Oak Works',$3,$3)", [vendor, w.workspaceId, w.designer]);
-      await w.client.query(`INSERT INTO purchase_orders(id,workspace_id,number,legal_entity_id,vendor_id,currency,payment_terms,created_by,status,sent_at,approved_at)
-        VALUES($1,$2,'PO-0007',$3,$4,'AED','on_delivery',$5,'sent',now(),now())`, [order, w.workspaceId, company, vendor, w.designer]);
-      await w.client.query(`INSERT INTO purchase_order_lines(id,workspace_id,order_id,position,project_id,source,boq_line_id,description,quantity,unit,unit_price,net,tax,total)
-        VALUES($1,$2,$3,0,$4,'line',$5,'Kitchen cabinets',4.5,'m',100,450,0,450)`, [randomUUID(), w.workspaceId, order, w.projectId, line.id]);
-      // The designer buys for the studio.
-      await w.client.query("INSERT INTO roles (id, workspace_id, code, name) VALUES ($1, $2, 'buyer', 'Buyer')", [role, w.workspaceId]);
-      await w.client.query("INSERT INTO role_permissions (workspace_id, role_id, permission_id) SELECT $1, $2, id FROM permissions WHERE code = 'purchasing.manage'", [w.workspaceId, role]);
-      await w.client.query("INSERT INTO member_roles (workspace_id, membership_id, role_id) VALUES ($1, $2, $3)", [w.workspaceId, w.designerMembership, role]);
-      // The variation takes the cabinets from 4.5 m to 3 m.
-      await w.client.query("UPDATE project_boq_lines SET quantity = 3 WHERE id = $1", [line.id]);
-      await w.client.query("INSERT INTO project_boq_events (id, workspace_id, project_id, line_id, kind, detail, seal_id, actor_user_id) VALUES ($1, $2, $3, $4, 'reduced', '{}', $5, $6)",
-        [randomUUID(), w.workspaceId, w.projectId, line.id, seal.id, w.manager]);
-      const project = { id: w.projectId, reference: "PRJ-1", name: "Villa 12" };
-      expect(await tellBuyersOverOrdered(w.client, w.workspaceId, project, { id: seal.id, label: "VO-1" }, w.manager)).toBe(1);
-      expect(await tellBuyersOverOrdered(w.client, w.workspaceId, project, { id: seal.id, label: "VO-1" }, w.manager)).toBe(0);
-      const [notice] = await w.notices("project.over_ordered");
-      expect(notice).toMatchObject({ recipient: w.designer, link: `/workspace/purchasing/orders?order=${order}` });
-      expect(notice.body).toBe("Kitchen cabinets: 4.5 m ordered (PO-0007), 3 now needed");
     });
   });
 

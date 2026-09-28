@@ -17,8 +17,8 @@ afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); });
 
 describe("the web assistants' AI gateway (W-0)", () => {
   it("asks Business Core, never the provider, and returns the answer", async () => {
-    vi.mocked(authenticatedBackendFetch).mockResolvedValue(reply({ text: "Call Maya.", finishReason: "STOP", model: "gemini" }));
-    await expect(generateThroughGateway(workspaceId, "crm.chat", request)).resolves.toMatchObject({ ok: true, text: "Call Maya.", finishReason: "STOP" });
+    vi.mocked(authenticatedBackendFetch).mockResolvedValue(reply({ text: "Call Maya.", finishReason: "STOP", model: "apac.amazon.nova-lite-v1:0", provider: "bedrock" }));
+    await expect(generateThroughGateway(workspaceId, "crm.chat", request)).resolves.toMatchObject({ ok: true, text: "Call Maya.", finishReason: "STOP", provider: "bedrock" });
     const [path, init] = vi.mocked(authenticatedBackendFetch).mock.calls[0];
     expect(path).toBe(`/workspaces/${workspaceId}/ai/generate`);
     expect(JSON.parse(String(init?.body))).toEqual({ feature: "crm.chat", request, timeoutMs: 30_000 });
@@ -38,8 +38,17 @@ describe("the web assistants' AI gateway (W-0)", () => {
     expect(refusalOf(403, {})).toBe("no-access");
     expect(refusalOf(429, { code: "AI_RATE_LIMITED" })).toBe("rate-limited");
     expect(refusalOf(503, null)).toBe("unavailable");
+    // AI credits used up (402) and today's AI limits are pauses, not failures; a model the host may not call is "not set up".
+    expect(refusalOf(402, { code: "AI_CREDITS_EXHAUSTED" })).toBe("no-credits");
+    expect(refusalOf(402, {})).toBe("no-credits");
+    expect(refusalOf(429, { code: "AI_WORKSPACE_DAILY_LIMIT" })).toBe("paused-today");
+    expect(refusalOf(429, { code: "AI_PLATFORM_DAILY_LIMIT" })).toBe("paused-today");
+    expect(refusalOf(429, { code: "AI_PROVIDER_BUSY" })).toBe("rate-limited");
+    expect(refusalOf(503, { code: "AI_NOT_AVAILABLE" })).toBe("not-configured");
     vi.mocked(authenticatedBackendFetch).mockResolvedValue(reply({ message: "off", code: "AI_OFF" }, 503));
     await expect(askWoddy(workspaceId, {}, [{ role: "user", text: "Hi" }])).rejects.toThrow("Woddy is off for this workspace. An admin can turn AI on in Settings.");
+    vi.mocked(authenticatedBackendFetch).mockResolvedValue(reply({ message: "AI credits are used up. Ask your admin to top up.", code: "AI_CREDITS_EXHAUSTED" }, 402));
+    await expect(askWoddy(workspaceId, {}, [{ role: "user", text: "Hi" }])).rejects.toThrow("AI credits are used up. Ask your admin to top up.");
   });
 
   it("no web code calls the model provider or holds its key", () => {

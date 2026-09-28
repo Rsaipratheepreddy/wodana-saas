@@ -56,7 +56,13 @@
         "pre_projects.view",
         "commercial.finance.verify",
         "commercial.costs.view",
-        "projects.view"
+        "projects.view",
+        "payables.view",
+        "payables.manage",
+        "receivables.view",
+        "receivables.manage",
+        "accounting.manage",
+        "purchasing.view"
       ]
     },
     {
@@ -135,6 +141,27 @@
       ]
     },
     {
+      "code": "PROCUREMENT_LEAD",
+      "name": "Procurement Lead",
+      "scope": "all",
+      "permissions": [
+        "projects.view",
+        "projects.buy",
+        "vendors.view",
+        "vendors.manage",
+        "supplier_offers.view",
+        "supplier_offers.manage",
+        "catalog.view",
+        "purchasing.view",
+        "purchasing.manage",
+        "stock.view",
+        "stock.receive",
+        "purchasing.approve",
+        "vendors.approve",
+        "stock.inspect"
+      ]
+    },
+    {
       "code": "PROJECT_MANAGERS",
       "name": "Project Managers",
       "scope": "assigned",
@@ -161,6 +188,24 @@
         "factory.manage",
         "factory.report",
         "stock.view"
+      ]
+    },
+    {
+      "code": "PRODUCTION_LEAD",
+      "name": "Production Lead",
+      "scope": "all",
+      "permissions": [
+        "projects.view",
+        "projects.report",
+        "projects.schedule.view",
+        "catalog.view",
+        "factory.view",
+        "factory.manage",
+        "factory.report",
+        "stock.view",
+        "factory.approve",
+        "stock.manage",
+        "stock.inspect"
       ]
     },
     {
@@ -195,7 +240,12 @@
       "permissions": [
         "catalog.view",
         "catalog.manage",
-        "projects.view"
+        "projects.view",
+        "stock.view",
+        "stock.manage",
+        "stock.receive",
+        "stock.adjust",
+        "purchasing.view"
       ]
     },
     {
@@ -216,6 +266,7 @@
     "Stock-list write for Showroom and Inventory is catalog.manage today; split when the stock list lands (Module 3)."
   ],
   "notes": [
-    "28 Sept 2026: QS Team also enters costs (commercial.costs.manage); Procurement raises and receives purchase orders (purchasing.*, stock.receive); Production runs factory work orders (factory.*). These follow the tracker's 'Core Authority' column for the purchasing and factory modules that landed after the tab was written."
+    "28 Sept 2026: QS Team also enters costs (commercial.costs.manage); Procurement raises and receives purchase orders (purchasing.*, stock.receive); Production runs factory work orders (factory.*). These follow the tracker's 'Core Authority' column for the purchasing and factory modules that landed after the tab was written.",
+    "29 Sept 2026: the Procurement Lead approves what Procurement raises (purchasing.approve, vendors.approve) and the Production Lead approves output and checks quality (factory.approve); nobody approves their own order or report. Finance enters supplier bills and records payments (payables.manage, receivables.manage); approving held bills stays with whoever holds payables.approve. The Inventory Clerk keeps stock (stock.*)."
   ]
 }

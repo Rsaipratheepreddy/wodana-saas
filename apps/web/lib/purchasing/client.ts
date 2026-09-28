@@ -1,5 +1,5 @@
 import type {
-  DeliveriesState, NeedsState, OrderState, OrdersState, PriceRequestsState, PriceRequestState, PurchasingSettings, ReceiptState, ReceivingForm, SupplierImportPlan, SupplierImportRow,
+  ArrivalsState, DeliveriesState, NeedsState, OrderState, OrdersState, PriceRequestsState, PriceRequestState, PurchasingSettings, ReceiptState, ReceivingForm, SupplierImportPlan, SupplierImportRow,
   SupplierControlsState, SupplierReturnState, SupplierReturnsState, SupplierState, UnmatchedState,
 } from "./types";
 
@@ -58,6 +58,8 @@ export function purchasingApi(workspaceId: string) {
     createPriceRequest: (input: Record<string, unknown>) => request<PriceRequestState>(at("price-requests"), "POST", input),
     priceRequestCommand: (id: string, version: number, action: string, input: Record<string, unknown> = {}) => request<PriceRequestState>(at(`price-requests/${id}`), "POST", { ...input, action, version }),
     deliveries: () => request<DeliveriesState>(at("deliveries")),
+    /** What's on its way to one project's site (supplier orders and moves). */
+    arrivals: (projectId: string) => request<ArrivalsState>(at("arrivals", { projectId })),
     receiving: (orderId: string) => request<ReceivingForm>(at(`orders/${orderId}/receiving`)),
     receive: (input: Record<string, unknown>) => request<ReceiptState>(at("receipts"), "POST", input),
     receipt: (id: string) => request<ReceiptState>(at(`receipts/${id}`)),

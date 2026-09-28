@@ -38,6 +38,11 @@ export class InventoryController {
     return this.inventory.transferCommand(actor, workspaceId, transferId, input ?? {});
   }
 
+  @Post("reorder-points")
+  setReorderPoint(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) {
+    return this.inventory.setReorderPoint(actor, workspaceId, input ?? {});
+  }
+
   @Post("adjustments/:requestId")
   decideAdjustment(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("requestId", ParseUUIDPipe) requestId: string, @Body() input: Record<string, unknown>) {
     return this.inventory.decideAdjustment(actor, workspaceId, requestId, input ?? {});

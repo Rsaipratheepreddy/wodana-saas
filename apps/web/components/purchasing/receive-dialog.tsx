@@ -44,7 +44,12 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api.receiving(orderId).then((next) => { setForm(next); setPlace(next.defaultPlace); }).catch((cause: Error) => setError(cause.message));
+    api.receiving(orderId).then((next) => {
+      setForm(next); setPlace(next.defaultPlace);
+      // Most deliveries bring everything that's left: it's filled in, and whoever receives only changes what didn't come.
+      setLines(Object.fromEntries(next.lines.filter((item) => Number(item.receivable) > 0)
+        .map((item) => [item.id, { received: quantityText(item.outstanding), noted: "", rejected: "", kind: null, reason: "" }])));
+    }).catch((cause: Error) => setError(cause.message));
   }, [api, orderId]);
   const open = useMemo(() => (form?.lines ?? []).filter((line) => Number(line.receivable) > 0), [form]);
   const line = (lineId: string) => lines[lineId] ?? { received: "", noted: "", rejected: "", kind: null, reason: "" };
@@ -70,6 +75,7 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
   return <ControlledModalDialog isOpen size="lg" title={form ? t("Receive {order}", { order: form.order.number }) : t("Receive")} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={<div className="wd-dialog-actions">
       {form && open.length ? <Button variant="quiet" onPress={() => setLines(Object.fromEntries(open.map((item) => [item.id, { ...line(item.id), received: quantityText(item.outstanding) }])))}>{t("Everything left")}</Button> : null}
+      {form && open.length ? <Button variant="quiet" onPress={() => setLines(Object.fromEntries(open.map((item) => [item.id, { ...line(item.id), received: "" }])))}>{t("Clear")}</Button> : null}
       <span className={styles.spacer} />
       <Button onPress={onClose}>{t("Cancel")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!place || !entered.length || Boolean(tooMuch || unexplained || overRejected) || photoNeeded} onPress={() => void save()}>{t("Receive")}</Button></div>}>

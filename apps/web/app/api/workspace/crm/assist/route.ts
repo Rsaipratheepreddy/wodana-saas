@@ -35,6 +35,8 @@ export async function POST(request: Request) {
     "not-configured": t("Record-based checklist. AI is not configured."),
     "no-access": t("Record-based checklist. AI assistance isn't available to you."),
     "rate-limited": t("The AI review limit was reached. Try again in a minute. Showing the record-based checklist."),
+    "no-credits": t("AI credits are used up. Ask your admin to top up. Showing the record-based checklist."),
+    "paused-today": t("AI is paused for today. Showing the record-based checklist."),
     unavailable: t("AI is temporarily unavailable. Showing the record-based checklist."),
   };
   let note = notes.unavailable;
@@ -70,12 +72,13 @@ export async function POST(request: Request) {
       evidence,
       proposedDiff,
       uncertainty,
-      provenance: { mode, provider: mode === "ai" ? "gemini" : "wodana_rules", model, generatedAt: new Date().toISOString() },
+      provenance: { mode, provider: mode === "ai" ? (answer.ok && answer.provider) || "ai" : "wodana_rules", model, generatedAt: new Date().toISOString() },
     }),
   }, t("The review was generated but could not be saved for staff review."));
   if (!saved.ok) return saved;
   const suggestion = await saved.json();
-  const response = NextResponse.json({ ...suggestion, mode, summary: suggestion.suggestionText, checks, note }, { headers: { "cache-control": "no-store" } });
+  const paused = !answer.ok && (answer.reason === "no-credits" || answer.reason === "paused-today");
+  const response = NextResponse.json({ ...suggestion, mode, summary: suggestion.suggestionText, checks, note, paused }, { headers: { "cache-control": "no-store" } });
   for (const cookie of [...upstream.cookies.getAll(), ...saved.cookies.getAll()]) response.cookies.set(cookie);
   applyRotatedSession(response, answer.rotatedSession);
   return response;

@@ -19,6 +19,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && (path[0] === "orders" || path[0] === "price-requests")) return ["GET", "POST"].includes(method);
   if (path.length === 2 && (path[0] === "orders" || path[0] === "price-requests") && UUID.test(path[1])) return ["GET", "POST"].includes(method);
   if (path.length === 1 && path[0] === "deliveries") return method === "GET";
+  if (path.length === 1 && path[0] === "arrivals") return method === "GET";
   if (path.length === 3 && path[0] === "orders" && UUID.test(path[1]) && path[2] === "receiving") return method === "GET";
   if (path.length === 1 && path[0] === "receipts") return method === "POST";
   if (path.length === 2 && path[0] === "receipts" && UUID.test(path[1])) return method === "GET";
@@ -59,6 +60,12 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   }
   const body = request.method === "GET" ? undefined : await request.text();
   if (body && body.length > 2_000_000) return NextResponse.json({ message: t("The request is too large.") }, { status: 413 });
+  // What's on its way to one project's site.
+  if (path[0] === "arrivals") {
+    const projectId = new URL(request.url).searchParams.get("projectId") ?? "";
+    if (!UUID.test(projectId)) return NextResponse.json({ message: t("Invalid purchasing resource.") }, { status: 400 });
+    return workspaceJsonResponse(`/workspaces/${workspaceId}/purchasing/arrivals?projectId=${projectId}`, { method: "GET" }, t("Could not save."));
+  }
   return workspaceJsonResponse(`/workspaces/${workspaceId}/purchasing/${path.join("/")}`,
     { method: request.method, headers: { "content-type": "application/json" }, body }, t("Could not save."));
 }
