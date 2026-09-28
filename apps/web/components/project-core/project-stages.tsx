@@ -86,8 +86,8 @@ function CheckRow({ check, stage, run, caseHref, projectHref, onTeam, roleLabel,
   const fix = check.passed || !live ? null
     : check.kind === "payment_verified" ? <Link href={caseHref("payment-plan")}>{t("Open payments")}</Link>
     : check.kind === "material_list_signed_off" ? <Link href={`${projectHref}/scope?view=materials`}>{t("Open the material list")}</Link>
-    : check.kind === "everything_ordered" ? <Link href="/workspace/purchasing">{t("Open what to order")}</Link>
-    : check.kind === "everything_made" ? <Link href="/workspace/factory">{t("Open the factory")}</Link>
+    : check.kind === "everything_ordered" ? <Link href={`/workspace/purchasing?project=${projectHref.split("/").pop()}`}>{t("Open what to order")}</Link>
+    : check.kind === "everything_made" ? <Link href={`/workspace/factory?project=${projectHref.split("/").pop()}`}>{t("Open the factory")}</Link>
     : check.kind === "snags_closed" || check.kind === "no_critical_snags" ? <Link href={`${projectHref}/plan`}>{t("Open the plan")}</Link>
     : check.kind === "handover_accepted" ? <Link href={`${projectHref}/handover`}>{t("Open the handover")}</Link>
     : <button type="button" className={styles.linkButton} onClick={onTeam}>{t("Name someone")}</button>;
