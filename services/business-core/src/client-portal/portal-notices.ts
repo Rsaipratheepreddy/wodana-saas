@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { portalLink } from "./portal-site";
 import { effectiveSections, readPortalSettings, readProjectAccess, type Section } from "./portal-settings";
+import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -48,6 +49,15 @@ export async function tellClients(db: Db, input: {
   if (access?.paused) return { queued: 0, reason: "paused" as const };
   const section = SECTION[input.event];
   if (!effectiveSections(settings, access)[section]) return { queued: 0, reason: "hidden" as const };
+  // WhatsApp first when the firm has the event on and an approved template; email to the portal contacts otherwise.
+  const client = await partyOfCase(db, input.workspaceId, input.caseId);
+  const whatsapp = await sendClientEvent(db, {
+    workspaceId: input.workspaceId, event: `portal.${input.event}`, partyId: client.partyId, leadId: client.leadId, recordKey: input.recordId,
+    record: input.event === "invoice_issued" ? { invoiceId: input.recordId, projectId: facts.projectId }
+      : input.event === "quote_issued" ? { quoteId: input.recordId.split(":")[0], projectId: facts.projectId } : { projectId: facts.projectId },
+  });
+  if (whatsapp.sent) return { queued: 1, reason: null, channel: "whatsapp" as const };
+  await recordClientMessageSkipped(db, input.workspaceId, `portal.${input.event}`, input.recordId, whatsapp, true);
   const recipients = (await db.query<{ id: string }>(
     `SELECT id FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND active AND email IS NOT NULL AND ($3::boolean = false OR test_contact)
        AND ($4::boolean = false OR role = 'approver') ORDER BY created_at`,

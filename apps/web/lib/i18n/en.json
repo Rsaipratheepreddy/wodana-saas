@@ -9780,5 +9780,22 @@
   "Languages": "Languages",
   "Project stage": "Project stage",
   "Invoice due date": "Invoice due date",
-  "Payment amount": "Payment amount"
+  "Payment amount": "Payment amount",
+  "Client message": "Client message",
+  "The client message could not be saved.": "The client message could not be saved.",
+  "Sends by": "Sends by",
+  "WhatsApp isn't connected": "WhatsApp isn't connected",
+  "No template yet": "No template yet",
+  "Client messages": "Client messages",
+  "No client messages": "No client messages",
+  "Welcome on a new enquiry": "Welcome on a new enquiry",
+  "Quotation ready": "Quotation ready",
+  "Invoice issued": "Invoice issued",
+  "Payment received": "Payment received",
+  "Decision waiting": "Decision waiting",
+  "Progress update shared": "Progress update shared",
+  "Stage started": "Stage started",
+  "Payment reminder": "Payment reminder",
+  "Template rejected by Meta": "Template rejected by Meta",
+  "Template paused by Meta": "Template paused by Meta"
 }

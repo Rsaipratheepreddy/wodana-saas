@@ -39,6 +39,7 @@ import { classifyRepeat } from "../leads/repeat-rules";
 import { notifyUserInApp } from "../../notifications/default-templates";
 import { enquiryTitle, refreshEnquiryTitlesForParty } from "../leads/enquiry-title";
 import { countryFromLocale, needsWorkspacePhoneCountry, normalizeIntakePartyPhones } from "./intake-phone";
+import { recordClientMessageSkipped, sendClientEvent } from "../conversations/inbox/client-messages";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -785,6 +786,9 @@ export class CrmIntakeService {
     } else {
       if (original.assignment) await this.leads.assignOnIntake(client, workspaceId, leadId, actorUserId, original.assignment);
       await this.leads.startSlaOnIntake(client, workspaceId, leadId, actorUserId);
+      // The client's welcome on WhatsApp, when the firm has it on, an approved template and the client's consent.
+      const welcome = await sendClientEvent(client, { workspaceId, event: "crm.enquiry.created", partyId: input.partyId, leadId, recordKey: leadId, actorUserId });
+      if (!welcome.sent) await recordClientMessageSkipped(client, workspaceId, "crm.enquiry.created", leadId, welcome, false);
       if (repeat?.kind === "returning") {
         await this.events.record(client, { workspaceId, actorUserId, source: actorUserId ? "user" : "system", action: "crm.lead.returning_customer.v1", entityType: "crm_lead", entityId: leadId, after: { originalSource: input.source, originalChannel: input.channel } });
         await notifyOwner(repeat.previousOwnerMembershipId, "crm.returning_customer", { clientName, reference });

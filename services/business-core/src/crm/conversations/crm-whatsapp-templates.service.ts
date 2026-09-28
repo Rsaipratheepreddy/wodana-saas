@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
@@ -7,9 +7,10 @@ import { notifyUserInApp } from "../../notifications/default-templates";
 import { webOrigin } from "../../client-portal/portal-site";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
-import { SubmitStarterPackDto, TemplateSubmittedDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
+import { SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
+import { CLIENT_EVENTS, clientMessageRule, EMAIL_FALLBACK } from "./inbox/client-messages";
 import { templatePlaceholders } from "./inbox/inbox-rules";
-import { metaBodyProblem, sampleValues, STARTER_LANGUAGES, STARTER_PACK, starterByName, type StarterLanguage } from "./inbox/whatsapp-starter-pack";
+import { metaBodyProblem, sampleValues, STARTER_LANGUAGES, STARTER_PACK, starterByName, type StarterEvent, type StarterLanguage } from "./inbox/whatsapp-starter-pack";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type ProviderStatus = "submitting" | "pending" | "approved" | "rejected" | "paused" | "disabled";
@@ -168,6 +169,49 @@ export class CrmWhatsAppTemplatesService {
       }
       if (input.full) await client.query(`UPDATE integration_connections SET configuration = configuration || jsonb_build_object('templatesSyncedAt', now()) WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'`, [workspaceId]);
       return { changed, added };
+    });
+  }
+
+  /** Settings → Inbox → Client messages: each event, its template and Meta status, how it goes out, on or off. */
+  clientMessages(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
+      const connected = Boolean((await client.query(`SELECT 1 FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected' LIMIT 1`, [workspaceId])).rowCount);
+      const rows = [];
+      for (const event of CLIENT_EVENTS) {
+        const rule = await clientMessageRule(client, workspaceId, event);
+        const template = rule.templateCode ? (await client.query<{ body: string; providerStatus: string; approved: boolean }>(
+          `SELECT body_template AS body, COALESCE(provider_status, CASE WHEN status = 'approved' THEN 'approved' ELSE 'pending' END) AS "providerStatus",
+                  status = 'approved' AND COALESCE(provider_status, 'approved') = 'approved' AS approved
+             FROM notification_templates WHERE workspace_id = $1 AND channel = 'whatsapp' AND code = $2
+            ORDER BY (status = 'approved') DESC, version_number DESC LIMIT 1`, [workspaceId, rule.templateCode])).rows[0] ?? null : null;
+        const whatsapp = rule.enabled && connected && Boolean(template?.approved);
+        rows.push({ event, enabled: rule.enabled, templateCode: rule.templateCode, version: rule.version, template, emailFallback: EMAIL_FALLBACK.has(event),
+          channel: whatsapp ? "whatsapp" : rule.enabled && EMAIL_FALLBACK.has(event) ? "email" : "none" });
+      }
+      return { connected, events: rows };
+    });
+  }
+
+  /** Turns an event on or off, or picks its template (version-checked; the first change creates the rule). */
+  setClientMessage(actor: RequestActor, workspaceId: string, event: string, input: UpdateClientMessageDto) {
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+      if (!(CLIENT_EVENTS as string[]).includes(event)) throw new NotFoundException("Unknown client message");
+      const current = await clientMessageRule(client, workspaceId, event as StarterEvent);
+      const enabled = input.enabled ?? current.enabled;
+      const templateCode = input.templateCode === undefined ? current.templateCode : input.templateCode;
+      if (enabled === current.enabled && templateCode === current.templateCode) return { event, ...current };
+      if (current.version !== input.version) throw new ConflictException("This client message changed; reload and try again");
+      if (templateCode) {
+        const exists = await client.query(`SELECT 1 FROM notification_templates WHERE workspace_id = $1 AND channel = 'whatsapp' AND code = $2 LIMIT 1`, [workspaceId, templateCode]);
+        if (!exists.rowCount) throw new UnprocessableEntityException("Choose one of your WhatsApp templates");
+      }
+      const saved = await client.query<{ version: number }>(
+        `INSERT INTO crm_client_message_rules (workspace_id, event, enabled, template_code, updated_by) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (workspace_id, event) DO UPDATE SET enabled = EXCLUDED.enabled, template_code = EXCLUDED.template_code, updated_by = EXCLUDED.updated_by,
+           updated_at = now(), version = crm_client_message_rules.version + 1
+         RETURNING version`, [workspaceId, event, enabled, templateCode, actorUser.userId]);
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.client_message.updated.v1", entityType: "crm_client_message_rule", entityId: workspaceId, before: { event, ...current }, after: { event, enabled, templateCode } });
+      return { event, enabled, templateCode, version: saved.rows[0].version };
     });
   }
 

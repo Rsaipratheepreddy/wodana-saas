@@ -6,6 +6,7 @@ import { CrmConversationsService } from "./crm-conversations.service";
 import { CrmInboxService } from "./crm-inbox.service";
 import { CrmMessageReceiptService } from "./crm-message-receipt.service";
 import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
+import { sendClientEvent } from "./inbox/client-messages";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -13,7 +14,7 @@ const integration = describe.skipIf(!databaseUrl);
 
 type Ids = {
   workspaceId: string; manager: string; sara: string; ali: string; saraMember: string; aliMember: string; managerMember: string;
-  noura: string; stranger: string; nouraChat: string; strangerChat: string; queueId: string; templateId: string;
+  noura: string; stranger: string; nouraChat: string; strangerChat: string; queueId: string; templateId: string; leadId: string;
   as: (userId: string) => void; conversations: CrmConversationsService; inbox: CrmInboxService; templates: CrmWhatsAppTemplatesService;
 };
 
@@ -53,6 +54,8 @@ integration("team inbox", () => {
         ($1,$3,'person','Noura Haddad','noura haddad'),($2,$3,'person','WhatsApp +15550001111','whatsapp +15550001111')`, [noura, stranger, workspaceId]);
       await client.query(`INSERT INTO crm_consents(workspace_id,party_id,purpose,channel,status) VALUES
         ($1,$2,'service','whatsapp','granted'),($1,$3,'service','whatsapp','granted')`, [workspaceId, noura, stranger]);
+      await client.query(`INSERT INTO crm_contact_points(workspace_id,party_id,type,raw_value,normalized_value,is_primary) VALUES
+        ($1,$2,'phone','+15550002222','+15550002222',true),($1,$3,'phone','+15550001111','+15550001111',true)`, [workspaceId, noura, stranger]);
       await client.query(`INSERT INTO crm_enquiries(id,workspace_id,intake_event_id,party_id,title,source,channel,received_at,reference,service_type,details)
         VALUES($1,$2,$3,$4,'Villa','company','whatsapp',now(),'E-1042','fit_out','{}')`, [enquiryId, workspaceId, randomUUID(), noura]);
       await client.query("INSERT INTO crm_leads(id,workspace_id,enquiry_id,party_id,owner_membership_id,status) VALUES($1,$2,$3,$4,$5,'connected')", [leadId, workspaceId, enquiryId, noura, saraMember]);
@@ -73,7 +76,7 @@ integration("team inbox", () => {
       const conversations = new CrmConversationsService(database as never, access as never, events as never, {} as never, new CrmMessageReceiptService());
       const inbox = new CrmInboxService(database as never, access as never, events as never);
       const templates = new CrmWhatsAppTemplatesService(database as never, access as never, events as never);
-      await work(client, { workspaceId, manager, sara, ali, saraMember, aliMember, managerMember, noura, stranger, nouraChat, strangerChat, queueId, templateId, as: (userId) => { current = userId; }, conversations, inbox, templates });
+      await work(client, { workspaceId, manager, sara, ali, saraMember, aliMember, managerMember, noura, stranger, nouraChat, strangerChat, queueId, templateId, leadId, as: (userId) => { current = userId; }, conversations, inbox, templates });
     } finally {
       await client.query("ROLLBACK");
       client.release();
@@ -254,6 +257,45 @@ integration("team inbox", () => {
       await expect(conversations.addMessage(actor, workspaceId, nouraChat, { direction: "outbound", templateId: approvedId, clientMessageId: randomUUID() } as never)).rejects.toThrow(/Quote number/);
       await templates.syncInternal(workspaceId, { full: false, templates: [{ id: "meta-quote", name: "wd_quote_ready", language: "en", status: "PAUSED", reason: "Low quality" }] });
       await expect(conversations.addMessage(actor, workspaceId, nouraChat, { direction: "outbound", templateId: approvedId, templateParameters: ["Noura", "V1", "https://x.example/portal"], clientMessageId: randomUUID() } as never)).rejects.toThrow(/not approved/);
+    });
+  });
+
+  it("messages the client about an event once, in their chat, only with consent and an approved template", async () => {
+    await withInbox(async (client, { workspaceId, manager, noura, stranger, nouraChat, leadId, templates, as }) => {
+      as(manager);
+      await templates.submitStarterPack(actor, workspaceId, { languages: ["en"] });
+      await templates.syncInternal(workspaceId, { full: true, templates: [{ id: "meta-welcome", name: "wd_enquiry_welcome", language: "en", status: "APPROVED" }] });
+
+      const sent = await sendClientEvent(client, { workspaceId, event: "crm.enquiry.created", partyId: noura, leadId, recordKey: leadId });
+      expect(sent).toMatchObject({ sent: true, conversationId: nouraChat, duplicate: false });
+      const again = await sendClientEvent(client, { workspaceId, event: "crm.enquiry.created", partyId: noura, leadId, recordKey: leadId });
+      expect(again).toMatchObject({ sent: true, duplicate: true });
+      const messages = await client.query(`SELECT body_text AS body, status, authorship, metadata->>'automatic' AS automatic FROM crm_messages WHERE conversation_id=$1`, [nouraChat]);
+      expect(messages.rows).toEqual([{ body: "Hello Noura, thank you for contacting Inbox Studio. We have received your enquiry E-1042 and will be in touch shortly.", status: "queued", authorship: "automation", automatic: "crm.enquiry.created" }]);
+      const queued = await client.query(`SELECT channel, template_parameters AS parameters FROM notifications WHERE workspace_id=$1 AND recipient_id=$2 AND channel='whatsapp'`, [workspaceId, noura]);
+      expect(queued.rows).toEqual([{ channel: "whatsapp", parameters: ["Noura", "Inbox Studio", "E-1042"] }]);
+      // An automatic message isn't a reply: nobody's wait ends and no owner is assigned by it.
+      expect((await client.query(`SELECT waiting_since, owner_membership_id FROM crm_conversations WHERE id=$1`, [nouraChat])).rows[0]).toEqual({ waiting_since: null, owner_membership_id: null });
+
+      expect(await sendClientEvent(client, { workspaceId, event: "project.stage_started", partyId: noura, recordKey: "p:s", record: { stageName: "Joinery" } })).toEqual({ sent: false, reason: "template_not_approved" });
+      expect(await sendClientEvent(client, { workspaceId, event: "receivables.payment_received", partyId: noura, recordKey: "missing" })).toEqual({ sent: false, reason: "template_not_approved" });
+      await templates.syncInternal(workspaceId, { full: false, templates: [{ id: "meta-paid", name: "wd_payment_received", language: "en", status: "APPROVED" }] });
+      expect(await sendClientEvent(client, { workspaceId, event: "receivables.payment_received", partyId: noura, recordKey: "missing", record: { paymentId: "no-such-payment" } })).toEqual({ sent: false, reason: "value_missing", field: "Payment amount" });
+
+      const listed = await templates.clientMessages(actor, workspaceId);
+      expect(listed.events.find((row) => row.event === "crm.enquiry.created")).toMatchObject({ channel: "whatsapp", enabled: true, templateCode: "wd_enquiry_welcome" });
+      expect(listed.events.find((row) => row.event === "portal.quote_issued")).toMatchObject({ channel: "email", template: { providerStatus: "submitting", approved: false } });
+      expect(listed.events.find((row) => row.event === "project.stage_started")).toMatchObject({ channel: "none" });
+      await templates.setClientMessage(actor, workspaceId, "crm.enquiry.created", { version: 0, enabled: false });
+      await expect(templates.setClientMessage(actor, workspaceId, "crm.enquiry.created", { version: 0, enabled: true })).rejects.toThrow(/changed/);
+      expect(await sendClientEvent(client, { workspaceId, event: "crm.enquiry.created", partyId: stranger, recordKey: "other" })).toEqual({ sent: false, reason: "off" });
+      await templates.setClientMessage(actor, workspaceId, "crm.enquiry.created", { version: 1, enabled: true });
+
+      await client.query(`UPDATE crm_consents SET status='withdrawn' WHERE workspace_id=$1 AND party_id=$2`, [workspaceId, stranger]);
+      expect(await sendClientEvent(client, { workspaceId, event: "crm.enquiry.created", partyId: stranger, recordKey: "other" })).toEqual({ sent: false, reason: "no_consent" });
+      await client.query(`UPDATE crm_consents SET status='granted' WHERE workspace_id=$1 AND party_id=$2`, [workspaceId, stranger]);
+      await client.query(`UPDATE crm_parties SET blocked_at=now() WHERE workspace_id=$1 AND id=$2`, [workspaceId, stranger]);
+      expect(await sendClientEvent(client, { workspaceId, event: "crm.enquiry.created", partyId: stranger, recordKey: "other" })).toEqual({ sent: false, reason: "blocked" });
     });
   });
 });

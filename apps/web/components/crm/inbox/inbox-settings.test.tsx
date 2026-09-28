@@ -15,6 +15,10 @@ function setup(canManage = true) {
       { id: TEMPLATE, code: "quote_ready", locale: "en_US", body: "Hi {{1}}, quote {{2}} is ready.", positions: [1, 2], usable: true, variables: [], mappingVersion: 0, approved: true, providerStatus: "approved", category: "utility" },
       { id: "t2", code: "wd_enquiry_welcome", locale: "en", body: "Hello {{1}}, thank you.", positions: [1], usable: true, variables: [{ position: 1, source: "contact.first_name" }], mappingVersion: 1, approved: false, providerStatus: "rejected", providerReason: "Template name already exists", category: "utility" },
     ],
+    "inbox/client-messages": { connected: true, events: [
+      { event: "crm.enquiry.created", enabled: true, templateCode: "wd_enquiry_welcome", version: 0, emailFallback: false, channel: "none", template: { body: "Hello {{1}}, thank you.", providerStatus: "rejected", approved: false } },
+      { event: "portal.invoice_issued", enabled: true, templateCode: "quote_ready", version: 2, emailFallback: true, channel: "whatsapp", template: { body: "Hi {{1}}, quote {{2}} is ready.", providerStatus: "approved", approved: true } },
+    ] },
     "inbox/starter-pack": { languages: ["en", "ar"], defaultLanguages: ["en"], items: [
       { key: "enquiry_welcome", event: "crm.enquiry.created", name: "wd_enquiry_welcome", language: "en", body: "Hello {{1}}…", status: "rejected" },
       { key: "quote_ready", event: "portal.quote_issued", name: "wd_quote_ready", language: "en", body: "Hello {{1}}…", status: null },
@@ -75,6 +79,16 @@ describe("Settings → Inbox", () => {
     await user.click(within(dialog).getByRole("checkbox", { name: "العربية" }));
     await user.click(within(dialog).getByRole("button", { name: "Send 2 to Meta" }));
     await waitFor(() => expect(sent("inbox/starter-pack", "POST")).toEqual([{ languages: ["en", "ar"] }]));
+  });
+
+  it("lists the client messages with how each goes out, and turns one off with its version", async () => {
+    const user = userEvent.setup(), { sent } = setup(); render(<InboxSettingsPage workspaceId={WORKSPACE} />);
+    const grid = await screen.findByRole("grid", { name: "Client messages" }).catch(() => screen.findByRole("table", { name: "Client messages" }));
+    expect(within(grid).getByText("Welcome on a new enquiry")).toBeInTheDocument();
+    expect(within(grid).getByText("Template rejected by Meta")).toBeInTheDocument();
+    expect(within(grid).getByText("WhatsApp")).toBeInTheDocument();
+    await user.click(within(grid).getByRole("switch", { name: "Invoice issued" }));
+    await waitFor(() => expect(sent("inbox/client-messages/portal.invoice_issued", "PUT")).toEqual([{ version: 2, enabled: false }]));
   });
 
   it("lets everyone read the settings but only managers change them", async () => {

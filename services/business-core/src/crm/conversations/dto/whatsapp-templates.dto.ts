@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, Matches, MaxLength, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min, ValidateNested } from "class-validator";
 import { STARTER_LANGUAGES } from "../inbox/whatsapp-starter-pack";
 
 export class SubmitStarterPackDto {
@@ -22,6 +22,13 @@ export class ProviderTemplateDto {
   @IsOptional() @IsString() @MaxLength(40) quality?: string;
   @IsOptional() @IsString() @MaxLength(500) reason?: string;
   @IsOptional() @IsString() @MaxLength(4096) body?: string;
+}
+
+export class UpdateClientMessageDto {
+  /** 0 while the event still runs on its defaults. */
+  @IsInt() @Min(0) version!: number;
+  @IsOptional() @IsBoolean() enabled?: boolean;
+  @IsOptional() @IsString() @Matches(/^[a-z0-9_.-]{1,100}$/) templateCode?: string | null;
 }
 
 export class WhatsAppTemplateSyncDto {

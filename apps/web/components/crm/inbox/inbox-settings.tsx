@@ -8,6 +8,7 @@ import { crmRequest } from "@/lib/crm/client";
 import { fillTemplate, LABEL_COLORS, renderTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_SOURCES, type InboxLabel, type InboxTemplate, type LabelColor, type QuickReply, type TemplateSource } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
+import { ClientMessagesSection } from "./client-messages-settings";
 import { LabelChip, useInboxLookups } from "./inbox-parts";
 import styles from "./inbox-parts.module.css";
 
@@ -92,6 +93,7 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
             selectedKey={draft?.queueId ?? ""} onSelectionChange={(key) => setDraft((current) => current && { ...current, queueId: key ? String(key) : null })} /></span>
         </SettingsRow>
       </SettingsSection>
+      <ClientMessagesSection workspaceId={workspaceId} canManage={canManage} templates={templates} />
       <SettingsSection id="inbox-labels" title={t("Labels")} actions={canManage ? <Button size="compact" variant="primary" onPress={() => setEditingLabel({ color: "viz-1" })}><Plus aria-hidden="true" size={14} />{t("Add label")}</Button> : null}>
         <div data-sales-grid><DataGrid ariaLabel={t("Labels")} columns={labelColumns} data={labels} emptyTitle={t("No labels yet")} emptyDescription={t("Add labels such as Quote request or Site visit.")} getRowId={(label) => label.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
       </SettingsSection>

@@ -16,7 +16,8 @@ function setup(overrides: Record<string, unknown> = {}, options: { context?: Rec
     lastInboundAt: now, windowClosesAt: new Date(Date.now() + 5 * 3_600_000).toISOString(), waitingSince: now, version: 3, ownerMembershipId: ME, ownerName: "Sara Khan",
     replyingAs: { businessName: "Palm Studio", number: "+1 555 0100" }, labels: [{ id: LABEL, name: "Quote request", color: "viz-2" }],
     events: [{ id: "event", kind: "assigned", method: "relationship", reason: null, snoozedUntil: null, createdAt: now, actorName: null, ownerName: "Sara Khan", labelName: null, labelColor: null }],
-    messages: [{ id: "incoming", direction: "inbound", status: "delivered", bodyText: "Hello there", createdAt: now }, { id: "note", direction: "internal", senderName: "Ali Noor", bodyText: "Call her after 5", createdAt: now }],
+    messages: [{ id: "incoming", direction: "inbound", status: "delivered", bodyText: "Hello there", createdAt: now }, { id: "note", direction: "internal", senderName: "Ali Noor", bodyText: "Call her after 5", createdAt: now },
+      { id: "auto", direction: "outbound", status: "read", authorship: "automation", senderType: "system", bodyText: "Thank you for contacting us.", metadata: { automatic: "crm.enquiry.created" }, createdAt: now }],
     ...overrides,
   };
   const other = { ...record, id: "email-chat", channel: "email", partyName: "Email person", labels: [], waitingSince: null };
@@ -48,6 +49,8 @@ describe("CRM inbox", () => {
     expect(await screen.findByRole("button", { name: /Mine\s*1/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Unassigned\s*4/ })).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "Team note" })).toHaveTextContent("Call her after 5");
+    expect(screen.getByText("Thank you for contacting us.").closest("article")).toHaveTextContent(/Automatic.*Welcome on a new enquiry/);
+    expect(screen.getByLabelText("Read")).toBeInTheDocument();
     expect(screen.getByText("Assigned to Sara Khan automatically")).toBeInTheDocument();
     expect(screen.getByText("Replying as Palm Studio · +1 555 0100")).toBeInTheDocument();
     expect(screen.getAllByText("Waiting 0 m").length).toBeGreaterThan(0);

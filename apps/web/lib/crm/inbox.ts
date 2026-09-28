@@ -53,6 +53,17 @@ export const TEMPLATE_SOURCE_LABELS: Record<TemplateSource, MessageKey> = {
   "staff.first_name": tKey("Your first name"), "business.name": tKey("Business name"), "today.date": tKey("Today's date"),
 };
 
+/** Business events that message the client on WhatsApp (Settings → Inbox → Client messages). */
+export const CLIENT_EVENT_LABELS: Record<string, MessageKey> = {
+  "crm.enquiry.created": tKey("Welcome on a new enquiry"), "portal.quote_issued": tKey("Quotation ready"), "portal.invoice_issued": tKey("Invoice issued"),
+  "receivables.payment_received": tKey("Payment received"), "portal.decision_waiting": tKey("Decision waiting"), "portal.update_published": tKey("Progress update shared"),
+  "project.stage_started": tKey("Stage started"), "payments.reminder": tKey("Payment reminder"),
+};
+export type ClientMessageRow = {
+  event: string; enabled: boolean; templateCode: string | null; version: number; emailFallback: boolean; channel: "whatsapp" | "email" | "none";
+  template: { body: string; providerStatus: string; approved: boolean } | null;
+};
+
 const PLACEHOLDER = /\{\{\s*(\d{1,2})\s*\}\}/g;
 
 /** The body as the client will read it: each {{n}} replaced by its value, or left visible when it has none. */

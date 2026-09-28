@@ -26,6 +26,7 @@ import { noticeProject, type ProjectNotice } from "./project-notices";
 import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, suggestMaterials } from "./project-materials";
 import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, seedBoq, SUPPLY, type Supply } from "./project-scope";
 import { ensureWorkTemplates, parseTemplateTasks } from "./work-templates";
+import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
 
 type Db = PoolClient;
 const SETTINGS = ["workspace.settings.manage"];
@@ -631,6 +632,11 @@ export class ProjectCoreService {
     const next = stages.find((stage) => stage.position > finished.position && stage.status === "upcoming");
     if (next) {
       await client.query(`UPDATE project_stages SET status = 'current', started_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.id]);
+      // The client hears on WhatsApp that the next stage started (when the firm has it on and the portal isn't paused).
+      const owner = await partyOfCase(client, workspaceId, project.caseId);
+      const toldClient = await sendClientEvent(client, { workspaceId, event: "project.stage_started", partyId: owner.partyId, leadId: owner.leadId, recordKey: `${project.id}:${next.id}`,
+        record: { projectId: project.id, stageName: next.name }, actorUserId: userId });
+      if (!toldClient.sent) await recordClientMessageSkipped(client, workspaceId, "project.stage_started", `${project.id}:${next.id}`, toldClient, false);
       const told = team.filter((member) => member.lead || (next.ownerRole && member.roles.includes(next.ownerRole))).map((member) => member.membershipId);
       notices.push({ key: `stage:${next.key}:${project.version}`, notice: { code: "project.stage_done", stage: next.name, previous: finished.name, memberships: told } });
     } else if (!stages.some((stage) => stage.id !== finished.id && (stage.status === "current" || stage.status === "upcoming"))) {

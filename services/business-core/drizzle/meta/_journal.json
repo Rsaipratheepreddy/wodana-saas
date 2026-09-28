@@ -624,6 +624,13 @@
       "when": 1801117500000,
       "tag": "0140_whatsapp_template_manager",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1801121100000,
+      "tag": "0141_client_event_messages",
+      "breakpoints": true
     }
   ]
 }

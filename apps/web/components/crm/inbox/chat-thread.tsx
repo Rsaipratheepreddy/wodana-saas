@@ -5,7 +5,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { ArrowLeft, Check, CheckCheck, Clock3, FileText, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
 import { Avatar, Button, ControlledModalDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, MenuButton, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
-import { eventLine, snoozePresets, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
+import { CLIENT_EVENT_LABELS, eventLine, snoozePresets, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { CrmDateTimeField } from "../crm-date-time-field";
@@ -212,10 +212,12 @@ function EventLine({ event, time }: { event: ChatEvent; time: string }) {
 function MessageBubble({ message, partyName, workspaceId, time }: { message: RecordData; partyName: string; workspaceId: string; time: string }) {
   const t = useT();
   const direction = String(message.direction);
-  const sender = direction === "inbound" ? partyName : message.authorship === "automation" || message.senderType === "system" ? t("Automation") : String(message.senderName ?? t("Team"));
-  return <article className={styles.message} data-direction={direction} aria-label={direction === "inbound" ? t("Contact message") : direction === "internal" ? t("Team note") : t("Your message")}>
+  const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata as Record<string, unknown> : {};
+  const automatic = typeof metadata.automatic === "string" ? metadata.automatic : null;
+  const sender = direction === "inbound" ? partyName : automatic ? t("Automatic") : message.authorship === "automation" || message.senderType === "system" ? t("Automation") : String(message.senderName ?? t("Team"));
+  return <article className={styles.message} data-direction={direction} data-automatic={automatic ? true : undefined} aria-label={direction === "inbound" ? t("Contact message") : direction === "internal" ? t("Team note") : t("Your message")}>
     <span className={styles.messageAvatar}><Avatar name={sender} size="sm" /></span>
-    <strong className={styles.messageSender}>{sender}{direction === "internal" ? <span className={styles.noteTag}>{t("Note")}</span> : null}</strong>
+    <strong className={styles.messageSender}>{sender}{direction === "internal" ? <span className={styles.noteTag}>{t("Note")}</span> : null}{automatic ? <span className={styles.automaticTag}>{t(CLIENT_EVENT_LABELS[automatic] ?? "Client message")}</span> : null}</strong>
     <MessageContent message={message} workspaceId={workspaceId} />
     <footer><time dateTime={String(message.createdAt)}>{time}</time>{direction === "outbound" ? <DeliveryState status={String(message.status)} /> : null}</footer>
     {message.failureCode ? <small className={styles.error}>{t("Not delivered: {reason}", { reason: String(message.failureCode) })}</small> : null}
