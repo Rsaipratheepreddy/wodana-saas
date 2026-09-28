@@ -7,6 +7,7 @@ import { WorkspaceAccessService } from "../../workspaces/workspace-access.servic
 import { CrmEventsService } from "../shared/crm-events.service";
 import { CrmNotificationsService } from "../notifications/crm-notifications.service";
 import { CrmMessageReceiptService } from "./crm-message-receipt.service";
+import { notifyUserInApp } from "../../notifications/default-templates";
 import { decodeCursor, encodeCursor, normalizeEmail, normalizeLoosePhone, normalizeName, stableHash } from "../shared/crm-types";
 import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSequenceDto, ListConversationsQueryDto, MessageReceiptDto, ProviderInboundMessageDto, ProviderMessageReceiptDto, SequenceVersionDto, StopSequenceEnrollmentDto, UpdateSequenceDto, UpdateConversationDto } from "./dto/conversations.dto";
 
@@ -151,6 +152,7 @@ export class CrmConversationsService {
       const updated = await client.query(`UPDATE crm_conversations SET subject=COALESCE($1,subject), status=COALESCE($2,status), owner_membership_id=CASE WHEN $3::boolean THEN $4::uuid ELSE owner_membership_id END, version=version+1 WHERE workspace_id=$5 AND id=$6 AND version=$7 RETURNING *`, [input.subject?.trim() ?? null, input.status ?? null, input.ownerMembershipId !== undefined, input.ownerMembershipId ?? null, workspaceId, conversationId, input.version]);
       const after = this.mapConversation(updated.rows[0]);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.conversation.updated.v1", entityType: "crm_conversation", entityId: conversationId, before: this.mapConversation(before), after });
+      if (after.ownerMembershipId && after.ownerMembershipId !== before.owner_membership_id) await this.tellNewOwner(client, workspaceId, updated.rows[0], actorUser.userId);
       return after;
     });
   }
@@ -627,5 +629,23 @@ export class CrmConversationsService {
 
   private mapConversation(row: Record<string, unknown>) { return { id: row.id, partyId: row.party_id, leadId: row.lead_id, channel: row.channel, subject: row.subject, status: row.status, ownerMembershipId: row.owner_membership_id, lastMessageAt: row.last_message_at, lastInboundAt: row.last_inbound_at, unreadCount: row.unread_count, version: Number(row.version) }; }
   private async requireParty(client: PoolClient, workspaceId: string, partyId: string) { const result = await client.query(`SELECT 1 FROM crm_parties WHERE id = $1 AND workspace_id = $2 AND status = 'active'`, [partyId, workspaceId]); if (!result.rowCount) throw new UnprocessableEntityException("Party does not exist or is inactive"); }
+  /** The person a conversation is given to hears it in the app, and on the phone (push), unless they gave it to themselves. */
+  private async tellNewOwner(client: PoolClient, workspaceId: string, conversation: Record<string, unknown>, actorUserId: string) {
+    const people = await client.query<{ ownerUserId: string; assignedBy: string | null; client: string | null }>(
+      `SELECT owner.user_id AS "ownerUserId", actor.display_name AS "assignedBy", party.display_name AS client
+       FROM workspace_memberships owner
+       LEFT JOIN users actor ON actor.id=$3
+       LEFT JOIN crm_parties party ON party.workspace_id=owner.workspace_id AND party.id=$4
+       WHERE owner.workspace_id=$1 AND owner.id=$2 AND owner.status='active'`,
+      [workspaceId, conversation.owner_membership_id, actorUserId, conversation.party_id ?? null]);
+    const person = people.rows[0];
+    if (!person || person.ownerUserId === actorUserId) return;
+    // The web opens the thread; the phone, which has no thread screen, opens the enquiry it belongs to.
+    const deepLink = `/workspace/crm/conversations?record=${String(conversation.id)}${conversation.lead_id ? `&lead=${String(conversation.lead_id)}` : ""}`;
+    await notifyUserInApp(client, { workspaceId, recipientUserId: person.ownerUserId, code: "crm.conversation_assigned", eventType: "crm.conversation.assigned",
+      variables: { client: person.client ?? String(conversation.subject ?? "a client"), assignedBy: person.assignedBy ?? "Someone" }, deepLink,
+      idempotencyKey: `conversation-assigned:${String(conversation.id)}:${String(conversation.version)}` });
+  }
+
   private async requireMembership(client: PoolClient, workspaceId: string, membershipId: string) { const result = await client.query(`SELECT 1 FROM workspace_memberships WHERE id = $1 AND workspace_id = $2 AND status = 'active'`, [membershipId, workspaceId]); if (!result.rowCount) throw new UnprocessableEntityException("Member does not exist or is inactive"); }
 }

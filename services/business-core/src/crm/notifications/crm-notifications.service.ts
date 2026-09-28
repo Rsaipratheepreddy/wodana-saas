@@ -160,8 +160,14 @@ export class CrmNotificationsService {
   }
   inbox(actor: RequestActor, workspaceId: string) {
     return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
-      const result = await client.query(`SELECT id,event_type AS "eventType",status,subject,body,deep_link AS "deepLink",delivered_at AS "deliveredAt",read_at AS "readAt",created_at AS "createdAt",version FROM notifications WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app' ORDER BY created_at DESC LIMIT 200`, [workspaceId, actorUser.userId]);
-      return result.rows;
+      const result = await client.query<Row>(`SELECT id,event_type AS "eventType",status,subject,body,deep_link AS "deepLink",delivered_at AS "deliveredAt",read_at AS "readAt",created_at AS "createdAt",version FROM notifications WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app' ORDER BY created_at DESC LIMIT 200`, [workspaceId, actorUser.userId]);
+      // The phone opens a notice it has no screen for on the web, in the browser.
+      const origin = this.config?.get<string>("WEB_ORIGIN", "")?.split(",")[0]?.trim();
+      const webUrl = (link: unknown) => {
+        if (!origin || typeof link !== "string" || !link.startsWith("/workspace/")) return null;
+        try { return new URL(link, origin).toString(); } catch { return null; }
+      };
+      return result.rows.map((row) => ({ ...row, webUrl: webUrl(row.deepLink) }));
     });
   }
   readAll(actor: RequestActor, workspaceId: string) {

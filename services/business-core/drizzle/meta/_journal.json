@@ -617,6 +617,13 @@
       "when": 1801113800000,
       "tag": "0138_delivery_health",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1801117400000,
+      "tag": "0139_conversation_assigned_notice",
+      "breakpoints": true
     }
   ]
 }

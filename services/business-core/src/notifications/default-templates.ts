@@ -46,6 +46,13 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     variables: ["reference", "newOwner"],
   },
   {
+    code: "crm.conversation_assigned",
+    channel: "in_app",
+    subject: "Conversation with {{client}} is yours",
+    body: "{{assignedBy}} assigned it to you. Reply from the inbox.",
+    variables: ["client", "assignedBy"],
+  },
+  {
     code: "crm.lead_taken_over_to",
     channel: "in_app",
     subject: "{{reference}} is now yours",
@@ -390,7 +397,7 @@ export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "purchasing.approval_needed", "stock.adjustment_needs_approval", "payables.run_submitted", "petty_cash.submitted",
   "hrms.leave_requested", "hrms.leave_approved", "hrms.leave_rejected", "hrms.timesheet_submitted", "hrms.crew_day_submitted", "hrms.attendance_to_review",
   "quotation.review_requested", "design.review_requested",
-  "crm.lead_assigned", "crm.lead_taken_over_to",
+  "crm.lead_assigned", "crm.lead_taken_over_to", "crm.conversation_assigned",
 ]);
 
 /**

@@ -9674,5 +9674,11 @@
   "Notices not delivered since {time}": "Notices not delivered since {time}",
   "Notices aren't being delivered": "Notices aren't being delivered",
   "{channel} notices not delivered since {time}": "{channel} notices not delivered since {time}",
-  "{channel} notices aren't being delivered": "{channel} notices aren't being delivered"
+  "{channel} notices aren't being delivered": "{channel} notices aren't being delivered",
+  "Notifications on this phone": "Notifications on this phone",
+  "Work given to you, approvals and site alerts arrive as pushes.": "Work given to you, approvals and site alerts arrive as pushes.",
+  "Off: notices wait in the inbox.": "Off: notices wait in the inbox.",
+  "Notifications could not be changed.": "Notifications could not be changed.",
+  "Not allowed in the phone’s settings": "Not allowed in the phone’s settings",
+  "Not available on this device": "Not available on this device"
 }

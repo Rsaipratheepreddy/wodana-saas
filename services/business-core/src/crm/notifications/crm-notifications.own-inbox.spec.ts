@@ -26,12 +26,24 @@ describe("your own notifications need only membership", () => {
   it("lists only the signed-in member's in-app notices", async () => {
     const query = vi.fn(async () => ({ rows: [{ id: notificationId, subject: "Quote ready for QS review" }], rowCount: 1 }));
     const { service, access } = memberWithoutPermissions(query);
-    await expect(service.inbox(actor, workspaceId)).resolves.toEqual([{ id: notificationId, subject: "Quote ready for QS review" }]);
+    await expect(service.inbox(actor, workspaceId)).resolves.toEqual([{ id: notificationId, subject: "Quote ready for QS review", webUrl: null }]);
     expect(access.asMember).toHaveBeenCalledTimes(1);
     expect(access.withPermission).not.toHaveBeenCalled();
     const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
     expect(sql).toMatch(/recipient_type='user' AND recipient_id=\$2 AND channel='in_app'/);
     expect(values).toEqual([workspaceId, qsUserId]);
+  });
+
+  it("gives the phone the web address of each notice, for the ones it has no screen for", async () => {
+    const query = vi.fn(async () => ({ rows: [{ id: notificationId, deepLink: "/workspace/finance/runs?run=1" }, { id: "b", deepLink: null }], rowCount: 2 }));
+    const client = { query };
+    const access = { asMember: vi.fn(async (_actor: unknown, _workspace: string, work: (c: unknown, u: { userId: string }) => unknown) => work(client, { userId: qsUserId })) };
+    const config = { get: (_key: string) => "https://app.example.com,https://other.example.com" };
+    const service = new CrmNotificationsService({} as never, access as never, { record: vi.fn() } as never, { record: vi.fn() } as never, undefined, undefined, config as never);
+    await expect(service.inbox(actor, workspaceId)).resolves.toEqual([
+      { id: notificationId, deepLink: "/workspace/finance/runs?run=1", webUrl: "https://app.example.com/workspace/finance/runs?run=1" },
+      { id: "b", deepLink: null, webUrl: null },
+    ]);
   });
 
   it("marks one of your notices read, and never someone else's", async () => {
