@@ -21,8 +21,8 @@ export async function seedDefaultQuickReplies(db: Db, workspaceId: string) {
   for (const reply of DEFAULT_QUICK_REPLIES) {
     const result = await db.query(
       `INSERT INTO crm_quick_replies (workspace_id, owner_membership_id, shortcut, body)
-       SELECT $1, NULL, $2, $3
-        WHERE NOT EXISTS (SELECT 1 FROM crm_quick_replies WHERE workspace_id = $1 AND owner_membership_id IS NULL AND shortcut = $2)`,
+       SELECT $1::uuid, NULL::uuid, $2::varchar, $3::text
+        WHERE NOT EXISTS (SELECT 1 FROM crm_quick_replies WHERE workspace_id = $1::uuid AND owner_membership_id IS NULL AND shortcut = $2::varchar)`,
       [workspaceId, reply.shortcut, reply.body]);
     added += result.rowCount ?? 0;
   }
