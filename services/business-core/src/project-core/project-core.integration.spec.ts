@@ -665,6 +665,11 @@ integration("projects core (plan §6.10)", () => {
       const detail = await lead.item(actor, w.workspaceId, projectId, tasks[2].id);
       expect(detail.before).toEqual([expect.objectContaining({ number: 2, kind: "ss" })]);
       await expect(lead.command(actor, w.workspaceId, projectId, { action: "plan_package", packageId: pkg.id })).rejects.toThrow(/already planned/);
+      // The next package starts by default on the working day after the one planned before it ends.
+      project = await core.get(actor, w.workspaceId, projectId);
+      await core.command(actor, w.workspaceId, projectId, { action: "save_package", version: project.project.version, name: "Wardrobes", supply: "make" });
+      const wardrobes = (await core.scope(actor, w.workspaceId, projectId)).packages.find((item) => item.name === "Wardrobes")!;
+      expect((await lead.packagePlan(actor, w.workspaceId, projectId, wardrobes.id)).startDate).toBe("2026-10-13");
       const planned = (await w.client.query<{ subject: string; body: string }>(`SELECT subject, body FROM notifications WHERE workspace_id = $1 AND event_type = 'work.planned' AND recipient_id = $2`, [w.workspaceId, w.designer])).rows;
       expect(planned).toEqual([{ subject: "Kitchen joinery is planned", body: "Omar Manager gave you 1 task on PRJ-0001 · Villa 12. First due Oct 5, 2026." }]);
     });

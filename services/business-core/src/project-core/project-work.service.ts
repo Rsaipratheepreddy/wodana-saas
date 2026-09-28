@@ -15,7 +15,7 @@ import {
   type WorkItem, type WorkStatus,
 } from "./project-work";
 import { criticalPath, readCalendar, ripple, type PlanMove } from "./work-calendar";
-import { ensureWorkTemplates, schedulePackage } from "./work-templates";
+import { ensureWorkTemplates, packageStart, schedulePackage } from "./work-templates";
 import { MISS_REASONS, readSprintDetail, readSprints, type MissReason } from "./project-sprints";
 
 type Db = PoolClient;
@@ -664,8 +664,7 @@ export class ProjectWorkService {
     const settings = await ensureSettings(client, workspaceId);
     const template = (await ensureWorkTemplates(client, workspaceId, settings.roles)).find((item) => item.supply === pkg.supply)!;
     const planned = Boolean((await client.query(`SELECT 1 FROM work_items WHERE workspace_id = $1 AND package_id = $2 AND template_key IS NOT NULL LIMIT 1`, [workspaceId, packageId])).rowCount);
-    const today = (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(default_timezone, 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
-    const startDate = requested ?? (context.project.startDate && context.project.startDate > today ? context.project.startDate : today);
+    const startDate = requested ?? await packageStart(client, workspaceId, context.project, packageId, await readCalendar(client, workspaceId));
     const team = (await readTeam(client, workspaceId, [context.project.id])).get(context.project.id) ?? [];
     const stages = (await client.query<{ id: string; key: string; name: string }>(`SELECT id, key, name FROM project_stages WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, context.project.id])).rows;
     const tasks = schedulePackage(template.tasks, startDate, await readCalendar(client, workspaceId)).map((task) => {

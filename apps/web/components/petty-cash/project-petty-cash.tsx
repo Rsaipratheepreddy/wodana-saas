@@ -136,7 +136,9 @@ function ClaimDialog({ api, projectId, state, claim, onClose, onSaved }: {
   const [spentOn, setSpentOn] = useState<string | null>(claim?.spentOn ?? state.today);
   const [amount, setAmount] = useState(claim ? plain(claim.amount) : "");
   const [description, setDescription] = useState(claim?.description ?? "");
-  const [category, setCategory] = useState<PettyCashCategory | null>(claim?.category ?? null);
+  // A new claim starts on the kind this person used last.
+  const [category, setCategory] = useState<PettyCashCategory | null>(() => claim?.category
+    ?? state.claims.filter((row) => row.claimedBy === state.me).reduce<PettyCashClaim | null>((last, row) => (!last || row.number > last.number ? row : last), null)?.category ?? null);
   const [packageId, setPackageId] = useState(claim?.packageId ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [noReceiptReason, setNoReceiptReason] = useState(claim?.noReceiptReason ?? "");
