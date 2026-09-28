@@ -9680,5 +9680,12 @@
   "Off: notices wait in the inbox.": "Off: notices wait in the inbox.",
   "Notifications could not be changed.": "Notifications could not be changed.",
   "Not allowed in the phone’s settings": "Not allowed in the phone’s settings",
-  "Not available on this device": "Not available on this device"
+  "Not available on this device": "Not available on this device",
+  "Woddy is off for this workspace. An admin can turn AI on in Settings.": "Woddy is off for this workspace. An admin can turn AI on in Settings.",
+  "You don't have access to Woddy in this workspace.": "You don't have access to Woddy in this workspace.",
+  "AI is off for this workspace. An admin can turn it on in Settings. You can continue in Room builder.": "AI is off for this workspace. An admin can turn it on in Settings. You can continue in Room builder.",
+  "AI analysis isn’t available to you. You can continue in Room builder.": "AI analysis isn’t available to you. You can continue in Room builder.",
+  "AI could not finish this analysis. Please retry, or continue in Room builder.": "AI could not finish this analysis. Please retry, or continue in Room builder.",
+  "AI is off for this workspace. Showing the record-based checklist.": "AI is off for this workspace. Showing the record-based checklist.",
+  "Record-based checklist. AI assistance isn't available to you.": "Record-based checklist. AI assistance isn't available to you."
 }

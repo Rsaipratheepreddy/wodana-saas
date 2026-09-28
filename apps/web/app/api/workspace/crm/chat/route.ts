@@ -3,6 +3,7 @@ import { askWoddy, type WoddyMessage } from "@/lib/crm/woddy.server";
 import { UUID, invalidRequest, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 import { getServerT } from "@/lib/i18n/server";
 import { translateKnown } from "@/lib/i18n/keys";
+import { ACCESS_COOKIE } from "@/lib/auth/server";
 
 export async function POST(request: Request) {
   const t = await getServerT();
@@ -36,7 +37,9 @@ export async function POST(request: Request) {
     : scope === "conversation" ? { scope, channel: record.channel, status: record.status, leadManager: record.ownerMembershipId ? "Assigned" : "Unassigned", unreadCount: record.unreadCount, messageStates: record.messages?.slice(-12).map((item: Record<string, unknown>) => ({ direction: item.direction, status: item.status })), note: "Message contents and customer identity are not shared. Customer replies use the tenant’s connected provider; internal notes remain private." }
     : { scope, generatedAt: record.generatedAt, counts: record.counts, returnedItemCount: record.items?.length, note: "Today's permission-filtered work queue, limited to 200 items. Not the entire CRM." };
   let response: NextResponse;
-  try { response = NextResponse.json({ answer: await askWoddy(body.workspaceId, facts, messages), note: t("AI guidance · Review before acting. Nothing is sent or changed."), scope }, { headers: { "cache-control": "no-store" } }); }
+  // A session the context call rotated is used for the model call too (the old refresh token is spent).
+  const rotatedAccess = upstream.cookies.get(ACCESS_COOKIE)?.value;
+  try { response = NextResponse.json({ answer: await askWoddy(body.workspaceId, facts, messages, rotatedAccess), note: t("AI guidance · Review before acting. Nothing is sent or changed."), scope }, { headers: { "cache-control": "no-store" } }); }
   catch (error) { response = NextResponse.json({ message: error instanceof Error && !["AbortError", "TimeoutError", "TypeError"].includes(error.name) ? translateKnown(t, error.message) : t("Woddy took too long to reply. Please try again.") }, { status: 503, headers: { "cache-control": "no-store" } }); }
   for (const cookie of upstream.cookies.getAll()) response.cookies.set(cookie);
   return response;

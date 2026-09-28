@@ -265,7 +265,14 @@ CURRENT_WEB_PORT="$(awk '$1 == "web:" { in_web=1; next } in_web && $1 == "PORT:"
 mkdir -m 700 "$RELEASE_DIR"
 cp "$CURRENT_RELEASE_DIR/web.env" "$RELEASE_DIR/web.env"
 cp "$NGINX_CONFIG_PATH" "$RELEASE_DIR/nginx-before.conf"
-if [[ "$DEPLOY_CORE" == 1 ]]; then cp "$CURRENT_CORE_RELEASE_DIR/core.env" "$RELEASE_DIR/core.env"; fi
+if [[ "$DEPLOY_CORE" == 1 ]]; then
+  cp "$CURRENT_CORE_RELEASE_DIR/core.env" "$RELEASE_DIR/core.env"
+  # Every AI call now goes through Business Core's gateway: a model key kept only for the web moves to the core.
+  if ! grep -q '^GEMINI_API_KEY=.' "$RELEASE_DIR/core.env" && grep -q '^GEMINI_API_KEY=.' "$RELEASE_DIR/web.env"; then
+    grep -E '^GEMINI_(API_KEY|MODEL)=' "$RELEASE_DIR/web.env" >> "$RELEASE_DIR/core.env"
+    echo "The AI key now lives with Business Core (copied from web.env)."
+  fi
+fi
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then cp "$CURRENT_INTELLIGENCE_RELEASE_DIR/intelligence.env" "$RELEASE_DIR/intelligence.env"; fi
 if [[ "$APPLY_PENDING_MIGRATIONS" == 1 ]]; then
   MIGRATION_ARCHIVE="/tmp/${RELEASE_NAME}.migrations.tar.gz"
