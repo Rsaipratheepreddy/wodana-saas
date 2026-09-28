@@ -64,3 +64,76 @@ export type HomeActivityEvent = {
   at: string;
   href: string | null;
 };
+
+/**
+ * Home's calm overview for one person, read in one tenant transaction. Every section follows the caller's
+ * permissions; what they may not see is left out, never guessed.
+ */
+export type HomeSummary = {
+  generatedAt: string;
+  timeZone: string;
+  /** The workspace's local calendar day (YYYY-MM-DD). */
+  today: string;
+  /** What needs this person now: overdue first, then due today, then what waits on them (approvals). */
+  focus: { items: HomeFocusItem[]; total: number };
+  /** Dated work after now: the next 7 days, or the next 30 when the week is quiet (`horizonDays`). */
+  upcoming: HomeUpcomingItem[];
+  horizonDays: 7 | 30;
+  /** The business flow the person can see, in order; a stage they can't see is left out. */
+  funnel: HomeFunnelStage[];
+  /** Records the person worked on most recently, then the ones in their care. */
+  recent: HomeRecentRecord[];
+  /** The person's running projects, most recent first, for actions that start on a project (a site report). */
+  projects: Array<{ id: string; name: string }>;
+};
+
+/** Where a Today item comes from; the web picks the action label from it. */
+export type HomeFocusSource =
+  | "follow_up" | "response" | "reply" | "work" | "delivery" | "invoice" | "production"
+  | "quote_review" | "receipt" | "order_approval" | "design_review" | "design_client" | "design_present" | "design_revise" | "petty_cash" | "leave";
+
+export type HomeFocusItem = {
+  /** Stable across reloads: `${source}:${recordId}`. */
+  id: string;
+  source: HomeFocusSource;
+  urgency: "overdue" | "today" | "waiting";
+  recordId: string;
+  title: string;
+  /** The client, project, supplier or person the item belongs to; may be empty. */
+  context: string;
+  /** When it was due (overdue, today) or since when it has waited (waiting); an ISO date or date-time. */
+  due: string | null;
+  href: string;
+  /** The project of a work item, so it opens in place. */
+  projectId?: string;
+};
+
+export type HomeUpcomingItem = {
+  id: string;
+  kind: "meeting" | "follow_up" | "work" | "delivery" | "payment" | "production";
+  title: string;
+  context: string;
+  /** An ISO date-time for timed items (meetings, follow-ups), an ISO date for all-day ones. */
+  at: string;
+  allDay: boolean;
+  href: string;
+};
+
+export type HomeFunnelStageId = "enquiries" | "planning" | "quotes" | "projects" | "handover";
+export type HomeFunnelStage = {
+  id: HomeFunnelStageId;
+  count: number;
+  /** Of `count`, the ones that have stalled: no movement for a while, overdue or late. */
+  stuck: number;
+  href: string;
+};
+
+export type HomeRecentRecord = {
+  id: string;
+  kind: "enquiry" | "case" | "project" | "order" | "work_order";
+  title: string;
+  context: string;
+  /** When the person last worked on it, else when it last changed. */
+  at: string;
+  href: string;
+};
