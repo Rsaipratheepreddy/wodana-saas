@@ -3,6 +3,7 @@ import { GlobalApprovalTasks } from "@/components/projects/global-approval-tasks
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 import { getDesignQueue } from "@/lib/pre-project/server";
 import { DesignQueue } from "@/components/pre-project/design-queue";
+import { LiveRefresh } from "@/components/workspace/live-refresh";
 import { projectRead } from "@/lib/projects/server";
 import type { ApprovalQueuePage } from "../../../../../services/business-core/src/projects/project-approval-queue";
 import styles from "./page.module.css";
@@ -23,7 +24,8 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
   let caseContent: React.ReactNode = null;
   if (source === "cases" && canReviewCases) {
     const queue = await getDesignQueue();
-    caseContent = <DesignQueue items={queue.items} error={queue.error} />;
+    // Design reviews are read on the server: a change in Planning re-renders them.
+    caseContent = <><DesignQueue items={queue.items} error={queue.error} /><LiveRefresh workspaceId={membership?.workspaceId ?? ""} scopes={["planning", "approvals"]} /></>;
   }
 
   let projectContent: React.ReactNode = null;

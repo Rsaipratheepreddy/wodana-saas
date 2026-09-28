@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
+import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
 import { DAY_GROUP_LABELS, NOTIFICATION_MODULES, dayGroup, notificationModule, type DayGroup, type NotificationModule } from "@/lib/workspace/notification-modules";
 import styles from "./workspace-notifications.module.css";
 
@@ -20,6 +21,7 @@ export type WorkspaceNotice = {
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const LIVE_SCOPES = ["notifications", "workspace"] as const;
 export const MODULE_ICONS: Record<NotificationModule, LucideIcon> = {
   sales: BriefcaseBusiness, planning: Ruler, projects: FolderKanban, operations: Factory, finance: Wallet, people: Users, workspace: LayoutGrid,
 };
@@ -42,13 +44,16 @@ export function useWorkspaceNotices(workspaceId: string) {
       setFailure(true);
     } finally { setLoaded(true); }
   }, [workspaceId]);
+  // A new notice arrives with the change that caused it, so any workspace change re-reads the list; polling
+  // stays as a fallback (every 30 seconds without the live stream, every minute with it).
+  const live = useLiveInvalidate(workspaceId, LIVE_SCOPES, () => void load(), 2_000);
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 30_000);
+    const timer = window.setInterval(() => { if (!document.hidden) void load(); }, pollEvery(live, 30_000));
     const refresh = () => { if (!document.hidden) void load(); };
     document.addEventListener("visibilitychange", refresh);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
-  }, [load]);
+  }, [load, live]);
   const markRead = async (item: WorkspaceNotice) => {
     if (item.readAt) return;
     try {

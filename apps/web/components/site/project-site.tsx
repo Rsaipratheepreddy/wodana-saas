@@ -7,6 +7,7 @@ import { Plus, X } from "lucide-react";
 import { Button, Checkbox, ControlledModalDialog, DateField, EmptyState, ErrorState, IconButton, InlineNotice, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { siteApi } from "@/lib/site/client";
+import { useLiveInvalidate } from "@/lib/workspace/live-events";
 import type { Outlook, Safety, SiteReport, SiteState } from "@/lib/site/types";
 import { ProjectCrewDays } from "../hrms/crew-days";
 import { ProjectSiteAccess } from "../hrms/site-access";
@@ -39,6 +40,8 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
     try { setState(await api.state()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The site didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  // Someone else's report or approval on this project shows without a refresh (a report being edited stays put).
+  useLiveInvalidate(workspaceId, [`project:${projectId}`], () => { if (!editing && !returning) void load(); });
   const run = async (action: string, input: Record<string, unknown> = {}) => {
     setNotice("");
     try { setState(await api.command(action, input)); return true; }

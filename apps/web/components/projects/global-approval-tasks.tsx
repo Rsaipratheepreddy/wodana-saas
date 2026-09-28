@@ -7,6 +7,9 @@ import {Badge,Button,Callout,DataGrid,type DataGridColumn} from '@/design-system
 import type {ApprovalQueuePage,ApprovalQueueRow} from '../../../../services/business-core/src/projects/project-approval-queue';
 import styles from '../workspace/workspace.module.css';
 import {rfaLabels} from '../../../../services/business-core/src/projects/project-rfa';
+import {useLiveInvalidate} from '@/lib/workspace/live-events';
+
+const APPROVAL_SCOPES=['approvals','projects'] as const;
 export function GlobalApprovalTasks({workspaceId,initial,initialError='',showSales=false,embedded=false}:{workspaceId:string;initial:ApprovalQueuePage;initialError?:string;showSales?:boolean;embedded?:boolean}){
   const t = useT();
  const [page,setPage]=useState(initial),[view,setView]=useState('mine'),[search,setSearch]=useState(''),[busy,setBusy]=useState(false),[failure,setFailure]=useState(initialError);
@@ -26,6 +29,8 @@ export function GlobalApprovalTasks({workspaceId,initial,initialError='',showSal
   finally{if(token===sequence.current)setBusy(false);}
  },[workspaceId,view,search]);
  useEffect(()=>{const pending=request,version=sequence;const timer=setTimeout(()=>void load(),250);return()=>{clearTimeout(timer);pending.current?.abort();version.current++;};},[load]);
+ // A request raised or decided by someone else shows without a refresh.
+ useLiveInvalidate(workspaceId,APPROVAL_SCOPES,()=>void load(),2_000);
  useEffect(()=>{const refresh=()=>{if(document.visibilityState==='visible')void load();};window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);return()=>{window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};},[load]);
  const changeView=(value:string)=>{request.current?.abort();sequence.current++;setBusy(true);setPage(previous=>({...previous,rows:[],nextCursor:null}));setView(value);};
  const columns:DataGridColumn<ApprovalQueueRow>[]=[
