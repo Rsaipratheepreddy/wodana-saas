@@ -92,7 +92,7 @@ test.describe("design system reference", () => {
     expect(frame.headerBackground).not.toBe(frame.surface);
     expect(frame.sticky).toBe("sticky");
     await page.getByRole("button", { name: "Use dark theme" }).click();
-    await grid.getByRole("button", { name: "Filter" }).click();
+    await grid.getByRole("button", { name: "Filter", exact: true }).click();
     const panel = page.locator(".wd-record-panel");
     await expect(panel).toHaveAttribute("data-wd-theme", "dark");
     expect(await panel.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe("rgb(255, 255, 255)");
