@@ -50,6 +50,7 @@ const MODULE_ACTIONS: Record<string, string> = {
   petty_cash: "Open expense",
   receivables: "Open invoice",
   account: "Open workspace",
+  ai: "Open AI credits",
 };
 
 export function staffEmailAction(eventType: string | null | undefined, recipientType?: string | null) {

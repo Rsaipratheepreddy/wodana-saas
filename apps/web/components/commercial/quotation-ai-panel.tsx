@@ -17,6 +17,7 @@ import { roomNames } from "@/lib/commercial/room-builder";
 import type { QuotationAnalysis } from "@/lib/commercial/quotation-assist";
 import { Woddy, woddyPoseFor } from "@/design-system";
 import s from "./quotation-workspace.module.css";
+import { AiPauseNotice } from "@/components/workspace/ai-pause-notice";
 
 type Message = { id: string; role: "user" | "assistant"; text: string };
 export function QuotationAiPanel({
@@ -40,7 +41,8 @@ export function QuotationAiPanel({
   const [prompt, setPrompt] = useState(""),
     [messages, setMessages] = useState<Message[]>([]),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [paused, setPaused] = useState("");
   const [analysis, setAnalysis] = useState<QuotationAnalysis | null>(null);
   const request = useRef<AbortController | null>(null),
     conversation = useRef<HTMLDivElement>(null);
@@ -63,6 +65,7 @@ export function QuotationAiPanel({
     request.current = controller;
     setBusy(true);
     setError("");
+    setPaused("");
     setMessages((current) => [...current, message]);
     setPrompt("");
     try {
@@ -95,6 +98,11 @@ export function QuotationAiPanel({
         signal: controller.signal,
       });
       const data = await result.json();
+      if (!result.ok && data?.paused) {
+        setPaused(data.message);
+        setPrompt(message.text);
+        return;
+      }
       if (!result.ok)
         throw new Error(data.message ?? t("Could not analyze the case."));
       if (controller.signal.aborted) return;
@@ -219,6 +227,7 @@ export function QuotationAiPanel({
             <small>{t("Quantities and prices need your confirmation.")}</small>
           </div>
         )}
+        {paused ? <AiPauseNotice message={paused} /> : null}
         {error && (
           <p role="alert" className={s.error}>
             {error}

@@ -126,6 +126,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/language", icon: "language", id: "workspace-language", label: tKey("Workspace language") },
           { href: "/workspace/legal-entities", icon: "company", id: "business-records", label: tKey("Business records") },
           { href: "/workspace/billing", icon: "billing", id: "billing", label: tKey("Billing") },
+          { href: "/workspace/settings/ai-credits", icon: "billing", id: "ai-credits", label: tKey("AI credits") },
           { href: "/workspace/settings/audit-logs", icon: "audit", id: "audit-log", label: tKey("Audit history") },
           { href: "/workspace/organizations", icon: "companies", id: "organizations-account", label: tKey("Manage workspaces"), showInSidebar: false },
           { href: "/workspace/gallery", icon: "designs", id: "gallery", label: tKey("Gallery"), showInSidebar: false },

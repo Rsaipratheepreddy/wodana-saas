@@ -680,6 +680,20 @@
       "when": 1801139000000,
       "tag": "0149_number_health",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1801157000000,
+      "tag": "0154_ai_credits",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1801160600000,
+      "tag": "0155_ai_credit_notices",
+      "breakpoints": true
     }
   ]
 }

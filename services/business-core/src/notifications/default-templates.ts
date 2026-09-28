@@ -305,6 +305,11 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "account.domain_ownership_lost", channel: "email", subject: "{{domain}} is not connected", body: "We could no longer find the DNS record that proves {{organization}} owns {{domain}}.\n\nSign in at {{address}} in the meantime, and restore the record to reconnect the domain.", variables: ["organization", "date", "domain", "address"] },
   { code: "account.domain_live", channel: "in_app", subject: "{{domain}} is live", body: "Sign in at {{domain}}.", variables: ["organization", "date", "domain", "address"] },
   { code: "account.domain_live", channel: "email", subject: "{{domain}} is live", body: "{{organization}} now signs in at {{domain}}.", variables: ["organization", "date", "domain", "address"] },
+  // AI credits (ai-gateway/ai-credits.ts): owners and administrators, once when credits run low and once when they run out.
+  { code: "ai.credits_low", channel: "in_app", subject: "AI credits are running low", body: "{{balance}} credits left. Contact support to top up.", variables: ["balance"] },
+  { code: "ai.credits_low", channel: "email", subject: "AI credits are running low", body: "Your workspace has {{balance}} AI credits left.\n\nContact support to top up before they run out. Woddy and AI suggestions pause when credits are used up.", variables: ["balance"] },
+  { code: "ai.credits_exhausted", channel: "in_app", subject: "AI credits are used up", body: "Woddy and AI suggestions are paused. Contact support to top up.", variables: ["balance"] },
+  { code: "ai.credits_exhausted", channel: "email", subject: "AI credits are used up", body: "Your workspace has used all of its AI credits.\n\nWoddy and AI suggestions are paused until credits are topped up. Contact support to top up.", variables: ["balance"] },
 ];
 
 export async function seedDefaultNotificationTemplates(db: Db, workspaceId: string) {

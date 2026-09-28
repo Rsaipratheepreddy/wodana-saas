@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiProperty, ApiPropertyOptional, ApiTags } from "@nestj
 import { IsBoolean, IsIn, IsInt, IsObject, IsOptional, Max, Min } from "class-validator";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
+import { AiCreditsService } from "./ai-credits.service";
 import { AiGatewayService } from "./ai-gateway.service";
 import { AI_FEATURE_LIMITS } from "./ai-rate-limit.service";
 
@@ -33,4 +34,13 @@ export class AiGatewayController {
 export class AiGenerateController {
   constructor(private readonly ai: AiGatewayService) {}
   @Post("generate") @HttpCode(200) generate(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() body: AiGenerateDto) { return this.ai.generate(actor, workspaceId, body); }
+}
+
+/** Settings → AI credits: the workspace's balance, this month's use by feature and its ledger. */
+@ApiTags("ai")
+@ApiBearerAuth()
+@Controller("workspaces/:workspaceId/ai-credits")
+export class AiCreditsController {
+  constructor(private readonly credits: AiCreditsService) {}
+  @Get() overview(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.credits.overview(actor, workspaceId); }
 }

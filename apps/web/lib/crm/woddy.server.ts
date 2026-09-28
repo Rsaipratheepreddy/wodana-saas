@@ -1,6 +1,7 @@
 import "server-only";
 import { tKey } from "@/lib/i18n/keys";
 import { generateThroughGateway, type AiRefusal } from "@/lib/ai/gateway.server";
+import { AI_PAUSE_MESSAGES } from "@/lib/ai/pause";
 
 export type WoddyMessage = { role: "user" | "assistant"; text: string };
 
@@ -10,6 +11,8 @@ export const WODDY_REFUSALS: Record<AiRefusal, string> = {
   "not-configured": tKey("Woddy is not configured yet. Your CRM records are unchanged."),
   "no-access": tKey("You don't have access to Woddy in this workspace."),
   "rate-limited": tKey("Woddy is busy. Please try again in a minute."),
+  "no-credits": AI_PAUSE_MESSAGES.AI_CREDITS_EXHAUSTED,
+  "paused-today": AI_PAUSE_MESSAGES.AI_PLATFORM_DAILY_LIMIT,
   unavailable: tKey("Woddy is temporarily unavailable. Please try again. No CRM records were changed."),
 };
 
