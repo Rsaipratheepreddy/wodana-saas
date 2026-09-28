@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { PoolClient } from "pg";
 import type { CommercialData } from "../commercial/commercial.types";
 import type { PortalContact } from "./portal-auth";
-import { comment, noticeClientMessage, raiseRequest, type DecisionContext } from "./portal-decisions";
+import { noticeClientMessage, type DecisionContext } from "./portal-decisions";
+import { comment, raiseRequest } from "./portal-messages";
 import type { PortalSettings } from "./portal-settings";
 
 const CASE = "11111111-1111-4111-8111-111111111111";
@@ -37,7 +38,7 @@ function database() {
 }
 
 function context(db: PoolClient, data: CommercialData): DecisionContext {
-  const settings = { workspaceId: "w", slug: "s", enabled: true, version: 1, sections: { progress: true, decisions: true, payments: true, documents: true, warranty: true, messages: true },
+  const settings = { workspaceId: "w", slug: "s", enabled: true, version: 1, sections: { progress: true, moodboard: true, decisions: true, payments: true, documents: true, warranty: true, messages: true },
     progress: { stageNames: true, dates: true, updates: true, photos: true }, invoiceAmounts: true, welcomeTitle: "", welcomeText: "", support: { phone: "", email: "", whatsapp: "" } } as PortalSettings;
   const contact = { phone: "+12025550123", grants: [{ id: "g1", caseId: CASE, name: "Maya", role: "viewer", email: null, confirmed: true }] } as unknown as PortalContact;
   return { db, workspaceId: "w", contact, settings, today: "2026-09-27", verify: async () => true, definitions: {} as DecisionContext["definitions"],
@@ -53,8 +54,11 @@ describe("client messages reach the team", () => {
     const data = emptyCase();
     const result = await raiseRequest(context(db, data), { caseId: CASE, title: "Paint", detail: "Which white did you mean?" });
     expect(data.requests).toHaveLength(1);
-    expect(notices.map((notice) => notice.userId).sort()).toEqual(["designer", "sales"]);
-    for (const notice of notices) {
+    // In the app and by email, once each.
+    const inApp = notices.filter((notice) => !notice.key.endsWith(":email"));
+    expect(inApp.map((notice) => notice.userId).sort()).toEqual(["designer", "sales"]);
+    expect(notices.filter((notice) => notice.key.endsWith(":email")).map((notice) => notice.userId).sort()).toEqual(["designer", "sales"]);
+    for (const notice of inApp) {
       expect(notice.code).toBe("request.client_raised");
       expect(notice.subject).toBe("Maya on Villa 402");
       expect(notice.body).toBe("CR-001 · Paint: Which white did you mean?");
@@ -71,9 +75,10 @@ describe("client messages reach the team", () => {
     await comment(context(db, data), { caseId: CASE, requestId: "33333333-3333-4333-8333-333333333333", text: "Yes, by the bed." });
     const commentId = data.requests[0].comments[0].id;
     expect(data.requests[0].comments[0]).toMatchObject({ author: "Maya", text: "Yes, by the bed.", visibility: "client", fromClient: true });
-    expect(notices.map((notice) => notice.userId).sort()).toEqual(["designer", "manager", "sales"]);
-    expect(notices[0]).toMatchObject({ code: "request.client_replied", subject: "Maya on PRJ-7 · Villa 402", body: "CR-002 · Sockets: Yes, by the bed.",
-      deepLink: `/workspace/pre-projects/cases/${CASE}/variations?request=33333333-3333-4333-8333-333333333333`, key: `request.client_replied:${commentId}:${notices[0].userId}` });
+    const inApp = notices.filter((notice) => !notice.key.endsWith(":email"));
+    expect(inApp.map((notice) => notice.userId).sort()).toEqual(["designer", "manager", "sales"]);
+    expect(inApp[0]).toMatchObject({ code: "request.client_replied", subject: "Maya on PRJ-7 · Villa 402", body: "CR-002 · Sockets: Yes, by the bed.",
+      deepLink: `/workspace/pre-projects/cases/${CASE}/variations?request=33333333-3333-4333-8333-333333333333`, key: `request.client_replied:${commentId}:${inApp[0].userId}` });
     projectStarted = false;
   });
 

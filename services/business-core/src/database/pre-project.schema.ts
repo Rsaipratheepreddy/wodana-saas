@@ -65,7 +65,10 @@ export const preProjectLifecycleCommands = pgTable("pre_project_lifecycle_comman
 // Definitions mirror the additive brief, design and specification migrations.
 const caseColumns = () => ({ workspaceId: uuid("workspace_id").notNull(), caseId: uuid("case_id").notNull() });
 const createdColumns = () => ({ createdBy: uuid("created_by").notNull().references(() => users.id), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() });
-const caseForeignKey = (t: { workspaceId: import("drizzle-orm/pg-core").AnyPgColumn; caseId: import("drizzle-orm/pg-core").AnyPgColumn }) => foreignKey({ columns: [t.workspaceId, t.caseId], foreignColumns: [preProjectCases.workspaceId, preProjectCases.id] });
+/** Written by staff, or by a client portal contact (then no staff author; 0137_client_portal_v2). */
+const clientAuthoredColumns = () => ({ createdBy: uuid("created_by").references(() => users.id), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  clientGrantId: uuid("client_grant_id") });
+const caseForeignKey =(t: { workspaceId: import("drizzle-orm/pg-core").AnyPgColumn; caseId: import("drizzle-orm/pg-core").AnyPgColumn }) => foreignKey({ columns: [t.workspaceId, t.caseId], foreignColumns: [preProjectCases.workspaceId, preProjectCases.id] });
 
 export const preProjectBriefs = pgTable("pre_project_briefs", {
   caseId: uuid("case_id").primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
@@ -86,8 +89,8 @@ export const preProjectBriefEntries = pgTable("pre_project_brief_entries", {
   note:text("note").notNull().default(""),category:varchar("category",{length:60}).notNull().default("General"),priority:varchar("priority",{length:20}).notNull().default("preferred"),
   scopeStatus:varchar("scope_status",{length:20}).notNull().default("undecided"),reviewStatus:varchar("review_status",{length:20}).notNull().default("captured"),
   quantity:numeric("quantity",{precision:16,scale:4}),unit:varchar("unit",{length:20}).notNull().default("nos"),referenceUrl:varchar("reference_url",{length:2000}).notNull().default(""),
-  avoid:text("avoid").notNull().default(""),source:varchar("source",{length:20}).notNull().default("team"),version:integer("version").notNull().default(1),...createdColumns(),
-  updatedBy:uuid("updated_by").notNull().references(()=>users.id),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),archivedAt:timestamp("archived_at",{withTimezone:true}),
+  avoid:text("avoid").notNull().default(""),source:varchar("source",{length:20}).notNull().default("team"),version:integer("version").notNull().default(1),...clientAuthoredColumns(),
+  updatedBy:uuid("updated_by").references(()=>users.id),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),archivedAt:timestamp("archived_at",{withTimezone:true}),
 },t=>[caseForeignKey(t),unique().on(t.workspaceId,t.caseId,t.id),
   foreignKey({columns:[t.workspaceId,t.caseId,t.roomId],foreignColumns:[preProjectRooms.workspaceId,preProjectRooms.caseId,preProjectRooms.id]}),
   index("pre_project_brief_entries_case_idx").on(t.workspaceId,t.caseId,t.updatedAt.desc()),
@@ -98,7 +101,7 @@ export const preProjectBriefEntries = pgTable("pre_project_brief_entries", {
 
 export const preProjectBriefAssets = pgTable("pre_project_brief_assets",{
   id:uuid("id").primaryKey(),...caseColumns(),originalName:varchar("original_name",{length:240}).notNull(),mimeType:varchar("mime_type",{length:100}).notNull(),byteSize:integer("byte_size").notNull(),
-  objectKey:text("object_key").notNull().unique(),previewKey:text("preview_key"),sha256:varchar("sha256",{length:64}).notNull(),...createdColumns(),
+  objectKey:text("object_key").notNull().unique(),previewKey:text("preview_key"),sha256:varchar("sha256",{length:64}).notNull(),...clientAuthoredColumns(),
 },t=>[caseForeignKey(t),unique().on(t.workspaceId,t.caseId,t.id),check("pre_project_brief_assets_byte_size_check",sql`${t.byteSize}>0 AND ${t.byteSize}<=20971520`)]);
 
 export const preProjectEntryAssets = pgTable("pre_project_entry_assets",{

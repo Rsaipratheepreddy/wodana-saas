@@ -12,7 +12,8 @@ export function usePortalLabels() {
   const t = useT();
   return useMemo(() => {
     const sections: Record<"home" | PortalSection, string> = {
-      home: t("Home"), progress: t("Progress"), decisions: t("Decisions"), payments: t("Payments"), documents: t("Documents"), warranty: t("Warranty"), messages: t("Messages"),
+      home: t("Home"), progress: t("Progress"), moodboard: t("Moodboard"), decisions: t("Decisions"), payments: t("Payments"), documents: t("Documents"), warranty: t("Warranty"),
+      messages: t("Messages"),
     };
     const states: Record<string, [string, Tone]> = {
       issued: [t("Waiting for you"), "warning"], client_review: [t("Waiting for you"), "warning"], sent: [t("Waiting for you"), "warning"],
@@ -21,13 +22,14 @@ export function usePortalLabels() {
       changes_requested: [t("Changes asked"), "info"], declined: [t("Declined"), "neutral"], rejected: [t("Declined"), "neutral"], refused: [t("Not accepted"), "info"],
       expired: [t("Expired"), "neutral"], superseded: [t("Replaced"), "neutral"], withdrawn: [t("Withdrawn"), "neutral"],
       paid: [t("Paid"), "success"], part_paid: [t("Part paid"), "info"], due: [t("Due"), "warning"], overdue: [t("Overdue"), "danger"], upcoming: [t("Upcoming"), "neutral"],
-      credited: [t("Cancelled"), "neutral"],
+      credited: [t("Cancelled"), "neutral"], received: [t("Received"), "success"], checking: [t("Being checked"), "info"],
+      issue_to_triage: [t("With the team"), "info"], issue_accepted: [t("Being fixed"), "info"], issue_declined: [t("Not taken up"), "neutral"], issue_fixed: [t("Fixed"), "success"],
       open: [t("Open"), "info"], under_review: [t("With the team"), "info"], resolved: [t("Done"), "success"],
       covered: [t("Covered"), "success"], not_covered: [t("Not covered"), "neutral"], chargeable: [t("Chargeable"), "warning"],
       done: [t("Done"), "success"], current: [t("Now"), "info"],
     };
     const projectStates: Record<string, string> = {
-      planning: t("Planning"), active: t("In progress"), on_hold: t("On hold"), completed: t("Complete"), cancelled: t("Cancelled"),
+      planning: t("Planning"), active: t("In progress"), on_hold: t("On hold"), completed: t("Completed"), cancelled: t("Cancelled"),
     };
     return { sections, states, projectStates };
   }, [t]);

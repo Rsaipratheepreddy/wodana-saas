@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
-import { notifyUserInApp } from "../notifications/default-templates";
+import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { portalLink } from "./portal-site";
 import { effectiveSections, readPortalSettings, readProjectAccess, type Section } from "./portal-settings";
 
@@ -15,11 +15,16 @@ type Db = Pick<PoolClient, "query">;
  * Nothing goes out while the portal is off, the project is paused, or the section it belongs to is hidden.
  * Each email opens the portal where the thing is.
  */
-export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published";
+export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "team_replied" | "payment_checked" | "issue_triaged";
 
-const SECTION: Record<ClientEvent, Section> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress" };
+//   team_replied       the team answered them on the moodboard   everyone on the project
+//   payment_checked    finance checked a payment they reported   everyone on the project
+//   issue_triaged      the manager took up or declined an issue  everyone on the project
+const SECTION: Record<ClientEvent, Section> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress",
+  team_replied: "moodboard", payment_checked: "payments", issue_triaged: "progress" };
 const TEMPLATE: Record<ClientEvent, string> = {
   quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
+  team_replied: "portal.team_replied", payment_checked: "portal.payment_checked", issue_triaged: "portal.issue_triaged",
 };
 
 const render = (template: string, variables: Record<string, string>) => template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
@@ -120,6 +125,67 @@ export async function tellStaffClientSignedIn(db: Db, workspaceId: string, conta
         if (result.queued) told += 1;
       }
     }
+  }
+  return told;
+}
+
+/**
+ * Who works a case, by what they do there (the user ids of active members):
+ *   design    the opportunity's designer and account manager, and the case owner (the moodboard, designs)
+ *   managers  the managers named on the case's started projects (issues, site, handover)
+ *   finance   everyone who verifies client receipts (a reported payment)
+ */
+export async function caseTeam(db: Db, workspaceId: string, caseId: string, who: Array<"design" | "managers" | "finance">) {
+  const people: string[] = [];
+  if (who.includes("design"))
+    people.push(...(await db.query<{ userId: string }>(
+      `SELECT membership.user_id AS "userId"
+         FROM pre_project_cases pre_case
+         JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+         LEFT JOIN crm_opportunity_designer designer ON designer.workspace_id = opportunity.workspace_id AND designer.opportunity_id = opportunity.id
+         JOIN workspace_memberships membership ON membership.workspace_id = pre_case.workspace_id AND membership.status = 'active'
+          AND membership.id IN (designer.membership_id, opportunity.owner_membership_id, pre_case.owner_membership_id)
+        WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows.map((row) => row.userId));
+  if (who.includes("managers"))
+    people.push(...(await db.query<{ userId: string }>(
+      `SELECT membership.user_id AS "userId" FROM delivery_projects project
+         JOIN project_assignments assignment ON assignment.workspace_id = project.workspace_id AND assignment.project_id = project.id AND assignment.active AND assignment.is_manager
+         JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
+        WHERE project.workspace_id = $1 AND project.case_id = $2 AND project.started_at IS NOT NULL`, [workspaceId, caseId])).rows.map((row) => row.userId));
+  if (who.includes("finance"))
+    people.push(...(await db.query<{ userId: string }>(
+      `SELECT membership.user_id AS "userId" FROM workspace_memberships membership
+         JOIN effective_member_roles effective_role ON effective_role.membership_id = membership.id
+         JOIN role_permissions granted ON granted.role_id = effective_role.role_id
+         JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'commercial.finance.verify'
+        WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows.map((row) => row.userId));
+  return [...new Set(people)];
+}
+
+/** The project (or opportunity) and client names a staff notice about a case starts from. */
+export async function caseTitle(db: Db, workspaceId: string, caseId: string) {
+  return (await db.query<{ title: string; clientName: string; projectId: string | null }>(
+    `SELECT coalesce(project.reference || ' · ' || project.name, opportunity.title) AS title, coalesce(party.display_name, opportunity.title) AS "clientName",
+            project.id AS "projectId"
+       FROM pre_project_cases pre_case
+       JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+       LEFT JOIN delivery_projects project ON project.workspace_id = pre_case.workspace_id AND project.case_id = pre_case.id AND project.started_at IS NOT NULL
+      WHERE pre_case.workspace_id = $1 AND pre_case.id = $2 ORDER BY project.started_at LIMIT 1`, [workspaceId, caseId])).rows[0] ?? { title: "", clientName: "", projectId: null };
+}
+
+/**
+ * Tells the case's people what the client did: in the app, and by email for what needs acting on. Once per person
+ * and event (the key names the event); never the person who acted.
+ */
+export async function tellStaff(db: Db, input: { workspaceId: string; recipients: string[]; code: string; variables: Record<string, string>; deepLink: string; key: string;
+  email?: boolean; except?: string | null }) {
+  let told = 0;
+  for (const userId of input.recipients.filter((id) => id !== input.except)) {
+    const message = { workspaceId: input.workspaceId, recipientUserId: userId, code: input.code, eventType: input.code, variables: input.variables, deepLink: input.deepLink };
+    const result = await notifyUserInApp(db, { ...message, idempotencyKey: `${input.code}:${input.key}:${userId}`.slice(0, 160) });
+    if (input.email) await queueUserEmail(db, { ...message, idempotencyKey: `${input.code}:${input.key}:${userId}:email`.slice(0, 160) });
+    if (result.queued) told += 1;
   }
   return told;
 }

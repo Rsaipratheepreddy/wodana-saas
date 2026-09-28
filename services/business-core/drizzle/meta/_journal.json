@@ -610,6 +610,13 @@
       "when": 1801051200000,
       "tag": "0136_site_report_photos_share",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1801113700000,
+      "tag": "0137_client_portal_v2",
+      "breakpoints": true
     }
   ]
 }

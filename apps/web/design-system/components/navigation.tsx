@@ -22,10 +22,10 @@ export function Tabs({ defaultSelectedKey, items, selectedKey, onSelectionChange
   return <AriaTabs className="wd-tabs" data-variant={variant} defaultSelectedKey={defaultSelectedKey} selectedKey={selectedKey} onSelectionChange={(key) => onSelectionChange?.(String(key))}><div aria-label={t("Scrollable sections")} className="wd-tab-scroll" role="region" tabIndex={0}><TabList aria-label={t("Sections")} className="wd-tab-list" items={items}>{(item) => <Tab className="wd-tab" data-tour={tour ? `${tour}-${item.id}` : undefined} data-tour-safe={tour ? "" : undefined} id={item.id}>{item.label}{typeof item.count === "number" ? <span className="wd-count-chip">{item.count}</span> : null}</Tab>}</TabList></div>{items.map((item) => <TabPanel className="wd-tab-panel" id={item.id} key={item.id}>{item.panel}</TabPanel>)}</AriaTabs>;
 }
 
-export type PillTabItem = { id: string; label: ReactNode; done?: boolean };
+export type PillTabItem = { id: string; label: ReactNode; done?: boolean; /** Something waiting there (shown as a count chip). */ count?: number };
 
 /** Simple pill tabs that switch what's shown below; the selected one is filled. Arrow keys move between them. */
-export function PillTabs({ ariaLabel, items, selectedKey, onSelectionChange, tour }: { ariaLabel: string; items: PillTabItem[]; selectedKey: string; onSelectionChange: (key: string) => void; /** Names each tab `data-tour="<tour>-<id>"` for Woddy's tours. */ tour?: string }) {
+export function PillTabs({ ariaLabel, items, selectedKey, onSelectionChange, tour, layout = "wrap" }: { ariaLabel: string; items: PillTabItem[]; selectedKey: string; onSelectionChange: (key: string) => void; /** Names each tab `data-tour="<tour>-<id>"` for Woddy's tours. */ tour?: string; /** "scroll" keeps the tabs on one row that scrolls sideways (a phone). */ layout?: "wrap" | "scroll" }) {
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
     const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
     if (!keys.includes(event.key)) return;
@@ -37,9 +37,9 @@ export function PillTabs({ ariaLabel, items, selectedKey, onSelectionChange, tou
     onSelectionChange(items[next].id);
     event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
   };
-  return <div aria-label={ariaLabel} className="wd-pill-tabs" role="tablist" onKeyDown={move}>
-    {items.map((item) => <button aria-selected={item.id === selectedKey} className="wd-pill-tab" data-done={item.done || undefined} data-tour={tour ? `${tour}-${item.id}` : undefined} data-tour-safe={tour ? "" : undefined} key={item.id} role="tab" tabIndex={item.id === selectedKey ? 0 : -1} type="button" onClick={() => onSelectionChange(item.id)}>
-      {item.done ? <Check aria-hidden="true" size={13} strokeWidth={2.5} /> : null}{item.label}
+  return <div aria-label={ariaLabel} className="wd-pill-tabs" data-layout={layout} role="tablist" onKeyDown={move}>
+    {items.map((item) => <button aria-selected={item.id === selectedKey} className="wd-pill-tab" data-done={item.done || undefined} data-tour={tour ? `${tour}-${item.id}` : undefined} data-tour-safe={tour ? "" : undefined} key={item.id} role="tab" tabIndex={item.id === selectedKey ? 0 : -1} type="button" onClick={(event) => { onSelectionChange(item.id); event.currentTarget.scrollIntoView?.({ block: "nearest", inline: "nearest" }); }}>
+      {item.done ? <Check aria-hidden="true" size={13} strokeWidth={2.5} /> : null}{item.label}{item.count ? <span className="wd-count-chip">{item.count}</span> : null}
     </button>)}
   </div>;
 }

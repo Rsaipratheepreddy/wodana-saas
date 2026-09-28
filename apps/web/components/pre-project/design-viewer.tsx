@@ -7,6 +7,7 @@ import { Avatar, Badge, Button, Checkbox, ConfirmationDialog, IconButton, PillTa
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseApi, caseRequest, type CaseContent, type CaseDesign, type DesignOptions, type DesignThread } from "@/lib/pre-project/content";
 import { DESIGN_STATUS_LABEL, designStatusTone } from "@/lib/pre-project/design-workspace";
+import { ClientFeedback, feedbackFor, useClientBoard } from "@/components/client-activity/client-feedback";
 import { FileCover } from "./design-file-preview";
 import styles from "./design-viewer.module.css";
 
@@ -161,6 +162,7 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
 
             {panel ? <aside className={styles.panel} aria-label={t("Review")}>
               {actions ? <div className={styles.panelActions}>{actions}</div> : null}
+              {revision ? <BoardFeedback data={data} versionId={revision.id} /> : null}
               <div className={styles.panelHead}>
                 <h3>{t("Comments")}</h3>
                 {resolvedCount ? <PillTabs ariaLabel={t("Comments")} selectedKey={filter} onSelectionChange={(key) => { setFilter(key as "open" | "resolved"); setOpenThread(null); }}
@@ -201,6 +203,17 @@ export function DesignViewer({ data, design, options, onClose, onUpdate, actions
 }
 
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
+
+/** When this revision is a board shared in the client's portal: their likes, dislikes and comments, and the team's reply. */
+function BoardFeedback({ data, versionId }: { data: CaseContent; versionId: string }) {
+  const client = useClientBoard(data.workspaceId, data.caseId);
+  const board = client.board;
+  if (!board) return null;
+  const shared = board.boards.some((item) => item.id === versionId);
+  const { likes, dislikes, comments } = feedbackFor(board, "design", versionId);
+  if (!shared && !likes.length && !dislikes.length && !comments.length) return null;
+  return <div className={styles.clientFeedback}><ClientFeedback board={board} kind="design" id={versionId} canReply={board.canEdit && shared} onReply={client.reply} /></div>;
+}
 
 /** An avatar pin whose point touches the spot the comment is about. */
 function Pin({ id, point, name, label, active, resolved, onPress }: { id?: string; point: Point; name: string; label: string; active?: boolean; resolved?: boolean; onPress?: () => void }) {

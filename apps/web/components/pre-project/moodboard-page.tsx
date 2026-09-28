@@ -1,10 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, ExternalLink, Heart, ImagePlus, Link2, Maximize2, StickyNote, ThumbsDown, X } from "lucide-react";
 import { PlatformMark } from "@/components/brand/platform-mark";
-import { Button, ControlledModalDialog, EmptyState, IconButton, InlineNotice, MultiSelectField, SegmentedControl, SelectField, TextAreaField, TextInput } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, EmptyState, IconButton, InlineNotice, MenuButton, MultiSelectField, SegmentedControl, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
+import { ClientFeedback, FeedbackSignals, feedbackFor, useClientBoard, type ClientBoard } from "@/components/client-activity/client-feedback";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type CaseRoom, type ScopeEntry } from "@/lib/pre-project/content";
 import { linkPlatform, pinKind } from "@/lib/pre-project/moodboard";
@@ -18,7 +21,8 @@ const images = (entry: ScopeEntry) => entry.assets.filter((asset) => asset.mimeT
 /**
  * The moodboard: what the client loves, or wants to avoid, in one scannable grid. Pins are photos,
  * links (Instagram, Pinterest, YouTube, any site) or notes; each names who added it, its room and
- * the requirements it informs. Photos open full size.
+ * the requirements it informs. Photos open full size. Pins the team shows in the client's portal, and
+ * the ones the client adds there, carry the client's likes, dislikes and comments; `?pin=` opens one.
  */
 export function MoodboardPage({ initialData, clientName }: { initialData: CaseContent; clientName?: string }) {
   const t = useT();
@@ -28,7 +32,8 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
   const [caseRooms, setCaseRooms] = useState(initialData.rooms);
   const [feeling, setFeeling] = useState("all");
   const [source, setSource] = useState("all");
-  const [selected, setSelected] = useState<string | null>(null);
+  const linkedPin = useSearchParams()?.get("pin") ?? null;
+  const [selected, setSelected] = useState<string | null>(() => linkedPin && entries.some((entry) => entry.id === linkedPin) ? linkedPin : null);
   const [viewing, setViewing] = useState<{ entryId: string; index: number } | null>(null);
   const [adding, setAdding] = useState<"link" | "note" | null>(null);
   const [error, setError] = useState("");
@@ -37,13 +42,30 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
   const requirements = useMemo(() => initialData.entries.filter((entry) => entry.kind === "requirement" && !entry.archivedAt), [initialData.entries]);
   const requirementName = useMemo(() => new Map(requirements.map((entry) => [entry.id, entry.title])), [requirements]);
   const roomName = (entry: ScopeEntry) => caseRooms.find((item) => item.id === entry.roomId)?.name ?? entry.roomName ?? null;
-  const addedBy = (entry: ScopeEntry) => entry.source === "client" ? (clientName || t("Client")) : (entry.createdByName || t("Team"));
+  const addedBy = (entry: ScopeEntry) => entry.fromClient ? (entry.createdByName || clientName || t("Client"))
+    : entry.source === "client" ? (clientName || t("Client")) : (entry.createdByName || t("Team"));
+  const client = useClientBoard(workspaceId, caseId);
+  const shared = (entry: ScopeEntry) => Boolean(client.board?.shared.includes(entry.id));
+  /** The client sees pins the team shared and the ones someone on their side added. */
+  const seenByClient = (entry: ScopeEntry) => Boolean(entry.fromClient) || shared(entry);
+  useEffect(() => {
+    if (linkedPin) document.getElementById(`pin-${linkedPin}`)?.scrollIntoView?.({ block: "center" });
+  }, [linkedPin]);
   const assetUrl = (asset: CaseAsset, preview = true) => caseApi(workspaceId, caseId, `assets/${asset.id}${preview && asset.hasPreview ? "?preview=1" : ""}`);
 
   const visible = entries.filter((entry) => (room === "all" || entry.roomId === room)
     && (feeling === "all" || feelingOf(entry) === feeling)
     && (source === "all" || entry.source === source));
   const filtered = room !== "all" || feeling !== "all" || source !== "all";
+  // Show or hide the team's pins in view (the filters choose them); the client's own pins are always theirs to see.
+  const teamInView = visible.filter((entry) => !entry.fromClient);
+  const toShow = teamInView.filter((entry) => !shared(entry)).map((entry) => entry.id);
+  const toHide = teamInView.filter(shared).map((entry) => entry.id);
+  const shareMany = async (ids: string[], show: boolean) => {
+    if (!ids.length) return;
+    setError("");
+    try { await client.share(ids, show); } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not save.")); }
+  };
 
   const replace = (saved: ScopeEntry) => setEntries((current) => current.some((item) => item.id === saved.id) ? current.map((item) => item.id === saved.id ? saved : item) : [saved, ...current]);
   const saveEntry = async (entry: ScopeEntry) => {
@@ -92,6 +114,10 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
       <SegmentedControl label={t("Added by")} value={source} onChange={setSource} options={[{ id: "all", label: t("Everyone") }, { id: "client", label: t("Client") }, { id: "team", label: t("Team") }]} />
       <span className={styles.count}>{t("{count} pins", { count: visible.length })}</span>
       <span className={styles.spacer} />
+      {client.board?.canEdit && teamInView.length ? <MenuButton size="compact" label={t("Client portal")} onAction={(id) => void shareMany(id === "show" ? toShow : toHide, id === "show")} items={[
+        ...(toShow.length ? [{ id: "show", label: t("Show {count} in the portal", { count: toShow.length }) }] : []),
+        ...(toHide.length ? [{ id: "hide", label: t("Hide {count} from the portal", { count: toHide.length }) }] : []),
+      ]} /> : null}
       {canEdit ? <div className={styles.addGroup} role="group" aria-label={t("Add to moodboard")}>
         <Button size="compact" isLoading={busy} onPress={() => upload.current?.click()}><ImagePlus aria-hidden="true" size={14} />{t("Photos")}</Button>
         <Button size="compact" onPress={() => setAdding("link")}><Link2 aria-hidden="true" size={14} />{t("Link")}</Button>
@@ -100,11 +126,12 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
       </div> : null}
     </div>
     {error ? <InlineNotice message={error} tone="error" /> : null}
+    {client.board?.boards.length ? <SharedBoards caseId={caseId} client={client} /> : null}
     {!entries.length ? <div className={styles.empty}><EmptyState illustration="upload" title={t("Start the moodboard")} description={t("Add photos, Instagram or Pinterest links, videos and notes the client loves, or wants to avoid.")} /></div>
       : !visible.length ? <div className={styles.empty}><EmptyState illustration="search" title={t("Nothing matches these filters")} description={t("Try another room, feeling or person.")} action={filtered ? <Button size="compact" onPress={() => { setRoom("all"); setFeeling("all"); setSource("all"); }}>{t("Clear filters")}</Button> : undefined} /></div>
       : <div className={styles.content} data-panel={selectedEntry ? "open" : undefined}><div className={styles.grid}>{visible.map((entry) => <PinCard key={entry.id} entry={entry} room={roomName(entry)} addedBy={addedBy(entry)} requirementNames={(entry.requirementIds ?? []).map((id) => requirementName.get(id)).filter((name): name is string => Boolean(name))}
-        assetUrl={assetUrl} selected={selected === entry.id} canEdit={canEdit} onOpen={() => setSelected(entry.id)} onView={(index) => setViewing({ entryId: entry.id, index })} onFeeling={(value) => void markFeeling(entry, value)} />)}</div>
-      {selectedEntry ? <PinPanel key={selectedEntry.id} entry={selectedEntry} roomContext={{ workspaceId, caseId, rooms: caseRooms, canEdit }} onRoomAdded={(added) => setCaseRooms((current) => [...current, added])} requirements={requirements} canEdit={canEdit} addedBy={addedBy(selectedEntry)} assetUrl={assetUrl}
+        assetUrl={assetUrl} selected={selected === entry.id} canEdit={canEdit} signals={<FeedbackSignals board={client.board} kind="pin" id={entry.id} shown={shared(entry)} />} onOpen={() => setSelected(entry.id)} onView={(index) => setViewing({ entryId: entry.id, index })} onFeeling={(value) => void markFeeling(entry, value)} />)}</div>
+      {selectedEntry ? <PinPanel key={selectedEntry.id} entry={selectedEntry} client={client} shared={shared(selectedEntry)} seenByClient={seenByClient(selectedEntry)} roomContext={{ workspaceId, caseId, rooms: caseRooms, canEdit }} onRoomAdded={(added) => setCaseRooms((current) => [...current, added])} requirements={requirements} canEdit={canEdit} addedBy={addedBy(selectedEntry)} assetUrl={assetUrl}
       onClose={() => setSelected(null)} onView={(index) => setViewing({ entryId: selectedEntry.id, index })}
       onFeeling={(value) => void markFeeling(selectedEntry, value)}
       onSave={async (next) => { await saveEntry(next); setSelected(null); }}
@@ -126,16 +153,16 @@ function FeelingToggle({ value, canEdit, onChange }: { value: Feeling; canEdit: 
   </span>;
 }
 
-function PinCard({ entry, room, addedBy, requirementNames, assetUrl, selected, canEdit, onOpen, onView, onFeeling }: {
+function PinCard({ entry, room, addedBy, requirementNames, assetUrl, selected, canEdit, signals, onOpen, onView, onFeeling }: {
   entry: ScopeEntry; room: string | null; addedBy: string; requirementNames: string[]; assetUrl: (asset: CaseAsset) => string; selected: boolean; canEdit: boolean;
-  onOpen: () => void; onView: (index: number) => void; onFeeling: (value: Feeling) => void;
+  signals?: ReactNode; onOpen: () => void; onView: (index: number) => void; onFeeling: (value: Feeling) => void;
 }) {
   const t = useT();
   const kind = pinKind(entry);
   const photos = images(entry);
   const platform = entry.referenceUrl ? linkPlatform(entry.referenceUrl) : null;
   const feeling = feelingOf(entry);
-  return <article className={styles.card} data-kind={kind} data-selected={selected || undefined} data-avoid={feeling === "avoid" || undefined} aria-label={entry.title}>
+  return <article id={`pin-${entry.id}`} className={styles.card} data-kind={kind} data-selected={selected || undefined} data-avoid={feeling === "avoid" || undefined} aria-label={entry.title}>
     {kind === "image" && photos[0] ? <button type="button" className={styles.media} aria-label={t("View {name} full size", { name: entry.title })} onClick={() => onView(0)}>
       <Image alt="" className={styles.photo} height={360} src={assetUrl(photos[0])} unoptimized width={480} />
       <span aria-hidden="true" className={styles.expand}><Maximize2 size={14} /></span>
@@ -152,14 +179,16 @@ function PinCard({ entry, room, addedBy, requirementNames, assetUrl, selected, c
     </button>
     <footer className={styles.cardFoot}>
       <span className={styles.chip} data-feeling={feeling}>{feeling === "avoid" ? t("Avoid") : t("Love")}</span>
+      {entry.fromClient ? <Badge className={styles.fromClient} tone="info">{t("From client")}</Badge> : null}
       <span className={styles.byline} title={addedBy}>{entry.source === "client" ? t("From {name}", { name: addedBy }) : t("Added by {name}", { name: addedBy })}</span>
       <FeelingToggle value={feeling} canEdit={canEdit} onChange={onFeeling} />
+      {signals}
     </footer>
   </article>;
 }
 
-function PinPanel({ entry, roomContext, onRoomAdded, requirements, canEdit, addedBy, assetUrl, onClose, onView, onFeeling, onSave, onRemove }: {
-  entry: ScopeEntry; roomContext: Pick<CaseContent, "workspaceId" | "caseId" | "rooms" | "canEdit">; onRoomAdded: (room: CaseRoom) => void; requirements: ScopeEntry[]; canEdit: boolean; addedBy: string; assetUrl: (asset: CaseAsset, preview?: boolean) => string;
+function PinPanel({ entry, client, shared, seenByClient, roomContext, onRoomAdded, requirements, canEdit, addedBy, assetUrl, onClose, onView, onFeeling, onSave, onRemove }: {
+  entry: ScopeEntry; client: ClientBoard; shared: boolean; seenByClient: boolean; roomContext: Pick<CaseContent, "workspaceId" | "caseId" | "rooms" | "canEdit">; onRoomAdded: (room: CaseRoom) => void; requirements: ScopeEntry[]; canEdit: boolean; addedBy: string; assetUrl: (asset: CaseAsset, preview?: boolean) => string;
   onClose: () => void; onView: (index: number) => void; onFeeling: (value: Feeling) => void; onSave: (entry: ScopeEntry) => Promise<void>; onRemove: () => Promise<void>;
 }) {
   const t = useT();
@@ -175,6 +204,13 @@ function PinPanel({ entry, roomContext, onRoomAdded, requirements, canEdit, adde
   const validLink = !draft.referenceUrl || /^https?:\/\/\S+$/i.test(draft.referenceUrl);
   const photos = images(entry);
   const feeling = feelingOf(entry);
+  const [sharing, setSharing] = useState(false);
+  const feedback = feedbackFor(client.board, "pin", entry.id);
+  const share = async (show: boolean) => {
+    setSharing(true); setError("");
+    try { await client.share([entry.id], show); } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not save.")); }
+    setSharing(false);
+  };
   return <aside className={styles.panel} aria-label={t("Pin details")}>
     <header className={styles.panelHead}>
       <strong>{entry.title || t("Pin")}</strong>
@@ -190,9 +226,13 @@ function PinPanel({ entry, roomContext, onRoomAdded, requirements, canEdit, adde
       </div> : null}
       <div className={styles.sheetRow}>
         <span className={styles.chip} data-feeling={feeling}>{feeling === "avoid" ? t("Avoid") : t("Love")}</span>
+        {entry.fromClient ? <Badge tone="info">{t("From client")}</Badge> : null}
         <FeelingToggle value={feeling} canEdit={canEdit} onChange={onFeeling} />
       </div>
       <p className={styles.byline}>{entry.source === "client" ? t("From {name}", { name: addedBy }) : t("Added by {name}", { name: addedBy })}</p>
+      {client.board && !entry.fromClient ? <Switch isSelected={shared} isDisabled={!client.board.canEdit || sharing} onChange={(show) => void share(show)}>{t("Show in the client portal")}</Switch> : null}
+      {client.board && (seenByClient || feedback.comments.length || feedback.likes.length || feedback.dislikes.length)
+        ? <ClientFeedback board={client.board} kind="pin" id={entry.id} canReply={client.board.canEdit && seenByClient} onReply={client.reply} /> : null}
       <TextInput isDisabled={!canEdit} isRequired label={t("Title")} maxLength={240} onChange={set("title")} value={draft.title} errorMessage={!draft.title.trim() ? t("Give the pin a title.") : undefined} />
       <TextAreaField isDisabled={!canEdit} label={t("Note")} maxLength={3000} onChange={set("note")} value={draft.note} />
       <TextInput isDisabled={!canEdit} inputType="url" label={t("Link")} maxLength={2000} onChange={set("referenceUrl")} placeholder="https://" value={draft.referenceUrl} errorMessage={!validLink ? t("Paste a full link starting with https://") : undefined} />
@@ -207,6 +247,20 @@ function PinPanel({ entry, roomContext, onRoomAdded, requirements, canEdit, adde
         : <><Button size="compact" variant="quiet" isDisabled={busy} onPress={() => setConfirmRemove(true)}>{t("Remove")}</Button><span className={styles.spacer} /><Button size="compact" isDisabled={busy} onPress={requestClose}>{t("Cancel")}</Button><Button size="compact" variant="primary" isDisabled={!dirty || !draft.title.trim() || !validLink} isLoading={busy} onPress={() => void run(() => onSave(draft))}>{t("Save")}</Button></>}
     </footer> : null}
   </aside>;
+}
+
+/** The concept and material boards the client sees in the portal, with their reactions and comments; each opens in Design to reply. */
+function SharedBoards({ caseId, client }: { caseId: string; client: ClientBoard }) {
+  const t = useT();
+  return <section className={styles.boards} aria-label={t("Boards the client sees")}>
+    <h3 className={styles.boardsHead}>{t("Boards the client sees")}</h3>
+    <ul className={styles.boardList}>{client.board!.boards.map((board) => <li key={board.id}>
+      <Link className={styles.boardLink} href={`/workspace/pre-projects/cases/${caseId}/designs?file=${encodeURIComponent(board.designId)}`}>
+        <strong>{board.title}</strong><span>{[t("R{number}", { number: board.number }), board.room].filter(Boolean).join(" · ")}</span>
+      </Link>
+      <FeedbackSignals board={client.board} kind="design" id={board.id} shown={false} />
+    </li>)}</ul>
+  </section>;
 }
 
 /** Photos full size: arrows and keys move between a pin's photos, Escape closes. */

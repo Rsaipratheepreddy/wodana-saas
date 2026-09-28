@@ -116,3 +116,16 @@
 .cardFoot > .chip { grid-column: 1; grid-row: 1; justify-self: start; }
 .cardFoot > .feelingToggle { grid-column: 3; grid-row: 1; }
 .cardFoot > .byline { grid-column: 1 / -1; grid-row: 2; }
+/* A pin the client added in the portal, and the client's likes and comments beneath the name. */
+.cardFoot > .fromClient { grid-column: 2; grid-row: 1; justify-self: start; }
+.cardFoot > ul { grid-column: 1 / -1; }
+
+/* The boards the client sees in the portal: one line each, opening the design. */
+.boards { display: grid; gap: var(--wd-space-2); }
+.boardsHead { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
+.boardList { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-5); margin: 0; padding: 0; list-style: none; }
+.boardList > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
+.boardLink { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-1-5); color: var(--wd-color-text); font-size: var(--wd-text-sm); text-decoration: none; overflow-wrap: anywhere; }
+.boardLink span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.boardLink:hover strong { color: var(--wd-color-action-primary); }
+.boardLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-sm); }

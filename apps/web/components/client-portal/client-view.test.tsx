@@ -13,8 +13,8 @@ const site: PortalSite = {
 };
 const project: PortalProject = {
   id: C, title: "Villa 12", reference: "PRJ-0042", role: "approver", status: "active", paused: false,
-  sections: { progress: false, decisions: true, payments: false, documents: false, warranty: false, messages: false },
-  manager: "Omar Manager", stage: { number: 2, total: 5, name: "Production" }, handoverDate: null,
+  sections: { progress: false, moodboard: false, decisions: true, payments: false, documents: false, warranty: false, messages: false },
+  manager: "Omar Manager", stage: { number: 2, total: 5, name: "Production" }, handoverDate: null, handedOverOn: null, warrantyUntil: null, rooms: [], unread: 0, moodboard: null,
   next: [{ kind: "materials", id: "r1", title: "R1", due: null }], latestUpdate: null, progress: null,
   decisions: { quotes: [], designs: [], requests: [], definition: null, handovers: [],
     materials: { id: "r1", number: 1, status: "sent", sentAt: "2026-09-24T09:00:00.000Z", decidedAt: null, decidedBy: null, canDecide: true,

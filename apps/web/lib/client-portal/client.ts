@@ -1,4 +1,4 @@
-import type { PortalContact, PortalSettings, PortalSite, PortalView, ProjectPortal } from "./types";
+import type { PortalContact, PortalFile, PortalSettings, PortalSite, PortalView, ProjectPortal, StaffIssue, StaffMoodboard, StaffPaymentReport, StaffThreads } from "./types";
 import type { Translate } from "@/lib/i18n/keys";
 
 const untranslated: Translate = (key) => key;
@@ -32,8 +32,22 @@ export function portalApi(slug: string, t: Translate = untranslated) {
     /** One command; the id makes a retry of the same action safe. */
     command: <T = { ok: true }>(commandId: string, input: Record<string, unknown>) => call<T>(t, at("command"), "POST", { ...input, commandId }),
     logout: () => call<{ ok: true }>(t, at("logout"), "POST", {}),
-    file: (kind: "design" | "photo" | "handover" | "agreement", id: string, preview = false) => `${at(`files/${kind}/${id}`)}${preview ? "?preview=1" : ""}`,
+    file: (kind: "design" | "photo" | "handover" | "agreement" | "asset", id: string, preview = false) => `${at(`files/${kind}/${id}`)}${preview ? "?preview=1" : ""}`,
+    /** Adds a photo or PDF to the project before it's sent with something; the id makes a retried upload return the same file. */
+    upload: (caseId: string, id: string, file: File) => upload(t, at(`cases/${caseId}/uploads/${id}`), file),
+    /** A tax invoice or receipt of the client's, to print. */
+    document: <T>(caseId: string, kind: "invoice" | "receipt", id: string) => call<T>(t, at(`cases/${caseId}/documents/${kind}/${id}`)),
   };
+}
+
+async function upload(t: Translate, url: string, file: File): Promise<PortalFile> {
+  const body = new FormData();
+  body.set("file", file);
+  const response = await fetch(url, { method: "POST", body, cache: "no-store" }).catch(() => null);
+  if (!response) throw new PortalError(t("You seem to be offline. Check your connection and try again."), 0);
+  const data = await response.json().catch(() => null) as (PortalFile & { message?: unknown }) | null;
+  if (!response.ok || !data) throw new PortalError(typeof data?.message === "string" ? data.message : t("That file couldn't be added. Try a photo or PDF up to 20 MB."), response.status);
+  return data;
 }
 export type PortalApi = ReturnType<typeof portalApi>;
 
@@ -58,6 +72,24 @@ export function staffPortalApi(workspaceId: string, t: Translate = untranslated)
     /** Sets (six digits) or clears (null) one contact's demonstration sign-in code; the command id makes a retry safe. */
     demoCode: (caseId: string, contactId: string, input: { commandId: string; version: number; code: string | null }) =>
       call<Contacts>(t, at(`cases/${caseId}/contacts/${contactId}/demo-code`), "POST", input),
+    // What the client did, for the team.
+    moodboard: (caseId: string) => call<StaffMoodboard>(t, at(`cases/${caseId}/moodboard`)),
+    /** Shows (or hides) moodboard pins in the client's portal. */
+    shareMoodboard: (caseId: string, input: { entryIds: string[]; shared: boolean }) => call<StaffMoodboard>(t, at(`cases/${caseId}/moodboard/share`), "POST", input),
+    /** Answers the client on a board or pin; the id makes a retry safe. */
+    replyMoodboard: (caseId: string, input: { id: string; targetKind: "pin" | "design"; targetId: string; text: string }) =>
+      call<StaffMoodboard>(t, at(`cases/${caseId}/moodboard/reply`), "POST", input),
+    paymentReports: (caseId: string) => call<{ reports: StaffPaymentReport[]; canDecide: boolean }>(t, at(`cases/${caseId}/payment-reports`)),
+    decidePaymentReport: (reportId: string, input: { decision: "recorded" | "not_received"; note: string; version: number }) =>
+      call<{ reports: StaffPaymentReport[]; canDecide: boolean }>(t, at(`payment-reports/${reportId}`), "POST", input),
+    issues: (projectId: string) => call<{ issues: StaffIssue[]; caseId: string; canTriage: boolean }>(t, at(`projects/${projectId}/issues`)),
+    triageIssue: (projectId: string, issueId: string, input: { decision: "accept" | "decline"; severity?: "minor" | "major" | "critical"; note: string; version: number }) =>
+      call<{ issues: StaffIssue[]; caseId: string; canTriage: boolean }>(t, at(`projects/${projectId}/issues/${issueId}`), "POST", input),
+    threads: (caseId: string) => call<StaffThreads>(t, at(`cases/${caseId}/threads`)),
+    /** The team opened a conversation (the client sees it was seen). */
+    readThread: (caseId: string, threadId: string) => call<{ ok: true }>(t, at(`cases/${caseId}/threads/${threadId}/read`), "POST", {}),
+    /** A file the client added, for the team to open. */
+    clientFile: (caseId: string, assetId: string, preview = false) => `/api/client-portal-admin/cases/${caseId}/files/${assetId}?${new URLSearchParams({ workspaceId, ...(preview ? { preview: "1" } : {}) })}`,
   };
 }
 export type StaffPortalApi = ReturnType<typeof staffPortalApi>;

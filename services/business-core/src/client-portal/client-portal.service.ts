@@ -11,23 +11,33 @@ import { PreProjectDefinitionService } from "../pre-projects/pre-project-definit
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { confirmName, mobileNumber, openSession, portalCodes, sendCode, signIn, signOut, useCode, type Channel, type Delivery, type PortalContact, type PortalCodes } from "./portal-auth";
 import {
-  answerRequest, assertDecisionOpen, claimWarranty, comment, decideDefinition, decideDesign, decideHandover, decideMaterials, decideQuote, grantFor, raiseRequest,
+  answerRequest, assertDecisionOpen, claimWarranty, decideDefinition, decideDesign, decideHandover, decideMaterials, decideQuote, grantFor,
   type DecisionContext,
 } from "./portal-decisions";
+import { FilePresence, locateClientAsset, readStored, uploadClientFile } from "./portal-files";
 import { openInvitation } from "./portal-invitations";
+import { reportIssue } from "./portal-issues";
+import { comment, raiseRequest, readThread } from "./portal-messages";
+import { addInspiration, boardComment, react, removeInspiration } from "./portal-moodboard";
 import { tellStaffClientSignedIn } from "./portal-notices";
+import { invoiceDocument, receiptDocument, reportPayment } from "./portal-payments";
 import { isImage, readView, workspaceToday } from "./portal-read";
-import { readPortalSettings, type PortalSettings } from "./portal-settings";
+import { readPortalSettings, SECTIONS, type PortalSettings, type Section } from "./portal-settings";
 import { findSite, readSite } from "./portal-site";
+import type { ReferenceUpload } from "../workspaces/reference-upload";
 
 /** Portal work runs as no staff user: the actor is the client, recorded by their contact. */
 const PORTAL_ACTOR = "00000000-0000-4000-8000-000000000000";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Handler = (ctx: DecisionContext, body: Record<string, unknown>) => Promise<{ ok: boolean; entity?: { type: string; id: string }; audit?: Record<string, unknown>; [key: string]: unknown }>;
-const COMMANDS: Record<string, Handler> = {
-  quote_decision: decideQuote, design_decision: decideDesign, definition_decision: decideDefinition, request_answer: answerRequest,
-  materials_decision: decideMaterials, handover_decision: decideHandover, warranty_claim: claimWarranty, request: raiseRequest, comment,
+/** Every client command, with the portal section it belongs to (a hidden section can't be acted on). */
+const COMMANDS: Record<string, [Handler, Section]> = {
+  quote_decision: [decideQuote, "decisions"], design_decision: [decideDesign, "decisions"], definition_decision: [decideDefinition, "decisions"],
+  request_answer: [answerRequest, "decisions"], materials_decision: [decideMaterials, "decisions"], handover_decision: [decideHandover, "decisions"],
+  warranty_claim: [claimWarranty, "warranty"], request: [raiseRequest, "messages"], comment: [comment, "messages"], read_thread: [readThread, "messages"],
+  react: [react, "moodboard"], board_comment: [boardComment, "moodboard"], add_inspiration: [addInspiration, "moodboard"], remove_inspiration: [removeInspiration, "moodboard"],
+  report_payment: [reportPayment, "payments"], report_issue: [reportIssue, "progress"],
 };
 
 /**
@@ -37,6 +47,8 @@ const COMMANDS: Record<string, Handler> = {
 @Injectable()
 export class ClientPortalService {
   private readonly codes: PortalCodes;
+  /** Which stored files are there, remembered across views. */
+  private readonly presence: FilePresence;
 
   constructor(
     private readonly db: DatabaseService,
@@ -50,6 +62,7 @@ export class ClientPortalService {
     if (config.get("PORTAL_DEMO_OTP") === "true" && production) throw new Error("PORTAL_DEMO_OTP cannot be enabled in production.");
     if (production && (config.get<string>("PORTAL_OTP_SECRET") ?? "").length < 32) throw new Error("Set a stable PORTAL_OTP_SECRET of at least 32 characters for production.");
     this.codes = portalCodes(config);
+    this.presence = new FilePresence(storage);
   }
 
   private delivery(): Delivery {
@@ -110,7 +123,7 @@ export class ClientPortalService {
 
   view(slug: string, token: string) {
     return this.within(slug, async (client, workspaceId, settings) =>
-      readView(client, workspaceId, await openSession(client, workspaceId, token, this.codes.demo), settings, this.definitions));
+      readView(client, workspaceId, await openSession(client, workspaceId, token, this.codes.demo), settings, this.definitions, this.presence));
   }
 
   logout(slug: string, token: string) {
@@ -157,8 +170,9 @@ export class ClientPortalService {
         audit = { name: result.name };
       } else {
         const ctx = this.context(client, workspaceId, settings, contact, await workspaceToday(client, workspaceId));
-        grantId = (await grantFor(ctx, body.caseId, action === "warranty_claim" ? "warranty" : action === "request" || action === "comment" ? "messages" : "decisions")).grant.id;
-        const { entity: target, audit: detail, ...rest } = await COMMANDS[action](ctx, body);
+        const [handler, section] = COMMANDS[action];
+        grantId = (await grantFor(ctx, body.caseId, section)).grant.id;
+        const { entity: target, audit: detail, ...rest } = await handler(ctx, body);
         result = rest;
         if (target) entity = target;
         audit = detail ?? {};
@@ -171,40 +185,74 @@ export class ClientPortalService {
     });
   }
 
-  /** A file the client may open: a design shared with them, a shared site photo, a handover document or the signed agreement. */
+  /**
+   * A file the client may open: a design shared with them, a shared site photo, a handover document, the signed
+   * agreement, a moodboard photo the team shared, or a file someone on their side added.
+   */
   file(slug: string, token: string, kind: string, id: string, preview: boolean) {
     if (!UUID.test(id)) throw new NotFoundException("File not found.");
     return this.within(slug, async (client, workspaceId, settings) => {
       const contact = await openSession(client, workspaceId, token, this.codes.demo);
       const ctx = this.context(client, workspaceId, settings, contact, await workspaceToday(client, workspaceId));
-      const found = await this.locate(client, workspaceId, kind, id);
+      const found = kind === "asset" ? await locateClientAsset(client, workspaceId, id) : await this.locate(client, workspaceId, kind, id);
       if (!found || !contact.grants.some((grant) => grant.caseId === found.caseId)) throw new NotFoundException("File not found.");
       // Open when any section that shows the file is shared with this client (a handover document shows under Decisions and Documents).
-      let open = false;
-      for (const section of found.sections) if (!open) open = await grantFor(ctx, found.caseId, section).then(() => true, () => false);
-      if (!open) throw new NotFoundException("File not found.");
-      if (!this.storage) throw new NotFoundException("File not found.");
-      const key = preview && found.previewKey ? found.previewKey : found.objectKey;
-      const stored = await this.storage.read(key).catch(() => null);
-      if (!stored) throw new NotFoundException("This file isn't available right now. Ask your project team.");
-      return { body: stored.body, mimeType: key === found.previewKey ? "image/webp" : found.mimeType, name: found.name };
+      if (!(await this.anySection(ctx, found.caseId, found.sections))) throw new NotFoundException("File not found.");
+      return readStored(this.storage, found, preview);
+    });
+  }
+
+  /** Whether any of these sections of the project is open to this client. */
+  private async anySection(ctx: DecisionContext, caseId: string, sections: readonly Section[]) {
+    for (const section of sections) if (await grantFor(ctx, caseId, section).then(() => true, () => false)) return true;
+    return false;
+  }
+
+  /**
+   * A photo or PDF the client adds to their project before sending it with something (an inspiration, a message,
+   * proof of payment, a problem). The id is the client's, so a retried upload returns the same file.
+   */
+  upload(slug: string, token: string, caseId: string, id: string, file: ReferenceUpload | undefined) {
+    return this.within(slug, async (client, workspaceId, settings) => {
+      const contact = await openSession(client, workspaceId, token, this.codes.demo);
+      const ctx = this.context(client, workspaceId, settings, contact, await workspaceToday(client, workspaceId));
+      const grant = contact.grants.find((item) => item.caseId === caseId);
+      if (!grant || !(await this.anySection(ctx, caseId, SECTIONS.filter((section) => section !== "documents")))) throw new NotFoundException("This project isn't shared with you.");
+      const stored = await uploadClientFile(client, this.storage, workspaceId, grant, id, file);
+      await recordAudit(client, { workspaceId, actorUserId: null, source: "client_portal", action: "client_portal.file_added", entityType: "pre_project_case", entityId: caseId,
+        after: { grantId: grant.id, assetId: stored.id, mimeType: stored.mimeType } });
+      return stored;
+    });
+  }
+
+  /** A tax invoice or a receipt of the client's, as a document they print or save. */
+  document(slug: string, token: string, caseId: string, kind: string, id: string) {
+    if (kind !== "invoice" && kind !== "receipt") throw new NotFoundException("Document not found.");
+    return this.within(slug, async (client, workspaceId, settings) => {
+      const contact = await openSession(client, workspaceId, token, this.codes.demo);
+      const today = await workspaceToday(client, workspaceId);
+      const { row } = await grantFor(this.context(client, workspaceId, settings, contact, today), caseId, "payments");
+      return kind === "invoice" ? { kind, invoice: await invoiceDocument(client, workspaceId, row, id, today) } : { kind, receipt: await receiptDocument(client, workspaceId, row, id) };
     });
   }
 
   private async locate(client: PoolClient, workspaceId: string, kind: string, id: string) {
-    type Found = { caseId: string; objectKey: string; previewKey: string | null; mimeType: string; name: string; sections: Array<"decisions" | "documents" | "progress"> };
+    type Found = { caseId: string; objectKey: string; previewKey: string | null; mimeType: string; name: string; sections: Section[] };
     if (kind === "design") {
-      // Designs shared for review (decisions) or approved (documents).
-      const row = (await client.query<Found & { status: string }>(
-        `SELECT version.case_id AS "caseId", asset.object_key AS "objectKey", asset.preview_key AS "previewKey", asset.mime_type AS "mimeType", asset.original_name AS name, version.status
+      // Designs shared for review (decisions), approved (documents), and concept and material boards (the moodboard).
+      const row = (await client.query<Omit<Found, "sections"> & { status: string; board: boolean }>(
+        `SELECT version.case_id AS "caseId", asset.object_key AS "objectKey", asset.preview_key AS "previewKey", asset.mime_type AS "mimeType", asset.original_name AS name, version.status,
+                (design.stage IN ('concepts', 'material_selection') OR design.document_type IN ('Concept / mood board', 'Material / finish board')) AS board
            FROM pre_project_design_versions version
            JOIN pre_project_designs design ON design.workspace_id = version.workspace_id AND design.id = version.design_id AND design.archived_at IS NULL
            JOIN pre_project_brief_assets asset ON asset.workspace_id = version.workspace_id AND asset.id = version.asset_id
           WHERE version.workspace_id = $1 AND version.id = $2 AND version.status IN ('client_review', 'approved', 'changes_requested', 'rejected')`, [workspaceId, id])).rows[0];
-      return row ? { ...row, sections: row.status === "approved" ? ["documents" as const, "decisions" as const] : ["decisions" as const] } : null;
+      if (!row) return null;
+      const sections: Section[] = row.status === "approved" ? ["documents", "decisions"] : ["decisions"];
+      return { ...row, sections: row.board ? [...sections, "moodboard" as const] : sections };
     }
     if (kind === "photo") {
-      const row = (await client.query<Found>(
+      const row = (await client.query<Omit<Found, "sections">>(
         `SELECT project.case_id AS "caseId", photo.object_key AS "objectKey", photo.preview_key AS "previewKey", photo.mime_type AS "mimeType", photo.original_name AS name
            FROM site_report_photos photo
            JOIN site_reports report ON report.workspace_id = photo.workspace_id AND report.id = photo.report_id AND report.status = 'approved'
@@ -214,7 +262,7 @@ export class ClientPortalService {
       return row && settings.progress.photos ? { ...row, sections: ["progress" as const] } : null;
     }
     if (kind === "handover") {
-      const row = (await client.query<Found>(
+      const row = (await client.query<Omit<Found, "sections">>(
         `SELECT project.case_id AS "caseId", document.object_key AS "objectKey", NULL AS "previewKey", document.mime_type AS "mimeType", document.original_name AS name
            FROM handover_documents document
            JOIN handover_packs pack ON pack.workspace_id = document.workspace_id AND pack.id = document.pack_id AND pack.status <> 'draft'
@@ -223,7 +271,7 @@ export class ClientPortalService {
       return row ? { ...row, sections: ["documents" as const, "decisions" as const] } : null;
     }
     if (kind === "agreement") {
-      const row = (await client.query<Found>(
+      const row = (await client.query<Omit<Found, "sections">>(
         `SELECT asset.case_id AS "caseId", asset.object_key AS "objectKey", asset.preview_key AS "previewKey", asset.mime_type AS "mimeType", asset.original_name AS name
            FROM pre_project_brief_assets asset WHERE asset.workspace_id = $1 AND asset.id = $2`, [workspaceId, id])).rows[0];
       if (!row) return null;
