@@ -363,6 +363,30 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
     });
   });
 
+  it("D-43: installation that isn't accepted raises a snag on its line and opens its finished task again", async () => {
+    await world(async (w) => {
+      const line = (await w.client.query<{ id: string }>("SELECT id FROM project_boq_lines WHERE project_id = $1 AND title = 'Kitchen cabinets'", [w.projectId])).rows[0];
+      const work = w.work(w.manager);
+      const install = randomUUID();
+      let board = await work.command(actor, w.workspaceId, w.projectId, { action: "create", id: install, title: "Install the cabinets", boqLineId: line.id, assigneeId: w.designerMembership });
+      board = await work.command(actor, w.workspaceId, w.projectId, { action: "update", itemId: install, status: "done", version: board.items.find((item) => item.id === install)!.version });
+      const report = randomUUID(), entry = randomUUID();
+      await w.client.query(`INSERT INTO site_reports(id,workspace_id,project_id,report_date,author_id,status,weather,safety,safety_note,forecast,impact,no_work_reason,notes,decision_note,
+          submitted_at,decided_by,decided_at) VALUES($1,$2,$3,$4,$5,'approved','','none','','none','','','','',now(),$6,now())`, [report, w.workspaceId, w.projectId, day(w.today, -1), w.designer, w.manager]);
+      await w.client.query("INSERT INTO site_report_lines(id,workspace_id,report_id,boq_line_id,installed,note) VALUES($1,$2,$3,$4,2,'')", [entry, w.workspaceId, report, line.id]);
+      const site = w.site(w.manager);
+      await expect(site.command(actor, w.workspaceId, w.projectId, { action: "reject_installation", reportId: report, lineId: entry, reason: "" })).rejects.toThrow(/Say what isn't right/);
+      await expect(w.site(w.designer, ["projects.view"]).command(actor, w.workspaceId, w.projectId, { action: "reject_installation", reportId: report, lineId: entry, reason: "Gaps" }))
+        .rejects.toThrow(/Only the project manager/);
+      await site.command(actor, w.workspaceId, w.projectId, { action: "reject_installation", reportId: report, lineId: entry, reason: "Door gaps uneven" });
+      board = await work.board(actor, w.workspaceId, w.projectId);
+      const snag = board.items.find((item) => item.type === "snag")!;
+      expect(snag).toMatchObject({ title: "Not accepted: Kitchen cabinets", severity: "major", source: "inspection", boqLineId: line.id, status: "todo" });
+      expect(board.items.find((item) => item.id === install)).toMatchObject({ status: "in_progress", completedAt: null });
+      expect((await w.notices("work.snag_reopened")).map((row) => row.recipient)).toEqual([w.designer]);
+    });
+  });
+
   it("PM change: the new project manager leads and hears late work; the old one keeps access without leading", async () => {
     await world(async (w) => {
       const core = w.core(w.manager);

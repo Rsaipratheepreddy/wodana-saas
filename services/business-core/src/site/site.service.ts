@@ -12,6 +12,7 @@ import { activeMembers, membershipOf, readProject } from "../project-core/projec
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { reworkInstallation } from "./installation-rework";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -169,6 +170,19 @@ export class SiteService {
           }
         }
         audit = { reportId: id };
+      } else if (action === "reject_installation") {
+        // Installed work that isn't accepted: a snag with why, and its finished tasks open again for rework.
+        if (!who.manager) throw new ForbiddenException("Only the project manager decides what isn't accepted.");
+        const report = (await this.reports(client, workspaceId, projectId, uuid(body.reportId, "Report")))[0];
+        if (!report) throw new NotFoundException("Report not found.");
+        if (report.status !== "approved") throw new ConflictException("Only approved installation can be not accepted.");
+        const line = report.lines.find((item) => item.id === body.lineId);
+        if (!line || Dec.of(line.installed).cmp(0) <= 0) throw new BadRequestException("Choose an installed item of this report.");
+        const reason = text(body.reason, 1000);
+        if (!reason) throw new BadRequestException("Say what isn't right.");
+        const actor = (await client.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [user.userId])).rows[0]?.name ?? "";
+        audit = { reportId: report.id, lineId: line.id, ...(await reworkInstallation(client, workspaceId, { projectId, projectTitle: `${project.reference} · ${project.name}`,
+          boqLineId: line.boqLineId, title: line.title, reason, actorId: user.userId, actorName: actor })) };
       } else if (action === "share_photo") {
         // The project manager chooses which photos of an approved report the client sees.
         if (!who.manager) throw new ForbiddenException("Only the project manager shares photos with the client.");

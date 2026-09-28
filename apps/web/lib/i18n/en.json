@@ -10238,5 +10238,8 @@
   "With the client": "With the client",
   "Charged as {label}": "Charged as {label}",
   "Variation V{number} · {status}": "Variation V{number} · {status}",
-  "Start variation": "Start variation"
+  "Start variation": "Start variation",
+  "{item} not accepted": "{item} not accepted",
+  "What isn't right": "What isn't right",
+  "Raise a snag": "Raise a snag"
 }
