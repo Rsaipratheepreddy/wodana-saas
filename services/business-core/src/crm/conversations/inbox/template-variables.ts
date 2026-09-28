@@ -16,7 +16,11 @@ export type TemplateContext = {
   config?: Config;
   now?: Date;
   /** An event's own record (the invoice issued, the payment due or received, the stage that started) wins over "latest". */
-  record?: { invoiceId?: string | null; paymentId?: string | null; quoteId?: string | null; projectId?: string | null; stageName?: string | null };
+  record?: {
+    invoiceId?: string | null; paymentId?: string | null; quoteId?: string | null; projectId?: string | null; stageName?: string | null;
+    /** What is still owed (a reminder), exact decimal and currency; wins over the milestone's full amount. */
+    amountDue?: { amount: string; currency: string } | null;
+  };
 };
 
 /** The client's records behind a chat, read once for every source a template needs. */
@@ -92,6 +96,7 @@ export async function resolveTemplateSources(db: Db, context: TemplateContext, s
         break;
       }
       case "payment.amount": {
+        if (context.record?.amountDue) { values[source] = formatMoney(context.record.amountDue.amount, context.record.amountDue.currency, locale); break; }
         const row = context.record?.paymentId ? (await db.query<{ amount: string; currency: string }>(
           `SELECT amount::text AS amount, currency FROM commercial_payments WHERE workspace_id=$1 AND id=$2`, [workspaceId, context.record.paymentId])).rows[0] : undefined;
         values[source] = row ? formatMoney(row.amount, row.currency, locale) : null;

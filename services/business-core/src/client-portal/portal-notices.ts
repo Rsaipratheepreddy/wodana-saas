@@ -4,6 +4,8 @@ import { notifyUserInApp } from "../notifications/default-templates";
 import { portalLink } from "./portal-site";
 import { effectiveSections, readPortalSettings, readProjectAccess, type Section } from "./portal-settings";
 import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
+import type { TemplateContext } from "../crm/conversations/inbox/template-variables";
+import type { StarterEvent } from "../crm/conversations/inbox/whatsapp-starter-pack";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -16,11 +18,17 @@ type Db = Pick<PoolClient, "query">;
  * Nothing goes out while the portal is off, the project is paused, or the section it belongs to is hidden.
  * Each email opens the portal where the thing is.
  */
-export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published";
+export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "payment_due";
 
-const SECTION: Record<ClientEvent, Section> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress" };
+const SECTION: Record<ClientEvent, Section> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress", payment_due: "payments" };
 const TEMPLATE: Record<ClientEvent, string> = {
   quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
+  payment_due: "portal.payment_due",
+};
+/** The WhatsApp client message each portal event is. */
+const WHATSAPP_EVENT: Record<ClientEvent, StarterEvent> = {
+  quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
+  payment_due: "payments.reminder",
 };
 
 const render = (template: string, variables: Record<string, string>) => template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
@@ -32,6 +40,8 @@ export async function caseOf(db: Db, workspaceId: string, projectId: string) {
 
 export async function tellClients(db: Db, input: {
   workspaceId: string; caseId: string; event: ClientEvent; recordId: string; title: string; due?: string | null; note?: string; demo?: boolean;
+  /** The event's own record for the WhatsApp values (e.g. a reminder's invoice and the amount still due). */
+  record?: TemplateContext["record"];
 }) {
   const settings = await readPortalSettings(db, input.workspaceId);
   if (!settings.enabled) return { queued: 0, reason: "portal_off" as const };
@@ -52,12 +62,12 @@ export async function tellClients(db: Db, input: {
   // WhatsApp first when the firm has the event on and an approved template; email to the portal contacts otherwise.
   const client = await partyOfCase(db, input.workspaceId, input.caseId);
   const whatsapp = await sendClientEvent(db, {
-    workspaceId: input.workspaceId, event: `portal.${input.event}`, partyId: client.partyId, leadId: client.leadId, recordKey: input.recordId,
-    record: input.event === "invoice_issued" ? { invoiceId: input.recordId, projectId: facts.projectId }
+    workspaceId: input.workspaceId, event: WHATSAPP_EVENT[input.event], partyId: client.partyId, leadId: client.leadId, recordKey: input.recordId,
+    record: input.record ? { projectId: facts.projectId, ...input.record } : input.event === "invoice_issued" ? { invoiceId: input.recordId, projectId: facts.projectId }
       : input.event === "quote_issued" ? { quoteId: input.recordId.split(":")[0], projectId: facts.projectId } : { projectId: facts.projectId },
   });
-  if (whatsapp.sent) return { queued: 1, reason: null, channel: "whatsapp" as const };
-  await recordClientMessageSkipped(db, input.workspaceId, `portal.${input.event}`, input.recordId, whatsapp, true);
+  if (whatsapp.sent) return { queued: 1, reason: null, channel: "whatsapp" as const, messageId: whatsapp.messageId };
+  await recordClientMessageSkipped(db, input.workspaceId, WHATSAPP_EVENT[input.event], input.recordId, whatsapp, true);
   const recipients = (await db.query<{ id: string }>(
     `SELECT id FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND active AND email IS NOT NULL AND ($3::boolean = false OR test_contact)
        AND ($4::boolean = false OR role = 'approver') ORDER BY created_at`,

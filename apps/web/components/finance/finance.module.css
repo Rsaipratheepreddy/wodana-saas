@@ -54,3 +54,4 @@
   .pair, .trio { grid-template-columns: minmax(0, 1fr); }
   .facts > div { grid-template-columns: minmax(0, 1fr); }
 }
+.rowActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }

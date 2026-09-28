@@ -9797,5 +9797,16 @@
   "Stage started": "Stage started",
   "Payment reminder": "Payment reminder",
   "Template rejected by Meta": "Template rejected by Meta",
-  "Template paused by Meta": "Template paused by Meta"
+  "Template paused by Meta": "Template paused by Meta",
+  "Already reminded today.": "Already reminded today.",
+  "Reminder sent on WhatsApp.": "Reminder sent on WhatsApp.",
+  "Reminder sent by email.": "Reminder sent by email.",
+  "The reminder couldn't be sent.": "The reminder couldn't be sent.",
+  "Reminded": "Reminded",
+  "Send reminder": "Send reminder",
+  "On the due date": "On the due date",
+  "{count} days before": "{count} days before",
+  "Choose at least one day.": "Choose at least one day.",
+  "The schedule could not be saved.": "The schedule could not be saved.",
+  "Payment reminder schedule": "Payment reminder schedule"
 }

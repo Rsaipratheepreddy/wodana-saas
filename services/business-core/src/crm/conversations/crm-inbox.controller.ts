@@ -6,7 +6,8 @@ import { InternalServiceGuard } from "../../auth/internal-service.guard";
 import { Public } from "../../auth/public.decorator";
 import { CrmInboxService } from "./crm-inbox.service";
 import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
-import { SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
+import { SendPaymentReminderDto, SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, UpdatePaymentReminderScheduleDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
+import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
 import { BulkConversationsDto, CreateLabelDto, CreateQuickReplyDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto } from "./dto/inbox.dto";
 
 type Ws = string;
@@ -14,9 +15,12 @@ type Ws = string;
 @ApiTags("crm-inbox") @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/crm")
 export class CrmInboxController {
-  constructor(private readonly inbox: CrmInboxService, private readonly whatsappTemplates: CrmWhatsAppTemplatesService) {}
+  constructor(private readonly inbox: CrmInboxService, private readonly whatsappTemplates: CrmWhatsAppTemplatesService, private readonly reminders: CrmPaymentRemindersService) {}
   @Get("inbox/starter-pack") starterPack(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.whatsappTemplates.starterPack(actor, workspaceId); }
   @Post("inbox/starter-pack") submitStarterPack(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: SubmitStarterPackDto) { return this.whatsappTemplates.submitStarterPack(actor, workspaceId, input); }
+  @Post("inbox/payment-reminders") remind(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: SendPaymentReminderDto) { return this.reminders.remind(actor, workspaceId, input); }
+  @Get("inbox/payment-reminders/schedule") reminderSchedule(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.reminders.schedule(actor, workspaceId); }
+  @Put("inbox/payment-reminders/schedule") updateReminderSchedule(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: UpdatePaymentReminderScheduleDto) { return this.reminders.updateSchedule(actor, workspaceId, input); }
   @Get("inbox/client-messages") clientMessages(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.whatsappTemplates.clientMessages(actor, workspaceId); }
   @Put("inbox/client-messages/:event") setClientMessage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("event") event: string, @Body() input: UpdateClientMessageDto) { return this.whatsappTemplates.setClientMessage(actor, workspaceId, event, input); }
   @Get("inbox/summary") summary(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.summary(actor, workspaceId); }
@@ -39,8 +43,9 @@ export class CrmInboxController {
 @ApiExcludeController() @Public() @UseGuards(InternalServiceGuard)
 @Controller("internal/crm")
 export class InternalCrmInboxController {
-  constructor(private readonly inbox: CrmInboxService, private readonly templates: CrmWhatsAppTemplatesService) {}
+  constructor(private readonly inbox: CrmInboxService, private readonly templates: CrmWhatsAppTemplatesService, private readonly reminders: CrmPaymentRemindersService) {}
   @Post("workspaces/:workspaceId/conversations/wake") wake(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: WakeSnoozedDto) { return this.inbox.wakeSnoozedInternal(workspaceId, input.limit); }
+  @Post("workspaces/:workspaceId/payment-reminders/run") runReminders(@Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.reminders.scheduleInternal(workspaceId); }
   @Post("workspaces/:workspaceId/whatsapp-templates/due") templateWork(@Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.templates.dueWorkInternal(workspaceId); }
   @Post("workspaces/:workspaceId/whatsapp-templates/sync") templateSync(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: WhatsAppTemplateSyncDto) { return this.templates.syncInternal(workspaceId, input); }
   @Post("workspaces/:workspaceId/whatsapp-templates/:templateId/submitted") templateSubmitted(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("templateId", ParseUUIDPipe) templateId: string, @Body() input: TemplateSubmittedDto) { return this.templates.submittedInternal(workspaceId, templateId, input); }

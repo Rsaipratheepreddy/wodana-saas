@@ -27,10 +27,16 @@ export class ReceivablesService {
       const today = await this.today(client, workspaceId);
       const milestones = (await readMilestones(client, workspaceId)).filter((item) => !item.invoiceId);
       const paid = await readMilestonePaid(client, workspaceId, milestones);
+      // When each payment's client was last reminded (Send reminder, or the automatic schedule).
+      const reminded = new Map((await client.query<{ caseId: string; paymentId: string; sentOn: string; channel: string }>(
+        `SELECT DISTINCT ON (case_id, payment_id) case_id AS "caseId", payment_id AS "paymentId", sent_on::text AS "sentOn", channel
+           FROM crm_payment_reminders WHERE workspace_id = $1 ORDER BY case_id, payment_id, sent_on DESC`, [workspaceId])).rows
+        .map((row) => [`${row.caseId}|${row.paymentId}`, { on: row.sentOn, channel: row.channel }]));
+      const lastReminder = (caseId: string, paymentId: string) => reminded.get(`${caseId}|${paymentId}`) ?? null;
       return {
-        invoices: await withBalances(client, workspaceId, await readInvoices(client, workspaceId), today),
+        invoices: (await withBalances(client, workspaceId, await readInvoices(client, workspaceId), today)).map((invoice) => ({ ...invoice, lastReminder: lastReminder(invoice.caseId, invoice.paymentId) })),
         // Milestones still to invoice, with anything already paid on them.
-        toInvoice: milestones.map((item) => ({ ...item, paid: (paid.get(`${item.caseId}|${item.paymentId}`) ?? Dec.ZERO).toFixed(4) })),
+        toInvoice: milestones.map((item) => ({ ...item, paid: (paid.get(`${item.caseId}|${item.paymentId}`) ?? Dec.ZERO).toFixed(4), lastReminder: lastReminder(item.caseId, item.paymentId) })),
         canManage: await this.access.hasPermission(client, workspaceId, user.userId, "receivables.manage"),
       };
     });

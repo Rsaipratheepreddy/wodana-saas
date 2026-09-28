@@ -414,6 +414,7 @@ class CrmWorker:
                 await self.business_core.process_due_takeovers(workspace_id)
                 await self.business_core.process_due_sequences(workspace_id)
                 await self.business_core.wake_snoozed_conversations(workspace_id)
+                await self.business_core.run_payment_reminders(workspace_id)
                 await self.whatsapp_templates(workspace_id)
                 await self.drain_notifications(workspace_id)
                 await self.business_core.dispatch_staff_emails(workspace_id)

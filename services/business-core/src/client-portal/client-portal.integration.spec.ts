@@ -24,6 +24,8 @@ import { ClientPortalService } from "./client-portal.service";
 import type { Delivery } from "./portal-auth";
 import { tellClients } from "./portal-notices";
 import { savePortalSettings } from "./portal-settings";
+import { CrmPaymentRemindersService } from "../crm/conversations/crm-payment-reminders.service";
+import { CrmWhatsAppTemplatesService } from "../crm/conversations/crm-whatsapp-templates.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -826,6 +828,50 @@ integration("client portal (plan §6.22)", () => {
       expect((await w.client.query("SELECT count(*)::int AS n FROM audit_events WHERE workspace_id = $1 AND action = 'client_portal.demo_code_cleared'", [w.workspaceId])).rows[0].n).toBe(1);
       expect((await w.client.query("SELECT demo_code_hash, demo_code_set_by, demo_code_set_at FROM client_portal_grants WHERE id = $1", [approver.id])).rows[0])
         .toEqual({ demo_code_hash: null, demo_code_set_by: null, demo_code_set_at: null });
+    });
+  });
+
+  it("reminds the client to pay what's still owed: by email, then on WhatsApp once the template is approved, once a day, never after payment", async () => {
+    await world(async (w) => {
+      await open(w);
+      await started(w);
+      const today = (await w.client.query<{ today: string }>(`SELECT (now() AT TIME ZONE default_timezone)::date::text AS today FROM workspaces WHERE id = $1`, [w.workspaceId])).rows[0].today;
+      await w.client.query(`UPDATE commercial_payments SET due_date = $3::date - 3 WHERE workspace_id = $1 AND case_id = $2 AND id = 'p2'`, [w.workspaceId, w.caseId, today]);
+      const run = (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => w.savepoint(async () => fn(w.client, { userId: w.manager }));
+      const database = { tenantTransaction: (_w: string, _a: string, fn: (c: PoolClient) => Promise<unknown>) => w.savepoint(() => fn(w.client)) };
+      const access = { withPermission: run, withAnyPermission: run, hasPermission: async () => true };
+      const reminders = new CrmPaymentRemindersService(database as never, access as never, new ConfigService({ WEB_ORIGIN: "https://app.example.com" }));
+      const inOffice = new Date(`${today}T06:00:00Z`); // 10:00 in the workspace's Gulf time zone
+
+      // No WhatsApp: the reminder goes by email to the portal contact, and only once today.
+      expect(await reminders.remind(actor, w.workspaceId, { caseId: w.caseId, paymentId: "p2" })).toMatchObject({ channel: "email", already: false });
+      const emails = await w.client.query(`SELECT subject FROM notifications WHERE workspace_id = $1 AND event_type = 'portal.payment_due'`, [w.workspaceId]);
+      expect(emails.rows).toEqual([{ subject: "Payment reminder · Before production" }]);
+      expect(await reminders.remind(actor, w.workspaceId, { caseId: w.caseId, paymentId: "p2" })).toMatchObject({ already: true, channel: "email" });
+      expect(await reminders.scheduleInternal(w.workspaceId, inOffice)).toEqual({ sent: 0, reason: null });
+
+      // WhatsApp connected, the client consented, the payment_due starter template approved: the next reminder goes there.
+      await w.client.query(`INSERT INTO integration_connections(workspace_id,provider,display_name,status,external_account_id,configuration) VALUES($1,'whatsapp','WhatsApp','connected','waba','{"phoneNumberId":"pn"}')`, [w.workspaceId]);
+      await w.client.query(`INSERT INTO crm_consents(workspace_id,party_id,purpose,channel,status) VALUES($1,$2,'service','whatsapp','granted')`, [w.workspaceId, w.party]);
+      await w.client.query(`INSERT INTO crm_contact_points(workspace_id,party_id,type,raw_value,normalized_value,is_primary) VALUES($1,$2,'phone','+15550100001','+15550100001',true)`, [w.workspaceId, w.party]);
+      const templates = new CrmWhatsAppTemplatesService(database as never, access as never, { record: async () => undefined } as never);
+      await templates.submitStarterPack(actor, w.workspaceId, { languages: ["en"] });
+      await templates.syncInternal(w.workspaceId, { full: false, templates: [{ id: "meta-due", name: "wd_payment_due", language: "en", status: "APPROVED" }] });
+      await w.client.query(`DELETE FROM crm_payment_reminders WHERE workspace_id = $1`, [w.workspaceId]); // as if today's email went yesterday
+      expect(await reminders.scheduleInternal(w.workspaceId, new Date(`${today}T20:00:00Z`))).toEqual({ sent: 0, reason: "closed" });
+      expect(await reminders.scheduleInternal(w.workspaceId, inOffice)).toEqual({ sent: 1, reason: null });
+      const chat = await w.client.query<{ body: string; automatic: string }>(
+        `SELECT message.body_text AS body, message.metadata->>'automatic' AS automatic FROM crm_messages message
+           JOIN crm_conversations conversation ON conversation.workspace_id = message.workspace_id AND conversation.id = message.conversation_id
+          WHERE message.workspace_id = $1 AND conversation.party_id = $2`, [w.workspaceId, w.party]);
+      expect(chat.rows).toEqual([{ automatic: "payments.reminder", body: expect.stringMatching(/^Hello Maya, this is a reminder that AED\s?3,925\.00 is due on .+\. You can pay here: \S+\/portal\S* Thank you\.$/) }]);
+      expect((await w.client.query(`SELECT channel, offset_days AS "offset" FROM crm_payment_reminders WHERE workspace_id = $1`, [w.workspaceId])).rows).toEqual([{ channel: "whatsapp", offset: 3 }]);
+
+      // Paid: the schedule never reminds again, and Send reminder refuses.
+      await w.client.query(`DELETE FROM crm_payment_reminders WHERE workspace_id = $1`, [w.workspaceId]);
+      await w.client.query(`UPDATE commercial_payments SET status = 'verified' WHERE workspace_id = $1 AND case_id = $2 AND id = 'p2'`, [w.workspaceId, w.caseId]);
+      expect(await reminders.scheduleInternal(w.workspaceId, inOffice)).toEqual({ sent: 0, reason: null });
+      await expect(reminders.remind(actor, w.workspaceId, { caseId: w.caseId, paymentId: "p2" })).rejects.toThrow(/Nothing is owed|paid or waiting/);
     });
   });
 });

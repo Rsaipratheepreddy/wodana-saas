@@ -631,6 +631,13 @@
       "when": 1801121100000,
       "tag": "0141_client_event_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1801124700000,
+      "tag": "0142_payment_reminders",
+      "breakpoints": true
     }
   ]
 }

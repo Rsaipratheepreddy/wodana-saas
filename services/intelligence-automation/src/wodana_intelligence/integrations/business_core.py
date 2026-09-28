@@ -243,6 +243,12 @@ class BusinessCoreClient:
             json={"limit": 50},
         )
 
+    async def run_payment_reminders(self, workspace_id: str) -> dict[str, Any]:
+        """Today's scheduled payment reminders to clients (checked hourly, in working hours)."""
+        return await self._internal_request(
+            "POST", f"/internal/crm/workspaces/{workspace_id}/payment-reminders/run", json={}
+        )
+
     async def whatsapp_template_work(self, workspace_id: str) -> dict[str, Any]:
         """Starter templates to submit to Meta, and whether the daily status sync is due."""
         return await self._internal_request(

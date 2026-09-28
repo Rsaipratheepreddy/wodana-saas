@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateNested } from "class-validator";
 import { STARTER_LANGUAGES } from "../inbox/whatsapp-starter-pack";
 
 export class SubmitStarterPackDto {
@@ -29,6 +29,17 @@ export class UpdateClientMessageDto {
   @IsInt() @Min(0) version!: number;
   @IsOptional() @IsBoolean() enabled?: boolean;
   @IsOptional() @IsString() @Matches(/^[a-z0-9_.-]{1,100}$/) templateCode?: string | null;
+}
+
+export class SendPaymentReminderDto {
+  @IsUUID() caseId!: string;
+  @IsString() @Matches(/^[A-Za-z0-9_.:-]{1,80}$/) paymentId!: string;
+}
+
+export class UpdatePaymentReminderScheduleDto {
+  @IsInt() @Min(0) version!: number;
+  /** Days relative to the due date: negative before it, 0 on it, positive after it. */
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(8) @IsInt({ each: true }) @Min(-30, { each: true }) @Max(60, { each: true }) offsets!: number[];
 }
 
 export class WhatsAppTemplateSyncDto {
