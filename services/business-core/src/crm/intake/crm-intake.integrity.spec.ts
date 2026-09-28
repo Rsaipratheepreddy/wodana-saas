@@ -106,7 +106,15 @@ describe("CRM intake idempotency integrity", () => {
     )).rejects.toThrow("different content");
   });
 
-  it("stores canonical hash version 2 and sends ambiguous matches to review", async () => {
+  function provisional(instance: CrmIntakeService) {
+    vi.spyOn(instance as never, "createPartyFromPayload" as never).mockResolvedValue("provisional-party" as never);
+    vi.spyOn(instance as never, "createReadyRecords" as never).mockResolvedValue({
+      partyId: "provisional-party", enquiryId: "enquiry", leadId: "lead", reference: "ENQ-9",
+    } as never);
+    return vi.spyOn(instance as never, "resolveIntake" as never).mockResolvedValue({ version: 2 } as never);
+  }
+
+  it("stores canonical hash version 2 and works an ambiguous match at once, on a provisional client (S-3)", async () => {
     const query = vi.fn(async (sql: string) => {
       if (sql.includes("SELECT id,payload_hash,payload_hash_version")) return { rows: [], rowCount: 0 };
       if (sql.includes("INSERT INTO crm_intake_events")) return { rows: [{ id: "intake" }], rowCount: 1 };
@@ -117,15 +125,46 @@ describe("CRM intake idempotency integrity", () => {
       { partyId: "party-1", strength: "exact", score: 1, reasons: ["verified_email"] },
       { partyId: "party-2", strength: "exact", score: 1, reasons: ["verified_phone"] },
     ] as never);
+    const resolved = provisional(instance);
     const result = await instance["ingest"](
       { query } as never, "workspace", "user", "user", "key", undefined, intake() as never,
     );
-    expect(result).toMatchObject({ status: "duplicate_candidate" });
+    expect(result).toMatchObject({ status: "ready", resolutionType: "new_identity", leadId: "lead", clientMatches: 2 });
     const inserted = query.mock.calls.find(([sql]) => sql.includes("INSERT INTO crm_intake_events"));
     expect(inserted?.[0]).toContain("payload_hash_version");
     expect(inserted?.[1]?.[9]).toBe(canonicalHash(intake()));
     expect(query.mock.calls.filter(([sql]) => sql.includes("INSERT INTO crm_identity_candidates"))).toHaveLength(2);
+    expect(query.mock.calls.some(([sql]) => sql.includes("status = 'duplicate_candidate'"))).toBe(false);
+    expect(resolved).toHaveBeenCalledWith(expect.anything(), "workspace", expect.objectContaining({
+      resolutionType: "new_identity", partyId: "provisional-party", evidence: expect.objectContaining({ provisional: true, candidateCount: 2 }),
+    }));
+    const review = query.mock.calls.find(([sql]) => sql.includes("SET client_review_due_at"));
+    expect(review?.[1]?.slice(0, 2)).toEqual(["workspace", "lead"]);
+    expect(review?.[1]?.[2]).toBeInstanceOf(Date);
     expect(events.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "crm.identity.review_required.v1" }));
+  });
+
+  it("takes the staff member's answer to 'existing client?' instead of matching (LF-1)", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT id,payload_hash,payload_hash_version")) return { rows: [], rowCount: 0 };
+      if (sql.includes("INSERT INTO crm_intake_events")) return { rows: [{ id: "intake" }], rowCount: 1 };
+      if (sql.includes("SELECT id FROM crm_parties")) return { rows: [{ id: "existing-party" }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const { instance } = service(query);
+    const matcher = vi.spyOn(instance as never, "identityMatches" as never);
+    const resolved = provisional(instance);
+    expect(await instance["ingest"]({ query } as never, "workspace", "user", "user", "existing-key", undefined,
+      intake({ identity: "existing", partyId: "existing-party" }) as never)).toMatchObject({ status: "ready", resolutionType: "review_attach", matchedExistingParty: true });
+    expect(resolved).toHaveBeenLastCalledWith(expect.anything(), "workspace", expect.objectContaining({ partyId: "existing-party", evidence: { decision: "staff_selected_existing" } }));
+    expect(await instance["ingest"]({ query } as never, "workspace", "user", "user", "new-key", undefined,
+      intake({ identity: "new" }) as never)).toMatchObject({ resolutionType: "review_create_new", matchedExistingParty: false });
+    expect(resolved).toHaveBeenLastCalledWith(expect.anything(), "workspace", expect.objectContaining({ partyId: "provisional-party", evidence: { decision: "staff_confirmed_new" } }));
+    expect(matcher).not.toHaveBeenCalled();
+    // An integration cannot claim a client; it is matched like any other intake.
+    matcher.mockResolvedValue([] as never);
+    await instance["ingest"]({ query } as never, "workspace", null, "integration", "form-key", undefined, intake({ identity: "existing", partyId: "existing-party" }) as never);
+    expect(matcher).toHaveBeenCalledTimes(1);
   });
 
   it("normalizes local integration numbers using the workspace locale before identity matching", async () => {
@@ -140,6 +179,7 @@ describe("CRM intake idempotency integrity", () => {
       { partyId: "party-1", strength: "exact", score: 1, reasons: ["verified_phone"] },
       { partyId: "party-2", strength: "exact", score: 1, reasons: ["verified_phone"] },
     ] as never);
+    provisional(instance);
     await instance["ingest"]({ query } as never, "workspace", null, "integration", "local-phone-key", undefined,
       intake({ party: { displayName: "Asha Rao", mobile: "050 123 4567" } }) as never);
     const inserted = query.mock.calls.find(([sql]) => sql.includes("INSERT INTO crm_intake_events"));
