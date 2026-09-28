@@ -74,6 +74,9 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
         <SettingsRow label={t("Replying as")} hint={settings.whatsapp.connected ? t("All {count} seats reply from this number. Clients see the business, not the person.", { count: settings.seats }) : undefined}>
           {settings.whatsapp.connected ? <strong>{[settings.businessName, settings.whatsapp.number].filter(Boolean).join(" · ")}</strong> : <Link href="/workspace/integrations">{t("Connect WhatsApp")}</Link>}
         </SettingsRow>
+        {settings.whatsapp.connected ? <SettingsRow label={t("Number health")} hint={[settings.whatsapp.quality ? t("Quality {value}", { value: settings.whatsapp.quality.toLowerCase() }) : null, settings.whatsapp.limit ? t("Limit {value}", { value: settings.whatsapp.limit.replace(/_/g, " ").toLowerCase() }) : null].filter(Boolean).join(" · ") || undefined}>
+          <Badge tone={settings.whatsapp.health === "blocked" ? "danger" : settings.whatsapp.health === "limited" ? "warning" : "success"}>{settings.whatsapp.health === "blocked" ? t("Blocked by Meta") : settings.whatsapp.health === "limited" ? t("Limited by Meta") : t("Can send")}</Badge>
+        </SettingsRow> : null}
         <SettingsRow label={t("Signature")} hint={t("Adds “— first name” under each reply.")}>
           <Switch isDisabled={!canManage || !draft} isSelected={Boolean(draft?.signatureEnabled)} onChange={(value) => setDraft((current) => current && { ...current, signatureEnabled: value })}>{t("Sign replies")}</Switch>
         </SettingsRow>

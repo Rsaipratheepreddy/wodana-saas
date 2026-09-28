@@ -347,7 +347,14 @@ class CrmWorker:
             except Exception:
                 logger.warning("WhatsApp template sync failed for %s; retrying within the hour", workspace_id)
                 return
-            await self.business_core.whatsapp_templates_synced(workspace_id, templates, True)
+            health = None
+            check_health = getattr(self.adapter, "whatsapp_health", None)
+            if check_health is not None:
+                try:
+                    health = await check_health(workspace_id)
+                except Exception:
+                    logger.warning("WhatsApp number health check failed for %s", workspace_id)
+            await self.business_core.whatsapp_templates_synced(workspace_id, templates, True, health)
 
     async def drain_notifications(self, workspace_id: str) -> int:
         jobs = await self.business_core.claim_notification_jobs(workspace_id)

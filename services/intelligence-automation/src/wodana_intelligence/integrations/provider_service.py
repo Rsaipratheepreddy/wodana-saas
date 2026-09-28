@@ -501,6 +501,11 @@ class ProviderService:
         _runtime, credential = await self.runtime_internal(workspace, "whatsapp")
         return await self.client.all_templates(credential)
 
+    async def whatsapp_health_internal(self, workspace: str) -> dict[str, Any]:
+        """The worker's daily check of the connected number's quality, limit and status."""
+        _runtime, credential = await self.runtime_internal(workspace, "whatsapp")
+        return await self.client.phone_number_health(credential)
+
     async def submit_whatsapp_template_internal(
         self, workspace: str, template: dict[str, Any]
     ) -> dict[str, Any]:

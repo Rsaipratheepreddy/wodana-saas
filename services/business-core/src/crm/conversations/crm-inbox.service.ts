@@ -428,8 +428,8 @@ export class CrmInboxService {
   private async readSettings(client: PoolClient, workspaceId: string, userId: string) {
     const row = (await client.query<Row>(`SELECT auto_assign AS "autoAssign", queue_id AS "queueId", signature_enabled AS "signatureEnabled", version FROM crm_inbox_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
     const queues = await client.query(`SELECT id, name, is_fallback AS "isFallback" FROM crm_queues WHERE workspace_id = $1 AND status = 'active' ORDER BY is_fallback DESC, lower(name)`, [workspaceId]);
-    const number = await client.query<{ number: string | null; accountName: string | null }>(
-      `SELECT configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName"
+    const number = await client.query<{ number: string | null; accountName: string | null; health: string | null; quality: string | null; limit: string | null }>(
+      `SELECT configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName", configuration->'health'->>'state' AS health, configuration->'health'->>'quality' AS quality, configuration->'health'->>'limit' AS "limit"
          FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
         ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, updated_at DESC, id LIMIT 1`, [workspaceId]);
     const seats = await client.query<{ seats: number }>(
@@ -442,7 +442,7 @@ export class CrmInboxService {
     return {
       autoAssign: row ? row.autoAssign === true : true, queueId: (row?.queueId as string | null) ?? null, signatureEnabled: row?.signatureEnabled === true,
       version: Number(row?.version ?? 0), canManage: await this.access.hasPermission(client, workspaceId, userId, "crm.settings.manage"),
-      queues: queues.rows, whatsapp: { connected: Boolean(number.rowCount), number: number.rows[0]?.number ?? null, accountName: number.rows[0]?.accountName ?? null },
+      queues: queues.rows, whatsapp: { connected: Boolean(number.rowCount), number: number.rows[0]?.number ?? null, accountName: number.rows[0]?.accountName ?? null, health: number.rows[0]?.health ?? null, quality: number.rows[0]?.quality ?? null, limit: number.rows[0]?.limit ?? null },
       seats: seats.rows[0]?.seats ?? 0, businessName: business.rows[0]?.name ?? null,
       workday: { start: calendar.rows[0]?.dayStart ?? null, days: calendar.rows[0]?.workingDays ?? null },
     };

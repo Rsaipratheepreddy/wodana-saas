@@ -21,6 +21,16 @@ export type TemplateVariableSource = (typeof TEMPLATE_VARIABLE_SOURCES)[number];
 
 export const MAX_SNOOZE_DAYS = 90;
 
+export type NumberHealth = { state: "connected" | "limited" | "blocked"; quality: string | null; limit: string | null; status: string | null };
+
+/** The connected number's standing from Meta's quality rating, status and quality events. */
+export function numberHealthState(health: { quality?: string | null; status?: string | null; event?: string | null }): NumberHealth["state"] {
+  const status = (health.status ?? "").toUpperCase();
+  if (["BANNED", "RESTRICTED", "DISCONNECTED", "DELETED"].includes(status)) return "blocked";
+  if ((health.quality ?? "").toUpperCase() === "RED" || ["FLAGGED", "RATE_LIMITED"].includes(status) || ["FLAGGED", "DOWNGRADE"].includes((health.event ?? "").toUpperCase())) return "limited";
+  return "connected";
+}
+
 /** Enquiry states a chat can be filtered by (the open ones and the outcomes). */
 export const ENQUIRY_STAGES = ["new", "attempting_contact", "connected", "nurturing", "paused", "qualified", "disqualified"] as const;
 

@@ -141,8 +141,8 @@ export class CrmConversationsService {
       const canSend = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.communications.send");
       const canManage = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.settings.manage");
       // The number every seat replies from: the workspace's default connected WhatsApp number.
-      const connection = await client.query<{ number: string | null; accountName: string | null }>(
-        `SELECT configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName"
+      const connection = await client.query<{ number: string | null; accountName: string | null; health: Record<string, unknown> | null }>(
+        `SELECT configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName", configuration->'health' AS health
            FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
           ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, updated_at DESC, id LIMIT 1`, [workspaceId]);
       const page = messages.rows.slice(0, 100);
@@ -169,6 +169,7 @@ export class CrmConversationsService {
         partyName: fact?.partyName ?? null, ownerName: fact?.ownerName ?? null, leadReference: fact?.leadReference ?? null,
         labels: labels.rows[0]?.labels ?? [], events: history.rows,
         replyingAs: { businessName: fact?.businessName ?? null, number: connection.rows[0]?.number ?? null, accountName: connection.rows[0]?.accountName ?? null },
+        numberHealth: (connection.rows[0]?.health?.state as string | undefined) ?? null,
         signatureEnabled: fact?.signatureEnabled === true, canManage,
         blockedAt: fact?.blockedAt ?? null, spamAt: fact?.spamAt ?? null,
         windowClosesAt: lastInbound ? new Date(lastInbound.getTime() + 86_400_000).toISOString() : null,
@@ -331,6 +332,45 @@ export class CrmConversationsService {
       }
       const message = await this.insertMessage(client, input.workspaceId, conversationId, { direction: "inbound", bodyText: input.bodyText, bodyHtml: input.bodyHtml, providerMessageId: input.providerMessageId, metadata: input.metadata }, null, "integration");
       return { conversationId, partyId, message };
+    });
+  }
+
+  /**
+   * Coexistence: a message the owner sent from the WhatsApp Business app on the same number. It lands in the
+   * client's chat once (by Meta's message id) as "Sent from phone", and counts as our reply.
+   */
+  ingestProviderEcho(input: ProviderInboundMessageDto) {
+    return this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
+      if (input.channel !== "whatsapp") throw new UnprocessableEntityException("Only WhatsApp echoes are supported");
+      const normalized = normalizeLoosePhone(input.contact);
+      if (!normalized) throw new UnprocessableEntityException("Provider contact is invalid");
+      const known = await client.query(`SELECT id, conversation_id AS "conversationId" FROM crm_messages WHERE workspace_id = $1 AND provider_message_id = $2`, [input.workspaceId, input.providerMessageId]);
+      if (known.rowCount) return { conversationId: known.rows[0].conversationId, messageId: known.rows[0].id, duplicate: true };
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`provider-contact:${input.workspaceId}:whatsapp:${normalized}`]);
+      let partyId = (await client.query<{ partyId: string }>(`SELECT party_id AS "partyId" FROM crm_contact_points WHERE workspace_id = $1 AND type = 'phone' AND normalized_value = $2 AND status = 'active' ORDER BY is_verified DESC, is_primary DESC, created_at LIMIT 1`, [input.workspaceId, normalized])).rows[0]?.partyId;
+      if (!partyId) {
+        partyId = randomUUID();
+        const displayName = `WhatsApp ${input.contact}`;
+        await client.query(`INSERT INTO crm_parties (id, workspace_id, type, display_name, normalized_name, created_by) VALUES ($1, $2, 'person', $3, $4, NULL)`, [partyId, input.workspaceId, displayName, normalizeName(displayName)]);
+        await client.query(`INSERT INTO crm_person_profiles (party_id, workspace_id) VALUES ($1, $2)`, [partyId, input.workspaceId]);
+        await client.query(`INSERT INTO crm_contact_points (workspace_id, party_id, type, raw_value, normalized_value, is_primary) VALUES ($1, $2, 'phone', $3, $4, true)`, [input.workspaceId, partyId, input.contact, normalized]);
+      }
+      let conversationId = (await client.query<{ id: string }>(
+        `SELECT id FROM crm_conversations WHERE workspace_id = $1 AND channel = 'whatsapp' AND (provider_thread_id = $2 OR party_id = $3)
+          ORDER BY (provider_thread_id = $2) DESC, last_message_at DESC NULLS LAST LIMIT 1 FOR UPDATE`, [input.workspaceId, input.providerThreadId, partyId])).rows[0]?.id;
+      if (!conversationId) {
+        conversationId = randomUUID();
+        await client.query(`INSERT INTO crm_conversations (id, workspace_id, party_id, channel, provider_thread_id, subject) VALUES ($1, $2, $3, 'whatsapp', $4, 'WhatsApp conversation')`, [conversationId, input.workspaceId, partyId, input.providerThreadId]);
+        await client.query(`INSERT INTO crm_conversation_participants (workspace_id, conversation_id, participant_type, participant_id) VALUES ($1, $2, 'party', $3) ON CONFLICT DO NOTHING`, [input.workspaceId, conversationId, partyId]);
+      }
+      const messageId = randomUUID();
+      await client.query(
+        `INSERT INTO crm_messages (id, workspace_id, conversation_id, direction, status, authorship, sender_type, provider_message_id, body_text, metadata, sent_at)
+         VALUES ($1, $2, $3, 'outbound', 'sent', 'provider', 'provider', $4, $5, $6, now()) ON CONFLICT (workspace_id, provider_message_id) DO NOTHING`,
+        [messageId, input.workspaceId, conversationId, input.providerMessageId, input.bodyText ?? null, { ...input.metadata, sentFromPhone: true }]);
+      await client.query(`UPDATE crm_conversations SET last_message_at = now(), waiting_since = NULL, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [input.workspaceId, conversationId]);
+      await this.events.record(client, { workspaceId: input.workspaceId, actorUserId: null, source: "integration", action: "crm.message.sent_from_phone.v1", entityType: "crm_message", entityId: messageId, after: { conversationId, partyId } });
+      return { conversationId, messageId, duplicate: false };
     });
   }
 
@@ -665,6 +705,11 @@ export class CrmConversationsService {
         // What the client receives is the template with its values, never free text beside it.
         bodyText = renderTemplate(String(template.body_template), templateParameters);
         bodyHtml = null;
+      }
+      if (conversation.channel === "whatsapp") {
+        const health = await client.query<{ state: string | null }>(`SELECT configuration->'health'->>'state' AS state FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
+          ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, updated_at DESC LIMIT 1`, [workspaceId]);
+        if (health.rows[0]?.state === "blocked") throw new UnprocessableEntityException("Meta has stopped sending from this WhatsApp number. Check it in Integrations.");
       }
       if (conversation.channel === "whatsapp" && !input.templateId) {
         const lastInbound = conversation.last_inbound_at ? new Date(String(conversation.last_inbound_at)) : null;

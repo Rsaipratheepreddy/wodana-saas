@@ -9835,5 +9835,14 @@
   "Enquiry · {stage}": "Enquiry · {stage}",
   "Sales · {stage}": "Sales · {stage}",
   "Project · {stage}": "Project · {stage}",
-  "No record": "No record"
+  "No record": "No record",
+  "Meta has stopped sending from this number. Check it in Integrations.": "Meta has stopped sending from this number. Check it in Integrations.",
+  "Blocked by Meta": "Blocked by Meta",
+  "Limited by Meta": "Limited by Meta",
+  "Sent from phone": "Sent from phone",
+  "Number health": "Number health",
+  "Quality {value}": "Quality {value}",
+  "Limit {value}": "Limit {value}",
+  "Can send": "Can send",
+  "I already use the WhatsApp Business app on this number": "I already use the WhatsApp Business app on this number"
 }

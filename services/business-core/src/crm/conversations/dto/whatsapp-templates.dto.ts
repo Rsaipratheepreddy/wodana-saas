@@ -42,8 +42,17 @@ export class UpdatePaymentReminderScheduleDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(8) @IsInt({ each: true }) @Min(-30, { each: true }) @Max(60, { each: true }) offsets!: number[];
 }
 
+/** The number's standing at Meta (daily check, or a quality webhook with only some of it). */
+export class NumberHealthDto {
+  @IsOptional() @IsString() @MaxLength(40) quality?: string | null;
+  @IsOptional() @IsString() @MaxLength(40) limit?: string | null;
+  @IsOptional() @IsString() @MaxLength(40) status?: string | null;
+  @IsOptional() @IsString() @MaxLength(40) event?: string | null;
+}
+
 export class WhatsAppTemplateSyncDto {
   /** True for the daily full list (it marks the sync done); false for one webhook status change. */
   @IsBoolean() full!: boolean;
   @IsArray() @ArrayMaxSize(2000) @ValidateNested({ each: true }) @Type(() => ProviderTemplateDto) templates!: ProviderTemplateDto[];
+  @IsOptional() @ValidateNested() @Type(() => NumberHealthDto) health?: NumberHealthDto;
 }

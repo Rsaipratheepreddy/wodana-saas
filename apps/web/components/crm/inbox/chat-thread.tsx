@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
-import { Avatar, Button, ControlledModalDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
+import { Avatar, Badge, Button, ControlledModalDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
 import { CLIENT_EVENT_LABELS, eventLine, snoozePresets, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -90,7 +90,8 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
   const replyingAs = thread.replyingAs as { businessName: string | null; number: string | null } | undefined;
   const blocked = !thread.canSend ? t("You can view this conversation. Ask an administrator for permission to reply.")
     : status === "closed" ? t("This conversation is resolved. Reopen it to reply.")
-    : isWhatsApp && !thread.whatsappConnected ? t("Connect WhatsApp in Integrations to reply.") : "";
+    : isWhatsApp && !thread.whatsappConnected ? t("Connect WhatsApp in Integrations to reply.")
+    : isWhatsApp && thread.numberHealth === "blocked" ? t("Meta has stopped sending from this number. Check it in Integrations.") : "";
   const workday = lookups.settings?.workday;
   const presets = snoozePresets({ now: new Date(now), timeZone, dayStart: workday?.start, workingDays: workday?.days });
   const owners = lookups.owners;
@@ -107,7 +108,7 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       <Avatar name={String(thread.partyName ?? t("Customer"))} size="md" />
       <div className={styles.headingIdentity}>
         <h2>{String(thread.partyName ?? t("Customer"))}</h2>
-        <span>{isWhatsApp && replyingAs?.number ? t("Replying as {business} · {number}", { business: replyingAs.businessName ?? "", number: replyingAs.number }) : label(thread.channel)}</span>
+        <span>{isWhatsApp && replyingAs?.number ? t("Replying as {business} · {number}", { business: replyingAs.businessName ?? "", number: replyingAs.number }) : label(thread.channel)}{isWhatsApp && (thread.numberHealth === "limited" || thread.numberHealth === "blocked") ? <> <Badge tone={thread.numberHealth === "blocked" ? "danger" : "warning"}>{thread.numberHealth === "blocked" ? t("Blocked by Meta") : t("Limited by Meta")}</Badge></> : null}</span>
         {chatLabels.length ? <span className={styles.headingLabels}>{chatLabels.map((item) => <LabelChip key={item.id} label={item} />)}</span> : null}
       </div>
       <div className={styles.actions}>
@@ -234,7 +235,7 @@ function MessageBubble({ message, partyName, workspaceId, time, onHide, canShowH
   const direction = String(message.direction);
   const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata as Record<string, unknown> : {};
   const automatic = typeof metadata.automatic === "string" ? metadata.automatic : null;
-  const sender = direction === "inbound" ? partyName : automatic ? t("Automatic") : message.authorship === "automation" || message.senderType === "system" ? t("Automation") : String(message.senderName ?? t("Team"));
+  const sender = direction === "inbound" ? partyName : automatic ? t("Automatic") : metadata.sentFromPhone ? t("Sent from phone") : message.authorship === "automation" || message.senderType === "system" ? t("Automation") : String(message.senderName ?? t("Team"));
   return <article className={styles.message} data-direction={direction} data-automatic={automatic ? true : undefined} aria-label={direction === "inbound" ? t("Contact message") : direction === "internal" ? t("Team note") : t("Your message")}>
     <span className={styles.messageAvatar}><Avatar name={sender} size="sm" /></span>
     <strong className={styles.messageSender}>{sender}{direction === "internal" ? <span className={styles.noteTag}>{t("Note")}</span> : null}{automatic ? <span className={styles.automaticTag}>{t(CLIENT_EVENT_LABELS[automatic] ?? "Client message")}</span> : null}</strong>

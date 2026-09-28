@@ -338,4 +338,28 @@ integration("team inbox", () => {
       expect(await ids("lead:paused")).toEqual([nouraChat]);
     });
   });
+
+  it("keeps the number's standing, stops sending when Meta blocks it, and shows messages sent from the phone once", async () => {
+    await withInbox(async (client, { workspaceId, manager, sara, nouraChat, conversations, templates, as }) => {
+      await conversations.addInboundInternal(workspaceId, nouraChat, { direction: "inbound", bodyText: "Hello" } as never);
+      await templates.syncInternal(workspaceId, { full: true, templates: [], health: { quality: "GREEN", limit: "TIER_1K", status: "CONNECTED" } });
+      as(sara);
+      expect((await conversations.get(actor, workspaceId, nouraChat)).numberHealth).toBe("connected");
+      await templates.syncInternal(workspaceId, { full: false, templates: [], health: { quality: "RED", event: "FLAGGED" } });
+      expect((await conversations.get(actor, workspaceId, nouraChat)).numberHealth).toBe("limited");
+      expect(await notices(client, workspaceId, manager, "crm.whatsapp.number_health")).toEqual([expect.objectContaining({ subject: "Your WhatsApp number is limited" })]);
+      await conversations.addMessage(actor, workspaceId, nouraChat, { direction: "outbound", purpose: "service", bodyText: "Still fine", clientMessageId: randomUUID() } as never);
+      await templates.syncInternal(workspaceId, { full: false, templates: [], health: { status: "BANNED" } });
+      await expect(conversations.addMessage(actor, workspaceId, nouraChat, { direction: "outbound", purpose: "service", bodyText: "Blocked", clientMessageId: randomUUID() } as never)).rejects.toThrow(/stopped sending/);
+
+      await conversations.addInboundInternal(workspaceId, nouraChat, { direction: "inbound", bodyText: "Are you there?" } as never);
+      const echo = { workspaceId, channel: "whatsapp", providerThreadId: "15550002222", providerMessageId: "wamid.phone-1", contact: "+15550002222", bodyText: "Yes, calling you now", metadata: { messageType: "text" } };
+      const first = await conversations.ingestProviderEcho(echo as never);
+      expect(first).toMatchObject({ conversationId: nouraChat, duplicate: false });
+      expect(await conversations.ingestProviderEcho(echo as never)).toMatchObject({ duplicate: true });
+      const phone = await client.query(`SELECT direction, status, metadata->>'sentFromPhone' AS phone FROM crm_messages WHERE provider_message_id = 'wamid.phone-1'`);
+      expect(phone.rows).toEqual([{ direction: "outbound", status: "sent", phone: "true" }]);
+      expect((await chat(client, nouraChat)).waiting_since).toBeNull();
+    });
+  });
 });

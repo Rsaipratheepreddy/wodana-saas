@@ -9,7 +9,7 @@ import { WorkspaceAccessService } from "../../workspaces/workspace-access.servic
 import { CrmEventsService } from "../shared/crm-events.service";
 import { SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
 import { CLIENT_EVENTS, clientMessageRule, EMAIL_FALLBACK } from "./inbox/client-messages";
-import { templatePlaceholders } from "./inbox/inbox-rules";
+import { numberHealthState, templatePlaceholders, type NumberHealth } from "./inbox/inbox-rules";
 import { metaBodyProblem, sampleValues, STARTER_LANGUAGES, STARTER_PACK, starterByName, type StarterEvent, type StarterLanguage } from "./inbox/whatsapp-starter-pack";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
@@ -168,6 +168,7 @@ export class CrmWhatsAppTemplatesService {
         }
       }
       if (input.full) await client.query(`UPDATE integration_connections SET configuration = configuration || jsonb_build_object('templatesSyncedAt', now()) WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'`, [workspaceId]);
+      if (input.health) await this.storeHealth(client, workspaceId, input.health);
       return { changed, added };
     });
   }
@@ -213,6 +214,25 @@ export class CrmWhatsAppTemplatesService {
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.client_message.updated.v1", entityType: "crm_client_message_rule", entityId: workspaceId, before: { event, ...current }, after: { event, enabled, templateCode } });
       return { event, enabled, templateCode, version: saved.rows[0].version };
     });
+  }
+
+  /** The number's standing (merged with what we knew); the connector hears when it becomes limited or blocked. */
+  private async storeHealth(client: Pick<PoolClient, "query">, workspaceId: string, update: { quality?: string | null; limit?: string | null; status?: string | null; event?: string | null }) {
+    const connection = (await client.query<{ id: string; health: Partial<NumberHealth> | null }>(
+      `SELECT id, configuration->'health' AS health FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
+        ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, updated_at DESC LIMIT 1 FOR UPDATE`, [workspaceId])).rows[0];
+    if (!connection) return;
+    const previous = connection.health ?? {};
+    const merged = { quality: update.quality ?? previous.quality ?? null, limit: update.limit ?? previous.limit ?? null, status: update.status ?? previous.status ?? null };
+    const state = numberHealthState({ ...merged, event: update.event });
+    await client.query(`UPDATE integration_connections SET configuration = configuration || jsonb_build_object('health', $3::jsonb) WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, connection.id, JSON.stringify({ ...merged, state, checkedAt: new Date().toISOString() })]);
+    if (state !== (previous.state ?? "connected") && state !== "connected") {
+      const owner = await client.query<{ userId: string }>(`SELECT connected_by AS "userId" FROM integration_connections WHERE workspace_id = $1 AND id = $2 AND connected_by IS NOT NULL`, [workspaceId, connection.id]);
+      if (owner.rows[0]) await notifyUserInApp(client, { workspaceId, recipientUserId: owner.rows[0].userId, code: "crm.number_health", eventType: "crm.whatsapp.number_health",
+        variables: { status: state, reason: state === "blocked" ? "Meta has stopped sending from this number." : "Meta has lowered this number's quality; sending may be limited." },
+        deepLink: "/workspace/integrations", idempotencyKey: `crm:number-health:${connection.id}:${state}:${new Date().toISOString().slice(0, 10)}` });
+    }
   }
 
   private async existing(client: Pick<PoolClient, "query">, workspaceId: string) {

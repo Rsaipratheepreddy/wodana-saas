@@ -69,6 +69,9 @@ class ConnectedProviderAdapter:
     async def whatsapp_templates(self, workspace_id: str) -> list[dict[str, Any]]:
         return await self.providers.whatsapp_templates_internal(workspace_id)
 
+    async def whatsapp_health(self, workspace_id: str) -> dict[str, Any]:
+        return await self.providers.whatsapp_health_internal(workspace_id)
+
     async def submit_whatsapp_template(
         self, workspace_id: str, template: dict[str, Any]
     ) -> dict[str, Any]:

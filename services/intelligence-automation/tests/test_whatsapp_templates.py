@@ -41,7 +41,7 @@ class FakeCore:
         self.results.append((template_id, result))
         return {}
 
-    async def whatsapp_templates_synced(self, _workspace: str, templates: list[dict[str, Any]], full: bool) -> dict[str, Any]:
+    async def whatsapp_templates_synced(self, _workspace: str, templates: list[dict[str, Any]], full: bool, health: dict[str, Any] | None = None) -> dict[str, Any]:
         self.synced.append((templates, full))
         return {}
 

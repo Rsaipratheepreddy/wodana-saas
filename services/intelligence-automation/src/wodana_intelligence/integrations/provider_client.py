@@ -610,6 +610,20 @@ class ProviderClient:
                 break
         return items
 
+    async def phone_number_health(self, credential: ProviderCredential) -> dict[str, Any]:
+        """The sender's standing at Meta: quality rating, messaging limit and status."""
+        data = await self.api(
+            credential,
+            "GET",
+            f"/{credential.configuration['phoneNumberId']}",
+            params={"fields": "quality_rating,messaging_limit_tier,status,name_status"},
+        )
+        return {
+            "quality": data.get("quality_rating"),
+            "limit": data.get("messaging_limit_tier"),
+            "status": data.get("status"),
+        }
+
     async def create_template(
         self, credential: ProviderCredential, template: dict[str, Any]
     ) -> dict[str, Any]:

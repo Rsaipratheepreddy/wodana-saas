@@ -21,7 +21,7 @@ export type InboxTemplate = {
 export type InboxSettings = {
   autoAssign: boolean; queueId: string | null; signatureEnabled: boolean; version: number; canManage: boolean;
   queues: Array<{ id: string; name: string; isFallback: boolean }>;
-  whatsapp: { connected: boolean; number: string | null; accountName: string | null };
+  whatsapp: { connected: boolean; number: string | null; accountName: string | null; health?: "connected" | "limited" | "blocked" | null; quality?: string | null; limit?: string | null };
   seats: number; businessName: string | null;
   workday: { start: string | null; days: number[] | null };
 };
