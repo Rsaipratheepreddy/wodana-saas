@@ -11,9 +11,11 @@ import { event as boqEvent } from "../project-core/project-scope";
 import { clientChoicesSignedOff } from "../project-core/project-materials";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import {
-  DELIVER_TO, currencyDecimals, defaultTaxRate, ensurePurchasingSettings, firstTime, nextOrderNumber, packQuantity, orderEvent, orderTotals, priceLine, readNeeds, readOrder, readOrderEvents, readOrderLines,
-  readOrders, type OrderDetail, type OrderLine,
+  DELIVER_TO, SHIPMENT_STATUSES, currencyDecimals, defaultTaxRate, ensurePurchasingSettings, firstTime, linesNeededBy, nextOrderNumber, packQuantity, orderEvent, orderTotals, priceLine, readNeeds, readOrder,
+  readOrderEvents, readOrderLines, readOrders, readShipments, type OrderDetail, type OrderLine,
 } from "./orders";
+import { readBills } from "./payables";
+import { closeSettledBlockers, readLineBlockers } from "./purchasing-blockers";
 import { outstanding, readReceipts, settleOrder } from "./receiving";
 import { describeShort, fundsShort, type FundsShort } from "./spending-guard";
 import { readReturns } from "./returns.service";
@@ -32,6 +34,8 @@ type LineInput = {
   description: string; specification: string; quantity: string; unit: string; unitPrice: string; discountPercent: string; taxRate: string;
   /** A line on another order this one replaces (that supplier didn't deliver it). */
   replacesLineId: string | null;
+  /** The stock item a free line restocks (its goods arrive as that item). */
+  stockItemId: string | null;
 };
 
 /**
@@ -161,6 +165,7 @@ export class OrdersService {
         if (over.length && !overReason)
           throw new ConflictException(`${over.map((line) => `${line.description}: ${line.over} ${line.unit}`.trim()).join(", ")} more than needed. Say why to order more.`);
         if (over.length && overReason !== order.overReason) await set(`over_reason = $3`, [overReason]);
+        await this.goesAheadOnHold(client, workspaceId, order, body, user.userId, set);
         const settings = await ensurePurchasingSettings(client, workspaceId);
         await this.guardFunds(client, workspaceId, order, settings.spendingGuard, user.userId);
         const home = (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency;
@@ -182,6 +187,8 @@ export class OrdersService {
         if (action === "return" && !note) throw new BadRequestException("Say what needs to change.");
         if (action === "approve") {
           await this.checkReady(client, workspaceId, order);
+          // A project put on hold after the buyer submitted: someone says why it still goes ahead.
+          await this.goesAheadOnHold(client, workspaceId, order, body, user.userId, set);
           // The money may have changed since it was submitted.
           await this.guardFunds(client, workspaceId, order, (await ensurePurchasingSettings(client, workspaceId)).spendingGuard, user.userId);
           await set(`status = 'approved', approved_at = now(), approved_by = $3`, [user.userId]);
@@ -223,6 +230,7 @@ export class OrdersService {
         await need("purchasing.manage", "You can't send purchase orders.");
         status("approved");
         await this.notHeld(client, workspaceId, order);
+        await this.goesAheadOnHold(client, workspaceId, order, body, user.userId, set);
         const to = body.to === null || body.to === undefined || body.to === "" ? null : text(body.to, 320, "Email");
         if (to && !EMAIL.test(to)) throw new BadRequestException("Enter the supplier's email.");
         await set(`status = 'sent', sent_at = now(), sent_to = $3`, [to]);
@@ -371,7 +379,7 @@ export class OrdersService {
           await this.createDraft(client, workspaceId, user.userId, { id: reordered, supplier, legalEntityId, currency, from: { replaces: order.number },
             header: { deliverTo: order.deliverTo, deliveryAddress: order.deliveryAddress, expectedDate: order.expectedDate, notes: "" },
             lines: [{ source: line.source, materialItemId: line.materialItemId, boqLineId: line.boqLineId, projectId: line.projectId, description: line.description,
-              specification: line.specification, quantity, unit: line.unit, replacesLineId: line.id }] });
+              specification: line.specification, quantity, unit: line.unit, replacesLineId: line.id, stockItemId: line.stockItemId }] });
         }
         audit = { line: line.id, quantity, reason, reordered };
       } else if (action === "change") {
@@ -406,9 +414,17 @@ export class OrdersService {
         await set(`status = 'cancelled', cancelled_at = now(), cancel_reason = $3`, [reason]);
         await orderEvent(client, workspaceId, orderId, "cancelled", { reason, was: order.status }, user.userId);
         audit = { reason };
+      } else if (action === "track") {
+        // A shipment the buyer follows inside the order: who carries it, its tracking, when it ships and arrives.
+        await need("purchasing.manage", "You can't follow shipments.");
+        status("approved", "sent", "confirmed", "partly_received");
+        audit = await this.track(client, workspaceId, order, body, user.userId);
+        await set(`notes = notes`, []);
       } else {
         throw new BadRequestException("Unknown action.");
       }
+      // Work waiting on a line that won't come any more (or came) isn't blocked by it now.
+      if (["cancel", "cancel_line", "close"].includes(action)) await closeSettledBlockers(client, workspaceId, { orderId }, user.userId);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `purchase_order.${action}`, entityType: "purchase_order", entityId: orderId, after: audit });
       const detail = await this.detail(client, workspaceId, orderId, user.userId);
       return { ...detail, email, reordered };
@@ -481,6 +497,15 @@ export class OrdersService {
       contracts: await this.contracts(client, workspaceId, order),
       neededBy: await this.neededBy(client, workspaceId, lines),
       ...(await this.funds(client, workspaceId, order, userId)),
+      shipments: await readShipments(client, workspaceId, orderId),
+      /** Its projects on hold now, while it isn't placed or going ahead anyway. */
+      holdProjects: order.holdOverrideAt || !["draft", "pending_approval", "approved"].includes(order.status) ? [] : await this.projectsOnHold(client, workspaceId, orderId),
+      /** The supplier's invoices for it and how they matched (for people who see supplier bills). */
+      bills: await this.access.hasPermission(client, workspaceId, userId, "payables.view")
+        ? (await readBills(client, workspaceId, { orderId })).map((bill) => ({ id: bill.id, number: bill.number, invoiceDate: bill.invoiceDate, status: bill.status, holdReasons: bill.holdReasons,
+          total: bill.total, balance: bill.balance, currency: bill.currency })) : null,
+      /** Work on its projects waiting for its lines. */
+      blockers: await readLineBlockers(client, workspaceId, { orderId }),
     };
   }
 
@@ -494,15 +519,7 @@ export class OrdersService {
 
   /** When each line's goods are needed on its project, from the plan (lines with no date are left out). */
   private async neededBy(client: Db, workspaceId: string, lines: OrderLine[]) {
-    const dates: Record<string, string> = {};
-    for (const projectId of new Set(lines.map((line) => line.projectId).filter((id): id is string => Boolean(id)))) {
-      const needs = new Map((await readNeeds(client, workspaceId, false, projectId)).map((need) => [need.key, need.neededBy]));
-      for (const line of lines.filter((item) => item.projectId === projectId)) {
-        const date = line.materialItemId ? needs.get(`material:${line.materialItemId}`) : line.boqLineId ? needs.get(`line:${line.boqLineId}`) : null;
-        if (date) dates[line.id] = date;
-      }
-    }
-    return dates;
+    return linesNeededBy(client, workspaceId, lines);
   }
 
   private async rights(client: Db, workspaceId: string, userId: string) {
@@ -584,6 +601,16 @@ export class OrdersService {
         if (!(await client.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 AND status IN ('active', 'on_hold')`, [workspaceId, projectId])).rowCount)
           throw new BadRequestException(`Line ${index + 1}: choose a running project.`);
       }
+      // Restocking free stock: the line names the stock item it refills, in that item's name and unit.
+      let stockItemId: string | null = null;
+      if (source === "free" && input.stockItemId) {
+        if (projectId) throw new BadRequestException(`Line ${index + 1}: restocking is for free stock, not a project.`);
+        const item = (await client.query<{ id: string; name: string; unit: string }>(`SELECT id, name, unit FROM stock_items WHERE workspace_id = $1 AND id = $2 AND active`,
+          [workspaceId, uuid(input.stockItemId, "Stock item")])).rows[0];
+        if (!item) throw new BadRequestException(`Line ${index + 1}: that stock item isn't kept.`);
+        origin = { projectId: "", title: item.name, detail: "", unit: item.unit, catalogItemId: null };
+        stockItemId = item.id;
+      }
       const description = text(input.description, 500, "Description") || origin?.title || "";
       if (!description) throw new BadRequestException(`Line ${index + 1}: say what's being ordered.`);
       const quantity = amount(input.quantity, `Line ${index + 1}: quantity`);
@@ -603,7 +630,7 @@ export class OrdersService {
       out.push({ id, source, materialItemId: source === "material" ? input.materialItemId as string : null, boqLineId: source === "line" ? input.boqLineId as string : null, projectId,
         description, specification: text(input.specification, 1000, "Specification") || (input.specification === undefined ? origin?.detail ?? "" : ""),
         quantity, unit: this.unit(text(input.unit, 40, "Unit"), origin, index), unitPrice: unitPrice ?? "0", discountPercent, taxRate,
-        replacesLineId: typeof input.replacesLineId === "string" && UUID.test(input.replacesLineId) ? input.replacesLineId : null });
+        replacesLineId: typeof input.replacesLineId === "string" && UUID.test(input.replacesLineId) ? input.replacesLineId : null, stockItemId });
     }
     return out;
   }
@@ -696,20 +723,22 @@ export class OrdersService {
         const arrived = Dec.of(before.accepted).add(before.pending);
         if (Dec.of(line.quantity).cmp(arrived) < 0) throw new ConflictException(`${before.description}: ${arrived.toString()} ${before.unit} has already arrived; order at least that.`);
       }
+      // A restock line keeps the stock item it refills while it stays a free line for no project, in that item's unit.
+      const stockItemId = line.source === "free" && !line.projectId ? line.stockItemId ?? (before?.unit.toLocaleLowerCase() === line.unit.toLocaleLowerCase() ? before?.stockItemId ?? null : null) : null;
       const values = [line.id, workspaceId, orderId, position, line.projectId, line.source, line.materialItemId, line.boqLineId, line.description, line.specification, line.quantity, line.unit,
-        line.unitPrice, line.discountPercent, line.taxRate, amounts.net, amounts.tax, amounts.total, line.replacesLineId ?? before?.replacesLineId ?? null];
+        line.unitPrice, line.discountPercent, line.taxRate, amounts.net, amounts.tax, amounts.total, line.replacesLineId ?? before?.replacesLineId ?? null, stockItemId];
       // A new line never takes an id already used elsewhere.
       if (!before && (await client.query(`SELECT 1 FROM purchase_order_lines WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id])).rowCount) values[0] = randomUUID();
       if (before)
         await client.query(
           `UPDATE purchase_order_lines SET position = $4, project_id = $5, source = $6, material_item_id = $7, boq_line_id = $8, description = $9, specification = $10, quantity = $11,
-                  unit = $12, unit_price = $13, discount_percent = $14, tax_rate = $15, net = $16, tax = $17, total = $18, replaces_line_id = $19
+                  unit = $12, unit_price = $13, discount_percent = $14, tax_rate = $15, net = $16, tax = $17, total = $18, replaces_line_id = $19, stock_item_id = $20
             WHERE id = $1 AND workspace_id = $2 AND order_id = $3`, values);
       else
         await client.query(
           `INSERT INTO purchase_order_lines (id, workspace_id, order_id, position, project_id, source, material_item_id, boq_line_id, description, specification, quantity, unit, unit_price,
-                                             discount_percent, tax_rate, net, tax, total, replaces_line_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`, values);
+                                             discount_percent, tax_rate, net, tax, total, replaces_line_id, stock_item_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`, values);
     }
     const totals = orderTotals(priced.map((item) => item.amounts), decimals);
     await client.query(`UPDATE purchase_orders SET subtotal = $3, discount_total = $4, tax_total = $5, total = $6 WHERE workspace_id = $1 AND id = $2`,
@@ -736,6 +765,79 @@ export class OrdersService {
       for (const { projectId, reference } of chosen)
         if (!(await clientChoicesSignedOff(client, workspaceId, projectId))) throw new ConflictException(`The client hasn't signed off ${reference}'s material list yet.`);
     }
+  }
+
+  /** The projects on an order that are on hold now. */
+  private async projectsOnHold(client: Db, workspaceId: string, orderId: string) {
+    return (await client.query<{ id: string; reference: string }>(
+      `SELECT DISTINCT project.id, project.reference FROM purchase_order_lines line
+         JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
+        WHERE line.workspace_id = $1 AND line.order_id = $2 AND project.status = 'on_hold' ORDER BY project.reference`, [workspaceId, orderId])).rows;
+  }
+
+  /**
+   * Hold means hold: an order for a project on hold goes ahead only when someone who buys or approves says
+   * why (once per order; the reason is kept on it and the projects' managers hear).
+   */
+  private async goesAheadOnHold(client: Db, workspaceId: string, order: OrderDetail, body: Record<string, unknown>, userId: string,
+    set: (sql: string, values: unknown[]) => Promise<unknown>) {
+    if (order.holdOverrideAt) return;
+    const held = await this.projectsOnHold(client, workspaceId, order.id);
+    if (!held.length) return;
+    const reason = text(body.holdReason, 500, "Reason");
+    const names = held.map((project) => project.reference).join(", ");
+    if (!reason) throw new ConflictException(`${names} ${held.length === 1 ? "is" : "are"} on hold. Say why this order goes ahead anyway.`);
+    await set(`hold_override_by = $3, hold_override_at = now(), hold_override_reason = $4`, [userId, reason]);
+    await orderEvent(client, workspaceId, order.id, "hold_override", { reason, projects: held.map((project) => project.reference) }, userId);
+    await this.tell(client, workspaceId, order, "purchasing.hold_override", await this.projectManagers(client, workspaceId, held.map((project) => project.id)), userId,
+      `${names}: ${reason}`.slice(0, 480));
+  }
+
+  /** The active managers of these projects. */
+  private async projectManagers(client: Db, workspaceId: string, projectIds: string[]) {
+    if (!projectIds.length) return [];
+    return (await client.query<{ userId: string }>(
+      `SELECT DISTINCT membership.user_id AS "userId" FROM project_assignments assignment
+         JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
+        WHERE assignment.workspace_id = $1 AND assignment.project_id = ANY($2::uuid[]) AND assignment.active AND assignment.is_manager`, [workspaceId, projectIds])).rows.map((row) => row.userId);
+  }
+
+  /**
+   * Adds or updates a shipment on an order (version-checked when it exists). An expected arrival that
+   * moves later, or a shipment marked delayed, tells the buyer and the projects' managers once per date.
+   */
+  private async track(client: Db, workspaceId: string, order: OrderDetail, body: Record<string, unknown>, userId: string) {
+    const id = uuid(body.shipmentId, "Shipment");
+    const existing = (await client.query<{ status: string; eta: string | null; version: number; orderId: string }>(
+      `SELECT status, eta::text AS eta, version, order_id AS "orderId" FROM purchase_order_shipments WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, id])).rows[0];
+    if (existing && existing.orderId !== order.id) throw new BadRequestException("That shipment is on another order.");
+    if (existing && body.shipmentVersion !== existing.version) throw new ConflictException("Someone else changed this shipment. Reload to see their changes.");
+    const carrier = text(body.carrier, 120, "Carrier");
+    const trackingRef = text(body.trackingRef, 120, "Tracking reference");
+    const trackingUrl = text(body.trackingUrl, 500, "Tracking link");
+    if (trackingUrl && !/^https?:\/\/\S+$/i.test(trackingUrl)) throw new BadRequestException("The tracking link starts with https://.");
+    const shipStatus = oneOf(body.status ?? existing?.status ?? "booked", SHIPMENT_STATUSES, "Shipment status");
+    const shippedOn = date(body.shippedOn, "Shipped on");
+    const eta = date(body.eta, "Expected on");
+    if (eta && shippedOn && eta < shippedOn) throw new BadRequestException("It can't arrive before it ships.");
+    if (!carrier && !trackingRef && !eta) throw new BadRequestException("Add the carrier, the tracking reference or when it arrives.");
+    const note = text(body.note, 500, "Note");
+    if (shipStatus === "delayed" && !note && !eta) throw new BadRequestException("Say why it's delayed, or when it now arrives.");
+    if (existing)
+      await client.query(`UPDATE purchase_order_shipments SET carrier = $3, tracking_ref = $4, tracking_url = $5, status = $6, shipped_on = $7, eta = $8, note = $9, updated_by = $10,
+          version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, carrier, trackingRef, trackingUrl, shipStatus, shippedOn, eta, note, userId]);
+    else
+      await client.query(`INSERT INTO purchase_order_shipments (id, workspace_id, order_id, carrier, tracking_ref, tracking_url, status, shipped_on, eta, note, created_by, updated_by)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)`, [id, workspaceId, order.id, carrier, trackingRef, trackingUrl, shipStatus, shippedOn, eta, note, userId]);
+    await orderEvent(client, workspaceId, order.id, existing ? "shipment_updated" : "shipment_added", { carrier, trackingRef, status: shipStatus, eta, was: existing?.eta ?? null, note }, userId);
+    const later = Boolean(eta && existing?.eta && eta > existing.eta);
+    if (later || (shipStatus === "delayed" && existing?.status !== "delayed")) {
+      const projects = (await client.query<{ id: string }>(`SELECT DISTINCT project_id AS id FROM purchase_order_lines WHERE workspace_id = $1 AND order_id = $2 AND project_id IS NOT NULL`,
+        [workspaceId, order.id])).rows.map((row) => row.id);
+      await this.tell(client, workspaceId, order, "purchasing.shipment_late", [order.createdBy, order.submittedBy, ...await this.projectManagers(client, workspaceId, projects)], userId,
+        [eta ? `now arrives ${eta}${existing?.eta ? ` (was ${existing.eta})` : ""}` : "delayed", note].filter(Boolean).join(": ").slice(0, 480), false, `${id}:${eta ?? shipStatus}`);
+    }
+    return { shipmentId: id, carrier, trackingRef, status: shipStatus, eta, was: existing?.eta ?? null };
   }
 
   /** An order with a supplier on hold waits until someone who approves orders says it continues. */
@@ -800,13 +902,13 @@ export class OrdersService {
     await this.tell(client, workspaceId, order, "purchasing.approval_needed", approvers.map((row) => row.userId), actorId, "", true);
   }
 
-  private async tell(client: Db, workspaceId: string, order: OrderDetail, code: string, userIds: Array<string | null>, actorId: string, note: string, email = false) {
+  private async tell(client: Db, workspaceId: string, order: OrderDetail, code: string, userIds: Array<string | null>, actorId: string, note: string, email = false, once?: string) {
     const actor = (await client.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [actorId])).rows[0]?.name ?? "Someone";
     const amount = `${order.currency} ${Dec.of(order.total).toFixed(currencyDecimals(order.currency))}`;
     const variables = { order: order.number, supplier: order.supplierName, amount, actor, note };
     for (const userId of new Set(userIds.filter((id): id is string => Boolean(id) && id !== actorId))) {
       const message = { workspaceId, recipientUserId: userId, code, eventType: code, variables, deepLink: `/workspace/purchasing/orders?order=${order.id}` };
-      const key = `${code}:${order.id}:${order.version}:${userId}`;
+      const key = `${code}:${order.id}:${once ?? order.version}:${userId}`.slice(0, 200);
       await notifyUserInApp(client, { ...message, idempotencyKey: key });
       if (email) await queueUserEmail(client, { ...message, idempotencyKey: `${key}:email` });
     }

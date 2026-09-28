@@ -4,7 +4,8 @@
 --    lead, QC inspector) and for Finance (finance, finance approver). Kits that deliver projects list the
 --    delivery templates; every kit lists the finance ones. Existing workspaces get the roles they're
 --    missing (editable, unassigned), so someone other than the Owner can approve orders, output and bills.
--- 2. Reorder points: free stock of an item at a place (or everywhere) at or below its point is low.
+-- 2. Reorder points: free stock of an item at a place (or everywhere) at or below its point is low, and an
+--    order line bought to restock it names the stock item it refills.
 -- 3. Shipment tracking inside an order: carrier, tracking reference and link, shipped and expected dates.
 -- 4. Ordering for a project on hold needs the buyer's reason, kept on the order.
 -- 5. A late supplier line blocks the work that needs it: one blocker per line, closed when the goods are in.
@@ -80,6 +81,12 @@ CREATE TABLE stock_reorder_points (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX stock_reorder_points_key ON stock_reorder_points (workspace_id, item_id, coalesce(location_id, '00000000-0000-0000-0000-000000000000'::uuid));
+--> statement-breakpoint
+-- A line bought to restock free stock names the stock item it refills, so what arrives lands on that item.
+ALTER TABLE purchase_order_lines
+  ADD COLUMN stock_item_id uuid,
+  ADD CONSTRAINT purchase_order_lines_stock_item FOREIGN KEY (workspace_id, stock_item_id) REFERENCES stock_items (workspace_id, id),
+  ADD CONSTRAINT purchase_order_lines_restock_free CHECK (stock_item_id IS NULL OR (source = 'free' AND project_id IS NULL));
 --> statement-breakpoint
 CREATE TABLE purchase_order_shipments (
   id uuid PRIMARY KEY,

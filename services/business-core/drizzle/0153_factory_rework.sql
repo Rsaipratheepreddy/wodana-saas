@@ -63,6 +63,7 @@ INSERT INTO notification_templates (workspace_id, code, channel, locale, version
 SELECT workspace.id, template.code, 'in_app', 'en', 1, 'approved', template.subject, template.body, template.variables::jsonb, now()
 FROM workspaces workspace CROSS JOIN (VALUES
   ('factory.rework', '{{order}} goes back into production', '{{note}}', '["order", "item", "project", "actor", "note"]'),
-  ('factory.drawing_stale', '{{order}}: its drawing has a newer revision', '{{note}}', '["order", "item", "project", "actor", "note"]')
+  ('factory.drawing_stale', '{{order}}: its drawing has a newer revision', '{{note}}', '["order", "item", "project", "actor", "note"]'),
+  ('stock.transfer_rejected', 'Move {{transfer}}: goods refused at {{to}}', '{{actor}}: {{note}}. They''re on their way back.', '["transfer", "from", "to", "actor", "note"]')
 ) AS template (code, subject, body, variables)
 ON CONFLICT (workspace_id, code, channel, locale, version_number) DO NOTHING;
