@@ -11,7 +11,6 @@ import { PortalFrame } from "./portal-frame";
 import { PortalWorkspace } from "./portal-workspace";
 import styles from "./portal.module.css";
 import { SignIn } from "./sign-in";
-import { useDeviceTheme } from "./use-device-theme";
 
 type State = { kind: "loading" } | { kind: "signed-out"; message?: string } | { kind: "failed"; message: string } | { kind: "ready"; view: PortalView };
 
@@ -26,13 +25,13 @@ function PortalSkeleton() {
 }
 
 /**
- * The client portal: the tenant's brand (colours and fonts through the design tokens), light or dark like
- * the client's device, their language and direction. Signed out, it asks for a mobile number (ready when the
+ * The client portal: the tenant's branded surface. Their colours, surface and fonts arrive through the design
+ * tokens; it is always light (the device's dark preference is not followed, so their logo and surface read as
+ * designed), in the client's language and direction. Signed out, it asks for a mobile number (ready when the
  * client came from their invitation link); signed in, it shows the client's projects.
  */
 export function PortalApp({ site, invite = null }: { site: PortalSite; invite?: PortalInvite | null }) {
   const t = useT();
-  const theme = useDeviceTheme();
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const api = useMemo(() => portalApi(site.slug, t), [site.slug, t]);
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -55,7 +54,7 @@ export function PortalApp({ site, invite = null }: { site: PortalSite; invite?: 
   const signOut = async () => { await api.logout().catch(() => null); setState({ kind: "signed-out" }); };
   const style = workspacePrimaryColorStyle({ primaryColor: site.brand.primaryColor, secondaryColor: site.brand.secondaryColor, headingFont: site.brand.headingFont,
     bodyFont: site.brand.bodyFont });
-  return <DesignSystemProvider theme={theme} locale={site.region.locale} currency={site.region.currency} timeZone={site.region.timeZone} portalContainer={container}
+  return <DesignSystemProvider theme="light" locale={site.region.locale} currency={site.region.currency} timeZone={site.region.timeZone} portalContainer={container}
     style={style} data-portal-root>
     <PortalFrame site={site} onSignOut={state.kind === "ready" ? () => void signOut() : undefined}>
       {state.kind === "loading" ? <PortalSkeleton /> : null}

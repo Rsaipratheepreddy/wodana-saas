@@ -88,6 +88,9 @@
   --wd-color-surface: var(--wd-neutral-0);
   --wd-color-surface-subtle: var(--wd-neutral-25);
   --wd-color-surface-muted: var(--wd-neutral-100);
+  /* The tenant's brand surface (their pale primary when they set an accent, else a light tint of their colour):
+     the client portal's header and foot. Always light enough for ink text and a dark logo. */
+  --wd-color-brand-surface: var(--wd-workspace-brand-surface-light, var(--wd-neutral-100));
   /* The light that sweeps across loading placeholders. */
   --wd-color-skeleton-sheen: color-mix(in srgb, var(--wd-color-surface) 78%, transparent);
   --wd-color-surface-hover: #f0f0f0;
@@ -314,6 +317,7 @@
 /* A nested light theme (a design-system provider carrying a tenant's brand, such as the client portal)
    resolves its actions on its own element, like the dark theme does, so the brand reaches them. */
 [data-wd-theme="light"] {
+  --wd-color-brand-surface: var(--wd-workspace-brand-surface-light, var(--wd-neutral-100));
   --wd-color-action-primary: var(--wd-workspace-action-light-primary, #292d32);
   --wd-color-action-primary-hover: var(--wd-workspace-action-light-hover, #41464c);
   --wd-color-action-primary-pressed: var(--wd-workspace-action-light-pressed, #191c20);
@@ -373,6 +377,7 @@
   --wd-color-surface: #191919;
   --wd-color-surface-subtle: #202020;
   --wd-color-surface-muted: #292929;
+  --wd-color-brand-surface: var(--wd-workspace-brand-surface-dark, #202020);
   --wd-color-skeleton-sheen: color-mix(in srgb, var(--wd-color-text) 7%, transparent);
   --wd-color-surface-hover: #303030;
   --wd-color-surface-pressed: #373737;
@@ -462,6 +467,7 @@
   --wd-color-surface: #ffffff;
   --wd-color-surface-subtle: #ffffff;
   --wd-color-surface-muted: #f0f0f0;
+  --wd-color-brand-surface: #f0f0f0;
   --wd-color-surface-hover: #e5e5e5;
   --wd-color-surface-pressed: #d8d8d8;
   --wd-color-surface-selected: #e2ebe5;
@@ -503,6 +509,10 @@
    a DesignSystemProvider can override the semantic tokens. */
 [data-theme],
 [data-wd-theme] {
+  /* The tenant's fonts arrive on the provider's element, so the families resolve there, not once on :root. */
+  --wd-font-sans: var(--wd-workspace-font-body, var(--font-jakarta, "Plus Jakarta Sans")), ui-sans-serif, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --wd-font-display: var(--wd-workspace-font-heading, var(--wd-font-sans));
   --wd-brand-gradient: var(--wd-color-action-primary);
   --wd-illustration-ink: var(--wd-color-text-tertiary);
   --wd-illustration-fill: var(--wd-color-surface-muted);

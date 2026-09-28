@@ -159,15 +159,21 @@ export function workspacePrimaryColorStyle(value: string | null | undefined | Wo
     darkStep(0.46, 0.65), darkStep(0.56, 0.78), darkStep(0.65, 0.9),
   ];
 
-  if (surfaceColor && brand.secondaryColor) {
-    const surface = parseHex(surfaceColor);
+  // With an accent (secondary) set, the primary is the tenant's surface colour rather than their action colour.
+  const surface = surfaceColor && brand.secondaryColor ? parseHex(surfaceColor) : null;
+  if (surface) {
     lightPalette[0] = toHex(mixRgb(surface, WHITE, 0.3));
     lightPalette[1] = toHex(mixRgb(surface, WHITE, 0.55));
     lightPalette[2] = toHex(surface);
   }
+  // The brand surface (the client portal's header and foot) always carries ink text and a dark logo: the tenant's
+  // own surface when it is pale enough, else a light tint of it; without a separate surface, a light tint of the brand.
+  const lightSurface = surface ? (contrast(surface, INK) >= 4.5 ? toHex(surface) : toHex(mixRgb(surface, WHITE, 0.25))) : lightPalette[1];
 
   return {
     ...fontStyle,
+    "--wd-workspace-brand-surface-light": lightSurface,
+    "--wd-workspace-brand-surface-dark": darkPalette[0],
     "--wd-workspace-brand-light-50": lightPalette[0],
     "--wd-workspace-brand-light-100": lightPalette[1],
     "--wd-workspace-brand-light-200": lightPalette[2],

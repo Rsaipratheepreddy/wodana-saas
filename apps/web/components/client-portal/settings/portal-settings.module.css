@@ -12,8 +12,8 @@
   color: var(--wd-color-text);
   font-family: var(--wd-font-sans);
 }
-.previewHeader { display: flex; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-3) var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
-.previewLogo { display: block; block-size: var(--wd-space-8); inline-size: auto; max-inline-size: 8rem; object-fit: contain; }
+.previewHeader { display: flex; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-3) var(--wd-space-4); background: var(--wd-color-brand-surface); }
+.previewLogo { display: block; block-size: var(--wd-space-10); inline-size: auto; max-inline-size: 10rem; object-fit: contain; }
 .previewName {
   font-family: var(--wd-font-display);
   font-weight: var(--wd-weight-semibold);
@@ -44,4 +44,4 @@
   font-size: var(--wd-text-md);
   font-weight: var(--wd-weight-semibold);
 }
-.previewFooter { padding: var(--wd-space-3) var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.previewFooter { padding: var(--wd-space-3) var(--wd-space-4); background: var(--wd-color-brand-surface); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
