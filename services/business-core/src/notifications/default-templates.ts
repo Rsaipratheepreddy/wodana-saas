@@ -191,6 +191,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.stage_ready", channel: "in_app", subject: "{{stage}} can be finished · {{title}}", body: "Everything it needs is done.", variables: ["title", "clientName", "actor", "stage", "note"] },
   { code: "project.materials_waiting", channel: "in_app", subject: "Material list waiting on the client · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.milestone_due", channel: "in_app", subject: "To invoice · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.over_ordered", channel: "in_app", subject: "Ordered more than {{actor}} leaves · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.client_update_ready", channel: "in_app", subject: "Client update to approve · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "work.assigned", channel: "in_app", subject: "{{task}} is yours", body: "{{actor}} gave you {{task}} on {{title}}.", variables: ["title", "clientName", "actor", "task", "due"] },
   { code: "work.assigned", channel: "email", subject: "{{task}} is yours · {{title}}", body: "{{actor}} gave you {{task}} on {{title}} for {{clientName}}. {{due}}", variables: ["title", "clientName", "actor", "task", "due"] },

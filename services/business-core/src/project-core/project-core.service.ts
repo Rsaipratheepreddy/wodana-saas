@@ -27,6 +27,7 @@ import { ensureWorkTemplates, parseTemplateTasks } from "./work-templates";
 import { readReadyCases, readStartState, startProject } from "./project-start";
 import { moneyAccess } from "./project-access";
 import { decideClientUpdate } from "./client-updates";
+import { tellBuyersOverOrdered } from "./variation-orders";
 import { holdLength, shiftForHold } from "./project-hold";
 import { noticeStageReady } from "./project-stage-watch";
 import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
@@ -436,8 +437,9 @@ export class ProjectCoreService {
           [sealId, workspaceId, projectId, quote.id, quote.number, label, decision.quoteHash, JSON.stringify(snapshot), canonicalHash(snapshot), scope.quote.currency,
             scope.pricing.total, decision.decidedAt, decision.decidedBy, decision.method ?? "portal", decision.recordedBy ?? null, user.userId]);
         await applyVariation(client, workspaceId, projectId, { id: sealId, label }, scope.lines, user.userId);
-        // Work orders the variation removed or reduced stop; the factory hears which.
+        // Work orders the variation removed or reduced stop; the factory hears which, and buyers hear what's now over-ordered.
         await tellScopeChanges(client, workspaceId, projectId, user.userId, sealId);
+        await tellBuyersOverOrdered(client, workspaceId, project, { id: sealId, label }, user.userId);
         notices.push({ key: `variation:${quote.id}`, notice: { code: "project.variation_applied", variation: label, amount: `${scope.quote.currency} ${scope.pricing.total}`, memberships: teamIds() } });
         audit = { quoteId: quote.id, label, total: scope.pricing.total };
       } else if (["confirm_check", "unconfirm_check", "complete_stage", "skip_stage", "reopen_stage"].includes(action)) {

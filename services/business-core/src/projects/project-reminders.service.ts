@@ -5,6 +5,7 @@ import { processDesignDeadlines } from "../design/design-journey.store";
 import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { processHrmsCheckouts, processHrmsDocuments } from "../hrms/hrms-reminders";
 import { processClientUpdateDrafts } from "../project-core/client-updates";
+import { processLateSupplies } from "../project-core/late-supplies";
 import { processMaterialsWaiting, processMilestonesDue, processStagesReady, processWeeklySummaries } from "../project-core/delivery-reminders";
 import { processSiteReports, processWarrantyExpiry } from "../site/site-reminders";
 import { processProjectBudgets } from "../project-core/project-money";
@@ -31,7 +32,7 @@ export class ProjectRemindersService {
     const workspaces = await this.db.query<{ workspace_id: string }>(
       "SELECT workspace_id FROM list_reminder_workspaces()",
     );
-    const totals = { created: 0, decisionReminders: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, designAlerts: 0,
+    const totals = { created: 0, decisionReminders: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, lateSupplyBlockers: 0, designAlerts: 0,
       workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, payablesDue: 0, retentionReleased: 0, overBudget: 0,
       receivablesOverdue: 0, checkoutReminders: 0, documentReminders: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
@@ -46,6 +47,8 @@ export class ProjectRemindersService {
           milestones: await processMilestonesDue(client, workspaceId),
           clientUpdates: await processClientUpdateDrafts(client, workspaceId),
           purchasing: await processPurchasingDeadlines(client, workspaceId),
+          // A late supplier holds up the work waiting for its goods (a blocker, closed by itself once received).
+          lateSupplies: await processLateSupplies(client, workspaceId),
           suppliers: await processSupplierDocuments(client, workspaceId),
           factory: await processFactoryDeadlines(client, workspaceId),
           site: await processSiteReports(client, workspaceId),
@@ -64,6 +67,7 @@ export class ProjectRemindersService {
         totals.materialsWaiting += run.materials.sent;
         totals.milestonesDue += run.milestones.sent;
         totals.clientUpdates += run.clientUpdates.drafted;
+        totals.lateSupplyBlockers += run.lateSupplies.raised;
         totals.designAlerts += (run.design?.alerted ?? 0) + (run.design?.closed ?? 0);
         totals.workReminders += run.work.sent;
         totals.lateOrders += run.purchasing.sent;
