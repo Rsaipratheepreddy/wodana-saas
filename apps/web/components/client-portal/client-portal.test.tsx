@@ -79,6 +79,22 @@ describe("client portal", () => {
     expect(sent(fetcher, "login")).toEqual([{ challengeId: "ch1", code: "123456" }]);
   });
 
+  it("stays light with the tenant's logo and surface on top, whatever the device prefers", async () => {
+    mount((url) => (url.endsWith("/view") ? { status: 401, body: {} } : { body: {} }));
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("dark"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    const branded = { ...site, brand: { ...site.brand, primaryColor: "#E4E3DE", secondaryColor: "#000000", logoUrl: "/api/auth/tenant-logo/studio?v=1" } };
+    render(<PortalApp site={branded} />);
+    expect(await screen.findByRole("heading", { name: "Welcome home" })).toBeInTheDocument();
+    const root = document.querySelector<HTMLElement>("[data-portal-root]")!;
+    expect(root).toHaveAttribute("data-wd-theme", "light");
+    expect(root.style.getPropertyValue("--wd-workspace-brand-surface-light")).toBe("#E4E3DE");
+    expect(root.style.getPropertyValue("--wd-workspace-action-light-primary")).toBe("#000000");
+    expect(root.style.getPropertyValue("--wd-workspace-font-heading")).toContain("Montserrat");
+    expect(within(screen.getByRole("banner")).getByRole("img", { name: "Studio Interiors" })).toHaveAttribute("src", "/api/auth/tenant-logo/studio?v=1");
+    expect(within(screen.getByRole("contentinfo")).getByText("Powered by Wodana")).toBeInTheDocument();
+    expect(within(screen.getByRole("banner")).queryByText("Powered by Wodana")).not.toBeInTheDocument();
+  });
+
   it("lets a client who typed the wrong number start again", async () => {
     mount((url) => (url.endsWith("/view") ? { status: 401, body: {} } : { body: { challengeId: "ch1", channel: "whatsapp", expiresIn: 300, resendAfter: 30 } }));
     const user = userEvent.setup();
@@ -166,6 +182,18 @@ describe("client portal", () => {
     expect(screen.getByText("Studio Interiors")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /care@studio\.example/ })).toHaveAttribute("href", "mailto:care@studio.example");
     expect(screen.getByText("Powered by Wodana")).toBeInTheDocument();
+  });
+
+  it("opens from an invitation link with the client's number ready, and says when the link has expired", async () => {
+    const fetcher = mount((url) => (url.endsWith("/view") ? { status: 401, body: {} } : { body: { challengeId: "ch1", channel: "whatsapp", expiresIn: 300, resendAfter: 30 } }));
+    const user = userEvent.setup();
+    const first = render(<PortalApp site={site} invite={{ status: "valid", name: "Maya", phone: "+12025550123" }} />);
+    await user.click(await screen.findByRole("button", { name: "Send code by WhatsApp" }));
+    await waitFor(() => expect(sent(fetcher, "challenge")).toEqual([{ phone: "+12025550123", channel: "whatsapp" }]));
+    first.unmount();
+    render(<PortalApp site={site} invite={{ status: "expired" }} />);
+    expect(await screen.findByText("This invite link has expired. Sign in with your mobile number, or ask your project team for a new one.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /Mobile number/ })).toHaveValue("");
   });
 
   it("reads right to left in Arabic", async () => {

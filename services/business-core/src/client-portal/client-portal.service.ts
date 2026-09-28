@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
 import { CommercialService } from "../commercial/commercial.service";
@@ -10,11 +9,13 @@ import { DatabaseService } from "../database/database.service";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { PreProjectDefinitionService } from "../pre-projects/pre-project-definition.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
-import { confirmName, mobileNumber, openSession, PortalCodes, sendCode, signIn, signOut, useCode, type Channel, type Delivery, type PortalContact } from "./portal-auth";
+import { confirmName, mobileNumber, openSession, portalCodes, sendCode, signIn, signOut, useCode, type Channel, type Delivery, type PortalContact, type PortalCodes } from "./portal-auth";
 import {
   answerRequest, assertDecisionOpen, claimWarranty, comment, decideDefinition, decideDesign, decideHandover, decideMaterials, decideQuote, grantFor, raiseRequest,
   type DecisionContext,
 } from "./portal-decisions";
+import { openInvitation } from "./portal-invitations";
+import { tellStaffClientSignedIn } from "./portal-notices";
 import { isImage, readView, workspaceToday } from "./portal-read";
 import { readPortalSettings, type PortalSettings } from "./portal-settings";
 import { findSite, readSite } from "./portal-site";
@@ -47,9 +48,8 @@ export class ClientPortalService {
   ) {
     const production = config.get("NODE_ENV") === "production";
     if (config.get("PORTAL_DEMO_OTP") === "true" && production) throw new Error("PORTAL_DEMO_OTP cannot be enabled in production.");
-    const secret = config.get<string>("PORTAL_OTP_SECRET") ?? "";
-    if (production && secret.length < 32) throw new Error("Set a stable PORTAL_OTP_SECRET of at least 32 characters for production.");
-    this.codes = new PortalCodes(secret || config.get<string>("LOCAL_AUTH_JWT_SECRET") || randomBytes(32).toString("hex"), config.get("PORTAL_DEMO_OTP") === "true" && !production);
+    if (production && (config.get<string>("PORTAL_OTP_SECRET") ?? "").length < 32) throw new Error("Set a stable PORTAL_OTP_SECRET of at least 32 characters for production.");
+    this.codes = portalCodes(config);
   }
 
   private delivery(): Delivery {
@@ -87,11 +87,25 @@ export class ClientPortalService {
     });
   }
 
+  /** Signs the client in; the first time they open a project, the people running it hear about it. */
   async login(slug: string, body: Record<string, unknown>) {
-    const result = await this.within(slug, (client, workspaceId) =>
-      signIn(client, workspaceId, this.codes, { challengeId: typeof body.challengeId === "string" ? body.challengeId : "", code: typeof body.code === "string" ? body.code : "" }));
+    const result = await this.within(slug, async (client, workspaceId) => {
+      const session = await signIn(client, workspaceId, this.codes, { challengeId: typeof body.challengeId === "string" ? body.challengeId : "", code: typeof body.code === "string" ? body.code : "" });
+      if (session?.firstSignIns.length) await tellStaffClientSignedIn(client, workspaceId, session.firstSignIns);
+      return session;
+    });
     if (!result) throw new BadRequestException("That code isn't right or has expired. Check it, or ask for a new one.");
-    return result;
+    const { firstSignIns: _first, ...session } = result;
+    return session;
+  }
+
+  /** What an invitation link opens: the client's number ready to sign in, or that the link no longer works. */
+  invitation(slug: string, token: string) {
+    return this.within(slug, async (client, workspaceId) => {
+      const found = await openInvitation(client, workspaceId, token);
+      if (!found) throw new NotFoundException("This invite link isn't valid any more.");
+      return found;
+    });
   }
 
   view(slug: string, token: string) {

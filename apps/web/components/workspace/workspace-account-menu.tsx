@@ -108,7 +108,7 @@ export function WorkspaceAccountMenu({ user, setup }: { user: WorkspaceUser; set
       </DialogTrigger>
       {setup ? <DesignSystemProvider {...inherited} className={styles.setupDialogHost} theme={inherited.theme === "high-contrast" ? inherited.theme : theme === "dark" ? "dark" : "light"}>
         <ControlledModalDialog isOpen={setupOpen} onOpenChange={setSetupOpen} title={t("Set up your workspace")} description={t("{completed} of {total} complete", { completed, total })} size="lg">
-          <WorkspaceSetupChecklist modules={setup.modules} readiness={readiness} />
+          <WorkspaceSetupChecklist modules={setup.modules} readiness={readiness} onNavigate={() => setSetupOpen(false)} />
         </ControlledModalDialog>
       </DesignSystemProvider> : null}
     </div>

@@ -31,6 +31,9 @@ apps/web/app/testing
 apps/web/e2e
 docs/qa-*
 apps/mobile
+!apps/mobile/assets/brand/palm-living-logo.png
 **/storybook-static
 tmp
 .DS_Store
+# Local agent worktrees and tooling state never enter an image.
+.claude

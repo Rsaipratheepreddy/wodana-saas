@@ -36,7 +36,7 @@ export function FactoryPage({ workspaceId, section: initialSection }: { workspac
   const open = state?.orders.filter((order) => ["planned", "released", "in_production", "on_hold"].includes(order.status)).length ?? 0;
   return <div className={styles.page}>
     <PageHeader title={t("Factory")} />
-    <Tabs selectedKey={section} onSelectionChange={(key) => go(key as FactorySection)} items={[
+    <Tabs tour="factory-tab" selectedKey={section} onSelectionChange={(key) => go(key as FactorySection)} items={[
       { id: "to-make", label: t("To make"), panel: <ToMake api={api} state={state} error={error} onReload={() => void load()} onPlanned={(id) => { void load(); go("orders", id); }} /> },
       { id: "orders", label: open ? t("Work orders ({count})", { count: open }) : t("Work orders"),
         panel: <WorkOrders api={api} state={state} error={error} openId={openId} onReload={() => void load()} onOpen={(id) => go("orders", id)} onBatched={(id) => { void load(); go("batches", id); }} /> },

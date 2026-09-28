@@ -454,7 +454,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           onNewCatalogItem={(title) => void newCatalogLine(draft, title)} onDiscard={() => discardDraft(draft)} onPasteRows={(text) => pasteRows(draft, text)}
           onOpen={() => undefined} onMenu={() => undefined} onDragStart={() => undefined} onDropBefore={() => undefined} onNewTrade={() => undefined} />)}
         {state.canEdit && (depth > 0 || !group.children) ? <div role="row" className={styles.addRow}>
-          <button type="button" onClick={() => addDraft(context)}><Plus aria-hidden="true" size={14} />{t("New line")}</button>
+          <button type="button" data-tour="quote-new-line" data-tour-safe onClick={() => addDraft(context)}><Plus aria-hidden="true" size={14} />{t("New line")}</button>
         </div> : null}
       </>}
     </div>;
@@ -465,16 +465,16 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     <header className={styles.top}>
       <Link href={backHref} className={styles.back} aria-label={t("All quotes")}><ArrowLeft aria-hidden="true" data-directional="true" size={16} /></Link>
       <h1>{t("Q-{number}", { number: state.quote.number })} · {state.quote.title}</h1>
-      <Badge tone={QUOTE_STATUS[state.quote.status]?.tone ?? "neutral"}>{t((QUOTE_STATUS[state.quote.status]?.label ?? state.quote.status) as never)}</Badge>
+      <Badge data-tour="quote-status" tone={QUOTE_STATUS[state.quote.status]?.tone ?? "neutral"}>{t((QUOTE_STATUS[state.quote.status]?.label ?? state.quote.status) as never)}</Badge>
       {state.family.length > 1 ? <span className={styles.revisions}><SegmentedControl label={t("Revisions")} value={state.quote.id} onChange={(id) => router.push(quoteHref(id))}
         options={state.family.map((item, index) => ({ id: item.id, label: t("R{number}", { number: index + 1 }) }))} /></span> : null}
-      <span className={styles.tabs}><SegmentedControl label={t("Quote")} value={tab} onChange={(key) => setTab(key as QuoteTab)}
+      <span className={styles.tabs}><SegmentedControl label={t("Quote")} tour="quote-tab" value={tab} onChange={(key) => setTab(key as QuoteTab)}
         options={[{ id: "items", label: t("Items") }, { id: "terms", label: t("Terms") }, { id: "payments", label: t("Payments") }, { id: "document", label: t("Document") }]} /></span>
       <span className={styles.saving} aria-live="polite">{saving ? t("Saving…") : null}</span>
       <span className={styles.spacer} />
       <PeopleHere people={people} />
-      {toFix ? <button type="button" className={styles.toFix} onClick={() => openPanel("totals")}><CircleAlert aria-hidden="true" size={14} />{toFix === 1 ? t("1 to fix") : t("{count} to fix", { count: toFix })}</button> : null}
-      <button type="button" className={styles.total} aria-label={t("Totals: {amount}", { amount: money(state.pricing.total, currency, decimals, locale) })} onClick={() => openPanel("totals")}>{money(state.pricing.total, currency, decimals, locale)}</button>
+      {toFix ? <button type="button" className={styles.toFix} data-tour="quote-checks" onClick={() => openPanel("totals")}><CircleAlert aria-hidden="true" size={14} />{toFix === 1 ? t("1 to fix") : t("{count} to fix", { count: toFix })}</button> : null}
+      <button type="button" className={styles.total} data-tour="quote-total" aria-label={t("Totals: {amount}", { amount: money(state.pricing.total, currency, decimals, locale) })} onClick={() => openPanel("totals")}>{money(state.pricing.total, currency, decimals, locale)}</button>
       <IconButton className={styles.withCount} aria-label={openThreads ? t("Comments · {count}", { count: openThreads }) : t("Comments")} aria-pressed={panelShown && activePanel === "comments"} onPress={() => (panelShown && activePanel === "comments" ? showSide(false) : openPanel("comments"))}>
         <MessageCircle aria-hidden="true" size={17} />{openThreads ? <span className={styles.countDot}>{openThreads}</span> : null}
       </IconButton>
@@ -534,7 +534,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
             <button type="button" onClick={() => openPanel("catalog")}><Store aria-hidden="true" size={18} /><strong>{t("Pick from the catalog")}</strong><small>{t("Search and add")}</small></button>
             <button type="button" onClick={() => setInserting(true)}><Bookmark aria-hidden="true" size={18} /><strong>{t("Insert a template")}</strong><small>{t("Saved areas and quotes")}</small></button>
           </div> : null}
-          <div ref={scroller} className={styles.gridScroll} style={{ "--visible": visible ? `${visible}px` : "100%" } as React.CSSProperties}><div role="grid" aria-label={t("Quote lines")} className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width, customColumns), "--stick-serial": `${widths.width("gutter")}px`, "--stick-picture": `${widths.width("gutter") + widths.width("serial")}px`,
+          <div ref={scroller} className={styles.gridScroll} style={{ "--visible": visible ? `${visible}px` : "100%" } as React.CSSProperties}><div role="grid" aria-label={t("Quote lines")} data-tour="quote-grid" className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width, customColumns), "--stick-serial": `${widths.width("gutter")}px`, "--stick-picture": `${widths.width("gutter") + widths.width("serial")}px`,
             "--stick-item": `${widths.width("gutter") + widths.width("serial") + (columns.picture ? widths.width("picture") : 0)}px`, "--stick-menu": `${widths.width("menu")}px` } as React.CSSProperties}
             onFocusCapture={(event) => {
               const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");

@@ -1,0 +1,486 @@
+/* Woddy explains: the scripted tour overlay (design-system/patterns/tour-overlay.tsx). */
+.wd-tour {
+  --wd-tour-ease: cubic-bezier(0.45, 0, 0.2, 1);
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--wd-z-toast) - 1);
+  pointer-events: none;
+}
+
+/* The page underneath is shown, not used, while Woddy explains. */
+.wd-tour-blocker {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.wd-tour-spotlight {
+  position: fixed;
+  border-radius: var(--wd-radius-md);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--wd-color-action-primary) 35%, transparent),
+    0 0 0 200vmax color-mix(in srgb, var(--wd-color-overlay) 70%, transparent);
+  transition:
+    inset-block-start var(--wd-tour-glide) var(--wd-tour-ease),
+    inset-inline-start var(--wd-tour-glide) var(--wd-tour-ease),
+    inline-size var(--wd-tour-glide) var(--wd-tour-ease),
+    block-size var(--wd-tour-glide) var(--wd-tour-ease);
+}
+
+.wd-tour-spotlight[data-empty] {
+  box-shadow: 0 0 0 200vmax color-mix(in srgb, var(--wd-color-overlay) 70%, transparent);
+}
+
+.wd-tour-cursor {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: var(--wd-space-12);
+  block-size: var(--wd-space-12);
+  transition: transform var(--wd-tour-glide) var(--wd-tour-ease), opacity var(--wd-duration-slow) var(--wd-ease-standard);
+  will-change: transform;
+}
+
+.wd-tour-cursor[data-hidden] {
+  opacity: 0;
+}
+
+.wd-tour-cursor > * {
+  max-inline-size: none;
+}
+
+/* Following its target (scrolling, a drawer settling): the cursor moves with it, without the glide's lag. */
+.wd-tour-cursor[data-follow] {
+  transition: opacity var(--wd-duration-slow) var(--wd-ease-standard);
+}
+
+.wd-tour-pointer {
+  position: absolute;
+  inset-block-start: calc(var(--wd-space-0-5) * -1);
+  inset-inline-start: calc(var(--wd-space-0-5) * -1);
+  fill: var(--wd-tour-actor, var(--wd-color-action-primary));
+  stroke: var(--wd-color-surface);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.wd-tour[data-rtl] .wd-tour-pointer {
+  transform: scaleX(-1);
+}
+
+.wd-tour-cursor-woddy {
+  position: absolute;
+  inset-block-start: var(--wd-space-5);
+  inset-inline-start: var(--wd-space-4);
+  inline-size: var(--wd-space-6);
+  block-size: var(--wd-space-6);
+  border: 2px solid var(--wd-color-surface);
+  border-radius: var(--wd-radius-round);
+  background: var(--wd-color-surface);
+  box-shadow: var(--wd-shadow-sm);
+  object-fit: cover;
+}
+
+.wd-tour-ripple {
+  position: absolute;
+  inset-block-start: calc(var(--wd-space-5) * -1);
+  inset-inline-start: calc(var(--wd-space-5) * -1);
+  inline-size: var(--wd-space-10);
+  block-size: var(--wd-space-10);
+  border: 2px solid var(--wd-tour-actor, var(--wd-color-action-primary));
+  border-radius: var(--wd-radius-round);
+  opacity: 0;
+  animation: wd-tour-ripple 640ms var(--wd-ease-out);
+}
+
+/* The person working on the step: their role picture and name ride with the cursor. */
+.wd-tour-actor {
+  position: absolute;
+  inset-block-start: var(--wd-space-5);
+  inset-inline-start: var(--wd-space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wd-space-1-5);
+  padding-block: var(--wd-space-0-5);
+  padding-inline: var(--wd-space-0-5) var(--wd-space-2-5);
+  /* Sized to its name: the cursor box it hangs from is only as wide as the pointer. */
+  inline-size: max-content;
+  white-space: nowrap;
+  border: 2px solid var(--wd-tour-actor);
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-surface);
+  color: var(--wd-color-text);
+  box-shadow: var(--wd-shadow-sm);
+  white-space: nowrap;
+}
+
+.wd-tour-actor-avatar {
+  inline-size: var(--wd-space-5);
+  block-size: var(--wd-space-5);
+  border-radius: var(--wd-radius-round);
+  background: var(--wd-color-surface-muted);
+  object-fit: cover;
+}
+
+.wd-tour-actor-name {
+  font-size: var(--wd-text-xs);
+  font-weight: var(--wd-weight-semibold);
+  line-height: var(--wd-leading-tight);
+}
+
+/* Another person takes over: a short, clear card in the middle of the screen. */
+.wd-tour-switch {
+  position: fixed;
+  inset-block-start: 36%;
+  inset-inline: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--wd-space-3);
+  inline-size: max-content;
+  max-inline-size: calc(100vw - var(--wd-space-8));
+  margin-inline: auto;
+  padding: var(--wd-space-5) var(--wd-space-8);
+  border-radius: var(--wd-radius-lg);
+  background: var(--wd-color-surface);
+  color: var(--wd-color-text);
+  box-shadow: var(--wd-shadow-md);
+  animation: wd-tour-pop var(--wd-duration-slow) var(--wd-ease-out);
+}
+
+.wd-tour-switch-avatar {
+  inline-size: var(--wd-space-13);
+  block-size: var(--wd-space-13);
+  border-radius: var(--wd-radius-round);
+  background: var(--wd-color-surface-muted);
+  box-shadow: 0 0 0 3px var(--wd-tour-actor, var(--wd-color-action-primary));
+  object-fit: cover;
+}
+
+.wd-tour-switch-line {
+  font-size: var(--wd-text-lg);
+  font-weight: var(--wd-weight-semibold);
+  text-align: center;
+}
+
+@keyframes wd-tour-pop {
+  from { opacity: 0; transform: translateY(var(--wd-space-2)) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+/* While someone takes over, the page shows through a little more, so the change of view can be seen. */
+.wd-tour[data-phase="switching"] .wd-tour-spotlight {
+  box-shadow: 0 0 0 200vmax color-mix(in srgb, var(--wd-color-overlay) 45%, transparent);
+}
+
+/* Taking over or opening another screen: the cut-out closes at once instead of shrinking across the page. */
+.wd-tour[data-phase="switching"] .wd-tour-spotlight,
+.wd-tour[data-phase="loading"] .wd-tour-spotlight {
+  transition: none;
+}
+
+/* The switch card speaks alone for its moment; the bubble steps back (its controls still work from the keyboard). */
+.wd-tour[data-phase="switching"] .wd-tour-bubble {
+  opacity: 0;
+}
+
+@keyframes wd-tour-ripple {
+  from { opacity: 0.9; transform: scale(0.3); }
+  to { opacity: 0; transform: scale(1.4); }
+}
+
+.wd-tour-bubble {
+  position: fixed;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--wd-space-3);
+  inline-size: min(24rem, calc(100vw - var(--wd-space-8)));
+  padding: var(--wd-space-4);
+  border: 1px solid var(--wd-color-border);
+  border-radius: var(--wd-radius-lg);
+  background: var(--wd-color-surface);
+  color: var(--wd-color-text);
+  box-shadow: var(--wd-shadow-md);
+  outline: none;
+  pointer-events: auto;
+  transition:
+    inset-block-start var(--wd-duration-slow) var(--wd-ease-standard),
+    inset-inline-start var(--wd-duration-slow) var(--wd-ease-standard),
+    opacity var(--wd-duration-base) var(--wd-ease-standard);
+}
+
+
+.wd-tour-bubble:focus-visible {
+  outline: none;
+}
+
+.wd-tour-woddy {
+  inline-size: var(--wd-space-12);
+  block-size: var(--wd-space-12);
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface-muted);
+  object-fit: cover;
+}
+
+.wd-tour-copy {
+  display: grid;
+  gap: var(--wd-space-3);
+  min-inline-size: 0;
+}
+
+.wd-tour-text {
+  margin: 0;
+  font-size: var(--wd-text-md);
+  line-height: var(--wd-leading-copy);
+}
+
+.wd-tour-text[data-note] {
+  color: var(--wd-color-text-secondary);
+}
+
+/* Between screens: a short loading line instead of a jump. It only appears if the wait is noticeable. */
+.wd-tour-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--wd-space-2);
+  margin: 0;
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-md);
+  line-height: var(--wd-leading-copy);
+  animation: wd-tour-fade var(--wd-duration-base) linear 150ms both;
+}
+
+.wd-tour-dots {
+  display: inline-flex;
+  gap: var(--wd-space-1);
+}
+
+.wd-tour-dots > span {
+  inline-size: var(--wd-space-1-5);
+  block-size: var(--wd-space-1-5);
+  border-radius: var(--wd-radius-round);
+  background: var(--wd-tour-actor, var(--wd-color-action-primary));
+  animation: wd-tour-dot 900ms var(--wd-ease-standard) infinite;
+}
+
+.wd-tour-dots > span:nth-child(2) { animation-delay: 150ms; }
+.wd-tour-dots > span:nth-child(3) { animation-delay: 300ms; }
+
+@keyframes wd-tour-dot {
+  0%, 80%, 100% { opacity: 0.3; transform: none; }
+  40% { opacity: 1; transform: translateY(calc(var(--wd-space-0-5) * -1)); }
+}
+
+/* Starting or leaving a tour: the page is covered until the right screen is ready. */
+.wd-tour-loader {
+  position: fixed;
+  inset: 0;
+  z-index: var(--wd-z-toast);
+  display: grid;
+  place-items: center;
+  padding: var(--wd-space-4);
+  background: var(--wd-color-canvas);
+  color: var(--wd-color-text);
+  opacity: 1;
+  animation: wd-tour-fade var(--wd-duration-base) var(--wd-ease-standard);
+  transition: opacity var(--wd-duration-slow) var(--wd-ease-standard);
+}
+
+.wd-tour-loader[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wd-tour-loader-body {
+  display: grid;
+  justify-items: center;
+  gap: var(--wd-space-4);
+  text-align: center;
+}
+
+.wd-tour-loader-woddy {
+  inline-size: var(--wd-space-21);
+  block-size: var(--wd-space-21);
+}
+
+.wd-tour-loader-text {
+  margin: 0;
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-md);
+}
+
+.wd-tour-loader-track {
+  inline-size: min(14rem, 60vw);
+  block-size: var(--wd-space-1);
+  overflow: hidden;
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-surface-muted);
+}
+
+.wd-tour-loader-bar {
+  display: block;
+  block-size: 100%;
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-action-primary);
+  transition: inline-size 480ms var(--wd-ease-out);
+}
+
+/* The demo "view as": the workspace parts outside the current person's work step back. */
+[data-persona-muted] {
+  opacity: 0.38;
+  transition: opacity var(--wd-duration-slow) var(--wd-ease-standard);
+}
+
+/* The header shows whose view the demo is in. */
+.wd-tour-persona-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wd-space-2);
+  padding-block: var(--wd-space-0-5);
+  padding-inline: var(--wd-space-0-5) var(--wd-space-3);
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-surface-muted);
+  color: var(--wd-color-text);
+  font-size: var(--wd-text-sm);
+  font-weight: var(--wd-weight-medium);
+  white-space: nowrap;
+}
+
+/* Tablet: the header is narrower, so the picture alone says whose view it is (the label stays for screen readers). */
+@media (max-width: 64rem) {
+  .wd-tour-persona-badge { padding-inline-end: var(--wd-space-0-5); }
+  .wd-tour-persona-label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+.wd-tour-persona-badge img {
+  inline-size: var(--wd-space-6);
+  block-size: var(--wd-space-6);
+  border-radius: var(--wd-radius-round);
+  box-shadow: 0 0 0 2px var(--wd-tour-actor, var(--wd-color-action-primary));
+  object-fit: cover;
+}
+
+.wd-tour-controls,
+.wd-tour-finish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wd-space-1);
+}
+
+.wd-tour-finish {
+  justify-content: flex-end;
+  gap: var(--wd-space-2);
+}
+
+.wd-tour-count {
+  margin-inline-end: auto;
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.wd-tour-speed {
+  min-inline-size: var(--wd-control-compact);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 480px) {
+  .wd-tour-woddy {
+    inline-size: var(--wd-space-10);
+    block-size: var(--wd-space-10);
+  }
+}
+
+/* Reduced motion: the cursor jumps, the spotlight and bubble fade in place. */
+@media (prefers-reduced-motion: reduce) {
+  .wd-tour-cursor { transition: opacity 160ms linear; }
+  .wd-tour-spotlight { transition: none; animation: wd-tour-fade 220ms linear; }
+  .wd-tour-bubble { transition: none; }
+  .wd-tour-ripple { animation: wd-tour-fade 400ms linear reverse; }
+  .wd-tour-switch { animation: wd-tour-fade 160ms linear; }
+  .wd-tour-dots > span { animation: none; opacity: 0.6; }
+  .wd-tour-loader { animation: none; transition: opacity 120ms linear; }
+  .wd-tour-loader-bar { transition: none; }
+}
+
+@keyframes wd-tour-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The first-run highlight on the Ask Woddy button: Woddy, one line and one click to the walkthrough. */
+.wd-walkthrough {
+  inline-size: min(20rem, calc(100vw - var(--wd-space-8)));
+}
+
+.wd-walkthrough-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--wd-space-3);
+  padding: var(--wd-space-4);
+}
+
+.wd-walkthrough-woddy {
+  inline-size: var(--wd-space-12);
+  block-size: var(--wd-space-12);
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface-muted);
+  object-fit: cover;
+}
+
+.wd-walkthrough-copy {
+  display: grid;
+  gap: var(--wd-space-3);
+}
+
+.wd-walkthrough-text {
+  margin: 0;
+  font-size: var(--wd-text-md);
+  line-height: var(--wd-leading-copy);
+}
+
+.wd-walkthrough-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--wd-space-2);
+}
+
+/* The Woddy menu: explain this screen, and the tours with their length. */
+.wd-tour-menu {
+  min-inline-size: 16rem;
+}
+
+.wd-tour-menu-section {
+  margin-block-start: var(--wd-space-1);
+  padding-block-start: var(--wd-space-1);
+  border-block-start: 1px solid var(--wd-color-border);
+}
+
+.wd-tour-menu-heading {
+  padding: var(--wd-space-1) var(--wd-space-2);
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-xs);
+  font-weight: var(--wd-weight-semibold);
+}
+
+.wd-tour-menu-item {
+  justify-content: space-between;
+  gap: var(--wd-space-3);
+}
+
+.wd-tour-menu-item small {
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-xs);
+  font-variant-numeric: tabular-nums;
+}

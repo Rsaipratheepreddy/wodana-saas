@@ -51,7 +51,7 @@ describe("client portal rules", () => {
     const request = { id: "r", number: 1, title: "Socket", detail: "One more?", status: "open", owner: "Dana Designer", dueDate: "", resolution: "", createdAt: "",
       comments: [{ id: "c1", author: "Dana Designer", at: "", text: "Yes", visibility: "client" }, { id: "c2", author: "Dana Designer", at: "", text: "Check budget", visibility: "internal" },
         { id: "c3", author: "Maya", at: "", text: "Thanks", visibility: "client" }] } as ChangeRequest;
-    const projected = portalRequest(request, { id: "g", caseId: "c", name: "Maya", role: "approver", email: null, confirmed: true });
+    const projected = portalRequest(request, { id: "g", caseId: "c", name: "Maya", role: "approver", email: null, confirmed: true, demo: false });
     expect(projected.comments.map((comment) => [comment.text, comment.fromClient])).toEqual([["Yes", false], ["Thanks", true]]);
     expect(JSON.stringify(projected)).not.toMatch(/Dana Designer|Check budget|owner/);
   });

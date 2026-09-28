@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Button, Form, InlineNotice, PhoneField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { PortalError, type Challenge, type PortalApi } from "@/lib/client-portal/client";
-import type { PortalSite } from "@/lib/client-portal/types";
-import { formatPhoneForDisplay, joinPhone } from "@/lib/phone";
+import type { PortalInvite, PortalSite } from "@/lib/client-portal/types";
+import { formatPhoneForDisplay, joinPhone, splitPhone } from "@/lib/phone";
 import styles from "./portal.module.css";
 import { secondsFromNow, useCountdown } from "./use-countdown";
 
@@ -13,12 +13,14 @@ type Channel = "whatsapp" | "email";
 
 /**
  * Sign in with the mobile number the team has for you: a 6-digit code by WhatsApp, or by email when
- * WhatsApp isn't there. The answer never says whether a number has access.
+ * WhatsApp isn't there. The answer never says whether a number has access. From an invitation link the
+ * number is already filled in; an expired link says so and lets the client sign in as usual.
  */
-export function SignIn({ site, api, onSignedIn }: { site: PortalSite; api: PortalApi; onSignedIn: (needsName: boolean) => void }) {
+export function SignIn({ site, api, invite = null, onSignedIn }: { site: PortalSite; api: PortalApi; invite?: PortalInvite | null; onSignedIn: (needsName: boolean) => void }) {
   const t = useT();
-  const [country, setCountry] = useState(site.region.country ?? "");
-  const [national, setNational] = useState("");
+  const invited = invite?.status === "valid" ? splitPhone(invite.phone, site.region.country) : null;
+  const [country, setCountry] = useState(invited?.country || site.region.country || "");
+  const [national, setNational] = useState(invited?.national ?? "");
   const [channel, setChannel] = useState<Channel>(site.signIn.channels.includes("whatsapp") ? "whatsapp" : "email");
   const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [code, setCode] = useState("");
@@ -62,6 +64,7 @@ export function SignIn({ site, api, onSignedIn }: { site: PortalSite; api: Porta
       <p className={styles.lead}>{site.welcomeText || t("Sign in to follow your project.")}</p>
     </div>
     <Form className={styles.form} onSubmit={(event) => { event.preventDefault(); void send(channel); }}>
+      {invite?.status === "expired" ? <InlineNotice tone="info" message={t("This invite link has expired. Sign in with your mobile number, or ask your project team for a new one.")} /> : null}
       {error ? <InlineNotice tone="error" message={error} /> : null}
       <PhoneField label={t("Mobile number")} value={national} onChange={setNational} countryCode={country} onCountryChange={setCountry} locale={site.region.locale} isRequired />
       <div className={styles.formActions}>

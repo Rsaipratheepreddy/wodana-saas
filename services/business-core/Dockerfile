@@ -31,6 +31,10 @@ COPY --from=production-dependencies /workspace/services/business-core/node_modul
 COPY --from=production-dependencies /workspace/services/business-core/package.json /workspace/services/business-core/package.json
 COPY --from=builder /workspace/services/business-core/dist /workspace/services/business-core/dist
 COPY packages/contracts /workspace/packages/contracts
+# The Palm Living seed (dist/seed/palm-showcase) reads the tenant's documents from /workspace/docs.
+COPY docs/fixtures /workspace/docs/fixtures
+COPY docs/projects/palm-living/proposal-kit.json /workspace/docs/projects/palm-living/proposal-kit.json
+COPY apps/mobile/assets/brand/palm-living-logo.png /workspace/docs/brand/palm-living-logo.png
 RUN mkdir -p /app/.data && chown node:node /app/.data
 USER node
 EXPOSE 8000

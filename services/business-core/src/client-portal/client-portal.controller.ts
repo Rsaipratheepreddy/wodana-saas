@@ -16,6 +16,8 @@ export class ClientPortalController {
 
   @Get("site") site(@Param("slug") slug: string) { return this.portal.site(slug); }
 
+  @Get("invite/:token") invitation(@Param("slug") slug: string, @Param("token") token: string) { return this.portal.invitation(slug, token.slice(0, 200)); }
+
   @Post("challenge") challenge(@Param("slug") slug: string, @Body() body: unknown, @Headers("authorization") auth = "", @Headers("x-portal-requester") requester?: string) {
     return this.portal.challenge(slug, object(body), bearer(auth), requester?.slice(0, 100));
   }
@@ -57,6 +59,11 @@ export class ClientPortalAdminController {
     return this.admin.saveSettings(actor, workspaceId, object(body));
   }
 
+  /** The portal as this case's client sees it, read-only, for the team's preview and Woddy's tours. */
+  @Get("cases/:caseId/preview") preview(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string) {
+    return this.admin.preview(actor, workspaceId, caseId);
+  }
+
   @Get("projects/:projectId") project(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
     return this.admin.project(actor, workspaceId, projectId);
   }
@@ -66,6 +73,16 @@ export class ClientPortalAdminController {
     return this.admin.saveProject(actor, workspaceId, projectId, object(body));
   }
 
+  @Post("projects/:projectId/invite") inviteClient(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("projectId", ParseUUIDPipe) projectId: string, @Body() body: unknown) {
+    return this.admin.inviteClient(actor, workspaceId, projectId, object(body));
+  }
+
+  @Post("projects/:projectId/revoke") revokeClient(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("projectId", ParseUUIDPipe) projectId: string, @Body() body: unknown) {
+    return this.admin.revokeClient(actor, workspaceId, projectId, object(body));
+  }
+
   @Get("cases/:caseId/contacts") contacts(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string) {
     return this.admin.contacts(actor, workspaceId, caseId);
   }
@@ -73,6 +90,11 @@ export class ClientPortalAdminController {
   @Put("cases/:caseId/contacts") saveContact(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
     @Param("caseId", ParseUUIDPipe) caseId: string, @Body() body: unknown) {
     return this.admin.saveContact(actor, workspaceId, caseId, object(body));
+  }
+
+  @Post("cases/:caseId/contacts/:contactId/demo-code") demoCode(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string, @Param("contactId", ParseUUIDPipe) contactId: string, @Body() body: unknown) {
+    return this.admin.demoCode(actor, workspaceId, caseId, contactId, object(body));
   }
 
   @Post("cases/:caseId/contacts/:contactId/sign-out") signOut(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,

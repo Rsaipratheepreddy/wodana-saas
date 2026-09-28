@@ -773,7 +773,7 @@ export function ApprovalRelease({
   ];
   return (
     <>
-      <nav className={s.tabs} aria-label={t("Approval views")}>
+      <nav className={s.tabs} data-tour="deal-approvals" aria-label={t("Approval views")}>
         {[
           ["owner", "Internal approval"],
           ["materials", "Material approvals"],

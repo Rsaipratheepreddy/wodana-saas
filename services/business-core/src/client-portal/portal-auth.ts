@@ -16,7 +16,8 @@ const PER_REQUESTER = 20;
 const PER_WORKSPACE = 300;
 
 export type Channel = "whatsapp" | "email";
-export type Grant = { id: string; caseId: string; name: string; role: "approver" | "viewer"; email: string | null; confirmed: boolean };
+/** `demo`: the contact signs in with a fixed demonstration code set by a workspace admin; nothing is sent to them. */
+export type Grant = { id: string; caseId: string; name: string; role: "approver" | "viewer"; email: string | null; confirmed: boolean; demo: boolean };
 export type PortalContact = { sessionId: string; phone: string; name: string; nameConfirmed: boolean; grants: Grant[] };
 
 export type Delivery = {
@@ -34,12 +35,52 @@ export function mobileNumber(value: unknown) {
   return raw;
 }
 
-/** Codes are stored only as an HMAC bound to their challenge. */
+/** Codes are stored only as an HMAC bound to their challenge; a contact's demonstration code is bound to their grant. */
 export class PortalCodes {
   constructor(private readonly secret: string, readonly demo: boolean) {}
   hash(challengeId: string, code: string) { return createHmac("sha256", this.secret).update(`${challengeId}:${code}`).digest("hex"); }
+  demoHash(grantId: string, code: string) { return createHmac("sha256", this.secret).update(`demo:${grantId}:${code}`).digest("hex"); }
   next() { return this.demo ? "123456" : String(randomInt(0, 1_000_000)).padStart(6, "0"); }
   requester(address: string | undefined) { return address ? createHmac("sha256", this.secret).update(`requester:${address}`).digest("hex") : null; }
+}
+
+/** The portal's code secret from configuration: stable in production, the local auth secret otherwise. */
+export function portalCodes(config: { get<T = string>(key: string): T | undefined }) {
+  const production = config.get("NODE_ENV") === "production";
+  const secret = config.get<string>("PORTAL_OTP_SECRET") ?? "";
+  return new PortalCodes(secret || config.get<string>("LOCAL_AUTH_JWT_SECRET") || randomBytes(32).toString("hex"), config.get("PORTAL_DEMO_OTP") === "true" && !production);
+}
+
+/** A demonstration code as an admin types it: exactly six digits. */
+export function demoCodeInput(value: unknown) {
+  const code = typeof value === "string" ? value.replace(/\s/g, "") : "";
+  if (!/^\d{6}$/.test(code)) throw new BadRequestException("Enter a six-digit code.");
+  return code;
+}
+
+/**
+ * Sets or clears the demonstration code on one contact. The same code again changes nothing; clearing ends the
+ * contact's sessions. Returns whether anything changed.
+ */
+export async function setDemoCode(db: Db, workspaceId: string, codes: PortalCodes, input: { grantId: string; code: string | null; userId: string }) {
+  const grant = (await db.query<{ phone: string; hash: string | null }>(
+    `SELECT phone, demo_code_hash AS hash FROM client_portal_grants WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, input.grantId])).rows[0];
+  if (!grant) return null;
+  const hash = input.code === null ? null : codes.demoHash(input.grantId, input.code);
+  if (hash === grant.hash) return { changed: false, demo: hash !== null, ended: 0 };
+  await db.query(
+    `UPDATE client_portal_grants SET demo_code_hash = $3, demo_code_set_by = $4, demo_code_set_at = $5, version = version + 1, updated_at = now()
+      WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.grantId, hash, hash ? input.userId : null, hash ? new Date() : null]);
+  const ended = hash ? 0 : await endSessions(db, workspaceId, grant.phone, "demo_code_cleared");
+  return { changed: true, demo: hash !== null, ended };
+}
+
+/** The contact whose demonstration code this is, if a grant of the number has one. */
+async function demoGrantFor(db: Db, workspaceId: string, codes: PortalCodes, phone: string, code: string) {
+  const grants = (await db.query<{ id: string; hash: string }>(
+    `SELECT id, demo_code_hash AS hash FROM client_portal_grants WHERE workspace_id = $1 AND phone = $2 AND active AND demo_code_hash IS NOT NULL ORDER BY created_at`,
+    [workspaceId, phone])).rows;
+  return grants.find((grant) => timingSafeEqual(Buffer.from(grant.hash, "hex"), Buffer.from(codes.demoHash(grant.id, code), "hex"))) ?? null;
 }
 
 /** An email address shown without giving it away: the first letter and the domain. */
@@ -48,10 +89,11 @@ export function maskEmail(email: string) {
   return `${name.slice(0, 1)}•••@${domain}`;
 }
 
+/** The number's active grants. In local demo mode only test contacts and contacts with a demonstration code count. */
 async function grantsFor(db: Db, workspaceId: string, phone: string, demo: boolean): Promise<Grant[]> {
   return (await db.query<Grant>(
-    `SELECT id, case_id AS "caseId", coalesce(confirmed_name, name) AS name, role, email, name_confirmed_at IS NOT NULL AS confirmed
-       FROM client_portal_grants WHERE workspace_id = $1 AND phone = $2 AND active AND ($3::boolean = false OR test_contact)
+    `SELECT id, case_id AS "caseId", coalesce(confirmed_name, name) AS name, role, email, name_confirmed_at IS NOT NULL AS confirmed, demo_code_hash IS NOT NULL AS demo
+       FROM client_portal_grants WHERE workspace_id = $1 AND phone = $2 AND active AND ($3::boolean = false OR test_contact OR demo_code_hash IS NOT NULL)
       ORDER BY created_at`, [workspaceId, phone, demo])).rows;
 }
 
@@ -80,15 +122,17 @@ export async function sendCode(db: Db, workspaceId: string, codes: PortalCodes, 
   const grants = await grantsFor(db, workspaceId, phone, codes.demo);
   const email = grants.find((grant) => grant.email)?.email ?? null;
   const id = randomUUID();
-  // A number without access gets an unguessable code nobody receives.
-  const code = grants.length ? codes.next() : randomBytes(24).toString("hex");
+  // A number without access gets an unguessable code nobody receives; so does a demonstration contact, who
+  // signs in with the code their admin set instead (checked against the same challenge, tries and expiry).
+  const demonstration = grants.some((grant) => grant.demo);
+  const code = grants.length && !demonstration ? codes.next() : randomBytes(24).toString("hex");
   await db.query(`UPDATE client_portal_challenges SET consumed_at = now() WHERE workspace_id = $1 AND phone = $2 AND purpose = $3 AND consumed_at IS NULL`,
     [workspaceId, phone, purpose]);
   await db.query(
     `INSERT INTO client_portal_challenges (id, workspace_id, phone, purpose, code_hash, expires_at, channel, requester)
      VALUES ($1, $2, $3, $4, $5, now() + make_interval(secs => $6), $7, $8)`,
     [id, workspaceId, phone, purpose.slice(0, 200), codes.hash(id, code), CODE_SECONDS, channel, input.requester]);
-  if (grants.length && !codes.demo) {
+  if (grants.length && !demonstration && !codes.demo) {
     const reason = purpose === "sign_in" ? "sign_in" as const : "decision" as const;
     let sent = false;
     if (channel === "whatsapp") {
@@ -114,12 +158,17 @@ export async function useCode(db: Db, workspaceId: string, codes: PortalCodes, i
   if (!challenge || challenge.purpose !== input.purpose || (input.phone && input.phone !== challenge.phone) || challenge.consumed_at
     || challenge.attempts >= MAX_ATTEMPTS || new Date(challenge.expires_at).getTime() <= Date.now()) return null;
   await db.query(`UPDATE client_portal_challenges SET attempts = attempts + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.challengeId]);
-  if (!timingSafeEqual(Buffer.from(challenge.code_hash, "hex"), Buffer.from(codes.hash(input.challengeId, input.code), "hex"))) return null;
+  // The delivered code, or the demonstration code of a contact of this number; either way the same challenge is used once.
+  const delivered = timingSafeEqual(Buffer.from(challenge.code_hash, "hex"), Buffer.from(codes.hash(input.challengeId, input.code), "hex"));
+  if (!delivered && !(await demoGrantFor(db, workspaceId, codes, challenge.phone, input.code))) return null;
   await db.query(`UPDATE client_portal_challenges SET consumed_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.challengeId]);
   return challenge.phone;
 }
 
-/** Signs a client in with their code: a session for this number, and whether they still need to confirm their name. */
+/**
+ * Signs a client in with their code: a session for this number, whether they still need to confirm their name,
+ * and the projects they open for the first time (the team hears about those).
+ */
 export async function signIn(db: Db, workspaceId: string, codes: PortalCodes, input: { challengeId: string; code: string }) {
   const phone = await useCode(db, workspaceId, codes, { ...input, purpose: "sign_in" });
   const grants = phone ? await grantsFor(db, workspaceId, phone, codes.demo) : [];
@@ -128,8 +177,12 @@ export async function signIn(db: Db, workspaceId: string, codes: PortalCodes, in
   await db.query(
     `INSERT INTO client_portal_sessions (id, workspace_id, phone, token_hash, expires_at, last_seen_at) VALUES ($1, $2, $3, $4, now() + make_interval(days => $5), now())`,
     [randomUUID(), workspaceId, phone, digest(token), SESSION_MAX_DAYS]);
-  await db.query(`UPDATE client_portal_grants SET last_signed_in_at = now() WHERE workspace_id = $1 AND id = ANY($2::uuid[])`, [workspaceId, grants.map((grant) => grant.id)]);
-  return { token, expiresIn: SESSION_MAX_DAYS * 86_400, needsName: !grants.some((grant) => grant.confirmed) };
+  const firstSignIns = (await db.query<{ id: string; caseId: string; name: string; first: boolean }>(
+    `WITH never AS (SELECT id FROM client_portal_grants WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND last_signed_in_at IS NULL)
+     UPDATE client_portal_grants grant_row SET last_signed_in_at = now() WHERE grant_row.workspace_id = $1 AND grant_row.id = ANY($2::uuid[])
+     RETURNING grant_row.id, grant_row.case_id AS "caseId", coalesce(grant_row.confirmed_name, grant_row.name) AS name, grant_row.id IN (SELECT id FROM never) AS first`,
+    [workspaceId, grants.map((grant) => grant.id)])).rows.filter((row) => row.first).map(({ id, caseId, name }) => ({ id, caseId, name }));
+  return { token, expiresIn: SESSION_MAX_DAYS * 86_400, needsName: !grants.some((grant) => grant.confirmed), firstSignIns };
 }
 
 /** The signed-in client: their session (kept alive while used) and the projects they have access to. */

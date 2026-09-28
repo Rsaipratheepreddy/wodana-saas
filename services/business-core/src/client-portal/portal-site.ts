@@ -61,3 +61,14 @@ export async function portalLink(db: Db, workspaceId: string, slug: string, path
   const host = (await db.query<{ host: string | null }>(`SELECT client_portal_custom_host($1) AS host`, [workspaceId])).rows[0]?.host;
   return host ? `https://${host}/portal${path}` : `/portal/${slug}${path}`;
 }
+
+/** The web app's public address (the first WEB_ORIGIN), where a portal link without a tenant domain lives. */
+export function webOrigin(config: { get(key: string): unknown }) {
+  const configured = config.get("WEB_ORIGIN");
+  return (typeof configured === "string" && configured.trim() ? configured : "http://localhost:3000").split(",")[0].trim();
+}
+
+/** The portal's full address, as staff copy it and as emails carry it. */
+export async function portalUrl(db: Db, config: { get(key: string): unknown }, workspaceId: string, slug: string, path = "") {
+  return new URL(await portalLink(db, workspaceId, slug, path), webOrigin(config)).toString();
+}

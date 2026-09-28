@@ -63,10 +63,12 @@ export class TransactionalEmailService {
 
   /**
    * Tenant branding for email: the sign-in branding record is the source of truth for name, logo
-   * and accent. Falls back to Wodana when the tenant has not configured branding.
+   * and accent. Falls back to Wodana when the tenant has not configured branding, or to `fallbackName`
+   * (the workspace's name) when the caller has one.
    */
-  async brand(target: { workspaceId?: string; loginSlug?: string }): Promise<EmailBrand & { loginSlug: string | null }> {
-    if (!this.database || (!target.workspaceId && !target.loginSlug)) return { ...WODANA_BRAND, loginSlug: null };
+  async brand(target: { workspaceId?: string; loginSlug?: string }, fallbackName?: string): Promise<EmailBrand & { loginSlug: string | null }> {
+    const fallback = { ...WODANA_BRAND, name: fallbackName?.trim() || WODANA_BRAND.name };
+    if (!this.database || (!target.workspaceId && !target.loginSlug)) return { ...fallback, loginSlug: null };
     const result = await this.database.query<BrandRow>(
       `SELECT display_name AS "displayName", login_slug AS "loginSlug", logo_url AS "logoUrl",
               logo_asset_id AS "logoAssetId", primary_color AS "primaryColor"
@@ -76,7 +78,7 @@ export class TransactionalEmailService {
       [target.workspaceId ?? null, target.loginSlug ?? null],
     ).catch(() => ({ rows: [] as BrandRow[] }));
     const row = result.rows[0];
-    if (!row) return { ...WODANA_BRAND, loginSlug: target.loginSlug ?? null };
+    if (!row) return { ...fallback, loginSlug: target.loginSlug ?? null };
     const logoUrl = row.logoAssetId
       ? new URL(`/api/auth/tenant-logo/${encodeURIComponent(row.loginSlug)}?v=${row.logoAssetId}`, this.origin()).toString()
       : row.logoUrl && /^https:\/\//.test(row.logoUrl) ? row.logoUrl : null;
@@ -181,6 +183,32 @@ export class TransactionalEmailService {
       ...(url ? { action: { label: "Open in Wodana Control", url } } : {}),
     });
     return this.send({ to: input.to, subject: input.subject, text, html, fromName: WODANA_BRAND.name });
+  }
+
+  /**
+   * A client's invitation to the portal, in the tenant's brand: where their project page is, how to sign in
+   * (their mobile number and a code by WhatsApp or email), and a link that opens it with their number ready.
+   */
+  async sendPortalInvitation(input: {
+    workspaceId: string; to: string; recipientName: string; projectName: string; company: string; portalUrl: string; inviteUrl: string;
+    phoneHint: string; channel: "whatsapp" | "email"; expiresAt: Date;
+  }): Promise<EmailDeliveryResult> {
+    const brand = await this.brand({ workspaceId: input.workspaceId }, input.company);
+    const expiresOn = new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone: "UTC" }).format(input.expiresAt);
+    const code = input.channel === "whatsapp" ? "A 6-digit code arrives by WhatsApp, or by email when WhatsApp can't reach you." : "A 6-digit code arrives by email.";
+    const { html, text } = renderBrandedEmail({
+      brand,
+      preheader: `Follow ${input.projectName} with ${brand.name}.`,
+      heading: `Your project page with ${brand.name}`,
+      paragraphs: [
+        input.recipientName.trim() ? `Hello ${input.recipientName.trim()},` : "Hello,",
+        `${brand.name} set up a page where you can follow ${input.projectName}: progress, decisions, payments and documents.`,
+        `Sign in with your mobile number ending in ${input.phoneHint}. ${code}`,
+      ],
+      action: { label: "Open your project page", url: input.inviteUrl },
+      footnote: `This link is for you and expires on ${expiresOn}. You can always sign in at ${input.portalUrl}.`,
+    });
+    return this.send({ to: input.to, subject: `Your project page with ${brand.name}`, text, html, fromName: brand.name });
   }
 
   /** A client portal code by email (to sign in, or to confirm a decision), in the tenant's brand. */

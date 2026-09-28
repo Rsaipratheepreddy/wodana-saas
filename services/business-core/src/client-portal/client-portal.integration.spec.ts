@@ -145,9 +145,10 @@ function paths(value: unknown, prefix = ""): string[] {
 }
 
 type World = {
-  client: PoolClient; workspaceId: string; slug: string; caseId: string; quoteId: string; manager: string; designer: string; managerMembership: string; designerMembership: string;
+  client: PoolClient; workspaceId: string; slug: string; caseId: string; quoteId: string; party: string; manager: string; designer: string; managerMembership: string; designerMembership: string;
   kitchen: string; storage: BrandAssetStorageService; core: ProjectCoreService; portal: ClientPortalService; admin: ClientPortalAdminService;
   sent: Array<{ channel: string; to: string; code: string }>;
+  invites: Array<{ to: string; recipientName: string; projectName: string; company: string; portalUrl: string; inviteUrl: string; phoneHint: string; channel: string }>;
   savepoint: <T>(work: () => Promise<T>) => Promise<T>;
 };
 
@@ -207,7 +208,11 @@ integration("client portal (plan §6.22)", () => {
         tenantTransaction: (_w: string, _a: string, fn: (c: PoolClient) => Promise<unknown>) => savepoint(() => fn(client)),
       };
       const sent: World["sent"] = [];
-      const mailer = { sendPortalCode: vi.fn(async (input: { to: string; code: string }) => { sent.push({ channel: "email", to: input.to, code: input.code }); return { status: "sent" }; }) };
+      const invites: World["invites"] = [];
+      const mailer = {
+        sendPortalCode: vi.fn(async (input: { to: string; code: string }) => { sent.push({ channel: "email", to: input.to, code: input.code }); return { status: "sent" }; }),
+        sendPortalInvitation: vi.fn(async (input: World["invites"][number]) => { invites.push(input); return { status: "sent", provider: "mailgun", messageId: "inv" }; }),
+      };
       const commercial = new CommercialService({} as never, config, {} as never, {} as never);
       const definitions = new PreProjectDefinitionService({} as never, { record: async () => undefined } as never);
       const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-portal-")) }));
@@ -217,9 +222,9 @@ integration("client portal (plan §6.22)", () => {
         whatsapp: async ({ phone, code }) => { if (phone.endsWith("2")) throw new Error("not on WhatsApp"); sent.push({ channel: "whatsapp", to: phone, code }); },
         email: async ({ to, code }) => { sent.push({ channel: "email", to, code }); return true; },
       });
-      const admin = new ClientPortalAdminService(access(manager, everything), config);
-      await work({ client, workspaceId, slug, caseId, quoteId, manager, designer, managerMembership, designerMembership, kitchen, storage, core: new ProjectCoreService(access(manager, everything)),
-        portal, admin, sent, savepoint });
+      const admin = new ClientPortalAdminService(access(manager, everything), config, mailer as never, definitions);
+      await work({ client, workspaceId, slug, caseId, quoteId, party, manager, designer, managerMembership, designerMembership, kitchen, storage, core: new ProjectCoreService(access(manager, everything)),
+        portal, admin, sent, invites, savepoint });
     } finally {
       await client.query("ROLLBACK");
       client.release();
@@ -481,6 +486,37 @@ integration("client portal (plan §6.22)", () => {
     });
   });
 
+  it("lets the team preview the portal exactly as the decision-maker sees it, without a session and without writing anything", async () => {
+    await world(async (w) => {
+      // No contact yet: the client is shown as a viewer, named as the team knows them.
+      const early = await w.admin.preview(actor, w.workspaceId, w.caseId);
+      expect(early.preview).toBe(true);
+      expect(early.view.contact.name).toBe("Maya Client");
+      expect(early.view.projects[0]).toMatchObject({ id: w.caseId, role: "viewer" });
+      const { approver } = await open(w);
+      const loaded = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!;
+      const data = { ...(loaded.content as CommercialData), revision: loaded.revision };
+      const quote = data.quotes.find((item) => item.id === w.quoteId)!;
+      Object.assign(quote, { status: "issued", issuedAt: new Date().toISOString(), validUntil: "2099-12-31", approverId: approver.id });
+      quote.hash = freezeHash(quote);
+      data.revision = loaded.revision + 1;
+      await commercialRepository.save(w.client, w.workspaceId, w.caseId, data);
+      const token = await signIn(w, APPROVER);
+      const client = await w.portal.view(w.slug, token);
+      const count = async () => (await w.client.query(
+        `SELECT (SELECT count(*) FROM client_portal_sessions WHERE workspace_id = $1)::int + (SELECT count(*) FROM client_portal_commands WHERE workspace_id = $1)::int
+              + (SELECT count(*) FROM audit_events WHERE workspace_id = $1)::int AS n`, [w.workspaceId])).rows[0].n;
+      const before = await count();
+      const preview = await w.admin.preview(actor, w.workspaceId, w.caseId);
+      expect(preview.site.slug).toBe(w.slug);
+      // The same projects, sections and decisions the decision-maker sees, the quotation still waiting for them.
+      expect(preview.view.projects).toEqual(client.projects);
+      expect(preview.view.projects[0].decisions!.quotes[0]).toMatchObject({ id: w.quoteId, status: "issued", canDecide: true });
+      expect(await count()).toBe(before);
+      await expect(w.admin.preview(actor, w.workspaceId, randomUUID())).rejects.toThrow(/not found/i);
+    });
+  });
+
   it("takes each decision once, on the exact revision, with a code bound to it; the first decision-maker wins", async () => {
     await world(async (w) => {
       const { approver } = await open(w);
@@ -597,7 +633,7 @@ integration("client portal (plan §6.22)", () => {
       let state = await handover.command(actor, w.workspaceId, projectId, { action: "create_pack", id: pack, title: "Villa handover", areaIds: [] });
       state = await handover.uploadDocument(actor, w.workspaceId, projectId, pack, randomUUID(), { kind: "manual", title: "Care guide" },
         { buffer: Buffer.from("%PDF-1.4\n%care\n"), originalname: "care.pdf", mimetype: "application/pdf", size: 0 });
-      state = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: pack, version: state.packs[0].version });
+      state = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: pack, version: state.packs[0].version, confirmOpen: true, openReason: "Client walk-through before the last stages" });
       expect((await w.client.query("SELECT count(*)::int AS n FROM notifications WHERE workspace_id = $1 AND recipient_type = 'portal_contact' AND event_type = 'portal.decision_waiting'",
         [w.workspaceId])).rows[0].n).toBe(4);
       let view = (await w.portal.view(w.slug, token)).projects[0];
@@ -609,7 +645,7 @@ integration("client portal (plan §6.22)", () => {
       expect(snags).toEqual([{ title: "Handover refused: Scratch on the island", severity: "major", source: "client", created_by: w.manager }]);
       state = await handover.state(actor, w.workspaceId, projectId);
       const next = state.packs.find((item) => item.status === "draft")!;
-      state = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: next.id, version: next.version });
+      state = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: next.id, version: next.version, confirmOpen: true, openReason: "Client walk-through before the last stages" });
       proof = await decisionCode(w, token, `handover:${w.caseId}:${next.id}:accept`);
       await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "handover_decision", caseId: w.caseId, packId: next.id, decision: "accept", outstanding: ["Touch up the skirting"], ...proof });
       expect((await w.client.query("SELECT status, decision_method, recorded_by, decided_by_name FROM handover_packs WHERE id = $1", [next.id])).rows)
@@ -664,6 +700,132 @@ integration("client portal (plan §6.22)", () => {
       expect(mailer.sendStaffNotice).toHaveBeenCalledWith(expect.objectContaining({ to: "maya@example.com", subject: "Main quote (V1) is ready for you", actionLabel: "Open your project",
         deepLink: `/portal/${w.slug}?project=${w.caseId}&open=decisions` }));
       expect(await count("portal.quote_issued")).toBe(1);
+    });
+  });
+
+  it("invites the project's client from the project record: one email with the portal address and a link that opens it with their number; the team hears their first sign-in; access can be taken away", async () => {
+    await world(async (w) => {
+      await savePortalSettings(w.client, w.workspaceId, w.manager, { version: 0, enabled: true });
+      const { projectId } = await started(w);
+      const contactPoint = (type: "phone" | "email", value: string, label: string | null, country: string | null) => w.client.query(
+        `INSERT INTO crm_contact_points (workspace_id, party_id, type, label, raw_value, normalized_value, country_code, is_primary) VALUES ($1, $2, $3::crm_contact_point_type, $4, $5::text, lower($5::text), $6, true)`,
+        [w.workspaceId, w.party, type, label, value, country]);
+      // The CRM client has neither a mobile number nor an email yet: the project record says what to add, in that order.
+      let portal = await w.admin.project(actor, w.workspaceId, projectId);
+      expect(portal.portalUrl).toBe(`https://app.example.com/portal/${w.slug}`);
+      expect(portal.client).toMatchObject({ name: "Maya Client", partyId: w.party, status: "not_invited", grantId: null, blocked: "no_phone" });
+      await expect(w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId: randomUUID(), version: 0 })).rejects.toThrow(/mobile number first/);
+      await contactPoint("phone", "050 010 0001", "mobile", "AE");
+      expect((await w.admin.project(actor, w.workspaceId, projectId)).client).toMatchObject({ phone: "+971500100001", blocked: "no_email" });
+      await expect(w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId: randomUUID(), version: 0 })).rejects.toThrow(/Add an email/);
+      await contactPoint("email", "Client@PalmLiving.test", null, null);
+      // Invited: the grant exists (a decision-maker), the email went to the client with the tenant's name, and the command replays safely.
+      const commandId = randomUUID();
+      portal = await w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId, version: 0 });
+      expect(portal.client).toMatchObject({ status: "invited", email: "client@palmliving.test", phone: "+971500100001", delivery: "sent", blocked: null, version: 1 });
+      expect(portal.client.invitedAt).toBeTruthy();
+      expect(portal.client.resendAfter).toBeGreaterThan(0);
+      expect(portal.contacts).toEqual([expect.objectContaining({ name: "Maya Client", phone: "+971500100001", email: "client@palmliving.test", role: "approver", active: true })]);
+      expect(w.invites).toEqual([expect.objectContaining({ to: "client@palmliving.test", recipientName: "Maya Client", projectName: "Villa 12", company: "Studio Interiors",
+        portalUrl: portal.portalUrl, phoneHint: "01", channel: "email" })]);
+      expect(w.invites[0].inviteUrl).toMatch(new RegExp(`^https://app\\.example\\.com/portal/${w.slug}\\?invite=[A-Za-z0-9_-]{43}$`));
+      expect((await w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId, version: 0 })).client.status).toBe("invited");
+      await expect(w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId, version: 1 })).rejects.toThrow(/different details/);
+      expect(w.invites).toHaveLength(1);
+      // Another invite waits; a stale version is refused.
+      await expect(w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId: randomUUID(), version: 1 })).rejects.toMatchObject({ status: 429 });
+      await expect(w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId: randomUUID(), version: 0 })).rejects.toThrow(/Reload/);
+      expect((await w.client.query("SELECT action FROM audit_events WHERE workspace_id = $1 AND action = 'client_portal.client_invited'", [w.workspaceId])).rowCount).toBe(1);
+      // The link opens the portal with the client's number; a made-up one opens nothing.
+      const token = new URL(w.invites[0].inviteUrl).searchParams.get("invite")!;
+      expect(await w.portal.invitation(w.slug, token)).toEqual({ status: "valid", name: "Maya Client", phone: "+971500100001" });
+      await expect(w.portal.invitation(w.slug, "not-a-real-token-at-all-0000")).rejects.toThrow(/isn't valid/);
+      // The client signs in: the project's manager hears it once, in the app; the record shows them active.
+      const session = await signIn(w, "+971500100001");
+      const notices = () => w.client.query("SELECT recipient_id AS who, subject, deep_link AS link FROM notifications WHERE workspace_id = $1 AND event_type = 'client_portal.client_signed_in'", [w.workspaceId]);
+      expect((await notices()).rows).toEqual([{ who: w.manager, subject: "Maya Client opened the client portal", link: `/workspace/projects/${projectId}/updates` }]);
+      await signIn(w, "+971500100001");
+      expect((await notices()).rowCount).toBe(1);
+      // One transaction, one now(): the invite is older than the visit in real life.
+      await w.client.query("UPDATE client_portal_invitations SET sent_at = sent_at - interval '1 minute' WHERE workspace_id = $1", [w.workspaceId]);
+      portal = await w.admin.project(actor, w.workspaceId, projectId);
+      expect(portal.client).toMatchObject({ status: "active", version: 1 });
+      expect(portal.client.lastVisitAt).toBeTruthy();
+      // An expired link says so, without ending access.
+      await w.client.query("UPDATE client_portal_invitations SET sent_at = now() - interval '15 days', expires_at = now() - interval '1 day' WHERE workspace_id = $1", [w.workspaceId]);
+      expect(await w.portal.invitation(w.slug, token)).toEqual({ status: "expired" });
+      expect((await w.portal.view(w.slug, session)).projects).toHaveLength(1);
+      // Revoked: sessions end, the client can't sign in, and the command replays safely.
+      const revoke = randomUUID();
+      portal = await w.admin.revokeClient(actor, w.workspaceId, projectId, { commandId: revoke, version: 1 });
+      expect(portal.client).toMatchObject({ status: "revoked", version: 2, lastVisitAt: null });
+      expect(portal.contacts[0].active).toBe(false);
+      await expect(w.portal.view(w.slug, session)).rejects.toThrow(/signed out|ended/);
+      expect((await w.admin.revokeClient(actor, w.workspaceId, projectId, { commandId: revoke, version: 1 })).client.status).toBe("revoked");
+      expect((await w.client.query("SELECT 1 FROM audit_events WHERE workspace_id = $1 AND action = 'client_portal.client_revoked'", [w.workspaceId])).rowCount).toBe(1);
+      // Invited again (their last visit was before): the same contact, turned back on, with a fresh link; they're invited until they come back.
+      await w.client.query("UPDATE client_portal_sessions SET last_seen_at = last_seen_at - interval '1 hour' WHERE workspace_id = $1", [w.workspaceId]);
+      await w.client.query("UPDATE client_portal_grants SET last_signed_in_at = last_signed_in_at - interval '1 hour' WHERE workspace_id = $1", [w.workspaceId]);
+      portal = await w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId: randomUUID(), version: 2 });
+      expect(portal.client).toMatchObject({ status: "invited", grantId: portal.contacts[0].id, version: 3 });
+      expect(portal.contacts).toHaveLength(1);
+      expect(w.invites).toHaveLength(2);
+      expect(w.invites[1].inviteUrl).not.toBe(w.invites[0].inviteUrl);
+      // Nothing goes out while the portal is off for the workspace or paused for the project.
+      await w.admin.saveProject(actor, w.workspaceId, projectId, { version: 0, paused: true });
+      expect((await w.admin.project(actor, w.workspaceId, projectId)).client.blocked).toBe("paused");
+      await expect(w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId: randomUUID(), version: 3 })).rejects.toThrow(/paused/);
+      await savePortalSettings(w.client, w.workspaceId, w.manager, { version: 1, enabled: false });
+      expect((await w.admin.project(actor, w.workspaceId, projectId)).client.blocked).toBe("portal_off");
+      await expect(w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId: randomUUID(), version: 3 })).rejects.toThrow(/off for the workspace/);
+    });
+  });
+
+  it("signs a demonstration contact in with the code an admin set, sends them nothing, and keeps every other number as it was", async () => {
+    await world(async (w) => {
+      const { approver, viewer } = await open(w);
+      // A workspace admin sets the code on one contact: six digits, once per command, version-checked, audited.
+      await expect(w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: randomUUID(), version: approver.version, code: "12345" })).rejects.toThrow(/six-digit/);
+      await expect(w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: randomUUID(), version: approver.version + 5, code: "123456" })).rejects.toThrow(/Reload/);
+      const set = randomUUID();
+      let contacts = await w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: set, version: approver.version, code: "123456" });
+      let demo = contacts.contacts.find((contact) => contact.id === approver.id)!;
+      expect([demo.demoCode, demo.version]).toEqual([true, approver.version + 1]);
+      expect((await w.client.query("SELECT demo_code_hash, demo_code_set_by FROM client_portal_grants WHERE id = $1", [approver.id])).rows[0])
+        .toEqual({ demo_code_hash: expect.stringMatching(/^[0-9a-f]{64}$/), demo_code_set_by: w.manager });
+      // The same command again is a no-op; a different body under the same id is refused.
+      expect((await w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: set, version: approver.version, code: "123456" })).contacts.find((contact) => contact.id === approver.id)!.version).toBe(demo.version);
+      await expect(w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: set, version: approver.version, code: "654321" })).rejects.toThrow(/different details/);
+      expect((await w.client.query("SELECT count(*)::int AS n FROM audit_events WHERE workspace_id = $1 AND action = 'client_portal.demo_code_set'", [w.workspaceId])).rows[0].n).toBe(1);
+
+      // Signing in: no WhatsApp or email goes to the demonstration contact; their code opens the session; a wrong one doesn't.
+      const sentBefore = w.sent.length;
+      const challenge = await w.portal.challenge(w.slug, { phone: APPROVER }, "", "203.0.113.7");
+      expect(w.sent).toHaveLength(sentBefore);
+      await expect(w.portal.login(w.slug, { challengeId: challenge.challengeId, code: "111111" })).rejects.toThrow(/isn't right/);
+      const session = await w.portal.login(w.slug, { challengeId: challenge.challengeId, code: "123456" });
+      expect(session.token).toBeTruthy();
+      expect((await w.portal.view(w.slug, session.token)).contact.phone).toBe(APPROVER);
+      // Another number (a contact without a demonstration code, or a stranger) with 123456 fails.
+      for (const phone of [VIEWER, STRANGER]) {
+        await w.client.query("UPDATE client_portal_challenges SET created_at = created_at - interval '1 minute' WHERE workspace_id = $1", [w.workspaceId]);
+        const other = await w.portal.challenge(w.slug, { phone }, "", "203.0.113.7");
+        await expect(w.portal.login(w.slug, { challengeId: other.challengeId, code: "123456" })).rejects.toThrow(/isn't right/);
+      }
+      expect(viewer.demoCode).toBe(false);
+
+      // Clearing the code ends the demonstration: their sessions end and 123456 no longer signs them in.
+      contacts = await w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: randomUUID(), version: demo.version, code: null });
+      demo = contacts.contacts.find((contact) => contact.id === approver.id)!;
+      expect(demo.demoCode).toBe(false);
+      await expect(w.portal.view(w.slug, session.token)).rejects.toThrow(/signed out/);
+      await w.client.query("UPDATE client_portal_challenges SET created_at = created_at - interval '1 minute' WHERE workspace_id = $1", [w.workspaceId]);
+      const again = await w.portal.challenge(w.slug, { phone: APPROVER }, "", "203.0.113.7");
+      await expect(w.portal.login(w.slug, { challengeId: again.challengeId, code: "123456" })).rejects.toThrow(/isn't right/);
+      expect(w.sent.at(-1)).toMatchObject({ channel: "whatsapp", to: APPROVER });
+      expect((await w.client.query("SELECT count(*)::int AS n FROM audit_events WHERE workspace_id = $1 AND action = 'client_portal.demo_code_cleared'", [w.workspaceId])).rows[0].n).toBe(1);
+      expect((await w.client.query("SELECT demo_code_hash, demo_code_set_by, demo_code_set_at FROM client_portal_grants WHERE id = $1", [approver.id])).rows[0])
+        .toEqual({ demo_code_hash: null, demo_code_set_by: null, demo_code_set_at: null });
     });
   });
 });

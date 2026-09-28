@@ -45,7 +45,7 @@ export function QuoteProposal({ workspaceId, caseId, quoteId, api, sizeUnit, col
   const sheet = (quote: Quote) => withSheetFields(quote, workspaceId, caseId, sizeUnit);
   if (!state.data.quotes.some((quote) => quote.id === quoteId)) return <ErrorState title={t("The proposal didn't load")} />;
   const known: ProposalFacts = { ...facts, phone: state.customerPhone ?? "", email: state.customerEmail ?? "", address: state.customerAddress ?? "" };
-  return <div className={styles.proposal}><ProposalFactsContext.Provider value={known}><ProposalColumnsContext.Provider value={columns}>
+  return <div className={styles.proposal} data-tour="quote-proposal"><ProposalFactsContext.Provider value={known}><ProposalColumnsContext.Provider value={columns}>
     <QuotationBuilderShell backHref="" initial={{ ...state, data: { ...state.data, quotes: state.data.quotes.map(sheet) } }} quoteId={quoteId}
       embedded={{ save: async (change) => { const result = await api.proposal(change); return { ...result, quote: sheet(result.quote) }; }, onPayments }} />
   </ProposalColumnsContext.Provider></ProposalFactsContext.Provider></div>;

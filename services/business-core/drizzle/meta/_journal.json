@@ -591,10 +591,31 @@
       "breakpoints": true
     },
     {
+      "idx": 84,
+      "version": "7",
+      "when": 1800792000000,
+      "tag": "0133_client_portal_invitations",
+      "breakpoints": true
+    },
+    {
       "idx": 85,
       "version": "7",
-      "when": 1800878400000,
-      "tag": "0134_sales_enquiries",
+      "when": 1800964800000,
+      "tag": "0135_client_portal_demo_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1801051200000,
+      "tag": "0136_site_report_photos_share",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1801114500000,
+      "tag": "0145_sales_enquiries",
       "breakpoints": true
     }
   ]

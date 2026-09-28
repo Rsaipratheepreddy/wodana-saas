@@ -1,4 +1,5 @@
-export const homeWidgetIds = ["attention", "projects", "trend", "money", "health", "planning", "activity", "storage", "sales", "tools", "attendance"] as const;
+/** Attendance is not a widget: today's status is a chip in the Home header. */
+export const homeWidgetIds = ["attention", "projects", "trend", "money", "health", "planning", "activity", "storage", "sales", "tools"] as const;
 export type HomeWidgetId = typeof homeWidgetIds[number];
 export const homeWidgetSizes = ["small", "medium", "wide"] as const;
 export type HomeWidgetSize = typeof homeWidgetSizes[number];
@@ -11,18 +12,19 @@ export const homeWidgetSpan: Record<HomeWidgetSize, number> = { small: 1, medium
 const widget = (id: HomeWidgetId, size: HomeWidgetSize, visible = true): HomeWidget => ({ id, visible, size, wide: size === "wide" });
 const baseSize: Record<HomeWidgetId, HomeWidgetSize> = {
   attention: "medium", projects: "small", trend: "medium", money: "small", health: "small", planning: "small",
-  activity: "small", storage: "small", sales: "small", tools: "small", attendance: "wide",
+  activity: "small", storage: "small", sales: "small", tools: "small",
 };
 
 export const defaultHomeLayout: HomeWidget[] = homeWidgetIds.map(id => widget(id, baseSize[id], id !== "sales"));
 
 export type HomeProfile = "owner" | "sales" | "qs" | "finance" | "member";
+/** Two compact rows per role; everything else stays in the gallery. */
 const profileOrder: Record<HomeProfile, Array<[HomeWidgetId, HomeWidgetSize]>> = {
-  owner: [["attendance", "wide"], ["attention", "medium"], ["money", "small"], ["trend", "medium"], ["health", "small"], ["planning", "small"], ["activity", "small"], ["storage", "small"], ["projects", "medium"], ["tools", "small"]],
-  sales: [["attendance", "wide"], ["attention", "medium"], ["planning", "small"], ["trend", "medium"], ["projects", "small"], ["activity", "small"], ["tools", "small"], ["sales", "small"]],
-  qs: [["attendance", "wide"], ["planning", "small"], ["trend", "medium"], ["projects", "small"], ["attention", "medium"], ["tools", "small"], ["activity", "small"]],
-  finance: [["attendance", "wide"], ["money", "small"], ["activity", "medium"], ["health", "small"], ["projects", "small"], ["tools", "small"]],
-  member: [["attendance", "wide"], ["projects", "medium"], ["tools", "small"], ["planning", "small"], ["attention", "medium"], ["activity", "small"]],
+  owner: [["attention", "medium"], ["projects", "small"], ["trend", "small"], ["money", "small"], ["health", "small"]],
+  sales: [["attention", "medium"], ["projects", "small"], ["trend", "small"], ["planning", "small"], ["activity", "small"]],
+  qs: [["planning", "medium"], ["projects", "small"], ["trend", "small"], ["attention", "medium"]],
+  finance: [["money", "small"], ["activity", "medium"], ["health", "small"], ["projects", "medium"]],
+  member: [["projects", "medium"], ["tools", "small"], ["attention", "medium"], ["planning", "small"]],
 };
 
 /** Picks the starting Home from what the person may do, never from a tenant or a role name alone. */

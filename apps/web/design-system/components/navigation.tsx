@@ -17,15 +17,15 @@ export function ModuleNavigation({ activeId, className, items }: { activeId: str
   </nav>;
 }
 
-export function Tabs({ defaultSelectedKey, items, selectedKey, onSelectionChange, variant = "underline" }: { defaultSelectedKey?: string; items: TabItem[]; selectedKey?: string; onSelectionChange?: (key: string) => void; variant?: "underline" | "segmented" }) {
+export function Tabs({ defaultSelectedKey, items, selectedKey, onSelectionChange, variant = "underline", tour }: { defaultSelectedKey?: string; items: TabItem[]; selectedKey?: string; onSelectionChange?: (key: string) => void; variant?: "underline" | "segmented"; /** Names each tab `data-tour="<tour>-<id>"` for Woddy's tours. */ tour?: string }) {
   const t = useT();
-  return <AriaTabs className="wd-tabs" data-variant={variant} defaultSelectedKey={defaultSelectedKey} selectedKey={selectedKey} onSelectionChange={(key) => onSelectionChange?.(String(key))}><div aria-label={t("Scrollable sections")} className="wd-tab-scroll" role="region" tabIndex={0}><TabList aria-label={t("Sections")} className="wd-tab-list" items={items}>{(item) => <Tab className="wd-tab" id={item.id}>{item.label}{typeof item.count === "number" ? <span className="wd-count-chip">{item.count}</span> : null}</Tab>}</TabList></div>{items.map((item) => <TabPanel className="wd-tab-panel" id={item.id} key={item.id}>{item.panel}</TabPanel>)}</AriaTabs>;
+  return <AriaTabs className="wd-tabs" data-variant={variant} defaultSelectedKey={defaultSelectedKey} selectedKey={selectedKey} onSelectionChange={(key) => onSelectionChange?.(String(key))}><div aria-label={t("Scrollable sections")} className="wd-tab-scroll" role="region" tabIndex={0}><TabList aria-label={t("Sections")} className="wd-tab-list" items={items}>{(item) => <Tab className="wd-tab" data-tour={tour ? `${tour}-${item.id}` : undefined} data-tour-safe={tour ? "" : undefined} id={item.id}>{item.label}{typeof item.count === "number" ? <span className="wd-count-chip">{item.count}</span> : null}</Tab>}</TabList></div>{items.map((item) => <TabPanel className="wd-tab-panel" id={item.id} key={item.id}>{item.panel}</TabPanel>)}</AriaTabs>;
 }
 
 export type PillTabItem = { id: string; label: ReactNode; done?: boolean };
 
 /** Simple pill tabs that switch what's shown below; the selected one is filled. Arrow keys move between them. */
-export function PillTabs({ ariaLabel, items, selectedKey, onSelectionChange }: { ariaLabel: string; items: PillTabItem[]; selectedKey: string; onSelectionChange: (key: string) => void }) {
+export function PillTabs({ ariaLabel, items, selectedKey, onSelectionChange, tour }: { ariaLabel: string; items: PillTabItem[]; selectedKey: string; onSelectionChange: (key: string) => void; /** Names each tab `data-tour="<tour>-<id>"` for Woddy's tours. */ tour?: string }) {
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
     const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
     if (!keys.includes(event.key)) return;
@@ -38,7 +38,7 @@ export function PillTabs({ ariaLabel, items, selectedKey, onSelectionChange }: {
     event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
   };
   return <div aria-label={ariaLabel} className="wd-pill-tabs" role="tablist" onKeyDown={move}>
-    {items.map((item) => <button aria-selected={item.id === selectedKey} className="wd-pill-tab" data-done={item.done || undefined} key={item.id} role="tab" tabIndex={item.id === selectedKey ? 0 : -1} type="button" onClick={() => onSelectionChange(item.id)}>
+    {items.map((item) => <button aria-selected={item.id === selectedKey} className="wd-pill-tab" data-done={item.done || undefined} data-tour={tour ? `${tour}-${item.id}` : undefined} data-tour-safe={tour ? "" : undefined} key={item.id} role="tab" tabIndex={item.id === selectedKey ? 0 : -1} type="button" onClick={() => onSelectionChange(item.id)}>
       {item.done ? <Check aria-hidden="true" size={13} strokeWidth={2.5} /> : null}{item.label}
     </button>)}
   </div>;

@@ -2,10 +2,11 @@ import "server-only";
 
 import { businessApiUrl } from "@/lib/auth/server";
 import { classifyTenantHost } from "@/lib/auth/tenant-host";
-import type { PortalSite } from "./types";
+import type { PortalInvite, PortalSite } from "./types";
 import { getServerT } from "@/lib/i18n/server";
 
 export const PORTAL_SLUG = /^[a-z0-9-]{1,80}$/;
+const INVITE_TOKEN = /^[A-Za-z0-9_-]{20,100}$/;
 /** The signed-in client's session, per portal. */
 export const portalCookie = (slug: string) => `wodana_client_${slug}`;
 
@@ -17,6 +18,17 @@ export async function loadSite(slug: string): Promise<PortalSite | null> {
   if (response.status === 404) return null;
   if (!response.ok) throw new Error((await getServerT())("The portal is temporarily unavailable. Please try again."));
   return response.json() as Promise<PortalSite>;
+}
+
+/** What an invitation link (?invite=…) opens: the client's number ready, or an expired link; null when there is no usable token. */
+export async function loadInvite(slug: string, token: string | string[] | undefined): Promise<PortalInvite | null> {
+  if (typeof token !== "string" || !INVITE_TOKEN.test(token) || !PORTAL_SLUG.test(slug)) return null;
+  const response = await fetch(businessApiUrl(`/client-portal/${slug}/invite/${encodeURIComponent(token)}`), { cache: "no-store", signal: AbortSignal.timeout(8_000) }).catch(() => null);
+  if (!response) return null;
+  if (response.status === 404) return { status: "expired" };
+  if (!response.ok) return null;
+  const body = await response.json().catch(() => null) as PortalInvite | null;
+  return body?.status === "valid" && typeof body.phone === "string" ? { status: "valid", name: String(body.name ?? ""), phone: body.phone } : body?.status === "expired" ? body : null;
 }
 
 /** The portal a tenant's own domain or its sign-in subdomain opens, without a link. */

@@ -68,6 +68,8 @@ function routeTable() {
     { id: "home", label: "Home", href: "/workspace", nav: "home", paths: ["/workspace"], exact: true },
     { id: "tasks", label: "Tasks", href: "/workspace/tasks", parent: "home", homeTab: true, paths: ["/workspace/tasks"] },
     { id: "approvals", label: "Approvals", href: "/workspace/approvals", parent: "home", homeTab: true, paths: ["/workspace/approvals"] },
+    // A case's client portal as the client sees it (read-only preview; no workspace chrome).
+    { id: "client-view", label: "Client view", href: "/workspace/pre-projects", parent: "home", paths: ["/workspace/client-view"] },
     // Sales people without project tasks get their follow-ups as Home › Tasks.
     { id: "sales-tasks", label: "Tasks", href: "/workspace/crm/follow-ups?view=activity", parent: "home", homeTab: true, paths: ["/workspace/crm/follow-ups"], query: { view: ["activity"] } },
     { id: "calendar", label: "Calendar", href: "/workspace/crm/follow-ups?view=schedule", nav: "daily-follow-ups", paths: ["/workspace/crm/follow-ups"], query: { view: ["schedule", "calendar"] } },

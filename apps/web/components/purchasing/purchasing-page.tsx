@@ -43,7 +43,7 @@ export function PurchasingPage({ workspaceId, section: initialSection }: { works
     : section === "suppliers" ? <Button variant="primary" onPress={() => setAddingSupplier(true)}><Plus aria-hidden="true" size={15} />{t("Add supplier")}</Button> : null;
   return <div className={styles.page}>
     <PageHeader title={t("Purchasing")} actions={action} />
-    <Tabs selectedKey={section} onSelectionChange={(key) => go(key as PurchasingSection)} items={[
+    <Tabs tour="purchasing-tab" selectedKey={section} onSelectionChange={(key) => go(key as PurchasingSection)} items={[
       { id: "to-order", label: t("To order"), panel: <ToOrder api={api} onCreated={(id) => { setRefresh((value) => value + 1); go("orders", id); }}
         onAsked={(id) => { setRefresh((value) => value + 1); go("price-requests", id); }} /> },
       { id: "price-requests", label: t("Price requests"), panel: <PriceRequests api={api} refreshKey={refresh} openId={requestId} onOpen={(id) => go("price-requests", id)}

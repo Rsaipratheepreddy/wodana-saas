@@ -19,8 +19,9 @@ type Draft = { id?: string; version?: number; name: string; country: string; nat
  * The client contacts of one project: who can sign in to the portal (by mobile number, with an email for
  * codes and notices when WhatsApp can't), who decides and who only reads, and signing someone out.
  */
-export function ClientContacts({ workspaceId, caseId, portalSlug, portalEnabled, locale, onChanged }: {
-  workspaceId: string; caseId: string; portalSlug: string | null; portalEnabled: boolean; locale?: string; onChanged?: () => void | Promise<unknown>;
+export function ClientContacts({ workspaceId, caseId, portalUrl, portalEnabled, locale, onChanged }: {
+  /** Where the portal opens: the full address, or a path on this site. */
+  workspaceId: string; caseId: string; portalUrl: string | null; portalEnabled: boolean; locale?: string; onChanged?: () => void | Promise<unknown>;
 }) {
   const t = useT();
   const api = useMemo(() => staffPortalApi(workspaceId, t), [workspaceId, t]);
@@ -53,7 +54,7 @@ export function ClientContacts({ workspaceId, caseId, portalSlug, portalEnabled,
     catch (cause) { setError((cause as Error).message); }
   };
   const copy = async () => {
-    try { await navigator.clipboard.writeText(`${location.origin}/portal/${portalSlug}`); setNotice(t("Portal link copied.")); }
+    try { await navigator.clipboard.writeText(new URL(portalUrl ?? "", location.origin).toString()); setNotice(t("Portal link copied.")); }
     catch { setError(t("Couldn't copy. Open the portal and copy its address.")); }
   };
   const open = (contact?: PortalContact) => {
@@ -74,9 +75,9 @@ export function ClientContacts({ workspaceId, caseId, portalSlug, portalEnabled,
   ];
   return <div className={styles.stack}>
     <div className={styles.toolbar}>
-      {portalSlug && portalEnabled ? <>
+      {portalUrl && portalEnabled ? <>
         <Button size="compact" variant="quiet" onPress={() => void copy()}><Copy aria-hidden="true" size={14} />{t("Copy portal link")}</Button>
-        <a className={styles.link} href={`/portal/${portalSlug}`} rel="noreferrer" target="_blank">{t("Open the portal")}<ArrowUpRight aria-hidden="true" data-directional="true" size={14} /></a>
+        <a className={styles.link} href={portalUrl} rel="noreferrer" target="_blank">{t("Open the portal")}<ArrowUpRight aria-hidden="true" data-directional="true" size={14} /></a>
       </> : null}
       <span className={styles.spacer} />
       {state.canManage ? <Button size="compact" variant="primary" onPress={() => open()}><Plus aria-hidden="true" size={14} />{t("Add contact")}</Button> : null}

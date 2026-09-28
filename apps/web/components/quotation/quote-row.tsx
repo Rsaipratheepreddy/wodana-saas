@@ -317,7 +317,7 @@ function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCata
     requestAnimationFrame(() => input.current?.blur());
   };
   return <div className={styles.itemInput}>
-    <input ref={input} autoFocus={draft} aria-label={t("Item")} role="combobox" aria-expanded={open && options.length > 0} aria-controls={listId} aria-autocomplete="list"
+    <input ref={input} autoFocus={draft} aria-label={t("Item")} data-tour={draft ? "quote-line-input" : undefined} role="combobox" aria-expanded={open && options.length > 0} aria-controls={listId} aria-autocomplete="list"
       aria-activedescendant={open && options[active] ? `${listId}-${active}` : undefined}
       className={styles.cell} data-title placeholder={t("Type to find an item…")} disabled={!canEdit} value={shown} title={line.title || undefined}
       onFocus={(event) => { setText(line.title); setFocused(true); event.currentTarget.select(); }}

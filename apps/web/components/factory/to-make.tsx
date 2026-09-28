@@ -40,7 +40,7 @@ export function ToMake({ api, state, error, onReload, onPlanned }: { api: Factor
     const rows = lines.filter((line) => line.projectId === projectId);
     return { id: projectId, label: `${rows[0].projectReference} · ${rows[0].projectName}`, rows, emptyMessage: "" };
   });
-  return <div className={styles.stack}>
+  return <div className={styles.stack} data-tour="factory-to-make">
     <div className={styles.filters}>
       <SearchInput label={t("Search what to make")} placeholder={t("Search")} value={search} onChange={setSearch} />
       <SegmentedControl label={t("Show")} value={show} onChange={(value) => setShow(value as Show)} options={[{ id: "left", label: t("Left to plan") }, { id: "all", label: t("Everything") }]} />

@@ -10,7 +10,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import type { PoolClient } from "pg";
-import { MAX_ACTIVE_DEVICES, sessionDeviceLimit } from "./session-policy";
+import { configuredDeviceLimit, sessionDeviceLimit } from "./session-policy";
 import { ConfigService } from "@nestjs/config";
 import { randomBytes, randomUUID } from "node:crypto";
 import * as jwt from "jsonwebtoken";
@@ -455,7 +455,7 @@ export class LocalAuthService {
           mfaEnrollmentDeadline: prior.mfaEnrollmentDeadline ?? undefined,
         }),
         refreshToken: nextToken,
-        accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+        accessTokenExpiresIn: this.accessTokenSeconds(),
         refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
       };
     });
@@ -520,7 +520,7 @@ export class LocalAuthService {
       enabled: true,
       recoveryCodes: confirmed.recoveryCodes,
       accessToken: this.signAccessToken(actor, current.familyId, confirmed.assurance),
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
     };
   }
 
@@ -538,7 +538,7 @@ export class LocalAuthService {
     await this.updateSessionAssurance(actorUser.userId, current.familyId, assurance);
     return {
       accessToken: this.signAccessToken(actor, current.familyId, assurance),
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
       verifiedAt: assurance.mfaVerifiedAt,
       authenticationMethods: assurance.authenticationMethods,
     };
@@ -585,7 +585,7 @@ export class LocalAuthService {
     return {
       enabled: false,
       accessToken: this.signAccessToken(actor, current.familyId, assurance),
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
     };
   }
 
@@ -608,7 +608,7 @@ export class LocalAuthService {
       authenticationMethod: actor.provider,
       passwordChangedAt: credential.rows[0]?.passwordChangedAt ?? null,
       policy: {
-        accessTokenMinutes: ACCESS_TOKEN_SECONDS / 60,
+        accessTokenMinutes: this.accessTokenSeconds() / 60,
         refreshSessionDays: REFRESH_TOKEN_DAYS,
         maxFailedAttempts: MAX_FAILED_ATTEMPTS,
         lockMinutes: LOCK_MINUTES,
@@ -993,7 +993,7 @@ export class LocalAuthService {
       const deviceLimit = this.deviceLimit(user.userId);
       if (deviceLimit !== null && sessions.length - (currentFamilyId ? 1 : 0) >= deviceLimit) {
         // Return normally so any chosen logout commits even if more devices still need removal.
-        return { blocked: true as const, sessions };
+        return { blocked: true as const, sessions, deviceLimit };
       }
       if (currentFamilyId) {
         await client.query(
@@ -1018,15 +1018,15 @@ export class LocalAuthService {
     if (result.blocked) {
       throw new ConflictException({
         code: "DEVICE_LIMIT_REACHED",
-        message: `You are already signed in on ${result.sessions.length} devices. You can use a maximum of ${MAX_ACTIVE_DEVICES} devices. Log out a device to continue.`,
-        maxActiveDevices: MAX_ACTIVE_DEVICES,
+        message: `You are already signed in on ${result.sessions.length} devices. You can use a maximum of ${result.deviceLimit} devices. Log out a device to continue.`,
+        maxActiveDevices: result.deviceLimit,
         sessions: result.sessions,
       });
     }
     return {
       accessToken: this.signAccessToken(actor, result.familyId, assurance),
       refreshToken: result.refreshToken,
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
       refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
       selectedWorkspaceId,
       profile: selectedProfile,
@@ -1070,13 +1070,19 @@ export class LocalAuthService {
         subject: actor.subject,
         issuer: this.config.get<string>("LOCAL_AUTH_ISSUER", "wodana-local"),
         audience: this.config.get<string>("LOCAL_AUTH_AUDIENCE", "wodana-web"),
-        expiresIn: ACCESS_TOKEN_SECONDS,
+        expiresIn: this.accessTokenSeconds(),
       },
     );
   }
 
+  /** How long a sign-in stays valid before a silent refresh: AUTH_ACCESS_TOKEN_MINUTES (5–1440), default 15. */
+  private accessTokenSeconds() {
+    const minutes = Number(this.config.get<string>("AUTH_ACCESS_TOKEN_MINUTES", ""));
+    return Number.isInteger(minutes) && minutes >= 5 && minutes <= 1440 ? minutes * 60 : ACCESS_TOKEN_SECONDS;
+  }
+
   private deviceLimit(userId: string) {
-    return sessionDeviceLimit(userId, this.config.get<string>("AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS", ""));
+    return sessionDeviceLimit(userId, this.config.get<string>("AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS", ""), configuredDeviceLimit(this.config.get<string>("AUTH_MAX_ACTIVE_DEVICES", "")));
   }
 
   private assertLocalAuthAvailable() {

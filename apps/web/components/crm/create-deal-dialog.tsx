@@ -69,7 +69,7 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { le
     finally { saving.current = false; setBusy(false); }
   };
   return <ControlledModalDialog isOpen title={t("Convert to opportunity")} description={lead.partyName} size="md" isDismissable={!busy} onOpenChange={open => { if (!open && !busy) onClose(); }} footer={<div className={styles.actions}><Button size="compact" style={{ flex: "0 0 auto", minWidth: 88 }} isDisabled={busy} onPress={onClose}>{t(saved ? "Close" : "Cancel")}</Button><Button size="compact" style={{ flex: "0 0 auto", minWidth: 112 }} variant="primary" type="submit" form={id} isLoading={busy} isDisabled={saved || !members.length || needsEnquiryType}>{t("Convert to opportunity")}</Button></div>}>
-    <form id={id} className={styles.form} onSubmit={submit}>
+    <form id={id} className={styles.form} data-tour="convert-form" onSubmit={submit}>
       <p className={styles.explanation}>{t("Move this enquiry into Pipeline as a new opportunity, keeping its client, owner and follow-up connected.")}</p>
       {failure && <Callout tone={saved ? "warning" : "danger"} title={t(saved ? "Opportunity created" : "Could not continue")}>{failure}</Callout>}
       {needsEnquiryType && <Callout tone="warning" title={t("Enquiry type needed")}>{t("This enquiry is marked Not Sure Yet. Open Edit details and choose its actual type before conversion.")}</Callout>}

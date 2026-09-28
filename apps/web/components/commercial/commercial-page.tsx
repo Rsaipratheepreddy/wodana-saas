@@ -483,7 +483,7 @@ export function CommercialPage({
               action={state.canEdit ? <Button size="compact" variant="primary" isDisabled={busy} onPress={() => void run("create")}><Plus size={15} />{t("Create quotation")}</Button> : undefined} />
           )
         ) : section === "client-portal" ? (
-          <ClientContacts workspaceId={state.workspaceId} caseId={state.caseId} portalSlug={state.portalSlug} portalEnabled={Boolean(state.portalEnabled)} locale={design.locale} onChanged={reload} />
+          <ClientContacts workspaceId={state.workspaceId} caseId={state.caseId} portalUrl={state.portalSlug ? `/portal/${state.portalSlug}` : null} portalEnabled={Boolean(state.portalEnabled)} locale={design.locale} onChanged={reload} />
         ) : section === "variations" ? (
           <CommercialRequests
             state={state}

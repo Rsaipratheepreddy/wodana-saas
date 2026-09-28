@@ -1,0 +1,1557 @@
+{
+ "_about": "Palm Living's supplier register (tenant data, not product code), from the shared workbook 'Core Supplier List' (sheets PLM Manu Preferred Suppliers, PLM Manufacturing, PLM Interiors). Company-level facts only: personal contact names and mobile numbers were deliberately left out; only generic company mailboxes are kept. Loaded by services/business-core/src/seed/palm-showcase (idempotent; suppliers are matched by name).",
+ "source": {
+  "file": "Core Supplier List.xlsx (Wodana x PLM shared folder)",
+  "readOn": "2026-09-28"
+ },
+ "suppliers": [
+  {
+   "name": "SIOM MARBLE & GRANITE TR. LLC",
+   "categories": [
+    "Marble"
+   ],
+   "locality": "SHARJAH",
+   "approval": "approved",
+   "approvalNote": "APPROVED MARBLE SUPPLIER",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Marble / Travertine · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "NILE MARBLE & GRANITE FACTORY LLC",
+   "categories": [
+    "Marble"
+   ],
+   "locality": "DUBAI, AL QUOZ",
+   "approval": "approved",
+   "approvalNote": "APPROVED MARBLE SUPPLIER",
+   "paymentTerms": "split",
+   "advancePercent": "50",
+   "termsNote": "50 / 50 - for items slab upfront 100% after completion depends on stocks availability",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Marble / Travertine · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "LILACS MARBLE",
+   "categories": [
+    "Marble"
+   ],
+   "locality": "ABU DHABI",
+   "approval": "approved",
+   "approvalNote": "APPROVED MARBLE SUPPLIER",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": "info@lilacs.ae",
+   "notes": "Marble Items · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "PHOENIX MARBLES CUTTING LLC",
+   "categories": [
+    "Marble"
+   ],
+   "locality": "SHARJAH",
+   "approval": "approved",
+   "approvalNote": "APPROVED MARBLE SUPPLIER",
+   "paymentTerms": "split",
+   "advancePercent": "50",
+   "termsNote": "50 / 50",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Marble / Travertine · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Bab Al Sham Marble Trading LLC",
+   "categories": [
+    "Marble"
+   ],
+   "locality": "SHARJAH",
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Travertine · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Etifaq",
+   "categories": [
+    "Travertine"
+   ],
+   "locality": "DUBAI, AL QUOZ",
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": "Sales@etifaqglobalstone.com",
+   "notes": "Marble / Travertine · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "RATHATH Marble",
+   "categories": [
+    "Marble"
+   ],
+   "locality": "SHARJAH",
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Marble / Travertine · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Al Ateeq",
+   "categories": [
+    "Marble"
+   ],
+   "locality": "SHARJAH",
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Marble / Travertine · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Marble House",
+   "categories": [
+    "Sintered Stone"
+   ],
+   "locality": "SHARJAH",
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Sintered Stone · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Ritver Paints Manufacturing LLC",
+   "categories": [
+    "Paint"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PU Paint, Thinner, Primer ETC · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Johns Paints Trading",
+   "categories": [
+    "Paint"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Paint · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "SAS Express Building Materials Trading LLC",
+   "categories": [
+    "Paint"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Paint · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "MARE PAINTS IND.FACTORY SOLE",
+   "categories": [
+    "Paint"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Paint · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Mas Paint ?",
+   "categories": [
+    "Paint"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Micro Cement · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Al Hikma W.Shops Equip & Machines TR.",
+   "categories": [
+    "Tools"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "CNC tools, Bits etc · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Fine Tools Trading LLC",
+   "categories": [
+    "Tools"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Tools and joinery equipments · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Ectratech Trading LLC",
+   "categories": [
+    "Hardware"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Hinges/Runners/Tools · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Emilam Industries LLC",
+   "categories": [
+    "Building Materials"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Laminate · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Golden Valley Building Materials Trading LLC",
+   "categories": [
+    "Building Materials"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Building Materials · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Al Yasmeen Building Materials Trading LLC",
+   "categories": [
+    "Building Materials"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Building materils, paints etc · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Crystal Casa Glass And Aluminum Works LLC",
+   "categories": [
+    "Glass"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Glass and Mirror · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Meta Glass",
+   "categories": [
+    "Glass"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "GLASS & ALUMINIUM · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Fabric Library FZCO",
+   "categories": [
+    "Upholstery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "none",
+   "dealNote": "0.1",
+   "email": null,
+   "notes": "All type of Fabric · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "FABRIC NATION TEXTILE TRADING LLC",
+   "categories": [
+    "Upholstery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "All type of Fabric · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Cane and Feathers General Trading LLC",
+   "categories": [
+    "Upholstery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Goose feathers · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Froma General Trading LLC",
+   "categories": [
+    "Upholstery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Foam Sheets · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Golden Dreams Building Materials Trading LLC",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Wood · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "GOLDENWAY ELECT. WARE TR.LLC",
+   "categories": [
+    "Electrical"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Electrical · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Kafeela Advertising Requisites Trading LLC",
+   "categories": [
+    "Electrical"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "LEDs, Electrical items · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "New Qamar Al Sahra Building Materials Trading LLC",
+   "categories": [
+    "Building Materials"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Building Materials · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Workspace Furniture Industry LLC",
+   "categories": [
+    "Logistics"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Hinges and Runners · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Qamar Alhuda Aljadeed General Trading LLC",
+   "categories": [
+    "Building Materials"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Building Materials · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Rexal General Trading LLC",
+   "categories": [
+    "Upholstery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Metresses · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Rhine Building Materials Tr. Co. LLC",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Laminate, wood, Building Material · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Royal Palace Foam Factory LLC",
+   "categories": [
+    "Upholstery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Foam Sheets · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Royal Wings Building Materials Trading LLC",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "LEDs, Joinery items · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Safinat Al Bahar Building Materials LLC",
+   "categories": [
+    "Tools"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Tools and Joinery · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Scientechnic LLC",
+   "categories": [
+    "Electrical"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Electrical · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Top Line Building Materials Co. LLC",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Laminate & Lipping · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "United Emirates Materials & Abrasives LLC",
+   "categories": [
+    "Metal"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "none",
+   "dealNote": "depends on the order",
+   "email": null,
+   "notes": "Metals , Chair Frames etc · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Woodstock Trading LLC",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "MDF, Plywood, vaneer etc · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Zhejiang Huasheng Huiye Furniture FZCO",
+   "categories": [
+    "Upholstery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Dacron · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "ALPHA PRIME BUILDING MATERIALS TRD. L.L.C",
+   "categories": [
+    "Porcelain"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Porcelain Tiles · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "SANIPEX / BAGNO DESIGN",
+   "categories": [
+    "Porcelain"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "15% discount reflected on issued Invoice",
+   "email": null,
+   "notes": "Porcelain Tiles · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "GHAF AL SAHRA TRADING LLC",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Rock Wall · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Super Classic Trading Co. LLC",
+   "categories": [
+    "Wrapping Material"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Wrapping Material · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Four K Building Material",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Egeer board's · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "SMB Glass & Aluminium",
+   "categories": [
+    "Glass"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Glass Fabrication · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Royal Grand Star Trading",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Flooring Materials · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Mohd Hakim Factory Machinery",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Jowat Adhesive Resin · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Casana LLC",
+   "categories": [
+    "Upholstery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Fabric Supply only · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "KINGS Fabrication",
+   "categories": [
+    "Corian"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Corian · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Acrylic Point Display",
+   "categories": [
+    "Glass"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Acrylic fabricate · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Al Azhar Paints Trading LLC",
+   "categories": [
+    "Paint"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PU Paint, Thinner, Primer ETC · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Al Fahs W. Shop Tools Maint.",
+   "categories": [
+    "Tools"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Sharpening of blades · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Al Sad Building Mat. LLC",
+   "categories": [
+    "Building Materials"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Archistone LLC",
+   "categories": [
+    "Marble"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Marble · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Blue Rhine General Trading LLC",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "LEDs, Joinery equipments · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Glaze Granite & Marble Tr. LLC",
+   "categories": [
+    "Marble"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Porcelain & Marble · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Godn Industrial Equipment FZCO",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Joinery · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Heavenlight Electronics Trading LLC",
+   "categories": [
+    "Electrical"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Electrical · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "ITALCO MIDDLE EAST TRADING LLC",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Joinery · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Malabar Glass & Aluminium Trading LLC",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA / End of Month for all delivered items",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Profile · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Mas Paints & Chemicals Industry",
+   "categories": [
+    "Paint"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Paint · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Mega City Building Materials Trading LLC",
+   "categories": [
+    "Building Materials"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Building Materials · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Mirodec Gulf Glass Industries LLC",
+   "categories": [
+    "Glass"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Glass and Mirror · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Ornate Wood Manufacturing LLC",
+   "categories": [
+    "Joinery"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Laminate, wood, lipping · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Qamar Al Zeyan Building Materials Trading LLC",
+   "categories": [
+    "Building Materials"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Building Materials · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "STONETTA",
+   "categories": [
+    "Marble"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Marble / Slab Only no fabrication · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Ugarit Paints Trading",
+   "categories": [
+    "Paint"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Paint · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "AL ATEEQ STONES & MARBLE TR.",
+   "categories": [
+    "Marble"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Marble / Slab only no fabrication · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "RATHATH MARBLE FACTORY",
+   "categories": [
+    "Marble"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Marble / Slab only no fabrication · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Moda Line",
+   "categories": [
+    "Marble"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Porcelain marble supply only / no fabrication · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Grani Marble",
+   "categories": [
+    "Marble"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "",
+   "email": null,
+   "notes": "Marble / Slab only no fabrication · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Al Tamauz Al Farid Interior Decoearion",
+   "categories": [
+    "Porcelain"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Direct Payment",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Porcelain and Marble supply only / no fabrication · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Heritage Brass",
+   "categories": [
+    "Door Handles"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Door handle supply · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "EuroArt",
+   "categories": [
+    "Door Handles"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Door handle supply · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Lock & Handles",
+   "categories": [
+    "Door Handles"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Door handle supply · PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Metre Squared",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "To METAGLASS TECHNICAL SERVICES CONTRACTING CO. L.L.C",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "A QA C BUILDING",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Dulsco",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "BlueWave Cleaners / new afro",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Sekah Al Rifaa",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "QAMAR AL HUDA",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "HIRTAA BUILDING",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "RAK CERAMICS",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "MFW TECHNICAL SERVICES LLC",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "FAIRDEAL MARBLES",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "LASPINAS BUILDING",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Home Furniture Manufacturing"
+  },
+  {
+   "name": "Casabella Better Living Furniture Trading LLC",
+   "categories": [
+    "Carpet, Curtain, Wallpaper"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "Month End - SOA",
+   "deal": "on_request",
+   "dealNote": "upon request",
+   "email": null,
+   "notes": "Bespoke carpet, Curtain and Wallpaper · PLM Interiors Trading"
+  },
+  {
+   "name": "Heng Tong - Carpets",
+   "categories": [
+    "Rugs"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "Month End - SOA",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Standard Carpets · PLM Interiors Trading"
+  },
+  {
+   "name": "Lifestyle / LHC Gifts and Trading",
+   "categories": [
+    "Diffusers"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA",
+   "deal": "on_request",
+   "dealNote": "discount/comm",
+   "email": null,
+   "notes": "Diffuser · PLM Interiors Trading"
+  },
+  {
+   "name": "MAYFAIR Wrapping",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "Terms",
+   "deal": "on_request",
+   "dealNote": "upon request",
+   "email": null,
+   "notes": "Wrapping / Flooring · PLM Interiors Trading"
+  },
+  {
+   "name": "No More Bottles",
+   "categories": [],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "Month End - SOA",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "water dispenser machine · PLM Interiors Trading"
+  },
+  {
+   "name": "Genius Marble / Radical",
+   "categories": [
+    "Marble Accessories"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "credit",
+   "termsNote": "30 days after item received",
+   "deal": "on_request",
+   "dealNote": "discounted",
+   "email": null,
+   "notes": "Marble Accessories · PLM Interiors Trading",
+   "creditDays": 30
+  },
+  {
+   "name": "Flower Center",
+   "categories": [
+    "Trees"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Olive Trees · PLM Interiors Trading"
+  },
+  {
+   "name": "Yatai Decor - Pots",
+   "categories": [
+    "Pots"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Pots · PLM Interiors Trading"
+  },
+  {
+   "name": "Amvin Trading LLC",
+   "categories": [
+    "PLM Shirts"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "on_delivery",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "discounted",
+   "email": null,
+   "notes": "PLM Shirts · PLM Interiors Trading"
+  },
+  {
+   "name": "Acorn Gifts Trading LLC",
+   "categories": [
+    "PLM Bags"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "on_delivery",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "discounted",
+   "email": null,
+   "notes": "PLM Bags · PLM Interiors Trading"
+  },
+  {
+   "name": "Rexal - PLM Mattress",
+   "categories": [
+    "PLM Mattress"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "PLM Mattress · PLM Interiors Trading"
+  },
+  {
+   "name": "Zhe Jiang Yinzuo - SILLY VASES",
+   "categories": [
+    "Vases"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Vases · PLM Interiors Trading"
+  },
+  {
+   "name": "FLORA Flowers Trading LLC",
+   "categories": [
+    "Trees"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "upfront",
+   "termsNote": "",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Banana Plant · PLM Interiors Trading"
+  },
+  {
+   "name": "SHINY Home Cleaning Services",
+   "categories": [
+    "Office Cleaner"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "statement",
+   "termsNote": "SOA",
+   "deal": "none",
+   "dealNote": "",
+   "email": null,
+   "notes": "Cleaners · PLM Interiors Trading"
+  },
+  {
+   "name": "GLOE Candles",
+   "categories": [
+    "Candles"
+   ],
+   "locality": null,
+   "approval": "pending",
+   "approvalNote": "",
+   "paymentTerms": "on_delivery",
+   "termsNote": "",
+   "deal": "on_request",
+   "dealNote": "discount/comm",
+   "email": null,
+   "notes": "Gloe Candles · PLM Interiors Trading"
+  }
+ ]
+}

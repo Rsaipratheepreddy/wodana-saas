@@ -1,6 +1,7 @@
 export * from "./foundations/provider";
 export * from "./foundations/formatters";
 export * from "./foundations/haptics";
+export * from "./foundations/media";
 export * from "./foundations/time-zone";
 export * from "./foundations/access";
 export * from "./atoms/module-icon";
@@ -40,3 +41,5 @@ export * from "./patterns/charts";
 export * from "./patterns/activity";
 export * from "./components/phone-field";
 export * from "./components/illustration";
+export * from "./patterns/tour-overlay";
+export * from "./patterns/tour-loader";
