@@ -42,6 +42,21 @@ describe("live events (FD-4)", () => {
     expect(source.closed).toBe(true);
   });
 
+  it("does not ask again for a refused stream for 30 seconds, whoever mounts", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const refusedWorkspace = "11111111-2222-4333-8444-555555555555";
+    const first = renderHook(() => useLiveInvalidate(refusedWorkspace, ["workspace"], vi.fn()));
+    const source = FakeEventSource.instances[0];
+    source.readyState = FakeEventSource.CLOSED;
+    act(() => { source.emit("error"); });
+    first.unmount();
+    renderHook(() => useLiveInvalidate(refusedWorkspace, ["notifications"], vi.fn()));
+    expect(FakeEventSource.instances).toHaveLength(1);
+    act(() => { vi.advanceTimersByTime(30_000); });
+    expect(FakeEventSource.instances).toHaveLength(2);
+  });
+
   it("does nothing without the stream, and polling slows to a minute only while it is live", () => {
     const { result } = renderHook(() => useLiveInvalidate(workspaceId, ["workspace"], vi.fn()));
     expect(result.current).toBe(false);

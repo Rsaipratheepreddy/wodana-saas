@@ -48,9 +48,10 @@ export function NotificationSettingsPage({ workspaceId, userId }: { workspaceId:
     void save(`${module}:${channel}`, prefixes.map((prefix) => ({ eventType: `${prefix}.*`, channel, enabled })));
   };
   const phone = preferences.find((row) => row.eventType === "*" && row.channel === "push");
-  const quiet = phone?.quietHours && typeof phone.quietHours.start === "string" && typeof phone.quietHours.end === "string" ? phone.quietHours as { start: string; end: string } : null;
+  const quiet = phone?.quietHours && typeof phone.quietHours.start === "string" && typeof phone.quietHours.end === "string" ? phone.quietHours as { start: string; end: string; timezone?: string } : null;
+  // Quiet hours keep the time zone they were set in; new ones use the workspace's.
   const setQuiet = (value: { start: string; end: string } | null) => void save("quiet", [{
-    eventType: "*", channel: "push", enabled: phone?.enabled ?? true, quietHours: value ? { ...value, timezone: timeZone } : {},
+    eventType: "*", channel: "push", enabled: phone?.enabled ?? true, quietHours: value ? { start: value.start, end: value.end, timezone: quiet?.timezone ?? timeZone } : {},
   }]);
   const time = (value: string) => { try { return parseTime(value); } catch { return null; } };
   const text = (value: { hour: number; minute: number } | null) => (value ? `${String(value.hour).padStart(2, "0")}:${String(value.minute).padStart(2, "0")}` : null);
@@ -72,7 +73,7 @@ export function NotificationSettingsPage({ workspaceId, userId }: { workspaceId:
       <SettingsRow label={t("Hold phone notifications")} hint={t("They arrive when quiet hours end. The inbox still has them.")}>
         <Switch aria-label={t("Hold phone notifications")} isDisabled={saving !== null} isSelected={Boolean(quiet)} onChange={(on) => setQuiet(on ? { start: "22:00", end: "07:00" } : null)} />
       </SettingsRow>
-      {quiet ? <SettingsRow label={t("Between")} hint={timeZone}>
+      {quiet ? <SettingsRow label={t("Between")} hint={quiet.timezone ?? timeZone}>
         <div className={styles.times}>
           {/* Saved when a field is left, not on every digit. */}
           <TimeField aria-label={t("From")} label={undefined} hourCycle={24} value={time(draft?.start ?? quiet.start)} isDisabled={saving !== null}

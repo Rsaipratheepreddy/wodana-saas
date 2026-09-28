@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Optional, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, Optional, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
@@ -43,6 +43,7 @@ const providerUrl = (model: string) => `https://generativelanguage.googleapis.co
 
 @Injectable()
 export class AiGatewayService {
+  private readonly logger = new Logger(AiGatewayService.name);
   private fetcher: Fetcher = (url, init) => fetch(url, init);
   constructor(private readonly access: WorkspaceAccessService, @Optional() private readonly limits: AiRateLimitService = new AiRateLimitService()) {}
 
@@ -146,6 +147,7 @@ export class AiGatewayService {
       const name = (error as Error)?.name;
       if (name === "TimeoutError" || name === "AbortError") { status = "timeout"; throw new AiUnavailableError("The AI service took too long. Try again, or continue manually."); }
       if (error instanceof AiUnavailableError) throw error;
+      this.logger.warn(`AI provider call failed (${(error as Error)?.name ?? "unknown"}: ${(error as Error)?.message ?? ""})`);
       throw new AiUnavailableError("The AI service did not answer. Try again, or continue manually.");
     } finally {
       await this.log(actor, workspaceId, { feature: input.feature, model, usage, status, started, userId });
@@ -174,7 +176,12 @@ export class AiGatewayService {
           body, signal: AbortSignal.timeout(Math.min(retry ? 50_000 : remaining, remaining)),
         });
         if ([429, 500, 502, 503, 504].includes(response.status)) { await response.body?.cancel(); throw new TemporaryProviderError(`Provider temporarily unavailable (${response.status})`); }
-        if (!response.ok) throw new AiUnavailableError("The AI service did not answer. Try again, or continue manually.");
+        if (!response.ok) {
+          // The status only: the provider's body can echo the prompt.
+          this.logger.warn(`AI provider refused the request (HTTP ${response.status})`);
+          await response.body?.cancel();
+          throw new AiUnavailableError("The AI service did not answer. Try again, or continue manually.");
+        }
         return await response.json() as unknown;
       } catch (error) {
         const name = (error as Error)?.name;

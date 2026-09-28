@@ -12,14 +12,22 @@ type Listener = { scopes: ReadonlySet<string>; fire: () => void };
 type Channel = { source: EventSource | null; listeners: Set<Listener>; live: boolean; watchers: Set<(live: boolean) => void>; retry?: number };
 
 const channels = new Map<string, Channel>();
+/** A refused stream (signed out, no access, no live updates) is not asked again before this, whoever mounts. */
+const refusedUntil = new Map<string, number>();
 const RETRY_MS = 30_000;
 
 function connect(workspaceId: string, channel: Channel) {
   if (typeof EventSource === "undefined" || channel.source) return;
+  const wait = (refusedUntil.get(workspaceId) ?? 0) - Date.now();
+  if (wait > 0) {
+    window.clearTimeout(channel.retry);
+    channel.retry = window.setTimeout(() => connect(workspaceId, channel), wait);
+    return;
+  }
   const source = new EventSource(`/api/workspace/events?workspaceId=${encodeURIComponent(workspaceId)}`);
   channel.source = source;
   const setLive = (live: boolean) => { if (channel.live !== live) { channel.live = live; channel.watchers.forEach((watch) => watch(live)); } };
-  source.addEventListener("open", () => setLive(true));
+  source.addEventListener("open", () => { refusedUntil.delete(workspaceId); setLive(true); });
   source.addEventListener("change", (event) => {
     let scopes: string[] = [];
     try { scopes = (JSON.parse((event as MessageEvent<string>).data) as { scopes?: string[] }).scopes ?? []; } catch { return; }
@@ -30,7 +38,8 @@ function connect(workspaceId: string, channel: Channel) {
     // The browser retries a dropped stream itself; a refused one (signed out, no access) is retried later.
     if (source.readyState === EventSource.CLOSED) {
       channel.source = null;
-      if (channel.listeners.size) channel.retry = window.setTimeout(() => connect(workspaceId, channel), RETRY_MS);
+      refusedUntil.set(workspaceId, Date.now() + RETRY_MS);
+      if (channel.listeners.size) { window.clearTimeout(channel.retry); channel.retry = window.setTimeout(() => connect(workspaceId, channel), RETRY_MS); }
     }
   });
 }
