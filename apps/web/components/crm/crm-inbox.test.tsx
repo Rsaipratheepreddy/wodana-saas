@@ -80,13 +80,17 @@ describe("CRM inbox", () => {
     await user.click(within(dialog).getByRole("button", { name: "Send template" }));
     await waitFor(() => expect(posted("/messages")).toEqual([{ direction: "outbound", purpose: "service", templateId: TEMPLATE, clientMessageId: expect.any(String) }]));
   });
-  it("blocks a template whose value this chat does not have, naming the field", async () => {
-    const user = userEvent.setup(), { data, record } = setup({}, { context: { variables: { "contact.first_name": "Noura" } } });
+  it("names a template value this chat does not have and sends only once it is typed", async () => {
+    const user = userEvent.setup(), { data, record, posted } = setup({}, { context: { variables: { "contact.first_name": "Noura" } } });
     render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     await user.click(await screen.findByRole("button", { name: "Templates" }));
     const dialog = await screen.findByRole("dialog");
-    expect(await within(dialog).findByText(/Fill in \{\{2\}\} \(Enquiry reference\)/)).toBeInTheDocument();
+    const missing = await within(dialog).findByRole("textbox", { name: /\{\{2\}\} · Enquiry reference/ });
     expect(within(dialog).getByRole("button", { name: "Send template" })).toBeDisabled();
+    await user.type(missing, "your villa");
+    expect(within(dialog).getByText("Hi Noura, your enquiry your villa is ready.")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Send template" }));
+    await waitFor(() => expect(posted("/messages")).toEqual([{ direction: "outbound", purpose: "service", templateId: TEMPLATE, templateParameters: ["Noura", "your villa"], clientMessageId: expect.any(String) }]));
   });
   it("fills a quick reply after / from the chat's records", async () => {
     const user = userEvent.setup(), { data, record } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);

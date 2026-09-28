@@ -9752,5 +9752,7 @@
   "{actor} added the label {label}": "{actor} added the label {label}",
   "{actor} removed the label {label}": "{actor} removed the label {label}",
   "{actor} linked this chat to an enquiry": "{actor} linked this chat to an enquiry",
-  "Open chats per person": "Open chats per person"
+  "Open chats per person": "Open chats per person",
+  "No field yet": "No field yet",
+  "This chat has no value for it. Type it for this message.": "This chat has no value for it. Type it for this message."
 }

@@ -50,7 +50,10 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   const areaOptions = options?.areas?.[details.emirate ?? ""] ?? [];
   const [customAreaSelected, setCustomAreaSelected] = useState(() => Boolean(existing?.details?.area && !(options?.areas?.[existing.details.emirate ?? ""] ?? []).some(item => item.id === existing.details?.area)));
   const areaChoice = customAreaSelected ? "other" : details.area ?? "";
-  const [source, setSource] = useState(existing?.source ?? options?.sources.find(s => s.id === "company")?.id ?? options?.sources[0]?.id ?? "");
+  // A chat's enquiry starts on a source that offers the chat's channel (e.g. WhatsApp).
+  const [source, setSource] = useState(existing?.source
+    ?? (prefill?.channel ? options?.sources.find(s => s.id === "company" && options.channels[s.id]?.some(c => c.id === prefill.channel))?.id ?? options?.sources.find(s => options.channels[s.id]?.some(c => c.id === prefill.channel))?.id : undefined)
+    ?? options?.sources.find(s => s.id === "company")?.id ?? options?.sources[0]?.id ?? "");
   const [channel, setChannel] = useState(existing?.channel ?? options?.channels[source]?.find(c => c.id === prefill?.channel)?.id ?? options?.channels[source]?.find(c => c.id === "call")?.id ?? options?.channels[source]?.[0]?.id ?? "");
   // Only a real correction is sent, so an older source that is no longer offered stays as it was.
   const sourceChanged = Boolean(existing) && (source !== (existing?.source ?? "") || channel !== (existing?.channel ?? ""));

@@ -3,7 +3,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { FileText, Send, StickyNote, Zap } from "lucide-react";
-import { Button, ControlledModalDialog, IconButton, InlineNotice, SearchInput, SegmentedControl, useConfirmationDialog } from "@/design-system";
+import { Button, ControlledModalDialog, IconButton, SearchInput, SegmentedControl, TextInput, useConfirmationDialog } from "@/design-system";
 import { crmRequest, type RecordData } from "@/lib/crm/client";
 import { fillQuickReply, fillTemplate, quickReplyQuery, renderTemplate, TEMPLATE_SOURCE_LABELS, windowLeft, type ChatContext, type InboxOwner, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -55,7 +55,7 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
     : people.map((person) => ({ id: person.id, label: person.displayName, pick: () => { onDraftChange(draft.replace(/@([^\s@]*)$/, `@${person.displayName} `)); setMentions((current) => current.some((item) => item.id === person.id) ? current : [...current, person]); setHighlight(0); input.current?.focus(); } }));
   useLayoutEffect(() => { if (input.current) { input.current.style.height = "auto"; input.current.style.height = `${Math.min(input.current.scrollHeight, 112)}px`; } }, [draft]);
 
-  const send = async (body: { bodyText?: string; templateId?: string }, after?: () => void, confirmed = false): Promise<void> => {
+  const send = async (body: { bodyText?: string; templateId?: string; templateParameters?: string[] }, after?: () => void, confirmed = false): Promise<void> => {
     if (saving.current) return;
     const text = body.bodyText?.trim() ?? "";
     const newer = lastOutbound && lastOutbound !== seenOutbound.current && !mine.current.has(lastOutbound);
@@ -63,7 +63,7 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
       requestConfirmation({ title: t("Someone else replied"), body: t("A teammate replied since you opened this chat. Send yours too?"), confirmLabel: t("Send anyway"), confirmVariant: "primary", onConfirm: () => void send(body, after, true) });
       return;
     }
-    const key = `${mode}:${body.templateId ?? ""}:${text}`;
+    const key = `${mode}:${body.templateId ?? ""}:${JSON.stringify(body.templateParameters ?? [])}:${text}`;
     if (attempt.current?.text !== key) attempt.current = { text: key, id: crypto.randomUUID() };
     saving.current = true; setBusy(true); setFailure(""); setNotice("");
     try {
@@ -71,7 +71,7 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
       const mentioned = note ? mentions.filter((person) => text.includes(`@${person.displayName}`)).map((person) => person.id) : [];
       const result = await crmRequest(workspaceId, `conversations/${id}/messages`, "POST", {
         direction: note ? "internal" : "outbound", ...(note ? {} : { purpose: "service" }),
-        ...(body.templateId ? { templateId: body.templateId } : { bodyText: text }), ...(mentioned.length ? { mentions: mentioned } : {}), clientMessageId: attempt.current.id,
+        ...(body.templateId ? { templateId: body.templateId, ...(body.templateParameters ? { templateParameters: body.templateParameters } : {}) } : { bodyText: text }), ...(mentioned.length ? { mentions: mentioned } : {}), clientMessageId: attempt.current.id,
       }, timeout());
       mine.current.add(result.id); seenOutbound.current = result.id;
       attempt.current = null; setMentions([]);
@@ -101,7 +101,7 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
   }}>
     <div className={styles.composerTools}>
       {thread.channel !== "internal" ? <SegmentedControl label={t("Message type")} value={mode} onChange={(value) => { setMode(value as "reply" | "note"); setFailure(""); }} options={[{ id: "reply", label: t("Reply") }, { id: "note", label: t("Note") }]} /> : null}
-      {mode === "reply" && isWhatsApp && left > 0 ? <span className={styles.windowChip}>{t("Window closes in {time}", { time: left >= 3_600_000 ? t("{count} h", { count: Math.floor(left / 3_600_000) }) : t("{count} m", { count: Math.max(1, Math.floor(left / 60_000)) }) })}</span> : null}
+      {mode === "reply" && isWhatsApp && left > 0 && !replyBlocked ? <span className={styles.windowChip}>{t("Window closes in {time}", { time: left >= 3_600_000 ? t("{count} h", { count: Math.floor(left / 3_600_000) }) : t("{count} m", { count: Math.max(1, Math.floor(left / 60_000)) }) })}</span> : null}
       <span className={styles.toolSpacer} />
       {mode === "reply" && isWhatsApp ? <Button size="compact" variant="quiet" isDisabled={Boolean(replyBlocked)} onPress={() => setPicking(true)}><FileText aria-hidden="true" size={15} />{t("Templates")}</Button> : null}
       {mode === "reply" && !needsTemplate ? <IconButton aria-label={t("Quick replies")} size="compact" isDisabled={Boolean(replyBlocked)} onPress={() => { onDraftChange("/"); input.current?.focus(); }}><Zap size={15} /></IconButton> : null}
@@ -123,32 +123,41 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
     </div> : null}
     <div className={styles.composerFooter} id={`message-help-${id}`}><span role="status">{notice}</span><small>{mode === "note" ? t("Only your team sees notes") : thread.signatureEnabled ? t("Signed with your first name") : t("Enter to send · Shift+Enter for a new line")}</small></div>
     {failure ? <p className={styles.error} role="alert">{failure}{isWhatsApp && windowClosed && mode === "reply" ? <> <Button size="compact" variant="quiet" onPress={() => setPicking(true)}>{t("Choose template")}</Button></> : null}</p> : null}
-    {picking ? <TemplatePicker templates={lookups.templates} variables={variables} canManage={lookups.canManage} onClose={() => setPicking(false)} onSend={async (template) => { setPicking(false); await send({ templateId: template.id }); }} /> : null}
+    {picking ? <TemplatePicker templates={lookups.templates} variables={variables} canManage={lookups.canManage} onClose={() => setPicking(false)} onSend={async (template, templateParameters) => { setPicking(false); await send({ templateId: template.id, templateParameters }); }} /> : null}
     {confirmationDialog}
   </form>;
 }
 
-/** Approved templates with a preview filled from the chat's records; a missing value blocks the send and names its field. */
-function TemplatePicker({ templates, variables, canManage, onClose, onSend }: { templates: InboxTemplate[]; variables: ChatContext["variables"]; canManage: boolean; onClose: () => void; onSend: (template: InboxTemplate) => Promise<void> }) {
+/**
+ * Approved templates with a preview filled from the chat's records. A value the chat does not have is named
+ * with its field and can be typed for this one message; until it is, Send stays off.
+ */
+function TemplatePicker({ templates, variables, canManage, onClose, onSend }: { templates: InboxTemplate[]; variables: ChatContext["variables"]; canManage: boolean; onClose: () => void; onSend: (template: InboxTemplate, parameters?: string[]) => Promise<void> }) {
   const t = useT();
   const [search, setSearch] = useState("");
   const usable = templates.filter((template) => template.usable && `${template.code} ${template.body}`.toLowerCase().includes(search.trim().toLowerCase()));
   const [chosen, setChosen] = useState<InboxTemplate | null>(null);
+  const [typed, setTyped] = useState<Record<number, string>>({});
   const [sending, setSending] = useState(false);
   const selected = chosen ?? usable[0] ?? null;
   const filled = selected ? fillTemplate(selected, variables) : null;
+  const parameters = filled ? filled.parameters.map((value, index) => value || (typed[selected!.positions[index]] ?? "").trim()) : [];
+  const stillMissing = filled?.missing.filter((item) => !(typed[item.position] ?? "").trim()) ?? [];
   const unmapped = filled?.missing.find((item) => !item.source);
-  const problem = !selected || !filled?.missing.length ? "" : unmapped ? t("{{{position}}} has no field yet.", { position: unmapped.position })
-    : t("Fill in {{{position}}} ({field}): this chat has no value for it.", { position: filled.missing[0].position, field: t(TEMPLATE_SOURCE_LABELS[filled.missing[0].source!]) });
+  const fieldOf = (item: { position: number; source: keyof typeof TEMPLATE_SOURCE_LABELS | null }) => item.source ? t(TEMPLATE_SOURCE_LABELS[item.source]) : t("No field yet");
   return <ControlledModalDialog isOpen size="lg" title={t("Send a template")} onOpenChange={(open) => { if (!open && !sending) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={sending} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={sending} isDisabled={!selected || Boolean(problem)} onPress={async () => { if (!selected) return; setSending(true); await onSend(selected); setSending(false); }}>{t("Send template")}</Button></div>}>
+    footer={<div className="wd-dialog-actions"><Button isDisabled={sending} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={sending} isDisabled={!selected || stillMissing.length > 0} onPress={async () => { if (!selected) return; setSending(true); await onSend(selected, filled?.missing.length ? parameters : undefined); setSending(false); }}>{t("Send template")}</Button></div>}>
     <div className={styles.templatePicker}>
       <SearchInput label={t("Search templates")} value={search} onChange={setSearch} />
       {!usable.length ? <p className={parts.muted}>{templates.length ? t("No matching templates.") : t("No approved templates. Sync them in Integrations.")}</p> : <div className={styles.templateList} role="listbox" aria-label={t("Templates")}>
-        {usable.map((template) => <button key={template.id} type="button" role="option" aria-selected={selected?.id === template.id} onClick={() => setChosen(template)}><strong>{template.code}</strong><small>{template.locale}</small></button>)}
+        {usable.map((template) => <button key={template.id} type="button" role="option" aria-selected={selected?.id === template.id} onClick={() => { setChosen(template); setTyped({}); }}><strong>{template.code}</strong><small>{template.locale}</small></button>)}
       </div>}
-      {selected && filled ? <p className={parts.preview}>{renderTemplate(selected.body, filled.parameters)}</p> : null}
-      {problem ? <InlineNotice tone="error" message={<>{problem} {unmapped && canManage ? <Link href="/workspace/settings/inbox#inbox-templates">{t("Map its variables")}</Link> : null}</>} /> : null}
+      {selected && filled ? <p className={parts.preview}>{renderTemplate(selected.body, parameters)}</p> : null}
+      {filled?.missing.length ? <div className={styles.templateValues}>
+        {filled.missing.map((item) => <TextInput key={`${selected!.id}:${item.position}`} maxLength={1024} label={`{{${item.position}}} · ${fieldOf(item)}`}
+          description={item.source ? t("This chat has no value for it. Type it for this message.") : undefined} value={typed[item.position] ?? ""} onChange={(value) => setTyped((current) => ({ ...current, [item.position]: value }))} />)}
+        {unmapped && canManage ? <Link href="/workspace/settings/inbox#inbox-templates">{t("Map its variables")}</Link> : null}
+      </div> : null}
     </div>
   </ControlledModalDialog>;
 }
