@@ -12,8 +12,10 @@ export type SiteReport = {
 };
 /** A scope line with what approved reports installed and what submitted ones would add. */
 export type SiteLine = { id: string; title: string; unit: string; quantity: string; supply: string | null; catalogItemId: string | null; areaName: string | null; installed: string; pending: string };
+/** Something on its way to the site: an order still owing goods for the project, or a stock move. */
+export type SiteDelivery = { kind: "order" | "move"; id: string; number: string; from: string; due: string | null; lines: number };
 export type SiteState = {
-  site: { startedOn: string | null; finishedOn: string | null }; reports: SiteReport[]; lines: SiteLine[]; members: Array<{ membershipId: string; name: string }>;
+  site: { startedOn: string | null; finishedOn: string | null }; reports: SiteReport[]; deliveries?: SiteDelivery[]; lines: SiteLine[]; members: Array<{ membershipId: string; name: string }>;
   today: string; me: string; canReport: boolean; canApprove: boolean; canManage: boolean;
 };
 

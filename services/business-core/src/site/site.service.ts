@@ -5,6 +5,8 @@ import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { Dec } from "../catalog-core/decimal";
 import { move, onHand, stockItemFor, stockItemInCatalogUnit } from "../inventory/stock";
+import { readOrderLines } from "../purchasing/orders";
+import { outstanding } from "../purchasing/receiving";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { activeMembers, membershipOf, readProject } from "../project-core/project-core.store";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
@@ -267,6 +269,7 @@ export class SiteService {
       `SELECT site_started_on::text AS started, site_finished_on::text AS finished FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId])).rows[0];
     return {
       site: { startedOn: dates.started, finishedOn: dates.finished },
+      deliveries: await this.arriving(client, workspaceId, projectId),
       reports: await this.reports(client, workspaceId, projectId),
       lines: await this.lines(client, workspaceId, projectId),
       members: await activeMembers(client, workspaceId),
@@ -274,6 +277,32 @@ export class SiteService {
       // Nothing new is reported while the project is on hold; reports already submitted can still be decided.
       me: userId, canReport: who.onTeam && who.project.status === "active", canApprove: who.manager, canManage: who.manager && who.project.status === "active",
     };
+  }
+
+  /**
+   * What's on its way to the site: orders delivering to it that still owe goods for this project (when they're
+   * due, how many lines), and stock moves on the way to its site. Each opens where it's received.
+   */
+  private async arriving(client: Db, workspaceId: string, projectId: string) {
+    const orders = (await client.query<{ id: string; number: string; supplier: string }>(
+      `SELECT purchase.id, purchase.number, vendor.display_name AS supplier FROM purchase_orders purchase
+         JOIN workspace_vendors vendor ON vendor.workspace_id = purchase.workspace_id AND vendor.id = purchase.vendor_id
+        WHERE purchase.workspace_id = $1 AND purchase.deliver_to = 'site' AND purchase.status IN ('sent', 'confirmed', 'partly_received')
+          AND EXISTS (SELECT 1 FROM purchase_order_lines line WHERE line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id AND line.project_id = $2)
+        ORDER BY purchase.number`, [workspaceId, projectId])).rows;
+    const expected: Array<{ kind: "order"; id: string; number: string; from: string; due: string | null; lines: number }> = [];
+    for (const order of orders) {
+      const owed = (await readOrderLines(client, workspaceId, order.id)).filter((line) => line.projectId === projectId && outstanding(line).cmp(0) > 0);
+      if (owed.length) expected.push({ kind: "order", id: order.id, number: order.number, from: order.supplier, due: owed.map((line) => line.due).filter((due): due is string => Boolean(due)).sort()[0] ?? null, lines: owed.length });
+    }
+    const moves = (await client.query<{ id: string; number: number; from: string; due: string | null; lines: number }>(
+      `SELECT transfer.id, transfer.number, origin.name AS "from", transfer.sent_on::text AS due,
+              (SELECT count(*)::int FROM stock_transfer_lines line WHERE line.workspace_id = transfer.workspace_id AND line.transfer_id = transfer.id) AS lines
+         FROM stock_transfers transfer
+         JOIN stock_locations place ON place.workspace_id = transfer.workspace_id AND place.id = transfer.to_location_id AND place.kind = 'site' AND place.project_id = $2
+         JOIN stock_locations origin ON origin.workspace_id = transfer.workspace_id AND origin.id = transfer.from_location_id
+        WHERE transfer.workspace_id = $1 AND transfer.status = 'in_transit' ORDER BY transfer.number`, [workspaceId, projectId])).rows;
+    return [...expected, ...moves.map((move) => ({ kind: "move" as const, id: move.id, number: `MV-${move.number}`, from: move.from, due: move.due, lines: move.lines }))];
   }
 
   /** The project's active scope lines with what approved reports installed, and what submitted ones would add. */

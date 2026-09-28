@@ -4,6 +4,7 @@
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .spacer { flex: 1; }
 .muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.muted[data-late] { color: var(--wd-color-danger); }
 .subhead { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
 .reports { display: grid; gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
 .report { display: grid; gap: var(--wd-space-2); padding-block: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }

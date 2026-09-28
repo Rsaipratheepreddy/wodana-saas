@@ -301,6 +301,9 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
       expect(blocker.title).toBe("Waiting on PO-0012 · Oak veneer");
       expect(board.items.find((item) => item.id === fit)!.blockedBy.map((item) => item.id)).toEqual([blocker.id]);
       expect((await w.notices("work.blocked")).map((row) => row.recipient).sort()).toEqual([w.designer, w.manager].sort());
+      // D-20: the site sees it's on its way (the order delivers to the site).
+      await w.client.query("UPDATE purchase_orders SET deliver_to = 'site' WHERE id = $1", [order]);
+      expect((await w.site(w.manager).state(actor, w.workspaceId, w.projectId)).deliveries).toEqual([{ kind: "order", id: order, number: "PO-0012", from: "Nile Veneers", due: day(w.today, -1), lines: 1 }]);
 
       // The goods came (the order is received): the blocker closes and the work can start.
       await w.client.query("UPDATE purchase_orders SET status = 'received' WHERE id = $1", [order]);
