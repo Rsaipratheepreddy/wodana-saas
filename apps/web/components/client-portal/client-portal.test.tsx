@@ -79,6 +79,22 @@ describe("client portal", () => {
     expect(sent(fetcher, "login")).toEqual([{ challengeId: "ch1", code: "123456" }]);
   });
 
+  it("stays light with the tenant's logo and surface on top, whatever the device prefers", async () => {
+    mount((url) => (url.endsWith("/view") ? { status: 401, body: {} } : { body: {} }));
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("dark"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    const branded = { ...site, brand: { ...site.brand, primaryColor: "#E4E3DE", secondaryColor: "#000000", logoUrl: "/api/auth/tenant-logo/studio?v=1" } };
+    render(<PortalApp site={branded} />);
+    expect(await screen.findByRole("heading", { name: "Welcome home" })).toBeInTheDocument();
+    const root = document.querySelector<HTMLElement>("[data-portal-root]")!;
+    expect(root).toHaveAttribute("data-wd-theme", "light");
+    expect(root.style.getPropertyValue("--wd-workspace-brand-surface-light")).toBe("#E4E3DE");
+    expect(root.style.getPropertyValue("--wd-workspace-action-light-primary")).toBe("#000000");
+    expect(root.style.getPropertyValue("--wd-workspace-font-heading")).toContain("Montserrat");
+    expect(within(screen.getByRole("banner")).getByRole("img", { name: "Studio Interiors" })).toHaveAttribute("src", "/api/auth/tenant-logo/studio?v=1");
+    expect(within(screen.getByRole("contentinfo")).getByText("Powered by Wodana")).toBeInTheDocument();
+    expect(within(screen.getByRole("banner")).queryByText("Powered by Wodana")).not.toBeInTheDocument();
+  });
+
   it("lets a client who typed the wrong number start again", async () => {
     mount((url) => (url.endsWith("/view") ? { status: 401, body: {} } : { body: { challengeId: "ch1", channel: "whatsapp", expiresIn: 300, resendAfter: 30 } }));
     const user = userEvent.setup();

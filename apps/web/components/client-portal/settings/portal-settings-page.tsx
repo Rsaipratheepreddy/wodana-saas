@@ -4,7 +4,7 @@ import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Button, DesignSystemProvider, EmailInput, ErrorState, InlineNotice, PhoneField, SegmentedControl, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput,
+  Button, DesignSystemProvider, EmailInput, ErrorState, InlineNotice, PhoneField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { staffPortalApi } from "@/lib/client-portal/client";
@@ -107,17 +107,14 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
   </SettingsPage>;
 }
 
-/** The portal's first screen as a client will see it: the real logo, name, colours and fonts, light or dark. */
+/** The portal's first screen as a client will see it: the real logo, name, surface, colours and fonts (the portal is always light). */
 function PortalPreview({ site, draft }: { site: PortalSite; draft: Draft }) {
   const t = useT();
   const labels = usePortalLabels();
-  const [theme, setTheme] = useState<"light" | "dark">("light");
   const style = workspacePrimaryColorStyle({ primaryColor: site.brand.primaryColor, secondaryColor: site.brand.secondaryColor, headingFont: site.brand.headingFont, bodyFont: site.brand.bodyFont });
   const tabs = ["home" as const, ...PORTAL_SECTIONS.filter((section) => draft.sections[section])];
   return <div className={styles.preview}>
-    <SegmentedControl label={t("Preview in")} value={theme} onChange={(value) => setTheme(value as "light" | "dark")}
-      options={[{ id: "light", label: t("Light") }, { id: "dark", label: t("Dark") }]} />
-    <DesignSystemProvider theme={theme} style={style}>
+    <DesignSystemProvider theme="light" style={style}>
       <div aria-hidden="true" className={styles.previewFrame}>
         <div className={styles.previewHeader}>
           {/* eslint-disable-next-line @next/next/no-img-element -- the tenant's own logo */}
