@@ -55,7 +55,7 @@ type Person = { workspaceId: string; membershipId: string; userId: string };
 type Clock = { now: string; today: string; timeZone: string };
 type Row = { recordId: string; linkId?: string | null; title: string | null; context: string | null; due: Date | string | null; urgency?: string; allDay?: boolean };
 
-const FOCUS_LIMIT = 12;
+const FOCUS_LIMIT = 20;
 const UPCOMING_LIMIT = 8;
 const RECENT_LIMIT = 5;
 const OPEN_LEADS = "('new','attempting_contact','connected','nurturing','paused')";
