@@ -5,7 +5,7 @@ import { ChevronDown } from "lucide-react";
 import { Button, Callout, ControlledModalDialog, SelectField, TextInput, TextAreaField } from "@/design-system";
 import { salesOwnerChoices, type LeadsPageData } from "@/lib/crm/leads";
 import type { EnquiryDetails, LeadContact, LeadOptions } from "@/lib/crm/lead-options";
-import { countryForPhone, joinPhone, phoneCountry, phoneProblem } from "@/lib/crm/phone";
+import { countryForPhone, phoneCountry, phoneProblem, toE164 } from "@/lib/crm/phone";
 import { findContactMatches, type ClientMatch } from "@/lib/crm/client-match";
 import { CrmPhoneField } from "./crm-phone-field";
 import { ClientMatchList } from "./client-match-list";
@@ -108,7 +108,7 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved, onOpe
   const email = contact.email?.trim() ?? "";
   const matchQuery = useMemo(() => {
     if (existing) return null;
-    const fullMobile = mobile && !phoneProblem(mobile, mobileCountry, quiet, { mobile: true }) ? joinPhone(mobileCountry, mobile) : "";
+    const fullMobile = mobile && !phoneProblem(mobile, mobileCountry, quiet, { mobile: true }) ? toE164(mobile, mobileCountry) ?? "" : "";
     const validEmail = EMAIL.test(email) ? email : "";
     return fullMobile || validEmail ? { mobile: fullMobile || undefined, email: validEmail || undefined } : null;
   }, [existing, mobile, mobileCountry, email]);

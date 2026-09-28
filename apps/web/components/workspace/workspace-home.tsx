@@ -242,7 +242,7 @@ function HomeContent({ workspaceId, userId, modules, initialData, canManage, fir
     const link = links[id];
     return link ? <ViewLink href={link[0]}>{link[1]}</ViewLink> : null;
   };
-  const attentionTone = (kind: string) => kind === "sla_breach" ? "danger" as const : kind.includes("overdue") ? "warning" as const : undefined;
+  const attentionTone = (kind: string) => kind === "sla_breach" || kind === "unowned_lead" ? "danger" as const : kind === "client_review" ? "warning" as const : kind.includes("overdue") ? "warning" as const : undefined;
   const body = (id: HomeWidgetId): ReactNode => {
     switch (id) {
       case "attention": return <>

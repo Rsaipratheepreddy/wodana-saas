@@ -372,12 +372,22 @@ export async function queueUserPush(db: Db, input: {
     `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
        scheduled_for, subject, body, deep_link, idempotency_key, correlation_id)
      VALUES ($1, $2, 'user', $3, 'push', $4, 'pending', now(), $5, $6, $7, $8, gen_random_uuid())
-     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING`,
+     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
+     RETURNING id, correlation_id AS "correlationId"`,
     [input.workspaceId, row.id, input.recipientUserId, input.eventType,
       row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
       input.deepLink ?? null, input.idempotencyKey],
   );
-  return inserted.rowCount ? { queued: true as const } : { queued: false as const, reason: "already_sent" };
+  const notification = inserted.rows[0] as { id: string; correlationId: string } | undefined;
+  if (!notification) return { queued: false as const, reason: "already_sent" };
+  // Wake the worker now instead of waiting for its next poll.
+  const eventId = randomUUID();
+  await db.query(
+    `INSERT INTO outbox_events (id, workspace_id, aggregate_type, aggregate_id, event_type, payload)
+     VALUES ($4, $1, 'notification', $2, 'notification.delivery_requested.v1', $3::jsonb)`,
+    [input.workspaceId, notification.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: notification.id, actorUserId: null, occurredAt: new Date().toISOString(), correlationId: notification.correlationId, causationId: null, data: { channel: "push" } }), eventId],
+  );
+  return { queued: true as const };
 }
 
 /**
