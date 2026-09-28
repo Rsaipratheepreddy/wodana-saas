@@ -638,6 +638,20 @@
       "when": 1801117400000,
       "tag": "0139_conversation_assigned_notice",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1801114800000,
+      "tag": "0148_operations_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1801114900000,
+      "tag": "0149_factory_rework",
+      "breakpoints": true
     }
   ]
 }

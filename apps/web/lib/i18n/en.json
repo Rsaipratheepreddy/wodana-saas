@@ -9859,5 +9859,14 @@
   "More for {name}": "More for {name}",
   "Mute notices like this": "Mute notices like this",
   "See all notifications": "See all notifications",
-  "Live updates are unavailable.": "Live updates are unavailable."
+  "Live updates are unavailable.": "Live updates are unavailable.",
+  "Only one person can approve orders.": "Only one person can approve orders.",
+  "Nobody can approve orders.": "Nobody can approve orders.",
+  "Only one person can approve factory output.": "Only one person can approve factory output.",
+  "Nobody can approve factory output.": "Nobody can approve factory output.",
+  "Only one person can approve stock corrections.": "Only one person can approve stock corrections.",
+  "Nobody can approve stock corrections.": "Nobody can approve stock corrections.",
+  "Only one person can approve supplier bills.": "Only one person can approve supplier bills.",
+  "Nobody can approve supplier bills.": "Nobody can approve supplier bills.",
+  "Approvals need a second person": "Approvals need a second person"
 }

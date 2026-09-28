@@ -24,6 +24,8 @@ const PEOPLE_HREF = "/workspace/members";
 const AVATAR_STACK = 3;
 
 type AccessFilter = "all" | "granted" | "denied";
+/** Approvals someone other than the person who raised the work gives. */
+const APPROVALS = ["purchasing.approve", "factory.approve", "stock.adjust", "payables.approve"] as const;
 type RoleDialogItem = { mode: "new" } | { mode: "edit"; role: WorkspaceRole } | { mode: "duplicate"; role: WorkspaceRole } | null;
 
 function responseMessage(response: Response, fallback: string) {
@@ -248,6 +250,18 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   };
 
   const headingId = `${baseId}-role`;
+  // Nobody approves their own order, output, count or bill: an approval only one person holds stalls when
+  // they raised it (or are away), so the page says so.
+  const approvalText: Record<(typeof APPROVALS)[number], [one: string, none: string]> = {
+    "purchasing.approve": [t("Only one person can approve orders."), t("Nobody can approve orders.")],
+    "factory.approve": [t("Only one person can approve factory output."), t("Nobody can approve factory output.")],
+    "stock.adjust": [t("Only one person can approve stock corrections."), t("Nobody can approve stock corrections.")],
+    "payables.approve": [t("Only one person can approve supplier bills."), t("Nobody can approve supplier bills.")],
+  };
+  const approvalGaps = APPROVALS.flatMap((code) => {
+    const holders = new Set((initialData.members ?? []).filter((member) => member.roles.some((roleCode) => roles.find((role) => role.code === roleCode)?.permissions.includes(code))).map((member) => member.id));
+    return holders.size > 1 ? [] : [approvalText[code][holders.size ? 0 : 1]];
+  });
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
@@ -259,6 +273,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
       >
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
         {failure ? <Callout title={t("Role action failed")} tone="danger">{failure}</Callout> : null}
+        {approvalGaps.length ? <Callout title={t("Approvals need a second person")} tone="warning">{approvalGaps.join(" ")}</Callout> : null}
 
         <div className={styles.layout}>
           <nav aria-label={t("Roles")} className={styles.rolesPane}>
