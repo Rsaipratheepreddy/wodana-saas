@@ -12,6 +12,7 @@ export type SiteReport = {
 };
 /** A scope line with what approved reports installed and what submitted ones would add. */
 export type SiteLine = { id: string; title: string; unit: string; quantity: string; supply: string | null; catalogItemId: string | null; areaName: string | null; installed: string; pending: string };
+/** Something on its way to the site: an order still owing goods for the project, or a stock move. */
 export type SiteState = {
   site: { startedOn: string | null; finishedOn: string | null }; reports: SiteReport[]; lines: SiteLine[]; members: Array<{ membershipId: string; name: string }>;
   today: string; me: string; canReport: boolean; canApprove: boolean; canManage: boolean;
@@ -24,8 +25,16 @@ export type HandoverPack = {
   id: string; revision: number; title: string; areaIds: string[]; status: "draft" | "issued" | "accepted" | "refused"; replacesId: string | null; contentHash: string | null;
   issuedAt: string | null; issuedByName: string | null; decidedOn: string | null; decidedByName: string | null; decisionMethod: HandoverMethod | null; decisionNote: string; version: number;
   documents: Array<{ id: string; kind: HandoverKind; title: string; name: string; size: number; sha256: string }>;
+  /** Money still due when it was accepted, and why it was accepted anyway (staff), in the project's currency. */
+  balanceDue?: string | null; balanceCurrency?: string | null; balanceReason?: string | null;
 };
-export type HandoverState = { packs: HandoverPack[]; areas: Array<{ id: string; name: string }>; covered: boolean; canManage: boolean; open: { stages: string[]; snags: string[] } };
+export type HandoverState = {
+  packs: HandoverPack[]; areas: Array<{ id: string; name: string }>; covered: boolean; canManage: boolean; open: { stages: string[]; snags: string[] };
+  /** What the client still owes (agreed less verified receipts) and the milestones not invoiced yet. */
+  balance?: { currency: string; due: string; toInvoice: Array<{ id: string; title: string; amount: string; dueDate: string | null }> };
+  /** Whether this person may accept a handover while money is still due. */
+  canAcceptBalance?: boolean;
+};
 
 export type Supply = "make" | "buy" | "ready_made" | "subcontract" | "client" | "site_work";
 /** A scope line's warranty: from the handover it was accepted in, for its months. */
@@ -34,8 +43,17 @@ export type ClaimStatus = "open" | "covered" | "not_covered" | "chargeable";
 export type WarrantyClaim = {
   id: string; number: number; raisedOn: string; raisedByName: string; channel: "phone" | "email" | "visit" | "message" | "portal"; description: string; areaId: string | null; lineId: string | null;
   lineTitle: string | null; status: ClaimStatus; decisionNote: string; decidedByName: string | null; snagId: string | null; snagNumber: number | null; snagStatus: string | null; version: number;
+  /** A chargeable claim's variation: its number and state, and the label it was applied as (VO-n). */
+  variationId?: string | null; variationNumber?: number | null; variationStatus?: string | null; variationApplied?: string | null;
 };
 export type WarrantyState = {
   items: WarrantyItem[]; claims: WarrantyClaim[]; lines: Array<{ id: string; title: string }>; areas: Array<{ id: string; name: string }>; today: string; canRecord: boolean; canManage: boolean;
+  caseId?: string | null; baselineQuoteId?: string | null;
 };
 export type WarrantySettings = { months: Record<Supply, number>; canManage: boolean };
+
+/** The phone's "My sites today": each running project I'm on whose site work runs today. */
+export type SiteToday = {
+  projectId: string; reference: string; name: string; report: { id: string; status: SiteReportStatus } | null; arriving: number; snags: number;
+};
+export type SitesToday = { today: string | null; hour: number | null; sites: SiteToday[] };

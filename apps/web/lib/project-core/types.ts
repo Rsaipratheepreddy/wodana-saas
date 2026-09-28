@@ -23,7 +23,11 @@ export type ProjectSummary = {
   id: string; reference: string; name: string; clientName: string; status: ProjectStatus; priority: Priority; health: Health;
   promiseDate: string | null; currency: string; total: string; startedAt: string;
 };
-export type ProjectRow = ProjectSummary & { stage: { name: string; position: number; count: number } | null; lead: string | null; next: NextStep | null };
+export type ProjectRow = ProjectSummary & {
+  stage: { name: string; position: number; count: number } | null; lead: string | null; next: NextStep | null;
+  /** Open work that's late, and open work held up by something unfinished. */
+  attention?: { late: number; blocked: number };
+};
 
 export type Member = { membershipId: string; name: string };
 export type EvaluatedCheck = StageCheck & { passed: boolean; confirmedBy: string | null; confirmedAt: string | null; note: string };
@@ -32,14 +36,26 @@ export type ProjectStage = {
   startedAt: string | null; completedAt: string | null; completedByName: string | null; skipReason: string | null;
   checks: EvaluatedCheck[]; ready: boolean; owner: Member | null; canWork: boolean;
 };
-export type StatusUpdate = { id: string; health: Health; note: string; byName: string; at: string; sharedAt?: string | null };
+export type StatusUpdate = {
+  id: string; health: Health; note: string; byName: string; at: string; sharedAt?: string | null;
+  /** A status update, or the week's client update (drafted from approved site reports; a draft until the project manager approves it). */
+  kind?: "status" | "client_update"; draft?: boolean; photoIds?: string[];
+};
+/** Who sees what of a project's money: its costs (margin only with commercial costs), and the client side. */
+export type MoneyRights = { costs: boolean; margin: boolean; client: boolean };
 
 export type ProjectDetail = {
   project: ProjectSummary & {
     caseId: string; opportunityId: string; opportunityReference: string | null; holdReason: string | null; holdReviewOn: string | null;
     startDate: string | null; templateName: string | null; version: number;
     closedAt: string | null; closedByName: string | null; cancelReason: string | null;
+    heldAt?: string | null; siteStartedOn?: string | null; siteFinishedOn?: string | null;
+    /** The client has accepted a handover pack (its warranty has started). */
+    handoverAccepted?: boolean;
   };
+  /** While on hold: how long, in calendar and working days (resume can move the dates by the working days). */
+  hold?: { days: number; workingDays: number } | null;
+  money?: MoneyRights;
   seal: { revisionLabel: string; quoteNumber: number; acceptedAt: string; acceptedBy: string; method: string | null; contentHash: string; sealedAt: string } | null;
   roles: ProjectRole[];
   team: Array<{ role: string; label: string; member: Member | null }>;
@@ -66,6 +82,8 @@ export type ProjectMoney = {
   income: { currency: string; agreed: string; agreedNet: string; requested: string; invoiced: string; received: string };
   spent: string; committed: string; forecast: string; budget: string | null; margin: string | null; available: string | null;
   packages: PackageMoney[]; entries: CostEntry[]; uncosted: number; canManage: boolean;
+  /** A project manager sees their project's money without its margin. */
+  marginHidden?: boolean;
 };
 
 /** A trade's day rate from a date: a day on site costs the rate set from the latest date on or before it. */
@@ -201,6 +219,8 @@ export type WorkBoard = {
   areas: Array<{ id: string; name: string }>;
   /** A completed project still works its warranty snags. */
   aftercare: boolean;
+  /** On hold: the plan is read-only apart from cancelling work and comments. */
+  onHold?: boolean;
 };
 /** An item pushed later because something it waits on moved. */
 export type WorkMove = { id: string; number: number; title: string; fromStart: string | null; fromDue: string | null; startDate: string | null; dueDate: string | null; because: number };
@@ -228,3 +248,34 @@ export type SprintDetail = {
   /** Committed and not done yet, while the sprint runs. */
   unfinished: Array<{ itemId: string; number: number; title: string }>;
 };
+
+/** What holds a project up, counted from the record that causes it; `href` opens its filtered list. */
+export type BlockerKey = "late_work" | "blocked_work" | "materials_not_in" | "late_to_order" | "late_orders" | "work_orders_waiting" | "reports_missing" | "client_decisions"
+  | "critical_snags" | "funds_short";
+export type Blocker = { key: BlockerKey; count: number; items: string[]; href: string };
+export type ClientDecision = { kind: "materials" | "handover" | "variation"; label: string; since: string | null; href: string };
+export type ActivityRow = { id: string; at: string; action: string; source: string; actor: string; subject: string; detail: Record<string, string> };
+/** The project's Overview, read on the server. */
+export type ProjectOverview = {
+  today: string;
+  work: { open: number; late: number; blocked: number; ready: number; openSnags: number; criticalSnags: number; clientRequests: number };
+  blockers: Blocker[];
+  decisions: ClientDecision[];
+  stagePlan: Record<string, { start: string | null; end: string | null; open: number; total: number }>;
+  dates: { start: string | null; promise: string | null; planEnd: string | null; siteStarted: string | null; siteFinished: string | null };
+  money: null | {
+    currency: string; agreed: string; invoiced: string; received: string; due: string; toInvoice: number;
+    next: { title: string; amount: string; dueDate: string | null; state: MilestoneState } | null;
+    spent: string | null; committed: string | null; available: string | null; costCurrency: string | null;
+  };
+  activity: ActivityRow[];
+};
+export type MilestoneState = "to_invoice" | "invoiced" | "reported" | "verified";
+/** One payment milestone of the project's sealed quotations, with its invoice and receipt. */
+export type Milestone = {
+  id: string; title: string; trigger: string; amount: string; currency: string; dueDate: string | null; quoteId: string | null; requiredForProduction: boolean;
+  state: MilestoneState; reference: string;
+  invoice: { id: string; number: string; total: string; dueDate: string } | null;
+  receipt: { status: string; reportedBy: string; reportedAt: string; verifiedBy: string | null; verifiedAt: string | null } | null;
+};
+export type Milestones = { milestones: Milestone[]; caseRevision: number | null; caseId: string; currency: string; canReport: boolean; canVerify: boolean; visible: boolean };

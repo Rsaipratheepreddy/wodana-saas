@@ -58,6 +58,11 @@ export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: stri
       ? <span className={styles.stageCell}>{row.stage.name}<small>{t("{position} of {count}", { position: row.stage.position, count: row.stage.count })}</small></span> : null } },
     { id: "next", header: t("Next step"), accessorFn: (row) => row.next?.text ?? "", size: 250, meta: { mobileHidden: true, renderCell: (row) => row.status === "active" && row.next
       ? <span className={styles.nextCell}>{row.next.text}{row.next.owner ? <small>{row.next.owner}</small> : null}</span> : null } },
+    { id: "attention", header: t("Needs a look"), accessorFn: (row) => (row.attention?.late ?? 0) * 1000 + (row.attention?.blocked ?? 0), size: 150, meta: { mobileHidden: true, renderCell: (row) => {
+      const parts = [row.attention?.late ? t("{count} late", { count: row.attention.late }) : "", row.attention?.blocked ? t("{count} blocked", { count: row.attention.blocked }) : ""].filter(Boolean);
+      return row.status === "active" && parts.length ? <Link className={styles.attention} data-late={row.attention?.late ? true : undefined}
+        href={`/workspace/projects/${row.id}/plan?filter=${row.attention?.late ? "late" : "blocked"}`}>{parts.join(" · ")}</Link> : <span className={styles.muted}>—</span>;
+    } } },
     { id: "handover", header: t("Handover"), accessorFn: (row) => row.promiseDate ?? "", size: 140, meta: { renderCell: (row) => {
       const until = row.status === "active" ? format.until(row.promiseDate) : null;
       return row.promiseDate ? <span className={styles.dateCell}>{format.day(row.promiseDate)}{until ? <small data-late={until.late || undefined}>{until.text}</small> : null}</span> : null;

@@ -184,6 +184,14 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.materials_signed_off", channel: "in_app", subject: "{{title}}: material list signed off", body: "{{clientName}} signed off {{revision}}.", variables: ["title", "clientName", "actor", "revision"] },
   { code: "project.materials_changes", channel: "in_app", subject: "{{title}}: changes to the material list", body: "{{clientName}} asked for changes to {{revision}}: {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
   { code: "project.variation_applied", channel: "in_app", subject: "{{title}}: {{variation}} applied", body: "{{actor}} applied {{variation}} ({{amount}}).", variables: ["title", "clientName", "actor", "variation", "amount"] },
+  // Delivery reminders (the daily run): the week in numbers, a stage whose checks all pass, a material list
+  // left with the client, a milestone to invoice and the drafted client update.
+  { code: "project.weekly_summary", channel: "in_app", subject: "This week on {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.weekly_summary", channel: "email", subject: "This week on {{title}}", body: "{{note}}\n\nOpen the project to see what needs you.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.stage_ready", channel: "in_app", subject: "{{stage}} can be finished · {{title}}", body: "Everything it needs is done.", variables: ["title", "clientName", "actor", "stage", "note"] },
+  { code: "project.materials_waiting", channel: "in_app", subject: "Material list waiting on the client · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.milestone_due", channel: "in_app", subject: "To invoice · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.client_update_ready", channel: "in_app", subject: "Client update to approve · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "work.assigned", channel: "in_app", subject: "{{task}} is yours", body: "{{actor}} gave you {{task}} on {{title}}.", variables: ["title", "clientName", "actor", "task", "due"] },
   { code: "work.assigned", channel: "email", subject: "{{task}} is yours · {{title}}", body: "{{actor}} gave you {{task}} on {{title}} for {{clientName}}. {{due}}", variables: ["title", "clientName", "actor", "task", "due"] },
   { code: "work.commented", channel: "in_app", subject: "{{actor}} on {{task}}", body: "{{note}}", variables: ["title", "clientName", "actor", "task", "note"] },

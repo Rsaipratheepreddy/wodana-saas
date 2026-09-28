@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
@@ -43,6 +44,7 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
   // Home's "Site report" opens a new report on arrival (`?new=report`) for someone who reports on this project.
   const [editing, setEditing] = useState<SiteReport | "new" | null>(() => params?.get("new") === "report" ? "new" : null);
   const [returning, setReturning] = useState<SiteReport | null>(null);
+  const [rejecting, setRejecting] = useState<{ report: SiteReport; lineId: string; title: string } | null>(null);
   const load = useCallback(async () => {
     try { setState(await api.state()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The site didn't load.")); }
   }, [api, t]);
@@ -101,7 +103,9 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
       {report.noWorkReason ? <li>{t("No work: {reason}", { reason: report.noWorkReason })}</li> : null}
       {report.lines.map((line) => <li key={line.id}>{Number(line.installed) < 0
         ? t("{item}: {quantity} taken back ({note})", { item: line.title, quantity: `${quantityText(line.installed.replace("-", ""))} ${line.unit}`.trim(), note: line.note })
-        : t("{item}: {quantity} installed", { item: line.title, quantity: `${quantityText(line.installed)} ${line.unit}`.trim() })}</li>)}
+        : t("{item}: {quantity} installed", { item: line.title, quantity: `${quantityText(line.installed)} ${line.unit}`.trim() })}
+        {report.status === "approved" && state.canApprove && Number(line.installed) > 0
+          ? <> <button type="button" className={styles.inlineAction} onClick={() => setRejecting({ report, lineId: line.id, title: line.title })}>{t("Not accepted")}</button></> : null}</li>)}
       {report.safety !== "none" ? <li className={report.safety === "incident" ? styles.alert : undefined}>{`${safety[report.safety]}: ${report.safetyNote}`}</li> : null}
       {report.forecast !== "none" ? <li className={report.forecast === "blocked" ? styles.alert : undefined}>
         {t("{state}: {impact} — {owner} by {date}", { state: outlook[report.forecast], impact: report.impact, owner: report.recoveryOwnerName ?? "", date: format.day(report.recoveryOn) })}</li> : null}
@@ -151,6 +155,8 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
         return true;
       }} /> : null}
     {returning ? <ReturnDialog onClose={() => setReturning(null)} onSave={async (note) => { if (await run("return", { reportId: returning.id, note, version: returning.version })) setReturning(null); }} /> : null}
+    {rejecting ? <ReasonDialog title={t("{item} not accepted", { item: rejecting.title })} label={t("What isn't right")} action={t("Raise a snag")} onClose={() => setRejecting(null)}
+      onSave={async (reason) => { if (await run("reject_installation", { reportId: rejecting.report.id, lineId: rejecting.lineId, reason })) setRejecting(null); }} /> : null}
   </div>;
 }
 
@@ -174,6 +180,17 @@ function ReportDialog({ state, report, onClose, onSave }: {
   const [photos, setPhotos] = useState<File[]>([]);
   const [busy, setBusy] = useState<"save" | "submit" | null>(null);
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
+  // A new report can start from my last one: the same crew, and the items I was installing that aren't finished.
+  const previous = report ? null : state.reports.find((row) => row.authorId === state.me && row.reportDate < draft.reportDate && (row.workforce.length || row.lines.length)) ?? null;
+  const unfinished = (previous?.lines ?? []).filter((line) => {
+    const scope = state.lines.find((item) => item.id === line.boqLineId);
+    return scope && Number(scope.installed) < Number(scope.quantity);
+  });
+  const repeat = () => set({
+    workforce: previous!.workforce.map((row) => ({ trade: row.trade, people: String(row.people) })),
+    lines: [...draft.lines.filter((line) => line.boqLineId), ...unfinished.filter((line) => !draft.lines.some((item) => item.boqLineId === line.boqLineId))
+      .map((line) => ({ boqLineId: line.boqLineId, installed: "", note: "" }))],
+  });
   const input = () => ({
     reportDate: draft.reportDate, weather: draft.weather.trim(), safety: draft.safety, safetyNote: draft.safetyNote.trim(), forecast: draft.forecast, impact: draft.impact.trim(),
     recoveryOwnerId: draft.recoveryOwnerId || null, recoveryOn: draft.recoveryOn, noWorkReason: draft.noWorkReason.trim(), notes: draft.notes.trim(),
@@ -194,6 +211,10 @@ function ReportDialog({ state, report, onClose, onSave }: {
         <DateField label={t("Day")} isRequired value={parseDate(draft.reportDate)} onChange={(value) => set({ reportDate: value ? value.toString() : state.today })} />
         <TextInput label={t("Weather")} value={draft.weather} onChange={(weather) => set({ weather })} />
       </div>
+      {previous ? <div className={styles.row}>
+        <Button size="compact" onPress={repeat}>{t("Same crew as {date}", { date: previous.reportDate })}</Button>
+        <span className={styles.muted}>{[previous.workforce.map((row) => `${row.trade} ${row.people}`).join(" · "), unfinished.length ? t("{count} items still going", { count: unfinished.length }) : ""].filter(Boolean).join(" · ")}</span>
+      </div> : null}
       <fieldset className={styles.group}>
         <legend>{t("Who worked")}</legend>
         {draft.workforce.map((row, index) => <div key={index} className={styles.row}>
@@ -247,5 +268,17 @@ function ReturnDialog({ onClose, onSave }: { onClose: () => void; onSave: (note:
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim()); setBusy(false); }}>{t("Send back")}</Button></div>}>
     <TextAreaField label={t("What to change")} isRequired value={note} onChange={setNote} />
+  </ControlledModalDialog>;
+}
+
+/** Why something isn't right: one required line of text, then the action. */
+function ReasonDialog({ title, label, action, onClose, onSave }: { title: string; label: string; action: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
+  const t = useT();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  return <ControlledModalDialog isOpen size="md" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{action}</Button></div>}>
+    <TextAreaField label={label} isRequired value={reason} onChange={setReason} autoFocus />
   </ControlledModalDialog>;
 }

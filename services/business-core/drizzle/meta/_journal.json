@@ -712,12 +712,26 @@
     {
       "idx": 101,
       "version": "7",
+      "when": 1801180000000,
+      "tag": "0150_project_delivery_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1801180000001,
+      "tag": "0151_warranty_variation",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
       "when": 1801190000000,
       "tag": "0156_inbox_auto_replies",
       "breakpoints": true
     },
     {
-      "idx": 102,
+      "idx": 104,
       "version": "7",
       "when": 1801190000001,
       "tag": "0157_default_quick_replies",

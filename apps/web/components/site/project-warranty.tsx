@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
 import { Button, ControlledModalDialog, DateField, EmptyState, ErrorState, InlineNotice, SegmentedControl, SelectField, SettingsSection, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { createVariation } from "@/lib/project-core/variations";
 import { siteApi, warrantySettingsApi } from "@/lib/site/client";
 import type { Supply, WarrantyClaim, WarrantyItem, WarrantySettings, WarrantyState } from "@/lib/site/types";
 import { useProjectFormat } from "../project-core/format";
@@ -25,6 +27,8 @@ export function ProjectWarranty({ workspaceId, projectId }: { workspaceId: strin
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [dialog, setDialog] = useState<{ kind: "claim" } | { kind: "decide"; claim: WarrantyClaim } | { kind: "months"; item: WarrantyItem } | null>(null);
+  const [starting, setStarting] = useState<string | null>(null);
+  const router = useRouter();
   const load = useCallback(async () => {
     try { setState(await api.warranty()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The warranty didn't load.")); }
   }, [api, t]);
@@ -38,6 +42,18 @@ export function ProjectWarranty({ workspaceId, projectId }: { workspaceId: strin
       return false;
     }
   };
+  /** A chargeable claim goes on as a draft variation of the accepted quotation, linked to the claim, opened in the builder. */
+  const charge = async (claim: WarrantyClaim) => {
+    if (!state?.caseId || !state.baselineQuoteId) return;
+    setStarting(claim.id); setNotice("");
+    try {
+      const quoteId = await createVariation(workspaceId, state.caseId, state.baselineQuoteId);
+      if (await run("link_variation", { claimId: claim.id, quoteId, version: claim.version })) router.push(`/workspace/projects/${projectId}/changes/${quoteId}`);
+    } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not start a variation.")); }
+    setStarting(null);
+  };
+  const variationStatus = (status: string | null | undefined) => status === "accepted" ? t("Accepted") : status === "issued" || status === "sent" ? t("With the client")
+    : status === "declined" ? t("Declined") : t("Draft");
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   if (!state) return <Skeleton lines={6} shape="rows" />;
   const statusLabel = { open: t("To decide"), covered: t("Covered"), not_covered: t("Not covered"), chargeable: t("Chargeable") };
@@ -63,6 +79,9 @@ export function ProjectWarranty({ workspaceId, projectId }: { workspaceId: strin
         </div>
         <p className={styles.body}>{claim.description}</p>
         {claim.decisionNote ? <span className={styles.muted}>{t("{name}: {note}", { name: claim.decidedByName ?? "", note: claim.decisionNote })}</span> : null}
+        {claim.status === "chargeable" && claim.variationId ? <Link href={`/workspace/projects/${projectId}/changes/${claim.variationId}`} className={styles.link}>
+          {claim.variationApplied ? t("Charged as {label}", { label: claim.variationApplied }) : t("Variation V{number} · {status}", { number: claim.variationNumber ?? 0, status: variationStatus(claim.variationStatus) })}</Link>
+          : claim.status === "chargeable" && state.canManage && state.caseId && state.baselineQuoteId ? <span><Button size="compact" isLoading={starting === claim.id} onPress={() => void charge(claim)}>{t("Start variation")}</Button></span> : null}
         {claim.snagId ? <Link href={`/workspace/projects/${projectId}/plan?item=${claim.snagId}`} className={styles.link}>
           {t("Snag #{number} · {status}", { number: claim.snagNumber ?? 0, status: claim.snagStatus === "done" ? t("Fixed") : t("Open") })}</Link> : null}
       </li>)}</ul>}

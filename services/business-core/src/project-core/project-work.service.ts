@@ -9,12 +9,13 @@ import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/refe
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { activeMembers, ensureSettings, membershipOf, readProject, readTeam, type ProjectRow } from "./project-core.store";
 import { noticeWork, type WorkNotice } from "./project-notices";
+import { noticeStageReady } from "./project-stage-watch";
 import {
   ensureProjectAccess, OPEN, readActivity, readInsights, readItem, readItems, readLinks, readOpenWork, readProgress, readProjectLinks, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
   type WorkItem, type WorkStatus,
 } from "./project-work";
 import { criticalPath, readCalendar, ripple, type PlanMove } from "./work-calendar";
-import { ensureWorkTemplates, schedulePackage } from "./work-templates";
+import { ensureWorkTemplates, packageStart, schedulePackage } from "./work-templates";
 import { MISS_REASONS, readSprintDetail, readSprints, type MissReason } from "./project-sprints";
 
 type Db = PoolClient;
@@ -152,11 +153,28 @@ export class ProjectWorkService {
       // After completion only warranty snags are still worked on (aftercare).
       if (!context.canEdit && !(await this.aftercare(client, workspaceId, context, action, body.itemId)))
         throw new ConflictException(EDITABLE.includes(context.project.status) ? "Only the project's team can change its work." : "The project is closed.");
+      // On hold means hold: the plan is read-only apart from cancelling work and comments until it resumes.
+      if (context.project.status === "on_hold" && !holdAllows(action, body))
+        throw new ConflictException("The project is on hold. Only cancelling work and comments are open until it resumes.");
       const notices: Array<{ key: string; notice: WorkNotice }> = [];
       let itemId: string | null;
       let audit: Record<string, unknown>;
 
-      if (action === "set_baseline") {
+      if (action === "bulk_update") {
+        // Several items at once (assignee, due date, package, stage, priority or status), each version-checked.
+        const entries = Array.isArray(body.items) ? (body.items as Array<Record<string, unknown>>) : [];
+        if (!entries.length || entries.length > 200) throw new BadRequestException("Choose up to 200 items.");
+        const changes = bulkChanges(body.changes);
+        if (!Object.keys(changes).length) throw new BadRequestException("Choose what to change.");
+        const changed: number[] = [];
+        for (const entry of entries) {
+          const id = uuid(entry?.id, "Item");
+          const result = await this.update(client, workspaceId, projectId, id, { ...changes, version: entry?.version }, user.userId, notices);
+          if (Object.keys(result).length) changed.push((await this.own(client, workspaceId, projectId, id)).number);
+        }
+        itemId = null;
+        audit = { items: changed, changes };
+      } else if (action === "set_baseline") {
         if (!context.manager) throw new ForbiddenException("Only the project manager can set the baseline.");
         const saved = (await client.query(`UPDATE work_items SET baseline_start = start_date, baseline_due = due_date WHERE workspace_id = $1 AND project_id = $2 AND status <> 'cancelled'`,
           [workspaceId, projectId])).rowCount;
@@ -248,8 +266,11 @@ export class ProjectWorkService {
         throw new BadRequestException("Unknown action.");
       }
 
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `work.${action}`, entityType: itemId ? "work_item" : "project", entityId: itemId ?? projectId, after: audit });
+      // The project id rides along so the project's open screens refresh live.
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `work.${action}`, entityType: itemId ? "work_item" : "project", entityId: itemId ?? projectId,
+        after: { projectId, ...audit } });
       for (const item of notices) await noticeWork(client, { workspaceId, projectId, key: item.key, actorUserId: user.userId, notice: item.notice });
+      await noticeStageReady(client, workspaceId, projectId, user.userId);
       return this.state(client, workspaceId, await this.context(client, workspaceId, projectId, user), itemId);
     });
   }
@@ -265,10 +286,14 @@ export class ProjectWorkService {
     const blocks = type === "blocker" && body.blocks ? await this.own(client, workspaceId, projectId, uuid(body.blocks, "Item")) : null;
     const line = body.boqLineId ? await this.line(client, workspaceId, projectId, uuid(body.boqLineId, "Line")) : null;
     const packageId = body.packageId !== undefined ? await this.packageOf(client, workspaceId, projectId, body.packageId) : parent?.packageId ?? blocks?.packageId ?? line?.packageId ?? null;
-    const stageId = body.stageId !== undefined ? await this.stageOf(client, workspaceId, projectId, body.stageId) : parent?.stageId ?? blocks?.stageId ?? null;
+    // Defaults that save taps: the current stage, and the package's due date for its work.
+    const current = (await client.query<{ id: string }>(`SELECT id FROM project_stages WHERE workspace_id = $1 AND project_id = $2 AND status = 'current' LIMIT 1`, [workspaceId, projectId])).rows[0]?.id ?? null;
+    const stageId = body.stageId !== undefined ? await this.stageOf(client, workspaceId, projectId, body.stageId) : parent?.stageId ?? blocks?.stageId ?? current;
     const assigneeId = body.assigneeId ? await this.assignee(client, workspaceId, projectId, body.assigneeId) : null;
     const startDate = date(body.startDate, "Start date");
-    const dueDate = date(body.dueDate, "Due date");
+    const packageDue = body.dueDate === undefined && packageId && type !== "blocker"
+      ? (await client.query<{ due: string | null }>(`SELECT due_date::text AS due FROM project_packages WHERE workspace_id = $1 AND id = $2`, [workspaceId, packageId])).rows[0]?.due ?? null : null;
+    const dueDate = body.dueDate === undefined ? (packageDue && (!startDate || packageDue >= startDate) ? packageDue : null) : date(body.dueDate, "Due date");
     if (startDate && dueDate && dueDate < startDate) throw new BadRequestException("The due date can't be before the start date.");
     const priority = oneOf(body.priority ?? "normal", WORK_PRIORITIES, "Priority");
     const description = text(body.description, 10000, "Description");
@@ -460,7 +485,8 @@ export class ProjectWorkService {
       // A completed project still works its warranty snags.
       aftercare: project.status === "completed" && Boolean(context.membershipId || context.manager),
       sprints: await readSprints(client, workspaceId, project.id),
-      me: context.membershipId, canEdit: context.canEdit, canManage: context.manager && context.canEdit,
+      me: context.membershipId, canEdit: context.canEdit && project.status !== "on_hold", canManage: context.manager && context.canEdit && project.status !== "on_hold",
+      onHold: project.status === "on_hold",
       calendar, promiseDate: project.promiseDate, startDate: project.startDate,
       // Working days each open item can slip before the plan's finish moves; none or less is the critical path.
       critical: { finish: path.finish, float: Object.fromEntries(path.float) },
@@ -638,8 +664,7 @@ export class ProjectWorkService {
     const settings = await ensureSettings(client, workspaceId);
     const template = (await ensureWorkTemplates(client, workspaceId, settings.roles)).find((item) => item.supply === pkg.supply)!;
     const planned = Boolean((await client.query(`SELECT 1 FROM work_items WHERE workspace_id = $1 AND package_id = $2 AND template_key IS NOT NULL LIMIT 1`, [workspaceId, packageId])).rowCount);
-    const today = (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(default_timezone, 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
-    const startDate = requested ?? (context.project.startDate && context.project.startDate > today ? context.project.startDate : today);
+    const startDate = requested ?? await packageStart(client, workspaceId, context.project, packageId, await readCalendar(client, workspaceId));
     const team = (await readTeam(client, workspaceId, [context.project.id])).get(context.project.id) ?? [];
     const stages = (await client.query<{ id: string; key: string; name: string }>(`SELECT id, key, name FROM project_stages WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, context.project.id])).rows;
     const tasks = schedulePackage(template.tasks, startDate, await readCalendar(client, workspaceId)).map((task) => {
@@ -730,6 +755,22 @@ export class ProjectWorkService {
 type Context = { project: ProjectRow; membershipId: string | null; canEdit: boolean; manager: boolean };
 
 // ---------- pure helpers ----------
+/** While a project is on hold: comments, and cancelling an item (nothing else about it changes). */
+function holdAllows(action: string, body: Record<string, unknown>) {
+  if (action === "comment") return true;
+  if (action !== "update") return false;
+  const keys = Object.keys(body).filter((key) => !["action", "itemId", "version", "status", "reason"].includes(key));
+  return body.status === "cancelled" && !keys.length;
+}
+
+/** The fields a bulk change may set, as the single-item update takes them. */
+function bulkChanges(value: unknown) {
+  const input = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const changes: Record<string, unknown> = {};
+  for (const key of ["assigneeId", "dueDate", "packageId", "stageId", "priority", "status"]) if (input[key] !== undefined) changes[key] = input[key];
+  return changes;
+}
+
 function uuid(value: unknown, label: string) {
   if (typeof value !== "string" || !UUID.test(value)) throw new BadRequestException(`${label} is not valid.`);
   return value;

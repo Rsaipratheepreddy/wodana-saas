@@ -354,7 +354,7 @@ export async function claimWarranty(ctx: DecisionContext, body: Record<string, u
     [id, ctx.workspaceId, row.projectId, number, ctx.today, grant.name.slice(0, 200), description, areaId, lineId, grant.id]);
   await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: "warranty_claim", targetId: id, files });
   await tellTeam(ctx.db, ctx.workspaceId, row.projectId, "warranty.claim", grant.name, `${grant.name}: ${description}${files.length ? ` (${files.length} photo${files.length === 1 ? "" : "s"})` : ""}`,
-    `claim:${id}`, "/warranty", true);
+    `claim:${id}`, "/handover?view=warranty", true);
   return { ok: true, claimId: id, number, entity: { type: "project", id: row.projectId }, audit: { claimId: id, number, files: files.length } };
 }
 

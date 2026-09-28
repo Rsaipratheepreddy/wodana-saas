@@ -44,7 +44,8 @@ describe("project money", () => {
     expect(table).toHaveTextContent(/Lights.*520.*20.00 over/);
     expect(table).toHaveTextContent(/Fitting.*100/);
     expect(table).toHaveTextContent("Not in a package");
-    await userEvent.click(within(screen.getByRole("radiogroup", { name: "Show" })).getByRole("radio", { name: "Every cost" }));
+    await userEvent.click(screen.getByRole("button", { name: /By package/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Every cost" }));
     const costs = await grid("Every cost");
     expect(costs).toHaveTextContent("Received: Oak veneer 6 sheets");
     expect(costs).toHaveTextContent("Invoice price");
@@ -54,7 +55,8 @@ describe("project money", () => {
     mount(() => state());
     render(<DesignSystemProvider><ProjectMoney workspaceId="w" projectId="p1" /></DesignSystemProvider>);
     await grid("Budget by package");
-    await userEvent.click(within(screen.getByRole("radiogroup", { name: "Show" })).getByRole("radio", { name: "Every cost" }));
+    await userEvent.click(screen.getByRole("button", { name: /By package/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Every cost" }));
     const costs = await grid("Every cost");
     const row = (text: string) => within(costs).getByText(text).closest("tr")!;
     expect(row("Site labour: Carpenters, 4 people")).toHaveTextContent(/Dana Designer · Not in a package.*Labour.*720/);
