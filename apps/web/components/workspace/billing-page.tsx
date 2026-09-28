@@ -97,7 +97,7 @@ export function BillingPage({ data }: { data: WorkspaceBillingData }) {
       </SettingsSection>
 
       <SettingsSection id="documents" title={t("Invoices, credits and receipts")}>
-        <DataGrid appearance="flush" ariaLabel={t("Billing documents")} columns={documentColumns(t, format)} data={data.documents}
+        <DataGrid ariaLabel={t("Billing documents")} columns={documentColumns(t, format)} data={data.documents}
           emptyTitle={t("No billing documents")} emptyDescription={t("No invoice, credit note or receipt has been recorded for this account.")}
           getRowId={(row) => row.id} pageSize={10} pinFirstColumn={false} rowNumbers={false} selectable={false}
           showToolbar={false}/>

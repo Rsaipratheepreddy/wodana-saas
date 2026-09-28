@@ -47,8 +47,9 @@
 .addPicture { display: grid; place-items: center; aspect-ratio: 1; border: 1px dashed var(--wd-color-border-strong); border-radius: var(--wd-radius-sm); background: none; color: var(--wd-color-text-secondary); cursor: pointer; }
 .addPicture:hover { color: var(--wd-color-text); }
 .catalog { display: flex; flex-direction: column; max-block-size: 50vh; margin: 0; padding: 0; overflow: auto; list-style: none; }
-.catalog label { display: flex; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-border); cursor: pointer; }
-.catalog label > span:last-child { display: flex; flex-direction: column; font-size: var(--wd-text-sm); }
+.catalog li > :global(.wd-checkbox) { display: flex; align-items: center; padding: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-border); }
+.pick { display: flex; align-items: center; gap: var(--wd-space-3); min-inline-size: 0; }
+.pick > span:last-child { display: flex; flex-direction: column; font-size: var(--wd-text-sm); line-height: var(--wd-leading-ui); }
 .catalog small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 
 @media (max-width: 64rem) {

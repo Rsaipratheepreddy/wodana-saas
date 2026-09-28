@@ -39,7 +39,7 @@ export function PettyCash({ workspaceId, openId, onOpen }: { workspaceId: string
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   const open = state?.claims.find((claim) => claim.id === openId) ?? null;
   return <>
-    <DataGrid<PettyCashClaim> appearance="flush" ariaLabel={t("Petty cash")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<PettyCashClaim> ariaLabel={t("Petty cash")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search claims")} rowNumbers={false} wrapText
       toolbarLeading={<SegmentedControl label={t("Show")} value={show} onChange={(value) => setShow(value as Show)} options={[{ id: "open", label: t("To reimburse") }, { id: "all", label: t("All") }]} />}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={show === "open" ? t("Nothing to reimburse") : t("No petty cash yet")} />} />

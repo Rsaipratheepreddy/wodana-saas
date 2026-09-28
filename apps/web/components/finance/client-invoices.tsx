@@ -65,10 +65,10 @@ export function ClientInvoices({ api, openId, onOpen }: { api: ReceivablesApi; o
   const invoices = (state?.invoices ?? []).filter((row) => !needle || `${row.number} ${row.customerName} ${row.projectReference} ${row.milestoneTitle}`.toLocaleLowerCase().includes(needle));
   return <>
     {view === "to_invoice"
-      ? <DataGrid<MilestoneToInvoice> appearance="flush" ariaLabel={t("Milestones to invoice")} columns={milestoneColumns} data={milestones} getRowId={(row) => `${row.caseId}|${row.paymentId}`}
+      ? <DataGrid<MilestoneToInvoice> ariaLabel={t("Milestones to invoice")} columns={milestoneColumns} data={milestones} getRowId={(row) => `${row.caseId}|${row.paymentId}`}
           isLoading={!state} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search milestones")} rowNumbers={false} wrapText toolbarLeading={toolbar}
           emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("Every milestone is invoiced")} />} />
-      : <DataGrid<ClientInvoice> appearance="flush" ariaLabel={t("Client invoices")} columns={invoiceColumns} data={invoices} getRowId={(row) => row.id} isLoading={!state}
+      : <DataGrid<ClientInvoice> ariaLabel={t("Client invoices")} columns={invoiceColumns} data={invoices} getRowId={(row) => row.id} isLoading={!state}
           onRowAction={(row) => onOpen(row.id)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search invoices")} rowNumbers={false} wrapText toolbarLeading={toolbar}
           emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No client invoices yet")} />} />}
     {issuing ? <IssueDialog api={api} milestone={issuing} onClose={() => setIssuing(null)} onIssued={(id) => { setIssuing(null); setView("invoices"); void load(); onOpen(id); }} /> : null}

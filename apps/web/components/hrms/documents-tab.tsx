@@ -76,7 +76,7 @@ export function DocumentsTab({ api, boot, creating, onCreateDone, openId, onOpen
   const open = openId ? documents.find((document) => document.id === openId) ?? null : null;
   const done = () => { void load(); if (creating) onCreateDone(); else onOpen(null); };
   return <>
-    <DataGrid<HrmsDocument> appearance="flush" ariaLabel={t("Documents")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!data} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<HrmsDocument> ariaLabel={t("Documents")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!data} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search documents")} rowNumbers={false} selectable={false} wrapText toolbarLeading={filters}
       emptyContent={filtered ? <NoResultsState onClear={() => { setSearch(""); setStatus("all"); setKind("all"); setPerson("all"); }} /> : <EmptyState title={t("No documents yet")} />} />
     {data && (open || creating) ? <DocumentSheet key={open?.id ?? "new"} api={api} document={creating ? null : open} manage={manage} subjects={subjects}

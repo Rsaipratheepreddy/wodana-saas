@@ -129,10 +129,10 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
         </div>
       </header>
       {notice ? <p role="status">{notice}</p> : null}
-      <DataGrid ariaLabel={t("Assignment sales owners")} appearance="flush" columns={ownerColumns} data={queue?.members ?? []} getRowId={(member) => member.membershipId} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No sales owners in this queue")} emptyDescription={t("Add a sales owner before enabling auto-assignment.")} />
+      <DataGrid ariaLabel={t("Assignment sales owners")} columns={ownerColumns} data={queue?.members ?? []} getRowId={(member) => member.membershipId} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No sales owners in this queue")} emptyDescription={t("Add a sales owner before enabling auto-assignment.")} />
     </section> }, { id: "order", label: t("Routing order"), panel: <section aria-label={t("Routing order")}>
       <header className={assignmentStyles.toolbar} data-actions-only><span /><Button size="compact" isDisabled={!queues.length} onPress={() => editPolicy()}>{t("Add auto-assignment")}</Button></header>
-      <DataGrid ariaLabel={t("Auto-assignment routing order")} appearance="flush" columns={policyColumns} data={[...policies].sort((a, b) => a.priority - b.priority)} getRowId={(policy) => policy.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No auto-assignment configured")} emptyDescription={t("Add one to route incoming enquiries.")} />
+      <DataGrid ariaLabel={t("Auto-assignment routing order")} columns={policyColumns} data={[...policies].sort((a, b) => a.priority - b.priority)} getRowId={(policy) => policy.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No auto-assignment configured")} emptyDescription={t("Add one to route incoming enquiries.")} />
     </section> }, { id: "rules", label: t("Routing rules"), panel: <section aria-label={t("Routing rules")}>
       <div className={assignmentStyles.toolbar}><span>{t("Match enquiries to a specific queue.")}</span><Button size="compact" isDisabled={!policies.some((policy) => policy.status === "active") || !queues.length} onPress={() => setAction({
         title: t("Add routing rule"), path: (values) => `assignment-policies/${values.policyId}`, method: "PATCH",
@@ -143,7 +143,7 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
           return { version: policy.version, rules: [...policy.rules.filter((rule) => rule.status === "active").map(({ name, priority, queueId, conditions }) => ({ name, priority, queueId, conditions })), { name: values.name, priority: values.priority, queueId: values.queueId, conditions: conditionsFrom(values) }] };
         },
       })}>{t("Add rule")}</Button></div>
-      <DataGrid ariaLabel={t("Routing rules")} appearance="flush" columns={ruleColumns} data={activeRules} getRowId={({ rule }) => rule.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No routing rules")} emptyDescription={t("Rules can direct matching enquiries to a specific queue.")} />
+      <DataGrid ariaLabel={t("Routing rules")} columns={ruleColumns} data={activeRules} getRowId={({ rule }) => rule.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No routing rules")} emptyDescription={t("Rules can direct matching enquiries to a specific queue.")} />
     </section> }]} />
     {action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={refresh} /> : null}
   </section>;
@@ -165,7 +165,7 @@ export function IntakeInbox({ workspaceId, onChanged }: { workspaceId: string; o
   return <div className={styles.workbench}>
     <div className={styles.toolbar}><h3>{t("Intake review")}</h3><div className={styles.actions}><Button size="compact" onPress={() => setFilter(filter === "all" ? "review" : "all")}>{filter === "all" ? t("Show needs review") : t("Show all")}</Button><Button size="compact" onPress={resource.refresh}>{t("Refresh")}</Button></div></div>
     <ResourceState {...resource} retry={resource.refresh} />
-    <DataGrid ariaLabel={t("Intake review")} appearance="flush" columns={columns} data={entries} getRowId={(entry) => String(entry.id)} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} isLoading={resource.loading} emptyTitle={t("No intake events in this view")} emptyDescription={t("New enquiries requiring review will appear here.")} />
+    <DataGrid ariaLabel={t("Intake review")} columns={columns} data={entries} getRowId={(entry) => String(entry.id)} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} isLoading={resource.loading} emptyTitle={t("No intake events in this view")} emptyDescription={t("New enquiries requiring review will appear here.")} />
     {selected ? <InspectorSheet isOpen title={t("Review intake")} size="md" onOpenChange={(open) => { if (!open) setSelected(null); }}><IntakeReview workspaceId={workspaceId} item={selected} onChanged={async () => { resource.refresh(); await onChanged(); }} /></InspectorSheet> : null}
   </div>;
 }

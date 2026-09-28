@@ -62,7 +62,6 @@ export function Suppliers({ api, adding, onAddingChange }: { api: PurchasingApi;
 
   return <>
     <DataGrid<Supplier>
-      appearance="flush"
       ariaLabel={t("Suppliers")}
       columns={columns}
       data={rows}

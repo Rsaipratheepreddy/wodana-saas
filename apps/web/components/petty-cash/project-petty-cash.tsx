@@ -54,7 +54,7 @@ export function ProjectPettyCash({ workspaceId, projectId }: { workspaceId: stri
     .sort((a, b) => Number(waiting(b)) - Number(waiting(a)));
   const open = state?.claims.find((claim) => claim.id === openId) ?? null;
   return <div className={styles.list}>
-    <DataGrid<PettyCashClaim> appearance="flush" ariaLabel={t("Petty cash")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => setOpenId(row.id)}
+    <DataGrid<PettyCashClaim> ariaLabel={t("Petty cash")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => setOpenId(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search claims")} rowNumbers={false} wrapText
       toolbarActions={state?.canClaim ? <Button variant="primary" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("New claim")}</Button> : undefined}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No petty cash yet")} />} />

@@ -83,7 +83,7 @@ export function EnquiryFieldsSettings({ workspaceId, leadOptions, regionLabel, o
     </div>
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {failure ? <EmptyState illustration="error" title={t("Fields could not load")} description={failure} action={<Button size="compact" onPress={() => setReload((value) => value + 1)}>{t("Retry")}</Button>} />
-      : <DataGrid ariaLabel={t("Enquiry fields")} appearance="flush" columns={columns} data={state ? rows : []} getRowId={(field) => field.key} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false}
+      : <DataGrid ariaLabel={t("Enquiry fields")} columns={columns} data={state ? rows : []} getRowId={(field) => field.key} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false}
         isLoading={!state} onRowAction={(field) => { if (editable(field)) setOpen(field); }} emptyTitle={t("No fields match")} emptyDescription={t("Try another name.")} />}
 
     {open === "new" ? <CustomFieldSheet workspaceId={workspaceId} onClose={() => setOpen(null)} position={(state?.custom.length ?? 0) + 1}

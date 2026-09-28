@@ -43,7 +43,7 @@ export function WorkplaceSettings({ api, creating, onCreateDone }: { api: HrmsAp
   if (error && !places) return <ErrorState description={error} onRetry={() => void load()} />;
   const saved = () => { setEditing(null); onCreateDone(); void load(); };
   return <>
-    <DataGrid<WorkLocation> appearance="flush" ariaLabel={t("Workplaces")} columns={columns} data={[...(places?.locations ?? [])].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name))}
+    <DataGrid<WorkLocation> ariaLabel={t("Workplaces")} columns={columns} data={[...(places?.locations ?? [])].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name))}
       getRowId={(row) => row.id} isLoading={!places} onRowAction={setEditing} rowNumbers={false} selectable={false} wrapText searchLabel={t("Search workplaces")}
       emptyContent={<EmptyState title={t("No workplaces yet")} />} />
     {places && editing ? <WorkplaceSheet key={editing.id} api={api} location={editing} contexts={places.contexts} onClose={() => setEditing(null)} onSaved={saved} /> : null}

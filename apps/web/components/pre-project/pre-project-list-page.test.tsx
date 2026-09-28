@@ -39,7 +39,7 @@ describe("pre-project table selector", () => {
     expect(within(table).getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/requirements`);
     expect(screen.queryByRole("button", { name: "Cards" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export filtered rows" })).toBeInTheDocument();
-    expect(table.closest(".wd-data-grid")).toHaveAttribute("data-appearance", "card");
+    expect(table.closest(".wd-table-scroll")).not.toBeNull();
   });
   it("searches all server pages as you type and drops obsolete filters", async () => {
     render(<PreProjectListPage initialData={data} search="view=cards&status=released&page=2&search=Villa" />);
