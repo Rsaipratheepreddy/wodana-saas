@@ -88,11 +88,11 @@ export async function applyConversationChange(db: Db, events: CrmEventsService, 
     if (before.party_id && lead.rows[0].partyId !== before.party_id) throw new UnprocessableEntityException("This enquiry belongs to another client");
   }
   const updated = await db.query<ConversationRow>(
-    `UPDATE crm_conversations SET status = $3, snoozed_until = $4,
-            resolved_at = CASE WHEN $3 = 'closed' THEN COALESCE(CASE WHEN status = 'closed' THEN resolved_at END, now()) ELSE NULL END,
+    `UPDATE crm_conversations SET status = $3::varchar, snoozed_until = $4::timestamptz,
+            resolved_at = CASE WHEN $3::varchar = 'closed' THEN COALESCE(CASE WHEN status = 'closed' THEN resolved_at END, now()) ELSE NULL END,
             owner_membership_id = $5::uuid,
             assigned_at = CASE WHEN $5::uuid IS NULL THEN NULL WHEN owner_membership_id IS DISTINCT FROM $5::uuid THEN now() ELSE assigned_at END,
-            lead_id = $6::uuid, subject = $7, version = version + 1, updated_at = now()
+            lead_id = $6::uuid, subject = $7::varchar, version = version + 1, updated_at = now()
       WHERE workspace_id = $1 AND id = $2 RETURNING *`,
     [workspaceId, conversationId, status, snoozedUntil, owner, leadId, subject],
   );

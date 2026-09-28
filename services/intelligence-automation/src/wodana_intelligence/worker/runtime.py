@@ -388,6 +388,7 @@ class CrmWorker:
                 await self.business_core.process_due_slas(workspace_id)
                 await self.business_core.process_due_takeovers(workspace_id)
                 await self.business_core.process_due_sequences(workspace_id)
+                await self.business_core.wake_snoozed_conversations(workspace_id)
                 await self.drain_notifications(workspace_id)
                 await self.business_core.dispatch_staff_emails(workspace_id)
                 waits = await self.business_core.claim_automation_waits(workspace_id)

@@ -9,10 +9,15 @@ describe("WhatsApp approved template mapping", () => {
     expect(matchesMetaTemplate({ ...stored, locale: "ar" }, template)).toBe(false);
     expect(matchesMetaTemplate({ ...stored, bodyTemplate: "Old content" }, template)).toBe(false);
   });
-  it("keeps OTP, unapproved and parameterized/media templates out of static inbox delivery", () => {
+  it("accepts numbered body variables, which the inbox mapping fills", () => {
+    expect(inboxTemplateReason({ ...template, components: [{ type: "BODY", text: "Hi {{1}}, quote {{2}} is ready. {{1}}, reply here." }] })).toBeNull();
+    expect(inboxTemplateReason({ ...template, components: [{ type: "BODY", text: "Hi {{1}}, quote {{3}}" }] })).not.toBeNull();
+    expect(inboxTemplateReason({ ...template, components: [{ type: "BODY", text: "Hi {{name}}" }] })).not.toBeNull();
+  });
+  it("keeps OTP, unapproved, header/button variable and media templates out of inbox delivery", () => {
     expect(inboxTemplateReason({ ...template, category: "AUTHENTICATION" })).toContain("portal login");
     expect(inboxTemplateReason({ ...template, status: "PENDING" })).toContain("approval");
-    for (const component of [{ type: "BODY", text: "Hello {{1}}" }, { type: "HEADER", format: "IMAGE" }, { type: "BUTTONS", buttons: [{ type: "URL", url: "https://example.com/{{1}}" }] }]) {
+    for (const component of [{ type: "HEADER", format: "TEXT", text: "Hello {{1}}" }, { type: "HEADER", format: "IMAGE" }, { type: "BUTTONS", buttons: [{ type: "URL", url: "https://example.com/{{1}}" }] }]) {
       expect(inboxTemplateReason({ ...template, components: [...template.components!, component] })).not.toBeNull();
     }
   });

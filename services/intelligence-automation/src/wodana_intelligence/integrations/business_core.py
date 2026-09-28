@@ -235,6 +235,14 @@ class BusinessCoreClient:
             json={"limit": 50},
         )
 
+    async def wake_snoozed_conversations(self, workspace_id: str) -> dict[str, Any]:
+        """Snoozed chats whose time has come are open again and their owner is told."""
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/conversations/wake",
+            json={"limit": 50},
+        )
+
     async def enqueue_notification(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._internal_request(
             "POST", "/internal/crm/notifications/enqueue", json=payload

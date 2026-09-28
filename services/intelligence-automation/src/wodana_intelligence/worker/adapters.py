@@ -113,6 +113,8 @@ class ConnectedProviderAdapter:
                         {
                             "templateName": job.template_code,
                             "language": (job.locale or "en_US").replace("-", "_"),
+                            # The values of the template's {{1}}…{{n}}, snapshotted by business-core.
+                            "bodyParameters": list(job.template_parameters),
                         }
                     )
                 else:
@@ -123,8 +125,9 @@ class ConnectedProviderAdapter:
                         action="message.send", idempotency_key=job.id, payload=payload
                     ),
                 )
+                # Meta accepting a message is not delivery: its status webhook says delivered or read.
                 return DeliveryResult(
-                    result="delivered",
+                    result="accepted",
                     provider="whatsapp",
                     provider_message_id=str(result["id"]),
                 )

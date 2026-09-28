@@ -161,6 +161,10 @@ class FakeDueWorkCore:
         self.calls.append("sequences")
         return {"processed": 1}
 
+    async def wake_snoozed_conversations(self, _workspace: str) -> dict[str, Any]:
+        self.calls.append("snoozed")
+        return {"woken": 0}
+
     async def claim_notification_jobs(self, _workspace: str) -> list[dict[str, Any]]:
         self.calls.append("notifications")
         return []
@@ -240,7 +244,7 @@ async def test_due_work_polls_sequences_before_notification_delivery(
     with pytest.raises(asyncio.CancelledError):
         await worker.poll_due_work()
 
-    assert core.calls == ["slas", "takeovers", "sequences", "notifications", "staff-emails", "waits"]
+    assert core.calls == ["slas", "takeovers", "sequences", "snoozed", "notifications", "staff-emails", "waits"]
 
 
 @pytest.mark.asyncio
