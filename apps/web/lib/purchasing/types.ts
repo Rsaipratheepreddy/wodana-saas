@@ -51,15 +51,26 @@ export type Need = {
   neededBy: string | null; leadDays: number; orderBy: string | null;
   /** Given from free stock (reserved for the project or issued to it); counted before orders. */
   fromStock: string; packageIds: string[]; scopeLines: string[];
+  /** The project is running or on hold (ordering for it then needs the buyer's reason). */
+  projectStatus?: "active" | "on_hold";
+  /** The latest variation that reduced or removed what it's for ("VO-2"). */
+  changedBy?: string | null;
 };
 export type NeedsState = { needs: Need[]; settings: PurchasingSettings; canBuy: boolean; canApprove: boolean };
 
+export type ShipmentStatus = "booked" | "in_transit" | "delayed" | "arrived" | "cancelled";
 export type OrderRow = {
   id: string; number: string; status: OrderStatus; vendorId: string; supplierName: string; legalEntityId: string; companyCode: string; currency: string;
-  total: string; expectedDate: string | null; promisedDate: string | null; createdAt: string; createdByName: string; projects: Array<{ id: string; reference: string }>; lines: number;
+  total: string; expectedDate: string | null; promisedDate: string | null; createdAt: string; createdByName: string; projects: Array<{ id: string; reference: string; status?: string }>; lines: number;
   revision: number; version: number;
+  /** Who raised and submitted it (nobody approves their own order). */
+  createdBy?: string; submittedBy?: string | null;
+  /** Lines still to come, when the first is due, and deliveries waiting for inspection. */
+  linesLeft?: number; due?: string | null; inspecting?: boolean;
+  /** The latest shipment the buyer follows. */
+  shipment?: { status: ShipmentStatus; eta: string | null; carrier: string } | null;
 };
-export type OrdersState = { orders: OrderRow[]; settings: PurchasingSettings; canBuy: boolean; canApprove: boolean };
+export type OrdersState = { orders: OrderRow[]; settings: PurchasingSettings; canBuy: boolean; canApprove: boolean; canReceive?: boolean; me?: string };
 
 export type OrderLine = {
   id: string; position: number; projectId: string | null; projectReference: string | null; source: "material" | "line" | "free"; materialItemId: string | null; boqLineId: string | null;
@@ -69,6 +80,8 @@ export type OrderLine = {
   cancelled: string; cancelReason: string | null; replacesLineId: string | null; replacesOrderNumber: string | null;
   alternateStatus: "offered" | "accepted" | "rejected" | null; alternateDescription: string | null; alternateSpecification: string; alternateUnitPrice: string | null;
   alternateNote: string; alternateOfferedBy: string | null; originalDescription: string | null; originalSpecification: string | null;
+  /** The stock item a restock line refills. */
+  stockItemId?: string | null;
 };
 export type OrderDetail = OrderRow & {
   paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string;
@@ -79,6 +92,18 @@ export type OrderDetail = OrderRow & {
   continuedAt: string | null; continuedNote: string | null; continuedByName: string | null;
   /** Who let the order go ahead beyond its project's money in hand, and why. */
   fundsOverrideAt: string | null; fundsOverrideReason: string | null; fundsOverrideByName: string | null;
+  /** Who said it goes ahead while its project is on hold, and why. */
+  holdOverrideAt?: string | null; holdOverrideReason?: string | null; holdOverrideByName?: string | null;
+};
+export type Shipment = {
+  id: string; carrier: string; trackingRef: string; trackingUrl: string; status: ShipmentStatus; shippedOn: string | null; eta: string | null; note: string;
+  updatedAt: string; updatedByName: string; version: number;
+};
+/** An invoice the supplier sent for the order, and how it matched (for people who see supplier bills). */
+export type OrderBill = { id: string; number: string; invoiceDate: string; status: "draft" | "held" | "approved" | "cancelled"; holdReasons: string; total: string; balance: string; currency: string };
+/** Work on a project held up by a line of the order. */
+export type LineBlocker = {
+  workItemId: string; number: number; title: string; status: string; projectId: string; projectReference: string; orderId: string; orderNumber: string; orderLineId: string; description: string; blocks: number;
 };
 export type OrderState = {
   order: OrderDetail; lines: OrderLine[]; receipts: Receipt[]; returns: SupplierReturnRow[]; canReceive: boolean;
@@ -107,6 +132,11 @@ export type OrderState = {
   reordered?: string | null;
   /** After sending: how the supplier's email went. */
   delivery?: "sent" | "not_configured" | "failed" | null;
+  shipments?: Shipment[];
+  /** Its projects on hold now, while it isn't placed or going ahead anyway. */
+  holdProjects?: Array<{ id: string; reference: string }>;
+  bills?: OrderBill[] | null;
+  blockers?: LineBlocker[];
 };
 
 export type PriceRequestStatus = "open" | "awarded" | "cancelled";
@@ -182,6 +212,13 @@ export type SupplierReturnState = {
 export type SupplierReturnsState = { returns: SupplierReturnRow[]; canBuy: boolean; canReceive: boolean };
 
 export type ExpectedOrder = OrderRow & { deliverTo: DeliverTo; linesLeft: number; due: string | null };
+/** What's on its way to one project's site: supplier orders delivering there and moves to it. */
+export type ArrivalsState = {
+  orders: Array<OrderRow & { items: Array<{ description: string; left: string; unit: string; due: string | null }> }>;
+  moves: Array<{ id: string; number: number; status: "in_transit" | "received" | "cancelled"; fromName: string; toName: string; sentOn: string; items: string; workOrderId: string | null;
+    workOrderNumber: number | null; note: string }>;
+  canReceive: boolean; canReceiveMoves: boolean;
+};
 export type DeliveriesState = {
   expected: ExpectedOrder[]; inspection: Receipt[]; received: Receipt[]; locations: StockLocation[]; canReceive: boolean; canInspect: boolean; userId: string;
   unmatched: UnmatchedDelivery[]; requireSitePhoto: boolean;

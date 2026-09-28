@@ -60,6 +60,8 @@ export class OrdersService {
   list(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "purchasing.view", async (client, user) => ({
       orders: await readOrders(client, workspaceId), settings: await ensurePurchasingSettings(client, workspaceId), ...(await this.rights(client, workspaceId, user.userId)),
+      // Who's looking: nobody approves an order they raised or submitted.
+      me: user.userId,
     }));
   }
 

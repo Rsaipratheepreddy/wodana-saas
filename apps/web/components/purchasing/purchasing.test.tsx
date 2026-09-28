@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import type {
-  DeliveriesState, Need, OrderState, PriceRequestState, ReceiptState, ReceivingForm, Supplier, SupplierControlsState, SupplierImportPlan, SupplierReturnState, SupplierState, UnmatchedState,
+  DeliveriesState, Need, OrdersState, OrderState, PriceRequestState, ReceiptState, ReceivingForm, Supplier, SupplierControlsState, SupplierImportPlan, SupplierReturnState, SupplierState, UnmatchedState,
 } from "@/lib/purchasing/types";
 import { PurchasingPage, type PurchasingSection } from "./purchasing-page";
 
@@ -246,9 +246,16 @@ describe("ordering", () => {
     // A material is one line to buy, linked to the scope line it's for.
     expect(table).toHaveTextContent("For Kitchen worktop");
     expect(table).not.toHaveTextContent("Oak veneer");
-    expect(screen.getByRole("region", { name: "Waiting for the client's sign-off" })).toHaveTextContent("Oak veneer");
-    await userEvent.click(within(table).getByRole("checkbox", { name: "Select PRJ-0007 Calacatta slab" }));
-    await userEvent.click(within(table).getByRole("checkbox", { name: "Select PRJ-0007 Under-cabinet lights" }));
+    // What waits for the client's sign-off is its own queue, with a way to the project's scope.
+    await userEvent.click(screen.getByRole("button", { name: /^Client sign-off\s*1$/ }));
+    const waiting = await screen.findByRole("grid", { name: "To order" }).catch(() => screen.findByRole("table", { name: "To order" }));
+    expect(waiting).toHaveTextContent("Oak veneer");
+    expect(within(waiting).getByRole("link", { name: "Get sign-off" })).toHaveAttribute("href", "/workspace/projects/p2/scope");
+    await userEvent.click(screen.getByRole("button", { name: /^To order\s*2$/ }));
+    await userEvent.click(within(await screen.findByRole("grid", { name: "To order" }).catch(() => screen.findByRole("table", { name: "To order" })))
+      .getByRole("checkbox", { name: "Select PRJ-0007 Calacatta slab" }));
+    const table2 = await screen.findByRole("grid", { name: "To order" }).catch(() => screen.findByRole("table", { name: "To order" }));
+    await userEvent.click(within(table2).getByRole("checkbox", { name: "Select PRJ-0007 Under-cabinet lights" }));
     await userEvent.click(screen.getByRole("button", { name: "Create order" }));
     const dialog = await screen.findByRole("dialog", { name: "New order" });
     // The material names its supplier, so it's chosen; quantities start at what's left.
@@ -262,6 +269,52 @@ describe("ordering", () => {
     expect(posts(fetcher).at(-1)!.body).toMatchObject({ vendorId: "s1", legalEntityId: "f", lines: [
       { source: "material", materialItemId: "m1", quantity: "12", unitPrice: "350" }, { source: "line", boqLineId: "l1", quantity: "1" }] });
     expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/purchasing/orders?order=o1");
+  });
+
+  it("keeps a project on hold apart: ordering it asks why, and the reason goes with the order (D-8)", async () => {
+    const fetcher = mount((url, body) => (url.includes("/needs") ? { ...needs, needs: [need({ projectStatus: "on_hold", clientChoice: false })] }
+      : url.includes("/suppliers") ? state() : body ? orderState() : ordersList));
+    page("to-order");
+    expect(await screen.findByText("Nothing left to order")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^On hold\s*1$/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Order Calacatta slab anyway" }));
+    const dialog = await screen.findByRole("dialog", { name: "New order" });
+    expect(within(dialog).getByText("PRJ-0007 is on hold: the order is drafted, and placing it asks why it goes ahead.")).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: /Supplier/ })).toHaveTextContent("Nile Marble & Granite"));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create order" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ lines: [{ source: "material", materialItemId: "m1" }] }));
+  });
+
+  it("asks why a draft for a project on hold goes ahead before it's placed (D-8)", async () => {
+    nav.query = "order=o1";
+    const held = orderState({}, { holdProjects: [{ id: "p1", reference: "PRJ-0007" }] });
+    const fetcher = mount((url, body) => (url.includes("/orders/o1") ? (body ? orderState({ status: "approved", version: 2 }) : held) : ordersList));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    expect(await within(sheet).findByText("PRJ-0007 is on hold. Say why this order goes ahead anyway.")).toBeInTheDocument();
+    const send = within(sheet).getByRole("button", { name: "Send for approval" });
+    expect(send).toBeDisabled();
+    await userEvent.type(within(sheet).getByRole("textbox", { name: /Why it goes ahead/ }), "Client paid for the slab");
+    await userEvent.click(send);
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "submit", holdReason: "Client paid for the slab" }));
+  });
+
+  it("restocks low stock from To order: the line names its stock item and goes to the warehouse", async () => {
+    const low = { id: "rp1", itemId: "i1", itemName: "Wood glue", itemCode: "", unit: "nos", locationId: "w1", locationName: "Main store", reorderAt: "6.0000", reorderQuantity: "24.0000",
+      vendorId: "s1", vendorName: "Nile Marble & Granite", free: "5.0000", onOrder: "0.0000", low: true, short: true, lowSince: "2026-09-28T10:00:00Z", version: 1 };
+    const fetcher = mount((url, body) => (url.includes("/api/inventory/stock") ? { rows: [], locations: [], projects: [], inTransit: 0, canManage: true, canAdjust: true, canReceive: true,
+      pendingAdjustments: [], me: "u2", currency: "AED", reorderPoints: [low] } : url.includes("/needs") ? needs : url.includes("/suppliers") ? state() : body ? orderState() : ordersList));
+    page("to-order");
+    await userEvent.click(await screen.findByRole("button", { name: /^Low stock\s*1$/ }));
+    const table = await screen.findByRole("grid", { name: "Low stock" }).catch(() => screen.findByRole("table", { name: "Low stock" }));
+    expect(table).toHaveTextContent("Wood glue");
+    expect(table).toHaveTextContent("Reorder at 6 nos");
+    await userEvent.click(within(table).getByRole("button", { name: "Restock Wood glue" }));
+    const dialog = await screen.findByRole("dialog", { name: "New order" });
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: /Supplier/ })).toHaveTextContent("Nile Marble & Granite"));
+    expect(within(dialog).getByRole("textbox", { name: "Quantity for Wood glue" })).toHaveValue("24");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create order" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ vendorId: "s1", deliverTo: "warehouse", lines: [{ source: "free", stockItemId: "i1", quantity: "24" }] }));
   });
 
   it("edits a draft with live exact totals and sends it for approval", async () => {
@@ -317,18 +370,26 @@ describe("ordering", () => {
   });
 
   it("keeps over-ordered items in To order with how much too many", async () => {
-    mount((url) => (url.includes("/needs") ? { ...needs, needs: [need({ placed: "14.0000", remaining: "-2.0000" })] } : ordersList));
+    mount((url) => (url.includes("/needs") ? { ...needs, needs: [need({ placed: "14.0000", remaining: "-2.0000", changedBy: "VO-2" })] } : ordersList));
     page("to-order");
+    await userEvent.click(await screen.findByRole("button", { name: /^Over-ordered\s*1$/ }));
     expect(await screen.findByText("Ordered 2 m² more than needed")).toBeInTheDocument();
+    // The variation that changed it, and the way to the orders to cancel the rest.
+    expect(screen.getByText(/Changed by VO-2/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open orders" })).toBeInTheDocument();
   });
 
-  it("shows when each need is needed and when it should be ordered by, late ones marked", async () => {
+  it("shows when each need is needed and when it should be ordered by, late ones marked and in their own queue", async () => {
     mount((url) => (url.includes("/needs") ? { ...needs, needs: [need({ neededBy: "2026-10-05", orderBy: "2020-09-21" }), need({ key: "material:m2", sourceId: "m2", title: "Brass handles", neededBy: "2099-11-02", orderBy: "2099-10-19" })] } : ordersList));
     page("to-order");
     const late = await screen.findByText("Order by Sep 21, 2020");
     expect(late.className).toMatch(/lateText/);
-    expect(screen.getByText("Oct 5, 2026")).toBeInTheDocument();
+    expect(screen.getByText("Nov 2, 2099")).toBeInTheDocument();
     expect(screen.getByText("Order by Oct 19, 2099").className).not.toMatch(/lateText/);
+    await userEvent.click(screen.getByRole("button", { name: /^Late to order\s*1$/ }));
+    const table = await screen.findByRole("grid", { name: "To order" }).catch(() => screen.findByRole("table", { name: "To order" }));
+    expect(table).toHaveTextContent("Calacatta slab");
+    expect(table).not.toHaveTextContent("Brass handles");
   });
 
   it("counts free stock given to the project before what's left to order", async () => {
@@ -359,9 +420,11 @@ describe("ordering", () => {
     const fetcher = mount((url) => (url.includes("/receiving") ? form : url.includes("/returns") ? { returns: [], canBuy: true, canReceive: true } : url.includes("/receipts") ? receipt() : deliveries));
     page("deliveries");
     const grid = await screen.findByRole("grid", { name: "Expected deliveries" }).catch(() => screen.findByRole("table", { name: "Expected deliveries" }));
-    await userEvent.click(await within(grid).findByRole("button", { name: "Receive" }));
+    await userEvent.click(await within(grid).findByRole("button", { name: "Receive FAC-PO-2026-00001" }));
     const dialog = await screen.findByRole("dialog", { name: "Receive FAC-PO-2026-00001" });
-    await userEvent.type(await within(dialog).findByRole("textbox", { name: "Received of Calacatta slab" }), "10");
+    // Everything left is filled in; only the slab came today.
+    expect(await within(dialog).findByRole("textbox", { name: "Received of Calacatta slab" })).toHaveValue("10");
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: "Received of Under-cabinet lights" }));
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Handed over by" }), "Ravi");
     expect(within(dialog).getByRole("button", { name: "Receive" })).toBeDisabled();
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:photo", revokeObjectURL: () => undefined }));
@@ -563,12 +626,15 @@ describe("ordering", () => {
     await within(grid).findByText("FAC-PO-2026-00001");
     expect(grid).toHaveTextContent(/days late/);
     expect(grid).toHaveTextContent("2 lines to come");
-    expect(screen.getByRole("radio", { name: "To inspect (1)" })).toBeInTheDocument();
-    await userEvent.click(within(grid).getByRole("button", { name: "Receive" }));
+    expect(screen.getByRole("button", { name: /^To inspect\s*1$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Late\s*1$/ })).toBeInTheDocument();
+    await userEvent.click(within(grid).getByRole("button", { name: "Receive FAC-PO-2026-00001" }));
     const dialog = await screen.findByRole("dialog", { name: "Receive FAC-PO-2026-00001" });
+    // It arrives where the order goes, and everything left is filled in.
     await waitFor(() => expect(within(dialog).getByRole("button", { name: /Arrived at/ })).toHaveTextContent("PRJ-0007 site"));
     // Inspection is on: nothing is accepted or rejected at receipt.
     expect(within(dialog).queryByRole("textbox", { name: "Rejected of Calacatta slab" })).toBeNull();
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: "Received of Calacatta slab" }));
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Received of Calacatta slab" }), "11");
     expect(within(dialog).getByText("At most 10 m² of Calacatta slab can arrive.")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Receive" })).toBeDisabled();
@@ -610,10 +676,11 @@ describe("ordering", () => {
     const fetcher = mount((url) => (url.includes("/receiving") ? form : url.includes("/returns") ? { returns: [], canBuy: true, canReceive: true } : url.includes("/receipts") ? receipt() : deliveries));
     page("deliveries");
     const grid = await screen.findByRole("grid", { name: "Expected deliveries" }).catch(() => screen.findByRole("table", { name: "Expected deliveries" }));
-    await userEvent.click(await within(grid).findByRole("button", { name: "Receive" }));
+    await userEvent.click(await within(grid).findByRole("button", { name: "Receive FAC-PO-2026-00001" }));
     const dialog = await screen.findByRole("dialog", { name: "Receive FAC-PO-2026-00001" });
     await userEvent.type(await within(dialog).findByRole("textbox", { name: "On the note of Calacatta slab" }), "12");
-    await userEvent.type(within(dialog).getByRole("textbox", { name: "Received of Calacatta slab" }), "10");
+    // Only the slab came.
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: "Received of Under-cabinet lights" }));
     expect(within(dialog).getByText("2 m² missing against the note")).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Receive" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body.lines).toEqual([{ orderLineId: "a", received: "10", noted: "12" }]));
@@ -699,6 +766,8 @@ describe("ordering", () => {
     page("orders");
     const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
     expect(await within(sheet).findByText("5 accepted · 1 rejected")).toBeInTheDocument();
+    // Deliveries (and shipments) are the order's own tab.
+    await userEvent.click(within(sheet).getByRole("tab", { name: /Deliveries/ }));
     expect(within(sheet).getByRole("button", { name: "Delivery 4" })).toBeInTheDocument();
     await userEvent.click(within(sheet).getByRole("button", { name: "Close order" }));
     const close = await screen.findByRole("dialog", { name: "Close order" });
@@ -706,6 +775,58 @@ describe("ordering", () => {
     await userEvent.type(within(close).getByRole("textbox", { name: /Why the rest won't come/ }), "Supplier out of stock");
     await userEvent.click(within(close).getByRole("button", { name: "Close order" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "close", version: 6, reason: "Supplier out of stock", commandId: expect.any(String) }));
+  });
+
+  it("opens on what needs me: approves others' orders in one go, never one I raised, and marks late ones first (D-22, D-44)", async () => {
+    const row = (patch: Partial<OrdersState["orders"][number]>) => ({ ...orderState().order, ...patch });
+    const list = { ...ordersList, me: "u2", canReceive: true, orders: [
+      row({ id: "o1", number: "PO-1", status: "pending_approval", createdBy: "u1", submittedBy: "u1", version: 3 }),
+      row({ id: "o2", number: "PO-2", status: "pending_approval", createdBy: "u2", submittedBy: "u2", version: 4 }),
+      row({ id: "o3", number: "PO-3", status: "confirmed", createdBy: "u1", linesLeft: 1, due: "2020-01-10", version: 5 }),
+      row({ id: "o4", number: "PO-4", status: "approved", createdBy: "u1", version: 6 }),
+    ] };
+    const fetcher = mount((url, body) => (body ? orderState() : url.includes("/orders?") ? list : ordersList));
+    page("orders");
+    // Needs me: PO-1 to approve, PO-3 to chase (late, first), PO-4 to send; not PO-2, which I raised.
+    const grid = await screen.findByRole("grid", { name: "Orders" }).catch(() => screen.findByRole("table", { name: "Orders" }));
+    await within(grid).findByText("PO-1");
+    expect(screen.getByRole("button", { name: /^Needs me\s*3$/ })).toHaveAttribute("aria-pressed", "true");
+    expect(grid).not.toHaveTextContent("PO-2");
+    const rows = within(grid).getAllByRole("row").map((item) => item.textContent ?? "");
+    expect(rows.findIndex((text) => text.includes("PO-3"))).toBeLessThan(rows.findIndex((text) => text.includes("PO-1")));
+    expect(within(grid).getByRole("button", { name: "Chase PO-3" })).toBeInTheDocument();
+    expect(within(grid).getByText(/days late/)).toBeInTheDocument();
+    await userEvent.click(within(grid).getByRole("button", { name: "Approve PO-1" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "approve", version: 3 }));
+    expect(await screen.findByText("Approved 1.")).toBeInTheDocument();
+    // Waiting for approval shows both; only one of them is mine to approve.
+    await userEvent.click(screen.getByRole("button", { name: /^Waiting for approval\s*2$/ }));
+    expect(within(grid).queryByRole("button", { name: "Approve PO-2" })).not.toBeInTheDocument();
+  });
+
+  it("follows a shipment inside the order: carrier, tracking and when it arrives (the list shows it)", async () => {
+    nav.query = "order=o1";
+    const sent = orderState({ status: "confirmed", sentAt: "2026-09-27T11:00:00Z", version: 7 }, { shipments: [] });
+    const tracked = orderState({ status: "confirmed", version: 8 }, { shipments: [{ id: "sh1", carrier: "Aramex", trackingRef: "AX-77", trackingUrl: "https://aramex.example/AX-77",
+      status: "in_transit", shippedOn: "2026-09-28", eta: "2099-10-10", note: "", updatedAt: "2026-09-28T10:00:00Z", updatedByName: "Bina Buyer", version: 1 }] });
+    const fetcher = mount((url, body) => (url.includes("/orders/o1") ? (body ? tracked : sent) : ordersList));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    expect(await within(sheet).findByRole("list", { name: "Where the order is" }).catch(() => within(sheet).getByLabelText("Where the order is"))).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("tab", { name: /Deliveries/ }));
+    expect(within(sheet).getByText("No shipment followed yet.")).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Add shipment" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add shipment" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Carrier" }), "Aramex");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Tracking link" }), "aramex.example");
+    expect(within(dialog).getByText("The tracking link starts with https://.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: "Tracking link" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Tracking reference" }), "AX-77");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "track", version: 7, carrier: "Aramex", trackingRef: "AX-77", status: "booked", shipmentId: expect.any(String) }));
+    expect(await within(sheet).findByText("Aramex · AX-77")).toBeInTheDocument();
+    expect(within(sheet).getByRole("link", { name: "Track" })).toHaveAttribute("href", "https://aramex.example/AX-77");
   });
 });
 
