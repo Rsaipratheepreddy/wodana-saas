@@ -52,3 +52,9 @@ export type WarrantyState = {
   caseId?: string | null; baselineQuoteId?: string | null;
 };
 export type WarrantySettings = { months: Record<Supply, number>; canManage: boolean };
+
+/** The phone's "My sites today": each running project I'm on whose site work runs today. */
+export type SiteToday = {
+  projectId: string; reference: string; name: string; report: { id: string; status: SiteReportStatus } | null; arriving: number; snags: number;
+};
+export type SitesToday = { today: string | null; hour: number | null; sites: SiteToday[] };

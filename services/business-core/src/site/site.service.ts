@@ -13,6 +13,7 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { reworkInstallation } from "./installation-rework";
+import { readSitesToday } from "./sites-today";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -39,6 +40,15 @@ type Report = {
 @Injectable()
 export class SiteService {
   constructor(private readonly access: WorkspaceAccessService, @Optional() private readonly storage?: BrandAssetStorageService) {}
+
+  /** My sites today (the phone's Today): projects I'm on whose site work runs today, with my report, deliveries and snags. */
+  sitesToday(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      if (!(await this.access.hasPermission(client, workspaceId, user.userId, "projects.view")) && !(await this.access.hasPermission(client, workspaceId, user.userId, "projects.manage")))
+        return { today: null, hour: null, sites: [] };
+      return readSitesToday(client, workspaceId, user.userId);
+    });
+  }
 
   state(actor: RequestActor, workspaceId: string, projectId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => this.read(client, workspaceId, projectId, user.userId));

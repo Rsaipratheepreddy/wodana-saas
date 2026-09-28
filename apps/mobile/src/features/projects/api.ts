@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { OpenWork, ProjectDetail, ProjectRow, WorkBoard, WorkDetail } from '../../../../web/lib/project-core/types';
-import type { HandoverState, SiteState } from '../../../../web/lib/site/types';
+import type { HandoverState, SitesToday, SiteState } from '../../../../web/lib/site/types';
 import { useApi } from '../../core/api';
 import { useSession } from '../../core/session';
 
 export type * from '../../../../web/lib/project-core/types';
-export type { HandoverKind, HandoverPack, HandoverState, Outlook, Safety, SiteLine, SiteReport, SiteReportStatus, SiteState } from '../../../../web/lib/site/types';
+export type { HandoverKind, HandoverPack, HandoverState, Outlook, Safety, SiteLine, SiteReport, SiteReportStatus, SiteState, SitesToday, SiteToday } from '../../../../web/lib/site/types';
 
 export const projectKeys = {
   all: (ws: string) => ['projects', ws] as const,
@@ -16,6 +16,7 @@ export const projectKeys = {
   openWork: (ws: string, view: 'mine' | 'all') => ['projects', ws, 'open-work', view] as const,
   site: (ws: string, id: string) => ['projects', ws, id, 'site'] as const,
   handover: (ws: string, id: string) => ['projects', ws, id, 'handover'] as const,
+  sitesToday: (ws: string) => ['projects', ws, 'sites-today'] as const,
 };
 
 const useOn = () => {
@@ -47,6 +48,12 @@ export function useWorkItem(projectId: string, itemId: string) {
 export function useOpenWork(view: 'mine' | 'all' = 'mine') {
   const api = useApi();
   return useQuery({ queryKey: projectKeys.openWork(api.workspaceId, view), queryFn: () => api.get<OpenWork>(`project-core/work?view=${view}`), enabled: useOn() });
+}
+
+/** My sites today: running projects I'm on whose site work runs today, with my report for the day. */
+export function useSitesToday() {
+  const api = useApi();
+  return useQuery({ queryKey: projectKeys.sitesToday(api.workspaceId), queryFn: () => api.get<SitesToday>('site/today'), enabled: useOn() });
 }
 
 export function useSite(id: string, enabled = true) {

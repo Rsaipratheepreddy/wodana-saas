@@ -9,6 +9,7 @@ import { QuotationBuilderService } from "../quotation/quotation-builder.service"
 import { HandoverService } from "../site/handover.service";
 import { SiteService } from "../site/site.service";
 import { WarrantyService } from "../site/warranty.service";
+import { readSitesToday } from "../site/sites-today";
 import { readHomeOverview } from "../workspaces/home-overview";
 import { decideClientUpdate, processClientUpdateDrafts } from "./client-updates";
 import { processMaterialsWaiting, processMilestonesDue, processWeeklySummaries } from "./delivery-reminders";
@@ -252,6 +253,10 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
       await w.site(w.manager).command(actor, w.workspaceId, w.projectId, { action: "save_report", id: randomUUID(), noWorkReason: "Access only" });
       const started = (await w.client.query("SELECT site_started_on::text AS started FROM delivery_projects WHERE workspace_id=$1 AND id=$2", [w.workspaceId, w.projectId])).rows[0];
       expect(started.started).toBe(w.today);
+      // D-19: the phone's Today lists the site with my draft report for the day.
+      const mine = await readSitesToday(w.client, w.workspaceId, w.manager);
+      expect(mine.sites).toEqual([expect.objectContaining({ projectId: w.projectId, report: expect.objectContaining({ status: "draft" }), arriving: 0, snags: 0 })]);
+      expect((await readSitesToday(w.client, w.workspaceId, randomUUID())).sites).toEqual([]);
 
       const core = w.core(w.manager);
       let detail = await core.command(actor, w.workspaceId, w.projectId, { action: "save_material", name: "Oak veneer", version: await w.version() });

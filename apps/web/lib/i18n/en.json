@@ -10241,5 +10241,10 @@
   "Start variation": "Start variation",
   "{item} not accepted": "{item} not accepted",
   "What isn't right": "What isn't right",
-  "Raise a snag": "Raise a snag"
+  "Raise a snag": "Raise a snag",
+  "My sites today": "My sites today",
+  "No report yet": "No report yet",
+  "{count} arriving": "{count} arriving",
+  "{count} snags to close": "{count} snags to close",
+  "Write report": "Write report"
 }
