@@ -21,7 +21,7 @@ import { TimeTab } from "./time-tab";
 import styles from "./hrms.module.css";
 
 /**
- * People: my attendance (today and my days), my hours, my leave, documents, my team's day and what waits
+ * People › Attendance & leave: my attendance (today and my days), my hours, my leave, documents, my team's day and what waits
  * for my decision, everyone's HR record, the crews without logins and the month's payroll. Tabs follow what
  * the person may do; records open in place from the address.
  */
@@ -55,7 +55,7 @@ export function HrmsPage({ workspaceId, section }: { workspaceId: string; sectio
   const go = (next: HrmsSection, open: Record<string, string | null | undefined> = {}) => router.replace(hrmsHref(next, open), { scroll: false });
 
   if (!boot) return <div className={styles.page}>
-    {error ? <><PageHeader title={t("People")} /><ErrorState description={error} onRetry={() => void load()} /></> : <PageSkeleton variant="list" tabs={6} columns={6} />}
+    {error ? <><PageHeader title={t("Attendance & leave")} /><ErrorState description={error} onRetry={() => void load()} /></> : <PageSkeleton variant="list" tabs={6} columns={6} />}
   </div>;
   const { permissions } = boot;
   const employee = boot.employee?.enabled ? boot.employee : null;
@@ -84,7 +84,7 @@ export function HrmsPage({ workspaceId, section }: { workspaceId: string; sectio
     ...(permissions.team || permissions.manage ? [{ id: "team", label: t("Team"), panel: <TeamTab api={api} boot={boot}
       open={{ leave: params.get("leave"), review: params.get("review"), timesheet: params.get("timesheet") }}
       onOpen={(open) => go("team", { leave: params.get("leave"), review: params.get("review"), timesheet: params.get("timesheet"), ...open })} /> }] : []),
-    ...(permissions.manage ? [{ id: "people", label: t("People"), panel: <PeopleTab api={api} boot={boot} openId={params.get("person")} onOpen={(person) => go("people", { person })}
+    ...(permissions.manage ? [{ id: "people", label: t("HR records"), panel: <PeopleTab api={api} boot={boot} openId={params.get("person")} onOpen={(person) => go("people", { person })}
       onOpenDocument={openDocument} /> }] : []),
     ...(crewRole || leadsCrew ? [{ id: "crews", label: t("Crews"), panel: <>
       <CrewsTab api={api} boot={boot} workspaceId={workspaceId} view={crewView} onView={(view) => { setCrewView(view); setCreating(null); }} creating={creating} onCreate={setCreating}
@@ -95,7 +95,7 @@ export function HrmsPage({ workspaceId, section }: { workspaceId: string; sectio
     ...(permissions.manage ? [{ id: "payroll", label: t("Payroll"), panel: <PayrollTab api={api} boot={boot} /> }] : []),
   ];
   return <div className={styles.page}>
-    <PageHeader title={t("People")} actions={action} />
+    <PageHeader title={t("Attendance & leave")} actions={action} />
     {items.some((item) => item.id === section)
       ? <Tabs selectedKey={section} onSelectionChange={(key) => go(key as HrmsSection)} items={items} />
       : section === "crews" && leadsCrew === null && !crewRole ? <PageSkeleton variant="list" columns={6} /> : <NoAccessState />}

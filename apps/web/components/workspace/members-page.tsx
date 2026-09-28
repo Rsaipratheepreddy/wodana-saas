@@ -1,6 +1,7 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
+import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { Copy, Download } from "lucide-react";
 import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
@@ -472,11 +473,11 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     }
   };
 
-  /** Invitations and members share the columns; only the words differ (invited on / created at, access / role). */
-  const columnsFor = (kind: "invitation" | "member"): GroupedTableColumn<DirectoryRow>[] => [
+  /** Invitations and members share one table and one set of columns. */
+  const columns: GroupedTableColumn<DirectoryRow>[] = [
     {
       id: "person",
-      label: kind === "invitation" ? t("Invited") : t("Member"),
+      label: t("Person"),
       mobileWidth: "14rem",
       render: (item) => {
         const name = item.kind === "member"
@@ -489,14 +490,14 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     },
     {
       id: "date",
-      label: kind === "invitation" ? t("Invited on") : t("Created at"),
+      label: t("Added"),
       mobileHidden: true,
       width: "8rem",
       render: (item) => dateLabel(item.kind === "member" ? item.member.joinedAt : item.invitation.createdAt, t, { locale, timeZone }),
     },
     {
       id: "role",
-      label: kind === "invitation" ? t("Access") : t("Role"),
+      label: t("Role"),
       mobileWidth: "9rem",
       width: "13rem",
       render: (item) => {
@@ -518,7 +519,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     },
     {
       id: "status",
-      label: kind === "invitation" ? t("Invitation") : t("Status"),
+      label: t("Status"),
       mobileWidth: "6rem",
       width: "6.5rem",
       render: (item) => {
@@ -549,8 +550,9 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   ];
 
   const selectedRows = rows.filter((row) => selectedIds.has(row.id));
-  // Pending invitations are their own short list above the members; guests get a group row only when there are any.
-  const memberSections: GroupedTableSection<DirectoryRow>[] = [
+  // One table: pending invitations first, then guests and members; a group row appears only when there is more than one group.
+  const directorySections: GroupedTableSection<DirectoryRow>[] = [
+    { id: "invited", label: t("Invited"), emptyMessage: "", rows: invitedRows },
     { id: "guests", label: t("Guest"), emptyMessage: t("No guests have access."), rows: guestRows },
     { id: "members", label: t("Member"), emptyMessage: t("No members have joined yet."), rows: memberRows },
   ].filter((section) => section.rows.length || section.id === "members");
@@ -602,32 +604,16 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           <Button onPress={() => exportRows(selectedRows)} size="compact"><Download aria-hidden="true" size={14} />{t("Export selected")}</Button>
         </div> : null}
 
-        {invitedRows.length ? <section aria-label={t("Pending invitations")} className={styles.tableSection}>
-          <h3 className={styles.sectionTitle}>{t("Pending invitations")}</h3>
-          <div className={styles.tableRegion}>
-            <GroupedTable
-              ariaLabel={t("Pending invitations")}
-              columns={columnsFor("invitation")}
-              getRowId={(row) => row.id}
-              getRowLabel={(row) => row.kind === "member" ? row.member.displayName : row.invitation.email}
-              groupRows={false}
-              onSelectionChange={setSelectedIds}
-              sections={[{ id: "invited", label: t("Pending invitations"), emptyMessage: "", rows: invitedRows }]}
-              selectedIds={selectedIds}
-            />
-          </div>
-        </section> : null}
         <section aria-label={t("Members")} className={styles.tableSection}>
-          {invitedRows.length ? <h3 className={styles.sectionTitle}>{t("Members")}</h3> : null}
           <div className={styles.tableRegion}>
             <GroupedTable
               ariaLabel={t("Workspace members")}
-              columns={columnsFor("member")}
+              columns={columns}
               getRowId={(row) => row.id}
               getRowLabel={(row) => row.kind === "member" ? row.member.displayName : row.invitation.email}
-              groupRows={memberSections.length > 1}
+              groupRows={directorySections.length > 1}
               onSelectionChange={setSelectedIds}
-              sections={memberSections}
+              sections={directorySections}
               selectedIds={selectedIds}
             />
           </div>
@@ -707,7 +693,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             <div><dt>{t("Team access")}</dt><dd><strong>{editingMember.teams?.map((team) => team.name).join(", ") || t("No assigned teams")}</strong></dd></div>
           </dl>
           {editStatus === "suspended" && editingMember.status !== "suspended" ? <Callout title={t("This releases a licensed seat")} tone="warning">{t("The member will lose workspace access immediately. Their records remain available, and reactivation will require a free seat.")}</Callout> : null}
-          {editingMember.inheritedRoles?.length ? <p className={styles.reviewNote}>{t("Team-inherited roles remain managed from Teams.")}</p> : null}
+          {editingMember.inheritedRoles?.length ? <p className={styles.reviewNote}>{t("Team-inherited roles remain managed from Teams.")} <Link href="/workspace/teams">{t("Open Teams")}</Link></p> : null}
         </div> : null}
         confirmLabel={t("Apply access changes")}
         confirmVariant="primary"
