@@ -48,7 +48,6 @@ export function Orders({ api, openId, onOpen, onReceipt, refreshKey }: {
   if (error && !state) return denied ? <NoAccessState /> : <ErrorState description={error} onRetry={() => void load()} />;
   return <>
     <DataGrid<OrderRow>
-      appearance="flush"
       ariaLabel={t("Orders")}
       columns={columns}
       data={rows}

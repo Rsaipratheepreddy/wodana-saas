@@ -42,7 +42,7 @@ export function Moves({ api, openId, onOpen, refreshKey, onChanged }: { api: Inv
   ], [t, format]);
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   return <>
-    <DataGrid<TransferRow> appearance="flush" ariaLabel={t("Moves")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<TransferRow> ariaLabel={t("Moves")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search moves")} rowNumbers={false} selectable={false} wrapText
       emptyContent={search.trim() ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No moves yet")} description={t("Move stock from a row in Stock.")} />} />
     {openId ? <MoveSheet api={api} transferId={openId} onChanged={() => { void load(); onChanged(); }} onClose={() => onOpen(null)} /> : null}

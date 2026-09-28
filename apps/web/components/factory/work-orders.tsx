@@ -46,7 +46,7 @@ export function WorkOrders({ api, state, error, openId, onReload, onOpen, onBatc
   ], [t, format]);
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   return <>
-    <DataGrid<WorkOrderRow> appearance="flush" ariaLabel={t("Work orders")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<WorkOrderRow> ariaLabel={t("Work orders")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search work orders")} rowNumbers={false} selectable={Boolean(state?.canManage)} wrapText
       bulkActions={(chosen) => {
         const ready = chosen.filter((row) => ["planned", "released"].includes(row.status) && !row.batchId);

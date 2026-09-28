@@ -605,7 +605,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         {invitedRows.length ? <section aria-label={t("Pending invitations")} className={styles.tableSection}>
           <h3 className={styles.sectionTitle}>{t("Pending invitations")}</h3>
           <div className={styles.tableRegion}>
-            <GroupedTable appearance="plain"
+            <GroupedTable
               ariaLabel={t("Pending invitations")}
               columns={columnsFor("invitation")}
               getRowId={(row) => row.id}
@@ -620,7 +620,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         <section aria-label={t("Members")} className={styles.tableSection}>
           {invitedRows.length ? <h3 className={styles.sectionTitle}>{t("Members")}</h3> : null}
           <div className={styles.tableRegion}>
-            <GroupedTable appearance="plain"
+            <GroupedTable
               ariaLabel={t("Workspace members")}
               columns={columnsFor("member")}
               getRowId={(row) => row.id}

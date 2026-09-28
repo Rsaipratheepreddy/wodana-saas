@@ -82,10 +82,10 @@ export function ProjectMoney({ workspaceId, projectId }: { workspaceId: string; 
     {state.uncosted ? <InlineNotice tone="info" message={t("{count} costs have no price or exchange rate yet and aren't counted.", { count: state.uncosted })} /> : null}
     {view === "hours" ? <ProjectHours workspaceId={workspaceId} projectId={projectId} switcher={toolbar} />
       : view === "packages"
-      ? <DataGrid<PackageMoney> appearance="flush" ariaLabel={t("Budget by package")} columns={packageColumns} data={packages} getRowId={(row) => row.id ?? "none"} rowNumbers={false} wrapText
+      ? <DataGrid<PackageMoney> ariaLabel={t("Budget by package")} columns={packageColumns} data={packages} getRowId={(row) => row.id ?? "none"} rowNumbers={false} wrapText
           onSearchChange={setSearch} searchValue={search} searchLabel={t("Search packages")} toolbarLeading={toolbar}
           emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No packages yet")} />} />
-      : <DataGrid<CostEntry> appearance="flush" ariaLabel={t("Every cost")} columns={entryColumns} data={entries} getRowId={(row) => row.key} rowNumbers={false} wrapText
+      : <DataGrid<CostEntry> ariaLabel={t("Every cost")} columns={entryColumns} data={entries} getRowId={(row) => row.key} rowNumbers={false} wrapText
           onSearchChange={setSearch} searchValue={search} searchLabel={t("Search costs")} toolbarLeading={toolbar}
           emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No costs yet")} />} />}
     {editing ? <BudgetDialog row={editing} currency={state.currency} name={packageName(editing.name)} onClose={() => setEditing(null)}

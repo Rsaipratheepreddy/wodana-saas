@@ -71,7 +71,7 @@ function TeamToday({ api, boot, switcher }: { api: HrmsApi; boot: HrmsBootstrap;
     { id: "hours", header: t("Hours"), accessorFn: (row) => row.elapsedMinutes, size: 100, meta: { renderCell: (row) => <span className={styles.number}>{format.duration(row.elapsedMinutes)}</span> } },
   ], [t, format]);
   if (error && !days) return <><div className={styles.toolbar}>{switcher}</div><ErrorState description={error} onRetry={() => void load()} /></>;
-  return <DataGrid<AttendanceDay> appearance="flush" ariaLabel={t("Team today")} columns={columns} data={[...(days ?? [])].sort((a, b) => a.name.localeCompare(b.name))}
+  return <DataGrid<AttendanceDay> ariaLabel={t("Team today")} columns={columns} data={[...(days ?? [])].sort((a, b) => a.name.localeCompare(b.name))}
     getRowId={(row) => row.membershipId} isLoading={!days} rowNumbers={false} selectable={false} wrapText searchLabel={t("Search people")} toolbarLeading={switcher}
     emptyContent={<EmptyState title={t("No one to show")} />} />;
 }
@@ -127,7 +127,7 @@ function Approvals({ api, boot, approvals, switcher, open, onOpen }: {
   const item = approvals.rows?.find((row) => (open.leave ? row.kind === "leave" && row.id === open.leave
     : open.timesheet ? row.kind === "timesheet" && row.id === open.timesheet : row.kind === "review" && row.id === open.review)) ?? null;
   return <>
-    <DataGrid<Approval> appearance="flush" ariaLabel={t("To approve")} columns={columns} data={waiting} getRowId={(row) => row.key} isLoading={!approvals.rows}
+    <DataGrid<Approval> ariaLabel={t("To approve")} columns={columns} data={waiting} getRowId={(row) => row.key} isLoading={!approvals.rows}
       onRowAction={(row) => onOpen({ ...closed, [row.kind]: row.id })} rowNumbers={false} selectable={false} wrapText
       searchLabel={t("Search requests")} toolbarLeading={switcher} emptyContent={<EmptyState title={t("Nothing to approve")} />} />
     {item?.timesheet ? <TimesheetSheet api={api} week={item.timesheet} canDecide={item.timesheet.canDecide} onClose={() => onOpen(closed)}
@@ -229,7 +229,7 @@ function TeamDays({ api, boot, switcher }: { api: HrmsApi; boot: HrmsBootstrap; 
       items={[{ id: "all", label: t("Everyone") }, ...people.map(([id, name]) => ({ id, label: name }))]} />
   </div>;
   if (error && !loaded) return <>{tools}<ErrorState description={error} onRetry={() => void load()} /></>;
-  return <DataGrid<AttendanceDay> appearance="flush" ariaLabel={t("Team days")} columns={columns} data={rows} getRowId={(row) => `${row.membershipId}:${row.date}`} isLoading={!loaded}
+  return <DataGrid<AttendanceDay> ariaLabel={t("Team days")} columns={columns} data={rows} getRowId={(row) => `${row.membershipId}:${row.date}`} isLoading={!loaded}
     rowNumbers={false} selectable={false} wrapText searchLabel={t("Search days")} toolbarLeading={tools}
     onExport={() => download(api.exportUrl({ from: range.from, to: range.to, scope: "team", membershipId: person === "all" ? null : person }))}
     emptyContent={<EmptyState title={t("No days in this period")} />} />;

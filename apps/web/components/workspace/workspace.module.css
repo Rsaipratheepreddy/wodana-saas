@@ -1599,12 +1599,8 @@
   .shell .crmContentPanel { margin: var(--wd-space-4); }
 }
 
-/* CRM lists, Notion style: row dividers only, no outer box or column lines. */
+/* CRM lists use the shared table frame (record-tables.css); this panel only sets toolbar spacing. */
 .recordTablePanel :global(.wd-data-grid) { padding-block-start: var(--wd-space-3); }
-.recordTablePanel :global(.wd-table th), .recordTablePanel :global(.wd-table td) { border-inline-end:0; border-block-end:1px solid var(--wd-color-structural-divider); padding:var(--wd-space-2) var(--wd-space-3); block-size:44px; font-size:var(--wd-text-sm); }
-.recordTablePanel :global(.wd-table th) { background:var(--wd-color-surface); color:var(--wd-color-text-secondary); font-weight:var(--wd-weight-medium); }
-.recordTablePanel :global(.wd-table td) { background:var(--wd-color-surface); }
-.recordTablePanel :global(.wd-table tr:hover td) { background:var(--wd-color-surface-hover); }
 .shell .recordTablePanel :global(.wd-row-index[data-selectable] > .wd-checkbox) { opacity: 1; }
 .shell .recordTablePanel :global(.wd-row-index[data-selectable] > span) { display: none; }
 .shell .recordTablePanel :global(.wd-record-toolbar.wd-record-toolbar) { padding-block: var(--wd-space-2) var(--wd-space-5); }
@@ -1656,8 +1652,6 @@
 .shell .recordTablePanel :global(.wd-record-search) { border-radius: var(--wd-radius-xs); }
 .shell .recordTablePanel :global(.wd-record-search .wd-search-field) { block-size: 30px; min-block-size: 30px; }
 
-/* Neutral full-row hover, including sticky cells; selection remains stronger. */
-.shell .recordTablePanel { --crm-row-hover: #f1f2f3; --crm-row-selected: #e4e7e9; }
 
 .shell .recordTablePanel :global(.wd-record-toolbar.wd-record-toolbar) {
   padding-block-end: var(--wd-space-6);
@@ -1896,8 +1890,7 @@
   background:var(--wd-color-surface);
 }
 
-/* Sales tables, final look (reference: minimal grid). Open sides, top and bottom rules,
-   thin column lines, plain header with icons, quiet hover. Keep this block last. */
+/* Sales list toolbar with list tabs: one row above the shared table frame. */
 .shell .recordTablePanel :global(.wd-grid-toolbar.wd-record-toolbar[data-leading]) { min-block-size: var(--wd-control-md); padding: 0; margin-block-end: var(--wd-space-2); }
 /* Second-level Sales tabs (Settings): same quiet underline tabs as other sub-sections. */
 .flowHeader[data-navigation="chips"] .commercialTabs { gap: var(--wd-space-3); padding-block: 0; padding-inline: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); }

@@ -59,8 +59,7 @@ export type DataGridColumn<T> = ColumnDef<T, unknown> & { meta?: DataGridColumnM
 export type SavedView = { id: string; label: string };
 
 export type DataGridProps<T> = {
-  /** Contained uses the compact, centered table frame; flush stays embedded in its parent. */
-  appearance?: "card" | "contained" | "flush";
+  /** Column lines between cells, for editable sheets. Every table has the same rounded frame. */
   gridLines?: boolean;
   /** Allow record text to wrap instead of silently truncating it. */
   wrapText?: boolean;
@@ -188,7 +187,6 @@ function SortIcon({ direction }: { direction: false | "asc" | "desc" }) {
 }
 
 export function DataGrid<T>({
-  appearance = "card",
   gridLines = false,
   wrapText = false,
   ariaLabel,
@@ -338,8 +336,8 @@ export function DataGrid<T>({
     openRow(row);
   };
 
-  return <section className="wd-data-grid" aria-label={ariaLabel} data-appearance={appearance} data-grid-lines={gridLines || appearance === "contained" || undefined} data-row-numbers={rowNumbers || undefined} data-wrap-text={wrapText || undefined}>
-    {showToolbar ? <DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={title ?? (appearance === "contained" ? ariaLabel : undefined)} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} onExport={exportRows} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} /> : null}
+  return <section className="wd-data-grid" aria-label={ariaLabel} data-grid-lines={gridLines || undefined} data-row-numbers={rowNumbers || undefined} data-wrap-text={wrapText || undefined}>
+    {showToolbar ? <DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={title} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} onExport={exportRows} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} /> : null}
     {selectedRows.length ? <div className="wd-bulk-bar"><strong>{t("{count} selected", { count: selectedRows.length })}</strong><div>{bulkActions?.(selectedRows)}</div><IconButton aria-label={t("Clear selection")} onPress={() => setSelection({})}><X size={14} /></IconButton></div> : null}
     {error ? <div className="wd-table-scroll wd-grid-state"><ErrorState title={error} /></div> : isLoading ? <div className="wd-table-scroll wd-grid-state"><div aria-label={t("Loading {name}", { name: ariaLabel })} className="wd-grid-loading" role="status"><TableSkeleton rows={8} widths={table.getVisibleLeafColumns().filter((column) => !column.id.startsWith("__")).map((column) => Math.max(1, column.getSize() / 100))} /></div></div> : !rows.length && !keepEmptyTable ? <div className="wd-table-scroll wd-grid-state">{emptyContent ?? <EmptyState description={emptyDescription} title={emptyTitle} />}</div> : <div className="wd-table-scroll" ref={scrollRef} tabIndex={0}>
       <table aria-label={ariaLabel} className="wd-table wd-record-table" data-virtual={virtual || undefined} style={{ inlineSize: table.getCenterTotalSize(), minInlineSize: "100%" }}>

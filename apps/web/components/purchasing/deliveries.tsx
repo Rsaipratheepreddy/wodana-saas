@@ -85,14 +85,14 @@ export function Deliveries({ api, openId, returnId, unmatchedId, onOpen, onOpenR
   ]} />;
   const cleared = search.trim() ? <NoResultsState onClear={() => setSearch("")} /> : null;
   return <>
-    {show === "expected" ? <DataGrid<ExpectedOrder> appearance="flush" ariaLabel={t("Expected deliveries")} columns={expectedColumns} data={expected} getRowId={(row) => row.id} isLoading={!state}
+    {show === "expected" ? <DataGrid<ExpectedOrder> ariaLabel={t("Expected deliveries")} columns={expectedColumns} data={expected} getRowId={(row) => row.id} isLoading={!state}
       onRowAction={(row) => onOpenOrder(row.id)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search deliveries")} toolbarLeading={toggle}
       emptyContent={cleared ?? <EmptyState title={t("No deliveries expected")} description={t("Orders appear here once they're sent to the supplier.")} />}
       rowNumbers={false} selectable={false} wrapText />
       : show === "unmatched" ? <UnmatchedList rows={state?.unmatched ?? []} search={search} onSearch={setSearch} onOpen={(id) => onOpenUnmatched(id)}
         toolbar={<div className={styles.filters}>{toggle}{state?.canReceive ? <Button size="compact" onPress={() => setRecording(true)}>{t("Goods without an order")}</Button> : null}</div>} />
       : show === "returns" ? <SupplierReturns api={api} rows={returns} search={search} onSearch={setSearch} toolbar={toggle} onOpen={(id) => onOpenReturn(id)} />
-      : <DataGrid<Receipt> appearance="flush" ariaLabel={show === "inspection" ? t("To inspect") : t("Received")} columns={receiptColumns} data={receipts} getRowId={(row) => row.id} isLoading={!state}
+      : <DataGrid<Receipt> ariaLabel={show === "inspection" ? t("To inspect") : t("Received")} columns={receiptColumns} data={receipts} getRowId={(row) => row.id} isLoading={!state}
         onRowAction={(row) => onOpen(row.id)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search deliveries")} toolbarLeading={toggle}
         emptyContent={cleared ?? (show === "inspection" ? <EmptyState title={t("Nothing to inspect")} /> : <EmptyState title={t("Nothing received yet")} />)}
         rowNumbers={false} selectable={false} wrapText />}

@@ -146,7 +146,7 @@ export function TimeTab({ api, employee, date, onDate }: { api: HrmsApi; employe
     {overDay ? <InlineNotice tone="error" message={t("A day has at most 24 hours.")} /> : null}
     {sheet?.decisionNote && open ? <InlineNotice tone="info" message={sheet.decidedByName ? t("Sent back by {name}: {note}", { name: sheet.decidedByName, note: sheet.decisionNote })
       : t("Sent back: {note}", { note: sheet.decisionNote })} /> : null}
-    <DataGrid<Row> appearance="flush" ariaLabel={t("My hours")} columns={columns} data={current ? [...lines.map((line) => ({ kind: "line" as const, line })), { kind: "total" as const }] : []}
+    <DataGrid<Row> ariaLabel={t("My hours")} columns={columns} data={current ? [...lines.map((line) => ({ kind: "line" as const, line })), { kind: "total" as const }] : []}
       getRowId={(row) => (row.kind === "line" ? row.line.key : "total")} isLoading={!current} rowNumbers={false} selectable={false} showFooter={false} wrapText
       toolbarLeading={tools} toolbarActions={actions} emptyContent={<EmptyState title={t("No hours this week")} />} />
   </>;
@@ -248,7 +248,7 @@ export function TeamTime({ api, boot, switcher }: { api: HrmsApi; boot: HrmsBoot
   if (error && !week) return <>{tools}<ErrorState description={error} onRetry={() => void load()} /></>;
   const person = open ? week?.people.find((row) => row.membershipId === open) ?? null : null;
   return <>
-    <DataGrid<TeamPerson> appearance="flush" ariaLabel={t("Team hours")} columns={columns} data={week?.people ?? []} getRowId={(row) => row.membershipId} isLoading={!week}
+    <DataGrid<TeamPerson> ariaLabel={t("Team hours")} columns={columns} data={week?.people ?? []} getRowId={(row) => row.membershipId} isLoading={!week}
       onRowAction={(row) => setOpen(row.membershipId)} rowNumbers={false} selectable={false} wrapText searchLabel={t("Search people")} toolbarLeading={tools}
       emptyContent={<EmptyState title={t("No one to show")} />} />
     {person ? <TimesheetSheet api={api} week={person} canDecide={person.canDecide} onClose={() => setOpen(null)} onDecided={() => { setOpen(null); void load(); }} /> : null}
@@ -288,6 +288,6 @@ export function TeamUtilisation({ api, boot, switcher }: { api: HrmsApi; boot: H
       onChange={(value) => { if (value) setRange({ from: value.start.toString(), to: value.end.toString() }); }} />
   </div>;
   if (error && !rows) return <>{tools}<ErrorState description={error} onRetry={() => void load()} /></>;
-  return <DataGrid<UtilisationRow> appearance="flush" ariaLabel={t("Utilisation")} columns={columns} data={rows ?? []} getRowId={(row) => row.membershipId} isLoading={!rows}
+  return <DataGrid<UtilisationRow> ariaLabel={t("Utilisation")} columns={columns} data={rows ?? []} getRowId={(row) => row.membershipId} isLoading={!rows}
     rowNumbers={false} selectable={false} wrapText searchLabel={t("Search people")} toolbarLeading={tools} emptyContent={<EmptyState title={t("No one to show")} />} />;
 }
