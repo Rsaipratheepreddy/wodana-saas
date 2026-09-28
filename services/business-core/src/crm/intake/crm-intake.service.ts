@@ -279,9 +279,16 @@ export class CrmIntakeService {
     input: CreateIntakeEventDto,
   ) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
-      if (input.assignment && input.assignment.mode !== "unassigned" &&
-          !await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.leads.assign")) {
-        throw new ForbiddenException("Lead assignment permission is required");
+      // Routing decides for itself, and a salesperson may own what they bring in (LF-1); giving an
+      // enquiry to someone else needs the assignment permission.
+      const owner = input.assignment?.mode === "manual" ? input.assignment.ownerMembershipId : undefined;
+      if (owner) {
+        const own = await client.query(
+          `SELECT 1 FROM workspace_memberships WHERE workspace_id=$1 AND id=$2 AND user_id=$3 AND status='active'`,
+          [workspaceId, owner, actorUser.userId]);
+        if (!own.rowCount && !await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.leads.assign")) {
+          throw new ForbiddenException("Lead assignment permission is required");
+        }
       }
       await validateLeadOptions(client, workspaceId, input);
       await assertSourceAllowed(client, workspaceId, actorUser.userId, input.source);

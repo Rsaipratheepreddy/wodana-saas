@@ -20,6 +20,7 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
   const [failure, setFailure] = useState("");
   const [addingDefaults, setAddingDefaults] = useState(false);
   const [notice, setNotice] = useState("");
+  const [salesSettings, setSalesSettings] = useState(initialData.salesSettings);
   const queue = queues.find((item) => item.id === queueId) ?? queues[0];
   const queueOptions = queues.map((item) => ({ id: item.id, label: item.name }));
   const refresh = async () => {
@@ -124,6 +125,19 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
             transform: (values) => ({ version: values.version, takeoverAfterMinutes: values.takeoverAfterMinutes ?? null }),
             submit: t("Save handoff"),
           })}>{t("Lead handoff")}</Button>
+          {initialData.canManageSales && salesSettings ? <Button size="compact" onPress={() => setAction({
+            // S-1, S-2, S-3, S-10: when a manager is told, and who the Sales admin is.
+            title: t("Escalation"), path: "sales-settings", method: "PATCH", submit: t("Save escalation"),
+            initial: { ...salesSettings, salesAdminMembershipId: salesSettings.salesAdminMembershipId ?? "" },
+            fields: [
+              { key: "salesAdminMembershipId", label: t("Sales admin"), options: initialData.members.filter((person) => person.status === "active").map((person) => ({ id: person.id, label: person.displayName || person.email })) },
+              { key: "takeoverCap", label: t("Handoffs before a manager is told"), type: "number", min: 0, max: 10, required: true },
+              { key: "unownedEscalationMinutes", label: t("Working minutes without an owner before escalating"), type: "number", min: 1, max: 1440, required: true },
+              { key: "clientReviewMinutes", label: t("Working minutes to confirm a possible existing client"), type: "number", min: 1, max: 1440, required: true },
+              { key: "duplicateWindowDays", label: t("Days a repeat enquiry counts as a duplicate"), type: "number", min: 1, max: 730, required: true },
+            ],
+            transform: (values) => ({ version: salesSettings.version, takeoverCap: values.takeoverCap, unownedEscalationMinutes: values.unownedEscalationMinutes, clientReviewMinutes: values.clientReviewMinutes, duplicateWindowDays: values.duplicateWindowDays, salesAdminMembershipId: values.salesAdminMembershipId || null }),
+          })}>{t("Escalation")}</Button> : null}
           <Button size="compact" onPress={() => setAction({ title: t("Add queue"), path: "queues", initial: { isFallback: queues.length === 0 }, fields: [{ key: "name", label: t("Name"), required: true }, { key: "code", label: t("Code"), required: true }, { key: "isFallback", label: t("Default queue"), type: "checkbox" }] })}>{t("Add queue")}</Button>
           <Button size="compact" isDisabled={!queue || !initialData.members.some((person) => person.status === "active" && !queue.members.some((existing) => existing.membershipId === person.id))} onPress={() => editMember()}>{t("Add sales owner")}</Button>
         </div>
@@ -145,7 +159,7 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
       })}>{t("Add rule")}</Button></div>
       <DataGrid ariaLabel={t("Routing rules")} appearance="flush" columns={ruleColumns} data={activeRules} getRowId={({ rule }) => rule.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No routing rules")} emptyDescription={t("Rules can direct matching enquiries to a specific queue.")} />
     </section> }]} />
-    {action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={refresh} /> : null}
+    {action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={async (result) => { if (action.path === "sales-settings") { setSalesSettings(result as unknown as typeof salesSettings); return; } await refresh(); }} /> : null}
   </section>;
 }
 

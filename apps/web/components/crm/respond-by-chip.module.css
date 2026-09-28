@@ -1,0 +1,17 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wd-space-1);
+  max-inline-size: 100%;
+  padding: var(--wd-space-0-5) var(--wd-space-2);
+  border: 1px solid var(--wd-color-structural-divider);
+  border-radius: var(--wd-radius-2xs);
+  background: var(--wd-color-surface-muted);
+  color: var(--wd-color-text);
+  font-size: var(--wd-text-2xs);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.chip > span { overflow: hidden; text-overflow: ellipsis; }
+.chip[data-state="warning"] { border-color: currentColor; background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
+.chip[data-state="breached"] { border-color: currentColor; background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); font-weight: var(--wd-weight-semibold); }

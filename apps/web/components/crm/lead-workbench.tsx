@@ -25,6 +25,9 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 import { customValueText, enquiryFields, isShown } from "@/lib/crm/enquiry-fields";
+import type { ClientMatch } from "@/lib/crm/client-match";
+import { ClientMatchList } from "./client-match-list";
+import { RespondByChip, useNow } from "./respond-by-chip";
 
 
 export function LinkedLeadWorkbench({ leadId, initialData, onChanged, onQualify }: { leadId: string; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void }) {
@@ -78,18 +81,38 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
   const primaryEmail = String(enquiry?.primaryEmail ?? contact.email ?? "").trim();
   const openContact = (target: string) => window.open(target, "_blank", "noopener,noreferrer");
   const latestSla = ((detail?.sla ?? []) as RecordData[])[0];
+  const now = useNow(60_000);
+  // S-3: the existing clients this enquiry's client may be.
+  const clientMatches = (detail?.clientMatches ?? []) as ClientMatch[];
+  const [confirming, setConfirming] = useState("");
+  const [confirmFailure, setConfirmFailure] = useState("");
+  const confirmClient = async (decision: "same" | "different", partyId?: string) => {
+    setConfirming(partyId ?? decision); setConfirmFailure("");
+    try {
+      await crmRequest(workspaceId, `leads/${lead.id}/confirm-client`, "POST", { version, decision, ...(partyId ? { partyId } : {}) });
+      await saved();
+    } catch (error) { setConfirmFailure(error instanceof Error ? error.message : t("The client could not be confirmed.")); }
+    finally { setConfirming(""); }
+  };
   const enquiryReference = String(enquiry?.reference ?? lead.reference ?? "").trim();
   const enquiryTitle = String(enquiry?.title ?? lead.title ?? "").trim();
   const showEnquiryTitle = Boolean(enquiryTitle && enquiryTitle !== enquiryReference && enquiryTitle.toLowerCase() !== "enquiry");
   return <div className={`${styles.workbench} ${styles.enquiryDetail}`} data-tour="enquiry-detail">
     <ResourceState {...resource} retry={resource.refresh} />
     <header className={styles.recordHeader}>
-      <div className={styles.enquiryIdentity}>{enquiryReference && <span className={styles.enquiryReference}>{enquiryReference}</span>}<h2>{customerDisplayName(lead.partyName)}</h2>{showEnquiryTitle && <p>{enquiryTitle}</p>}</div>
+      <div className={styles.enquiryIdentity}>{enquiryReference && <span className={styles.enquiryReference}>{enquiryReference}</span>}<h2>{customerDisplayName(lead.partyName)}</h2>{showEnquiryTitle && <p>{enquiryTitle}</p>}<RespondByChip lead={live as { slaStatus?: string | null; slaDueAt?: string | null; slaWarningAt?: string | null }} now={now} /></div>
       <div className={styles.recordActions}>
         {active && !live.isConverted ? <Button size="compact" variant="primary" isDisabled={!detail} onPress={() => setContacting(true)}><PhoneCall size={14} aria-hidden="true" />{t("Log contact")}</Button> : null}
         <Button size="compact" isDisabled={!detail} onPress={() => setEditing(true)}>{t("Edit details")}</Button>
       </div>
     </header>
+    {clientMatches.length ? <section className={styles.stack} aria-label={t("Confirm client")}>
+      <strong>{t("Confirm client")}</strong>
+      <ClientMatchList label={t("Possible existing clients")} matches={clientMatches} actions={(match) => <Button size="compact" variant="secondary" isLoading={confirming === match.partyId} isDisabled={Boolean(confirming)} onPress={() => void confirmClient("same", match.partyId)}>{t("Same client")}</Button>} />
+      <div><Button size="compact" variant="quiet" isLoading={confirming === "different"} isDisabled={Boolean(confirming)} onPress={() => void confirmClient("different")}>{t("Different person")}</Button></div>
+      {confirmFailure ? <Callout title={t("Client not confirmed")} tone="danger">{confirmFailure}</Callout> : null}
+    </section> : null}
+    {live.status === "duplicate" ? <Callout title={t("Held as a duplicate")} tone="info" actions={<Button size="compact" isDisabled={!detail} onPress={() => setAction({ title: t("Not a duplicate: open as new"), path: `leads/${lead.id}/reopen-duplicate`, method: "POST", submit: t("Open as new"), fields: [{ key: "reason", label: t("Reason"), type: "textarea", required: true }], transform: (values) => ({ version, reason: String(values.reason ?? "").trim() }) })}>{t("Not a duplicate")}</Button>}>{live.duplicateOfLeadId ? <a href={`/workspace/crm/leads?lead=${String(live.duplicateOfLeadId)}`}>{t("Open the original")}</a> : t("This contact already had an open enquiry.")}</Callout> : null}
     <dl className={styles.properties} aria-label={t("Enquiry properties")} data-tour="enquiry-properties">
       <div><dt><CircleDot size={14} aria-hidden="true" />{t("Stage")}</dt><dd className={styles.quietSelect}><SelectField label={null} aria-label={t("Enquiry stage")} selectedKey={String(live.status)} items={[{ id: String(live.status), label: t(leadStageLabel(String(live.status))) }, ...stageOptions.filter(item => item.id !== String(live.status)).map(item => ({ ...item, label: t(item.label) }))]} isDisabled={!detail || Boolean(opportunities.length) || !stageOptions.length} onSelectionChange={key => { if (key) { const changed = String(key) !== String(live.status); setSelectedStage(changed ? String(key) : ""); setStageEditing(changed); } }} /></dd></div>
       <div><dt><UserRound size={14} aria-hidden="true" />{t("Owner")}</dt><dd><Button size="compact" variant="quiet" isDisabled={!detail || !active} onPress={() => setAssigning(true)}><span>{owner ?? t("Assign owner")}</span><ChevronDown size={14} aria-hidden="true" /></Button></dd></div>
@@ -170,7 +193,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
 
     {editing && detail ? <LeadEnquiryForm initialData={initialData} existing={{ id: lead.id, version, reference: String(enquiry?.reference ?? lead.reference ?? ""), title: String(enquiry?.title ?? lead.title), summary: String(enquiry?.summary ?? ""), serviceType: String(enquiry?.serviceType ?? lead.serviceType ?? ""), details: enquiryDetails, source: String(enquiry?.source ?? lead.source ?? ""), channel: String(enquiry?.channel ?? lead.channel ?? ""), referral: (enquiry?.referral ?? null) as never, party: { ...contact, displayName: String(enquiry?.partyName ?? lead.partyName), email: String(enquiry?.primaryEmail ?? contact.email ?? ""), phone: String(enquiry?.primaryPhone ?? contact.phone ?? ""), mobile: String(enquiry?.primaryMobile ?? contact.mobile ?? "") }, customFields: lead.customFields }} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await saved(); }} /> : null}
     {scheduling && <NewFollowUpDialog workspaceId={workspaceId} initialLead={{ ...live }} onClose={() => setScheduling(false)} onCreated={async () => { await saved(); setScheduling(false); }} />}
-    {contacting && <LogContactDialog workspaceId={workspaceId} lead={{ id: lead.id, version: Number(version), name: customerDisplayName(lead.partyName) }} onClose={() => setContacting(false)} onLogged={async () => { setContacting(false); await saved(); }} />}
+    {contacting && <LogContactDialog workspaceId={workspaceId} slaPolicies={initialData.slaPolicies} lead={{ id: lead.id, version: Number(version), name: customerDisplayName(lead.partyName) }} onClose={() => setContacting(false)} onLogged={async () => { setContacting(false); await saved(); }} />}
     {assigning && <LeadAssignmentDialog lead={live} members={salesOwnerChoices(initialData)} workspaceId={workspaceId} onClose={() => setAssigning(false)} onSaved={saved} />}
     {action ? <ActionDialog action={action} workspaceId={workspaceId} onClose={() => setAction(null)} onSaved={saved} /> : null}
   </div>;
