@@ -2,12 +2,14 @@
 
 import { LogOut, Moon, Sun } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { AppShell, Avatar, DesignSystemProvider, IconButton, ToastProvider, useToast } from "@/design-system";
+import { AppShell, Avatar, DesignSystemProvider, IconButton, ModuleNavigation, ToastProvider, useToast, type ModuleNavigationItem } from "@/design-system";
 import type { OperatorPermission } from "@/lib/internal/auth";
+import { salesApi } from "@/lib/internal/sales";
 import { useLanguage, useT } from "@/lib/i18n/i18n-provider";
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
+import { NEW_ENQUIRIES_EVENT } from "./sales-labels";
 import styles from "./control-plane.module.css";
 
 export type ConsoleOperator = { name: string; email: string; role: string; permissions: OperatorPermission[] };
@@ -26,11 +28,37 @@ export function OperatorShell({ operator, children }: { operator: ConsoleOperato
   }, []);
   return <DesignSystemProvider theme={theme === "dark" ? "dark" : "light"} locale={language} direction={direction} timeZone={timeZone}>
     <ToastProvider>
-      <AppShell title={<Link className={styles.brand} href="/internal">{t("Wodana Control")}</Link>} topActions={<ShellActions operator={operator} theme={theme} onToggleTheme={toggleTheme} />}>
+      <AppShell title={<Link className={styles.brand} href="/internal">{t("Wodana Control")}</Link>}
+        topNavigation={<ShellNavigation canReadSales={operator.permissions.includes("sales.read")} />}
+        topActions={<ShellActions operator={operator} theme={theme} onToggleTheme={toggleTheme} />}>
         {children}
       </AppShell>
     </ToastProvider>
   </DesignSystemProvider>;
+}
+
+/** The portal's modules; the count on Sales enquiries is the notice of enquiries nobody has picked up yet. */
+function ShellNavigation({ canReadSales }: { canReadSales: boolean }) {
+  const t = useT();
+  const pathname = usePathname() ?? "";
+  const [newEnquiries, setNewEnquiries] = useState(0);
+  useEffect(() => {
+    if (!canReadSales) return;
+    let live = true;
+    salesApi.enquiries().then((list) => { if (live) setNewEnquiries(list.counts.new ?? 0); }).catch(() => undefined);
+    const announced = (event: Event) => { if (live) setNewEnquiries((event as CustomEvent<number>).detail ?? 0); };
+    window.addEventListener(NEW_ENQUIRIES_EVENT, announced);
+    return () => { live = false; window.removeEventListener(NEW_ENQUIRIES_EVENT, announced); };
+  }, [canReadSales]);
+  const items: ModuleNavigationItem[] = [
+    { id: "accounts", href: "/internal", label: t("Accounts") },
+    ...(canReadSales ? [
+      { id: "sales", href: "/internal/sales-enquiries", label: t("Sales enquiries"), ...(newEnquiries > 0 ? { count: newEnquiries } : {}) },
+      { id: "form", href: "/internal/contact-form", label: t("Contact form") },
+    ] : []),
+  ];
+  const activeId = pathname.startsWith("/internal/sales-enquiries") ? "sales" : pathname.startsWith("/internal/contact-form") ? "form" : "accounts";
+  return <ModuleNavigation activeId={activeId} items={items} />;
 }
 
 function ShellActions({ operator, theme, onToggleTheme }: { operator: ConsoleOperator; theme: string; onToggleTheme: () => void }) {

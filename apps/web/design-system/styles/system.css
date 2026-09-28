@@ -290,6 +290,12 @@
 .wd-app-main { min-inline-size: 0; }
 .wd-app-topbar { position: sticky; z-index: 20; inset-block-start: 0; block-size: 3.5rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-3); padding-inline: var(--wd-space-4); border-block-end: 1px solid var(--wd-line); background: color-mix(in srgb, var(--wd-surface) 94%, transparent); backdrop-filter: blur(8px); }
 .wd-app-content { min-inline-size: 0; }
+.wd-app-topbar[data-top-navigation] { grid-template-columns: auto minmax(0, 1fr) auto; }
+.wd-app-topbar > strong { white-space: nowrap; }
+.wd-app-topnav { min-inline-size: 0; overflow-x: auto; scrollbar-width: none; }
+.wd-app-topnav::-webkit-scrollbar { display: none; }
+.wd-app-topnav > .wd-module-nav { display: flex; }
+.wd-module-link > .wd-count-chip { margin-inline-start: var(--wd-space-1-5); }
 .wd-mobile-menu, .wd-mobile-sidebar-close, .wd-app-scrim { display: none; }
 .wd-button kbd { margin-inline-start: var(--wd-space-4); color: var(--wd-faint); font: 0.6875rem var(--wd-font-mono); }
 
@@ -1032,7 +1038,9 @@
   .wd-app-scrim { position: fixed; z-index: calc(var(--wd-z-overlay) - 2); inset: 0; display: block; border: 0; padding: 0; background: var(--wd-scrim); cursor: pointer; opacity: 0; pointer-events: none; transition: opacity var(--wd-duration-base); }
   .wd-app-shell[data-mobile-open] .wd-app-scrim { opacity: 1; pointer-events: auto; }
   .wd-app-topbar { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .wd-app-topbar[data-top-navigation] { grid-template-columns: auto auto minmax(0, 1fr) auto; }
   .wd-app-shell[data-navigation="none"] .wd-app-topbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .wd-app-shell[data-navigation="none"] .wd-app-topbar[data-top-navigation] { grid-template-columns: auto minmax(0, 1fr) auto; }
   .wd-mobile-menu { display: inline-flex; }
   .wd-property-row { grid-template-columns: 1fr; gap: var(--wd-space-1); }
   .wd-grid-toolbar { align-items: stretch; flex-direction: column; padding-block: var(--wd-space-2); }

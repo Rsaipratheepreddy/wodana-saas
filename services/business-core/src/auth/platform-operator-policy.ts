@@ -21,6 +21,8 @@ export const PLATFORM_OPERATOR_PERMISSIONS = [
   "support.approve",
   "data.manage",
   "operators.manage",
+  "sales.read",
+  "sales.manage",
 ] as const;
 
 export type PlatformOperatorPermission = typeof PLATFORM_OPERATOR_PERMISSIONS[number];
@@ -30,8 +32,8 @@ const allPermissions = [...PLATFORM_OPERATOR_PERMISSIONS];
 export const PLATFORM_OPERATOR_POLICY: Record<PlatformOperatorRole, readonly PlatformOperatorPermission[]> = {
   administrator: allPermissions,
   platform_security_owner: allPermissions,
-  provisioning_operator: ["tenants.read", "tenants.provision", "invitations.send"],
-  account_billing_operator: ["tenants.read", "billing.manage", "entitlements.manage"],
+  provisioning_operator: ["tenants.read", "tenants.provision", "invitations.send", "sales.read"],
+  account_billing_operator: ["tenants.read", "billing.manage", "entitlements.manage", "sales.read", "sales.manage"],
   domain_operator: ["tenants.read", "domains.manage"],
   support_observer: ["tenants.read", "support.request"],
 };

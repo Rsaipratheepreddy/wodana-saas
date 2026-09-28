@@ -1,0 +1,47 @@
+/* Wodana Control: sales enquiries and the contact form. Tokens and logical properties only. */
+
+/* List cells */
+.cell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; white-space: normal; }
+.cell > span { overflow-wrap: anywhere; }
+.cell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.reference { margin-inline-end: var(--wd-space-1-5); color: var(--wd-color-text-secondary); font-family: var(--wd-font-mono); font-size: var(--wd-text-xs); }
+.name { font-weight: var(--wd-weight-medium); }
+
+/* Inspector */
+.stack { display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
+.statusRow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.statusRow > .actions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin-inline-start: auto; }
+.facts { display: grid; grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr); gap: var(--wd-space-1-5) var(--wd-space-3); margin: 0; font-size: var(--wd-text-sm); }
+.facts dt { color: var(--wd-color-text-tertiary); }
+.facts dd { margin: 0; min-inline-size: 0; overflow-wrap: anywhere; }
+.facts a { color: var(--wd-color-text); }
+.ltr { direction: ltr; unicode-bidi: isolate; }
+.message { white-space: pre-wrap; }
+.subhead { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.list { display: grid; margin: 0; padding: 0; list-style: none; }
+.list > li { display: grid; gap: var(--wd-space-1); min-inline-size: 0; padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
+.list > li:last-child { border-block-end: 0; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.meta strong { color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
+.change { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
+.body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.noteForm { display: grid; gap: var(--wd-space-2); justify-items: end; }
+.noteForm > :first-child { justify-self: stretch; }
+.noticeRow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.muted { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+
+/* Contact form settings */
+.wide { inline-size: 100%; text-align: start; }
+.fieldControls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-3); inline-size: 100%; text-align: start; }
+.fieldControls > :last-child { flex: 1 1 12rem; min-inline-size: 0; }
+.options { display: grid; gap: var(--wd-space-2); justify-items: start; inline-size: 100%; text-align: start; }
+.option { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-2); inline-size: 100%; max-inline-size: 24rem; }
+.recipients { display: grid; gap: var(--wd-space-2); }
+.preview { padding: var(--wd-phi-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
+.version { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+@media (max-width: 720px) {
+  .facts { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-0-5); }
+  .facts dt { margin-block-start: var(--wd-space-2); }
+  .statusRow > .actions { margin-inline-start: 0; }
+}

@@ -8,12 +8,12 @@ import { Tab, TabList, TabPanel, Tabs as AriaTabs } from "react-aria-components"
 import { Button, IconButton } from "./actions";
 
 export type TabItem = { id: string; label: ReactNode; panel: ReactNode; count?: number };
-export type ModuleNavigationItem = { id: string; href: string; label: string };
+export type ModuleNavigationItem = { id: string; href: string; label: string; /** Items waiting there (e.g. new enquiries); omit when there are none. */ count?: number };
 
 export function ModuleNavigation({ activeId, className, items }: { activeId: string; className?: string; items: ModuleNavigationItem[] }) {
   const t = useT();
   return <nav aria-label={t("Modules")} className={["wd-module-nav", className].filter(Boolean).join(" ")}>
-    {items.map((item) => <Link aria-current={item.id === activeId ? "page" : undefined} className="wd-module-link" href={item.href} key={item.id}>{item.label}</Link>)}
+    {items.map((item) => <Link aria-current={item.id === activeId ? "page" : undefined} className="wd-module-link" href={item.href} key={item.id}>{item.label}{typeof item.count === "number" ? <span className="wd-count-chip">{item.count}</span> : null}</Link>)}
   </nav>;
 }
 
@@ -54,7 +54,7 @@ export function Pagination({ ariaLabel, page, pageCount, onPageChange }: { ariaL
   return <nav aria-label={ariaLabel ?? t("Pagination")} className="wd-pagination"><IconButton aria-label={t("Previous page")} isDisabled={page <= 1} onPress={() => onPageChange(page - 1)}><ChevronLeft data-directional="true" size={16} /></IconButton><span>{t("Page {page} of {count}", { page, count: pageCount })}</span><IconButton aria-label={t("Next page")} isDisabled={page >= pageCount} onPress={() => onPageChange(page + 1)}><ChevronRight data-directional="true" size={16} /></IconButton></nav>;
 }
 
-export function AppShell({ children, navigation, title, topActions }: { children: ReactNode; navigation?: ReactNode; title: ReactNode; topActions?: ReactNode }) {
+export function AppShell({ children, navigation, title, topActions, topNavigation }: { children: ReactNode; navigation?: ReactNode; title: ReactNode; topActions?: ReactNode; /** Module links next to the title (a portal without a sidebar). */ topNavigation?: ReactNode }) {
   const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -72,7 +72,7 @@ export function AppShell({ children, navigation, title, topActions }: { children
       {navigation}
     </aside> : null}
     {navigation ? <button aria-label={t("Close navigation")} className="wd-app-scrim" onClick={() => setMobileOpen(false)} type="button" /> : null}
-    <div className="wd-app-main"><header className="wd-app-topbar">{navigation ? <IconButton aria-expanded={mobileOpen} aria-label={t("Open navigation")} className="wd-mobile-menu" onPress={() => setMobileOpen(true)}><Menu size={17} /></IconButton> : null}<strong>{title}</strong><div>{topActions}</div></header><div className="wd-app-content">{children}</div></div>
+    <div className="wd-app-main"><header className="wd-app-topbar" data-top-navigation={topNavigation ? "" : undefined}>{navigation ? <IconButton aria-expanded={mobileOpen} aria-label={t("Open navigation")} className="wd-mobile-menu" onPress={() => setMobileOpen(true)}><Menu size={17} /></IconButton> : null}<strong>{title}</strong>{topNavigation ? <div className="wd-app-topnav">{topNavigation}</div> : null}<div>{topActions}</div></header><div className="wd-app-content">{children}</div></div>
   </div>;
 }
 

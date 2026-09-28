@@ -45,6 +45,8 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
+  // Product screenshots on the public pages are served as AVIF where the browser supports it, else WebP.
+  images: { formats: ["image/avif", "image/webp"] },
   experimental: {
     // Large barrel packages: load only the components a page uses (dev compiles and production bundles).
     optimizePackageImports: ["react-aria-components", "react-aria"],
