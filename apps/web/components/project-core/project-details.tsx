@@ -21,7 +21,12 @@ export function ProjectDetails({ detail, run, onDialog, planEnd }: { detail: Pro
   const open = project.status === "active" || project.status === "on_hold";
   const manage = detail.canManage && open;
   const priorityLabel: Record<Priority, string> = { normal: t("Normal"), high: t("High"), critical: t("Critical") };
-  const named = detail.team.filter((role) => role.member);
+  // One line per person, with every role they hold.
+  const named = [...detail.team.filter((role) => role.member).reduce((people, role) => {
+    const entry = people.get(role.member!.membershipId) ?? { name: role.member!.name, roles: [] as string[] };
+    entry.roles.push(t(role.label as never));
+    return people.set(role.member!.membershipId, entry);
+  }, new Map<string, { name: string; roles: string[] }>())];
   const missing = detail.team.filter((role) => !role.member);
   const late = planEnd && project.promiseDate && planEnd > project.promiseDate;
   return <div className={styles.detailsPanel}>
@@ -52,12 +57,12 @@ export function ProjectDetails({ detail, run, onDialog, planEnd }: { detail: Pro
     <section className={styles.detailTeam} aria-label={t("Team")}>
       <div className={styles.detailHeading}>
         <h2>{t("Team")}</h2>
-        {manage ? <button type="button" className={styles.linkButton} onClick={() => onDialog("team")}>{t("Edit")}</button> : null}
+        {manage ? <button type="button" className={styles.panelAction} onClick={() => onDialog("team")}>{t("Edit")}</button> : null}
       </div>
       <ul>
-        {named.map((role) => <li key={role.role}>
-          <Avatar name={role.member!.name} seed={role.member!.name} size="sm" />
-          <span><span>{role.member!.name}</span><small>{t(role.label as never)}</small></span>
+        {named.map(([id, person]) => <li key={id}>
+          <Avatar name={person.name} seed={person.name} size="sm" />
+          <span><span>{person.name}</span><small>{person.roles.join(", ")}</small></span>
         </li>)}
       </ul>
       {missing.length ? <p className={styles.muted}>{t("Not named: {roles}", { roles: missing.map((role) => t(role.label as never)).join(", ") })}</p> : null}

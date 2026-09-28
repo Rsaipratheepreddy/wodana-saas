@@ -76,9 +76,9 @@ export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDi
     project.promiseDate ? <span key="handover" className={styles.headFact}>{t("Handover {date}", { date: format.short(project.promiseDate) })}
       {until ? <span className={styles.muted} data-late={until.late || undefined}> · {until.text}</span> : null}</span> : null,
     ...(detailsOpen ? [] : [
-      <span key="client" className={styles.headFact}>{project.clientName}</span>,
-      lead ? <span key="lead" className={styles.headFact}>{lead.name}</span> : null,
-      <span key="value" className={`${styles.headFact} ${styles.number}`}>{format.money(project.total, project.currency)}</span>,
+      <span key="client" className={styles.headFact} data-extra>{project.clientName}</span>,
+      lead ? <span key="lead" className={styles.headFact} data-extra>{lead.name}</span> : null,
+      <span key="value" className={`${styles.headFact} ${styles.number}`} data-extra>{format.money(project.total, project.currency)}</span>,
     ]),
   ].filter(Boolean);
 

@@ -205,7 +205,7 @@ describe("projects", () => {
   });
 
   it("resumes a held project, offering to move the dates by the working days lost", async () => {
-    let current = { ...detail({ status: "on_hold", holdReason: "Client travelling" }), hold: { days: 7, workingDays: 5 } };
+    let current: ProjectDetail = { ...detail({ status: "on_hold", holdReason: "Client travelling" }), hold: { days: 7, workingDays: 5 } };
     const fetcher = mount((_url, body) => {
       if (body?.action === "resume") current = { ...detail({ version: 5 }), hold: null };
       return current;

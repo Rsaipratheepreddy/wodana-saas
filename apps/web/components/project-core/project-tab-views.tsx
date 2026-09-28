@@ -57,8 +57,8 @@ export function ProjectHandoverTab({ workspaceId, projectId, detail }: { workspa
   const warranty = detail.project.status === "completed" || Boolean(detail.project.handoverAccepted) || params.get("view") === "warranty" || Boolean(params.get("claim"));
   const views: HandoverView[] = warranty ? ["handover", "warranty"] : ["handover"];
   const [view, go] = useView<HandoverView>(views, "handover");
-  const switcher = views.length > 1 ? <SegmentedControl label={t("Handover")} value={view} onChange={go}
-    options={[{ id: "handover", label: t("Handover") }, { id: "warranty", label: t("Warranty") }]} /> : null;
+  const switcher = views.length > 1 ? <div className={styles.tabSwitch}><SegmentedControl label={t("Handover")} value={view} onChange={go}
+    options={[{ id: "handover", label: t("Handover") }, { id: "warranty", label: t("Warranty") }]} /></div> : null;
   return <div className={styles.tabStack}>
     {switcher}
     {view === "warranty" ? <ProjectWarranty workspaceId={workspaceId} projectId={projectId} /> : <ProjectHandover workspaceId={workspaceId} projectId={projectId} />}

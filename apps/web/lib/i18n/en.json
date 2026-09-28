@@ -10228,5 +10228,7 @@
   "Why accept before it's paid": "Why accept before it's paid",
   "{amount} is still due. Someone who manages projects accepts a handover with a balance.": "{amount} is still due. Someone who manages projects accepts a handover with a balance.",
   "Same crew as {date}": "Same crew as {date}",
-  "{count} items still going": "{count} items still going"
+  "{count} items still going": "{count} items still going",
+  "Balance due {amount}. Your invoice and how to pay it are under Payments.": "Balance due {amount}. Your invoice and how to pay it are under Payments.",
+  "Confirm: {check}": "Confirm: {check}"
 }

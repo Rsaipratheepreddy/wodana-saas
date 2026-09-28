@@ -45,6 +45,7 @@ export function HandoverSheet({ pack, caseId, api, format, channels, onDecided }
     </ul>
     {pack.status !== "issued" && pack.decidedOn ? <p className={styles.muted}>{t("{name} decided on {date}.", { name: pack.decidedBy ?? "", date: format.date(pack.decidedOn) })}</p> : null}
     {pack.note && pack.status !== "issued" ? <p className={styles.body}>{pack.note}</p> : null}
+    {pack.canDecide && pack.balance ? <p className={styles.body}>{t("Balance due {amount}. Your invoice and how to pay it are under Payments.", { amount: format.money(pack.balance.due, pack.balance.currency) })}</p> : null}
     {pack.canDecide ? <>
       {decision ? <TextAreaField label={decision === "accept" ? t("Anything still to finish? One per line (optional)") : t("What needs fixing first?")} value={text}
         onChange={setText} maxLength={decision === "accept" ? 9000 : 1000} isRequired={decision === "refuse"} autoFocus /> : null}

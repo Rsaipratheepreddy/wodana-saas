@@ -62,6 +62,7 @@
 .work { display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
 .details { position: sticky; inset-block-start: var(--wd-space-4); padding-inline-start: var(--wd-phi-3); border-inline-start: 1px solid var(--wd-color-structural-divider); min-inline-size: 0; }
 .tabStack { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.tabSwitch { justify-self: start; max-inline-size: 100%; }
 .dialogText { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); line-height: var(--wd-leading-copy); }
 
 /* Details panel */
@@ -83,6 +84,9 @@
 .detailTeam p { margin: 0; font-size: var(--wd-text-xs); }
 .detailHeading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--wd-space-2); }
 .detailHeading h2 { margin: 0; font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-tertiary); }
+.panelAction { padding: 0; border: 0; background: transparent; color: var(--wd-color-link); font: inherit; font-size: var(--wd-text-xs); cursor: pointer; }
+.panelAction:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+.panelAction:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
 .propertyButton { display: inline-flex; align-items: center; gap: var(--wd-space-2); max-inline-size: 100%; margin-inline-start: calc(-1 * var(--wd-space-1-5)); padding: var(--wd-space-1) var(--wd-space-1-5); border: 0; border-radius: var(--wd-radius-xs); background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 .propertyButton:hover:not(:disabled) { background: var(--wd-color-surface-hover); }
 .propertyButton:disabled { cursor: default; }
@@ -218,11 +222,13 @@ li[data-passed] > .autoMark { border-style: solid; border-color: var(--wd-color-
   .headActions { align-self: stretch; }
   .headActions > :first-child { flex: 1; justify-content: center; }
   .headFacts { display: flex; inline-size: 100%; }
+  /* On a phone the details are one tap away (ⓘ): the header keeps the stage and the handover. */
+  .headFact[data-extra] { display: none; }
   .pair { grid-template-columns: minmax(0, 1fr); }
   .composer { grid-template-columns: minmax(0, 1fr); }
-  .stageMeta { flex-basis: 100%; margin-inline-start: calc(var(--wd-space-4) + var(--wd-space-3)); text-align: start; font-size: var(--wd-text-xs); }
+  .stageMeta { order: 1; flex-basis: 100%; margin-inline-start: calc(var(--wd-space-4) + var(--wd-space-3)); text-align: start; font-size: var(--wd-text-xs); }
   .stageHead { flex-wrap: wrap; padding-block: var(--wd-space-1); }
-  .stageHead > :last-child { margin-inline-start: auto; }
+  .stageHead > :last-child:not(.stageMeta) { margin-inline-start: auto; }
   .feed li { grid-template-columns: minmax(0, 1fr); }
   .feed li small, .feedShare { grid-column: 1; }
   .milestones li { grid-template-columns: minmax(0, 1fr) auto; }

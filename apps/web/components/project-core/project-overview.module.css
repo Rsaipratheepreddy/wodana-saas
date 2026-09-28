@@ -42,7 +42,8 @@ li[data-key="late_work"] .blockerCount, li[data-key="critical_snags"] .blockerCo
 
 @media (max-width: 720px) {
   .glance { grid-template-columns: minmax(0, 1fr); }
-  .blockers a { grid-template-columns: var(--wd-space-6) minmax(0, 1fr) auto; }
-  .blockerItems { grid-column: 2 / -1; }
+  .blockers a { grid-template-columns: var(--wd-space-6) minmax(0, 1fr); row-gap: var(--wd-space-0-5); }
+  .blockerItems { grid-column: 2; }
   .blockerLabel { white-space: normal; }
+  .blockerGo { display: none; }
 }

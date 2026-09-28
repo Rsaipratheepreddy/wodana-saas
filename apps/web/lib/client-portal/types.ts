@@ -55,6 +55,8 @@ export type PortalMaterials = {
 export type PortalHandover = {
   id: string; revision: number; title: string; status: "issued" | "accepted" | "refused"; areas: string[]; issuedAt: string; decidedOn: string | null; decidedBy: string | null;
   note: string; documents: Array<{ id: string; kind: string; title: string; mimeType: string }>; canDecide: boolean;
+  /** Money still due on the project while the pack waits for the client's decision. */
+  balance?: { currency: string; due: string } | null;
 };
 
 export type PortalQuestion = {

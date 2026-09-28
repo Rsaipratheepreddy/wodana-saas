@@ -270,7 +270,7 @@ export class PettyCashService {
     for (const notice of notices)
       for (const userId of new Set(notice.users.filter((id) => id !== actorId)))
         await notifyUserInApp(client, { workspaceId, recipientUserId: userId, code: notice.code, eventType: notice.code, variables: { ...variables, note: notice.note.slice(0, 480) },
-          deepLink: notice.link === "finance" ? `/workspace/finance/petty-cash?claim=${claimId}` : `/workspace/projects/${claim.projectId}/petty-cash?claim=${claimId}`,
+          deepLink: notice.link === "finance" ? `/workspace/finance/petty-cash?claim=${claimId}` : `/workspace/projects/${claim.projectId}/money?view=petty-cash&claim=${claimId}`,
           idempotencyKey: `${notice.code}:${claimId}:${userId}` });
   }
 

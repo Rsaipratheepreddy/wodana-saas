@@ -183,7 +183,7 @@ export class WarrantyService {
       [workspaceId, projectId])).rows.map((row) => row.userId).filter((id) => id !== actorId);
     for (const userId of new Set(people)) {
       const message = { workspaceId, recipientUserId: userId, code: "warranty.claim", eventType: "warranty.claim", variables: { title: facts?.title ?? "", clientName: facts?.clientName ?? "", actor,
-        note: note.slice(0, 480) }, deepLink: `/workspace/projects/${projectId}/warranty` };
+        note: note.slice(0, 480) }, deepLink: `/workspace/projects/${projectId}/handover?view=warranty` };
       await notifyUserInApp(client, { ...message, idempotencyKey: `warranty.claim:${key}:${userId}` });
       await queueUserEmail(client, { ...message, idempotencyKey: `warranty.claim:${key}:${userId}:email` });
     }

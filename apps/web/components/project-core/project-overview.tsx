@@ -44,7 +44,8 @@ export function ProjectOverview({ api, detail, run, onTeam, refreshKey }: { api:
 
     {error && !overview ? <ErrorState description={error} onRetry={() => void load()} /> : !overview ? <Skeleton lines={2} shape="rows" />
       : running || detail.project.status === "on_hold" ? <section className={styles.blockers} aria-label={t("What holds it up")}>
-        {overview.blockers.length ? <ul>{overview.blockers.map((blocker) => <BlockerRow key={blocker.key} blocker={blocker} label={blockerLabel(blocker.key, blocker.count)} />)}</ul>
+        {overview.blockers.length ? <ul>{overview.blockers.map((blocker) => <BlockerRow key={blocker.key} label={blockerLabel(blocker.key, blocker.count)}
+          blocker={blocker.key === "reports_missing" ? { ...blocker, items: blocker.items.map((day) => format.short(day)) } : blocker} />)}</ul>
           : <p className={styles.clear}><CircleCheck aria-hidden="true" size={16} />{t("Nothing is holding the project up.")}</p>}
       </section> : null}
 
