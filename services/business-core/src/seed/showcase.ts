@@ -1381,6 +1381,7 @@ class ShowcaseSeed {
     const pinned = new Set(current.filter((entry) => entry.board).map((entry) => entry.id));
     await this.advance("moodboard layout", pins.every((pin) => pinned.has(pin.entryId)), async () =>
       brief.saveMoodboardLayout(designer, this.w, caseId, await Promise.all(pins.map((pin) => this.validated(MoodboardPinDto, pin)))));
+    await this.clientMoodboard(ctx, caseId, pins.map((pin) => pin.entryId));
     // The site plan the quotation needs: a plan file on the record (the seed's own drawing tile).
     const planId = this.id(ctx, "asset:site-plan"), planEntry = this.id(ctx, "file:site-plan");
     await this.step("site plan file", async () => current.find((row) => row.id === planEntry) ?? null, async () => {
@@ -1774,6 +1775,34 @@ class ShowcaseSeed {
     }
     const view = (await portal.view(this.slug, token)) as { projects: Any[] };
     return { token, projects: view.projects };
+  }
+
+  /**
+   * The team shows its ideas in the client's portal; the client likes the first and asks about it, and the designer
+   * answers. A portal that isn't open yet leaves the client's part for a later run, never the rest of the brief.
+   */
+  private async clientMoodboard(ctx: Ctx, caseId: string, entryIds: string[]) {
+    if (!entryIds.length) return;
+    const designer = await this.as("designer");
+    const admin = this.get(ClientPortalAdminService);
+    try {
+      const board = (await admin.moodboard(designer, this.w, caseId)) as { shared: string[]; comments: Array<{ targetId: string; fromClient: boolean }> };
+      await this.advance("moodboard shown in the client's portal", entryIds.every((id) => board.shared.includes(id)), () =>
+        admin.shareMoodboard(designer, this.w, caseId, { entryIds, shared: true }));
+      const [first] = entryIds;
+      const asked = board.comments.some((comment) => comment.targetId === first && comment.fromClient);
+      await this.advance("client likes and asks about an idea in the portal", asked, async () => {
+        const portal = this.get(ClientPortalService);
+        const { token } = await this.portalView(ctx);
+        await portal.command(this.slug, token, { commandId: randomUUID(), action: "react", caseId, targetKind: "pin", targetId: first, reaction: "like" });
+        await portal.command(this.slug, token, { commandId: randomUUID(), action: "board_comment", caseId, targetKind: "pin", targetId: first, text: "We love this. Could it work in the living room too?" });
+      });
+      const answered = board.comments.some((comment) => comment.targetId === first && !comment.fromClient);
+      await this.advance("designer answers the client on the moodboard", answered, () =>
+        admin.replyMoodboard(designer, this.w, caseId, { id: this.id(ctx, "moodboard:reply"), targetKind: "pin", targetId: first, text: "Yes. We'll show it on the living room board." }));
+    } catch (error) {
+      this.skip(`${ctx.s.key} · client moodboard`, describe(error));
+    }
   }
 
   private async portalDecision(ctx: Ctx, action: string, purpose: string, body: Record<string, unknown>) {

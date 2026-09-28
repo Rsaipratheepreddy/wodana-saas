@@ -22,13 +22,13 @@ const quote: PortalQuote = {
 };
 const base: PortalProject = {
   id: "c1", title: "Villa 12", reference: null, role: "approver", status: "active", paused: false,
-  sections: { progress: false, decisions: true, payments: false, documents: false, warranty: true, messages: true },
-  manager: null, stage: null, handoverDate: null, next: [], latestUpdate: null, progress: null,
+  sections: { progress: false, moodboard: false, decisions: true, payments: false, documents: false, warranty: true, messages: true },
+  manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, rooms: [], unread: 0, next: [], latestUpdate: null, progress: null, moodboard: null,
   decisions: { quotes: [quote], designs: [], requests: [], definition: null, materials: null,
     handovers: [{ id: "k1", revision: 1, title: "Villa handover", status: "issued", areas: [], issuedAt: "2026-09-26T09:00:00.000Z", decidedOn: null, decidedBy: null, note: "",
       documents: [{ id: "d1", kind: "manual", title: "Care guide", mimeType: "application/pdf" }], canDecide: true }] },
-  payments: null, documents: null, messages: { requests: [] },
-  warranty: { items: [{ id: "l1", title: "Cabinets", area: "Kitchen", startsOn: "2026-09-01", endsOn: "2027-08-31", active: true }], claims: [],
+  payments: null, documents: null, messages: { requests: [], unread: 0 },
+  warranty: { rooms: [{ id: "a1", name: "Kitchen", until: "2027-08-31", active: true, items: [{ id: "l1", title: "Cabinets", until: "2027-08-31", active: true }] }], claims: [],
     areas: [{ id: "a1", name: "Kitchen" }], lines: [{ id: "l1", title: "Cabinets", areaId: "a1" }], canClaim: true },
 };
 const view: PortalView = { contact: { name: "Maya", nameConfirmed: true, phone: "+15550100001" }, today: "2026-09-27", projects: [base] };
@@ -54,7 +54,7 @@ describe("client portal decisions", () => {
     const dialog = await screen.findByRole("dialog", { name: "Kitchen · V2" });
     expect(within(dialog).getByRole("link", { name: "Print or save as PDF" })).toHaveAttribute("href", expect.stringContaining(`/portal/studio/print?case=c1&quote=q1&snapshot=${"h".repeat(64)}`));
     await user.click(within(dialog).getByRole("checkbox", { name: /Wine fridge/ }));
-    expect(within(dialog).getByText("$1,315.00")).toBeInTheDocument();
+    expect(within(dialog).getByText("\u2068$1,315.00\u2069")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(bodies(fetcher, "challenge")).toEqual([{ purpose: "quote:c1:q1:accept", channel: "whatsapp" }]));
     await user.type(await within(dialog).findByRole("textbox", { name: /Code/ }), "111222");
@@ -99,7 +99,9 @@ describe("client portal decisions", () => {
     render(<PortalApp site={site} />);
     const tabs = await screen.findByRole("tablist", { name: "Sections" });
     await user.click(within(tabs).getByRole("tab", { name: "Warranty" }));
-    expect(await screen.findByText("Until Aug 31, 2027")).toBeInTheDocument();
+    // One line per room: how many items and until when; opening it lists them.
+    expect(await screen.findByText("1 item · until Aug 31, 2027")).toBeInTheDocument();
+    expect(screen.getByText("Cabinets")).not.toBeVisible();
     await user.click(screen.getByRole("button", { name: "Report a problem" }));
     const dialog = await screen.findByRole("dialog", { name: "Report a problem" });
     await user.type(within(dialog).getByRole("textbox", { name: /What's wrong/ }), "Drawer won't close");

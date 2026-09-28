@@ -41,12 +41,13 @@ const entrySelect = `SELECT (SELECT content || jsonb_build_object('version',s.ve
   COALESCE((SELECT jsonb_agg(rl.requirement_id ORDER BY rl.created_at) FROM pre_project_entry_requirement_links rl WHERE rl.workspace_id=e.workspace_id AND rl.entry_id=e.id),'[]'::jsonb) AS "requirementIds",
   (SELECT jsonb_build_object('x',mp.x,'y',mp.y,'width',mp.width,'z',mp.z,'sentiment',mp.sentiment) FROM pre_project_moodboard_pins mp WHERE mp.workspace_id=e.workspace_id AND mp.entry_id=e.id) AS board,
   e.created_at AS "createdAt",e.updated_at AS "updatedAt",e.archived_at AS "archivedAt",
-  u.display_name AS "createdByName",
+  COALESCE(u.display_name,cg.confirmed_name,cg.name) AS "createdByName",e.client_grant_id IS NOT NULL AS "fromClient",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',a.id,'name',a.original_name,'mimeType',a.mime_type,'byteSize',a.byte_size,'hasPreview',a.preview_key IS NOT NULL) ORDER BY a.created_at,a.id)
     FROM pre_project_entry_assets l JOIN pre_project_brief_assets a ON a.id=l.asset_id AND a.workspace_id=l.workspace_id AND a.case_id=l.case_id
     WHERE l.entry_id=e.id AND l.workspace_id=e.workspace_id AND l.case_id=e.case_id),'[]'::jsonb) AS assets
   FROM pre_project_brief_entries e LEFT JOIN pre_project_rooms r ON r.id=e.room_id AND r.workspace_id=e.workspace_id AND r.case_id=e.case_id
-  JOIN users u ON u.id=e.created_by`;
+  LEFT JOIN users u ON u.id=e.created_by
+  LEFT JOIN client_portal_grants cg ON cg.workspace_id=e.workspace_id AND cg.id=e.client_grant_id`;
 
 @Injectable()
 export class BriefService {

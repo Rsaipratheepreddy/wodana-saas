@@ -266,6 +266,10 @@
 .wd-pill-tab[aria-selected="true"] { background: var(--wd-color-text); color: var(--wd-color-text-inverse); }
 .wd-pill-tab[aria-selected="true"] svg { color: inherit; }
 .wd-pill-tab:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.wd-pill-tabs[data-layout="scroll"] { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none; padding-block: var(--wd-space-0-5); }
+.wd-pill-tabs[data-layout="scroll"]::-webkit-scrollbar { display: none; }
+.wd-pill-tabs[data-layout="scroll"] .wd-pill-tab { flex: none; scroll-snap-align: start; }
+.wd-pill-tab[aria-selected="true"] .wd-count-chip { background: var(--wd-color-surface); color: var(--wd-color-text); }
 /* Compact segmented navigation: no full-width divider or active underline. */
 .wd-tabs[data-variant="segmented"] > .wd-tab-scroll { border: 0; scrollbar-width: none; }
 .wd-tabs[data-variant="segmented"] > .wd-tab-scroll::-webkit-scrollbar { display: none; }
