@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { HrmsBootstrap, HrmsDocumentKind, HrmsPerson } from "@wodana/contracts";
-import { Button, Checkbox, EmptyState, InlineNotice, NoAccessState, NumericInput, PageSkeleton, SelectField, SettingsPage, SettingsRow, Skeleton, Tabs, isNoAccessError } from "@/design-system";
+import { Button, Checkbox, EmptyState, SaveBar, InlineNotice, NoAccessState, NumericInput, PageSkeleton, SelectField, SettingsPage, SettingsRow, Skeleton, Tabs, isNoAccessError } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { hrmsApi, type HrmsApi } from "@/lib/hrms/api";
 import { HRMS_SETTINGS_TABS, type HrmsSettingsTab } from "@/lib/hrms/sections";
@@ -107,12 +107,10 @@ function RuleSettings({ api, boot, onSaved }: { api: HrmsApi; boot: HrmsBootstra
         onChange={(on) => set("siteDocuments", DOCUMENT_KINDS.filter((item) => (item === kind ? on : form.siteDocuments.includes(item))))}>{kinds[kind]}</Checkbox>)}</div>
     </SettingsRow>
     </div>
-    <div className={styles.actions}>
-      <Button variant="primary" isLoading={busy} isDisabled={!dirty || !valid} onPress={async () => {
-        setBusy(true); setError("");
-        try { await api.saveSettings({ version: boot.settings?.version ?? 0, ...form }); onSaved(); }
-        catch (cause) { setError(format.failure(cause, t("Could not save."))); setBusy(false); }
-      }}>{t("Save")}</Button>
-    </div>
+    <SaveBar isDirty={dirty} isSaving={busy} isDisabled={!valid} onDiscard={() => { setForm(initial); setError(""); }} onSave={async () => {
+      setBusy(true); setError("");
+      try { await api.saveSettings({ version: boot.settings?.version ?? 0, ...form }); onSaved(); }
+      catch (cause) { setError(format.failure(cause, t("Could not save."))); setBusy(false); }
+    }} />
   </div>;
 }

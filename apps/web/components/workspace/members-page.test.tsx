@@ -29,7 +29,10 @@ describe("MembersPage", () => {
     expect(screen.getByRole("region", { name: "People" })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "Workspace members" })).toBeInTheDocument();
     expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("link", { name: "admin@igloarchitects.com" })).toBeInTheDocument();
-    expect(within(screen.getByRole("table", { name: "Pending invitations" })).getByRole("link", { name: "maya@igloarchitects.com" })).toBeInTheDocument();
+    // Invitations and members are one framed table: the invitation sits in its own group above the members.
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("link", { name: "maya@igloarchitects.com" })).toBeInTheDocument();
+    expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("button", { name: "Collapse Invited" })).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Iglo Administrator" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select maya@igloarchitects.com" })).toBeInTheDocument();
@@ -68,7 +71,7 @@ describe("MembersPage", () => {
     const ready = await screen.findByRole("dialog", { name: "Invitation ready" });
     expect(within(ready).getByDisplayValue(/\/login\?invitation=/)).toBeInTheDocument();
     await interaction.click(within(ready).getByRole("button", { name: "Done" }));
-    expect(within(screen.getByRole("table", { name: "Pending invitations" })).getByRole("link", { name: "maya@igloarchitects.com" })).toBeInTheDocument();
+    expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("link", { name: "maya@igloarchitects.com" })).toBeInTheDocument();
   });
 
   it("creates a standard member invitation from the inline composer", async () => {

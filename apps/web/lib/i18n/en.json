@@ -9676,5 +9676,15 @@
   "{hours} h {minutes} min": "{hours} h {minutes} min",
   "{days} d": "{days} d",
   "Respond by {when} · {duration} overdue": "Respond by {when} · {duration} overdue",
-  "Respond by {when} · {duration}": "Respond by {when} · {duration}"
+  "Respond by {when} · {duration}": "Respond by {when} · {duration}",
+  "Directory": "Directory",
+  "People & access": "People & access",
+  "HR records": "HR records",
+  "Open Teams": "Open Teams",
+  "Search settings": "Search settings",
+  "No settings match": "No settings match",
+  "This changed while you were away": "This changed while you were away",
+  "Someone saved a newer version. Reload to see it, then make your change again.": "Someone saved a newer version. Reload to see it, then make your change again.",
+  "Reload": "Reload",
+  "This couldn't be done": "This couldn't be done"
 }

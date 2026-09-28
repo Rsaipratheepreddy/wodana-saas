@@ -133,7 +133,7 @@ export function LeadResponseSla({ initialData }: { initialData: LeadsPageData })
         <Button size="compact" variant="primary" onPress={() => setAction(eventPolicy(t, timeZone))}>{t("Add response target")}</Button>
       </div>
     </header>
-    <DataGrid ariaLabel={t("Response SLA policies")} appearance="flush" columns={columns} data={policies} getRowId={(policy) => policy.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No response targets yet")} emptyDescription={t("Set how fast a new enquiry must get its first contact.")} />
+    <DataGrid ariaLabel={t("Response SLA policies")} columns={columns} data={policies} getRowId={(policy) => policy.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle={t("No response targets yet")} emptyDescription={t("Set how fast a new enquiry must get its first contact.")} />
     <ResourceState loading={loading} failure={failure} retry={refresh} />
     {!loading && !failure && policies.length ? <dl className={styles.health} aria-label={t("Response SLA health")}><div><dt>{t("Within target")}</dt><dd>{reportCount(health.withinTarget, locale)}</dd></div><div><dt>{t("Breached")}</dt><dd>{reportCount(health.breached, locale)}</dd></div><div><dt>{t("Average first response")}</dt><dd>{average}</dd></div></dl> : null}
     {action ? <ActionDialog workspaceId={initialData.workspaceId} action={action} onClose={() => setAction(null)} onSaved={refresh} /> : null}

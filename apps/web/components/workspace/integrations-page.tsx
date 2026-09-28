@@ -347,7 +347,7 @@ export function IntegrationsPage({
       {!visibleCatalog.length ? <EmptyState title={t("No integrations found")} description={t("Try another search term.")} /> : null}
       {!embedded && filteredConnections.length ? <section aria-label={t("Configured accounts")} className={styles.accounts}>
         <div className={styles.sectionHeading}><h2>{t("Configured accounts")}</h2><span>{filteredConnections.length === 1 ? t("1 account") : t("{count} accounts", { count: filteredConnections.length })}</span></div>
-        <DataGrid appearance="flush" ariaLabel={t("Configured accounts")} columns={accountColumns} data={filteredConnections} getRowId={(connection) => connection.id} pinFirstColumn={false} rowNumbers={false} selectable={false} showToolbar={false} />
+        <DataGrid ariaLabel={t("Configured accounts")} columns={accountColumns} data={filteredConnections} getRowId={(connection) => connection.id} pinFirstColumn={false} rowNumbers={false} selectable={false} showToolbar={false} />
       </section> : null}
     </section>
 

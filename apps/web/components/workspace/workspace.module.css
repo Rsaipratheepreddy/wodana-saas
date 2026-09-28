@@ -1599,12 +1599,8 @@
   .shell .crmContentPanel { margin: var(--wd-space-4); }
 }
 
-/* CRM lists, Notion style: row dividers only, no outer box or column lines. */
+/* CRM lists use the shared table frame (record-tables.css); this panel only sets toolbar spacing. */
 .recordTablePanel :global(.wd-data-grid) { padding-block-start: var(--wd-space-3); }
-.recordTablePanel :global(.wd-table th), .recordTablePanel :global(.wd-table td) { border-inline-end:0; border-block-end:1px solid var(--wd-color-structural-divider); padding:var(--wd-space-2) var(--wd-space-3); block-size:44px; font-size:var(--wd-text-sm); }
-.recordTablePanel :global(.wd-table th) { background:var(--wd-color-surface); color:var(--wd-color-text-secondary); font-weight:var(--wd-weight-medium); }
-.recordTablePanel :global(.wd-table td) { background:var(--wd-color-surface); }
-.recordTablePanel :global(.wd-table tr:hover td) { background:var(--wd-color-surface-hover); }
 .shell .recordTablePanel :global(.wd-row-index[data-selectable] > .wd-checkbox) { opacity: 1; }
 .shell .recordTablePanel :global(.wd-row-index[data-selectable] > span) { display: none; }
 .shell .recordTablePanel :global(.wd-record-toolbar.wd-record-toolbar) { padding-block: var(--wd-space-2) var(--wd-space-5); }
@@ -1656,8 +1652,6 @@
 .shell .recordTablePanel :global(.wd-record-search) { border-radius: var(--wd-radius-xs); }
 .shell .recordTablePanel :global(.wd-record-search .wd-search-field) { block-size: 30px; min-block-size: 30px; }
 
-/* Neutral full-row hover, including sticky cells; selection remains stronger. */
-.shell .recordTablePanel { --crm-row-hover: #f1f2f3; --crm-row-selected: #e4e7e9; }
 
 .shell .recordTablePanel :global(.wd-record-toolbar.wd-record-toolbar) {
   padding-block-end: var(--wd-space-6);
@@ -1720,68 +1714,6 @@
 }
 .shell :global(.wd-dialog[aria-label="Enquiry details"]) > header > div { display: none; }
 .shell :global(.wd-dialog[aria-label="Enquiry details"]) > :global(.wd-dialog-body) { padding-block-start: var(--wd-space-4); }
-
-/* Consistent CRM form controls, without changing compact table toolbars. */
-.shell .recordTablePanel :global(.wd-dialog-body form) {
-  --wd-control-lg: 40px;
-}
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-field) { gap: var(--wd-space-1-5); }
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-field-label) { color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: 500; line-height: 1.4; }
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-input-group),
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-date-group),
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-select-button) {
-  min-block-size: 40px;
-  height: 40px;
-  border: 1px solid var(--wd-color-border-strong);
-  border-radius: var(--wd-radius-xs);
-  background: var(--wd-color-surface);
-  color: var(--wd-color-text);
-  box-shadow: none;
-  font-size: var(--wd-text-sm);
-}
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-input) { padding-inline: var(--wd-space-3); font-size: var(--wd-text-sm); }
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-select-button) { padding-inline: var(--wd-space-3) var(--wd-space-1); }
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-select-indicator) { inline-size: 28px; block-size: 28px; border: 0; }
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-textarea-frame) { border-radius: var(--wd-radius-xs); background: var(--wd-color-surface); }
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-textarea) { padding: var(--wd-space-2) var(--wd-space-3); min-block-size: 88px; font-size: var(--wd-text-sm); }
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-input-group:focus-within),
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-select-button[data-focus-visible]) { border-color: var(--wd-color-action-primary); outline: 2px solid var(--wd-color-action-primary-subtle); outline-offset: 1px; }
-.shell .recordTablePanel :global(.wd-picker-popover) { padding: var(--wd-space-1); border-radius: var(--wd-radius-xs); background: var(--wd-color-surface); color: var(--wd-color-text); }
-.shell .recordTablePanel :global(.wd-picker-item) { padding: var(--wd-space-2) var(--wd-space-2); min-block-size: 34px; font-size: var(--wd-text-xs); border-radius: var(--wd-radius-2xs); }
-
-/* Form dialogs use a narrower, quieter layout than record-detail modals. */
-.shell :global(.wd-modal):has(> :global(.wd-dialog) > :global(.wd-dialog-body) > form) {
-  inline-size: min(600px, calc(100vw - 32px));
-  max-block-size: min(720px, calc(100dvh - 32px));
-  border-radius: var(--wd-radius-sm);
-}
-.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) {
-  max-block-size: min(718px, calc(100dvh - 34px));
-  overflow: hidden;
-}
-.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > header {
-  min-block-size: 0;
-  flex-shrink: 0;
-  padding: var(--wd-space-4) var(--wd-space-5) var(--wd-space-3);
-  border-block-end: 0;
-}
-.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > header h2 { font-size: var(--wd-text-lg); font-weight: 600; margin: 0; }
-.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > header p { font-size: var(--wd-text-xs); margin-block-start: var(--wd-space-1); }
-.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > :global(.wd-dialog-body) { flex: 1 1 auto; min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--wd-space-1) var(--wd-space-5) var(--wd-space-4); }
-.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer { flex-shrink: 0; padding: var(--wd-space-3) var(--wd-space-5) var(--wd-space-4); border-block-start: 1px solid var(--wd-color-border); background: var(--wd-color-surface); }
-.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer > div { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
-.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer :global(.wd-button) { flex: none; min-block-size: var(--wd-control-sm); padding-inline: var(--wd-space-3); font-size: var(--wd-text-sm); border-radius: var(--wd-radius-sm); }
-@media(max-width:600px) { .shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer :global(.wd-button) { flex: 1; min-block-size: 44px; } }
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-field-label) { font-weight: 400; }
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-input-group),
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-date-group),
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-select-button) { min-block-size: 36px; height: 36px; border-radius: var(--wd-radius-xs); }
-.shell .recordTablePanel :global(.wd-dialog-body form .wd-textarea) { min-block-size: 64px; height: 64px; padding: var(--wd-space-2) var(--wd-space-2); }
-@media(max-width:600px) {
-  .shell .recordTablePanel :global(.wd-dialog-body form .wd-input-group),
-  .shell .recordTablePanel :global(.wd-dialog-body form .wd-date-group),
-  .shell .recordTablePanel :global(.wd-dialog-body form .wd-select-button) { min-block-size: 44px; height: 44px; }
-}
 
 .commercialTabs { display:flex; align-items:center; gap:var(--wd-space-1); padding-block:var(--wd-space-1-5); overflow-x:auto; }
 .commercialTabs > .commercialSegment { flex:0 0 auto; }
@@ -1896,8 +1828,7 @@
   background:var(--wd-color-surface);
 }
 
-/* Sales tables, final look (reference: minimal grid). Open sides, top and bottom rules,
-   thin column lines, plain header with icons, quiet hover. Keep this block last. */
+/* Sales list toolbar with list tabs: one row above the shared table frame. */
 .shell .recordTablePanel :global(.wd-grid-toolbar.wd-record-toolbar[data-leading]) { min-block-size: var(--wd-control-md); padding: 0; margin-block-end: var(--wd-space-2); }
 /* Second-level Sales tabs (Settings): same quiet underline tabs as other sub-sections. */
 .flowHeader[data-navigation="chips"] .commercialTabs { gap: var(--wd-space-3); padding-block: 0; padding-inline: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); }

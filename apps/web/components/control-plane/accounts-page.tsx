@@ -67,7 +67,6 @@ export function AccountsPage({ canProvision }: { canProvision: boolean }) {
   return <div className={styles.page}>
     <PageHeader title={t("Accounts")} actions={create} />
     <DataGrid<AccountSummary>
-      appearance="flush"
       ariaLabel={t("Accounts")}
       columns={columns}
       data={visible}

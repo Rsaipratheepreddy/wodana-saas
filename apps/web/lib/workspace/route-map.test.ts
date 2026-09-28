@@ -15,9 +15,13 @@ describe("workspace route map", () => {
     }
   });
 
-  it("keeps People under Settings with the Settings menu", () => {
-    expect(crumbs("/workspace/members")).toBe("Settings › People");
-    expect(route("/workspace/members")).toMatchObject({ nav: "settings", settings: true });
+  it("puts the directory, teams, roles and attendance in People, not in Settings", () => {
+    expect(crumbs("/workspace/members")).toBe("People");
+    expect(route("/workspace/members")).toMatchObject({ nav: "team", settings: false });
+    expect(crumbs("/workspace/teams")).toBe("People › Teams");
+    expect(crumbs("/workspace/roles")).toBe("People › Roles & permissions");
+    expect(crumbs("/workspace/hrms")).toBe("People › Attendance");
+    for (const path of ["/workspace/teams", "/workspace/roles", "/workspace/hrms", "/workspace/hrms/leave"]) expect(route(path)).toMatchObject({ nav: "team", settings: false });
     expect(crumbs("/workspace/settings/audit-logs")).toBe("Settings › Audit history");
   });
 

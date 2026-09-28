@@ -56,11 +56,13 @@ describe("client portal settings", () => {
     await user.click(screen.getByRole("switch", { name: "Stage names" }));
     await user.type(screen.getByRole("textbox", { name: /Email/ }), "care@studio.example");
     expect(screen.getByText("Welcome home", { selector: "p" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    // One save pattern: the changes wait in the save bar at the bottom of the page.
+    await user.click(within(screen.getByRole("region", { name: "Unsaved changes" })).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(writes(fetcher)).toEqual([{ url: `/api/client-portal-admin/settings?workspaceId=${W}`, method: "PUT", body: expect.objectContaining({
       version: 3, enabled: true, sections: expect.objectContaining({ payments: false, decisions: true }), progress: expect.objectContaining({ stageNames: false }),
       support: { phone: "", email: "care@studio.example", whatsapp: "" } }) }]));
-    expect(await screen.findByText("Saved.")).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved");
+    expect(screen.queryByRole("region", { name: "Unsaved changes" })).not.toBeInTheDocument();
   });
 
   it("narrows or pauses one project's portal and lists who can sign in", async () => {

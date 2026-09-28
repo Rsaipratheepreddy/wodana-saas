@@ -12,10 +12,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - Product layouts are full-bleed by default. Do not wrap the application shell or page canvas in
   an all-sides bordered, rounded card and do not add global page padding to simulate a card.
-- Do not use complete rectangular borders to group page regions, tables, sidebars, or passive
-  cards. Prefer hierarchy from whitespace, background tone, typography, and a single structural
-  divider where separation is necessary. Complete borders remain valid for interactive controls,
-  menus, dialogs, and selectable objects when their boundary is required for usability.
+- Tables use the shared frame: a 1px border with rounded corners, a header band and row hairlines
+  (`design-system/styles/record-tables.css`, the same for DataGrid, RecordTable and GroupedTable).
+  Page regions, sidebars and passive cards have no borders: prefer hierarchy from whitespace,
+  background tone, typography, and a single structural divider where separation is necessary.
+  Complete borders remain valid for interactive controls, menus, dialogs, and selectable objects
+  when their boundary is required for usability.
 - Keep product typography compact and neutral. Use colour for action and state, not decoration.
 - Use shadows only for transient elevation such as menus, dialogs, drawers, and drag previews.
 - New shell and navigation work must preserve keyboard access, RTL layout, reduced motion, and
