@@ -20,6 +20,41 @@ export const TEMPLATE_VARIABLE_SOURCES = [
 export type TemplateVariableSource = (typeof TEMPLATE_VARIABLE_SOURCES)[number];
 
 export const MAX_SNOOZE_DAYS = 90;
+
+/** Enquiry states a chat can be filtered by (the open ones and the outcomes). */
+export const ENQUIRY_STAGES = ["new", "attempting_contact", "connected", "nurturing", "paused", "qualified", "disqualified"] as const;
+
+/**
+ * The SQL for "the chat's linked record is at one of these stages" (DZ-11), OR'ed together:
+ *   lead:<status>          the chat's enquiry (linked, else the client's) has that status
+ *   opportunity:<stageId>  the client's open opportunity is at that pipeline stage
+ *   project:<stageKey>     the client's active project's current stage
+ *   none                   the client has no enquiry, opportunity or project
+ * `push` adds a value and returns its placeholder. Unknown tokens are ignored.
+ */
+export function stageFilterSql(tokens: string[], push: (value: unknown) => string, alias = "conversation") {
+  const clauses: string[] = [];
+  const cases = `SELECT pc.id FROM pre_project_cases pc JOIN crm_opportunities opp ON opp.workspace_id = pc.workspace_id AND opp.id = pc.opportunity_id
+    WHERE pc.workspace_id = ${alias}.workspace_id AND opp.party_id = ${alias}.party_id`;
+  for (const token of tokens) {
+    const [kind, value] = token.split(":", 2);
+    if (kind === "lead" && (ENQUIRY_STAGES as readonly string[]).includes(value)) {
+      clauses.push(`EXISTS (SELECT 1 FROM crm_leads stage_lead WHERE stage_lead.workspace_id = ${alias}.workspace_id
+        AND (stage_lead.id = ${alias}.lead_id OR (${alias}.lead_id IS NULL AND stage_lead.party_id = ${alias}.party_id)) AND stage_lead.status = ${push(value)}::crm_lead_status)`);
+    } else if (kind === "opportunity" && /^[0-9a-f-]{36}$/i.test(value ?? "")) {
+      clauses.push(`EXISTS (SELECT 1 FROM crm_opportunities stage_opportunity WHERE stage_opportunity.workspace_id = ${alias}.workspace_id
+        AND stage_opportunity.party_id = ${alias}.party_id AND stage_opportunity.status = 'open' AND stage_opportunity.stage_id = ${push(value)}::uuid)`);
+    } else if (kind === "project" && /^[a-z0-9_-]{1,60}$/.test(value ?? "")) {
+      clauses.push(`EXISTS (SELECT 1 FROM delivery_projects stage_project JOIN project_stages current_stage ON current_stage.workspace_id = stage_project.workspace_id
+          AND current_stage.project_id = stage_project.id AND current_stage.status = 'current'
+        WHERE stage_project.workspace_id = ${alias}.workspace_id AND stage_project.status = 'active' AND stage_project.case_id IN (${cases}) AND current_stage.key = ${push(value)})`);
+    } else if (kind === "none") {
+      clauses.push(`(${alias}.lead_id IS NULL AND NOT EXISTS (SELECT 1 FROM crm_leads none_lead WHERE none_lead.workspace_id = ${alias}.workspace_id AND none_lead.party_id = ${alias}.party_id)
+        AND NOT EXISTS (SELECT 1 FROM crm_opportunities none_opportunity WHERE none_opportunity.workspace_id = ${alias}.workspace_id AND none_opportunity.party_id = ${alias}.party_id))`);
+    }
+  }
+  return clauses.length ? `(${clauses.join(" OR ")})` : null;
+}
 export const MAX_TEMPLATE_PARAMETER_LENGTH = 1024;
 
 const PLACEHOLDER = /\{\{\s*(\d{1,2})\s*\}\}/g;

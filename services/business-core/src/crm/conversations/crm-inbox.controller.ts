@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiExcludeController, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
@@ -25,7 +25,8 @@ export class CrmInboxController {
   @Put("conversations/:conversationId/messages/:messageId/hidden") hide(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Param("messageId", ParseUUIDPipe) messageId: string, @Body() input: HideMessageDto) { return this.inbox.hideMessage(actor, workspaceId, conversationId, messageId, input); }
   @Get("inbox/client-messages") clientMessages(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.whatsappTemplates.clientMessages(actor, workspaceId); }
   @Put("inbox/client-messages/:event") setClientMessage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("event") event: string, @Body() input: UpdateClientMessageDto) { return this.whatsappTemplates.setClientMessage(actor, workspaceId, event, input); }
-  @Get("inbox/summary") summary(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.summary(actor, workspaceId); }
+  @Get("inbox/summary") summary(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Query("stage") stage?: string) { return this.inbox.summary(actor, workspaceId, typeof stage === "string" ? stage.slice(0, 1000) : undefined); }
+  @Get("inbox/stages") stages(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.stages(actor, workspaceId); }
   @Get("inbox/owners") owners(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.owners(actor, workspaceId); }
   @Post("inbox/bulk") bulk(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: BulkConversationsDto) { return this.inbox.bulk(actor, workspaceId, input); }
   @Get("inbox/settings") settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.settings(actor, workspaceId); }

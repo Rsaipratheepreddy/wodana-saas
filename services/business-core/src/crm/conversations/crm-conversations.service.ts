@@ -14,7 +14,7 @@ import { applyConversationChange, mapConversation, recordChatEvent } from "./inb
 import { INBOX_MEMBERS_SQL, inboxQueue, selectInboxOwner } from "./inbox/inbox-assignment";
 import { inboxLink, noticeChat, readChatNotices, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
 import { notifyUserInApp, queueUserPush } from "../../notifications/default-templates";
-import { inboundSummary, normalizeTemplateParameter, renderTemplate, templateParametersProblem, templatePlaceholders, withSignature, type TemplateVariableSource } from "./inbox/inbox-rules";
+import { inboundSummary, normalizeTemplateParameter, renderTemplate, stageFilterSql, templateParametersProblem, templatePlaceholders, withSignature, type TemplateVariableSource } from "./inbox/inbox-rules";
 import { resolveTemplateSources } from "./inbox/template-variables";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
@@ -66,6 +66,7 @@ export class CrmConversationsService {
         clauses.push(query.view === "mine" ? `conversation.owner_membership_id = $${values.length}` : `conversation.owner_membership_id IN (${TEAM_SQL(values.length)})`);
       }
       if (query.labelId) { values.push(query.labelId); clauses.push(`EXISTS (SELECT 1 FROM crm_conversation_label_links link WHERE link.workspace_id = conversation.workspace_id AND link.conversation_id = conversation.id AND link.label_id = $${values.length})`); }
+      if (query.stage) { const stageSql = stageFilterSql(query.stage.split(",").slice(0, 30), (value) => { values.push(value); return `$${values.length}`; }); if (stageSql) clauses.push(stageSql); }
       if (query.unread === "true") clauses.push("conversation.unread_count > 0");
       if (query.search?.trim()) { values.push(`%${query.search.trim().replace(/[\\%_]/g, "\\$&")}%`); clauses.push(`(conversation.subject ILIKE $${values.length} OR party.display_name ILIKE $${values.length} OR EXISTS (SELECT 1 FROM crm_contact_points contact WHERE contact.workspace_id=conversation.workspace_id AND contact.party_id=conversation.party_id AND contact.status='active' AND (contact.raw_value ILIKE $${values.length} OR contact.normalized_value ILIKE $${values.length})))`); }
       if (cursor) {

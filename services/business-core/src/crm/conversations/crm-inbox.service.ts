@@ -10,7 +10,7 @@ import { INBOX_MEMBERS_SQL } from "./inbox/inbox-assignment";
 import { applyConversationChange, recordChatEvent, type ConversationChange } from "./inbox/inbox-commands";
 import { inboxLink, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
 import { notifyUserInApp } from "../../notifications/default-templates";
-import { placeholdersAreContiguous, TEMPLATE_VARIABLE_SOURCES, templatePlaceholders } from "./inbox/inbox-rules";
+import { ENQUIRY_STAGES, placeholdersAreContiguous, stageFilterSql, TEMPLATE_VARIABLE_SOURCES, templatePlaceholders } from "./inbox/inbox-rules";
 import { resolveTemplateSources } from "./inbox/template-variables";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
@@ -34,9 +34,12 @@ export class CrmInboxService {
   ) {}
 
   /** Open chats per view (Team is null for someone in no queue) and the Snoozed and Resolved totals. */
-  summary(actor: RequestActor, workspaceId: string) {
+  summary(actor: RequestActor, workspaceId: string, stage?: string) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
       const me = await this.membership(client, workspaceId, actorUser.userId);
+      const values: unknown[] = [workspaceId, me];
+      // The counts follow the stage filter, so each view says how many of its chats are at those stages.
+      const stageSql = stage ? stageFilterSql(stage.split(",").slice(0, 30), (value) => { values.push(value); return `$${values.length}`; }) : null;
       const result = await client.query<Row>(
         `SELECT count(*) FILTER (WHERE status = 'open' AND owner_membership_id = $2)::int AS mine,
                 count(*) FILTER (WHERE status = 'open' AND owner_membership_id IS NULL)::int AS unassigned,
@@ -47,10 +50,29 @@ export class CrmInboxService {
                 count(*) FILTER (WHERE status = 'open')::int AS "all",
                 count(*) FILTER (WHERE status = 'snoozed')::int AS snoozed,
                 count(*) FILTER (WHERE status = 'open' AND unread_count > 0 AND (owner_membership_id = $2 OR owner_membership_id IS NULL))::int AS "unreadForMe"
-           FROM crm_conversations WHERE workspace_id = $1`,
-        [workspaceId, me],
+           FROM crm_conversations conversation WHERE workspace_id = $1${stageSql ? ` AND ${stageSql}` : ""}`,
+        values,
       );
       return { ...result.rows[0], membershipId: me };
+    });
+  }
+
+  /** What a chat can be filtered by: enquiry states, the sales pipeline's stages and the project stages in use. */
+  stages(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
+      const opportunity = await client.query<{ id: string; name: string; pipeline: string }>(
+        `SELECT stage.id, stage.name, pipeline.name AS pipeline FROM crm_pipeline_stages stage
+           JOIN crm_pipelines pipeline ON pipeline.workspace_id = stage.workspace_id AND pipeline.id = stage.pipeline_id
+          WHERE stage.workspace_id = $1 AND stage.status = 'active' AND pipeline.status = 'active' ORDER BY pipeline.name, stage.position`, [workspaceId]);
+      const project = await client.query<{ key: string; name: string }>(
+        `SELECT DISTINCT ON (stage.key) stage.key, stage.name FROM project_stages stage
+           JOIN delivery_projects project ON project.workspace_id = stage.workspace_id AND project.id = stage.project_id AND project.status = 'active'
+          WHERE stage.workspace_id = $1 ORDER BY stage.key, stage.position`, [workspaceId]);
+      return {
+        enquiry: ENQUIRY_STAGES.map((status) => ({ id: `lead:${status}`, status })),
+        opportunity: opportunity.rows.map((row) => ({ id: `opportunity:${row.id}`, name: row.name, pipeline: row.pipeline })),
+        project: project.rows.map((row) => ({ id: `project:${row.key}`, name: row.name })),
+      };
     });
   }
 

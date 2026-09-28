@@ -9831,5 +9831,9 @@
   "{actor} blocked this number": "{actor} blocked this number",
   "{actor} unblocked this number": "{actor} unblocked this number",
   "{actor} hid a message": "{actor} hid a message",
-  "{actor} showed a hidden message again": "{actor} showed a hidden message again"
+  "{actor} showed a hidden message again": "{actor} showed a hidden message again",
+  "Enquiry · {stage}": "Enquiry · {stage}",
+  "Sales · {stage}": "Sales · {stage}",
+  "Project · {stage}": "Project · {stage}",
+  "No record": "No record"
 }

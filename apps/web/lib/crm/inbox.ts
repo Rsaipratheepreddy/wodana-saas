@@ -59,6 +59,11 @@ export const CLIENT_EVENT_LABELS: Record<string, MessageKey> = {
   "receivables.payment_received": tKey("Payment received"), "portal.decision_waiting": tKey("Decision waiting"), "portal.update_published": tKey("Progress update shared"),
   "project.stage_started": tKey("Stage started"), "payments.reminder": tKey("Payment reminder"),
 };
+/** Enquiry states a chat can be filtered by. */
+export const ENQUIRY_STAGE_LABELS: Record<string, MessageKey> = {
+  new: tKey("New"), attempting_contact: tKey("Contacting"), connected: tKey("Connected"), nurturing: tKey("Nurturing"),
+  paused: tKey("Come back to"), qualified: tKey("Qualified"), disqualified: tKey("Not interested"),
+};
 export type ClientMessageRow = {
   event: string; enabled: boolean; templateCode: string | null; version: number; emailFallback: boolean; channel: "whatsapp" | "email" | "none";
   template: { body: string; providerStatus: string; approved: boolean } | null;

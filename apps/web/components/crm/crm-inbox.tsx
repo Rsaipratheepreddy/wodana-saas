@@ -5,10 +5,10 @@ import Link from "next/link";
 import { CheckSquare, MessageCircle, Plus, RefreshCw, Settings2 } from "lucide-react";
 import { MessagingMark } from "@/components/brand/messaging-mark";
 import { ProviderMark } from "@/components/brand/provider-mark";
-import { Avatar, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, IconButton, ListTabs, MenuButton, SearchInput, SegmentedControl, SelectField, Skeleton, TextInput, ToggleButton, useDesignSystem } from "@/design-system";
+import { Avatar, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, IconButton, ListTabs, MenuButton, MultiSelectField, SearchInput, SegmentedControl, SelectField, Skeleton, TextInput, ToggleButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
-import { nextChatId, snoozePresets, type ChatState, type InboxLabel, type InboxOwner, type InboxSummary, type InboxView } from "@/lib/crm/inbox";
+import { ENQUIRY_STAGE_LABELS, nextChatId, snoozePresets, type ChatState, type InboxLabel, type InboxOwner, type InboxSummary, type InboxView } from "@/lib/crm/inbox";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
 import { CrmProductShell, useCrmTime } from "./crm-product-shell";
 import { ConversationThread, DeliveryState, inboxDate } from "./inbox/chat-thread";
@@ -37,6 +37,9 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
   const [labelId, setLabelId] = useState("");
   const [team, setTeam] = useState<InboxOwner[]>([]);
   const [ownerFilter, setOwnerFilter] = useState("");
+  const [stages, setStages] = useState<Set<string>>(new Set());
+  const [stageOptions, setStageOptions] = useState<Array<{ id: string; label: string }>>([]);
+  const stageParam = [...stages].sort().join(",");
   const [channelFilter, setChannelFilter] = useState("all");
   const [items, setItems] = useState<RecordData[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -51,10 +54,10 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
   const requestPending = useRef(false), controller = useRef<AbortController | null>(null), cursorRef = useRef(cursor);
   const threadActions = useRef<{ resolve: () => void } | null>(null);
   useEffect(() => { cursorRef.current = cursor; }, [cursor]);
-  const query = new URLSearchParams({ limit: "100", status: state, ...(view === "team" && ownerFilter ? { ownerMembershipId: ownerFilter } : view !== "all" ? { view } : {}), ...(labelId ? { labelId } : {}), ...(channelFilter !== "all" ? { channel: channelFilter } : {}), ...(search.trim() ? { search: search.trim() } : {}) }).toString();
+  const query = new URLSearchParams({ limit: "100", status: state, ...(stageParam ? { stage: stageParam } : {}), ...(view === "team" && ownerFilter ? { ownerMembershipId: ownerFilter } : view !== "all" ? { view } : {}), ...(labelId ? { labelId } : {}), ...(channelFilter !== "all" ? { channel: channelFilter } : {}), ...(search.trim() ? { search: search.trim() } : {}) }).toString();
   const loadSummary = useCallback(async () => {
     const [next, people] = await Promise.all([
-      crmRequest<InboxSummary>(workspaceId, "inbox/summary", "GET", undefined, timeout()).catch(() => null),
+      crmRequest<InboxSummary>(workspaceId, `inbox/summary${stageParam ? `?stage=${encodeURIComponent(stageParam)}` : ""}`, "GET", undefined, timeout()).catch(() => null),
       view === "team" ? crmRequest<InboxOwner[]>(workspaceId, "inbox/owners", "GET", undefined, timeout()).catch(() => null) : Promise.resolve(null),
     ]);
     if (Array.isArray(people)) setTeam(people);
@@ -62,7 +65,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
     setSummary(next);
     // Sales starts on Mine; with nothing of their own and chats waiting for someone, Unassigned.
     if (!viewChosen.current) { viewChosen.current = true; if (!next.mine && next.unassigned) setView("unassigned"); }
-  }, [workspaceId, view]);
+  }, [workspaceId, view, stageParam]);
   const reload = useCallback(async (more = false, background = false) => {
     if (background && requestPending.current) return;
     requestPending.current = true;
@@ -86,6 +89,15 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
     return () => { clearTimeout(timer); clearInterval(poll); controller.current?.abort(); };
   }, [reload, initialData.canView]);
   useEffect(() => { setPicked(new Set()); }, [query]);
+  // What a chat can be filtered by: its enquiry, opportunity or project stage, or no record at all.
+  useEffect(() => {
+    void crmRequest<{ enquiry: Array<{ id: string; status: string }>; opportunity: Array<{ id: string; name: string; pipeline: string }>; project: Array<{ id: string; name: string }> }>(workspaceId, "inbox/stages").then((options) => setStageOptions([
+      ...options.enquiry.map((item) => ({ id: item.id, label: t("Enquiry · {stage}", { stage: t(ENQUIRY_STAGE_LABELS[item.status] ?? "Open") }) })),
+      ...options.opportunity.map((item) => ({ id: item.id, label: t("Sales · {stage}", { stage: item.name }) })),
+      ...options.project.map((item) => ({ id: item.id, label: t("Project · {stage}", { stage: item.name }) })),
+      { id: "none", label: t("No record") },
+    ])).catch(() => setStageOptions([]));
+  }, [workspaceId, t]);
 
   const chooseView = (next: InboxView) => { viewChosen.current = true; setView(next); setOwnerFilter(""); };
   const ids = items.map((item) => item.id);
@@ -112,7 +124,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
   const togglePick = (id: string, value: boolean) => setPicked((current) => { const next = new Set(current); if (value) next.add(id); else next.delete(id); return next; });
   const activeLabels = lookups.labels.filter((item) => item.status !== "archived");
   const presets = snoozePresets({ now: new Date(now), timeZone, dayStart: lookups.settings?.workday.start, workingDays: lookups.settings?.workday.days });
-  const filtered = Boolean(search.trim()) || state !== "open" || view !== "all" || Boolean(labelId) || channelFilter !== "all";
+  const filtered = Boolean(stageParam) || Boolean(search.trim()) || state !== "open" || view !== "all" || Boolean(labelId) || channelFilter !== "all";
   const noConversations = loaded && !items.length && !busy && !filtered;
   const emptyState = <EmptyState icon={<MessagingMark size={36} />} title={noConversations ? t("No conversations yet") : t("Choose a conversation")}
     action={<Button size="compact" variant="primary" className={styles.brandButton} onPress={() => setCreating(true)}><Plus aria-hidden="true" size={16} />{t("New conversation")}</Button>} />;
@@ -143,6 +155,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
           <SegmentedControl label={t("Chat state")} value={state} onChange={(value) => setState(value as ChatState)} options={[{ id: "open", label: t("Open") }, { id: "snoozed", label: t("Snoozed"), count: summary?.snoozed || undefined }, { id: "closed", label: t("Resolved") }]} />
           {activeLabels.length ? <SelectField accent="neutral" aria-label={t("Label")} label={null} items={[{ id: "", label: t("All labels") }, ...activeLabels.map((item) => ({ id: item.id, label: item.name }))]} selectedKey={labelId} onSelectionChange={(key) => setLabelId(key ? String(key) : "")} /> : null}
         </div>
+        {stageOptions.length ? <div className={styles.stageFilter}><MultiSelectField label={t("Stage")} items={stageOptions} selectedKeys={stages} onSelectionChange={(keys) => setStages(new Set([...keys].map(String)))} /></div> : null}
         <div className={styles.channels} aria-label={t("Conversation channels")}>{["all", "whatsapp"].map((channel) => <button key={channel} type="button" aria-pressed={channelFilter === channel} onClick={() => setChannelFilter(channel)}>{channel === "whatsapp" ? <span className={styles.channelMark}><ProviderMark provider="whatsapp" /></span> : null}{channel === "all" ? t("All") : "WhatsApp"}</button>)}</div>
         {picked.size ? <div className={`wd-bulk-bar ${styles.bulkBar}`} role="toolbar" aria-label={t("Bulk actions")}>
           <strong>{t("{count} selected", { count: picked.size })}</strong>

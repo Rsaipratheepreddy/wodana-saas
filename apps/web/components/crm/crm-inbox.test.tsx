@@ -24,6 +24,7 @@ function setup(overrides: Record<string, unknown> = {}, options: { context?: Rec
   const context = { conversationId: record.id, leadId: null, party: null, enquiries: [], opportunities: [], projects: [], variables: { "contact.first_name": "Noura", "enquiry.reference": "E-1042" }, ...options.context };
   const payloads: Record<string, unknown> = {
     "inbox/summary": { mine: 1, unassigned: 4, team: 6, all: 9, snoozed: 2, unreadForMe: 1, membershipId: ME },
+    "inbox/stages": { enquiry: [{ id: "lead:connected", status: "connected" }], opportunity: [{ id: "opportunity:s1", name: "Site visit", pipeline: "Sales" }], project: [{ id: "project:joinery", name: "Joinery" }] },
     "inbox/labels": [{ id: LABEL, name: "Quote request", color: "viz-2", status: "active", version: 1 }],
     "inbox/owners": [{ id: ME, displayName: "Sara Khan", openChats: 3, away: false, isMe: true }, { id: ALI, displayName: "Ali Noor", openChats: 2, away: false, isMe: false }],
     "inbox/quick-replies": [{ id: "q1", shortcut: "address", body: "Hi {{contact.first_name}}, our studio is on Beach Road.", status: "active", version: 1, scope: "workspace", canEdit: true }],
@@ -150,6 +151,16 @@ describe("CRM inbox", () => {
     expect(await screen.findByText(/Hidden by Sara Khan/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Show again" }));
     await waitFor(() => expect(posted("conversations/" + record.id + "/messages/gone/hidden", "PUT")).toEqual([{ hidden: false }]));
+  });
+  it("filters chats by their record's stage, and the view counts follow", async () => {
+    const user = userEvent.setup(), { data, record, fetcher } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByText("Hello there");
+    const stage = await screen.findByRole("group", { name: "Stage" });
+    await user.click(within(stage).getByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: "Project · Joinery" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("stage=project%3Ajoinery"))).toBe(true));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("inbox/summary?") && String(url).includes("stage=project%3Ajoinery"))).toBe(true));
+    expect(within(stage).getByText("Project · Joinery")).toBeInTheDocument();
   });
   it("resolves several chats at once", async () => {
     const user = userEvent.setup(), { data, record, posted } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);

@@ -9,6 +9,8 @@ export class ListConversationsQueryDto {
   @IsOptional() @IsUUID() labelId?: string;
   /** Longest-waiting first (the default for Open) or most recent first. */
   @IsOptional() @IsIn(["waiting", "recent"]) sort?: string;
+  /** Linked-record stages, comma-separated (lead:<status>, opportunity:<stageId>, project:<stageKey>, none). */
+  @IsOptional() @IsString() @MaxLength(1000) stage?: string;
   @IsOptional() @IsString() @MaxLength(200) search?: string;
   @IsOptional() @IsIn(["true", "false"]) unread?: string;
   @IsOptional() @IsUUID() partyId?: string;

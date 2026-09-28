@@ -163,6 +163,7 @@
 .views :global(.wd-list-tab-count) { min-inline-size: 1rem; padding-inline: var(--wd-space-1); }
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .filters :global(.wd-field) { min-inline-size: 9rem; flex: 1; }
+.stageFilter { padding: 0 var(--wd-space-4) var(--wd-space-3); }
 .iconLink { display: inline-grid; place-items: center; inline-size: 2rem; block-size: 2rem; border-radius: var(--wd-radius-xs); color: var(--wd-color-text-secondary); }
 .iconLink:hover { background: var(--wd-color-surface-muted); color: var(--wd-color-text); }
 .iconLink:focus-visible { outline: 2px solid var(--chat-accent); outline-offset: 2px; }

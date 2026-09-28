@@ -322,4 +322,20 @@ integration("team inbox", () => {
       expect((await conversations.get(actor, workspaceId, nouraChat)).messages.find((item: { id: string }) => item.id === message.id)).toMatchObject({ bodyText: "My card number is 4111…", hiddenAt: null });
     });
   });
+
+  it("filters chats by their record's stage, and the view counts follow", async () => {
+    await withInbox(async (client, { workspaceId, sara, nouraChat, strangerChat, conversations, inbox, as }) => {
+      as(sara);
+      const ids = async (stage: string) => (await conversations.list(actor, workspaceId, { stage, limit: 50 } as never)).data.map((row: { id: string }) => row.id).sort();
+      expect(await ids("lead:connected")).toEqual([nouraChat]);
+      expect(await ids("none")).toEqual([strangerChat]);
+      expect(await ids("lead:connected,none")).toEqual([nouraChat, strangerChat].sort());
+      expect(await ids("lead:new")).toEqual([]);
+      expect(await ids("bogus:thing")).toEqual([nouraChat, strangerChat].sort());
+      expect(await inbox.summary(actor, workspaceId, "none")).toMatchObject({ all: 1 });
+      expect((await inbox.stages(actor, workspaceId)).enquiry.map((item) => item.id)).toContain("lead:connected");
+      await client.query(`UPDATE crm_leads SET status = 'paused', paused_reason = 'Travelling' WHERE workspace_id = $1`, [workspaceId]);
+      expect(await ids("lead:paused")).toEqual([nouraChat]);
+    });
+  });
 });
