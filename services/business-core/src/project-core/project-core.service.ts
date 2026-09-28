@@ -26,6 +26,7 @@ import { applyVariation, assignLines, deletePackage, lineHistory, proposePackage
 import { ensureWorkTemplates, parseTemplateTasks } from "./work-templates";
 import { readReadyCases, readStartState, startProject } from "./project-start";
 import { moneyAccess } from "./project-access";
+import { readAttention } from "./project-attention";
 import { decideClientUpdate } from "./client-updates";
 import { tellBuyersOverOrdered } from "./variation-orders";
 import { holdLength, shiftForHold } from "./project-hold";
@@ -165,6 +166,7 @@ export class ProjectCoreService {
       const teams = await readTeam(client, workspaceId, ids);
       const stages = await readStages(client, workspaceId, ids);
       const settings = await ensureSettings(client, workspaceId);
+      const attention = await readAttention(client, workspaceId, ids);
       const rows = [];
       for (const project of projects) {
         const mine = stages.filter((stage) => stage.projectId === project.id);
@@ -176,6 +178,8 @@ export class ProjectCoreService {
           stage: current ? { name: current.name, position: current.position + 1, count: mine.length } : null,
           lead: team.find((member) => member.lead)?.name ?? null,
           next: evaluated ? nextStep(evaluated, settings.roles) : null,
+          // Which project needs a look: its late and held-up work.
+          attention: attention.get(project.id) ?? { late: 0, blocked: 0 },
         });
       }
       return { projects: rows, canStart: all };

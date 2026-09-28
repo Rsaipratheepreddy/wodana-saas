@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
@@ -48,7 +48,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const requested = params.get("view");
   const view: View = VIEWS.includes(requested as View) ? requested as View : "list";
   const [sprintFilter, setSprintFilter] = useState<string>("all");
-  const requestedFilter = params.get("filter");
+  const requestedFilter = params.get("filter") ?? (params.get("type") === "snag" ? "snags" : params.get("type") === "client_request" ? "requests" : null);
   const filter: Filter = FILTERS.includes(requestedFilter as Filter) ? requestedFilter as Filter : "all";
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDue, setBulkDue] = useState(false);
@@ -57,6 +57,30 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const [planning, setPlanning] = useState(false);
   const [critical, setCritical] = useState(false);
   const open = params.get("item");
+  const root = useRef<HTMLDivElement>(null);
+  const canCreate = Boolean(board?.canEdit);
+  // Keys on the list: j/k move between rows, Enter opens one, n adds a task, / searches (never while typing or in a dialog).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || !root.current) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']")) return;
+      if (event.key === "/") {
+        const search = root.current.querySelector<HTMLInputElement>("input");
+        if (search) { event.preventDefault(); search.focus(); }
+      } else if (event.key === "n" && canCreate) {
+        event.preventDefault(); setCreating(true);
+      } else if (event.key === "j" || event.key === "k") {
+        const rows = [...root.current.querySelectorAll<HTMLElement>("tr[data-actionable]")];
+        if (!rows.length) return;
+        const at = rows.indexOf(document.activeElement as HTMLElement);
+        const next = rows[at < 0 ? 0 : event.key === "j" ? Math.min(rows.length - 1, at + 1) : Math.max(0, at - 1)];
+        event.preventDefault(); next.focus(); next.scrollIntoView?.({ block: "nearest" });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canCreate]);
 
   const load = useCallback(async () => {
     try { setBoard(await api.work(projectId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The plan didn't load.")); }
@@ -151,7 +175,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const overrun = planEnd && board.promiseDate && planEnd > board.promiseDate
     ? Math.round((Date.parse(`${planEnd}T00:00:00Z`) - Date.parse(`${board.promiseDate}T00:00:00Z`)) / 86_400_000) : 0;
 
-  return <div className={styles.plan}>
+  return <div className={styles.plan} ref={root}>
     <div className={styles.toolbar}>
       <div className={styles.toolbarGroup}>
         {view !== "sprints" ? <>

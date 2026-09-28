@@ -20,6 +20,9 @@
 .nameCell a:hover { text-decoration: underline; }
 .nameCell small, .stageCell small, .nextCell small, .dateCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .dateCell small[data-late] { color: var(--wd-color-danger); }
+.attention { color: var(--wd-color-warning); font-size: var(--wd-text-sm); text-decoration: none; }
+.attention[data-late] { color: var(--wd-color-danger); }
+.attention:hover { text-decoration: underline; }
 .status { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-sm); white-space: nowrap; }
 .status::before { content: ""; inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); background: var(--wd-color-success); }
 .status[data-tone="risk"]::before { background: var(--wd-color-warning); }

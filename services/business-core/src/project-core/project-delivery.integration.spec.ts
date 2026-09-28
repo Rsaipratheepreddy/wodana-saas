@@ -133,6 +133,8 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
       expect(keys).toEqual(expect.arrayContaining(["late_work", "blocked_work"]));
       expect(overview.blockers.find((blocker) => blocker.key === "late_work")).toMatchObject({ count: 1, href: `/workspace/projects/${w.projectId}/plan?filter=late` });
       expect(overview.work).toMatchObject({ open: 2, late: 1, blocked: 1 });
+      // The Projects list says which project needs a look.
+      expect((await w.core(w.manager).list(actor, w.workspaceId)).projects.find((row) => row.id === w.projectId)?.attention).toEqual({ late: 1, blocked: 1 });
       expect(overview.dates.planEnd).toBe(day(w.today, 5));
       // Money at a glance: agreed 7200, half verified, nothing spent.
       expect(overview.money).toMatchObject({ currency: "AED", agreed: "7200.00", received: "3600.00", due: "3600.00", toInvoice: 1 });

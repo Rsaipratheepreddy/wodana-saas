@@ -10246,5 +10246,7 @@
   "No report yet": "No report yet",
   "{count} arriving": "{count} arriving",
   "{count} snags to close": "{count} snags to close",
-  "Write report": "Write report"
+  "Write report": "Write report",
+  "Needs a look": "Needs a look",
+  "{count} blocked": "{count} blocked"
 }

@@ -23,7 +23,11 @@ export type ProjectSummary = {
   id: string; reference: string; name: string; clientName: string; status: ProjectStatus; priority: Priority; health: Health;
   promiseDate: string | null; currency: string; total: string; startedAt: string;
 };
-export type ProjectRow = ProjectSummary & { stage: { name: string; position: number; count: number } | null; lead: string | null; next: NextStep | null };
+export type ProjectRow = ProjectSummary & {
+  stage: { name: string; position: number; count: number } | null; lead: string | null; next: NextStep | null;
+  /** Open work that's late, and open work held up by something unfinished. */
+  attention?: { late: number; blocked: number };
+};
 
 export type Member = { membershipId: string; name: string };
 export type EvaluatedCheck = StageCheck & { passed: boolean; confirmedBy: string | null; confirmedAt: string | null; note: string };
