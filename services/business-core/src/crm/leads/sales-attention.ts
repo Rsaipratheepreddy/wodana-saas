@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import { notifyUserInApp, queueUserEmail, queueUserPush } from "../../notifications/default-templates";
+import { notifyUserInApp, queueUserEmail, queueUserPushFromTemplate } from "../../notifications/default-templates";
 import { addSlaMinutes, normalizeSlaSchedule, type SlaSchedule } from "./sla-schedule";
 
 type Db = Pick<PoolClient, "query">;
@@ -28,7 +28,7 @@ export async function tell(db: Db, workspaceId: string, recipients: Array<{ user
       const sent = await notifyUserInApp(db, { ...base, idempotencyKey: `${notice.key}:${recipient.userId}` });
       if (sent.queued) told += 1;
     }
-    if (notice.channels.includes("push")) await queueUserPush(db, { ...base, idempotencyKey: `${notice.key}:${recipient.userId}:push` });
+    if (notice.channels.includes("push")) await queueUserPushFromTemplate(db, { ...base, idempotencyKey: `${notice.key}:${recipient.userId}:push` });
     if (notice.channels.includes("email")) await queueUserEmail(db, { ...base, idempotencyKey: `${notice.key}:${recipient.userId}:email` });
   }
   return told;

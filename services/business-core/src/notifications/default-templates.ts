@@ -368,7 +368,7 @@ export async function notifyUserInApp(db: Db, input: {
  * tenant transaction. Only when the person turned push on and has a registered device; the in-app
  * notice is always the record. The worker delivers it (and falls back to the inbox on failure).
  */
-export async function queueUserPush(db: Db, input: {
+export async function queueUserPushFromTemplate(db: Db, input: {
   workspaceId: string;
   recipientUserId: string;
   code: string;
