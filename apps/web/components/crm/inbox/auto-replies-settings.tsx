@@ -37,7 +37,7 @@ export function AutoRepliesSection({ workspaceId }: { workspaceId: string }) {
   const number = data?.numbers.find((item) => item.connectionId === scopeId) ?? null;
   // What is saved for the chosen scope: the workspace's, or the number's own (null while it follows the workspace).
   const saved = !data ? null : number ? number.override : data.workspace;
-  useEffect(() => { const timer = setTimeout(() => setDraft(saved ? structuredClone(saved) : null), 0); return () => clearTimeout(timer); }, [saved]);
+  useEffect(() => { const timer = setTimeout(() => setDraft(saved ? structuredClone(saved) : null), 0); return () => clearTimeout(timer); }, [saved, scopeId]);
   const week = useMemo(() => {
     const first = weekStart(locale);
     const name = (day: number, style: "short" | "long") => new Intl.DateTimeFormat(locale, { weekday: style, timeZone: "UTC" }).format(new Date(Date.UTC(2024, 0, 7 + day)));
