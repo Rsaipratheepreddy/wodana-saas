@@ -11,7 +11,15 @@ function setup(canManage = true) {
     "inbox/settings": { autoAssign: true, queueId: null, signatureEnabled: false, version: 2, canManage, queues: [{ id: "q", name: "Sales", isFallback: true }], whatsapp: { connected: true, number: "+1 555 0100", accountName: null }, seats: 4, businessName: "Palm Studio", workday: { start: "09:00", days: [1, 2, 3, 4, 5] } },
     "inbox/labels": [{ id: "l1", name: "Complaint", color: "viz-5", status: "active", version: 1, openChats: 2 }],
     "inbox/owners": [], "inbox/quick-replies": [],
-    "inbox/templates": [{ id: TEMPLATE, code: "quote_ready", locale: "en_US", body: "Hi {{1}}, quote {{2}} is ready.", positions: [1, 2], usable: true, variables: [], mappingVersion: 0 }],
+    "inbox/templates": [
+      { id: TEMPLATE, code: "quote_ready", locale: "en_US", body: "Hi {{1}}, quote {{2}} is ready.", positions: [1, 2], usable: true, variables: [], mappingVersion: 0, approved: true, providerStatus: "approved", category: "utility" },
+      { id: "t2", code: "wd_enquiry_welcome", locale: "en", body: "Hello {{1}}, thank you.", positions: [1], usable: true, variables: [{ position: 1, source: "contact.first_name" }], mappingVersion: 1, approved: false, providerStatus: "rejected", providerReason: "Template name already exists", category: "utility" },
+    ],
+    "inbox/starter-pack": { languages: ["en", "ar"], defaultLanguages: ["en"], items: [
+      { key: "enquiry_welcome", event: "crm.enquiry.created", name: "wd_enquiry_welcome", language: "en", body: "Hello {{1}}…", status: "rejected" },
+      { key: "quote_ready", event: "portal.quote_issued", name: "wd_quote_ready", language: "en", body: "Hello {{1}}…", status: null },
+      { key: "quote_ready", event: "portal.quote_issued", name: "wd_quote_ready", language: "ar", body: "مرحبًا {{1}}…", status: null },
+    ] },
   };
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     const path = new URL(url, "http://localhost").pathname.replace("/api/workspace/crm/data/", "");
@@ -44,7 +52,7 @@ describe("Settings → Inbox", () => {
 
   it("maps each template variable to a record field", async () => {
     const user = userEvent.setup(), { sent } = setup(); render(<InboxSettingsPage workspaceId={WORKSPACE} />);
-    await user.click(await screen.findByRole("button", { name: "Map variables" }));
+    await user.click((await screen.findAllByRole("button", { name: "Map variables" }))[0]);
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Save variables" }));
     expect(await within(dialog).findByText("Choose a field for {{1}}.")).toBeInTheDocument();
@@ -55,6 +63,18 @@ describe("Settings → Inbox", () => {
     expect(within(dialog).getByText("Hi [Client first name], quote [Quote number] is ready.")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Save variables" }));
     await waitFor(() => expect(sent(`inbox/templates/${TEMPLATE}/variables`, "PUT")).toEqual([{ version: 0, variables: [{ position: 1, source: "contact.first_name" }, { position: 2, source: "quote.number" }] }]));
+  });
+
+  it("shows Meta's status and reason, and sends the missing starter templates in the chosen languages", async () => {
+    const user = userEvent.setup(), { sent } = setup(); render(<InboxSettingsPage workspaceId={WORKSPACE} />);
+    expect(await screen.findByText("Template name already exists")).toBeInTheDocument();
+    expect(screen.getAllByText("Rejected").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Add starter templates" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("button", { name: "Send 1 to Meta" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("checkbox", { name: "العربية" }));
+    await user.click(within(dialog).getByRole("button", { name: "Send 2 to Meta" }));
+    await waitFor(() => expect(sent("inbox/starter-pack", "POST")).toEqual([{ languages: ["en", "ar"] }]));
   });
 
   it("lets everyone read the settings but only managers change them", async () => {

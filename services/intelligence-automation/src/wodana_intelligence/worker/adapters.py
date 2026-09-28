@@ -66,6 +66,14 @@ class ConnectedProviderAdapter:
         self.google = google
         self.providers = providers
 
+    async def whatsapp_templates(self, workspace_id: str) -> list[dict[str, Any]]:
+        return await self.providers.whatsapp_templates_internal(workspace_id)
+
+    async def submit_whatsapp_template(
+        self, workspace_id: str, template: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self.providers.submit_whatsapp_template_internal(workspace_id, template)
+
     async def deliver(self, job: DeliveryJob) -> DeliveryResult:
         try:
             destination = job.destination or {}

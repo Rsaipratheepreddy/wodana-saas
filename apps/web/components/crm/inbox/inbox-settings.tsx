@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, DataGrid, InlineNotice, NoAccessState, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, Checkbox, ControlledModalDialog, DataGrid, InlineNotice, NoAccessState, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
 import { fillTemplate, LABEL_COLORS, renderTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_SOURCES, type InboxLabel, type InboxTemplate, type LabelColor, type QuickReply, type TemplateSource } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { LabelChip, useInboxLookups } from "./inbox-parts";
 import styles from "./inbox-parts.module.css";
 
@@ -23,6 +24,7 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
   const [editingLabel, setEditingLabel] = useState<Partial<InboxLabel> | null>(null);
   const [editingReply, setEditingReply] = useState<Partial<QuickReply> | null>(null);
   const [mapping, setMapping] = useState<InboxTemplate | null>(null);
+  const [starting, setStarting] = useState(false);
   useEffect(() => { if (settings) setDraft({ autoAssign: settings.autoAssign, queueId: settings.queueId, signatureEnabled: settings.signatureEnabled }); }, [settings]);
 
   if (!settings && !loadFailure) return <SettingsPage title={t("Inbox")}><Skeleton lines={5} shape="form" /></SettingsPage>;
@@ -54,8 +56,10 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
     </span> : null },
   ];
   const templateColumns: DataGridColumn<InboxTemplate>[] = [
-    { accessorKey: "code", header: t("Template"), size: 220, cell: ({ row: { original } }) => <span className={styles.name}><strong>{original.code}</strong><small>{original.body}</small></span> },
-    { accessorKey: "locale", header: t("Language"), size: 110 },
+    { accessorKey: "code", header: t("Template"), size: 240, cell: ({ row: { original } }) => <span className={styles.name}><strong>{original.code}</strong><small>{original.body}</small>{original.providerReason ? <small className={styles.reason}>{original.providerReason}</small> : null}</span> },
+    { accessorKey: "locale", header: t("Language"), size: 100 },
+    { accessorKey: "category", header: t("Category"), size: 110, cell: ({ row: { original } }) => original.category ? t(CATEGORY_LABELS[original.category] ?? "Utility") : "" },
+    { accessorKey: "providerStatus", header: t("Status"), size: 150, cell: ({ row: { original } }) => { const status = TEMPLATE_STATUS[original.providerStatus ?? "approved"]; return <Badge tone={status.tone}>{t(status.label)}</Badge>; } },
     { id: "variables", header: t("Variables"), size: 170, accessorFn: (template) => template.positions.length, cell: ({ row: { original } }) => !original.positions.length ? t("None") : !original.usable ? <Badge tone="warning">{t("Not numbered 1, 2, 3…")}</Badge>
       : original.positions.every((position) => original.variables.some((variable) => variable.position === position)) ? <Badge tone="success">{t("{count} mapped", { count: original.positions.length })}</Badge> : <Badge tone="warning">{t("Needs mapping")}</Badge> },
     ...(canManage ? [{ id: "actions", header: "", size: 130, enableSorting: false, cell: ({ row: { original } }: { row: { original: InboxTemplate } }) => original.positions.length && original.usable ? <Button size="compact" variant="secondary" onPress={() => setMapping(original)}>{t("Map variables")}</Button> : null } as DataGridColumn<InboxTemplate>] : []),
@@ -94,8 +98,8 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
       <SettingsSection id="inbox-quick-replies" title={t("Quick replies")} actions={<Button size="compact" variant="primary" onPress={() => setEditingReply({ scope: canManage ? "workspace" : "personal" })}><Plus aria-hidden="true" size={14} />{t("Add quick reply")}</Button>}>
         <div data-sales-grid><DataGrid ariaLabel={t("Quick replies")} columns={replyColumns} data={quickReplies} emptyTitle={t("No quick replies yet")} emptyDescription={t("Type / in a chat to use them.")} getRowId={(reply) => reply.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
       </SettingsSection>
-      <SettingsSection id="inbox-templates" title={t("WhatsApp templates")}>
-        <div data-sales-grid><DataGrid ariaLabel={t("WhatsApp templates")} columns={templateColumns} data={templates} emptyTitle={t("No approved templates")} emptyDescription={t("Sync templates in Integrations.")} getRowId={(template) => template.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
+      <SettingsSection id="inbox-templates" title={t("WhatsApp templates")} actions={canManage && settings.whatsapp.connected ? <Button size="compact" variant="primary" onPress={() => setStarting(true)}><Plus aria-hidden="true" size={14} />{t("Add starter templates")}</Button> : null}>
+        <div data-sales-grid><DataGrid ariaLabel={t("WhatsApp templates")} columns={templateColumns} data={templates} emptyTitle={t("No templates yet")} emptyDescription={settings.whatsapp.connected ? t("Add the starter templates: one for each client message.") : t("Connect WhatsApp first.")} getRowId={(template) => template.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
       </SettingsSection>
     </div>
     {editingLabel ? <LabelDialog initial={editingLabel} onClose={() => setEditingLabel(null)} onSave={async (value) => {
@@ -110,7 +114,48 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
       const saved = await run(() => crmRequest(workspaceId, `inbox/templates/${mapping.id}/variables`, "PUT", { version: mapping.mappingVersion, variables }), t("Template variables saved."));
       if (saved) setMapping(null);
     }} /> : null}
+    {starting ? <StarterPackDialog workspaceId={workspaceId} onClose={() => setStarting(false)} onSubmit={async (languages) => {
+      const saved = await run(() => crmRequest(workspaceId, "inbox/starter-pack", "POST", { languages }), t("Starter templates sent to Meta for review."));
+      if (saved) setStarting(false);
+    }} /> : null}
   </SettingsPage>;
+}
+
+const TEMPLATE_STATUS: Record<NonNullable<InboxTemplate["providerStatus"]>, { label: MessageKey; tone: "neutral" | "success" | "warning" | "danger" | "info" }> = {
+  submitting: { label: tKey("Sending to Meta"), tone: "info" }, pending: { label: tKey("Waiting for Meta approval"), tone: "warning" },
+  approved: { label: tKey("Approved"), tone: "success" }, rejected: { label: tKey("Rejected"), tone: "danger" },
+  paused: { label: tKey("Paused by Meta"), tone: "warning" }, disabled: { label: tKey("Disabled by Meta"), tone: "danger" },
+};
+const CATEGORY_LABELS: Record<string, MessageKey> = { utility: tKey("Utility"), marketing: tKey("Marketing"), authentication: tKey("Authentication") };
+
+type StarterPack = { languages: string[]; defaultLanguages: string[]; items: Array<{ key: string; event: string; name: string; language: string; body: string; status: string | null }> };
+
+/** One confirm adds a template for every client message in the chosen languages; the worker submits them to Meta. */
+function StarterPackDialog({ workspaceId, onClose, onSubmit }: { workspaceId: string; onClose: () => void; onSubmit: (languages: string[]) => Promise<void> }) {
+  const t = useT();
+  const [pack, setPack] = useState<StarterPack | null>(null);
+  const [languages, setLanguages] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false), [error, setError] = useState("");
+  useEffect(() => {
+    void crmRequest<StarterPack>(workspaceId, "inbox/starter-pack").then((next) => { setPack(next); setLanguages(new Set(next.defaultLanguages)); }).catch((reason: Error) => setError(reason.message));
+  }, [workspaceId]);
+  const names: Record<string, string> = { en: "English", ar: "العربية" };
+  const missing = pack?.items.filter((item) => languages.has(item.language) && !item.status) ?? [];
+  return <ControlledModalDialog isOpen size="lg" title={t("Starter templates")} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={saving} isDisabled={!missing.length}
+      onPress={async () => { setSaving(true); await onSubmit([...languages]); setSaving(false); }}>{missing.length ? t("Send {count} to Meta", { count: missing.length }) : t("Nothing to add")}</Button></div>}>
+    <div className={styles.form}>
+      {error ? <InlineNotice tone="error" message={error} /> : null}
+      {!pack && !error ? <Skeleton lines={5} /> : null}
+      {pack ? <>
+        <div className={styles.inline} role="group" aria-label={t("Languages")}>{pack.languages.map((language) => <Checkbox key={language} isSelected={languages.has(language)} onChange={(value) => setLanguages((current) => { const next = new Set(current); if (value) next.add(language); else next.delete(language); return next; })}>{names[language] ?? language}</Checkbox>)}</div>
+        <ul className={styles.starterList}>{pack.items.filter((item) => languages.has(item.language)).map((item) => <li key={`${item.name}:${item.language}`}>
+          <span className={styles.name}><strong>{item.name}</strong><small dir="auto">{item.body}</small></span>
+          {item.status ? <Badge tone={TEMPLATE_STATUS[item.status as keyof typeof TEMPLATE_STATUS]?.tone ?? "neutral"}>{t(TEMPLATE_STATUS[item.status as keyof typeof TEMPLATE_STATUS]?.label ?? "Added")}</Badge> : <Badge tone="neutral">{names[item.language] ?? item.language}</Badge>}
+        </li>)}</ul>
+      </> : null}
+    </div>
+  </ControlledModalDialog>;
 }
 
 function LabelDialog({ initial, onClose, onSave }: { initial: Partial<InboxLabel>; onClose: () => void; onSave: (value: Partial<InboxLabel>) => Promise<void> }) {

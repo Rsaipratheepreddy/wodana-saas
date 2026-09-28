@@ -15,6 +15,8 @@ export type TemplateContext = {
   staffUserId: string | null;
   config?: Config;
   now?: Date;
+  /** An event's own record (the invoice issued, the payment due or received, the stage that started) wins over "latest". */
+  record?: { invoiceId?: string | null; paymentId?: string | null; quoteId?: string | null; projectId?: string | null; stageName?: string | null };
 };
 
 /** The client's records behind a chat, read once for every source a template needs. */
@@ -70,15 +72,18 @@ export async function resolveTemplateSources(db: Db, context: TemplateContext, s
         break;
       }
       case "project.name": {
-        const row = partyId ? (await db.query<{ name: string }>(
+        const row = context.record?.projectId ? (await db.query<{ name: string }>(`SELECT name FROM delivery_projects WHERE workspace_id=$1 AND id=$2`, [workspaceId, context.record.projectId])).rows[0]
+          : partyId ? (await db.query<{ name: string }>(
           `SELECT project.name FROM delivery_projects project
             WHERE project.workspace_id=$1 AND project.case_id IN (${PARTY_CASES})
             ORDER BY (project.status='active') DESC, project.created_at DESC LIMIT 1`, [workspaceId, partyId])).rows[0] : undefined;
         values[source] = row?.name ?? null;
         break;
       }
+      case "project.stage": values[source] = context.record?.stageName?.trim() || null; break;
       case "quote.number": {
-        const row = partyId ? (await db.query<{ number: number }>(
+        const row = context.record?.quoteId ? (await db.query<{ number: number }>(`SELECT number FROM commercial_quotes WHERE workspace_id=$1 AND id::text=$2`, [workspaceId, context.record.quoteId])).rows[0]
+          : partyId ? (await db.query<{ number: number }>(
           `SELECT quote.number FROM commercial_quotes quote
             WHERE quote.workspace_id=$1 AND quote.case_id IN (${PARTY_CASES})
               AND quote.status IN ('issued','accepted','changes_requested')
@@ -86,13 +91,32 @@ export async function resolveTemplateSources(db: Db, context: TemplateContext, s
         values[source] = row ? `V${row.number}` : null;
         break;
       }
+      case "payment.amount": {
+        const row = context.record?.paymentId ? (await db.query<{ amount: string; currency: string }>(
+          `SELECT amount::text AS amount, currency FROM commercial_payments WHERE workspace_id=$1 AND id=$2`, [workspaceId, context.record.paymentId])).rows[0] : undefined;
+        values[source] = row ? formatMoney(row.amount, row.currency, locale) : null;
+        break;
+      }
       case "invoice.number":
-      case "invoice.total": {
-        const row = partyId ? (await db.query<{ number: string; total: string; currency: string }>(
-          `SELECT invoice.number, invoice.total::text AS total, invoice.currency FROM client_invoices invoice
-            WHERE invoice.workspace_id=$1 AND invoice.status='issued' AND invoice.case_id IN (${PARTY_CASES})
-            ORDER BY invoice.issued_at DESC LIMIT 1`, [workspaceId, partyId])).rows[0] : undefined;
-        values[source] = !row ? null : source === "invoice.number" ? row.number : formatMoney(row.total, row.currency, locale);
+      case "invoice.total":
+      case "invoice.due_date": {
+        const row = context.record?.invoiceId
+          ? (await db.query<{ number: string; total: string; currency: string; dueDate: string | null }>(
+            `SELECT number, total::text AS total, currency, due_date::text AS "dueDate" FROM client_invoices WHERE workspace_id=$1 AND id=$2`, [workspaceId, context.record.invoiceId])).rows[0]
+          : context.record?.paymentId
+            // A payment milestone that has no invoice yet: its own amount and due date.
+            ? (await db.query<{ number: string | null; total: string; currency: string; dueDate: string | null }>(
+              `SELECT (SELECT invoice.number FROM client_invoices invoice WHERE invoice.workspace_id=payment.workspace_id AND invoice.payment_id=payment.id AND invoice.status='issued' ORDER BY invoice.issued_at DESC LIMIT 1) AS number,
+                      payment.amount::text AS total, payment.currency, payment.due_date::text AS "dueDate"
+                 FROM commercial_payments payment WHERE payment.workspace_id=$1 AND payment.id=$2`, [workspaceId, context.record.paymentId])).rows[0]
+            : partyId ? (await db.query<{ number: string; total: string; currency: string; dueDate: string | null }>(
+              `SELECT invoice.number, invoice.total::text AS total, invoice.currency, invoice.due_date::text AS "dueDate" FROM client_invoices invoice
+                WHERE invoice.workspace_id=$1 AND invoice.status='issued' AND invoice.case_id IN (${PARTY_CASES})
+                ORDER BY invoice.issued_at DESC LIMIT 1`, [workspaceId, partyId])).rows[0] : undefined;
+        values[source] = !row ? null
+          : source === "invoice.number" ? row.number ?? null
+          : source === "invoice.total" ? formatMoney(row.total, row.currency, locale)
+          : row.dueDate ? formatDate(new Date(`${row.dueDate}T12:00:00Z`), locale, "UTC") : null;
         break;
       }
       case "portal.link": {

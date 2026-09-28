@@ -14,8 +14,8 @@ export const LABEL_COLORS = ["viz-1", "viz-2", "viz-3", "viz-4", "viz-5", "viz-6
 
 /** What can fill a WhatsApp template's {{n}}, always read from the chat's own records. */
 export const TEMPLATE_VARIABLE_SOURCES = [
-  "contact.first_name", "contact.name", "enquiry.reference", "opportunity.reference", "project.name",
-  "quote.number", "invoice.number", "invoice.total", "portal.link", "staff.first_name", "business.name", "today.date",
+  "contact.first_name", "contact.name", "enquiry.reference", "opportunity.reference", "project.name", "project.stage",
+  "quote.number", "invoice.number", "invoice.total", "invoice.due_date", "payment.amount", "portal.link", "staff.first_name", "business.name", "today.date",
 ] as const;
 export type TemplateVariableSource = (typeof TEMPLATE_VARIABLE_SOURCES)[number];
 

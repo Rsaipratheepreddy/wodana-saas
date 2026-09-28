@@ -14,6 +14,9 @@ export type QuickReply = { id: string; shortcut: string; body: string; status: "
 export type InboxTemplate = {
   id: string; code: string; locale: string; body: string; positions: number[]; usable: boolean;
   variables: Array<{ position: number; source: TemplateSource }>; mappingVersion: number;
+  /** Sendable: approved here and at Meta. */
+  approved?: boolean; providerStatus?: "submitting" | "pending" | "approved" | "rejected" | "paused" | "disabled"; providerReason?: string | null;
+  category?: string | null; quality?: string | null; starterKey?: string | null;
 };
 export type InboxSettings = {
   autoAssign: boolean; queueId: string | null; signatureEnabled: boolean; version: number; canManage: boolean;
@@ -37,8 +40,8 @@ export type ChatContext = {
 };
 
 export const TEMPLATE_SOURCES = [
-  "contact.first_name", "contact.name", "enquiry.reference", "opportunity.reference", "project.name",
-  "quote.number", "invoice.number", "invoice.total", "portal.link", "staff.first_name", "business.name", "today.date",
+  "contact.first_name", "contact.name", "enquiry.reference", "opportunity.reference", "project.name", "project.stage",
+  "quote.number", "invoice.number", "invoice.total", "invoice.due_date", "payment.amount", "portal.link", "staff.first_name", "business.name", "today.date",
 ] as const;
 export type TemplateSource = (typeof TEMPLATE_SOURCES)[number];
 /** What each source is called in the mapping and in a blocked send (i18n keys). */
@@ -46,6 +49,7 @@ export const TEMPLATE_SOURCE_LABELS: Record<TemplateSource, MessageKey> = {
   "contact.first_name": tKey("Client first name"), "contact.name": tKey("Client name"), "enquiry.reference": tKey("Enquiry reference"),
   "opportunity.reference": tKey("Opportunity reference"), "project.name": tKey("Project name"), "quote.number": tKey("Quote number"),
   "invoice.number": tKey("Invoice number"), "invoice.total": tKey("Invoice amount"), "portal.link": tKey("Client portal link"),
+  "project.stage": tKey("Project stage"), "invoice.due_date": tKey("Invoice due date"), "payment.amount": tKey("Payment amount"),
   "staff.first_name": tKey("Your first name"), "business.name": tKey("Business name"), "today.date": tKey("Today's date"),
 };
 

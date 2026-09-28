@@ -135,7 +135,7 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
 function TemplatePicker({ templates, variables, canManage, onClose, onSend }: { templates: InboxTemplate[]; variables: ChatContext["variables"]; canManage: boolean; onClose: () => void; onSend: (template: InboxTemplate, parameters?: string[]) => Promise<void> }) {
   const t = useT();
   const [search, setSearch] = useState("");
-  const usable = templates.filter((template) => template.usable && `${template.code} ${template.body}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const usable = templates.filter((template) => template.usable && template.approved !== false && `${template.code} ${template.body}`.toLowerCase().includes(search.trim().toLowerCase()));
   const [chosen, setChosen] = useState<InboxTemplate | null>(null);
   const [typed, setTyped] = useState<Record<number, string>>({});
   const [sending, setSending] = useState(false);

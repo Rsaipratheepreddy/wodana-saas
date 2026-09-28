@@ -5,6 +5,8 @@ import { CurrentActor } from "../../auth/current-actor.decorator";
 import { InternalServiceGuard } from "../../auth/internal-service.guard";
 import { Public } from "../../auth/public.decorator";
 import { CrmInboxService } from "./crm-inbox.service";
+import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
+import { SubmitStarterPackDto, TemplateSubmittedDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
 import { BulkConversationsDto, CreateLabelDto, CreateQuickReplyDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto } from "./dto/inbox.dto";
 
 type Ws = string;
@@ -12,7 +14,9 @@ type Ws = string;
 @ApiTags("crm-inbox") @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/crm")
 export class CrmInboxController {
-  constructor(private readonly inbox: CrmInboxService) {}
+  constructor(private readonly inbox: CrmInboxService, private readonly whatsappTemplates: CrmWhatsAppTemplatesService) {}
+  @Get("inbox/starter-pack") starterPack(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.whatsappTemplates.starterPack(actor, workspaceId); }
+  @Post("inbox/starter-pack") submitStarterPack(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: SubmitStarterPackDto) { return this.whatsappTemplates.submitStarterPack(actor, workspaceId, input); }
   @Get("inbox/summary") summary(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.summary(actor, workspaceId); }
   @Get("inbox/owners") owners(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.owners(actor, workspaceId); }
   @Post("inbox/bulk") bulk(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: BulkConversationsDto) { return this.inbox.bulk(actor, workspaceId, input); }
@@ -33,6 +37,9 @@ export class CrmInboxController {
 @ApiExcludeController() @Public() @UseGuards(InternalServiceGuard)
 @Controller("internal/crm")
 export class InternalCrmInboxController {
-  constructor(private readonly inbox: CrmInboxService) {}
+  constructor(private readonly inbox: CrmInboxService, private readonly templates: CrmWhatsAppTemplatesService) {}
   @Post("workspaces/:workspaceId/conversations/wake") wake(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: WakeSnoozedDto) { return this.inbox.wakeSnoozedInternal(workspaceId, input.limit); }
+  @Post("workspaces/:workspaceId/whatsapp-templates/due") templateWork(@Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.templates.dueWorkInternal(workspaceId); }
+  @Post("workspaces/:workspaceId/whatsapp-templates/sync") templateSync(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: WhatsAppTemplateSyncDto) { return this.templates.syncInternal(workspaceId, input); }
+  @Post("workspaces/:workspaceId/whatsapp-templates/:templateId/submitted") templateSubmitted(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("templateId", ParseUUIDPipe) templateId: string, @Body() input: TemplateSubmittedDto) { return this.templates.submittedInternal(workspaceId, templateId, input); }
 }

@@ -617,6 +617,13 @@
       "when": 1801113900000,
       "tag": "0139_team_inbox",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1801117500000,
+      "tag": "0140_whatsapp_template_manager",
+      "breakpoints": true
     }
   ]
 }

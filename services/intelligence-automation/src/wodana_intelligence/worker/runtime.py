@@ -324,6 +324,31 @@ class CrmWorker:
                 },
             )
 
+    async def whatsapp_templates(self, workspace_id: str) -> None:
+        """Submits starter templates to Meta and, once a day, stores every template's Meta status."""
+        submit = getattr(self.adapter, "submit_whatsapp_template", None)
+        list_all = getattr(self.adapter, "whatsapp_templates", None)
+        if submit is None or list_all is None:
+            return
+        work_for = getattr(self.business_core, "whatsapp_template_work", None)
+        if work_for is None:
+            return
+        work = await work_for(workspace_id)
+        for template in work.get("submissions", []):
+            try:
+                created = await submit(workspace_id, template)
+                result: dict[str, Any] = {"providerTemplateId": created["id"], "status": created["status"]}
+            except Exception as error:  # Meta refused it: the reason is stored and the owner told.
+                result = {"error": str(getattr(error, "message", error))[:500] or "Meta refused the template"}
+            await self.business_core.whatsapp_template_submitted(workspace_id, str(template["id"]), result)
+        if work.get("sync"):
+            try:
+                templates = await list_all(workspace_id)
+            except Exception:
+                logger.warning("WhatsApp template sync failed for %s; retrying within the hour", workspace_id)
+                return
+            await self.business_core.whatsapp_templates_synced(workspace_id, templates, True)
+
     async def drain_notifications(self, workspace_id: str) -> int:
         jobs = await self.business_core.claim_notification_jobs(workspace_id)
         delivered = 0
@@ -389,6 +414,7 @@ class CrmWorker:
                 await self.business_core.process_due_takeovers(workspace_id)
                 await self.business_core.process_due_sequences(workspace_id)
                 await self.business_core.wake_snoozed_conversations(workspace_id)
+                await self.whatsapp_templates(workspace_id)
                 await self.drain_notifications(workspace_id)
                 await self.business_core.dispatch_staff_emails(workspace_id)
                 waits = await self.business_core.claim_automation_waits(workspace_id)

@@ -35,6 +35,7 @@ const SOURCE_NAMES: Record<TemplateVariableSource, string> = {
   "opportunity.reference": "Opportunity reference", "project.name": "Project name", "quote.number": "Quote number",
   "invoice.number": "Invoice number", "invoice.total": "Invoice amount", "portal.link": "Client portal link",
   "staff.first_name": "Your first name", "business.name": "Business name", "today.date": "Today's date",
+  "project.stage": "Project stage", "invoice.due_date": "Invoice due date", "payment.amount": "Payment amount",
 };
 
 @Injectable()

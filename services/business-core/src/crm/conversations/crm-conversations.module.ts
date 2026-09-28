@@ -6,6 +6,7 @@ import { CrmConversationsController, InternalCrmConversationsController } from "
 import { CrmConversationsService } from "./crm-conversations.service";
 import { CrmInboxController, InternalCrmInboxController } from "./crm-inbox.controller";
 import { CrmInboxService } from "./crm-inbox.service";
+import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
 
-@Module({ imports: [WorkspacesModule, CrmNotificationsModule, CrmMessageReceiptModule], controllers: [CrmInboxController, InternalCrmInboxController, CrmConversationsController, InternalCrmConversationsController], providers: [CrmConversationsService, CrmInboxService] })
+@Module({ imports: [WorkspacesModule, CrmNotificationsModule, CrmMessageReceiptModule], controllers: [CrmInboxController, InternalCrmInboxController, CrmConversationsController, InternalCrmConversationsController], providers: [CrmConversationsService, CrmInboxService, CrmWhatsAppTemplatesService] })
 export class CrmConversationsModule {}

@@ -5,6 +5,7 @@ import { seedDefaultNotificationTemplates } from "../../notifications/default-te
 import { CrmConversationsService } from "./crm-conversations.service";
 import { CrmInboxService } from "./crm-inbox.service";
 import { CrmMessageReceiptService } from "./crm-message-receipt.service";
+import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -13,7 +14,7 @@ const integration = describe.skipIf(!databaseUrl);
 type Ids = {
   workspaceId: string; manager: string; sara: string; ali: string; saraMember: string; aliMember: string; managerMember: string;
   noura: string; stranger: string; nouraChat: string; strangerChat: string; queueId: string; templateId: string;
-  as: (userId: string) => void; conversations: CrmConversationsService; inbox: CrmInboxService;
+  as: (userId: string) => void; conversations: CrmConversationsService; inbox: CrmInboxService; templates: CrmWhatsAppTemplatesService;
 };
 
 integration("team inbox", () => {
@@ -62,6 +63,7 @@ integration("team inbox", () => {
       await client.query(`INSERT INTO notification_templates(id,workspace_id,code,channel,locale,version_number,status,body_template,approved_at)
         VALUES($1,$2,'quote_ready','whatsapp','en_US',1,'approved','Hi {{1}}, about {{2}}.',now())`, [templateId, workspaceId]);
       await seedDefaultNotificationTemplates(client, workspaceId);
+      await client.query(`INSERT INTO integration_connections(workspace_id,provider,display_name,status,connected_by,external_account_id,configuration) VALUES($1,'whatsapp','WhatsApp','connected',$2,'waba-1','{"phoneNumberId":"pn-1","displayPhoneNumber":"+1 555 0100"}')`, [workspaceId, manager]);
       await client.query("SET LOCAL session_replication_role = origin");
       let current = sara;
       const database = { tenantTransaction: (_w: string, _a: string, fn: (c: PoolClient) => unknown) => fn(client) };
@@ -70,7 +72,8 @@ integration("team inbox", () => {
       const events = { record: async () => randomUUID() };
       const conversations = new CrmConversationsService(database as never, access as never, events as never, {} as never, new CrmMessageReceiptService());
       const inbox = new CrmInboxService(database as never, access as never, events as never);
-      await work(client, { workspaceId, manager, sara, ali, saraMember, aliMember, managerMember, noura, stranger, nouraChat, strangerChat, queueId, templateId, as: (userId) => { current = userId; }, conversations, inbox });
+      const templates = new CrmWhatsAppTemplatesService(database as never, access as never, events as never);
+      await work(client, { workspaceId, manager, sara, ali, saraMember, aliMember, managerMember, noura, stranger, nouraChat, strangerChat, queueId, templateId, as: (userId) => { current = userId; }, conversations, inbox, templates });
     } finally {
       await client.query("ROLLBACK");
       client.release();
@@ -209,6 +212,48 @@ integration("team inbox", () => {
       expect(explicit.bodyText).toBe("Hi there, about your visit.");
       const context = await inbox.context(actor, workspaceId, nouraChat);
       expect(context.variables).toMatchObject({ "contact.first_name": "Noura", "enquiry.reference": "E-1042", "business.name": "Inbox Studio" });
+    });
+  });
+
+  it("submits the starter pack once, keeps Meta's status current, and sends only approved templates", async () => {
+    await withInbox(async (client, { workspaceId, manager, sara, nouraChat, conversations, templates, as }) => {
+      as(manager);
+      const first = await templates.submitStarterPack(actor, workspaceId, { languages: ["en", "ar"] });
+      expect(first.added).toBe(16);
+      expect(await templates.submitStarterPack(actor, workspaceId, { languages: ["en"] })).toEqual({ added: 0, skipped: 8 });
+      const mapping = await client.query(`SELECT position, source FROM crm_template_variables WHERE workspace_id=$1 AND template_code='wd_payment_due' ORDER BY position`, [workspaceId]);
+      expect(mapping.rows.map((row) => row.source)).toEqual(["contact.first_name", "payment.amount", "invoice.due_date", "portal.link"]);
+
+      const work = await templates.dueWorkInternal(workspaceId);
+      expect(work.sync).toBe(true);
+      expect(work.submissions).toHaveLength(16);
+      expect(work.submissions.find((item) => item.name === "wd_invoice_issued" && item.language === "en")).toMatchObject({ category: "UTILITY", examples: ["Noura", "INV-0101", expect.stringContaining("12,500"), expect.stringMatching(/\/portal$/)] });
+      // Claimed for ten minutes: a second pass doesn't submit them again, and the daily sync isn't due again.
+      expect(await templates.dueWorkInternal(workspaceId)).toEqual({ submissions: [], sync: false });
+
+      const quote = work.submissions.find((item) => item.name === "wd_quote_ready" && item.language === "en")!;
+      const welcome = work.submissions.find((item) => item.name === "wd_enquiry_welcome" && item.language === "en")!;
+      await templates.submittedInternal(workspaceId, quote.id, { providerTemplateId: "meta-quote", status: "PENDING" });
+      await templates.submittedInternal(workspaceId, welcome.id, { error: "Template name already exists" });
+      await templates.syncInternal(workspaceId, { full: true, templates: [
+        { id: "meta-quote", name: "wd_quote_ready", language: "en", status: "APPROVED", category: "UTILITY", quality: "GREEN" },
+        { id: "meta-new", name: "studio_hours", language: "en", status: "APPROVED", category: "UTILITY", body: "We open at nine, Sunday to Thursday." },
+      ] });
+      const listed = await (await import("./crm-inbox.service")).CrmInboxService.prototype.templates.call({ access: { withPermission: (_a: unknown, _w: string, _p: string, fn: (c: PoolClient) => unknown) => fn(client) } }, actor, workspaceId) as Array<Record<string, unknown>>;
+      expect(listed.find((item) => item.code === "wd_quote_ready" && item.locale === "en")).toMatchObject({ approved: true, providerStatus: "approved", category: "utility", quality: "green" });
+      expect(listed.find((item) => item.code === "wd_enquiry_welcome" && item.locale === "en")).toMatchObject({ approved: false, providerStatus: "rejected", providerReason: "Template name already exists" });
+      expect(listed.find((item) => item.code === "studio_hours")).toMatchObject({ approved: true });
+      expect(await notices(client, workspaceId, manager, "crm.whatsapp.template_status")).toEqual([expect.objectContaining({ subject: "Template wd_enquiry_welcome (en) is rejected" })]);
+      const synced = await client.query(`SELECT configuration->>'templatesSyncedAt' AS at FROM integration_connections WHERE workspace_id=$1`, [workspaceId]);
+      expect(synced.rows[0].at).toBeTruthy();
+
+      // An approved starter template sends; once Meta pauses it, it can't be sent.
+      await conversations.addInboundInternal(workspaceId, nouraChat, { direction: "inbound", bodyText: "Hello" } as never);
+      as(sara);
+      const approvedId = listed.find((item) => item.code === "wd_quote_ready" && item.locale === "en")!.id as string;
+      await expect(conversations.addMessage(actor, workspaceId, nouraChat, { direction: "outbound", templateId: approvedId, clientMessageId: randomUUID() } as never)).rejects.toThrow(/Quote number/);
+      await templates.syncInternal(workspaceId, { full: false, templates: [{ id: "meta-quote", name: "wd_quote_ready", language: "en", status: "PAUSED", reason: "Low quality" }] });
+      await expect(conversations.addMessage(actor, workspaceId, nouraChat, { direction: "outbound", templateId: approvedId, templateParameters: ["Noura", "V1", "https://x.example/portal"], clientMessageId: randomUUID() } as never)).rejects.toThrow(/not approved/);
     });
   });
 });

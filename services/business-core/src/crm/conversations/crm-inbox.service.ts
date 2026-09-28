@@ -247,10 +247,15 @@ export class CrmInboxService {
   templates(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
       const result = await client.query<Row>(
+        // Every WhatsApp template (latest version per name and language) with Meta's status; only approved ones can be sent.
         `SELECT DISTINCT ON (template.code, template.locale) template.id, template.code, template.locale, template.body_template AS body,
-                template.provider_template_id AS "providerTemplateId", template.approved_at AS "approvedAt"
+                template.provider_template_id AS "providerTemplateId", template.approved_at AS "approvedAt",
+                template.status = 'approved' AND COALESCE(template.provider_status, 'approved') = 'approved' AS approved,
+                COALESCE(template.provider_status, CASE WHEN template.status = 'approved' THEN 'approved' ELSE 'pending' END) AS "providerStatus",
+                template.provider_reason AS "providerReason", template.provider_category AS category, template.provider_quality AS quality,
+                template.starter_key AS "starterKey"
            FROM notification_templates template
-          WHERE template.workspace_id = $1 AND template.channel = 'whatsapp' AND template.status = 'approved'
+          WHERE template.workspace_id = $1 AND template.channel = 'whatsapp' AND template.status <> 'archived'
           ORDER BY template.code, template.locale, template.version_number DESC`, [workspaceId]);
       const mappings = await client.query<{ code: string; position: number; source: string; version: number }>(
         `SELECT template_code AS code, position, source, version FROM crm_template_variables WHERE workspace_id = $1 AND channel = 'whatsapp' ORDER BY position`, [workspaceId]);

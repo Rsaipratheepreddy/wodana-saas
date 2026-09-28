@@ -233,6 +233,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "crm.inbox_assigned", channel: "in_app", subject: "Chat with {{clientName}} is yours", body: "{{reason}}", variables: ["clientName", "reason"] },
   { code: "crm.inbox_assigned", channel: "push", subject: "Chat with {{clientName}} is yours", body: "{{reason}}", variables: ["clientName", "reason"] },
   { code: "crm.inbox_woke", channel: "in_app", subject: "Chat with {{clientName}} is back", body: "You snoozed it until now.", variables: ["clientName"] },
+  { code: "crm.template_status", channel: "in_app", subject: "Template {{name}} is {{status}}", body: "{{reason}}", variables: ["name", "status", "reason"] },
   { code: "crm.inbox_mention", channel: "in_app", subject: "{{actor}} mentioned you", body: "{{clientName}}: {{summary}}", variables: ["actor", "clientName", "summary"] },
   { code: "crm.inbox_mention", channel: "push", subject: "{{actor}} mentioned you", body: "{{clientName}}: {{summary}}", variables: ["actor", "clientName", "summary"] },
   { code: "crm.inbox_unassigned", channel: "in_app", subject: "{{clientName}} is waiting", body: "Nobody could take this new chat. Assign it.", variables: ["clientName"] },

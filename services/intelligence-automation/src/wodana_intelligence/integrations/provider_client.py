@@ -567,6 +567,69 @@ class ProviderClient:
             "status": "created",
         }
 
+    async def all_templates(self, credential: ProviderCredential) -> list[dict[str, Any]]:
+        """Every template on the WhatsApp Business Account with Meta's status (paged past 100)."""
+        items: list[dict[str, Any]] = []
+        after: str | None = None
+        for _page in range(50):
+            params: dict[str, Any] = {
+                "limit": 100,
+                "fields": "id,name,language,status,category,quality_score,rejected_reason,components",
+            }
+            if after:
+                params["after"] = after
+            data = await self.api(
+                credential, "GET", f"/{credential.account_id}/message_templates", params=params
+            )
+            for item in data.get("data", []):
+                if not isinstance(item, dict):
+                    continue
+                body = next(
+                    (
+                        component.get("text")
+                        for component in item.get("components", [])
+                        if isinstance(component, dict) and component.get("type") == "BODY"
+                    ),
+                    None,
+                )
+                quality = item.get("quality_score")
+                reason = item.get("rejected_reason")
+                items.append({
+                    "id": str(item.get("id", "")),
+                    "name": str(item.get("name", "")),
+                    "language": str(item.get("language", "")),
+                    "status": str(item.get("status", "PENDING")),
+                    "category": item.get("category"),
+                    "quality": quality.get("score") if isinstance(quality, dict) else None,
+                    "reason": reason if reason not in (None, "", "NONE") else None,
+                    "body": body,
+                })
+            paging = data.get("paging", {})
+            after = paging.get("cursors", {}).get("after") if paging.get("next") else None
+            if not after:
+                break
+        return items
+
+    async def create_template(
+        self, credential: ProviderCredential, template: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Submits one body-only template to Meta for review, with sample values for its variables."""
+        body: dict[str, Any] = {"type": "BODY", "text": template["body"]}
+        if template.get("examples"):
+            body["example"] = {"body_text": [list(template["examples"])]}
+        data = await self.api(
+            credential,
+            "POST",
+            f"/{credential.account_id}/message_templates",
+            json={
+                "name": template["name"],
+                "language": template["language"],
+                "category": template["category"],
+                "components": [body],
+            },
+        )
+        return {"id": str(data.get("id", "")), "status": str(data.get("status", "PENDING"))}
+
     async def send_template(
         self, credential: ProviderCredential, payload: WhatsAppMessageRequest
     ) -> dict[str, Any]:

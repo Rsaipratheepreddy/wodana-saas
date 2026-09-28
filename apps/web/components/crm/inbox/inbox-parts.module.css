@@ -25,3 +25,6 @@
 .preview mark { padding-inline: var(--wd-space-0-5); border-radius: var(--wd-radius-2xs); background: var(--wd-color-warning-subtle); color: inherit; }
 .variables { display: grid; gap: var(--wd-space-3); }
 .muted { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.name small.reason { color: var(--wd-color-danger); }
+.starterList { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; max-block-size: 22rem; overflow-y: auto; }
+.starterList li { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
