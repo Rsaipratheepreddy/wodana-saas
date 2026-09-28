@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     worker_consumer_group: str = "wodana-intelligence"
     worker_consumer_name: str = "worker-1"
+    # The container's own liveness proof, touched on every loop; `python -m
+    # wodana_intelligence.worker.healthcheck` reads it (the Redis heartbeat is shared by releases).
+    worker_heartbeat_file: str = "/tmp/wodana-worker.beat"
+    # Set by the deploy (same value as Business Core); the heartbeat carries it so a release can
+    # prove its own worker is the one running.
+    wodana_release_id: str = ""
     notification_adapter_mode: str = "unconfigured"
     dependency_checks_enabled: bool = False
     integrations_encryption_key: str = "local-development-integration-key-change-me"
@@ -68,6 +74,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DELIVERY_ALLOWLIST is for local and UAT environments; remove it in production"
             )
+
+    def validate_worker_settings(self) -> None:
+        """A production worker delivers for real: "unconfigured" would fail every message and
+        "test" would mark them delivered without sending."""
+        self.validate_delivery_settings()
+        if (
+            self.environment.lower() == "production"
+            and self.notification_adapter_mode.lower() != "live"
+        ):
+            raise ValueError("Production requires NOTIFICATION_ADAPTER_MODE=live for the worker")
 
     def validate_integration_settings(self) -> None:
         self.validate_delivery_settings()
