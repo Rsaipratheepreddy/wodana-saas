@@ -45,7 +45,7 @@ export function AccountingPostings({ api }: { api: AccountingApi }) {
         }}>{t("Retry")}</Button> : null } },
   ], [t, format, kinds, statuses, api, busy]);
   if (error && !postings) return <ErrorState description={error} onRetry={() => void load()} />;
-  return <DataGrid<Posting> appearance="flush" ariaLabel={t("Accounting postings")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!postings}
+  return <DataGrid<Posting> ariaLabel={t("Accounting postings")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!postings}
     onSearchChange={setSearch} searchValue={search} searchLabel={t("Search postings")} rowNumbers={false} wrapText
     toolbarLeading={<SegmentedControl label={t("Show")} value={show} onChange={(value) => setShow(value as Show)} options={[{ id: "attention", label: t("Needs attention") }, { id: "all", label: t("All") }]} />}
     emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={show === "attention" ? t("Nothing needs attention") : t("Nothing posted yet")}

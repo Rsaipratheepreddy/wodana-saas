@@ -82,10 +82,10 @@ export function CrewsTab({ api, boot, workspaceId, view, onView, creating, onCre
   const empty = (title: string) => needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={title} />;
   return <>
     {view === "crews"
-      ? <DataGrid<HrmsCrew> appearance="flush" ariaLabel={t("Crews")} columns={crewColumns} data={crewRows} getRowId={(row) => row.id} isLoading={!state}
+      ? <DataGrid<HrmsCrew> ariaLabel={t("Crews")} columns={crewColumns} data={crewRows} getRowId={(row) => row.id} isLoading={!state}
           onRowAction={(row) => onOpen({ crew: row.id, worker: null })} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search crews")} rowNumbers={false} selectable={false}
           wrapText toolbarLeading={switcher} emptyContent={empty(t("No crews yet"))} />
-      : <DataGrid<HrmsWorker> appearance="flush" ariaLabel={t("Workers")} columns={workerColumns} data={workerRows} getRowId={(row) => row.id} isLoading={!state}
+      : <DataGrid<HrmsWorker> ariaLabel={t("Workers")} columns={workerColumns} data={workerRows} getRowId={(row) => row.id} isLoading={!state}
           onRowAction={(row) => onOpen({ worker: row.id, crew: null })} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search workers")} rowNumbers={false} selectable={false}
           wrapText toolbarLeading={switcher} emptyContent={empty(t("No workers yet"))} />}
     {state && crew ? <CrewSheet key={crew === "new" ? "new" : crew.id} api={api} workspaceId={workspaceId} state={state} crew={crew === "new" ? null : crew}

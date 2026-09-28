@@ -40,7 +40,6 @@ export function GroupedTable<T>({
   selectable = true,
   collapsible = true,
   groupRows = true,
-  appearance = "plain",
   onRowAction,
   onSectionAction,
 }: {
@@ -56,7 +55,6 @@ export function GroupedTable<T>({
   collapsible?: boolean;
   /** Without group rows the sections run together under the one header (a single-section list). */
   groupRows?: boolean;
-  appearance?: "plain" | "enclosed";
   /** Opens a row (click, Enter or Space), like DataGrid rows. */
   onRowAction?: (row: T) => void;
   /** Makes each section's name a button, e.g. to edit the group. */
@@ -80,9 +78,9 @@ export function GroupedTable<T>({
   const allSelected = allIds.filter((id) => selectedIds.has(id)).length;
   const span = columns.length + (selectable ? 1 : 0);
 
-  return <div className="wd-grouped-table-scroll" data-appearance={appearance} data-selectable={selectable} tabIndex={0}><table aria-label={ariaLabel} className="wd-grouped-table wd-record-table"><colgroup>{selectable ? <col className="wd-grouped-select-column" /> : null}{columns.map((column) => <col data-mobile-hidden={column.mobileHidden || undefined} key={column.id} style={{ "--wd-grouped-column-width": column.width ?? "auto", "--wd-grouped-column-mobile-width": column.mobileWidth ?? "auto" } as CSSProperties} />)}</colgroup>
+  return <div className="wd-grouped-table-scroll" data-selectable={selectable} tabIndex={0}><table aria-label={ariaLabel} className="wd-grouped-table wd-record-table"><colgroup>{selectable ? <col className="wd-grouped-select-column" /> : null}{columns.map((column) => <col data-mobile-hidden={column.mobileHidden || undefined} key={column.id} style={{ "--wd-grouped-column-width": column.width ?? "auto", "--wd-grouped-column-mobile-width": column.mobileWidth ?? "auto" } as CSSProperties} />)}</colgroup>
     <thead><tr>
-      {selectable ? <th scope="col"><Checkbox aria-label={t("Select all")} isIndeterminate={allSelected > 0 && allSelected < allIds.length} isSelected={Boolean(allIds.length) && allSelected === allIds.length} onChange={(selected) => selectMany(allIds, selected)} /></th> : null}
+      {selectable ? <th className="wd-grouped-select-cell" scope="col"><Checkbox aria-label={t("Select all")} isIndeterminate={allSelected > 0 && allSelected < allIds.length} isSelected={Boolean(allIds.length) && allSelected === allIds.length} onChange={(selected) => selectMany(allIds, selected)} /></th> : null}
       {columns.map((column) => <th scope="col" data-align={column.align} data-mobile-hidden={column.mobileHidden || undefined} key={column.id}>{column.label}</th>)}
     </tr></thead>
     {sections.map((section) => {
@@ -93,7 +91,7 @@ export function GroupedTable<T>({
       const name = onSectionAction ? <button className="wd-grouped-table-section-button" onClick={() => onSectionAction(section.id)} type="button">{section.label}</button> : <span className="wd-grouped-table-section-label">{section.label}</span>;
       return <tbody key={section.id}>
         {groupRows ? <tr className="wd-grouped-table-heading" data-collapsed={closed || undefined}>
-          {selectable ? <th scope="row"><Checkbox aria-label={t("Select all {name}", { name: section.label.toLowerCase() })} isIndeterminate={selectedCount > 0 && selectedCount < rowIds.length} isSelected={Boolean(rowIds.length) && selectedCount === rowIds.length} onChange={(selected) => selectMany(rowIds, selected)} /></th> : null}
+          {selectable ? <th className="wd-grouped-select-cell" scope="row"><Checkbox aria-label={t("Select all {name}", { name: section.label.toLowerCase() })} isIndeterminate={selectedCount > 0 && selectedCount < rowIds.length} isSelected={Boolean(rowIds.length) && selectedCount === rowIds.length} onChange={(selected) => selectMany(rowIds, selected)} /></th> : null}
           <th scope="colgroup" colSpan={summary ? 1 : columns.length}><span className="wd-grouped-table-section">
             {collapsible ? <button aria-expanded={!closed} aria-label={t(closed ? "Expand {name}" : "Collapse {name}", { name: section.label })} className="wd-grouped-table-toggle" onClick={() => setCollapsed((current) => { const next = new Set(current); if (next.has(section.id)) next.delete(section.id); else next.add(section.id); return next; })} type="button">{closed ? <ChevronRight aria-hidden="true" size={14} /> : <ChevronDown aria-hidden="true" size={14} />}</button> : null}
             {name}
@@ -107,7 +105,7 @@ export function GroupedTable<T>({
             data-actionable={onRowAction ? true : undefined} tabIndex={onRowAction ? 0 : undefined}
             onClick={onRowAction ? (event) => { if (!(event.target as HTMLElement).closest("button,input,a,select,textarea,[role=checkbox],label")) onRowAction(row); } : undefined}
             onKeyDown={onRowAction ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowAction(row); } } : undefined}>
-            {selectable ? <td><Checkbox aria-label={t("Select {name}", { name: getRowLabel?.(row) ?? id })} isSelected={selectedIds.has(id)} onChange={(selected) => setRowSelected(id, selected)} /></td> : null}
+            {selectable ? <td className="wd-grouped-select-cell"><Checkbox aria-label={t("Select {name}", { name: getRowLabel?.(row) ?? id })} isSelected={selectedIds.has(id)} onChange={(selected) => setRowSelected(id, selected)} /></td> : null}
             {columns.map((column) => <td data-align={column.align} data-mobile-hidden={column.mobileHidden || undefined} key={column.id}>{column.render(row)}</td>)}
           </tr>;
         }) : <tr className="wd-grouped-table-empty"><td colSpan={span}>{section.emptyMessage}</td></tr>}

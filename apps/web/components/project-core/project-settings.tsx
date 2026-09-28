@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SelectField, SettingsPage, SettingsRow, SettingsSection, InspectorSheet, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
+import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, InspectorSheet, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { CheckKind, ProjectRole, ProjectRoute, RouteStage, SettingsState, StageCheck, TemplateTask, WorkTemplate } from "@/lib/project-core/types";
@@ -99,10 +99,8 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
         <Switch aria-label={t("Change payment verified")} isDisabled={readOnly} isSelected={form.requireVariationPayment} onChange={(value) => setForm({ ...form, requireVariationPayment: value })} />
       </SettingsRow>
     </SettingsSection>
-    {readOnly ? null : <div className={styles.actions}>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!dirty || !/^[A-Z]/.test(form.referencePrefix)}
-        onPress={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment, referencePrefix: form.referencePrefix }); setBusy(false); }}>{t("Save")}</Button>
-    </div>}
+    {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} isDisabled={!/^[A-Z]/.test(form.referencePrefix)} onDiscard={() => setForm(data.settings)}
+      onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment, referencePrefix: form.referencePrefix }); setBusy(false); }} />}
   </>;
 }
 
@@ -121,10 +119,8 @@ function Roles({ data, onSave }: { data: SettingsState; onSave: (roles: ProjectR
       </li>)}</ul>
       {readOnly ? null : <Button size="compact" variant="quiet" onPress={() => setRoles([...roles, { key: "", label: "" }])}><Plus aria-hidden="true" size={14} />{t("Add role")}</Button>}
     </SettingsSection>
-    {readOnly ? null : <div className={styles.actions}>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!dirty || roles.some((role) => !role.label.trim())}
-        onPress={async () => { setBusy(true); await onSave(roles.map((role) => ({ key: role.key, label: role.label.trim() }))); setBusy(false); }}>{t("Save")}</Button>
-    </div>}
+    {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} isDisabled={roles.some((role) => !role.label.trim())} onDiscard={() => setRoles(data.settings.roles)}
+      onSave={async () => { setBusy(true); await onSave(roles.map((role) => ({ key: role.key, label: role.label.trim() }))); setBusy(false); }} />}
   </>;
 }
 

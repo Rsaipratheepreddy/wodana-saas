@@ -53,7 +53,6 @@ function VariantComparison({ options, work, roomName, value, onChange }: {
     { id: "select", header: "", size: 110, enableSorting: false, meta: { align: "end", renderCell: (variant) => <Button aria-label={t("Select {name}", { name: variant.name })} onPress={() => onChange(variant)} size="compact" variant={value?.id === variant.id ? "primary" : "secondary"}>{t(value?.id === variant.id ? "Selected" : "Select")}</Button> } },
   ], [onChange, roomName, t, value?.id, work.name]);
   return <DataGrid
-    appearance="flush"
     ariaLabel={t("Compare variants for {name}", { name: quotationItemName(work.name, roomName) })}
     columns={columns}
     data={options}
@@ -144,7 +143,6 @@ export function QuotationProductPicker({ workspaceId, caseId, catalogId, room, l
   ], [atLimit, caseId, lines, onAdd, onEdit, onQuantity, room?.name, t, workspaceId]);
   return <div className={s.productPicker}>
     <DataGrid
-      appearance="card"
       ariaLabel={t("Catalog items")}
       columns={columns}
       data={items}

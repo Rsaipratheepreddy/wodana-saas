@@ -40,6 +40,9 @@ const SETTINGS_NAV_OVERRIDES: Record<string, Partial<WorkspaceRouteEntry>> = {
   integrations: { nav: "integrations" },
 };
 
+/** Settings menu entries whose pages belong to People: the menu links to them, the pages show People's tabs. */
+const PEOPLE_PAGES = ["members", "teams", "roles"];
+
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
 // Built on first use: the navigation module also reads this map, so nothing runs at import time.
@@ -55,8 +58,8 @@ function routeTable() {
   const settingsModule = workspaceModules.find((module) => module.id === "workspace");
   const settingsEntries: WorkspaceRouteEntry[] = (settingsModule?.navigation ?? [])
     .flatMap((group) => group.items)
-    // Gallery sits in the Company section of the sidebar, not in Settings.
-    .filter((item) => item.id !== "gallery")
+    // Gallery sits in the Company section of the sidebar, not in Settings; People, Teams and Roles live in People.
+    .filter((item) => !["gallery", ...PEOPLE_PAGES].includes(item.id))
     .map((item) => ({ id: `settings:${item.id}`, label: item.label, href: item.href, parent: "settings", paths: [item.href], ...SETTINGS_NAV_OVERRIDES[item.id] }));
   const hrmsModule = workspaceModules.find((module) => module.id === "hrms");
   const hrmsEntries: WorkspaceRouteEntry[] = (hrmsModule?.navigation ?? [])
@@ -102,8 +105,11 @@ function routeTable() {
     { id: "inventory", label: "Inventory", href: "/workspace/inventory", nav: "inventory", paths: ["/workspace/inventory"] },
     { id: "factory", label: "Factory", href: "/workspace/factory", nav: "factory", paths: ["/workspace/factory"] },
 
-    // Company
-    { id: "people", label: "People", href: "/workspace/hrms", nav: "team", paths: ["/workspace/hrms"] },
+    // Company: People opens on the directory; teams, roles, and attendance and leave are its other areas.
+    { id: "people", label: "People", href: "/workspace/members", nav: "team", paths: ["/workspace/members"] },
+    { id: "people:teams", label: "Teams", href: "/workspace/teams", parent: "people", paths: ["/workspace/teams"] },
+    { id: "people:roles", label: "Roles & permissions", href: "/workspace/roles", parent: "people", paths: ["/workspace/roles"] },
+    { id: "people:attendance", label: "Attendance", href: "/workspace/hrms", parent: "people", paths: ["/workspace/hrms"] },
     ...hrmsEntries,
     { id: "gallery", label: "Gallery", href: "/workspace/gallery", nav: "gallery", paths: ["/workspace/gallery"] },
     { id: "settings", label: "Settings", href: "/workspace/settings/profile", nav: "settings", settings: true, paths: ["/workspace/settings"] },

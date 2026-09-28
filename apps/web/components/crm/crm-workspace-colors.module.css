@@ -14,6 +14,8 @@
 }
 
 .theme :global(.wd-select-button) { min-block-size: 34px; border-radius: var(--wd-radius-xs); padding-inline: var(--wd-space-2) 0; font-size: var(--wd-text-xs); background: var(--wd-color-surface); color: var(--wd-color-text); border-color: var(--wd-color-border-strong); }
+/* The compact select is for toolbars; inside a form it matches the text fields beside it. */
+.theme :global(form .wd-select-button) { min-block-size: 2.5rem; border-radius: var(--wd-radius-md); padding-inline: var(--wd-space-3) var(--wd-space-1-5); font-size: var(--wd-text-sm); border-color: var(--wd-color-border-control); }
 .theme :global(.wd-picker-popover) { background: var(--wd-color-surface); color: var(--wd-color-text); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-xs); padding: var(--wd-space-1); }
 .theme :global(.wd-picker-item) { font-size: var(--wd-text-xs); min-block-size: 32px; padding: var(--wd-space-1-5) var(--wd-space-2); border-radius: var(--wd-radius-2xs); }
 .theme :global(.wd-picker-item[data-focused]) { background: var(--wd-color-surface-hover); }
