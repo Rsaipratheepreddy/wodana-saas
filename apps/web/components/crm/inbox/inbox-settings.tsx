@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
-import { Badge, Button, Checkbox, ControlledModalDialog, DataGrid, InlineNotice, NoAccessState, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, Checkbox, ControlledModalDialog, DataGrid, EmptyState, InlineNotice, NoAccessState, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
-import { fillTemplate, LABEL_COLORS, renderTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_SOURCES, type InboxLabel, type InboxTemplate, type LabelColor, type QuickReply, type TemplateSource } from "@/lib/crm/inbox";
+import { fillTemplate, LABEL_COLORS, renderTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_SOURCES, TEMPLATE_STATUS, type InboxLabel, type InboxTemplate, type LabelColor, type QuickReply, type TemplateSource } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
+import { AutoRepliesSection } from "./auto-replies-settings";
 import { ClientMessagesSection } from "./client-messages-settings";
 import { LabelChip, useInboxLookups } from "./inbox-parts";
 import styles from "./inbox-parts.module.css";
@@ -27,6 +28,14 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
   const [mapping, setMapping] = useState<InboxTemplate | null>(null);
   const [starting, setStarting] = useState(false);
   useEffect(() => { if (settings) setDraft({ autoAssign: settings.autoAssign, queueId: settings.queueId, signatureEnabled: settings.signatureEnabled }); }, [settings]);
+  // "New quick reply" from a chat lands here with the dialog open.
+  const openedFromChat = useRef(false);
+  useEffect(() => {
+    if (!settings || openedFromChat.current || window.location.hash !== "#new-quick-reply") return;
+    openedFromChat.current = true;
+    const timer = setTimeout(() => setEditingReply({ scope: settings.canManage ? "workspace" : "personal" }), 0);
+    return () => clearTimeout(timer);
+  }, [settings]);
 
   if (!settings && !loadFailure) return <SettingsPage title={t("Inbox")}><Skeleton lines={5} shape="form" /></SettingsPage>;
   if (!settings) return <SettingsPage title={t("Inbox")}><NoAccessState area={t("Inbox")} /></SettingsPage>;
@@ -96,15 +105,20 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
             selectedKey={draft?.queueId ?? ""} onSelectionChange={(key) => setDraft((current) => current && { ...current, queueId: key ? String(key) : null })} /></span>
         </SettingsRow>
       </SettingsSection>
+      <AutoRepliesSection workspaceId={workspaceId} />
       <ClientMessagesSection workspaceId={workspaceId} canManage={canManage} templates={templates} />
       <SettingsSection id="inbox-labels" title={t("Labels")} actions={canManage ? <Button size="compact" variant="primary" onPress={() => setEditingLabel({ color: "viz-1" })}><Plus aria-hidden="true" size={14} />{t("Add label")}</Button> : null}>
         <div data-sales-grid><DataGrid ariaLabel={t("Labels")} columns={labelColumns} data={labels} emptyTitle={t("No labels yet")} emptyDescription={t("Add labels such as Quote request or Site visit.")} getRowId={(label) => label.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
       </SettingsSection>
       <SettingsSection id="inbox-quick-replies" title={t("Quick replies")} actions={<Button size="compact" variant="primary" onPress={() => setEditingReply({ scope: canManage ? "workspace" : "personal" })}><Plus aria-hidden="true" size={14} />{t("Add quick reply")}</Button>}>
-        <div data-sales-grid><DataGrid ariaLabel={t("Quick replies")} columns={replyColumns} data={quickReplies} emptyTitle={t("No quick replies yet")} emptyDescription={t("Type / in a chat to use them.")} getRowId={(reply) => reply.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
+        <div data-sales-grid><DataGrid ariaLabel={t("Quick replies")} columns={replyColumns} data={quickReplies} getRowId={(reply) => reply.id} rowNumbers={false} selectable={false} showToolbar={false}
+          emptyContent={<EmptyState title={t("No quick replies yet")} description={t("Type / in a chat to use them.")} action={<Button size="compact" variant="primary" onPress={() => setEditingReply({ scope: canManage ? "workspace" : "personal" })}>{t("New quick reply")}</Button>} />} /></div>
       </SettingsSection>
       <SettingsSection id="inbox-templates" title={t("WhatsApp templates")} actions={canManage && settings.whatsapp.connected ? <Button size="compact" variant="primary" onPress={() => setStarting(true)}><Plus aria-hidden="true" size={14} />{t("Add starter templates")}</Button> : null}>
-        <div data-sales-grid><DataGrid ariaLabel={t("WhatsApp templates")} columns={templateColumns} data={templates} emptyTitle={t("No templates yet")} emptyDescription={settings.whatsapp.connected ? t("Add the starter templates: one for each client message.") : t("Connect WhatsApp first.")} getRowId={(template) => template.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
+        <div data-sales-grid><DataGrid ariaLabel={t("WhatsApp templates")} columns={templateColumns} data={templates} getRowId={(template) => template.id} rowNumbers={false} selectable={false} showToolbar={false}
+          emptyContent={settings.whatsapp.connected
+            ? <EmptyState title={t("No templates yet")} description={t("Add the starter templates: one for each client message.")} action={canManage ? <Button size="compact" variant="primary" onPress={() => setStarting(true)}>{t("Add starter templates")}</Button> : undefined} />
+            : <EmptyState title={t("WhatsApp isn't connected")} action={<Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/integrations">{t("Connect WhatsApp")}</Link>} />} /></div>
       </SettingsSection>
     </div>
     {editingLabel ? <LabelDialog initial={editingLabel} onClose={() => setEditingLabel(null)} onSave={async (value) => {
@@ -126,11 +140,6 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
   </SettingsPage>;
 }
 
-const TEMPLATE_STATUS: Record<NonNullable<InboxTemplate["providerStatus"]>, { label: MessageKey; tone: "neutral" | "success" | "warning" | "danger" | "info" }> = {
-  submitting: { label: tKey("Sending to Meta"), tone: "info" }, pending: { label: tKey("Waiting for Meta approval"), tone: "warning" },
-  approved: { label: tKey("Approved"), tone: "success" }, rejected: { label: tKey("Rejected"), tone: "danger" },
-  paused: { label: tKey("Paused by Meta"), tone: "warning" }, disabled: { label: tKey("Disabled by Meta"), tone: "danger" },
-};
 const CATEGORY_LABELS: Record<string, MessageKey> = { utility: tKey("Utility"), marketing: tKey("Marketing"), authentication: tKey("Authentication") };
 
 type StarterPack = { languages: string[]; defaultLanguages: string[]; items: Array<{ key: string; event: string; name: string; language: string; body: string; status: string | null }> };

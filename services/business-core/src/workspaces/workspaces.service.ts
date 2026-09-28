@@ -1,5 +1,6 @@
 import { MemberProfileService } from "./member-profile.service";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
+import { seedDefaultQuickReplies } from "../crm/conversations/inbox/default-quick-replies";
 import { acceptPendingInvitation } from "./invitation-acceptance";
 import {
   BadRequestException,
@@ -214,6 +215,7 @@ export class WorkspacesService {
           await this.insertDefaultCrmAutomations(client, workspaceId);
           await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(undefined));
           await seedDefaultNotificationTemplates(client, workspaceId);
+          await seedDefaultQuickReplies(client, workspaceId);
           await client.query(
             `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
              VALUES ($1, $2, now() + interval '14 days')`,
@@ -399,6 +401,7 @@ export class WorkspacesService {
         );
         await this.insertDefaultCrmAutomations(client, workspaceId);
         await seedDefaultNotificationTemplates(client, workspaceId);
+        await seedDefaultQuickReplies(client, workspaceId);
         // The kit's Sales pipeline, so a salesperson's first conversion needs no CRM-settings permission.
         await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(setup?.firmKit.configuration.salesPipeline));
         if (setup) {
@@ -606,6 +609,7 @@ export class WorkspacesService {
     await this.insertDefaultCrmAutomations(client, workspaceId);
     await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(undefined));
           await seedDefaultNotificationTemplates(client, workspaceId);
+    await seedDefaultQuickReplies(client, workspaceId);
     await client.query(
       `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
        VALUES ($1, $2, now() + interval '14 days')`,

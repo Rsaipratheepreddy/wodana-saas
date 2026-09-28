@@ -708,6 +708,20 @@
       "when": 1801170000001,
       "tag": "0153_factory_rework",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1801190000000,
+      "tag": "0156_inbox_auto_replies",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1801190000001,
+      "tag": "0157_default_quick_replies",
+      "breakpoints": true
     }
   ]
 }

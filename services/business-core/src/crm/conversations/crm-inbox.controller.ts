@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiExcludeController, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
@@ -8,7 +8,7 @@ import { CrmInboxService } from "./crm-inbox.service";
 import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
 import { SendPaymentReminderDto, SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, UpdatePaymentReminderScheduleDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
 import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
-import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessageDto, CreateQuickReplyDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto } from "./dto/inbox.dto";
+import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessageDto, CreateQuickReplyDto, RemoveAutoRepliesDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateAutoRepliesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto } from "./dto/inbox.dto";
 
 type Ws = string;
 
@@ -31,6 +31,9 @@ export class CrmInboxController {
   @Post("inbox/bulk") bulk(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: BulkConversationsDto) { return this.inbox.bulk(actor, workspaceId, input); }
   @Get("inbox/settings") settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.settings(actor, workspaceId); }
   @Put("inbox/settings") updateSettings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: UpdateInboxSettingsDto) { return this.inbox.updateSettings(actor, workspaceId, input); }
+  @Get("inbox/auto-replies") autoReplies(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.autoReplies(actor, workspaceId); }
+  @Put("inbox/auto-replies") updateAutoReplies(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: UpdateAutoRepliesDto) { return this.inbox.updateAutoReplies(actor, workspaceId, input); }
+  @Delete("inbox/auto-replies/:connectionId") removeAutoReplies(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("connectionId", ParseUUIDPipe) connectionId: string, @Query() input: RemoveAutoRepliesDto) { return this.inbox.removeAutoRepliesOverride(actor, workspaceId, connectionId, input); }
   @Get("inbox/labels") labels(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.labels(actor, workspaceId); }
   @Post("inbox/labels") createLabel(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: CreateLabelDto) { return this.inbox.createLabel(actor, workspaceId, input); }
   @Patch("inbox/labels/:labelId") updateLabel(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("labelId", ParseUUIDPipe) labelId: string, @Body() input: UpdateLabelDto) { return this.inbox.updateLabel(actor, workspaceId, labelId, input); }

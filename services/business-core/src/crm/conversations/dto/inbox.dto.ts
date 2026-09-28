@@ -70,6 +70,33 @@ export class SetTemplateVariablesDto {
   @IsArray() @ArrayMaxSize(20) @ValidateNested({ each: true }) @Type(() => TemplateVariableDto) variables!: TemplateVariableDto[];
 }
 
+const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Settings → Inbox → Auto replies, for the workspace (no connectionId) or one WhatsApp number. */
+export class UpdateAutoRepliesDto {
+  /** A connected WhatsApp number whose own settings these are; omitted for the workspace's. */
+  @IsOptional() @IsUUID() connectionId?: string | null;
+  /** 0 when this scope has never been saved. */
+  @IsInt() @Min(0) version!: number;
+  @IsBoolean() greetingEnabled!: boolean;
+  @IsString() @MaxLength(1024) greetingText!: string;
+  @IsInt() @Min(1) @Max(365) greetingSilenceDays!: number;
+  @IsBoolean() awayEnabled!: boolean;
+  @IsString() @MaxLength(1024) awayText!: string;
+  @IsInt() @Min(1) @Max(168) awayWindowHours!: number;
+  /** 0 = Sunday … 6 = Saturday; null follows the workspace's working week. */
+  @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(7) @IsInt({ each: true }) @Min(0, { each: true }) @Max(6, { each: true }) workingDays?: number[] | null;
+  /** "HH:MM"; both or neither (neither follows the work calendar). */
+  @IsOptional() @IsString() @Matches(CLOCK) dayStart?: string | null;
+  @IsOptional() @IsString() @Matches(CLOCK) dayEnd?: string | null;
+  /** An IANA time zone; null follows the workspace's. */
+  @IsOptional() @IsString() @MaxLength(64) timeZone?: string | null;
+}
+
+export class RemoveAutoRepliesDto {
+  @Type(() => Number) @IsInt() @Min(1) version!: number;
+}
+
 export class WakeSnoozedDto {
   @IsOptional() @IsInt() @Min(1) @Max(100) limit = 50;
 }

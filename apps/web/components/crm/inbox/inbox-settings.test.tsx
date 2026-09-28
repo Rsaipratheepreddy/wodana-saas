@@ -19,6 +19,16 @@ function setup(canManage = true) {
       { event: "crm.enquiry.created", enabled: true, templateCode: "wd_enquiry_welcome", version: 0, emailFallback: false, channel: "none", template: { body: "Hello {{1}}, thank you.", providerStatus: "rejected", approved: false } },
       { event: "portal.invoice_issued", enabled: true, templateCode: "quote_ready", version: 2, emailFallback: true, channel: "whatsapp", template: { body: "Hi {{1}}, quote {{2}} is ready.", providerStatus: "approved", approved: true } },
     ] },
+    "inbox/auto-replies": {
+      canManage, businessName: "Palm Studio",
+      workspace: { connectionId: null, greeting: { enabled: false, text: "Hi {{contact.first_name}}, thanks for contacting {{business.name}}.", silenceDays: 14 },
+        away: { enabled: false, text: "We are away and will reply soon.", windowHours: 12 }, hours: { workingDays: null, start: null, end: null, timeZone: null }, version: 0 },
+      numbers: [
+        { connectionId: "c1", number: "+1 555 0100", accountName: null, isDefault: true, override: null },
+        { connectionId: "c2", number: "+1 555 0200", accountName: "Showroom", isDefault: false, override: null },
+      ],
+      defaults: { workingDays: [1, 2, 3, 4, 5], start: "09:00", end: "18:00", timeZone: "Europe/London" },
+    },
     "inbox/starter-pack": { languages: ["en", "ar"], defaultLanguages: ["en"], items: [
       { key: "enquiry_welcome", event: "crm.enquiry.created", name: "wd_enquiry_welcome", language: "en", body: "Hello {{1}}…", status: "rejected" },
       { key: "quote_ready", event: "portal.quote_issued", name: "wd_quote_ready", language: "en", body: "Hello {{1}}…", status: null },
@@ -40,8 +50,33 @@ describe("Settings → Inbox", () => {
     expect(await screen.findByText("Palm Studio · +1 555 0100")).toBeInTheDocument();
     expect(screen.getByText(/All 4 seats reply from this number/)).toBeInTheDocument();
     await user.click(screen.getByRole("switch", { name: "Sign replies" }));
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(within(screen.getByRole("region", { name: "New chats" })).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(sent("inbox/settings", "PUT")).toEqual([{ version: 2, autoAssign: true, queueId: null, signatureEnabled: true }]));
+  });
+
+  it("turns the greeting on with a preview as the client reads it, and saves it with its version", async () => {
+    const user = userEvent.setup(), { sent } = setup(); render(<InboxSettingsPage workspaceId={WORKSPACE} />);
+    const section = await screen.findByRole("region", { name: "Auto replies" });
+    await user.click(await within(section).findByRole("switch", { name: "Greeting message" }));
+    expect(within(section).getByLabelText("Preview")).toHaveTextContent("Hi [Client first name], thanks for contacting Palm Studio.");
+    await user.click(within(section).getByRole("switch", { name: "Away message" }));
+    expect(within(section).getByText(/09:00–18:00 · Europe\/London/)).toBeInTheDocument();
+    await user.click(within(section).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent("inbox/auto-replies", "PUT")).toEqual([{
+      version: 0, greetingEnabled: true, greetingText: "Hi {{contact.first_name}}, thanks for contacting {{business.name}}.", greetingSilenceDays: 14,
+      awayEnabled: true, awayText: "We are away and will reply soon.", awayWindowHours: 12, workingDays: null, dayStart: null, dayEnd: null, timeZone: null,
+    }]));
+  });
+
+  it("gives a second WhatsApp number its own auto replies", async () => {
+    const user = userEvent.setup(), { sent } = setup(); render(<InboxSettingsPage workspaceId={WORKSPACE} />);
+    const section = await screen.findByRole("region", { name: "Auto replies" });
+    await user.click(await within(section).findByRole("button", { name: /Number/ }));
+    await user.click(await screen.findByRole("option", { name: "+1 555 0200 · Showroom" }));
+    await user.click(within(section).getByRole("button", { name: "Customise for this number" }));
+    await user.click(within(section).getByRole("switch", { name: "Away message" }));
+    await user.click(within(section).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent("inbox/auto-replies", "PUT")).toEqual([expect.objectContaining({ connectionId: "c2", version: 0, awayEnabled: true, greetingEnabled: false })]));
   });
 
   it("adds a label with a token colour", async () => {

@@ -53,6 +53,15 @@ export const TEMPLATE_SOURCE_LABELS: Record<TemplateSource, MessageKey> = {
   "staff.first_name": tKey("Your first name"), "business.name": tKey("Business name"), "today.date": tKey("Today's date"),
 };
 
+/** Meta's review state of a WhatsApp template, as the inbox shows it (only approved ones can be sent). */
+export const TEMPLATE_STATUS: Record<NonNullable<InboxTemplate["providerStatus"]>, { label: MessageKey; tone: "neutral" | "success" | "warning" | "danger" | "info" }> = {
+  submitting: { label: tKey("Sending to Meta"), tone: "info" }, pending: { label: tKey("Waiting for Meta approval"), tone: "warning" },
+  approved: { label: tKey("Approved"), tone: "success" }, rejected: { label: tKey("Rejected"), tone: "danger" },
+  paused: { label: tKey("Paused by Meta"), tone: "warning" }, disabled: { label: tKey("Disabled by Meta"), tone: "danger" },
+};
+/** A template the team can send now: numbered 1, 2, 3… and approved here and at Meta. */
+export const sendableTemplate = (template: InboxTemplate) => template.usable && template.approved !== false && (template.providerStatus ?? "approved") === "approved";
+
 /** Business events that message the client on WhatsApp (Settings → Inbox → Client messages). */
 export const CLIENT_EVENT_LABELS: Record<string, MessageKey> = {
   "crm.enquiry.created": tKey("Welcome on a new enquiry"), "portal.quote_issued": tKey("Quotation ready"), "portal.invoice_issued": tKey("Invoice issued"),
@@ -68,6 +77,30 @@ export type ClientMessageRow = {
   event: string; enabled: boolean; templateCode: string | null; version: number; emailFallback: boolean; channel: "whatsapp" | "email" | "none";
   template: { body: string; providerStatus: string; approved: boolean } | null;
 };
+
+/** Auto replies (Settings → Inbox → Auto replies), shared with business-core (crm/conversations/inbox/auto-reply-rules.ts). */
+export type AutoReplyScope = {
+  connectionId: string | null;
+  greeting: { enabled: boolean; text: string; silenceDays: number };
+  away: { enabled: boolean; text: string; windowHours: number };
+  /** Null values follow the workspace's working week, work calendar and time zone. */
+  hours: { workingDays: number[] | null; start: string | null; end: string | null; timeZone: string | null };
+  version: number;
+};
+export type AutoRepliesState = {
+  canManage: boolean; businessName: string | null; workspace: AutoReplyScope;
+  numbers: Array<{ connectionId: string; number: string | null; accountName: string | null; isDefault: boolean; override: AutoReplyScope | null }>;
+  defaults: { workingDays: number[]; start: string; end: string; timeZone: string };
+};
+export const AUTO_REPLY_FIELDS = ["contact.first_name", "contact.name", "business.name"] as const;
+export type AutoReplyField = (typeof AUTO_REPLY_FIELDS)[number];
+
+/** The auto reply as the client reads it; a field without a value is left out and the sentence closed up. */
+export function renderAutoReply(text: string, values: Partial<Record<AutoReplyField, string | null>>) {
+  return text
+    .replace(/\{\{\s*([a-z_]+\.[a-z_]+)\s*\}\}/g, (_all, name: string) => ((AUTO_REPLY_FIELDS as readonly string[]).includes(name) ? values[name as AutoReplyField]?.trim() ?? "" : ""))
+    .replace(/[ \t]+([,.!?;:])/g, "$1").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "").trim();
+}
 
 const PLACEHOLDER = /\{\{\s*(\d{1,2})\s*\}\}/g;
 

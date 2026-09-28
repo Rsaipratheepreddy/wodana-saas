@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { randomUUID } from "node:crypto";
 import { PoolClient } from "pg";
@@ -16,6 +16,7 @@ import { INBOX_MEMBERS_SQL, inboxQueue, selectInboxOwner } from "./inbox/inbox-a
 import { inboxLink, noticeChat, readChatNotices, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
 import { inboundSummary, normalizeTemplateParameter, renderTemplate, stageFilterSql, templateParametersProblem, templatePlaceholders, withSignature, type TemplateVariableSource } from "./inbox/inbox-rules";
 import { resolveTemplateSources } from "./inbox/template-variables";
+import { sendAutoReply } from "./inbox/auto-replies";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 /** Open chats by who has waited longest for our reply; chats nobody waits on follow, most recent first. */
@@ -40,6 +41,8 @@ const SOURCE_NAMES: Record<TemplateVariableSource, string> = {
 
 @Injectable()
 export class CrmConversationsService {
+  private readonly logger = new Logger(CrmConversationsService.name);
+
   constructor(
     private readonly database: DatabaseService,
     private readonly access: WorkspaceAccessService,
@@ -796,8 +799,24 @@ export class CrmConversationsService {
     const blocked = input.direction === "inbound" && conversation.party_id
       ? (await client.query(`SELECT 1 FROM crm_parties WHERE workspace_id = $1 AND id = $2 AND blocked_at IS NOT NULL`, [workspaceId, conversation.party_id])).rowCount : 0;
     if (input.direction === "inbound" && !blocked) await this.routeInbound(client, workspaceId, conversation, touched.rows[0], messageId, bodyText);
+    if (input.direction === "inbound" && !blocked && conversation.channel === "whatsapp") await this.autoReply(client, workspaceId, touched.rows[0] ?? conversation, messageId, input.metadata);
     if (input.direction === "internal" && input.mentions?.length) await this.noticeMentions(client, workspaceId, conversation, [...new Set(input.mentions)], messageId, bodyText, actorUserId);
     return response;
+  }
+
+  /**
+   * The greeting or away message for a client's WhatsApp message, when one is due. It runs in a savepoint, so a
+   * reply that can't be written never loses the client's message.
+   */
+  private async autoReply(client: PoolClient, workspaceId: string, conversation: Record<string, unknown>, inboundMessageId: string, metadata?: Record<string, unknown>) {
+    await client.query("SAVEPOINT crm_auto_reply");
+    try {
+      await sendAutoReply(client, { workspaceId, conversation, inboundMessageId, metadata });
+      await client.query("RELEASE SAVEPOINT crm_auto_reply");
+    } catch (error) {
+      await client.query("ROLLBACK TO SAVEPOINT crm_auto_reply");
+      this.logger.warn(`Auto reply skipped for message ${inboundMessageId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**

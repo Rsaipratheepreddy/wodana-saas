@@ -9,6 +9,7 @@ import { isOperationalEvidence } from "../commercial/release-integrity";
 import { CrmActivitiesService } from "../crm/activities/crm-activities.service";
 import { CreateActivityDto } from "../crm/activities/dto/activities.dto";
 import { CrmConversationsService } from "../crm/conversations/crm-conversations.service";
+import { CrmInboxService } from "../crm/conversations/crm-inbox.service";
 import { ProviderInboundMessageDto } from "../crm/conversations/dto/conversations.dto";
 import { CrmIntakeService } from "../crm/intake/crm-intake.service";
 import { CreateIntakeEventDto, UpdateLeadDetailsDto } from "../crm/intake/dto/intake.dto";
@@ -38,6 +39,7 @@ import { SuppliersService } from "../purchasing/suppliers.service";
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
 import { HandoverService } from "../site/handover.service";
 import { SiteService } from "../site/site.service";
+import { seedShowcaseInbox } from "./showcase-inbox";
 import { WarrantyService } from "../site/warranty.service";
 
 /**
@@ -738,6 +740,11 @@ class ShowcaseSeed {
       await this.stage("home · tasks", () => this.homeTasks());
       await this.stage("home · follow-ups", () => this.followUps());
       await this.stage("home · client replies", () => this.clientReplies());
+    }
+    if (!only || only.has("inbox")) {
+      // After the client replies above, so their messages arrive before auto replies are switched on.
+      this.log("── Team inbox: chats, WhatsApp templates, quick replies and auto replies");
+      await this.stage("inbox", () => this.inbox());
     }
     if (!only || only.has("operations")) {
       this.log("── Operations: sourcing, deliveries, stock");
@@ -2386,6 +2393,16 @@ class ShowcaseSeed {
           contact: scenario.client.mobile, displayName: scenario.client.displayName, bodyText: reply.text, metadata: { seed: "showcase" },
         })));
     }
+  }
+
+  /** The team inbox: chats with the showcase's clients (records only; nothing is delivered), templates, quick replies and auto replies. */
+  private async inbox() {
+    await seedShowcaseInbox({
+      workspaceId: this.w, owner: await this.actor(this.input.actorUserId), inbox: this.get(CrmInboxService),
+      transaction: (work) => this.db.tenantTransaction(this.w, this.input.actorUserId, (client) => work(client)),
+      staff: (role) => this.as(role), id: (key) => this.id("inbox:", key),
+      made: (label) => this.made(label), kept: (label) => this.kept(label), skip: (stage, reason) => this.skip(stage, reason),
+    });
   }
 
   /** Stages move forward while their checks pass, up to the stage the story leaves current. */
