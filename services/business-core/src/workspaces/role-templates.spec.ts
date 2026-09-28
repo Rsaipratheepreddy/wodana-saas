@@ -12,7 +12,7 @@ const seededPermissionCodes = new Set(
     .flatMap((file) => [...readFileSync(resolve(migrationsDir, file), "utf8").matchAll(/'([a-z_]+(?:\.[a-z_]+)+)'/g)].map((match) => match[1])),
 );
 const kitMigration = readFileSync(resolve(migrationsDir, "0130_firm_kit_role_templates.sql"), "utf8");
-const operationsMigration = readFileSync(resolve(migrationsDir, "0148_operations_v2.sql"), "utf8");
+const operationsMigration = readFileSync(resolve(migrationsDir, "0152_operations_v2.sql"), "utf8");
 const DELIVERY_TEMPLATES = ["buyer", "purchasing_approver", "storekeeper", "factory_lead", "qc_inspector"];
 const FINANCE_TEMPLATES = ["finance", "finance_approver"];
 
