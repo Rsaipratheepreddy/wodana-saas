@@ -305,7 +305,7 @@
 .wd-menu-item[data-disabled] { opacity: 0.45; cursor: default; }
 .wd-menu-item [data-tone="danger"] { color: var(--wd-danger); }
 .wd-modal-overlay, .wd-sheet-overlay { position: fixed; z-index: var(--wd-z-overlay); inset: 0; display: flex; align-items: center; justify-content: center; padding: var(--wd-space-4); background: var(--wd-scrim); overscroll-behavior: contain; backdrop-filter: blur(var(--wd-space-2)); }
-.wd-modal { inline-size: min(32rem, 100%); max-block-size: min(42rem, calc(100dvh - 2rem)); border: 1px solid color-mix(in srgb, var(--wd-line-strong) 72%, transparent); border-radius: var(--wd-radius-lg); overflow: hidden; background: var(--wd-surface); box-shadow: var(--wd-shadow-2); }
+.wd-modal { inline-size: min(36rem, 100%); max-block-size: min(45rem, calc(100dvh - 2rem)); border: 1px solid color-mix(in srgb, var(--wd-line-strong) 72%, transparent); border-radius: var(--wd-radius-lg); overflow: hidden; background: var(--wd-surface); box-shadow: var(--wd-shadow-2); }
 /* Only transient surfaces get a quiet frosted treatment; working tables stay opaque. */
 @supports (backdrop-filter: blur(1px)) {
   .wd-popover, .wd-tooltip, .wd-modal {
@@ -329,15 +329,27 @@
 .wd-modal[data-exiting] { animation: wd-modal-in var(--wd-duration-fast) reverse var(--wd-ease-standard); }
 @keyframes wd-fade-in { from { opacity: 0; } }
 @keyframes wd-modal-in { from { opacity: 0; transform: translateY(8px) scale(0.985); } }
+/* Dialogs and drawers share one rhythm: a 24px frame, the title on top, the body scrolling between,
+   and the actions at the bottom-end (the primary action last, Cancel before it). */
 .wd-dialog, .wd-sheet-dialog { display: flex; flex-direction: column; max-block-size: inherit; outline: none; }
-.wd-dialog > header, .wd-sheet-dialog > header { min-block-size: 3.75rem; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-4); padding: var(--wd-space-4); border-block-end: 1px solid var(--wd-line); }
-.wd-dialog > header.wd-dialog-minimal-header { min-block-size: 0; justify-content: flex-end; padding: var(--wd-space-1-5) var(--wd-space-2) 0; border-block-end: 0; }
+.wd-dialog > header, .wd-sheet-dialog > header { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-4); padding: var(--wd-space-5) var(--wd-space-6) var(--wd-space-3); }
+.wd-sheet-dialog > header { padding-block-end: var(--wd-space-4); border-block-end: 1px solid var(--wd-line); }
+.wd-dialog > header > .wd-icon-button, .wd-sheet-dialog > header > .wd-icon-button { flex: none; margin-block-start: calc(var(--wd-space-1) * -1); margin-inline-end: calc(var(--wd-space-2) * -1); }
+.wd-dialog > header.wd-dialog-minimal-header { min-block-size: 0; justify-content: flex-end; padding: var(--wd-space-2) var(--wd-space-3) 0; border-block-end: 0; }
 .wd-dialog:has(> .wd-dialog-minimal-header) > .wd-dialog-body { padding-block-start: var(--wd-space-1); }
-.wd-dialog h2, .wd-sheet-dialog h2 { margin: 0; font-size: var(--wd-text-md); }
-.wd-dialog header p, .wd-sheet-dialog header p { margin: var(--wd-space-1) 0 0; color: var(--wd-muted); font-size: var(--wd-text-xs); }
-.wd-dialog-body, .wd-sheet-body { min-block-size: 0; overflow: auto; padding: var(--wd-space-4); }
-.wd-dialog > footer, .wd-sheet-dialog > footer { padding: var(--wd-space-3) var(--wd-space-4); border-block-start: 1px solid var(--wd-line); }
-.wd-dialog-actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
+.wd-dialog h2, .wd-sheet-dialog h2 { margin: 0; color: var(--wd-ink); font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); }
+.wd-dialog header p, .wd-sheet-dialog header p { margin: var(--wd-space-1-5) 0 0; color: var(--wd-muted); font-size: var(--wd-text-sm); line-height: var(--wd-leading-ui); }
+.wd-dialog-body, .wd-sheet-body { flex: 1 1 auto; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: var(--wd-space-3) var(--wd-space-6) var(--wd-space-6); }
+.wd-sheet-body { padding-block-start: var(--wd-space-5); }
+.wd-dialog > footer, .wd-sheet-dialog > footer { flex: none; padding: var(--wd-space-4) var(--wd-space-6); border-block-start: 1px solid var(--wd-line); background: var(--wd-surface); }
+.wd-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+.wd-dialog-actions > .wd-button { flex: none; }
+@media (max-width: 36rem) {
+  .wd-dialog > header, .wd-sheet-dialog > header { padding-inline: var(--wd-space-4); }
+  .wd-dialog-body, .wd-sheet-body { padding-inline: var(--wd-space-4); }
+  .wd-dialog > footer, .wd-sheet-dialog > footer { padding-inline: var(--wd-space-4); }
+  .wd-dialog-actions > .wd-button { flex: 1 1 0; min-block-size: 2.75rem; }
+}
 .wd-sheet-overlay { align-items: stretch; justify-content: flex-end; padding: 0; background: color-mix(in srgb, var(--wd-scrim) 40%, transparent); }
 .wd-sheet-overlay-start { justify-content: flex-start; }
 .wd-sheet-overlay-bottom { align-items: flex-end; justify-content: stretch; }
@@ -359,6 +371,9 @@
 
 /* Forms and property editing */
 .wd-form, .wd-field-stack { display: grid; gap: var(--wd-space-5); }
+/* Two fields side by side where there is room; one column in a narrow dialog or on a phone. */
+.wd-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: var(--wd-space-5) var(--wd-space-4); align-items: start; }
+.wd-form > .wd-fieldset + .wd-fieldset { margin-block-start: var(--wd-phi-2); }
 .wd-field { display: grid; gap: var(--wd-space-1-5); min-inline-size: 0; align-content: start; }
 .wd-field-label { color: var(--wd-ink-soft); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); letter-spacing: 0; }
 .wd-field-label > span { color: var(--wd-danger); }
@@ -493,7 +508,7 @@
 .wd-segmented button[aria-checked="true"] { background: var(--wd-color-surface); color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); box-shadow: 0 1px 3px rgb(0 0 0 / 10%), inset 0 0 0 1px var(--wd-color-structural-divider); }
 .wd-repeatable, .wd-repeatable > div { display: grid; gap: var(--wd-space-2); }
 .wd-repeatable-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--wd-space-2); align-items: start; }
-.wd-fieldset { display: grid; gap: var(--wd-space-3); border: 0; padding: 0; margin: 0; }
+.wd-fieldset { display: grid; gap: var(--wd-space-4); border: 0; padding: 0; margin: 0; min-inline-size: 0; }
 .wd-fieldset legend { padding: 0; color: var(--wd-ink); font-weight: 650; }
 .wd-fieldset > p { margin: calc(var(--wd-space-2) * -1) 0 0; color: var(--wd-muted); font-size: var(--wd-text-xs); }
 .wd-validation-summary { border-inline-start: 3px solid var(--wd-danger); padding: var(--wd-space-3); background: var(--wd-danger-soft); color: var(--wd-danger); }

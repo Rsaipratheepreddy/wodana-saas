@@ -664,7 +664,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           {bulkInvitationResult.failedEmails.length ? <Callout title={bulkInvitationResult.failedEmails.length === 1 ? t("1 invitation failed") : t("{count} invitations failed", { count: bulkInvitationResult.failedEmails.length })} tone="danger">
             {bulkInvitationResult.failedEmails.length > 5 ? t("{emails} and {count} more", { emails: bulkInvitationResult.failedEmails.slice(0, 5).join(", "), count: bulkInvitationResult.failedEmails.length - 5 }) : bulkInvitationResult.failedEmails.join(", ")}
           </Callout> : null}
-        </div> : <Form className={styles.form} data-wd-density="compact" id="invite-member-form" noValidate onSubmit={createInvitation}>
+        </div> : <Form className={styles.form} id="invite-member-form" noValidate onSubmit={createInvitation}>
           <ValidationSummary errors={inviteErrors} />
           {inviteFailure ? <Callout title={t("Could not create invitation")} tone="danger">{inviteFailure}</Callout> : null}
           <TextInput isRequired label={t("Full name")} onChange={setInviteName} placeholder={t("e.g. Maya Thomas")} value={inviteName} />
@@ -682,7 +682,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         onOpenChange={(open) => { if (!open && !isSavingMember) { setMemberReviewOpen(false); setEditingMember(null); } }}
         title={t("Edit member access")}
       >
-        {editingMember ? <Form className={styles.form} data-wd-density="compact" id="edit-member-form" noValidate onSubmit={reviewMember}>
+        {editingMember ? <Form className={styles.form} id="edit-member-form" noValidate onSubmit={reviewMember}>
           {editFailure ? <Callout title={t("Could not save member")} tone="danger">{editFailure}</Callout> : null}
           <div className={styles.memberPreview}><Avatar name={editingMember.displayName} preset={editingMember.avatarPreset ?? "auto"} roles={[...editingMember.roles, ...(editingMember.inheritedRoles ?? [])]} seed={editingMember.userId} size="lg" src={editingMember.photoUrl} /><span><strong>{editingMember.displayName}</strong><small>{editingMember.email}</small></span></div>
           <RoleChoices onChange={setEditRoles} roles={assignableRoles} selected={editRoles} />

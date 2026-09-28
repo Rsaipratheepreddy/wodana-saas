@@ -68,14 +68,12 @@
 .saveBar { position: sticky; inset-block-end: 0; z-index: var(--wd-z-sticky); display: flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); padding-block: var(--wd-space-3); background: var(--wd-color-floating-surface); backdrop-filter: blur(var(--wd-glass-blur)); }
 .saveBar > span { margin-inline-end: auto; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; }
 
-.form { display: grid; gap: var(--wd-space-3); }
-.formColumns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
+.form { display: grid; }
+.formColumns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--wd-space-5) var(--wd-space-4); }
 .form :global(.wd-field) { gap: var(--wd-space-1-5); }
-.form :global(.wd-field-label) { font-size: var(--wd-text-xs); }
 .form :global(.wd-input-group) { min-block-size: var(--wd-control-md); border-radius: var(--wd-radius-sm); box-shadow: none; }
-.form :global(.wd-input) { font-size: var(--wd-text-xs); }
 .form :global(.wd-textarea-frame) { border-radius: var(--wd-radius-sm); box-shadow: none; }
-.form :global(.wd-textarea) { min-block-size: 4rem; padding: var(--wd-space-3) var(--wd-space-3); font-size: var(--wd-text-xs); }
+.form :global(.wd-textarea) { min-block-size: 4rem; padding: var(--wd-space-3) var(--wd-space-3); }
 
 @media (max-width: 64rem) {
   .layout { grid-template-columns: minmax(0, 1fr); gap: var(--wd-phi-3); }
