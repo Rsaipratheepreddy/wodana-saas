@@ -44,8 +44,11 @@ export type ClaimStatus = "open" | "covered" | "not_covered" | "chargeable";
 export type WarrantyClaim = {
   id: string; number: number; raisedOn: string; raisedByName: string; channel: "phone" | "email" | "visit" | "message" | "portal"; description: string; areaId: string | null; lineId: string | null;
   lineTitle: string | null; status: ClaimStatus; decisionNote: string; decidedByName: string | null; snagId: string | null; snagNumber: number | null; snagStatus: string | null; version: number;
+  /** A chargeable claim's variation: its number and state, and the label it was applied as (VO-n). */
+  variationId?: string | null; variationNumber?: number | null; variationStatus?: string | null; variationApplied?: string | null;
 };
 export type WarrantyState = {
   items: WarrantyItem[]; claims: WarrantyClaim[]; lines: Array<{ id: string; title: string }>; areas: Array<{ id: string; name: string }>; today: string; canRecord: boolean; canManage: boolean;
+  caseId?: string | null; baselineQuoteId?: string | null;
 };
 export type WarrantySettings = { months: Record<Supply, number>; canManage: boolean };

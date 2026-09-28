@@ -8,6 +8,7 @@ import { seedDefaultNotificationTemplates } from "../notifications/default-templ
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
 import { HandoverService } from "../site/handover.service";
 import { SiteService } from "../site/site.service";
+import { WarrantyService } from "../site/warranty.service";
 import { readHomeOverview } from "../workspaces/home-overview";
 import { decideClientUpdate, processClientUpdateDrafts } from "./client-updates";
 import { processMaterialsWaiting, processMilestonesDue, processWeeklySummaries } from "./delivery-reminders";
@@ -31,6 +32,7 @@ type World = {
   core: (userId: string, permissions?: string[]) => ProjectCoreService; work: (userId: string, permissions?: string[]) => ProjectWorkService;
   overview: (userId: string, permissions?: string[]) => ProjectOverviewService; money: (userId: string, permissions?: string[]) => ProjectMoneyService;
   site: (userId: string, permissions?: string[]) => SiteService; handover: (userId: string, permissions?: string[]) => HandoverService;
+  warranty: (userId: string, permissions?: string[]) => WarrantyService;
   version: () => Promise<number>; notices: (code: string) => Promise<Array<{ recipient: string; subject: string; body: string; link: string }>>;
 };
 
@@ -106,6 +108,7 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
         money: (userId, permissions = EVERYTHING) => new ProjectMoneyService(access(userId, permissions)),
         site: (userId, permissions = EVERYTHING) => new SiteService(access(userId, permissions)),
         handover: (userId, permissions = EVERYTHING) => new HandoverService(access(userId, permissions)),
+        warranty: (userId, permissions = EVERYTHING) => new WarrantyService(access(userId, permissions)),
         version: async () => (await client.query<{ version: number }>("SELECT version FROM delivery_projects WHERE workspace_id=$1 AND id=$2", [workspaceId, projectId])).rows[0].version,
         notices: async (code: string) => (await client.query<{ recipient: string; subject: string; body: string; link: string }>(
           `SELECT recipient_id AS recipient, subject, body, deep_link AS link FROM notifications WHERE workspace_id=$1 AND event_type=$2 AND channel='in_app' ORDER BY created_at`, [workspaceId, code])).rows,
@@ -338,6 +341,25 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
       const [notice] = await w.notices("project.over_ordered");
       expect(notice).toMatchObject({ recipient: w.designer, link: `/workspace/purchasing/orders?order=${order}` });
       expect(notice.body).toBe("Kitchen cabinets: 4.5 m ordered (PO-0007), 3 now needed");
+    });
+  });
+
+  it("D-27: a chargeable warranty claim goes on as a variation of the project, linked both ways", async () => {
+    await world(async (w) => {
+      const warranty = w.warranty(w.manager);
+      const claim = randomUUID();
+      let state = await warranty.command(actor, w.workspaceId, w.projectId, { action: "record_claim", id: claim, raisedOn: w.today, raisedByName: "Maya", channel: "phone", description: "Hinge replaced after misuse" });
+      let row = state.claims.find((item) => item.id === claim)!;
+      await expect(warranty.command(actor, w.workspaceId, w.projectId, { action: "link_variation", claimId: claim, quoteId: randomUUID(), version: row.version })).rejects.toThrow(/Only a chargeable claim/);
+      state = await warranty.command(actor, w.workspaceId, w.projectId, { action: "decide_claim", claimId: claim, decision: "chargeable", note: "Misuse: new hinge at cost", version: row.version });
+      row = state.claims.find((item) => item.id === claim)!;
+      expect(state).toMatchObject({ caseId: w.caseId, baselineQuoteId: expect.any(String) });
+      const variation = randomUUID();
+      await w.client.query("INSERT INTO commercial_quotes(workspace_id,case_id,id,sort_order,number,kind,round,status,title,currency) VALUES($1,$2,$3,1,2,'variation','main','draft','Hinge','AED')",
+        [w.workspaceId, w.caseId, variation]);
+      await expect(warranty.command(actor, w.workspaceId, w.projectId, { action: "link_variation", claimId: claim, quoteId: randomUUID(), version: row.version })).rejects.toThrow(/variation of this project/);
+      state = await warranty.command(actor, w.workspaceId, w.projectId, { action: "link_variation", claimId: claim, quoteId: variation, version: row.version });
+      expect(state.claims.find((item) => item.id === claim)).toMatchObject({ variationId: variation, variationNumber: 2, variationStatus: "draft", variationApplied: null });
     });
   });
 

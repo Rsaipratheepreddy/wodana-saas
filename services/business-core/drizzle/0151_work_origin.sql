@@ -9,3 +9,6 @@ INSERT INTO notification_templates (workspace_id, code, channel, locale, version
 SELECT workspace.id, 'project.over_ordered', 'in_app', 'en', 1, 'approved', 'Ordered more than {{actor}} leaves · {{title}}', '{{note}}', '["title", "clientName", "actor", "note"]'::jsonb, now()
   FROM workspaces workspace
 ON CONFLICT (workspace_id, code, channel, locale, version_number) DO NOTHING;
+--> statement-breakpoint
+-- A chargeable warranty claim becomes a variation (priced and accepted like any change); the claim keeps which.
+ALTER TABLE warranty_claims ADD COLUMN variation_quote_id varchar(64);

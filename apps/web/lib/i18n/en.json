@@ -10234,5 +10234,9 @@
   "Arriving": "Arriving",
   "1 line to receive": "1 line to receive",
   "{count} lines to receive": "{count} lines to receive",
-  "Nothing on its way": "Nothing on its way"
+  "Nothing on its way": "Nothing on its way",
+  "With the client": "With the client",
+  "Charged as {label}": "Charged as {label}",
+  "Variation V{number} · {status}": "Variation V{number} · {status}",
+  "Start variation": "Start variation"
 }
