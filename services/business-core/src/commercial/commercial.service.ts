@@ -3,7 +3,7 @@ import { Dec } from "../catalog-core/decimal";
 import { copyBuilderData } from "../quotation/quote-revision";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { releasePhaseOnDealApproval, winOpportunityOnAcceptance } from "./quote-acceptance";
-import { noticeReceiptStep } from "./commercial-notices";
+import { noticeReceiptStep, permissionHolderNames } from "./commercial-notices";
 import { effectivePortalBrand } from "./effective-brand";
 import { newQuoteDefaults } from "./quote-defaults";
 import { tellClients } from "../client-portal/portal-notices";
@@ -510,6 +510,15 @@ export class CommercialService {
             user.userId,
             "portal.manage",
           ),
+          canManageContacts:
+            (await this.access.hasPermission(client, workspaceId, user.userId, "portal.manage")) ||
+            (await this.access.hasPermission(client, workspaceId, user.userId, "portal.contacts.manage")),
+          stepHolders: {
+            verifyAgreement: await permissionHolderNames(client, workspaceId, "commercial.approve"),
+            verifyPayment: await permissionHolderNames(client, workspaceId, "commercial.finance.verify"),
+            approveDeal: await permissionHolderNames(client, workspaceId, "commercial.deal.approve"),
+            startProject: await permissionHolderNames(client, workspaceId, "projects.manage"),
+          },
         };
       },
     );

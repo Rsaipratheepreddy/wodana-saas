@@ -20,6 +20,25 @@ export async function permissionHolders(db: Db, workspaceId: string, permission:
       LIMIT $3`, [workspaceId, permission, limit])).rows.map((row) => row.userId);
 }
 
+/**
+ * The names of a few people who hold a permission, owners and administrators last (the team member who
+ * does this every day is the one to ask), so a screen can say who holds a step.
+ */
+export async function permissionHolderNames(db: Db, workspaceId: string, permission: string, limit = 3): Promise<string[]> {
+  return (await db.query<{ name: string }>(
+    `SELECT holder.name FROM (
+       SELECT DISTINCT ON (membership.id) coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS name,
+              bool_or(role.code IN ('owner', 'administrator')) OVER (PARTITION BY membership.id) AS admin
+         FROM workspace_memberships membership
+         JOIN users account ON account.id = membership.user_id AND account.status = 'active'
+         JOIN effective_member_roles assigned ON assigned.membership_id = membership.id AND assigned.workspace_id = membership.workspace_id
+         JOIN roles role ON role.id = assigned.role_id
+         JOIN role_permissions granted ON granted.role_id = assigned.role_id
+         JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = $2
+        WHERE membership.workspace_id = $1 AND membership.status = 'active'
+     ) holder ORDER BY holder.admin, lower(holder.name) LIMIT $3`, [workspaceId, permission, limit])).rows.map((row) => row.name);
+}
+
 /** "AED 12,500.00" style: the currency code and the exact amount in its minor units. */
 export function amountText(amount: number | string, currency: string | undefined) {
   const code = currency?.trim() || "";

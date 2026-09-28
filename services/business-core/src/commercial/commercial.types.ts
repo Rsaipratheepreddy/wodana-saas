@@ -751,6 +751,10 @@ export type CommercialState = {
   canEditCosts?: boolean;
   canRelease: boolean;
   canManagePortal: boolean;
+  /** Names the case's client contacts and decision-makers (portal managers and whoever sends quotes). */
+  canManageContacts?: boolean;
+  /** Who holds each step after the client accepts (a few names each), so people who can't act see who can. */
+  stepHolders?: { verifyAgreement: string[]; verifyPayment: string[]; approveDeal: string[]; startProject: string[] };
   portalSlug: string | null;
   portalBrand?: PortalBrand;
   /** The firm's proposal kit, when the proposal screen has loaded it. */

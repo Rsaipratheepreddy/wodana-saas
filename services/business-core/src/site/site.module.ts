@@ -6,5 +6,5 @@ import { HandoverService } from "./handover.service";
 import { SiteService } from "./site.service";
 import { WarrantyService } from "./warranty.service";
 
-@Module({ imports: [WorkspacesModule], controllers: [SiteController, WarrantySettingsController], providers: [SiteService, HandoverService, WarrantyService, BrandAssetStorageService] })
+@Module({ imports: [WorkspacesModule], controllers: [SiteController, WarrantySettingsController], providers: [SiteService, HandoverService, WarrantyService, BrandAssetStorageService], exports: [SiteService] })
 export class SiteModule {}

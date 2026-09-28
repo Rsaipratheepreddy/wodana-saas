@@ -1,0 +1,73 @@
+import { randomUUID } from "node:crypto";
+import { Pool, type PoolClient } from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { waitingFor, type ApprovalContext } from "./approval-sources";
+
+// Opt-in: PROJECT_REPOSITORY_TEST_DATABASE_URL must point at a local, migrated database with a
+// superuser role. Every test runs in a transaction that is rolled back.
+const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
+const integration = describe.skipIf(!databaseUrl);
+
+integration("waiting for you, across modules", () => {
+  let pool: Pool;
+  beforeAll(() => {
+    const url = new URL(databaseUrl!);
+    if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) throw new Error("Tests require a local database");
+    pool = new Pool({ connectionString: url.toString() });
+  });
+  afterAll(() => pool.end());
+
+  async function world(work: (client: PoolClient, ids: { workspaceId: string; buyer: string; approver: string; site: string; projectId: string }) => Promise<void>) {
+    const client = await pool.connect();
+    const workspaceId = randomUUID(), buyer = randomUUID(), approver = randomUUID(), site = randomUUID(), projectId = randomUUID(), vendor = randomUUID();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("SELECT set_config('app.current_workspace_id',$1,true)", [workspaceId]);
+      await client.query("INSERT INTO workspaces(id,name,slug,default_currency,created_by) VALUES($1,'Firm',$2,'AED',$3)", [workspaceId, `firm-${workspaceId.slice(0, 8)}`, approver]);
+      await client.query("INSERT INTO workspace_vendors(workspace_id,id,code,display_name,created_by,updated_by) VALUES($1,$2,'V1','Al Noor Timber',$3,$3)", [workspaceId, vendor, buyer]);
+      await client.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,created_by,reference,quote_id,started_at) VALUES($1,$2,$3,'Villa 12',$4,'P-12',$5,now())",
+        [projectId, workspaceId, randomUUID(), approver, randomUUID()]);
+      await client.query(`INSERT INTO purchase_orders(id,workspace_id,number,legal_entity_id,vendor_id,currency,payment_terms,created_by,submitted_by,status,total)
+        VALUES($1,$2,'PO-0042',$3,$4,'AED','on_delivery',$5,$5,'pending_approval',1234.5)`, [randomUUID(), workspaceId, randomUUID(), vendor, buyer]);
+      await client.query("INSERT INTO site_reports(id,workspace_id,project_id,report_date,author_id,status,submitted_at) VALUES($1,$2,$3,'2026-09-28',$4,'submitted',now())",
+        [randomUUID(), workspaceId, projectId, site]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      await work(client, { workspaceId, buyer, approver, site, projectId });
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+  }
+  const context = (ids: { workspaceId: string }, userId: string, permissions: string[], managed: string[] = []): ApprovalContext => ({
+    workspaceId: ids.workspaceId, userId, displayName: "Someone", membershipId: null, currency: "AED",
+    can: async (permission) => permissions.includes(permission), managedProjects: new Set(managed),
+  });
+
+  it("reads every source, and lists what each person may decide", async () => {
+    await world(async (client, ids) => {
+      // Everything readable at once: every query runs.
+      const everything = await waitingFor(client, context(ids, ids.approver, [
+        "commercial.estimate", "commercial.approve", "commercial.finance.verify", "commercial.deal.approve", "purchasing.approve", "factory.approve",
+        "projects.manage", "stock.adjust", "payables.approve", "payables.manage",
+      ]));
+      expect(everything.rows.map((row) => row.kind).sort()).toEqual(["order", "site_report"]);
+      const order = everything.rows.find((row) => row.kind === "order")!;
+      expect(order).toMatchObject({ title: "PO-0042", subject: "Al Noor Timber", amount: "1234.5000", currency: "AED", canDecide: true,
+        decide: { approve: "approve", other: "return" } });
+      expect(order.href).toMatch(/^\/workspace\/purchasing\/orders\?order=/);
+      expect(everything.count).toBe(2);
+      expect(everything.counts).toMatchObject({ orders: 1, site: 1, quotes: 0 });
+
+      // The buyer who raised the order sees it isn't theirs to approve (if they could approve at all).
+      const buyer = await waitingFor(client, context(ids, ids.buyer, ["purchasing.approve"]));
+      expect(buyer.rows).toEqual([expect.objectContaining({ kind: "order", canDecide: false, reason: expect.stringMatching(/your own/) })]);
+      expect(buyer.count).toBe(0);
+
+      // Without the permission, nothing; a named project manager sees their project's site report.
+      expect((await waitingFor(client, context(ids, ids.site, []))).rows).toEqual([]);
+      const manager = await waitingFor(client, context(ids, ids.approver, [], [ids.projectId]));
+      expect(manager.rows).toEqual([expect.objectContaining({ kind: "site_report", canDecide: true, project: expect.objectContaining({ reference: "P-12" }) })]);
+    });
+  });
+});

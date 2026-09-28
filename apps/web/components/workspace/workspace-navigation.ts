@@ -401,7 +401,8 @@ export function homeTabs(modules: WorkspaceModuleDefinition[]): { id: string; la
   return [
     { id: "overview", label: tKey("Overview"), href: "/workspace" },
     ...(projectTasks || allowed.has("follow-ups") ? [{ id: "tasks", label: tKey("Tasks"), href: projectTasks ? "/workspace/tasks" : "/workspace/crm/follow-ups?view=activity" }] : []),
-    ...(allowed.has("projects-overview") || allowed.has("pre-projects") ? [{ id: "approvals", label: tKey("Approvals"), href: "/workspace/approvals" }] : []),
+    // Everyone has approvals waiting somewhere (quotes, payments, orders, bills, reports): the list is theirs.
+    { id: "approvals", label: tKey("Approvals"), href: "/workspace/approvals" },
   ];
 }
 export const HOME_ROUTES = ["/workspace", "/workspace/tasks", "/workspace/approvals"];

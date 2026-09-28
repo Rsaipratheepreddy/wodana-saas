@@ -1,0 +1,5 @@
+.list { min-inline-size: 0; display: grid; gap: var(--wd-space-3); }
+.what { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.kind { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); }
+.actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); inline-size: 100%; }
+.muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
