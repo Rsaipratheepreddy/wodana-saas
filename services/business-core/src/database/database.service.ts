@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
+import { viewAsReadOnly } from "../auth/view-as/view-as.context";
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
@@ -34,15 +35,20 @@ export class DatabaseService implements OnModuleDestroy {
     text: string,
     values: unknown[] = [],
   ): Promise<QueryResult<Row>> {
+    // While someone views as another person, even a single statement runs in a transaction that is discarded.
+    if (viewAsReadOnly()) return this.transaction((client) => client.query<Row>(text, values));
     return this.pool.query<Row>(text, values);
   }
 
   async transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
+    // View as changes nothing, down to the database: its transactions run and are then rolled back, so a read
+    // that also writes (a default row made on first use, a "last seen", an audit of a download) leaves no trace.
+    const discard = viewAsReadOnly();
     try {
       await client.query("BEGIN");
       const result = await work(client);
-      await client.query("COMMIT");
+      await client.query(discard ? "ROLLBACK" : "COMMIT");
       return result;
     } catch (error) {
       await client.query("ROLLBACK");

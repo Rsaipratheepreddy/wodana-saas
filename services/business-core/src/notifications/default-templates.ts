@@ -333,6 +333,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "ai.credits_low", channel: "email", subject: "AI credits are running low", body: "Your workspace has {{balance}} AI credits left.\n\nContact support to top up before they run out. Woddy and AI suggestions pause when credits are used up.", variables: ["balance"] },
   { code: "ai.credits_exhausted", channel: "in_app", subject: "AI credits are used up", body: "Woddy and AI suggestions are paused. Contact support to top up.", variables: ["balance"] },
   { code: "ai.credits_exhausted", channel: "email", subject: "AI credits are used up", body: "Your workspace has used all of its AI credits.\n\nWoddy and AI suggestions are paused until credits are topped up. Contact support to top up.", variables: ["balance"] },
+  // View as (auth/view-as): the person an owner or administrator viewed as, once the view ends (a workspace setting, on by default).
+  { code: "workspace.viewed_as", channel: "in_app", subject: "{{viewerName}} viewed as you", body: "Read-only, {{minutes}} min from {{startedAt}}. Security lists every view.", variables: ["viewerName", "minutes", "startedAt"] },
 ];
 
 export async function seedDefaultNotificationTemplates(db: Db, workspaceId: string) {

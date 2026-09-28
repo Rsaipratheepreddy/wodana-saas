@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { PoolClient } from "pg";
 import { ActorUser, RequestActor } from "../auth/actor";
 import { IdentityService } from "../auth/identity.service";
+import { viewAsPermissionsFor } from "../auth/view-as/view-as.context";
 import { DatabaseService } from "../database/database.service";
 import { tenantModuleForPermission } from "./tenant-operations.domain";
 
@@ -57,7 +58,8 @@ export class WorkspaceAccessService {
         [workspaceId, actorUser.userId, permitted],
       );
 
-      if (!result.rows[0]?.granted) {
+      const viewing = viewAsPermissionsFor(workspaceId, actorUser.userId);
+      if (!result.rows[0]?.granted || (viewing && !permitted.some((permission) => viewing.has(permission)))) {
         throw new ForbiddenException(`Any permission required: ${permissions.join(", ")}`);
       }
       return work(client, actorUser);
@@ -90,7 +92,9 @@ export class WorkspaceAccessService {
         [workspaceId, actorUser.userId, permitted],
       );
 
-      if (result.rows[0]?.granted !== new Set(permissions).size) {
+      const viewing = viewAsPermissionsFor(workspaceId, actorUser.userId);
+      if (result.rows[0]?.granted !== new Set(permissions).size
+        || (viewing && !permissions.every((permission) => viewing.has(permission)))) {
         throw new ForbiddenException(`Permissions required: ${permissions.join(", ")}`);
       }
       return work(client, actorUser);
@@ -105,6 +109,9 @@ export class WorkspaceAccessService {
   ): Promise<boolean> {
     const permitted = await this.effectivePermissions(client, workspaceId, [permission]);
     if (!permitted.length) return false;
+    // Viewing as someone: what the view allows (their permissions narrowed to the viewer's), or a role preview's.
+    const viewing = viewAsPermissionsFor(workspaceId, userId);
+    if (viewing && !viewing.has(permission)) return false;
     const result = await client.query(
       `SELECT 1
          FROM workspace_memberships membership

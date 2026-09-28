@@ -38,6 +38,8 @@ export class IdentityService {
   constructor(private readonly database: DatabaseService) {}
 
   async resolveActor(actor: RequestActor, client?: PoolClient): Promise<ActorUser> {
+    // Viewing as someone reads as them, and leaves no "last sign-in" behind for either person.
+    if (actor.viewAs) return { ...actor, userId: actor.viewAs.effectiveUserId };
     const query = <Row extends QueryResultRow = QueryResultRow>(
       text: string,
       values: unknown[] = [],
@@ -88,6 +90,9 @@ export class IdentityService {
 
   async getProfile(actor: RequestActor) {
     const actorUser = await this.resolveActor(actor);
+    // Viewing as someone: their name, roles and permissions (narrowed to the viewer's) in that one workspace;
+    // the viewer keeps their own language and time zone.
+    const viewAs = actor.viewAs ?? null;
     const user = await this.database.query<{
       id: string;
       primaryEmail: string;
@@ -102,6 +107,12 @@ export class IdentityService {
        FROM users WHERE id = $1`,
       [actorUser.userId],
     );
+    const viewer = viewAs
+      ? await this.database.query<{ preferredLocale: string; preferredTimezone: string }>(
+        `SELECT preferred_locale AS "preferredLocale", preferred_timezone AS "preferredTimezone" FROM users WHERE id = $1`,
+        [viewAs.viewerUserId],
+      )
+      : null;
     const platformAccess = await this.database.query<{ role: string }>(
       `SELECT role FROM platform_administrators
        WHERE user_id = $1 AND status = 'active'`,
@@ -162,7 +173,7 @@ export class IdentityService {
     // A suspended organization stays readable (changes are refused by the write-block guard).
     const readable = (status: string) => status === "active" || status === "suspended";
     const unavailableOrganizations = memberships.rows
-      .filter((membership) => !readable(membership.workspaceStatus))
+      .filter((membership) => !viewAs && !readable(membership.workspaceStatus))
       .map((membership) => ({
         workspaceId: membership.workspaceId,
         workspaceName: membership.workspaceName,
@@ -171,20 +182,26 @@ export class IdentityService {
         accountName: membership.accountName,
       }));
     const withRoles = [];
-    for (const membership of memberships.rows.filter((item) => readable(item.workspaceStatus))) {
+    for (const membership of memberships.rows.filter((item) => readable(item.workspaceStatus)
+      && (!viewAs || item.workspaceId === viewAs.workspaceId))) {
       const tenantAccess = await this.database.tenantTransaction(
         membership.workspaceId,
         actorUser.userId,
         async (client) => {
-          const roles = await client.query<{ code: string }>(
-            `SELECT role.code
-             FROM effective_member_roles assigned
-             JOIN roles role ON role.id = assigned.role_id
-             WHERE assigned.membership_id = $1
-             ORDER BY role.code`,
-            [membership.id],
-          );
-          const permissions = await client.query<{ code: string }>(
+          const roles = viewAs?.kind === "role"
+            ? await client.query<{ code: string }>(`SELECT code FROM roles WHERE workspace_id = $1 AND id = $2`,
+              [membership.workspaceId, viewAs.subjectRoleId])
+            : await client.query<{ code: string }>(
+              `SELECT role.code
+               FROM effective_member_roles assigned
+               JOIN roles role ON role.id = assigned.role_id
+               WHERE assigned.membership_id = $1
+               ORDER BY role.code`,
+              [membership.id],
+            );
+          const permissions = viewAs
+            ? { rows: [...viewAs.permissions].map((code) => ({ code })) }
+            : await client.query<{ code: string }>(
             `SELECT DISTINCT permission.code
              FROM effective_member_roles assigned
              JOIN role_permissions granted ON granted.role_id = assigned.role_id
@@ -270,7 +287,7 @@ export class IdentityService {
       });
     }
 
-    const pendingInvitations = await this.database.actorTransaction(
+    const pendingInvitations = viewAs ? { rows: [], rowCount: 0 } : await this.database.actorTransaction(
       actorUser.userId,
       (client) => client.query<{
         id: string;
@@ -294,12 +311,23 @@ export class IdentityService {
 
     return {
       ...user.rows[0],
-      platformRole: platformAccess.rows[0]?.role ?? null,
+      ...(viewer?.rows[0] ?? {}),
+      platformRole: viewAs ? null : platformAccess.rows[0]?.role ?? null,
       identity: { provider: actor.provider, subject: actor.subject },
       memberships: withRoles,
       unavailableOrganizations,
       pendingInvitations: pendingInvitations.rows,
       nextAction: deriveAuthBootstrapNextAction(withRoles, pendingInvitations.rowCount ?? 0),
+      viewAs: viewAs ? {
+        sessionId: viewAs.sessionId,
+        kind: viewAs.kind,
+        workspaceId: viewAs.workspaceId,
+        subjectName: viewAs.subjectName,
+        subjectRoleLabel: viewAs.subjectRoleLabel,
+        startedAt: viewAs.startedAt.toISOString(),
+        expiresAt: viewAs.expiresAt.toISOString(),
+        returnPath: viewAs.returnPath,
+      } : null,
     };
   }
 }

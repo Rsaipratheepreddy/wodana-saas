@@ -7,6 +7,8 @@ import { createHash } from "node:crypto";
 import { PoolClient } from "pg";
 import { DatabaseService } from "../../database/database.service";
 import { RequestActor } from "../../auth/actor";
+import { currentViewAs } from "../../auth/view-as/view-as.context";
+import { privateNoticesRemoved } from "../../auth/view-as/view-as.domain";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { ApproveTemplateDto, ClaimNotificationJobsDto, ClaimPushReceiptsDto, CreateNotificationPolicyDto, CreateNotificationTemplateDto, EnqueueNotificationDto, NotificationPolicyStatusDto, NotificationResultDto, PushPreferenceDto, PushReceiptResultDto, RecordDeviceConsentDto, RegisterDeviceEndpointDto, RevokeDeviceEndpointDto, UpsertPreferenceDto } from "./dto/notifications.dto";
@@ -179,7 +181,9 @@ export class CrmNotificationsService {
         if (!origin || typeof link !== "string" || !link.startsWith("/workspace/")) return null;
         try { return new URL(link, origin).toString(); } catch { return null; }
       };
-      return result.rows.map((row) => ({ ...row, webUrl: webUrl(row.deepLink) }));
+      // Viewing as someone: their notices, less what stays private (views of them, and leave reasons).
+      const rows = currentViewAs() ? privateNoticesRemoved(result.rows) : result.rows;
+      return rows.map((row) => ({ ...row, webUrl: webUrl(row.deepLink) }));
     });
   }
   readAll(actor: RequestActor, workspaceId: string) {

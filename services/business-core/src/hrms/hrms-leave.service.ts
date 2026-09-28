@@ -6,6 +6,8 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { RequestActor } from "../auth/actor";
+import { currentViewAs } from "../auth/view-as/view-as.context";
+import { leaveReasonsRemoved } from "../auth/view-as/view-as.domain";
 import { HrmsAccessService, HrmsContext } from "./hrms-access.service";
 import {
   AllowanceDto,
@@ -413,7 +415,8 @@ export class HrmsLeaveService {
               row.membershipId !== ctx.membershipId &&
               (await this.access.canManageEmployee(ctx, row.membershipId)),
           });
-      return result;
+      // Leave reasons stay private while an owner views as someone.
+      return currentViewAs() ? leaveReasonsRemoved(result) : result;
     });
   }
   cancel(
