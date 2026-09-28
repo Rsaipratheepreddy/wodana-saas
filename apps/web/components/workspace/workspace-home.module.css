@@ -53,6 +53,9 @@
 .copy strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
 .copy small { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--wd-space-2); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
 .copy small > svg { flex: none; color: var(--wd-color-text-tertiary); }
+/* An icon and its line of text stay together when the text wraps. */
+.copy small.metaLine { flex-wrap: nowrap; gap: var(--wd-space-1-5); }
+.metaLine > span { min-inline-size: 0; }
 .copy em { font-style: normal; font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); }
 .listFooter { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); padding-block-start: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
 
@@ -74,7 +77,8 @@ a.upcomingRow:hover, a.recentRow:hover, a.activityRow:hover { background: var(--
 .chevron { color: var(--wd-color-text-tertiary); }
 
 /* The pipeline: one tile per stage in flow order; a stalled stage is gently tinted. */
-.pulse { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+/* Five equal tracks for every role, so a stage is the same size whether the person sees two or five. */
+.pulse { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
 .pulse > li { min-inline-size: 0; }
 .stage { display: grid; align-content: start; gap: var(--wd-space-1); block-size: 100%; box-sizing: border-box; min-inline-size: 0; padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); text-decoration: none; }
 a.stage:hover { background: var(--wd-color-surface-hover); }
@@ -84,7 +88,7 @@ a.stage:hover { background: var(--wd-color-surface-hover); }
 .stageNote { min-block-size: var(--wd-space-4); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-warning); }
 
 /* Key numbers: one or two soft tiles, each a link to its list. */
-.numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
 .number { display: grid; align-content: start; gap: var(--wd-space-1); box-sizing: border-box; block-size: 100%; padding: var(--wd-space-4) var(--wd-space-5); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-subtle); color: var(--wd-color-text); text-decoration: none; }
 a.number:hover { background: var(--wd-color-surface-hover); }
 .numberLabel { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
@@ -94,7 +98,8 @@ a.number:hover { background: var(--wd-color-surface-hover); }
 .numberFoot small[data-tone="success"] { color: var(--wd-color-success); }
 .numberFoot small[data-tone="warning"] { color: var(--wd-color-warning); }
 .numberFoot small[data-tone="danger"] { color: var(--wd-color-danger); }
-.spark { display: inline-flex; inline-size: var(--wd-space-16); block-size: var(--wd-space-5); }
+/* The chart's exact values stay available to screen readers without widening the page. */
+.spark { position: relative; display: inline-flex; overflow: hidden; inline-size: var(--wd-space-16); block-size: var(--wd-space-5); }
 .spark :global(.wd-sparkline) { inline-size: 100%; block-size: 100%; }
 
 /* Jump back in and recent activity. */
@@ -114,11 +119,9 @@ a.number:hover { background: var(--wd-color-surface-hover); }
   .bar { margin-block-start: 0; }
   .search { flex-basis: 100%; max-inline-size: none; }
   .section { padding-inline: var(--wd-space-4); }
-  .pulse { gap: var(--wd-space-1); }
-  .stage { padding: var(--wd-space-2); }
-  .stageLabel { font-size: var(--wd-text-2xs); }
+  /* Three stages to a row keep every label whole on a phone. */
+  .pulse { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stage { padding: var(--wd-space-2) var(--wd-space-3); }
   .stageCount { font-size: var(--wd-text-xl); }
-  .stageNote { font-size: var(--wd-text-2xs); }
-  .focusRow { grid-template-columns: auto minmax(0, 1fr); }
-  .focusRow > :global(.wd-button) { grid-column: 2; justify-self: start; }
+  .focusRow { gap: var(--wd-space-2-5); }
 }

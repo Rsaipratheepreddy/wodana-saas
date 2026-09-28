@@ -191,7 +191,7 @@ export function UpcomingList({ summary, empty }: { summary: Load<HomeSummary>; e
         <span className={s.dateBlock} aria-hidden="true"><small>{date.weekday}</small><strong>{date.day}</strong></span>
         <span className={s.copy}>
           <strong>{item.title}</strong>
-          <small><Icon size={12} aria-hidden="true" />{[date.time, kinds[item.kind], item.context].filter(Boolean).join(" · ")}</small>
+          <small className={s.metaLine}><Icon size={12} aria-hidden="true" /><span>{[date.time, kinds[item.kind], item.context].filter(Boolean).join(" · ")}</span></small>
         </span>
         <span className="wd-visually-hidden">{date.long}</span>
         <ChevronRight className={s.chevron} size={16} aria-hidden="true" />
@@ -234,7 +234,7 @@ function figures(data: HomeMetrics, lens: NumbersLens, t: T, locale: string): Fi
   const change = (current: string | number, previous: string | number, upIsGood = true): Figure["note"] => {
     const delta = changeBetween(current, previous);
     if (delta.direction === "flat") return { text: t("Same as last month"), tone: "neutral" };
-    if (delta.direction === "new") return { text: t("New this month"), tone: "success" };
+    if (delta.direction === "new") return { text: t("None last month"), tone: "neutral" };
     const good = (delta.direction === "up") === upIsGood;
     return { text: delta.direction === "up" ? t("{percent}% up on last month", { percent: delta.percent }) : t("{percent}% down on last month", { percent: delta.percent }), tone: good ? "success" : "warning" };
   };
