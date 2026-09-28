@@ -315,9 +315,14 @@ export class CrmLeadsService {
         // S-1: the takeover rotates an enquiry at most `takeoverCap` times; then a manager is told instead.
         const settings = await loadSalesSettings(client, workspaceId);
         const tries = await client.query<{ attempts: number }>(
-          `SELECT count(*)::int AS attempts FROM crm_assignment_history
-            WHERE workspace_id=$1 AND lead_id=$2 AND assignment_method='automatic'
-              AND explanation->>'reason' IN ('unanswered_takeover','no_eligible_alternate')`, [workspaceId, lead.id]);
+          // Counted since the last hand-picked or first assignment, so a manager's reassignment starts a fresh count.
+          `SELECT count(*)::int AS attempts FROM crm_assignment_history attempt
+            WHERE attempt.workspace_id=$1 AND attempt.lead_id=$2 AND attempt.assignment_method='automatic'
+              AND attempt.explanation->>'reason' IN ('unanswered_takeover','no_eligible_alternate')
+              AND attempt.assigned_at >= coalesce((SELECT max(other.assigned_at) FROM crm_assignment_history other
+                WHERE other.workspace_id=$1 AND other.lead_id=$2
+                  AND NOT (other.assignment_method='automatic' AND coalesce(other.explanation->>'reason', '') IN ('unanswered_takeover','no_eligible_alternate'))), '-infinity')`,
+          [workspaceId, lead.id]);
         const attempts = Number(tries.rows[0]?.attempts ?? 0);
         if (attempts >= settings.takeoverCap) {
           await this.escalateTakeover(client, workspaceId, lead, attempts);
@@ -776,7 +781,7 @@ export class CrmLeadsService {
         `UPDATE crm_identity_candidates SET status='rejected', decision=$4, resolved_party_id=$3, reviewed_by=$5, reviewed_at=now(),
            decision_reason=$6, version=version+1, updated_at=now()
          WHERE workspace_id=$1 AND intake_event_id=$2 AND status='pending'`,
-        [workspaceId, intakeEventId, partyId, input.decision === "same" ? "resolved_elsewhere" : "reject", actorUser.userId,
+        [workspaceId, intakeEventId, partyId, input.decision === "same" ? "resolved_elsewhere" : "create_new", actorUser.userId,
           input.reason?.trim() || (input.decision === "same" ? "resolved_by_other_candidate" : "Confirmed a different person on the enquiry")]);
       await client.query(
         `UPDATE crm_intake_events SET resolution_type=$3, resolved_party_id=$4, resolved_by=$5, resolved_at=now(),
