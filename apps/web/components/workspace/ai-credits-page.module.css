@@ -1,0 +1,4 @@
+/* Settings → AI credits. */
+.value { color: var(--wd-color-text); font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
+.number { font-variant-numeric: tabular-nums; }
+.muted { color: var(--wd-color-text-secondary); }

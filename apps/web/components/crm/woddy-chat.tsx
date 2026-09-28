@@ -7,6 +7,7 @@ import { Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 import { Avatar, Button, IconButton, Woddy } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
+import { AiPauseNotice } from "@/components/workspace/ai-pause-notice";
 import { submitChatOnEnter } from "./chat-composer";
 import workspaceColors from "./crm-workspace-colors.module.css";
 import styles from "./woddy-chat.module.css";
@@ -39,6 +40,7 @@ function ChatPanel({ workspaceId, context, isOpen, onOpenChange }: { workspaceId
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [paused, setPaused] = useState("");
   const request = useRef<AbortController | null>(null);
   const end = useRef<HTMLDivElement>(null);
   const composerInput = useRef<HTMLTextAreaElement>(null);
@@ -62,11 +64,12 @@ function ChatPanel({ workspaceId, context, isOpen, onOpenChange }: { workspaceId
     const previous = messages;
     const next: Message[] = [...previous, { role: "user", text: question.trim() }];
     const controller = new AbortController();
-    request.current = controller; restoreFocus.current = true; setBusy(true); setError(""); setDraft(""); setMessages(next);
+    request.current = controller; restoreFocus.current = true; setBusy(true); setError(""); setPaused(""); setDraft(""); setMessages(next);
     try {
       const response = await fetch(context?.type === "commercial" ? "/api/commercial-assist" : "/api/workspace/crm/chat", { method: "POST", headers: { "content-type": "application/json" }, signal: controller.signal, body: JSON.stringify(context?.type === "commercial" ? {workspaceId,caseId:context.id,question:question.trim(),messages:next.slice(-11)} : { workspaceId, context: context ? { type: context.type, id: context.id } : { type: "overview" }, messages: next.slice(-11) }) });
       const payload = await response.json().catch(() => null);
       if (controller.signal.aborted) throw new Error("Reply stopped");
+      if (!response.ok && payload?.paused) { setMessages(previous); setDraft(question); setPaused(payload.message ?? t("AI credits are used up. Ask your admin to top up.")); return; }
       if (!response.ok || !payload?.answer) throw new Error(payload?.message ?? t("Woddy could not reply. Please try again."));
       if (!controller.signal.aborted) setMessages([...next, { role: "assistant", text: payload.answer }]);
     } catch (failure) {
@@ -88,7 +91,7 @@ function ChatPanel({ workspaceId, context, isOpen, onOpenChange }: { workspaceId
         </div>)}
         {busy ? <div className={styles.messageRow} data-role="assistant"><span className={styles.messageAvatar}><Woddy pose="thinking" size={30} /></span><div className={styles.thinking} role="status" aria-label={t("Woddy is typing")}><span aria-hidden="true"><i /><i /><i /></span><span className="wd-visually-hidden">{t("Woddy is typing…")}</span></div></div> : null}<div ref={end} />
       </div>
-      <footer className={styles.footer}>{error ? <p className={styles.error} role="alert"><Woddy pose="oops" size={28} />{t("{error} Your question is ready to retry.", { error })}</p> : null}<form aria-busy={busy} onSubmit={(event) => { event.preventDefault(); void send(draft); }}><label className="wd-sr-only" htmlFor="woddy-question">{t("Message Woddy")}</label><textarea ref={composerInput} autoFocus id="woddy-question" rows={1} maxLength={3000} placeholder={t("Ask Woddy…")} value={draft} readOnly={busy} aria-describedby="woddy-keyboard-hint" onChange={(event) => setDraft(event.target.value)} onKeyDown={submitChatOnEnter} />{busy ? <IconButton aria-label={t("Stop Woddy reply")} onPress={() => request.current?.abort()}><Square size={15} /></IconButton> : <Button className={styles.sendButton} type="submit" variant="primary" aria-label={t("Send message to Woddy")} isDisabled={!draft.trim() || !workspaceId} size="compact"><ArrowUp size={17} /></Button>}</form><small id="woddy-keyboard-hint">{t("Enter to send · Shift+Enter for a new line")}</small><small>{t("AI suggestions, not actions. Review before using.")}<br />{t("Chat stays in this session; relevant context is sent to Gemini.")}</small></footer>
+      <footer className={styles.footer}>{paused ? <AiPauseNotice message={paused} /> : null}{error ? <p className={styles.error} role="alert"><Woddy pose="oops" size={28} />{t("{error} Your question is ready to retry.", { error })}</p> : null}<form aria-busy={busy} onSubmit={(event) => { event.preventDefault(); void send(draft); }}><label className="wd-sr-only" htmlFor="woddy-question">{t("Message Woddy")}</label><textarea ref={composerInput} autoFocus id="woddy-question" rows={1} maxLength={3000} placeholder={t("Ask Woddy…")} value={draft} readOnly={busy} aria-describedby="woddy-keyboard-hint" onChange={(event) => setDraft(event.target.value)} onKeyDown={submitChatOnEnter} />{busy ? <IconButton aria-label={t("Stop Woddy reply")} onPress={() => request.current?.abort()}><Square size={15} /></IconButton> : <Button className={styles.sendButton} type="submit" variant="primary" aria-label={t("Send message to Woddy")} isDisabled={!draft.trim() || !workspaceId} size="compact"><ArrowUp size={17} /></Button>}</form><small id="woddy-keyboard-hint">{t("Enter to send · Shift+Enter for a new line")}</small><small>{t("AI suggestions, not actions. Review before using.")}<br />{t("Chat stays in this session; relevant context is sent to the AI model.")}</small></footer>
     </Dialog></Modal>
   </ModalOverlay>;
 }

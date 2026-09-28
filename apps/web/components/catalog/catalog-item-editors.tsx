@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button, ComboboxField, IconButton, InlineNotice, SelectField, Switch, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { AiPauseNotice } from "@/components/workspace/ai-pause-notice";
+import { isAiPauseMessage } from "@/lib/ai/pause";
 import { loadAiSettings } from "@/lib/workspace/ai-settings";
 import { catalogApi, type CatalogItemRow, type CatalogStructure } from "@/lib/workspace/catalog-v2";
 import styles from "./catalog-page.module.css";
@@ -101,7 +103,7 @@ export function CatalogComponentsEditor({ workspaceId, catalogId, item, structur
     finally { setSaving(false); }
   };
   return <div className={styles.form}>
-    {error ? <InlineNotice message={error} tone="error" /> : null}
+    {isAiPauseMessage(error) ? <AiPauseNotice message={error} /> : error ? <InlineNotice message={error} tone="error" /> : null}
     <p className={styles.muted}>{t("Formulas use the measurements from the site, e.g. width, height, length, area.")}</p>
     {rows.length ? <div aria-hidden="true" className={`${styles.componentRow} ${styles.componentHead}`}><span>{t("Component")}</span><span>{t("Quantity formula")}</span><span>{t("Unit")}</span><span /></div> : null}
     {rows.map((row, index) => <div className={`${styles.componentRow} ${styles.componentLine}`} key={index}>
