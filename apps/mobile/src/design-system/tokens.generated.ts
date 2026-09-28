@@ -30,7 +30,7 @@ export const tokens = {
       "surface": "#ffffff",
       "surfaceSubtle": "#fcfcfc",
       "surfaceMuted": "#f5f5f5",
-      "brandSurface": "var(--wd-workspace-brand-surface-light, #f5f5f5)",
+      "brandSurface": "#f5f5f5",
       "skeletonSheen": "rgba(255, 255, 255, 0.78)",
       "surfaceHover": "#f0f0f0",
       "surfacePressed": "#e8e8e8",
