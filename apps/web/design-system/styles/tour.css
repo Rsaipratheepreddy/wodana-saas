@@ -103,6 +103,9 @@
   gap: var(--wd-space-1-5);
   padding-block: var(--wd-space-0-5);
   padding-inline: var(--wd-space-0-5) var(--wd-space-2-5);
+  /* Sized to its name: the cursor box it hangs from is only as wide as the pointer. */
+  inline-size: max-content;
+  white-space: nowrap;
   border: 2px solid var(--wd-tour-actor);
   border-radius: var(--wd-radius-pill);
   background: var(--wd-color-surface);
