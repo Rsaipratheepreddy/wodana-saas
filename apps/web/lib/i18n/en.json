@@ -10281,5 +10281,10 @@
   "Release ({count})": "Release ({count})",
   "Nothing is blocked": "Nothing is blocked",
   "Nothing is being made": "Nothing is being made",
-  "Nothing to send to site": "Nothing to send to site"
+  "Nothing to send to site": "Nothing to send to site",
+  "What's on its way didn't load.": "What's on its way didn't load.",
+  "Nothing on its way to site": "Nothing on its way to site",
+  "From suppliers": "From suppliers",
+  "From our stock and factory": "From our stock and factory",
+  "from {place}": "from {place}"
 }
