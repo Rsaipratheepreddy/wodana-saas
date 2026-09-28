@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 
 type Db = Pick<PoolClient, "query">;
@@ -44,6 +44,13 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     subject: "{{reference}} moved to {{newOwner}}",
     body: "No call or note was logged within the response time, so {{reference}} was reassigned.",
     variables: ["reference", "newOwner"],
+  },
+  {
+    code: "crm.conversation_assigned",
+    channel: "in_app",
+    subject: "Conversation with {{client}} is yours",
+    body: "{{assignedBy}} assigned it to you. Reply from the inbox.",
+    variables: ["client", "assignedBy"],
   },
   {
     code: "crm.lead_taken_over_to",
@@ -336,17 +343,24 @@ export async function notifyUserInApp(db: Db, input: {
   );
   if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
   const row = template.rows[0];
+  const subject = row.subject ? render(row.subject, input.variables) : null;
+  const body = render(row.body, input.variables);
   const inserted = await db.query(
     `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
        subject, body, deep_link, idempotency_key, correlation_id, delivered_at)
      VALUES ($1, $2, 'user', $3, 'in_app', $4, 'delivered', $5, $6, $7, $8, gen_random_uuid(), now())
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING`,
-    [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
-      input.deepLink ?? null, input.idempotencyKey],
+    [input.workspaceId, row.id, input.recipientUserId, input.eventType, subject, body, input.deepLink ?? null, input.idempotencyKey],
   );
   // A key already used means this notice was already sent: nothing new is queued.
-  return inserted.rowCount ? { queued: true as const } : { queued: false as const, reason: "already_sent" };
+  if (!inserted.rowCount) return { queued: false as const, reason: "already_sent" };
+  // The same notice on the phone, for the events people act on away from a desk.
+  if (PUSH_NOTICES.has(input.code)) {
+    // Keys are at most 160 characters; a long one is hashed rather than cut.
+    const pushKey = input.idempotencyKey.length <= 155 ? `${input.idempotencyKey}:push` : `push:${createHash("sha256").update(input.idempotencyKey).digest("hex")}`;
+    await queueUserPush(db, { workspaceId: input.workspaceId, recipientUserId: input.recipientUserId, eventType: input.eventType, subject, body, deepLink: input.deepLink, templateId: row.id, idempotencyKey: pushKey });
+  }
+  return { queued: true as const };
 }
 
 /**
@@ -445,12 +459,103 @@ export async function queueUserEmail(db: Db, input: {
       input.deepLink ?? null, input.idempotencyKey],
   );
   const notification = inserted.rows[0];
-  // Wake the worker now instead of waiting for its next poll.
+  if (notification) await wakeDelivery(db, input.workspaceId, notification.id, notification.correlationId, "email");
+  return { queued: true as const };
+}
+
+/** Wakes the delivery worker for one queued notice now, instead of waiting for its next poll. */
+export async function wakeDelivery(db: Db, workspaceId: string, notificationId: string, correlationId: string, channel: string) {
   const eventId = randomUUID();
-  if (notification) await db.query(
+  await db.query(
     `INSERT INTO outbox_events (id, workspace_id, aggregate_type, aggregate_id, event_type, payload)
      VALUES ($4, $1, 'notification', $2, 'notification.delivery_requested.v1', $3::jsonb)`,
-    [input.workspaceId, notification.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: notification.id, actorUserId: null, occurredAt: new Date().toISOString(), correlationId: notification.correlationId, causationId: null, data: { channel: "email" } }), eventId],
+    [workspaceId, notificationId, JSON.stringify({ schemaVersion: 1, eventId, workspaceId, aggregateType: "notification", aggregateId: notificationId, actorUserId: null, occurredAt: new Date().toISOString(), correlationId, causationId: null, data: { channel } }), eventId],
   );
+}
+
+/**
+ * Notices that also go to the person's phone as a push: work waiting for someone away from a desk
+ * (site, factory, purchasing, stock), approvals, and a new enquiry of one's own. Everything else stays in
+ * the in-app inbox. A push needs the person to have turned push on and a registered phone.
+ */
+export const PUSH_NOTICES: ReadonlySet<string> = new Set([
+  "site.report_missing", "site.report_returned", "site.incident", "site.blocked",
+  "work.assigned", "work.overdue", "work.snag_reopened",
+  "factory.released", "factory.check_failed", "factory.material_short",
+  "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed",
+  "stock.transfer_sent", "stock.transfer_short",
+  "purchasing.approval_needed", "stock.adjustment_needs_approval", "payables.run_submitted", "petty_cash.submitted",
+  "hrms.leave_requested", "hrms.leave_approved", "hrms.leave_rejected", "hrms.timesheet_submitted", "hrms.crew_day_submitted", "hrms.attendance_to_review",
+  "quotation.review_requested", "design.review_requested",
+  "crm.lead_assigned", "crm.lead_taken_over_to", "crm.conversation_assigned",
+]);
+
+/**
+ * When quiet hours ({ start: "22:00", end: "07:00", timezone }) are on now, the moment they end; otherwise null.
+ * A window may cross midnight. Without a time zone the hours are UTC.
+ */
+export function quietUntil(quietHours: Record<string, unknown> | null | undefined, now = new Date()): Date | null {
+  const pattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
+  const start = typeof quietHours?.start === "string" ? pattern.exec(quietHours.start) : null;
+  const end = typeof quietHours?.end === "string" ? pattern.exec(quietHours.end) : null;
+  if (!start || !end) return null;
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-GB", { timeZone: typeof quietHours?.timezone === "string" ? quietHours.timezone : "UTC", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  } catch { return null; }
+  const minuteOf = (hour: string, minute: string) => Number(hour) * 60 + Number(minute);
+  const current = minuteOf(parts.find((part) => part.type === "hour")?.value ?? "0", parts.find((part) => part.type === "minute")?.value ?? "0");
+  const from = minuteOf(start[1], start[2]);
+  const to = minuteOf(end[1], end[2]);
+  if (from === to) return null;
+  const inside = from < to ? current >= from && current < to : current >= from || current < to;
+  if (!inside) return null;
+  const wait = (to - current + 1440) % 1440;
+  return new Date(Math.floor(now.getTime() / 60_000) * 60_000 + wait * 60_000);
+}
+
+/**
+ * Queues a push to one person's phone, inside the caller's tenant transaction, when they turned push on
+ * (the app does it on sign-in) and have a registered phone; a preference for this event (or its module)
+ * can switch it off. Idempotent per key. The worker sends it through Expo and falls back to the inbox.
+ */
+export async function queueUserPush(db: Db, input: {
+  workspaceId: string;
+  recipientUserId: string;
+  eventType: string;
+  subject: string | null;
+  body: string;
+  deepLink?: string | null;
+  templateId?: string | null;
+  idempotencyKey: string;
+}) {
+  // The phone's switch ("*") must be on; the event's or its module's setting can still turn this one off.
+  const preferences = await db.query<{ eventType: string; enabled: boolean; quietHours: Record<string, unknown> | null }>(
+    `SELECT event_type AS "eventType", enabled, quiet_hours AS "quietHours" FROM notification_preferences
+     WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='push'
+       AND event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*', '*')`,
+    [input.workspaceId, input.recipientUserId, input.eventType],
+  );
+  const master = preferences.rows.find((row) => row.eventType === "*");
+  const specific = preferences.rows.find((row) => row.eventType === input.eventType) ?? preferences.rows.find((row) => row.eventType !== "*");
+  if (master?.enabled !== true || specific?.enabled === false) return { queued: false as const, reason: "push_off" };
+  // The person's quiet hours (on the phone's switch) hold a push until they end; the in-app notice is already there.
+  const scheduledFor = quietUntil(master.quietHours) ?? new Date();
+  const device = await db.query(
+    `SELECT 1 FROM device_endpoints WHERE workspace_id=$1 AND user_id=$2 AND status='active' LIMIT 1`,
+    [input.workspaceId, input.recipientUserId],
+  );
+  if (!device.rowCount) return { queued: false as const, reason: "no_device" };
+  const inserted = await db.query<{ id: string; correlationId: string }>(
+    `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
+       scheduled_for, subject, body, deep_link, idempotency_key, correlation_id)
+     VALUES ($1, $2, 'user', $3, 'push', $4, 'pending', $9, $5, $6, $7, $8, gen_random_uuid())
+     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
+     RETURNING id, correlation_id AS "correlationId"`,
+    [input.workspaceId, input.templateId ?? null, input.recipientUserId, input.eventType, input.subject, input.body, input.deepLink ?? null, input.idempotencyKey, scheduledFor],
+  );
+  const notification = inserted.rows[0];
+  if (!notification) return { queued: false as const, reason: "already_sent" };
+  await wakeDelivery(db, input.workspaceId, notification.id, notification.correlationId, "push");
   return { queued: true as const };
 }

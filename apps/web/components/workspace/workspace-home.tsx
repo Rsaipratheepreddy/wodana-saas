@@ -13,6 +13,10 @@ import { defaultLayoutFor, homeActionLabel, homeActivityId, homeProfile, homeWid
 import { crmRecordLink, crmTime } from "@/components/crm/crm-product-shell";
 import { FollowUpSheet, NewFollowUpDialog } from "@/components/crm/follow-up-editor";
 import { HomeAttendance } from "./home-attendance";
+import { DeliveryAttention } from "./delivery-attention";
+import { useLiveInvalidate } from "@/lib/workspace/live-events";
+
+const HOME_SCOPES = ["workspace"] as const;
 import { ActivityWidget, HealthWidget, ItemList, MoneyWidget, Row, StorageWidget, SummaryStrip, TrendWidget, ViewLink, type MetricsState, type Series } from "./home-widgets";
 import { formatCount, greetingPart } from "./home-format";
 import s from "./workspace-home.module.css";
@@ -149,9 +153,16 @@ function HomeContent({ workspaceId, userId, modules, initialData, canManage, fir
       .catch(error => { if (!controller.signal.aborted) { setLayoutVersion(null); setPreferenceError(error.message); } });
     return () => controller.abort();
   }, [workspaceId, userId, layoutReload, roleDefault, t]);
+  // Someone else's change refreshes the figures in place (no loading state); a minute's polling is not needed.
+  const quiet = useRef({ overview: false, metrics: false });
+  useLiveInvalidate(workspaceId, HOME_SCOPES, () => {
+    quiet.current = { overview: true, metrics: true };
+    setOverviewReload(value => value + 1); setMetricsReload(value => value + 1);
+  }, 5_000);
   useEffect(() => {
     const controller = new AbortController();
-    setOverview(null); setOverviewError("");
+    if (!quiet.current.overview) { setOverview(null); setOverviewError(""); }
+    quiet.current.overview = false;
     fetch(`/api/workspace/home-overview?workspaceId=${encodeURIComponent(workspaceId)}`, { signal: controller.signal, cache: "no-store" })
       .then(async response => { if (!response.ok) throw new Error(t("Your latest workspace overview could not be loaded.")); return response.json() as Promise<HomeOverview>; })
       .then(result => { if (!controller.signal.aborted) setOverview(result); })
@@ -160,7 +171,8 @@ function HomeContent({ workspaceId, userId, modules, initialData, canManage, fir
   }, [workspaceId, userId, overviewReload, t]);
   useEffect(() => {
     const controller = new AbortController();
-    setMetrics(null); setMetricsFailed(false);
+    if (!quiet.current.metrics) { setMetrics(null); setMetricsFailed(false); }
+    quiet.current.metrics = false;
     fetch(`/api/workspace/home-metrics?workspaceId=${encodeURIComponent(workspaceId)}`, { signal: controller.signal, cache: "no-store" })
       .then(async response => { if (!response.ok) throw new Error("metrics"); return response.json() as Promise<HomeMetrics>; })
       .then(result => { if (!controller.signal.aborted) setMetrics(result); })
@@ -283,6 +295,7 @@ function HomeContent({ workspaceId, userId, modules, initialData, canManage, fir
         ? <div className={s.actions}><Button onPress={() => setGallery(true)} isDisabled={layoutBusy}><Plus size={16} aria-hidden="true" />{t("Add widget")}</Button><Button variant="quiet" isDisabled={layoutBusy} onPress={() => setEditing(false)}>{t("Cancel")}</Button><Button variant="primary" isLoading={layoutBusy} isDisabled={layoutVersion === null} onPress={() => void saveLayout()}>{t("Done")}</Button></div>
         : <div className={s.actions}><Button variant="quiet" data-tour="home-edit" onPress={startEditing}><LayoutGrid size={16} aria-hidden="true" />{t("Edit Home")}</Button>{crmEnabled ? <Link className="wd-button" data-size="standard" data-variant="primary" href="/workspace/crm/leads?create=true"><Plus size={16} aria-hidden="true" />{t("New enquiry")}</Link> : null}</div>} />
     {editing && preferenceError ? <p className={s.inlineFailure} role="alert"><AlertTriangle size={14} aria-hidden="true" /><span>{preferenceError}</span><Button size="compact" isDisabled={layoutBusy} onPress={() => { setLayoutReload(value => value + 1); setEditing(false); }}>{t("Reload saved layout")}</Button></p> : null}
+    {!editing && canManage ? <DeliveryAttention workspaceId={workspaceId} /> : null}
     {!editing ? <SummaryStrip metrics={metricsState} expected={expectedFigures} /> : null}
     <div className={s.grid}>{shownLayout.map(widget => <section key={widget.id} className={s.widget} data-widget-id={widget.id} data-size={widget.size} data-dragging={dragId === widget.id || undefined} data-tour={`home-widget-${widget.id}`} aria-label={widgetNames[widget.id]}>
       {editing ? <div className={s.editChrome}>

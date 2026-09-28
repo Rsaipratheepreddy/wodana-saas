@@ -240,7 +240,9 @@ async def test_due_work_polls_sequences_before_notification_delivery(
     with pytest.raises(asyncio.CancelledError):
         await worker.poll_due_work()
 
-    assert core.calls == ["slas", "takeovers", "sequences", "notifications", "staff-emails", "waits"]
+    assert core.calls == [
+        "slas", "takeovers", "sequences", "notifications", "staff-emails", "waits"
+    ]
 
 
 @pytest.mark.asyncio
@@ -360,3 +362,68 @@ async def test_a_heartbeat_failure_never_stops_the_worker() -> None:
         FakeStreamRedis(), FakeDueWorkCore(), DeterministicTestAdapter(), "g", "w"  # type: ignore[arg-type]
     )
     await worker.beat()
+
+
+@pytest.mark.asyncio
+async def test_the_heartbeat_names_the_release_and_delivery_mode_and_touches_its_file(
+    tmp_path: Any,
+) -> None:
+    redis = HeartbeatRedis()
+    beat_file = tmp_path / "worker.beat"
+    worker = CrmWorker(
+        redis, FakeDueWorkCore(), DeterministicTestAdapter(), "g", "worker-2",  # type: ignore[arg-type]
+        release="20260928-web", adapter_mode="live", heartbeat_file=str(beat_file),
+    )
+    await worker.beat()
+
+    beat: dict[str, Any] = json.loads(redis.values["wodana:worker:heartbeat"])
+    assert beat["release"] == "20260928-web"
+    assert beat["adapter"] == "live"
+    assert beat_file.exists()
+
+
+class FlakyDueWorkCore(FakeDueWorkCore):
+    """Two workspaces; the first one's SLA pass fails."""
+
+    async def due_crm_workspaces(self) -> list[str]:
+        return ["broken", WORKSPACE_ID]
+
+    async def process_due_slas(self, workspace: str) -> dict[str, Any]:
+        if workspace == "broken":
+            raise RuntimeError("business core restarted")
+        return await super().process_due_slas(workspace)
+
+
+class UnreachableDueWorkCore(FakeDueWorkCore):
+    async def due_crm_workspaces(self) -> list[str]:
+        raise RuntimeError("business core is down")
+
+
+@pytest.mark.asyncio
+async def test_one_workspace_failing_never_stops_the_others_or_the_timer_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    core = FlakyDueWorkCore()
+    worker = CrmWorker(
+        FakeStreamRedis(), core, DeterministicTestAdapter(), "g", "w"  # type: ignore[arg-type]
+    )
+    await worker.run_due_work()
+    assert core.calls == [
+        "slas", "takeovers", "sequences", "notifications", "staff-emails", "waits"
+    ]
+
+    passes = 0
+
+    async def two_passes(_seconds: float) -> None:
+        nonlocal passes
+        passes += 1
+        if passes == 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", two_passes)
+    looping = CrmWorker(
+        FakeStreamRedis(), UnreachableDueWorkCore(), DeterministicTestAdapter(), "g", "w"  # type: ignore[arg-type]
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await looping.poll_due_work()
+    assert passes == 2

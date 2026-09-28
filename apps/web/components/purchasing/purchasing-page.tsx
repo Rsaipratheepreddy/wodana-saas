@@ -15,6 +15,9 @@ import { PriceRequests } from "./price-requests";
 import { Suppliers } from "./suppliers";
 import { ToOrder } from "./to-order";
 import styles from "./purchasing.module.css";
+import { useLiveInvalidate } from "@/lib/workspace/live-events";
+
+const PURCHASING_SCOPES = ["purchasing"] as const;
 
 export type { PurchasingSection };
 
@@ -30,6 +33,8 @@ export function PurchasingPage({ workspaceId, section: initialSection }: { works
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [newOrder, setNewOrder] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  // Another buyer's order, approval or delivery shows on every tab without a reload.
+  useLiveInvalidate(workspaceId, PURCHASING_SCOPES, () => setRefresh((value) => value + 1), 2_000);
   const openId = params.get("order");
   const requestId = params.get("request");
   const receiptId = params.get("receipt");

@@ -10,11 +10,13 @@ import { Avatar, Button, Callout, ControlledModalDialog, EmptyState, IconButton,
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, label, rows, type RecordData } from "@/lib/crm/client";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
+import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CrmProductShell, useCrmTime } from "./crm-product-shell";
 import { submitChatOnEnter } from "./chat-composer";
 import styles from "./crm-inbox.module.css";
 
 type ChatPage = { data: RecordData[]; nextCursor: string | null };
+const LIST_SCOPES = ["conversations"] as const;
 const timeout = () => AbortSignal.timeout(20_000);
 export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScreenPageData; initialRecordId?: string }) {
   const t = useT();
@@ -45,12 +47,14 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
     } catch (error) { if (!request.signal.aborted) setFailure(error instanceof Error ? error.message : t("Chats could not be loaded.")); }
     finally { if (controller.current === request) requestPending.current = false; if (!request.signal.aborted) setBusy(false); }
   }, [initialData.workspaceId, query, t]);
+  // A new message or reply re-reads the list at once; polling is the fallback (a minute while live).
+  const live = useLiveInvalidate(initialData.canView ? initialData.workspaceId : "", LIST_SCOPES, () => { if (!cursorRef.current) void reload(false, true); });
   useEffect(() => {
     if (!initialData.canView) return;
     const timer = setTimeout(() => void reload(), 250);
-    const poll = setInterval(() => { if (document.visibilityState === "visible" && !cursorRef.current) void reload(false, true); }, 8_000);
+    const poll = setInterval(() => { if (document.visibilityState === "visible" && !cursorRef.current) void reload(false, true); }, pollEvery(live, 8_000));
     return () => { clearTimeout(timer); clearInterval(poll); controller.current?.abort(); };
-  }, [reload, initialData.canView]);
+  }, [reload, initialData.canView, live]);
   // One empty state: the list says nothing of its own until there are conversations to filter.
   const filtered = Boolean(search.trim()) || filter !== "all" || channelFilter !== "all";
   const noConversations = !items.length && !busy && !filtered;
@@ -151,7 +155,8 @@ function useLiveConversation(workspaceId: string, id: string) {
     catch (error) { if (!request.signal.aborted) setFailure(error instanceof Error ? error.message : t("Chat could not be refreshed.")); }
     finally { if (controller.current === request) pending.current = false; }
   }, [workspaceId, id, t]);
-  useEffect(() => { const initial = setTimeout(() => void refresh(), 0); const timer = setInterval(() => { if (document.visibilityState === "visible") void refresh(true); }, 5_000); return () => { clearTimeout(initial); clearInterval(timer); controller.current?.abort(); }; }, [refresh]);
+  const live = useLiveInvalidate(workspaceId, [`conversation:${id}`], () => void refresh(true), 500);
+  useEffect(() => { const initial = setTimeout(() => void refresh(), 0); const timer = setInterval(() => { if (document.visibilityState === "visible") void refresh(true); }, pollEvery(live, 5_000)); return () => { clearTimeout(initial); clearInterval(timer); controller.current?.abort(); }; }, [refresh, live]);
   return { thread, failure, refresh };
 }
 

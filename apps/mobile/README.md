@@ -22,6 +22,11 @@ Copy `.env.example` to `.env.local` to point at another API. The iOS simulator r
 build sets `EXPO_PUBLIC_APP_NAME`, `EXPO_PUBLIC_APP_ICON`, `EXPO_PUBLIC_SPLASH_IMAGE`,
 `EXPO_PUBLIC_BUNDLE_ID` (see `app.config.ts`); nothing in the code knows a tenant.
 
+Push: a uat or production build needs `EXPO_PUBLIC_EAS_PROJECT_ID` (set it as an EAS environment
+variable; the build refuses to start without it). On sign-in the app asks to allow notifications,
+records the answer, registers the phone's Expo token and turns push on unless the person turned it
+off (Me → Notifications on this phone). Signing out unregisters the phone.
+
 ## Check
 
 ```sh

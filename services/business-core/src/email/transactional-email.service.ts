@@ -13,6 +13,8 @@ export interface EmailDeliveryResult {
   messageId: string | null;
   /** Why nothing was sent although email is set up (the DELIVERY_ALLOWLIST guard). */
   suppressedReason?: typeof NOT_ALLOWLISTED;
+  /** Why a send failed, without recipient data (e.g. MAILGUN_HTTP_401, MAILGUN_TIMEOUT). */
+  errorCode?: string;
 }
 
 interface TransactionalMessage {
@@ -59,6 +61,11 @@ export class TransactionalEmailService {
 
   private origin() {
     return this.config.get<string>("WEB_ORIGIN", "http://localhost:3000").split(",")[0].trim();
+  }
+
+  /** Whether the platform mailer (team and client-portal emails) has its sending credentials. */
+  configured() {
+    return Boolean(this.config.get<string>("MAILGUN_API_KEY", "").trim() && this.config.get<string>("MAILGUN_DOMAIN", "").trim());
   }
 
   /**
@@ -265,7 +272,7 @@ export class TransactionalEmailService {
       });
       if (!response.ok) {
         this.logger.error(`Mailgun rejected a transactional email with HTTP ${response.status}`);
-        return { status: "failed", provider: "mailgun", messageId: null };
+        return { status: "failed", provider: "mailgun", messageId: null, errorCode: `MAILGUN_HTTP_${response.status}` };
       }
 
       const payload = await response.json().catch(() => ({})) as { id?: unknown };
@@ -277,7 +284,7 @@ export class TransactionalEmailService {
     } catch (error) {
       const reason = error instanceof Error ? error.name : "UnknownError";
       this.logger.error(`Mailgun transactional email delivery failed (${reason})`);
-      return { status: "failed", provider: "mailgun", messageId: null };
+      return { status: "failed", provider: "mailgun", messageId: null, errorCode: reason === "TimeoutError" ? "MAILGUN_TIMEOUT" : "MAILGUN_UNREACHABLE" };
     }
   }
 }
