@@ -40,6 +40,7 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   integrations: [ORGANIZATION_READ, ["module.integrations.read", "integrations.view"]],
   "client-portal-settings": [["portal.manage", "pre_projects.view", "projects.view"]],
   "reminder-settings": [["crm.automations.view"]],
+  "inbox-settings": [["crm.communications.view", "crm.settings.manage"]],
   // Sales
   "crm-overview": [["crm.leads.view"]],
   leads: [["crm.leads.view"]],

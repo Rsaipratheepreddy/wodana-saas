@@ -162,6 +162,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         items: [
           { href: "/workspace/integrations", icon: "integrations", id: "integrations", label: tKey("Integrations") },
           { href: "/workspace/settings/client-portal", icon: "settings", id: "client-portal-settings", label: tKey("Client portal") },
+          { href: "/workspace/settings/inbox", icon: "conversations", id: "inbox-settings", label: tKey("Inbox") },
           { href: "/workspace/settings/reminders", icon: "settings", id: "reminder-settings", label: tKey("Reminders") },
         ],
       },

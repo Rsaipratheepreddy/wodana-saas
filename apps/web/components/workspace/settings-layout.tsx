@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { BellRing, Building2, CalendarClock, CreditCard, FileText, Globe, History, KeyRound, Landmark, Languages, Palette, Plug, ShieldCheck, UserRound, Users, type LucideIcon } from "lucide-react";
+import { BellRing, Building2, CalendarClock, CreditCard, FileText, Globe, History, KeyRound, Landmark, Languages, MessagesSquare, Palette, Plug, ShieldCheck, UserRound, Users, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { SelectField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -12,7 +12,7 @@ import styles from "./settings-layout.module.css";
 const ICONS: Record<string, LucideIcon> = {
   profile: UserRound, security: ShieldCheck, company: Building2, "workspace-language": Languages, members: Users, roles: KeyRound,
   "business-records": Landmark, billing: CreditCard, "audit-log": History, integrations: Plug, "client-portal-settings": Globe, "design-packages": Palette, "reminder-settings": BellRing,
-  "attendance-settings": CalendarClock,
+  "attendance-settings": CalendarClock, "inbox-settings": MessagesSquare,
 };
 
 /**
@@ -26,7 +26,7 @@ export function SettingsLayout({ module, pathname, children }: { module: Workspa
     "workspace-me": t("Account"), "workspace-company": t("Company"), "workspace-people": t("Team & access"), "workspace-account": t("Records & billing"), "workspace-connections": t("Connections"),
     profile: t("Profile"), security: t("Sign-in security"), company: t("Company profile"), "workspace-language": t("Workspace language"), members: t("People"), roles: t("Roles & permissions"),
     "business-records": t("Business records"), billing: t("Billing"), "audit-log": t("Audit history"), integrations: t("Integrations"), "client-portal-settings": t("Client portal"), "design-packages": t("Design packages"), "reminder-settings": t("Reminders"),
-    "attendance-settings": t("Attendance & leave"),
+    "attendance-settings": t("Attendance & leave"), "inbox-settings": t("Inbox"),
   };
   const groups = module.navigation
     .map((group) => ({ ...group, items: group.items.filter((item) => item.showInSidebar !== false) }))

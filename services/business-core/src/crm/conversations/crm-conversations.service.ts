@@ -11,8 +11,9 @@ import { CrmMessageReceiptService } from "./crm-message-receipt.service";
 import { decodeCursor, encodeCursor, normalizeEmail, normalizeLoosePhone, normalizeName, stableHash } from "../shared/crm-types";
 import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSequenceDto, ListConversationsQueryDto, MessageReceiptDto, ProviderInboundMessageDto, ProviderMessageReceiptDto, SequenceVersionDto, StopSequenceEnrollmentDto, UpdateSequenceDto, UpdateConversationDto } from "./dto/conversations.dto";
 import { applyConversationChange, mapConversation, recordChatEvent } from "./inbox/inbox-commands";
-import { inboxQueue, selectInboxOwner } from "./inbox/inbox-assignment";
-import { noticeChat, readChatNotices, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
+import { INBOX_MEMBERS_SQL, inboxQueue, selectInboxOwner } from "./inbox/inbox-assignment";
+import { inboxLink, noticeChat, readChatNotices, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
+import { notifyUserInApp, queueUserPush } from "../../notifications/default-templates";
 import { inboundSummary, normalizeTemplateParameter, renderTemplate, templateParametersProblem, templatePlaceholders, withSignature, type TemplateVariableSource } from "./inbox/inbox-rules";
 import { resolveTemplateSources } from "./inbox/template-variables";
 
@@ -115,8 +116,8 @@ export class CrmConversationsService {
                 message.read_at AS "readAt", message.failure_code AS "failureCode", message.metadata, message.version,
                 message.created_at AS "createdAt", message.updated_at AS "updatedAt"
          FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id
-         WHERE message.workspace_id = $1 AND message.conversation_id = $2 AND ($3 <> 'whatsapp' OR message.direction <> 'internal')
-         ORDER BY message.created_at DESC, message.id DESC LIMIT 101`, [workspaceId, conversationId, conversation.channel],
+         WHERE message.workspace_id = $1 AND message.conversation_id = $2
+         ORDER BY message.created_at DESC, message.id DESC LIMIT 101`, [workspaceId, conversationId],
       );
       const facts = await client.query<{ partyName: string | null; ownerName: string | null; leadReference: string | null; businessName: string; signatureEnabled: boolean | null }>(
         `SELECT (SELECT display_name FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "partyName",
@@ -169,10 +170,15 @@ export class CrmConversationsService {
 
   messages(actor: RequestActor, workspaceId: string, conversationId: string, query: { cursor?: string; limit: number }) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
-      const conversation = await this.requireConversation(client, workspaceId, conversationId, false);
+      await this.requireConversation(client, workspaceId, conversationId, false);
       const cursor = decodeCursor(query.cursor);
       if (query.cursor && (!cursor || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(cursor.id) || !Number.isFinite(Date.parse(cursor.value)))) throw new BadRequestException("Invalid message cursor");
-      const result = await client.query(`SELECT id,direction,status,authorship,sender_type AS "senderType",sender_id AS "senderId",body_text AS "bodyText",metadata,created_at AS "createdAt",failure_code AS "failureCode" FROM crm_messages WHERE workspace_id=$1 AND conversation_id=$2 AND ($6 <> 'whatsapp' OR direction <> 'internal') AND ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::uuid)) ORDER BY created_at DESC,id DESC LIMIT $5`, [workspaceId, conversationId, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1, conversation.channel]);
+      // Internal notes are part of the team's thread (never sent to the client).
+      const result = await client.query(`SELECT message.id,message.direction,message.status,message.authorship,message.sender_type AS "senderType",message.sender_id AS "senderId",
+          coalesce(nullif(btrim(sender.display_name), ''), sender.primary_email) AS "senderName",message.body_text AS "bodyText",message.metadata,message.created_at AS "createdAt",message.failure_code AS "failureCode"
+        FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id
+        WHERE message.workspace_id=$1 AND message.conversation_id=$2 AND ($3::timestamptz IS NULL OR (message.created_at,message.id)<($3::timestamptz,$4::uuid))
+        ORDER BY message.created_at DESC,message.id DESC LIMIT $5`, [workspaceId, conversationId, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1]);
       const data = result.rows.slice(0, query.limit), oldest = data.at(-1);
       return { data: data.reverse(), nextCursor: result.rows.length > query.limit && oldest ? encodeCursor({ value: new Date(oldest.createdAt).toISOString(), id: oldest.id }) : null };
     });
@@ -686,6 +692,7 @@ export class CrmConversationsService {
             ...input.metadata,
             ...(input.clientMessageId ? { clientMessageId: input.clientMessageId, requestHash } : {}),
             ...(template ? { template: { id: template.id, code: template.code, parameters: templateParameters } } : {}),
+            ...(input.direction === "internal" && input.mentions?.length ? { mentions: [...new Set(input.mentions)] } : {}),
           },
         ],
       );
@@ -731,6 +738,7 @@ export class CrmConversationsService {
       : messageId;
     await this.events.record(client, { workspaceId, actorUserId, source, action: input.direction === "inbound" ? "crm.customer.replied.v1" : "crm.message.created.v1", entityType: aggregateType, entityId: aggregateId, after: { ...response, partyId: conversation.party_id, leadId: conversation.lead_id } });
     if (input.direction === "inbound") await this.routeInbound(client, workspaceId, conversation, touched.rows[0], messageId, bodyText);
+    if (input.direction === "internal" && input.mentions?.length) await this.noticeMentions(client, workspaceId, conversation, [...new Set(input.mentions)], messageId, bodyText, actorUserId);
     return response;
   }
 
@@ -791,6 +799,23 @@ export class CrmConversationsService {
       if (!value) throw new UnprocessableEntityException(`Fill in {{${position}}} (${SOURCE_NAMES[source]}): this chat has no value for it`);
       return normalizeTemplateParameter(value);
     });
+  }
+
+  /** Each person @mentioned in a note (who can open the inbox, and is not the writer) is told in-app and by push. */
+  private async noticeMentions(client: PoolClient, workspaceId: string, conversation: Record<string, unknown>, mentions: string[], messageId: string, bodyText: string | null, actorUserId: string | null) {
+    const people = await client.query<{ userId: string }>(`SELECT inbox."userId" FROM (${INBOX_MEMBERS_SQL}) inbox WHERE inbox."membershipId" = ANY($2::uuid[])`, [workspaceId, mentions]);
+    const facts = await client.query<{ actor: string | null; clientName: string | null }>(
+      `SELECT (SELECT ${MEMBER_NAME("account")} FROM users account WHERE account.id = $2) AS actor,
+              (SELECT display_name FROM crm_parties WHERE workspace_id = $1 AND id = $3) AS "clientName"`,
+      [workspaceId, actorUserId, conversation.party_id ?? null]);
+    const variables = { actor: facts.rows[0]?.actor ?? "A teammate", clientName: facts.rows[0]?.clientName ?? "a client", summary: inboundSummary(1, bodyText) };
+    const deepLink = inboxLink(String(conversation.id));
+    for (const { userId } of people.rows) {
+      if (userId === actorUserId) continue;
+      const key = `crm:inbox:mention:${messageId}:${userId}`;
+      const raised = await notifyUserInApp(client, { workspaceId, recipientUserId: userId, code: "crm.inbox_mention", eventType: "crm.inbox.mention", variables, deepLink, idempotencyKey: key });
+      if (raised.queued) await queueUserPush(client, { workspaceId, recipientUserId: userId, code: "crm.inbox_mention", eventType: "crm.inbox.mention", variables, deepLink, idempotencyKey: `${key}:push` });
+    }
   }
 
   private async viewerMembership(client: PoolClient, workspaceId: string, userId: string) {

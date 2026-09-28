@@ -21,8 +21,10 @@ export type EditableEnquiry = {
   customFields?: CustomValues | null;
 };
 
-export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
+export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSaved }: {
   initialData: LeadsPageData; existing?: EditableEnquiry; onClose: () => void;
+  /** A new enquiry started from somewhere else (a chat): the person, the channel and a summary. */
+  prefill?: { party: LeadContact; channel?: string; summary?: string };
   onSaved: (leadId: string) => Promise<void>;
 }) {
   const t = useT();
@@ -34,7 +36,7 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
   const [customValues, setCustomValues] = useState<CustomValues>(() => ({ ...(existing?.customFields ?? {}) }));
   const [requestId] = useState(() => crypto.randomUUID());
   const [contact, setContact] = useState<LeadContact>(() => {
-    const saved = existing?.party ?? { displayName: "" };
+    const saved = existing?.party ?? prefill?.party ?? { displayName: "" };
     const fallback = phoneCountry(undefined, initialData.defaultLocale) ?? "";
     return {
       ...saved,
@@ -43,13 +45,13 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
     };
   });
   const [serviceType, setServiceType] = useState(existing?.serviceType ?? options?.enquiryTypes.find(item => item.id === "not_sure")?.id ?? options?.enquiryTypes[0]?.id ?? "");
-  const [summary, setSummary] = useState(existing?.summary ?? "");
+  const [summary, setSummary] = useState(existing?.summary ?? prefill?.summary ?? "");
   const [details, setDetails] = useState<EnquiryDetails>(existing?.details ?? {});
   const areaOptions = options?.areas?.[details.emirate ?? ""] ?? [];
   const [customAreaSelected, setCustomAreaSelected] = useState(() => Boolean(existing?.details?.area && !(options?.areas?.[existing.details.emirate ?? ""] ?? []).some(item => item.id === existing.details?.area)));
   const areaChoice = customAreaSelected ? "other" : details.area ?? "";
   const [source, setSource] = useState(existing?.source ?? options?.sources.find(s => s.id === "company")?.id ?? options?.sources[0]?.id ?? "");
-  const [channel, setChannel] = useState(existing?.channel ?? options?.channels[source]?.find(c => c.id === "call")?.id ?? options?.channels[source]?.[0]?.id ?? "");
+  const [channel, setChannel] = useState(existing?.channel ?? options?.channels[source]?.find(c => c.id === prefill?.channel)?.id ?? options?.channels[source]?.find(c => c.id === "call")?.id ?? options?.channels[source]?.[0]?.id ?? "");
   // Only a real correction is sent, so an older source that is no longer offered stays as it was.
   const sourceChanged = Boolean(existing) && (source !== (existing?.source ?? "") || channel !== (existing?.channel ?? ""));
   const [referral, setReferral] = useState({ name: existing?.referral?.name ?? "", contact: existing?.referral?.contact ?? "", membershipId: existing?.referral?.membershipId ?? "", option: existing?.referral?.option ?? "" });

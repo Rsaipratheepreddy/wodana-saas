@@ -56,6 +56,8 @@ export class CreateMessageDto {
   @IsOptional() @IsString() @MaxLength(80) purpose?: string;
   @IsOptional() @IsString() @MaxLength(500) providerMessageId?: string;
   @IsOptional() @IsObject() metadata?: Record<string, unknown>;
+  /** People (memberships) @mentioned in an internal note; each is told. */
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @IsUUID(undefined, { each: true }) mentions?: string[];
 }
 
 export class MessageReceiptDto {

@@ -175,6 +175,19 @@ integration("team inbox", () => {
     });
   });
 
+  it("keeps internal notes in the team's thread, never sends them, and tells the people mentioned", async () => {
+    await withInbox(async (client, { workspaceId, sara, ali, aliMember, nouraChat, conversations, as }) => {
+      as(sara);
+      const note = await conversations.addMessage(actor, workspaceId, nouraChat, { direction: "internal", bodyText: "@Ali Noor call her after 5", mentions: [aliMember] } as never);
+      const thread = await conversations.get(actor, workspaceId, nouraChat);
+      expect(thread.messages).toEqual([expect.objectContaining({ id: note.id, direction: "internal", senderName: "Sara Khan" })]);
+      const queued = await client.query(`SELECT 1 FROM notifications WHERE workspace_id=$1 AND idempotency_key=$2`, [workspaceId, `message:${note.id}`]);
+      expect(queued.rowCount).toBe(0);
+      expect(await notices(client, workspaceId, ali, "crm.inbox.mention")).toEqual([expect.objectContaining({ subject: "Sara Khan mentioned you", body: "Noura Haddad: @Ali Noor call her after 5" })]);
+      expect((await chat(client, nouraChat)).waiting_since).toBeNull();
+    });
+  });
+
   it("fills a template from the chat's records and blocks a send whose value is missing", async () => {
     await withInbox(async (client, { workspaceId, manager, sara, templateId, nouraChat, strangerChat, conversations, inbox, as }) => {
       await conversations.addInboundInternal(workspaceId, nouraChat, { direction: "inbound", bodyText: "Hello" } as never);

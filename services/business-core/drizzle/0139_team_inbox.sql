@@ -264,6 +264,8 @@ SELECT workspace.id, template.code, template.channel, 'en', 1, 'approved', templ
    ('crm.inbox_assigned', 'in_app', 'Chat with {{clientName}} is yours', '{{reason}}', '["clientName","reason"]'),
    ('crm.inbox_assigned', 'push', 'Chat with {{clientName}} is yours', '{{reason}}', '["clientName","reason"]'),
    ('crm.inbox_woke', 'in_app', 'Chat with {{clientName}} is back', 'You snoozed it until now.', '["clientName"]'),
+   ('crm.inbox_mention', 'in_app', '{{actor}} mentioned you', '{{clientName}}: {{summary}}', '["actor","clientName","summary"]'),
+   ('crm.inbox_mention', 'push', '{{actor}} mentioned you', '{{clientName}}: {{summary}}', '["actor","clientName","summary"]'),
    ('crm.inbox_unassigned', 'in_app', '{{clientName}} is waiting', 'Nobody could take this new chat. Assign it.', '["clientName"]')
  ) AS template (code, channel, subject, body, variables)
 ON CONFLICT (workspace_id, code, channel, locale, version_number) DO NOTHING;
