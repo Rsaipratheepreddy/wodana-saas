@@ -54,6 +54,11 @@ export async function POST(request: Request) {
   }
   if (!source || !channel || !serviceType) return invalidRequest(t("Select a source, channel and enquiry type."));
   if (!mobile || !emirate) return invalidRequest(t("Enter a mobile number and select a region."));
+  // LF-1: the person's answer to "existing client?", and who referred a referral enquiry.
+  const identity = body?.identity === "existing" || body?.identity === "new" ? body.identity : undefined;
+  const partyId = typeof body?.partyId === "string" && UUID.test(body.partyId) ? body.partyId : undefined;
+  if (identity === "existing" && !partyId) return invalidRequest(t("Choose the existing client again."));
+  const referral = body?.referral && typeof body.referral === "object" && !Array.isArray(body.referral) ? body.referral : undefined;
   const extraContact = Object.fromEntries(["mobile", "mobileCountryCode", "phoneCountryCode", "company", "jobPosition", "website", "address"].flatMap(key => typeof body?.[key] === "string" ? [[key, body[key]]] : []));
 
   return workspaceJsonResponse(
@@ -79,6 +84,8 @@ export async function POST(request: Request) {
         serviceType,
         details,
         assignment: body?.assignment ?? { mode: "unassigned" },
+        ...(referral ? { referral } : {}),
+        ...(identity ? { identity, ...(identity === "existing" ? { partyId } : {}) } : {}),
         originalPayload: { origin: "wodana_leads_ui" },
       }),
     },

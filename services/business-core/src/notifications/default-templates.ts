@@ -56,16 +56,37 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     code: "crm.lead_assigned",
     channel: "in_app",
     subject: "{{reference}} · {{clientName}} is yours",
-    body: "New enquiry from {{source}}. Log your first contact within the response time.",
-    variables: ["reference", "clientName", "source"],
+    body: "New enquiry from {{source}}. Respond by {{deadline}}.",
+    variables: ["reference", "clientName", "source", "deadline"],
   },
   {
     code: "crm.lead_assigned",
     channel: "email",
     subject: "New enquiry {{reference}}: {{clientName}}",
-    body: "You have a new enquiry.\n\nReference: {{reference}}\nClient: {{clientName}}\nSource: {{source}}\n\nOpen it and log your first contact within the response time.",
-    variables: ["reference", "clientName", "source"],
+    body: "You have a new enquiry.\n\nReference: {{reference}}\nClient: {{clientName}}\nSource: {{source}}\nRespond by: {{deadline}}\n\nOpen it and log your first contact.",
+    variables: ["reference", "clientName", "source", "deadline"],
   },
+  // Sales timers (S-1, S-2, S-3, S-7, S-26, S-27): who is told when an enquiry is at risk.
+  { code: "crm.sla_warning", channel: "in_app", subject: "{{reference}} · respond by {{deadline}}", body: "{{minutes}} min left to contact {{clientName}}.", variables: ["reference", "clientName", "deadline", "minutes"] },
+  { code: "crm.sla_warning", channel: "push", subject: "{{reference}} · respond by {{deadline}}", body: "{{minutes}} min left to contact {{clientName}}.", variables: ["reference", "clientName", "deadline", "minutes"] },
+  { code: "crm.sla_breached", channel: "in_app", subject: "{{reference}} missed its response time", body: "{{clientName}} was due a first contact by {{deadline}}. Owner: {{ownerName}}.", variables: ["reference", "clientName", "deadline", "ownerName"] },
+  { code: "crm.sla_breached", channel: "push", subject: "{{reference}} missed its response time", body: "{{clientName}} was due a first contact by {{deadline}}. Owner: {{ownerName}}.", variables: ["reference", "clientName", "deadline", "ownerName"] },
+  { code: "crm.lead_kept", channel: "in_app", subject: "{{reference}} is still yours", body: "No one else is available, so {{clientName}} stays with you. Contact the client now.", variables: ["reference", "clientName"] },
+  { code: "crm.lead_kept", channel: "push", subject: "{{reference}} is still yours", body: "No one else is available, so {{clientName}} stays with you. Contact the client now.", variables: ["reference", "clientName"] },
+  { code: "crm.lead_kept_admin", channel: "in_app", subject: "{{reference}} has no one to take over", body: "{{ownerName}} has not contacted {{clientName}} and no one else is available. It stays with {{ownerName}}.", variables: ["reference", "clientName", "ownerName"] },
+  { code: "crm.lead_escalated", channel: "in_app", subject: "{{reference}} needs a manager", body: "{{clientName}} went {{attempts}} response windows without a first contact. Owner now: {{ownerName}}.", variables: ["reference", "clientName", "attempts", "ownerName"] },
+  { code: "crm.lead_escalated", channel: "email", subject: "{{reference}} needs a manager", body: "{{clientName}} went {{attempts}} response windows without a first contact.\n\nOwner now: {{ownerName}}\n\nOpen the enquiry to assign it or call the client.", variables: ["reference", "clientName", "attempts", "ownerName"] },
+  { code: "crm.lead_unowned", channel: "in_app", subject: "{{reference}} has no owner", body: "{{clientName}} has waited {{minutes}} min without an owner. Assign it now.", variables: ["reference", "clientName", "minutes"] },
+  { code: "crm.lead_unowned", channel: "push", subject: "{{reference}} has no owner", body: "{{clientName}} has waited {{minutes}} min without an owner. Assign it now.", variables: ["reference", "clientName", "minutes"] },
+  { code: "crm.lead_unowned", channel: "email", subject: "{{reference}} has no owner", body: "{{clientName}} has waited {{minutes}} min without an owner.\n\nOpen the enquiry and assign it now.", variables: ["reference", "clientName", "minutes"] },
+  { code: "crm.client_review_waiting", channel: "in_app", subject: "Confirm the client for {{reference}}", body: "{{clientName}} may be an existing client. Confirm or keep them as new.", variables: ["reference", "clientName"] },
+  { code: "crm.sales_digest", channel: "in_app", subject: "Sales today: {{breached}} overdue, {{unowned}} without an owner", body: "{{waiting}} enquiries are waiting for a first contact.", variables: ["breached", "unowned", "waiting"] },
+  { code: "crm.sales_digest", channel: "email", subject: "Sales today: {{breached}} overdue, {{unowned}} without an owner", body: "Overdue first contact: {{breached}}\nWithout an owner: {{unowned}}\nWaiting for a first contact: {{waiting}}\n\nOpen Enquiries to act on them.", variables: ["breached", "unowned", "waiting"] },
+  { code: "crm.enquiries_waiting", channel: "in_app", subject: "{{count}} enquiries waiting for you", body: "The first is due {{deadline}}.", variables: ["count", "deadline"] },
+  { code: "crm.enquiries_waiting", channel: "push", subject: "{{count}} enquiries waiting for you", body: "The first is due {{deadline}}.", variables: ["count", "deadline"] },
+  { code: "crm.lead_woken", channel: "in_app", subject: "Come back to {{clientName}} today", body: "{{reference}} was paused until {{deadline}}. It is back in your list.", variables: ["reference", "clientName", "deadline"] },
+  { code: "crm.lead_woken", channel: "push", subject: "Come back to {{clientName}} today", body: "{{reference}} was paused until {{deadline}}. It is back in your list.", variables: ["reference", "clientName", "deadline"] },
+  { code: "crm.lead_reassigned_from", channel: "in_app", subject: "{{reference}} moved to {{newOwner}}", body: "{{clientName}} is now with {{newOwner}}.", variables: ["reference", "clientName", "newOwner"] },
   {
     code: "crm.intro_booked",
     channel: "in_app",
@@ -326,6 +347,61 @@ export async function notifyUserInApp(db: Db, input: {
   );
   // A key already used means this notice was already sent: nothing new is queued.
   return inserted.rowCount ? { queued: true as const } : { queued: false as const, reason: "already_sent" };
+}
+
+/**
+ * Queues a push to one user's phone from the workspace's approved push template, inside the caller's
+ * tenant transaction. Only when the person turned push on and has a registered device; the in-app
+ * notice is always the record. The worker delivers it (and falls back to the inbox on failure).
+ */
+export async function queueUserPush(db: Db, input: {
+  workspaceId: string;
+  recipientUserId: string;
+  code: string;
+  eventType: string;
+  variables: Record<string, string>;
+  deepLink?: string;
+  idempotencyKey: string;
+}) {
+  const reachable = await db.query(
+    `SELECT 1 FROM notification_preferences preference
+      WHERE preference.workspace_id=$1 AND preference.recipient_type='user' AND preference.recipient_id=$2
+        AND preference.channel='push' AND preference.event_type='*' AND preference.enabled
+        AND EXISTS (SELECT 1 FROM device_endpoints endpoint WHERE endpoint.workspace_id=$1 AND endpoint.user_id=$2 AND endpoint.status='active')
+        AND NOT EXISTS (SELECT 1 FROM notification_preferences muted WHERE muted.workspace_id=$1 AND muted.recipient_type='user'
+          AND muted.recipient_id=$2 AND muted.channel='push' AND muted.event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*') AND NOT muted.enabled)
+      LIMIT 1`,
+    [input.workspaceId, input.recipientUserId, input.eventType],
+  );
+  if (!reachable.rowCount) return { queued: false as const, reason: "push_off" };
+  const template = await db.query<{ id: string; subject: string | null; body: string }>(
+    `SELECT id, subject_template AS subject, body_template AS body FROM notification_templates
+     WHERE workspace_id=$1 AND code=$2 AND channel='push' AND status='approved' AND locale='en'
+     ORDER BY version_number DESC LIMIT 1`,
+    [input.workspaceId, input.code],
+  );
+  if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
+  const row = template.rows[0];
+  const inserted = await db.query(
+    `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
+       scheduled_for, subject, body, deep_link, idempotency_key, correlation_id)
+     VALUES ($1, $2, 'user', $3, 'push', $4, 'pending', now(), $5, $6, $7, $8, gen_random_uuid())
+     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
+     RETURNING id, correlation_id AS "correlationId"`,
+    [input.workspaceId, row.id, input.recipientUserId, input.eventType,
+      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
+      input.deepLink ?? null, input.idempotencyKey],
+  );
+  const notification = inserted.rows[0] as { id: string; correlationId: string } | undefined;
+  if (!notification) return { queued: false as const, reason: "already_sent" };
+  // Wake the worker now instead of waiting for its next poll.
+  const eventId = randomUUID();
+  await db.query(
+    `INSERT INTO outbox_events (id, workspace_id, aggregate_type, aggregate_id, event_type, payload)
+     VALUES ($4, $1, 'notification', $2, 'notification.delivery_requested.v1', $3::jsonb)`,
+    [input.workspaceId, notification.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: notification.id, actorUserId: null, occurredAt: new Date().toISOString(), correlationId: notification.correlationId, causationId: null, data: { channel: "push" } }), eventId],
+  );
+  return { queued: true as const };
 }
 
 /**

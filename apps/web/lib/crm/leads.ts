@@ -80,6 +80,25 @@ export type CrmLeadListItem = {
   slaStatus: string | null;
   slaWarningAt: string | null;
   slaDueAt: string | null;
+  /** The open enquiry this one repeats (S-10). */
+  duplicateOfLeadId?: string | null;
+  /** When the enquiry was escalated to a manager (S-1, S-2). */
+  escalatedAt?: string | null;
+  escalationDueAt?: string | null;
+  /** Unanswered tries so far (S-16). */
+  contactAttempts?: number;
+  /** Existing clients this enquiry's client may be, waiting for "Confirm client" (S-3). */
+  clientMatches?: number;
+};
+
+/** The Sales rules the timers read (S-1, S-2, S-3, S-10). */
+export type SalesSettings = {
+  takeoverCap: number;
+  unownedEscalationMinutes: number;
+  clientReviewMinutes: number;
+  duplicateWindowDays: number;
+  salesAdminMembershipId: string | null;
+  version: number;
 };
 
 export type CrmWorkspaceMember = {
@@ -251,6 +270,10 @@ export type LeadsPageData = {
   currentRoles?: string[];
   /** Whether the signed-in member may create a Sales pipeline (CRM settings); everyone else converts into the seeded one. */
   canManagePipelines?: boolean;
+  /** Whether the signed-in member may give enquiries to other people (routing and owning one's own need no more). */
+  canAssign?: boolean;
+  /** Whether the signed-in member manages Sales settings (the Sales admin and escalation rules). */
+  canManageSales?: boolean;
   leadOptions?: LeadOptions;
   enquiryFields?: EnquiryFieldsState;
   canView: boolean;
@@ -263,6 +286,8 @@ export type LeadsPageData = {
   members: CrmWorkspaceMember[];
   /** Who an enquiry can be given to (the server's own owner rule), readable by anyone who creates or assigns enquiries. */
   salesOwners?: CrmWorkspaceMember[];
+  /** Readable by anyone who works enquiries; edited with CRM settings permission. */
+  salesSettings?: SalesSettings;
   nextCursor: string | null;
   referenceTime: string;
   workspaceId: string;

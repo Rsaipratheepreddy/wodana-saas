@@ -3,145 +3,184 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import { leadsPageFixture } from "@/lib/crm/leads";
+import type { ClientMatch } from "@/lib/crm/client-match";
 import { LeadEnquiryForm, type EditableEnquiry } from "./lead-enquiry-form";
 
 afterEach(() => vi.unstubAllGlobals());
-function setup(existing?: EditableEnquiry, tweak?: (data: ReturnType<typeof structuredClone<typeof leadsPageFixture>>) => void) {
+type Data = ReturnType<typeof structuredClone<typeof leadsPageFixture>>;
+function setup(existing?: EditableEnquiry, tweak?: (data: Data) => void, matches: ClientMatch[] = []) {
   const data = structuredClone(leadsPageFixture);
   data.defaultLocale = "en-AE";
+  data.canAssign = true;
   data.leadOptions = {
     enquiryTypes: [{ id: "design", label: "Design consultation" }],
     budgetRanges: [{ id: "small", label: "Small budget" }], customerTypes: [],
     emirates: [{ id: "dubai", label: "Dubai" }, { id: "other", label: "Other" }], areas: { dubai: [{ id: "marina", label: "Dubai Marina" }] },
-    sources: [{ id: "company", label: "Company" }, { id: "referral", label: "Referral" }, { id: "self_generated", label: "Self Generated", allowedRoles: ["SALES"] }],
-    channels: { company: [{ id: "call", label: "Call" }], referral: [{ id: "external", label: "External" }, { id: "partner", label: "Partner" }], self_generated: [{ id: "whatsapp", label: "WhatsApp" }] },
+    sources: [{ id: "company", label: "Company" }, { id: "referral", label: "Referral" }, { id: "self_generated", label: "Self Generated", allowedRoles: ["sales"] }, { id: "returning_customer", label: "Returning Customer" }],
+    channels: { company: [{ id: "call", label: "Call" }], referral: [{ id: "external", label: "External" }, { id: "partner", label: "Partner" }], self_generated: [{ id: "whatsapp", label: "WhatsApp" }], returning_customer: [{ id: "old_leads", label: "Old leads" }] },
     referralPartners: [{ id: "odg", label: "ODG" }],
   };
   tweak?.(data);
-  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ leadId: "saved" }) });
+  const fetchMock = vi.fn(async (url: string): Promise<{ ok: boolean; json: () => Promise<unknown> }> => ({ ok: true, json: async () => String(url).includes("contact-match") ? { valid: true, message: null, matches } : { leadId: "saved", reference: "E-0042" } }));
   vi.stubGlobal("fetch", fetchMock);
   const onSaved = vi.fn().mockResolvedValue(undefined);
+  const onOpenLead = vi.fn();
   const saved = existing ? { ...existing, party: { mobile: "+971501234567", ...existing.party }, details: { emirate: "dubai", ...existing.details } } : undefined;
-  render(<DesignSystemProvider><LeadEnquiryForm initialData={data} existing={saved} onClose={vi.fn()} onSaved={onSaved} /></DesignSystemProvider>);
-  return { user: userEvent.setup(), fetchMock, onSaved };
+  render(<DesignSystemProvider><LeadEnquiryForm initialData={data} existing={saved} onClose={vi.fn()} onSaved={onSaved} onOpenLead={onOpenLead} /></DesignSystemProvider>);
+  const saves = () => fetchMock.mock.calls.filter(([url]) => !String(url).includes("contact-match"));
+  return { user: userEvent.setup(), fetchMock, onSaved, onOpenLead, saves, body: (index = 0) => JSON.parse((saves()[index] as unknown as [string, { body: string }])[1].body) };
 }
 async function choose(user: ReturnType<typeof userEvent.setup>, label: RegExp, option: string) {
   await user.click(screen.getByRole("button", { name: label }));
   await user.click(screen.getByRole("option", { name: option }));
 }
-async function completeRequired(user: ReturnType<typeof userEvent.setup>) {
+async function completeRequired(user: ReturnType<typeof userEvent.setup>, source = "Company") {
   await user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
+  await user.type(screen.getByLabelText(/Customer name/), "Test customer");
+  await choose(user, /^Choose source|^Source/, source);
   await choose(user, /Emirate/, "Dubai");
 }
-it("uses configured enquiry types, resets dependent channels and saves selected option IDs", async () => {
-  const { user, fetchMock, onSaved } = setup();
+
+it("puts the mobile first, then the required fields, and keeps the rest under More details (LF-1)", async () => {
+  setup();
+  const fields = screen.getAllByRole("textbox").map((box) => box.getAttribute("aria-label") ?? (box as HTMLInputElement).labels?.[0]?.textContent ?? "");
+  expect(fields[0]).toMatch(/Mobile/);
+  expect(screen.getByRole("button", { name: "More details" })).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("textbox", { name: "Email" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Enquiry reference" })).not.toBeInTheDocument();
+});
+
+it("doesn't preselect a source, resets the channel with it and saves the chosen option IDs", async () => {
+  const { user, onSaved, body, saves } = setup();
   expect(screen.getByRole("button", { name: /Enquiry type/ })).toHaveTextContent("Design consultation");
-  await user.type(screen.getByLabelText(/Customer name/), "Test customer");
-  await completeRequired(user);
-  await choose(user, /Source/, "Referral");
-  expect(screen.getByRole("button", { name: /Channel/ })).toHaveTextContent("External");
-  await user.type(screen.getByRole("textbox", { name: /^Referred by/ }), "Omar");
-  await choose(user, /Budget range/, "Small budget");
-  await choose(user, /Assignment/, "Leave unassigned");
-  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
-  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ serviceType: "design", source: "referral", channel: "external", details: { budgetRange: "small" }, assignment: { mode: "unassigned" } });
-}, 15_000);
-it("passes the selected country with a locally entered mobile", async () => {
-  const { user, fetchMock, onSaved } = setup();
-  await user.type(screen.getByLabelText(/Customer name/), "Test customer");
   await user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
+  await user.type(screen.getByLabelText(/Customer name/), "Test customer");
   await choose(user, /Emirate/, "Dubai");
-  await choose(user, /Assignment/, "Leave unassigned");
+  await choose(user, /Owner/, "Leave unassigned");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
-  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ mobile: "501234567", mobileCountryCode: "AE" });
-});
+  // Nothing is saved until the source is chosen.
+  expect(saves()).toHaveLength(0);
+  await choose(user, /^Choose source|^Source/, "Referral");
+  expect(screen.getByRole("button", { name: /Channel/ })).not.toHaveTextContent("External");
+  await choose(user, /Channel/, "External");
+  await user.type(screen.getByRole("textbox", { name: /^Referred by/ }), "Omar");
+  await user.click(screen.getByRole("button", { name: "More details" }));
+  await choose(user, /Budget range/, "Small budget");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved", "E-0042"));
+  expect(body()).toMatchObject({ serviceType: "design", source: "referral", channel: "external", details: { budgetRange: "small" }, assignment: { mode: "unassigned" }, referral: { name: "Omar" } });
+}, 20_000);
+
+it("passes the selected country with a locally entered mobile", async () => {
+  const { user, onSaved, body } = setup();
+  await completeRequired(user);
+  await choose(user, /Owner/, "Leave unassigned");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(body()).toMatchObject({ mobile: "501234567", mobileCountryCode: "AE", channel: "call" });
+}, 15_000);
+
 it("types the place when the region is Other", async () => {
-  const { user, fetchMock, onSaved } = setup();
-  await user.type(screen.getByLabelText(/Customer name/), "International customer");
-  await user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
+  const { user, onSaved, body } = setup();
+  await completeRequired(user);
   await choose(user, /Emirate/, "Other");
-  expect(screen.queryByRole("button", { name: /Area · optional/ })).not.toBeInTheDocument();
   await user.type(screen.getByRole("textbox", { name: /Area \/ city/ }), "Muscat, Oman");
-  await choose(user, /Assignment/, "Leave unassigned");
+  await choose(user, /Owner/, "Leave unassigned");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
-  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body).details).toMatchObject({ emirate: "other", area: "Muscat, Oman" });
-});
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(body().details).toMatchObject({ emirate: "other", area: "Muscat, Oman" });
+}, 15_000);
+
+const match: ClientMatch = { partyId: "party-1", name: "Asha Rao", mobile: "+971501234567", email: "asha@example.com", leadId: "lead-9", reference: "E-0123", status: "qualified", receivedAt: "2026-05-01T08:00:00.000Z", open: false, ownerName: "Ali" };
+
+it("recognises an existing client from the mobile and needs an answer before saving (LF-1)", async () => {
+  const { user, onSaved, body, fetchMock } = setup(undefined, undefined, [match]);
+  await completeRequired(user);
+  expect(await screen.findByText("Existing client?")).toBeVisible();
+  expect(String(fetchMock.mock.calls.find(([url]) => String(url).includes("contact-match"))?.[0])).toContain("mobile=%2B971501234567");
+  const card = screen.getByRole("list", { name: "Clients with this mobile or email" });
+  expect(card).toHaveTextContent("Asha Rao");
+  expect(card).toHaveTextContent("asha@example.com");
+  expect(card).toHaveTextContent("E-0123");
+  expect(card).toHaveTextContent("Owner Ali");
+  await choose(user, /Owner/, "Leave unassigned");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  expect(await screen.findByText("Choose the existing client or Different person.")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Add as returning" }));
+  expect(screen.getByLabelText(/Customer name/)).toHaveValue("Asha Rao");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(body()).toMatchObject({ identity: "existing", partyId: "party-1", displayName: "Asha Rao" });
+}, 20_000);
+
+it("keeps a different person as a new client, and opens an open enquiry instead of adding one", async () => {
+  const first = setup(undefined, undefined, [match]);
+  await completeRequired(first.user);
+  await first.user.click(await screen.findByRole("button", { name: "Different person" }));
+  await choose(first.user, /Owner/, "Leave unassigned");
+  await first.user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(first.onSaved).toHaveBeenCalled());
+  expect(first.body()).toMatchObject({ identity: "new", displayName: "Test customer" });
+  expect(first.body()).not.toHaveProperty("partyId");
+  cleanup();
+
+  const second = setup(undefined, undefined, [{ ...match, open: true, status: "new" }]);
+  await second.user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
+  await second.user.click(await screen.findByRole("button", { name: "Open it" }));
+  expect(second.onOpenLead).toHaveBeenCalledWith("lead-9");
+  expect(screen.getByRole("button", { name: "Add to this client" })).toBeVisible();
+}, 20_000);
+
 it("shows retired values while editing and allows clearing an optional selection", async () => {
-  const { user, fetchMock, onSaved } = setup({ id: "old", version: 3, serviceType: "legacy_service", party: { displayName: "Test customer" }, details: { budgetRange: "legacy_budget", customerType: "legacy_customer" } });
-  expect(screen.getByRole("textbox", { name: "Enquiry reference" })).toHaveAttribute("readonly");
+  const { user, onSaved, body } = setup({ id: "old", version: 3, serviceType: "legacy_service", source: "company", channel: "call", party: { displayName: "Test customer" }, details: { budgetRange: "legacy_budget", customerType: "legacy_customer" } });
   expect(screen.queryByRole("textbox", { name: /Enquiry title/ })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Enquiry type/ })).toHaveTextContent("legacy service");
   expect(screen.getByRole("button", { name: /Budget range/ })).toHaveTextContent("legacy budget");
   expect(screen.getByRole("button", { name: /Client type/ })).toHaveTextContent("legacy customer");
+  expect(screen.queryByRole("button", { name: /Owner/ })).not.toBeInTheDocument();
   await choose(user, /Budget range/, "Not provided");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
-  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("old"));
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ version: 3, serviceType: "legacy_service", details: { budgetRange: "", customerType: "legacy_customer" } });
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("title");
+  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("old", undefined));
+  expect(body()).toMatchObject({ version: 3, serviceType: "legacy_service", details: { budgetRange: "", customerType: "legacy_customer" } });
+  expect(body()).not.toHaveProperty("title");
 });
+
 it("keeps the modal and selections when the backend rejects a save", async () => {
-  const { user, fetchMock, onSaved } = setup({ id: "old", version: 3, serviceType: "design", party: { displayName: "Test customer" } });
+  const { user, fetchMock, onSaved } = setup({ id: "old", version: 3, serviceType: "design", source: "company", channel: "call", party: { displayName: "Test customer" }, details: { budgetRange: "small" } });
   fetchMock.mockResolvedValue({ ok: false, json: async () => ({ message: "Lead changed; reload before saving" }) });
-  await choose(user, /Budget range/, "Small budget");
+  await choose(user, /Budget range/, "Not provided");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(await screen.findByText("Lead changed; reload before saving")).toBeVisible();
-  expect(screen.getByRole("button", { name: /Budget range/ })).toHaveTextContent("Small budget");
+  expect(screen.getByRole("button", { name: /Budget range/ })).toHaveTextContent("Not provided");
   expect(onSaved).not.toHaveBeenCalled();
 });
-it.each([['Test customer', 'attach'], ['Different person — create a new client', 'create_new']])('resolves %s inside the original form', async (option, decision) => {
-  const { user, fetchMock, onSaved } = setup();
-  fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'duplicate_candidate', intakeEventId: 'intake-1' }) })
-    .mockResolvedValueOnce({ ok: true, json: async () => ({ candidates: [{ id: 'candidate-1', partyId: 'party-1', partyName: 'Test customer', status: 'pending', version: 2 }] }) });
-  await user.type(screen.getByLabelText(/Customer name/), 'Test customer');
-  await completeRequired(user);
-  await choose(user, /Assignment/, 'Leave unassigned');
-  await user.click(screen.getByRole('button', { name: 'Create enquiry' }));
-  expect(await screen.findByText('Is this an existing client?')).toBeVisible();
-  expect(screen.getAllByRole('dialog')).toHaveLength(1);
-  expect(onSaved).not.toHaveBeenCalled();
-  await choose(user, /Client for this enquiry/, option);
-  await user.click(screen.getByRole('button', { name: 'Save enquiry' }));
-  await waitFor(() => expect(onSaved).toHaveBeenCalledWith('saved'));
-  const body = JSON.parse(fetchMock.mock.calls[2][1].body);
-  expect(body).toMatchObject({ decision, version: 2 });
-  expect(body.partyId).toBe(decision === 'attach' ? 'party-1' : undefined);
-});
+
 it("lets an existing enquiry correct its source and channel, and keeps an older source untouched", async () => {
   const legacy = { id: "lead-1", version: 3, serviceType: "design", party: { displayName: "Amira" }, source: "instagram", channel: "dm" };
   const first = setup(legacy);
   expect(screen.getByRole("button", { name: /Source/ })).toHaveTextContent("instagram");
   await first.user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(first.onSaved).toHaveBeenCalled());
-  const untouched = JSON.parse(first.fetchMock.mock.calls[0][1].body);
-  expect(untouched).not.toHaveProperty("source");
-  expect(untouched).not.toHaveProperty("channel");
+  expect(first.body()).not.toHaveProperty("source");
+  expect(first.body()).not.toHaveProperty("channel");
   cleanup();
 
   const second = setup(legacy);
   await choose(second.user, /Source/, "Referral");
-  expect(screen.getByRole("button", { name: /Channel/ })).toHaveTextContent("External");
+  await choose(second.user, /Channel/, "External");
   await second.user.type(screen.getByRole("textbox", { name: /^Referred by/ }), "Omar");
   await second.user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(second.onSaved).toHaveBeenCalled());
-  expect(JSON.parse(second.fetchMock.mock.calls[0][1].body)).toMatchObject({ version: 3, source: "referral", channel: "external", referral: { name: "Omar" } });
+  expect(second.body()).toMatchObject({ version: 3, source: "referral", channel: "external", referral: { name: "Omar" } });
 }, 15_000);
 
-it("asks who referred a referral enquiry and sends it, and hides role-limited sources", async () => {
-  const { user, fetchMock, onSaved } = setup();
-  await user.type(screen.getByLabelText(/Customer name/), "Referred client");
-  await completeRequired(user);
-  await user.click(screen.getByRole("button", { name: /Source/ }));
+it("never offers Returning Customer or a role-limited source to someone without the role", async () => {
+  const { user } = setup();
+  await user.click(screen.getByRole("button", { name: /^Choose source|^Source/ }));
   expect(screen.queryByRole("option", { name: "Self Generated" })).toBeNull();
-  await user.click(screen.getByRole("option", { name: "Referral" }));
-  await user.type(screen.getByRole("textbox", { name: /^Referred by/ }), "Omar Haddad");
-  await choose(user, /Assignment/, "Leave unassigned");
-  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
-  await waitFor(() => expect(onSaved).toHaveBeenCalled());
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ source: "referral", channel: "external", referral: { name: "Omar Haddad" } });
-}, 15_000);
+  expect(screen.queryByRole("option", { name: "Returning Customer" })).toBeNull();
+  expect(screen.getByRole("option", { name: "Referral" })).toBeVisible();
+});
 
 const FLOOR = "7d1b6c1e-2f0a-4c55-9d7e-0a1b2c3d4e5f";
 it("saves the workspace's own fields with the enquiry and hides hidden fixed fields", async () => {
@@ -149,61 +188,68 @@ it("saves the workspace's own fields with the enquiry and hides hidden fixed fie
     data.enquiryFields = { system: { email: { visible: false, version: 1 }, customerType: { visible: true, version: 0 }, area: { visible: true, version: 0 }, budgetRange: { visible: false, version: 1 }, summary: { visible: true, version: 0 } },
       custom: [{ id: FLOOR, key: "floor", label: "Floor", dataType: "text", configuration: {}, visible: true, position: 1, version: 1 }] };
   });
+  await user.click(screen.getByRole("button", { name: "More details" }));
   expect(screen.queryByRole("textbox", { name: "Email" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /Budget range/ })).not.toBeInTheDocument();
-  await user.type(screen.getByLabelText(/Customer name/), "Field customer");
-  await user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
-  await choose(user, /Emirate/, "Dubai");
+  await completeRequired(user);
   await user.type(screen.getByRole("textbox", { name: "Floor" }), "3rd");
-  await choose(user, /Assignment/, "Leave unassigned");
+  await choose(user, /Owner/, "Leave unassigned");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
-  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
-  const fieldsCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/leads/saved/fields"));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  const fieldsCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/leads/saved/fields")) as unknown as [string, { method: string; body: string }] | undefined;
   expect(fieldsCall?.[1].method).toBe("PUT");
-  expect(JSON.parse(fieldsCall?.[1].body)).toEqual({ values: { [FLOOR]: "3rd" } });
-});
+  expect(JSON.parse(fieldsCall?.[1].body ?? "{}")).toEqual({ values: { [FLOOR]: "3rd" } });
+}, 15_000);
 
 it("doesn't ask for a region when the workspace lists none", async () => {
   const { user, onSaved } = setup(undefined, (data) => { data.leadOptions = { ...data.leadOptions!, emirates: [], areas: {} }; });
   expect(screen.queryByRole("button", { name: /Emirate/ })).not.toBeInTheDocument();
-  await user.type(screen.getByLabelText(/Customer name/), "No region");
   await user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
+  await user.type(screen.getByLabelText(/Customer name/), "No region");
+  await choose(user, /^Choose source|^Source/, "Company");
   await user.type(screen.getByRole("textbox", { name: /Area \/ city/ }), "Anywhere");
-  await choose(user, /Assignment/, "Leave unassigned");
+  await choose(user, /Owner/, "Leave unassigned");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
-  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
-});
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+}, 15_000);
 
 const SARA = "20000000-0000-4000-8000-000000000001";
 const ZAID = "20000000-0000-4000-8000-000000000002";
-const salesperson = (data: typeof leadsPageFixture) => {
+const salesperson = (data: Data) => {
   // A salesperson can't read the member directory; the sales owners come from their own list.
   data.members = [];
   data.currentMembershipId = SARA;
+  data.currentRoles = ["sales"];
   data.salesOwners = [{ id: SARA, displayName: "Sara", email: "sara@example.com", status: "active" }, { id: ZAID, displayName: "Zaid", email: "zaid@example.com", status: "active" }];
 };
 
-it("lets a salesperson own the enquiry they create: they are the default sales owner", async () => {
-  const { user, fetchMock, onSaved } = setup(undefined, salesperson);
-  expect(screen.getByRole("button", { name: /Sales owner/ })).toHaveTextContent("Sara");
-  await user.type(screen.getByLabelText(/Customer name/), "Walk-in customer");
-  await completeRequired(user);
+it("routes company enquiries and gives self-generated ones to the person creating them", async () => {
+  const { user, onSaved, body } = setup(undefined, salesperson);
+  expect(screen.getByRole("button", { name: /Owner/ })).toHaveTextContent("Use routing rules");
+  await completeRequired(user, "Self Generated");
+  expect(screen.getByRole("button", { name: /Owner/ })).toHaveTextContent("Me (Sara)");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
-  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ assignment: { mode: "manual", ownerMembershipId: SARA } });
-});
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(body()).toMatchObject({ source: "self_generated", channel: "whatsapp", assignment: { mode: "manual", ownerMembershipId: SARA } });
+}, 15_000);
 
-it("offers every assignable sales owner, not only the salesperson", async () => {
-  const { user, fetchMock, onSaved } = setup(undefined, salesperson);
-  await choose(user, /Sales owner/, "Zaid");
-  await user.type(screen.getByLabelText(/Customer name/), "Referred customer");
-  await completeRequired(user);
-  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
-  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ assignment: { mode: "manual", ownerMembershipId: ZAID } });
-});
+it("owns it yourself when no routing is set up, and offers others only to people who may assign", async () => {
+  const assigner = setup(undefined, (data) => { salesperson(data); data.assignmentPolicies = []; data.queues = []; });
+  expect(screen.getByRole("button", { name: /Owner/ })).toHaveTextContent("Me (Sara)");
+  await choose(assigner.user, /Owner/, "Zaid");
+  await completeRequired(assigner.user);
+  await assigner.user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(assigner.onSaved).toHaveBeenCalled());
+  expect(assigner.body()).toMatchObject({ assignment: { mode: "manual", ownerMembershipId: ZAID } });
+  cleanup();
+
+  const seller = setup(undefined, (data) => { salesperson(data); data.canAssign = false; });
+  await seller.user.click(screen.getByRole("button", { name: /Owner/ }));
+  expect(screen.queryByRole("option", { name: "Zaid" })).toBeNull();
+  expect(screen.getByRole("option", { name: "Me (Sara)" })).toBeVisible();
+}, 20_000);
 
 it("doesn't preselect someone who can't own enquiries", async () => {
-  setup(undefined, (data) => { salesperson(data); data.currentMembershipId = "20000000-0000-4000-8000-000000000009"; });
-  expect(screen.getByRole("button", { name: /Sales owner/ })).not.toHaveTextContent(/Sara|Zaid/);
+  setup(undefined, (data) => { salesperson(data); data.currentMembershipId = "20000000-0000-4000-8000-000000000009"; data.assignmentPolicies = []; data.queues = []; });
+  expect(screen.getByRole("button", { name: /Owner/ })).not.toHaveTextContent(/Sara|Zaid/);
 });

@@ -14,6 +14,7 @@ export class CrmTodayService {
       const workspace = await client.query(`SELECT default_timezone FROM workspaces WHERE id = $1`, [workspaceId]);
       const timezone = workspace.rows[0]?.default_timezone ?? "UTC";
       const canReadCustomers = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.parties.view");
+      const canAssign = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.leads.assign");
       const summary = await client.query(`SELECT
         (SELECT count(*)::int FROM crm_leads WHERE workspace_id=$1 AND status IN ('new','attempting_contact','connected','nurturing','paused')) AS "activeLeads",
         (SELECT count(*)::int FROM crm_leads WHERE workspace_id=$1 AND owner_membership_id IS NULL AND status IN ('new','attempting_contact','connected','nurturing','paused')) AS "unassignedLeads",
@@ -91,6 +92,27 @@ export class CrmTodayService {
            WHERE sla.workspace_id = $1 AND sla.status = 'breached'
              AND ($2::uuid IS NULL OR sla.owner_membership_id = $2 OR sla.owner_membership_id IS NULL)
            UNION ALL
+           -- S-2: whoever assigns enquiries sees every one nobody owns, on Home too.
+           SELECT 2, 'unowned_lead', lead.id, party.display_name,
+                  'No owner yet', COALESCE(lead.escalation_due_at, lead.created_at), '/crm/leads/' || lead.id,
+                  lead.party_id, lead.id, NULL::uuid
+           FROM crm_leads lead
+           JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id
+           WHERE $7::boolean AND lead.workspace_id = $1 AND lead.owner_membership_id IS NULL
+             AND lead.status IN ('new','attempting_contact','connected','nurturing')
+           UNION ALL
+           -- S-3: a possible existing client waits to be confirmed on the enquiry.
+           SELECT 3, 'client_review', lead.id, party.display_name,
+                  'Confirm the client', lead.client_review_due_at, '/crm/leads/' || lead.id,
+                  lead.party_id, lead.id, NULL::uuid
+           FROM crm_leads lead
+           JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id
+           JOIN crm_enquiries enquiry ON enquiry.id = lead.enquiry_id AND enquiry.workspace_id = lead.workspace_id
+           WHERE lead.workspace_id = $1 AND lead.status <> 'duplicate'
+             AND EXISTS (SELECT 1 FROM crm_identity_candidates candidate WHERE candidate.workspace_id = lead.workspace_id
+                           AND candidate.intake_event_id = enquiry.intake_event_id AND candidate.status = 'pending')
+             AND ($2::uuid IS NULL OR lead.owner_membership_id = $2 OR lead.owner_membership_id IS NULL)
+           UNION ALL
            SELECT 3, 'overdue_activity', activity.id, activity.title,
                   'Commitment is overdue', activity.due_at, '/crm/activities/' || activity.id,
                   activity.party_id, activity.lead_id, activity.opportunity_id
@@ -150,7 +172,7 @@ export class CrmTodayService {
          LEFT JOIN crm_parties party ON party.id = COALESCE(queue."partyId", lead.party_id, opportunity.party_id)
            AND party.workspace_id = $1
          ORDER BY queue.priority, queue."dueAt" NULLS LAST, queue."recordId"`,
-        [workspaceId, membershipId ?? null, canReadMessages, canReadActivities, canReadOpportunities, timezone],
+        [workspaceId, membershipId ?? null, canReadMessages, canReadActivities, canReadOpportunities, timezone, canAssign],
       );
       const counts = result.rows.reduce<Record<string, number>>((total, item) => {
         const kind = String(item.kind);

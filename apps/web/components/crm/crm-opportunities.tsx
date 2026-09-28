@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarClock, Plus, RefreshCw, Columns3, List, Search } from "lucide-react";
 import { Avatar, Badge, Button, Callout, DataGrid, ControlledModalDialog, personDisplayName, SelectField, useDesignSystem, type DataGridColumn } from "@/design-system";
@@ -75,6 +75,24 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
   const [moveNotice, setMoveNotice] = useState("");
   const [pendingOutcome, setPendingOutcome] = useState<{ recordId: string; stageId: string; status: "won" | "lost" } | null>(null);
   const [outcomeReason, setOutcomeReason] = useState("");
+  // S-5: the board refreshes itself while on screen; a card being moved or decided is left alone.
+  const quiet = useRef(false);
+  useEffect(() => { quiet.current = busy || Boolean(moving || dragged || pendingOutcome); });
+  useEffect(() => {
+    const poll = () => {
+      if (document.visibilityState !== "visible" || quiet.current || moveLock.current) return;
+      crmRequest<OpportunityPage>(initialData.workspaceId, "opportunities?limit=100").then((page) => {
+        if (quiet.current || moveLock.current) return;
+        const fresh = rows(page) as CrmRecord[];
+        const byId = new Map(fresh.map((record) => [record.id, record]));
+        setItems((current) => [...fresh.filter((record) => !current.some((item) => item.id === record.id)), ...current.map((record) => byId.get(record.id) ?? record)]);
+      }).catch(() => { /* the next pass tries again */ });
+    };
+    const timer = window.setInterval(poll, 30_000);
+    const onVisible = () => { if (document.visibilityState === "visible") poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
+  }, [initialData.workspaceId]);
   const [layout, setLayout] = useState<"board" | "list">("board");
   const [search, setSearch] = useState("");
   const [assignee, setAssignee] = useState("");

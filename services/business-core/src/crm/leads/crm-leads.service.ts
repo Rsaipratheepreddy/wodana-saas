@@ -13,7 +13,9 @@ import { RequestActor } from "../../auth/actor";
 import { DatabaseService } from "../../database/database.service";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
-import { decodeCursor, encodeCursor, normalizeName } from "../shared/crm-types";
+import { decodeCursor, encodeCursor, normalizeEmail, normalizeLoosePhone, normalizeName } from "../shared/crm-types";
+import { countryFromLocale, normalizeIntakePartyPhones } from "../intake/intake-phone";
+import { refreshEnquiryTitlesForParty } from "./enquiry-title";
 import {
   AddQueueMemberDto,
   AssignLeadDto,
@@ -29,11 +31,15 @@ import {
   UpsertQualificationDto,
 } from "./dto/leads.dto";
 import { notifyUserInApp, queueUserEmail } from "../../notifications/default-templates";
-import { checkContact, statusForOutcome } from "./contact-outcomes";
+import { checkContact, statusForOutcome, UNANSWERED_OUTCOMES, unansweredNote } from "./contact-outcomes";
 import { addSlaMinutes, normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
 import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvaluation } from "./qualification-evidence";
 import { hasResolvedEnquiryType } from "./lead-options";
+import {
+  formatDeadline, leadFacts, leadLink, loadSalesSettings, memberPerson, refreshUnownedEscalation,
+  salesEscalationRecipients, tell, workspaceClock,
+} from "./sales-attention";
 
 const ACTIVE_LEAD_STATUSES = ["new", "attempting_contact", "connected", "nurturing", "paused"];
 /** Who can own an enquiry: an active member (with an active account) holding enquiry view and manage and follow-up access. */
@@ -160,6 +166,7 @@ export class CrmLeadsService {
           entityId: String(row.leadId ?? row.targetId),
           after: { ...row, escalation },
         });
+        if (row.leadId && row.eventType === "first_response") await this.notifySla(client, workspaceId, row, "breach");
       }
       const remaining = safeLimit - (breached.rowCount ?? 0);
       const warnings = remaining > 0
@@ -204,8 +211,35 @@ export class CrmLeadsService {
           entityId: String(row.leadId ?? row.targetId),
           after: { ...row, escalation },
         });
+        if (row.leadId && row.eventType === "first_response") await this.notifySla(client, workspaceId, row, "warning");
       }
       return { warnings: warnings.rows, breaches: breached.rows };
+    });
+  }
+
+  /**
+   * S-7: at the warning the owner is told how long is left; at the breach the owner and the Sales
+   * admin are told. A warning on an enquiry without an owner goes to the admin (S-2 escalates it too).
+   */
+  private async notifySla(client: PoolClient, workspaceId: string, row: Record<string, unknown>, level: "warning" | "breach") {
+    const leadId = String(row.leadId);
+    const dueAt = new Date(row.dueAt as string | Date);
+    const now = new Date();
+    const clock = await workspaceClock(client, workspaceId);
+    const facts = await leadFacts(client, workspaceId, leadId);
+    const owner = await memberPerson(client, workspaceId, row.ownerMembershipId ? String(row.ownerMembershipId) : null);
+    const admins = level === "breach" || !owner ? await salesEscalationRecipients(client, workspaceId, [owner?.membershipId ?? null]) : [];
+    const deadline = formatDeadline(dueAt, clock, now);
+    if (level === "warning") {
+      await tell(client, workspaceId, owner ? [owner] : admins, {
+        code: "crm.sla_warning", channels: ["in_app", "push"], deepLink: leadLink(leadId), key: `crm:sla:${String(row.id)}:warning`,
+        variables: { ...facts, deadline, minutes: String(Math.max(1, Math.round((dueAt.getTime() - now.getTime()) / 60_000))) },
+      });
+      return;
+    }
+    await tell(client, workspaceId, [...(owner ? [owner] : []), ...admins], {
+      code: "crm.sla_breached", channels: ["in_app", "push"], deepLink: leadLink(leadId), key: `crm:sla:${String(row.id)}:breach`,
+      variables: { ...facts, deadline, ownerName: owner?.name ?? "No owner" },
     });
   }
 
@@ -223,6 +257,8 @@ export class CrmLeadsService {
       );
       const reassigned: Array<{ leadId: string; ownerMembershipId: string | null; queueId: string | null }> = [];
       const engaged: string[] = [];
+      const kept: string[] = [];
+      const escalated: string[] = [];
       for (const item of due.rows) {
         const lead = await this.requireLead(client, workspaceId, item.id, false);
         if (!lead.owner_membership_id || !lead.queue_id) {
@@ -276,9 +312,32 @@ export class CrmLeadsService {
           });
           continue;
         }
+        // S-1: the takeover rotates an enquiry at most `takeoverCap` times; then a manager is told instead.
+        const settings = await loadSalesSettings(client, workspaceId);
+        const tries = await client.query<{ attempts: number }>(
+          // Counted since the last hand-picked or first assignment, so a manager's reassignment starts a fresh count.
+          `SELECT count(*)::int AS attempts FROM crm_assignment_history attempt
+            WHERE attempt.workspace_id=$1 AND attempt.lead_id=$2 AND attempt.assignment_method='automatic'
+              AND attempt.explanation->>'reason' IN ('unanswered_takeover','no_eligible_alternate')
+              AND attempt.assigned_at >= coalesce((SELECT max(other.assigned_at) FROM crm_assignment_history other
+                WHERE other.workspace_id=$1 AND other.lead_id=$2
+                  AND NOT (other.assignment_method='automatic' AND coalesce(other.explanation->>'reason', '') IN ('unanswered_takeover','no_eligible_alternate'))), '-infinity')`,
+          [workspaceId, lead.id]);
+        const attempts = Number(tries.rows[0]?.attempts ?? 0);
+        if (attempts >= settings.takeoverCap) {
+          await this.escalateTakeover(client, workspaceId, lead, attempts);
+          escalated.push(lead.id);
+          continue;
+        }
         const selection = await this.selectAssignment(client, workspaceId, lead, true, {
           queueId: lead.queue_id, excludedOwnerId: lead.owner_membership_id,
         });
+        if (!selection.ownerMembershipId) {
+          // Nobody else can take it: it stays with its owner, now urgent, and both the owner and the admin know.
+          await this.keepWithOwner(client, workspaceId, lead, selection, attempts + 1, settings.takeoverCap);
+          kept.push(lead.id);
+          continue;
+        }
         const changed = await this.applyAssignment(
           client, workspaceId, lead, selection, null, "automatic",
           "No call or note was logged before the ownership deadline",
@@ -299,7 +358,70 @@ export class CrmLeadsService {
         if (previous) await notifyUserInApp(client, { workspaceId, recipientUserId: previous.userId, code: "crm.lead_taken_over_from", eventType: "crm.lead_taken_over_from", variables: { reference, newOwner: next?.name ?? "the queue" }, deepLink: `/workspace/crm/leads?lead=${lead.id}`, idempotencyKey: `takeover-from:${lead.id}:${stamp}` });
         if (next) await notifyUserInApp(client, { workspaceId, recipientUserId: next.userId, code: "crm.lead_taken_over_to", eventType: "crm.lead_taken_over_to", variables: { reference, previousOwner: previous?.name ?? "The previous owner" }, deepLink: `/workspace/crm/leads?lead=${lead.id}`, idempotencyKey: `takeover-to:${lead.id}:${stamp}` });
       }
-      return { reassigned, engaged };
+      return { reassigned, engaged, kept, escalated };
+    });
+  }
+
+  /**
+   * S-1: with nobody else eligible the enquiry keeps its owner (never left unowned), turns urgent and,
+   * unless this was the last allowed attempt, gets a fresh response window. The attempt is recorded.
+   */
+  private async keepWithOwner(client: PoolClient, workspaceId: string, lead: LeadContext,
+    selection: { queueId: string | null; explanation: Record<string, unknown> }, attempt: number, cap: number) {
+    const lastAttempt = attempt >= cap;
+    const queue = lead.queue_id ? await client.query<{ minutes: number | null; schedule: unknown }>(
+      `SELECT takeover_after_minutes AS minutes, takeover_schedule AS schedule FROM crm_queues WHERE workspace_id=$1 AND id=$2 AND status='active'`,
+      [workspaceId, lead.queue_id]) : null;
+    const minutes = queue?.rows[0]?.minutes ?? null;
+    const nextDue = lastAttempt || minutes === null ? null
+      : addSlaMinutes(new Date(), minutes, queue?.rows[0]?.schedule ? normalizeSlaSchedule(queue.rows[0].schedule) : { version: 1, mode: "elapsed" });
+    await client.query(
+      `UPDATE crm_leads SET ownership_due_at=$3, priority='urgent', escalated_at=CASE WHEN $4 THEN now() ELSE escalated_at END,
+         version=version+1, updated_at=now()
+       WHERE workspace_id=$1 AND id=$2`, [workspaceId, lead.id, nextDue, lastAttempt]);
+    await client.query(
+      `INSERT INTO crm_assignment_history
+        (workspace_id, lead_id, previous_owner_membership_id, owner_membership_id, queue_id, assignment_method, explanation, reason, assigned_by)
+       VALUES ($1,$2,$3,$3,$4,'automatic',$5,$6,NULL)`,
+      [workspaceId, lead.id, lead.owner_membership_id, lead.queue_id ?? selection.queueId,
+        { ...selection.explanation, reason: "no_eligible_alternate", kept: true },
+        "No one else was available, so the owner keeps the enquiry"]);
+    await client.query(
+      `UPDATE crm_activities SET priority='urgent', version=version+1, updated_at=now()
+        WHERE workspace_id=$1 AND lead_id=$2 AND sla_instance_id IS NOT NULL AND status='pending'`, [workspaceId, lead.id]);
+    const facts = await leadFacts(client, workspaceId, lead.id);
+    const owner = await memberPerson(client, workspaceId, lead.owner_membership_id);
+    const stamp = new Date(lead.ownership_due_at ?? Date.now()).toISOString();
+    if (owner) await tell(client, workspaceId, [owner], {
+      code: "crm.lead_kept", channels: ["in_app", "push"], deepLink: leadLink(lead.id), variables: facts, key: `crm:kept:${lead.id}:${stamp}`,
+    });
+    const admins = await salesEscalationRecipients(client, workspaceId, [lead.owner_membership_id]);
+    await tell(client, workspaceId, admins, {
+      code: lastAttempt ? "crm.lead_escalated" : "crm.lead_kept_admin", channels: lastAttempt ? ["in_app", "email"] : ["in_app"],
+      deepLink: leadLink(lead.id), key: `crm:kept-admin:${lead.id}:${stamp}`,
+      variables: { ...facts, ownerName: owner?.name ?? "", attempts: String(attempt) },
+    });
+    await this.events.record(client, {
+      workspaceId, actorUserId: null, source: "automation", action: "crm.lead.takeover_kept.v1", entityType: "crm_lead", entityId: lead.id,
+      after: { ownerMembershipId: lead.owner_membership_id, nextTakeoverAt: nextDue?.toISOString() ?? null, attempt, escalated: lastAttempt, reason: selection.explanation.reason },
+    });
+  }
+
+  /** S-1: the enquiry already moved as often as allowed; it stays where it is and a manager is told. */
+  private async escalateTakeover(client: PoolClient, workspaceId: string, lead: LeadContext, attempts: number) {
+    await client.query(
+      `UPDATE crm_leads SET ownership_due_at=NULL, priority='urgent', escalated_at=now(), version=version+1, updated_at=now()
+        WHERE workspace_id=$1 AND id=$2`, [workspaceId, lead.id]);
+    const facts = await leadFacts(client, workspaceId, lead.id);
+    const owner = await memberPerson(client, workspaceId, lead.owner_membership_id);
+    await tell(client, workspaceId, await salesEscalationRecipients(client, workspaceId, [lead.owner_membership_id]), {
+      code: "crm.lead_escalated", channels: ["in_app", "email"], deepLink: leadLink(lead.id),
+      key: `crm:takeover-cap:${lead.id}:${new Date(lead.ownership_due_at ?? Date.now()).toISOString()}`,
+      variables: { ...facts, attempts: String(attempts), ownerName: owner?.name ?? "" },
+    });
+    await this.events.record(client, {
+      workspaceId, actorUserId: null, source: "automation", action: "crm.lead.takeover_escalated.v1", entityType: "crm_lead", entityId: lead.id,
+      after: { ownerMembershipId: lead.owner_membership_id, attempts },
     });
   }
 
@@ -360,7 +482,13 @@ export class CrmLeadsService {
                 ${enquiryCustomValuesSql("lead.workspace_id", "enquiry.id")} AS "customFields",
                 enquiry.service_type AS "serviceType",
                 user_account.display_name AS "ownerName", queue.name AS "queueName",
-                sla.status AS "slaStatus", sla.warning_at AS "slaWarningAt", sla.due_at AS "slaDueAt"
+                sla.status AS "slaStatus", sla.warning_at AS "slaWarningAt", sla.due_at AS "slaDueAt",
+                lead.duplicate_of_lead_id AS "duplicateOfLeadId",
+                lead.escalated_at AS "escalatedAt", lead.escalation_due_at AS "escalationDueAt",
+                (SELECT count(*)::int FROM crm_activities attempt WHERE attempt.workspace_id = lead.workspace_id AND attempt.lead_id = lead.id
+                   AND attempt.status = 'completed' AND attempt.completion_outcome IN ('no_answer', 'message_sent_no_reply')) AS "contactAttempts",
+                (SELECT count(*)::int FROM crm_identity_candidates candidate WHERE candidate.workspace_id = lead.workspace_id
+                   AND candidate.intake_event_id = enquiry.intake_event_id AND candidate.status = 'pending') AS "clientMatches"
          FROM crm_leads lead
          JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id
          JOIN crm_enquiries enquiry ON enquiry.id = lead.enquiry_id AND enquiry.workspace_id = lead.workspace_id
@@ -487,8 +615,10 @@ export class CrmLeadsService {
       const qualificationState = frozenQualification && frozenTypeResolved
         ? null
         : await evaluateQualification(client, workspaceId, leadId);
+      const clientMatches = await this.pendingClientMatches(client, workspaceId, lead.enquiry_id);
       return {
         ...this.mapLead(lead), ownerName: owner.rows[0]?.ownerName ?? null, enquiry: { ...enquiry.rows[0], attribution: attribution.rows }, opportunities: opportunities.rows,
+        clientMatches,
         qualification: qualification.rows, assignments: assignments.rows, sla: sla.rows,
         qualificationState: {
           ready: qualificationState ? qualificationState.ready : true,
@@ -542,6 +672,210 @@ export class CrmLeadsService {
       const self = await client.query<{ id: string }>(
         `SELECT id FROM workspace_memberships WHERE workspace_id=$1 AND user_id=$2 AND status='active'`, [workspaceId, actorUser.userId]);
       return { items: owners.rows.map((owner) => ({ ...owner, status: "active" })), currentMembershipId: self.rows[0]?.id ?? null };
+    });
+  }
+
+  /**
+   * LF-1: while someone types a mobile (or email) into a new enquiry, who in the CRM already has it:
+   * the client, their latest enquiry and its owner, so an existing client is recognised before saving.
+   */
+  contactMatch(actor: RequestActor, workspaceId: string, query: { mobile?: string; countryCode?: string; email?: string }) {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client) => {
+      const values: string[] = [];
+      let invalid: string | null = null;
+      if (query.mobile?.trim()) {
+        try {
+          const country = query.countryCode?.trim() || (query.mobile.trim().startsWith("+") ? undefined
+            : countryFromLocale((await client.query<{ locale: string }>(`SELECT default_locale AS locale FROM workspaces WHERE id=$1`, [workspaceId])).rows[0]?.locale));
+          const normalized = normalizeIntakePartyPhones({ mobile: query.mobile.trim(), mobileCountryCode: country }).mobile;
+          const loose = normalized ? normalizeLoosePhone(normalized) : null;
+          if (loose) values.push(loose);
+        } catch (error) {
+          invalid = error instanceof Error ? error.message : "Enter a valid mobile number";
+        }
+      }
+      const email = query.email?.trim() ? normalizeEmail(query.email) : null;
+      if (!values.length && !email) return { valid: !invalid, message: invalid, matches: [] };
+      const parties = await client.query<{ id: string }>(
+        `SELECT DISTINCT contact.party_id AS id FROM crm_contact_points contact
+           JOIN crm_parties party ON party.workspace_id = contact.workspace_id AND party.id = contact.party_id AND party.status = 'active'
+          WHERE contact.workspace_id = $1 AND contact.status = 'active'
+            AND ((contact.type = 'phone' AND contact.normalized_value = ANY($2::text[])) OR ($3::text IS NOT NULL AND contact.type = 'email' AND contact.normalized_value = $3))
+          LIMIT 5`, [workspaceId, values, email]);
+      return { valid: !invalid, message: invalid, matches: await this.partySummaries(client, workspaceId, parties.rows.map((row) => row.id)) };
+    });
+  }
+
+  /** The people a new enquiry might belong to, with enough to tell them apart: mobile, email, latest enquiry, owner. */
+  private async partySummaries(client: PoolClient, workspaceId: string, partyIds: string[]) {
+    if (!partyIds.length) return [];
+    const result = await client.query(
+      `SELECT party.id AS "partyId", party.display_name AS name,
+              (SELECT contact.raw_value FROM crm_contact_points contact WHERE contact.workspace_id = party.workspace_id AND contact.party_id = party.id
+                 AND contact.type = 'phone' AND contact.status = 'active' ORDER BY (contact.label = 'mobile') DESC, contact.is_primary DESC, contact.created_at DESC LIMIT 1) AS mobile,
+              (SELECT contact.raw_value FROM crm_contact_points contact WHERE contact.workspace_id = party.workspace_id AND contact.party_id = party.id
+                 AND contact.type = 'email' AND contact.status = 'active' ORDER BY contact.is_primary DESC, contact.created_at DESC LIMIT 1) AS email,
+              latest.id AS "leadId", latest.reference, latest.status, latest.received_at AS "receivedAt", coalesce(latest.open, false) AS open,
+              coalesce(nullif(btrim(owner_account.display_name), ''), owner_account.primary_email) AS "ownerName"
+         FROM crm_parties party
+         LEFT JOIN LATERAL (
+           SELECT lead.id, enquiry.reference, lead.status::text AS status, enquiry.received_at, lead.owner_membership_id,
+                  (lead.closed_at IS NULL AND lead.status NOT IN ('qualified', 'disqualified', 'duplicate')) AS open
+             FROM crm_leads lead JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
+            WHERE lead.workspace_id = party.workspace_id AND lead.party_id = party.id AND lead.status <> 'duplicate'
+            ORDER BY (lead.closed_at IS NULL AND lead.status NOT IN ('qualified', 'disqualified', 'duplicate')) DESC, enquiry.received_at DESC LIMIT 1
+         ) latest ON true
+         LEFT JOIN workspace_memberships owner_member ON owner_member.workspace_id = party.workspace_id
+           AND owner_member.id = coalesce(latest.owner_membership_id, party.owner_membership_id)
+         LEFT JOIN users owner_account ON owner_account.id = owner_member.user_id
+        WHERE party.workspace_id = $1 AND party.id = ANY($2::uuid[]) AND party.status = 'active'
+        ORDER BY coalesce(latest.open, false) DESC, latest.received_at DESC NULLS LAST, party.id`,
+      [workspaceId, partyIds]);
+    return result.rows;
+  }
+
+  /** S-3: the existing clients a provisional one may be, for "Confirm client" on the enquiry. */
+  private async pendingClientMatches(client: PoolClient, workspaceId: string, enquiryId: string) {
+    const candidates = await client.query<{ candidateId: string; partyId: string; strength: string; reasons: string[]; version: number }>(
+      `SELECT candidate.id AS "candidateId", candidate.candidate_party_id AS "partyId", candidate.strength, candidate.reasons, candidate.version
+         FROM crm_identity_candidates candidate
+         JOIN crm_enquiries enquiry ON enquiry.workspace_id = candidate.workspace_id AND enquiry.intake_event_id = candidate.intake_event_id
+        WHERE candidate.workspace_id = $1 AND enquiry.id = $2 AND candidate.status = 'pending'
+        ORDER BY candidate.score DESC, candidate.id`, [workspaceId, enquiryId]);
+    if (!candidates.rowCount) return [];
+    const summaries = new Map((await this.partySummaries(client, workspaceId, candidates.rows.map((row) => row.partyId)))
+      .map((row) => [String((row as Record<string, unknown>).partyId), row as Record<string, unknown>]));
+    return candidates.rows.filter((row) => summaries.has(row.partyId)).map((row) => ({ ...summaries.get(row.partyId), ...row }));
+  }
+
+  /**
+   * S-3: confirm who a form enquiry's client is, after the enquiry is already being worked. "Same" moves
+   * the enquiry (and everything the provisional client gathered) onto the existing client; "different"
+   * keeps the new client. Either way the pending matches are closed and the review timer stops.
+   */
+  confirmClient(actor: RequestActor, workspaceId: string, leadId: string, input: { version: number; decision: "same" | "different"; partyId?: string; reason?: string }) {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:crm-identity`]);
+      const lead = await this.requireLead(client, workspaceId, leadId, true);
+      if (lead.version !== input.version) throw new ConflictException("Lead changed; reload and try again");
+      const intake = await client.query<{ intakeEventId: string }>(
+        `SELECT intake_event_id AS "intakeEventId" FROM crm_enquiries WHERE workspace_id=$1 AND id=$2`, [workspaceId, lead.enquiry_id]);
+      const intakeEventId = intake.rows[0]?.intakeEventId;
+      const pending = await client.query<{ id: string; partyId: string }>(
+        `SELECT id, candidate_party_id AS "partyId" FROM crm_identity_candidates
+          WHERE workspace_id=$1 AND intake_event_id=$2 AND status='pending' FOR UPDATE`, [workspaceId, intakeEventId]);
+      if (!pending.rowCount) throw new ConflictException("This client is already confirmed");
+      const provisionalPartyId = lead.party_id;
+      let partyId = provisionalPartyId;
+      if (input.decision === "same") {
+        const chosen = pending.rows.find((row) => row.partyId === input.partyId);
+        if (!chosen) throw new UnprocessableEntityException("Choose one of the suggested clients");
+        partyId = chosen.partyId;
+        await this.moveProvisionalClient(client, workspaceId, provisionalPartyId, partyId);
+        await client.query(
+          `UPDATE crm_identity_candidates SET status='accepted', decision='attach', resolved_party_id=$3, reviewed_by=$4, reviewed_at=now(),
+             decision_reason=$5, version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2`,
+          [workspaceId, chosen.id, partyId, actorUser.userId, input.reason?.trim() || "Confirmed the existing client on the enquiry"]);
+      }
+      await client.query(
+        `UPDATE crm_identity_candidates SET status='rejected', decision=$4, resolved_party_id=$3, reviewed_by=$5, reviewed_at=now(),
+           decision_reason=$6, version=version+1, updated_at=now()
+         WHERE workspace_id=$1 AND intake_event_id=$2 AND status='pending'`,
+        [workspaceId, intakeEventId, partyId, input.decision === "same" ? "resolved_elsewhere" : "create_new", actorUser.userId,
+          input.reason?.trim() || (input.decision === "same" ? "resolved_by_other_candidate" : "Confirmed a different person on the enquiry")]);
+      await client.query(
+        `UPDATE crm_intake_events SET resolution_type=$3, resolved_party_id=$4, resolved_by=$5, resolved_at=now(),
+           resolution_evidence = coalesce(resolution_evidence, '{}'::jsonb) || $6::jsonb, version=version+1, updated_at=now()
+         WHERE workspace_id=$1 AND id=$2`,
+        [workspaceId, intakeEventId, input.decision === "same" ? "review_attach" : "review_create_new", partyId, actorUser.userId,
+          JSON.stringify({ confirmedOnLead: leadId, decision: input.decision, provisionalPartyId })]);
+      await client.query(`UPDATE crm_leads SET client_review_due_at=NULL, version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2`, [workspaceId, leadId]);
+      const name = (await client.query<{ name: string }>(`SELECT display_name AS name FROM crm_parties WHERE workspace_id=$1 AND id=$2`, [workspaceId, partyId])).rows[0]?.name ?? "";
+      await refreshEnquiryTitlesForParty(client, workspaceId, partyId, name);
+      if (input.decision === "same") {
+        // The existing client may already be with someone: that owner hears the client enquired again.
+        const other = await client.query<{ id: string; reference: string | null; owner: string | null }>(
+          `SELECT lead.id, enquiry.reference, lead.owner_membership_id AS owner FROM crm_leads lead
+             JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
+            WHERE lead.workspace_id=$1 AND lead.party_id=$2 AND lead.id<>$3 AND lead.closed_at IS NULL
+              AND lead.status NOT IN ('qualified','disqualified','duplicate') ORDER BY lead.created_at LIMIT 1`, [workspaceId, partyId, leadId]);
+        const otherOwner = other.rows[0]?.owner && other.rows[0].owner !== lead.owner_membership_id ? await memberPerson(client, workspaceId, other.rows[0].owner) : null;
+        if (otherOwner) {
+          const facts = await leadFacts(client, workspaceId, leadId);
+          await tell(client, workspaceId, [otherOwner], {
+            code: "crm.enquiry_duplicate", channels: ["in_app"], deepLink: leadLink(leadId), key: `crm:confirmed-duplicate:${leadId}`,
+            variables: { clientName: facts.clientName, reference: facts.reference, channel: lead.channel, originalReference: other.rows[0].reference ?? "" },
+          });
+        }
+      }
+      const after = this.mapLead(await this.requireLead(client, workspaceId, leadId, false));
+      await this.events.record(client, {
+        workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.lead.client_confirmed.v1", entityType: "crm_lead", entityId: leadId,
+        before: { partyId: provisionalPartyId }, after: { ...after, decision: input.decision, partyId },
+      });
+      return after;
+    });
+  }
+
+  /** Moves everything a provisional client gathered onto the confirmed one; contacts the client already has are archived. */
+  private async moveProvisionalClient(client: PoolClient, workspaceId: string, fromPartyId: string, toPartyId: string) {
+    await client.query(
+      `UPDATE crm_contact_points moving SET status='archived', is_primary=false, version=version+1
+        WHERE moving.workspace_id=$1 AND moving.party_id=$2 AND moving.status='active'
+          AND EXISTS (SELECT 1 FROM crm_contact_points kept WHERE kept.workspace_id=$1 AND kept.party_id=$3 AND kept.status='active'
+                        AND kept.type=moving.type AND kept.normalized_value=moving.normalized_value)`, [workspaceId, fromPartyId, toPartyId]);
+    await client.query(
+      `UPDATE crm_contact_points SET is_primary=false WHERE workspace_id=$1 AND party_id=$2`, [workspaceId, fromPartyId]);
+    await client.query(
+      `UPDATE crm_consents moving SET party_id=$3 WHERE moving.workspace_id=$1 AND moving.party_id=$2
+          AND NOT EXISTS (SELECT 1 FROM crm_consents kept WHERE kept.workspace_id=$1 AND kept.party_id=$3
+                            AND kept.legal_entity_id IS NOT DISTINCT FROM moving.legal_entity_id AND kept.purpose=moving.purpose AND kept.channel=moving.channel)`,
+      [workspaceId, fromPartyId, toPartyId]);
+    for (const table of ["crm_contact_points", "crm_addresses", "crm_enquiries", "crm_leads", "crm_activities", "crm_conversations", "crm_opportunities", "crm_sequence_enrollments"]) {
+      await client.query(`UPDATE ${table} SET party_id=$3 WHERE workspace_id=$1 AND party_id=$2`, [workspaceId, fromPartyId, toPartyId]);
+    }
+    await client.query(
+      `UPDATE crm_parties SET status='merged', merged_into_party_id=$3, version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2`,
+      [workspaceId, fromPartyId, toPartyId]);
+  }
+
+  salesSettings(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.view", (client) => loadSalesSettings(client, workspaceId));
+  }
+
+  /** The Sales rules the timers read (S-1, S-2, S-3, S-10): one row per workspace, version-checked and audited. */
+  updateSalesSettings(actor: RequestActor, workspaceId: string, input: { version: number; takeoverCap?: number; unownedEscalationMinutes?: number; clientReviewMinutes?: number; duplicateWindowDays?: number; salesAdminMembershipId?: string | null }) {
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+      const before = await loadSalesSettings(client, workspaceId);
+      if (before.version !== input.version) throw new ConflictException("Sales settings changed; reload and try again");
+      if (input.salesAdminMembershipId) {
+        const member = await client.query(`SELECT 1 FROM workspace_memberships WHERE workspace_id=$1 AND id=$2 AND status='active'`, [workspaceId, input.salesAdminMembershipId]);
+        if (!member.rowCount) throw new UnprocessableEntityException("Choose an active team member as the Sales admin");
+      }
+      const next = {
+        takeoverCap: input.takeoverCap ?? before.takeoverCap,
+        unownedEscalationMinutes: input.unownedEscalationMinutes ?? before.unownedEscalationMinutes,
+        clientReviewMinutes: input.clientReviewMinutes ?? before.clientReviewMinutes,
+        duplicateWindowDays: input.duplicateWindowDays ?? before.duplicateWindowDays,
+        salesAdminMembershipId: input.salesAdminMembershipId === undefined ? before.salesAdminMembershipId : input.salesAdminMembershipId,
+      };
+      const saved = await client.query(
+        `INSERT INTO workspace_sales_settings (workspace_id, takeover_cap, unowned_escalation_minutes, client_review_minutes, duplicate_window_days, sales_admin_membership_id, updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (workspace_id) DO UPDATE SET takeover_cap=EXCLUDED.takeover_cap, unowned_escalation_minutes=EXCLUDED.unowned_escalation_minutes,
+           client_review_minutes=EXCLUDED.client_review_minutes, duplicate_window_days=EXCLUDED.duplicate_window_days,
+           sales_admin_membership_id=EXCLUDED.sales_admin_membership_id, updated_by=EXCLUDED.updated_by,
+           version=workspace_sales_settings.version+1, updated_at=now()
+         WHERE workspace_sales_settings.version=$8
+         RETURNING version`,
+        [workspaceId, next.takeoverCap, next.unownedEscalationMinutes, next.clientReviewMinutes, next.duplicateWindowDays, next.salesAdminMembershipId, actorUser.userId, input.version]);
+      if (!saved.rowCount) throw new ConflictException("Sales settings changed; reload and try again");
+      const after = await loadSalesSettings(client, workspaceId);
+      await this.events.record(client, {
+        workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.sales_settings.updated.v1", entityType: "workspace", entityId: workspaceId,
+        before: before as unknown as Record<string, unknown>, after: after as unknown as Record<string, unknown>,
+      });
+      return after;
     });
   }
 
@@ -903,6 +1237,7 @@ export class CrmLeadsService {
     if (input.mode === "unassigned") {
       await client.query(`INSERT INTO crm_assignment_history (workspace_id, lead_id, assignment_method, explanation, reason, assigned_by)
         VALUES ($1,$2,'manual',$3,'Left unassigned during creation',$4)`, [workspaceId, leadId, { mode: "unassigned" }, actorUserId]);
+      await refreshUnownedEscalation(client, workspaceId, leadId);
       return this.mapLead(lead);
     }
     return this.applyAssignment(client, workspaceId, lead, {
@@ -913,7 +1248,10 @@ export class CrmLeadsService {
 
   async startSlaOnIntake(client: PoolClient, workspaceId: string, leadId: string, actorUserId: string | null) {
     const lead = await this.requireLead(client, workspaceId, leadId, false);
-    return this.startFirstResponseSla(client, workspaceId, leadId, lead.owner_membership_id, actorUserId, false, "Lead became ready after intake");
+    const started = await this.startFirstResponseSla(client, workspaceId, leadId, lead.owner_membership_id, actorUserId, false, "Lead became ready after intake");
+    // Every new enquiry without an owner starts the unowned countdown, whatever channel it came from (S-2).
+    await refreshUnownedEscalation(client, workspaceId, leadId);
+    return started;
   }
 
   async autoAssignForAutomation(client: PoolClient, workspaceId: string, leadId: string) {
@@ -949,8 +1287,15 @@ export class CrmLeadsService {
       const before = await this.requireLead(client, workspaceId, leadId, true);
       if (before.version !== input.version) throw new ConflictException("Lead changed; reload and try again");
       if (["qualified", "disqualified", "duplicate"].includes(before.status)) throw new UnprocessableEntityException("This enquiry is closed. Reopen it to log contact.");
-      const { note, next } = checkContact(input);
+      const checked = checkContact(input);
+      const { next } = checked;
       const status = statusForOutcome(input.outcome);
+      // S-16: an unanswered try is counted, and noted for the person when they typed nothing.
+      const tries = await client.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM crm_activities WHERE workspace_id=$1 AND lead_id=$2 AND status='completed'
+            AND completion_outcome = ANY($3::text[])`, [workspaceId, leadId, UNANSWERED_OUTCOMES]);
+      const attempt = Number(tries.rows[0]?.count ?? 0) + 1;
+      const note = checked.note || unansweredNote(input.outcome, attempt);
       const member = await client.query<{ id: string }>(`SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'`, [workspaceId, actorUser.userId]);
       const activity = await client.query<{ id: string }>(
         `INSERT INTO crm_activities (workspace_id, party_id, lead_id, type, status, title, description, owner_membership_id, completed_at, completion_outcome, interaction_direction, created_by)
@@ -968,11 +1313,48 @@ export class CrmLeadsService {
         [workspaceId, leadId, status, input.reason?.trim() || null, note, next, input.version]);
       if (!updated.rowCount) throw new ConflictException("Lead changed; reload and try again");
       await this.slas.recordFirstResponse(client, workspaceId, leadId, { sourceType: "activity", sourceId: activity.rows[0].id, actorUserId: actorUser.userId, respondedAt: new Date() });
+      await refreshUnownedEscalation(client, workspaceId, leadId);
+      const attempts = UNANSWERED_OUTCOMES.includes(input.outcome) ? attempt : attempt - 1;
       await this.events.record(client, {
         workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.lead.contact_logged.v1", entityType: "crm_lead", entityId: leadId,
-        before: { status: before.status }, after: { status, channel: input.channel, outcome: input.outcome, nextActionAt: next?.toISOString() ?? null, activityId: activity.rows[0].id },
+        before: { status: before.status }, after: { status, channel: input.channel, outcome: input.outcome, nextActionAt: next?.toISOString() ?? null, activityId: activity.rows[0].id, attempts },
       });
-      return { ...this.mapLead(updated.rows[0] as LeadContext), activityId: activity.rows[0].id };
+      return { ...this.mapLead(updated.rows[0] as LeadContext), activityId: activity.rows[0].id, contactAttempts: attempts };
+    });
+  }
+
+  /**
+   * S-10: a repeat enquiry wrongly held as a duplicate (two people sharing a family phone) is opened as
+   * its own enquiry: it is routed like a new one and its response timer starts. The reason is kept.
+   */
+  reopenDuplicate(actor: RequestActor, workspaceId: string, leadId: string, input: { version: number; reason: string }) {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:lead-assignment`]);
+      const before = await this.requireLead(client, workspaceId, leadId, true);
+      if (before.version !== input.version) throw new ConflictException("Lead changed; reload and try again");
+      if (before.status !== "duplicate") throw new ConflictException("Only an enquiry held as a duplicate can be opened as new");
+      const opened = await client.query(
+        `UPDATE crm_leads SET status='new', duplicate_of_lead_id=NULL, owner_membership_id=NULL, closed_at=NULL, version=version+1, updated_at=now()
+          WHERE workspace_id=$1 AND id=$2 AND version=$3 RETURNING *`, [workspaceId, leadId, input.version]);
+      if (!opened.rowCount) throw new ConflictException("Lead changed; reload and try again");
+      const lead = await this.requireLead(client, workspaceId, leadId, true);
+      let routed: Record<string, unknown>;
+      try {
+        routed = await this.applyAssignment(client, workspaceId, lead, await this.selectAssignment(client, workspaceId, lead, true),
+          actorUser.userId, "automatic", "Opened as a new enquiry, not a duplicate");
+      } catch (error) {
+        // No routing configured: it stays open without an owner, and the unowned countdown starts.
+        if (!(error instanceof ConflictException)) throw error;
+        await this.startFirstResponseSla(client, workspaceId, leadId, null, actorUser.userId);
+        await refreshUnownedEscalation(client, workspaceId, leadId);
+        routed = this.mapLead(await this.requireLead(client, workspaceId, leadId, false));
+      }
+      await this.events.record(client, {
+        workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.lead.duplicate_reopened.v1", entityType: "crm_lead", entityId: leadId,
+        before: { status: "duplicate", duplicateOfLeadId: (before as unknown as Record<string, unknown>).duplicate_of_lead_id ?? null, ownerMembershipId: before.owner_membership_id },
+        after: { status: "new", reason: input.reason.trim(), ownerMembershipId: routed.ownerMembershipId ?? null },
+      });
+      return routed;
     });
   }
 
@@ -993,7 +1375,10 @@ export class CrmLeadsService {
         ? await evaluateQualification(client, workspaceId, leadId, {}, true)
         : null;
       const retainedAction = (before as unknown as Record<string, unknown>).next_action_at;
-      const nextActionAt = ["qualified", "disqualified", "paused"].includes(input.status) ? null : input.nextActionAt ? new Date(input.nextActionAt) : retainedAction ? new Date(String(retainedAction)) : null;
+      // A pause may carry its come-back date, which wakes the enquiry when it arrives (S-27).
+      const nextActionAt = ["qualified", "disqualified"].includes(input.status) ? null
+        : input.status === "paused" ? (input.nextActionAt ? new Date(input.nextActionAt) : null)
+        : input.nextActionAt ? new Date(input.nextActionAt) : retainedAction ? new Date(String(retainedAction)) : null;
       if (nextActionAt && Number.isNaN(nextActionAt.getTime())) throw new BadRequestException("nextActionAt is invalid");
       if (ACTIVE_LEAD_STATUSES.includes(input.status) && input.status !== "paused" && !nextActionAt && !before.owner_membership_id) {
         throw new UnprocessableEntityException("An active unowned lead requires a next action or assignment");
@@ -1089,6 +1474,7 @@ export class CrmLeadsService {
         // Reopening a lead must reopen the same enquiry as well; history remains in audit events.
         await client.query(`UPDATE crm_enquiries SET status = 'open', closed_at = NULL, version = version + 1 WHERE workspace_id = $1 AND id = (SELECT enquiry_id FROM crm_leads WHERE workspace_id = $1 AND id = $2)`, [workspaceId, leadId]);
       }
+      await refreshUnownedEscalation(client, workspaceId, leadId);
       const event = input.status === "qualified"
         ? "crm.lead.qualified.v1"
         : input.status === "disqualified"
@@ -1177,15 +1563,27 @@ export class CrmLeadsService {
       if (!fallback.rowCount) throw new ConflictException("No active assignment policy or fallback queue is configured");
       // A default queue is sufficient for basic auto-assignment. Apply the same
       // availability, capacity and round-robin checks used by custom policies.
-      policy = { id: null, fallback_queue_id: fallback.rows[0].id, rules: [], preserve_relationship_owner: false };
+      // Like a policy's default, a returning client goes back to the person who worked with them (S-11).
+      policy = { id: null, fallback_queue_id: fallback.rows[0].id, rules: [], preserve_relationship_owner: true };
     }
+    let relationshipSkipped: Record<string, unknown> | null = null;
     if (policy.preserve_relationship_owner && lead.party_owner_membership_id) {
-      const relationshipOwner = await client.query(
-        `SELECT membership.id FROM workspace_memberships membership
-         WHERE membership.id = $1 AND membership.workspace_id = $2 AND membership.status = 'active'`,
-        [lead.party_owner_membership_id, workspaceId],
+      // S-11: the previous owner, when they can still own enquiries and are not away (leave, unavailable).
+      const relationshipOwner = await client.query<{ id: string; away: boolean }>(
+        `SELECT membership.id, EXISTS (SELECT 1 FROM crm_effective_queue_members member
+                  WHERE member.workspace_id = membership.workspace_id AND member.membership_id = membership.id
+                    AND (NOT member.is_available OR member.unavailable_until > now())) AS away
+           FROM workspace_memberships membership
+           JOIN users account ON account.id = membership.user_id AND account.status = 'active'
+          WHERE membership.id = $1 AND membership.workspace_id = $2 AND membership.status = 'active'
+            AND (SELECT count(DISTINCT permission.code) FROM effective_member_roles assigned
+                   JOIN role_permissions granted ON granted.role_id = assigned.role_id
+                   JOIN permissions permission ON permission.id = granted.permission_id
+                  WHERE assigned.workspace_id = membership.workspace_id AND assigned.membership_id = membership.id
+                    AND permission.code = ANY($3::text[])) = $4`,
+        [lead.party_owner_membership_id, workspaceId, SALES_OWNER_PERMISSIONS, SALES_OWNER_PERMISSIONS.length],
       );
-      if (relationshipOwner.rowCount) {
+      if (relationshipOwner.rowCount && !relationshipOwner.rows[0].away) {
         return {
           ownerMembershipId: lead.party_owner_membership_id,
           queueId: null,
@@ -1193,6 +1591,7 @@ export class CrmLeadsService {
           explanation: { reason: "eligible_relationship_owner", policyId: policy.id, excluded: [] },
         };
       }
+      relationshipSkipped = { membershipId: lead.party_owner_membership_id, reason: relationshipOwner.rowCount ? "away" : "not_eligible" };
     }
     const context = {
       source: lead.source,
@@ -1243,7 +1642,7 @@ export class CrmLeadsService {
         ruleId: matchedRule?.id ?? null,
         explanation: {
           reason: takeover ? "no_eligible_alternate" : "no_eligible_member", policyId: policy.id,
-          ruleId: matchedRule?.id ?? null,
+          ruleId: matchedRule?.id ?? null, ...(relationshipSkipped ? { relationshipOwner: relationshipSkipped } : {}),
           considered: candidates.rows.map((candidate) => ({
             membershipId: candidate.membershipId,
             activeLoad: candidate.activeLoad,
@@ -1270,7 +1669,7 @@ export class CrmLeadsService {
       ruleId: matchedRule?.id ?? null,
       explanation: {
         reason: takeover ? "unanswered_takeover" : matchedRule ? "matching_rule" : policy.id ? "policy_fallback" : "workspace_fallback",
-        policyId: policy.id, ruleId: matchedRule?.id ?? null, queueId,
+        policyId: policy.id, ruleId: matchedRule?.id ?? null, queueId, ...(relationshipSkipped ? { relationshipOwner: relationshipSkipped } : {}),
         selected: { membershipId: selected.membershipId, activeLoad: selected.activeLoad, capacity: selected.capacity, loadRatio: selected.loadRatio },
         eligible: eligible.map((candidate) => ({ membershipId: candidate.membershipId, activeLoad: candidate.activeLoad, capacity: candidate.capacity })),
       },
@@ -1342,6 +1741,13 @@ export class CrmLeadsService {
       reason: reason || "Lead responsibility changed",
     });
     if (["new", "attempting_contact"].includes(lead.status)) await this.startFirstResponseSla(client, workspaceId, lead.id, selection.ownerMembershipId, actorUserId);
+    await refreshUnownedEscalation(client, workspaceId, lead.id);
+    // S-11: the client's first salesperson becomes their relationship owner, so a returning client goes back to them.
+    if (selection.ownerMembershipId) {
+      await client.query(
+        `UPDATE crm_parties SET owner_membership_id=$3, version=version+1, updated_at=now()
+          WHERE workspace_id=$1 AND id=$2 AND owner_membership_id IS NULL`, [workspaceId, lead.party_id, selection.ownerMembershipId]);
+    }
     const response = this.mapLead(await this.requireLead(client, workspaceId, lead.id, false));
     await this.events.record(client, {
       workspaceId, actorUserId, source: actorUserId ? "user" : "automation",
@@ -1349,7 +1755,7 @@ export class CrmLeadsService {
       entityType: "crm_lead", entityId: lead.id,
       before: this.mapLead(lead), after: { ...response, assignment: selection },
     });
-    if (!quiet) await this.notifyLeadAssignment(client, workspaceId, lead.id, Number(response.version), selection);
+    if (!quiet) await this.notifyLeadAssignment(client, workspaceId, lead.id, Number(response.version), selection, lead.owner_membership_id);
     return { ...response, assignment: selection };
   }
 
@@ -1359,6 +1765,7 @@ export class CrmLeadsService {
     leadId: string,
     assignmentVersion: number,
     selection: { ownerMembershipId: string | null; queueId: string | null },
+    previousOwnerMembershipId: string | null = null,
   ) {
     const recipients = await client.query<{ userId: string }>(
       `SELECT DISTINCT membership.user_id AS "userId"
@@ -1374,23 +1781,47 @@ export class CrmLeadsService {
       [workspaceId, selection.ownerMembershipId, selection.queueId],
     );
     if (selection.ownerMembershipId) {
-      // PLM-032: the new owner hears about it in the app and by email, with the reference, client and source.
-      const facts = await client.query<{ reference: string | null; clientName: string | null; source: string | null; sourceLabel: string | null }>(
+      // PLM-032: the new owner hears about it in the app and by email, with the reference, client and source,
+      // and by when to respond in local time, so a Friday-evening enquiry says "Sat 10:00" (S-26).
+      const facts = await client.query<{ reference: string | null; clientName: string | null; source: string | null; sourceLabel: string | null; dueAt: Date | null }>(
         `SELECT enquiry.reference, party.display_name AS "clientName", enquiry.source,
                 (SELECT option.label FROM crm_taxonomy_options option JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = option.workspace_id AND taxonomy.id = option.taxonomy_id
-                  WHERE option.workspace_id = enquiry.workspace_id AND taxonomy.code = 'lead_source' AND option.code = enquiry.source LIMIT 1) AS "sourceLabel"
+                  WHERE option.workspace_id = enquiry.workspace_id AND taxonomy.code = 'lead_source' AND option.code = enquiry.source LIMIT 1) AS "sourceLabel",
+                (SELECT min(sla.due_at) FROM crm_sla_instances sla WHERE sla.workspace_id = lead.workspace_id AND sla.lead_id = lead.id
+                  AND sla.event_type = 'first_response' AND sla.status IN ('active', 'warning')) AS "dueAt"
          FROM crm_leads lead JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
          LEFT JOIN crm_parties party ON party.workspace_id = lead.workspace_id AND party.id = lead.party_id
          WHERE lead.workspace_id = $1 AND lead.id = $2`, [workspaceId, leadId]);
       const fact = facts.rows[0];
-      const variables = { reference: fact?.reference ?? "", clientName: fact?.clientName ?? "", source: fact?.sourceLabel ?? fact?.source ?? "" };
+      const due = fact?.dueAt ?? (await client.query<{ at: Date | null }>(`SELECT ownership_due_at AS at FROM crm_leads WHERE workspace_id=$1 AND id=$2`, [workspaceId, leadId])).rows[0]?.at ?? null;
+      const deadline = due ? formatDeadline(new Date(due), await workspaceClock(client, workspaceId)) : "the response time";
+      const variables = { reference: fact?.reference ?? "", clientName: fact?.clientName ?? "", source: fact?.sourceLabel ?? fact?.source ?? "", deadline };
       const deepLink = `/workspace/crm/leads?lead=${leadId}`;
       for (const recipient of recipients.rows) {
         const key = `crm:assignment:${leadId}:${assignmentVersion}:${recipient.userId}`;
         await notifyUserInApp(client, { workspaceId, recipientUserId: recipient.userId, code: "crm.lead_assigned", eventType: "crm.lead.assigned", variables, deepLink, idempotencyKey: key });
         await queueUserEmail(client, { workspaceId, recipientUserId: recipient.userId, code: "crm.lead_assigned", eventType: "crm.lead.assigned", variables, deepLink, idempotencyKey: `${key}:email` });
       }
+      // S-23: the person it was taken from is told who has it now.
+      const previous = await memberPerson(client, workspaceId, previousOwnerMembershipId);
+      if (previous && previousOwnerMembershipId !== selection.ownerMembershipId) {
+        const next = await memberPerson(client, workspaceId, selection.ownerMembershipId);
+        await tell(client, workspaceId, [previous], {
+          code: "crm.lead_reassigned_from", channels: ["in_app"], deepLink, key: `crm:reassigned-from:${leadId}:${assignmentVersion}`,
+          variables: { reference: variables.reference, clientName: variables.clientName, newOwner: next?.name ?? "" },
+        });
+      }
       return;
+    }
+    if (!recipients.rowCount) {
+      // S-2: nobody in the queue is available, so every queue member and the Sales admin hear it instead of no one.
+      const everyone = await client.query<{ userId: string }>(
+        `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership
+           JOIN users account ON account.id=membership.user_id AND account.status='active'
+          WHERE membership.workspace_id=$1 AND membership.status='active'
+            AND EXISTS (SELECT 1 FROM crm_effective_queue_members member WHERE member.workspace_id=$1 AND member.queue_id=$2::uuid AND member.membership_id=membership.id)`,
+        [workspaceId, selection.queueId]);
+      recipients.rows.push(...everyone.rows, ...(await salesEscalationRecipients(client, workspaceId)));
     }
     const eventType = selection.ownerMembershipId ? "crm.lead.assigned" : "crm.lead.queue_waiting";
     const subject = selection.ownerMembershipId ? "New enquiry assigned" : "New enquiry in your queue";
