@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllGlobals());
 const ME = "10000000-0000-4000-8000-000000000001", ALI = "10000000-0000-4000-8000-000000000002";
 const LABEL = "20000000-0000-4000-8000-000000000001", TEMPLATE = "30000000-0000-4000-8000-000000000001";
 
-function setup(overrides: Record<string, unknown> = {}, options: { context?: Record<string, unknown> } = {}) {
+function setup(overrides: Record<string, unknown> = {}, options: { context?: Record<string, unknown>; payloads?: Record<string, unknown> } = {}) {
   const data = structuredClone(crmScreenFixture("conversations"));
   const now = new Date().toISOString();
   const record = {
@@ -30,6 +30,7 @@ function setup(overrides: Record<string, unknown> = {}, options: { context?: Rec
     "inbox/quick-replies": [{ id: "q1", shortcut: "address", body: "Hi {{contact.first_name}}, our studio is on Beach Road.", status: "active", version: 1, scope: "workspace", canEdit: true }],
     "inbox/settings": { autoAssign: true, queueId: null, signatureEnabled: false, version: 1, canManage: true, queues: [], whatsapp: { connected: true, number: "+1 555 0100", accountName: null }, seats: 4, businessName: "Palm Studio", workday: { start: "09:00", days: [1, 2, 3, 4, 5] } },
     "inbox/templates": [{ id: TEMPLATE, code: "quote_ready", locale: "en_US", body: "Hi {{1}}, your enquiry {{2}} is ready.", positions: [1, 2], usable: true, variables: [{ position: 1, source: "contact.first_name" }, { position: 2, source: "enquiry.reference" }], mappingVersion: 1 }],
+    ...options.payloads,
   };
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     const path = new URL(url, "http://localhost").pathname.replace("/api/workspace/crm/data/", "");
@@ -95,6 +96,38 @@ describe("CRM inbox", () => {
     expect(within(dialog).getByText("Hi Noura, your enquiry your villa is ready.")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Send template" }));
     await waitFor(() => expect(posted("/messages")).toEqual([{ direction: "outbound", purpose: "service", templateId: TEMPLATE, templateParameters: ["Noura", "your villa"], clientMessageId: expect.any(String) }]));
+  });
+  it("says what to do when no template can be sent, and shows the ones Meta hasn't approved with their state", async () => {
+    const user = userEvent.setup(), { data, record } = setup({}, { payloads: { "inbox/templates": [
+      { id: "t-pending", code: "site_visit_booked", locale: "en", body: "Hi {{1}}", positions: [1], usable: true, variables: [], mappingVersion: 0, approved: false, providerStatus: "pending" },
+      { id: "t-rejected", code: "promo_offer", locale: "en", body: "Sale", positions: [], usable: true, variables: [], mappingVersion: 0, approved: false, providerStatus: "rejected", providerReason: "Promotional content in a utility template" },
+    ] } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await user.click(await screen.findByRole("button", { name: "Templates" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("No approved templates yet")).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "New template" })).toHaveAttribute("href", "/workspace/settings/inbox#inbox-templates");
+    expect(within(dialog).getByRole("option", { name: /site_visit_booked.*Waiting for Meta approval/ })).toBeDisabled();
+    expect(within(dialog).getByRole("option", { name: /promo_offer.*Rejected/ })).toHaveTextContent("Promotional content in a utility template");
+    expect(within(dialog).getByRole("button", { name: "Send template" })).toBeDisabled();
+  });
+  it("offers to connect WhatsApp when no number is connected", async () => {
+    const { data, record } = setup({ whatsappConnected: false }, { payloads: { "inbox/templates": [] } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    expect(await screen.findByText(/Connect WhatsApp in Integrations to reply/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Connect WhatsApp" })).toHaveAttribute("href", "/workspace/integrations");
+    expect(screen.getByRole("button", { name: "Templates" })).toBeDisabled();
+  });
+  it("offers a new quick reply when the team has none, and marks an auto reply in the thread", async () => {
+    const user = userEvent.setup(), { data, record } = setup({ messages: [
+      { id: "incoming", direction: "inbound", status: "delivered", bodyText: "Hello there", createdAt: new Date().toISOString() },
+      { id: "greeting", direction: "outbound", status: "sent", authorship: "automation", senderType: "system", bodyText: "Hi Noura, thanks for contacting Palm Studio.", metadata: { automatic: "auto_reply", autoReply: "greeting" }, createdAt: new Date().toISOString() },
+    ] }, { payloads: { "inbox/quick-replies": [] } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    expect((await screen.findByText("Hi Noura, thanks for contacting Palm Studio.")).closest("article")).toHaveTextContent(/Automatic.*Auto reply/);
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "/");
+    expect(await screen.findByText("No quick replies yet")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "New quick reply" })).toHaveAttribute("href", "/workspace/settings/inbox#new-quick-reply");
   });
   it("fills a quick reply after / from the chat's records", async () => {
     const user = userEvent.setup(), { data, record } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);

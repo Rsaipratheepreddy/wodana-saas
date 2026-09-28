@@ -10220,5 +10220,7 @@
   "At most once per chat in this time.": "At most once per chat in this time.",
   "Nothing to send yet": "Nothing to send yet",
   "Auto reply": "Auto reply",
-  "Auto replies could not be loaded.": "Auto replies could not be loaded."
+  "Auto replies could not be loaded.": "Auto replies could not be loaded.",
+  "No approved templates yet": "No approved templates yet",
+  "New template": "New template"
 }

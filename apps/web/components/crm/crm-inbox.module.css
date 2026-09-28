@@ -222,6 +222,9 @@
 .templateList button[aria-selected="true"] { border-color: var(--chat-accent); background: var(--chat-soft); }
 .templateList button:focus-visible { outline: 2px solid var(--chat-accent); outline-offset: 2px; }
 .templateList small { color: var(--wd-color-text-secondary); }
+/* A template Meta hasn't approved: shown with its state, not sendable. */
+.templateList button[data-waiting] { flex-wrap: wrap; align-items: center; background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); cursor: not-allowed; }
+.suggestions[data-empty] { display: grid; justify-content: stretch; padding: var(--wd-space-1); }
 
 /* The client's records beside the chat. */
 .contextSection { display: grid; gap: var(--wd-space-2); padding-block: var(--wd-space-3); }

@@ -3,9 +3,9 @@
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { FileText, Send, StickyNote, Zap } from "lucide-react";
-import { Button, ControlledModalDialog, IconButton, SearchInput, SegmentedControl, TextInput, useConfirmationDialog } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, EmptyState, IconButton, SearchInput, SegmentedControl, TextInput, useConfirmationDialog } from "@/design-system";
 import { crmRequest, type RecordData } from "@/lib/crm/client";
-import { fillQuickReply, fillTemplate, quickReplyQuery, renderTemplate, TEMPLATE_SOURCE_LABELS, windowLeft, type ChatContext, type InboxOwner, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
+import { fillQuickReply, fillTemplate, quickReplyQuery, renderTemplate, sendableTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_STATUS, windowLeft, type ChatContext, type InboxOwner, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { submitChatOnEnter } from "../chat-composer";
 import styles from "../crm-inbox.module.css";
@@ -106,12 +106,15 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
       {mode === "reply" && isWhatsApp ? <Button size="compact" variant="quiet" isDisabled={Boolean(replyBlocked)} onPress={() => setPicking(true)}><FileText aria-hidden="true" size={15} />{t("Templates")}</Button> : null}
       {mode === "reply" && !needsTemplate ? <IconButton aria-label={t("Quick replies")} size="compact" isDisabled={Boolean(replyBlocked)} onPress={() => { onDraftChange("/"); input.current?.focus(); }}><Zap size={15} /></IconButton> : null}
     </div>
-    {replyBlocked ? <p className={styles.composerNotice}>{replyBlocked}</p> : null}
+    {replyBlocked ? <p className={styles.composerNotice}>{replyBlocked}{isWhatsApp && thread.whatsappConnected === false && lookups.canManage ? <> <Link href="/workspace/integrations">{t("Connect WhatsApp")}</Link></> : null}</p> : null}
     {needsTemplate && !replyBlocked ? <div className={styles.windowClosed}><p>{t("More than 24 hours since the client's last message. Choose a template to restart the chat.")}</p><Button size="compact" variant="primary" onPress={() => setPicking(true)}>{t("Choose template")}</Button></div> : null}
     {!needsTemplate ? <div className={styles.composerInput} data-note={mode === "note" || undefined}>
       {popup.length ? <div className={styles.suggestions} role="listbox" id={`suggest-${id}`} aria-label={query !== null ? t("Quick replies") : t("People")}>
         {popup.map((item, index) => <button key={item.id} id={`suggest-${id}-${index}`} type="button" role="option" aria-selected={index === highlight} onMouseDown={(event) => event.preventDefault()} onClick={item.pick}><strong>{item.label}</strong>{item.detail ? <small>{item.detail}</small> : null}</button>)}
-      </div> : query !== null && mode === "reply" ? <div className={styles.suggestions} role="status"><span>{lookups.quickReplies.length ? t("No quick reply starts with /{query}", { query }) : t("No quick replies yet")}</span><Link href="/workspace/settings/inbox#inbox-quick-replies">{t("Add quick reply")}</Link></div> : null}
+      </div> : query !== null && mode === "reply" ? <div className={styles.suggestions} role="status" data-empty={!lookups.quickReplies.some((reply) => reply.status === "active") || undefined}>{lookups.quickReplies.some((reply) => reply.status === "active")
+        ? <><span>{t("No quick reply starts with /{query}", { query })}</span><Link href="/workspace/settings/inbox#new-quick-reply">{t("New quick reply")}</Link></>
+        : <EmptyState illustration={null} icon={<Zap aria-hidden="true" size={18} />} title={t("No quick replies yet")}
+          action={<Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/settings/inbox#new-quick-reply">{t("New quick reply")}</Link>} />}</div> : null}
       {mode === "note" ? <StickyNote aria-hidden="true" className={styles.noteMark} size={16} /> : null}
       <label className="wd-visually-hidden" htmlFor={`message-${id}`}>{mode === "note" ? t("Note") : t("Message")}</label>
       <textarea ref={input} rows={1} id={`message-${id}`} value={draft} maxLength={4096} readOnly={busy || !thread.canSend}
@@ -123,7 +126,7 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
     </div> : null}
     <div className={styles.composerFooter} id={`message-help-${id}`}><span role="status">{notice}</span><small>{mode === "note" ? t("Only your team sees notes") : thread.signatureEnabled ? t("Signed with your first name") : t("Enter to send · Shift+Enter for a new line")}</small></div>
     {failure ? <p className={styles.error} role="alert">{failure}{isWhatsApp && windowClosed && mode === "reply" ? <> <Button size="compact" variant="quiet" onPress={() => setPicking(true)}>{t("Choose template")}</Button></> : null}</p> : null}
-    {picking ? <TemplatePicker templates={lookups.templates} variables={variables} canManage={lookups.canManage} onClose={() => setPicking(false)} onSend={async (template, templateParameters) => { setPicking(false); await send({ templateId: template.id, templateParameters }); }} /> : null}
+    {picking ? <TemplatePicker templates={lookups.templates} variables={variables} canManage={lookups.canManage} connected={thread.whatsappConnected !== false} onClose={() => setPicking(false)} onSend={async (template, templateParameters) => { setPicking(false); await send({ templateId: template.id, templateParameters }); }} /> : null}
     {confirmationDialog}
   </form>;
 }
@@ -132,10 +135,14 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
  * Approved templates with a preview filled from the chat's records. A value the chat does not have is named
  * with its field and can be typed for this one message; until it is, Send stays off.
  */
-function TemplatePicker({ templates, variables, canManage, onClose, onSend }: { templates: InboxTemplate[]; variables: ChatContext["variables"]; canManage: boolean; onClose: () => void; onSend: (template: InboxTemplate, parameters?: string[]) => Promise<void> }) {
+function TemplatePicker({ templates, variables, canManage, connected, onClose, onSend }: { templates: InboxTemplate[]; variables: ChatContext["variables"]; canManage: boolean; connected: boolean; onClose: () => void; onSend: (template: InboxTemplate, parameters?: string[]) => Promise<void> }) {
   const t = useT();
   const [search, setSearch] = useState("");
-  const usable = templates.filter((template) => template.usable && template.approved !== false && `${template.code} ${template.body}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const matching = templates.filter((template) => `${template.code} ${template.body}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const usable = matching.filter(sendableTemplate);
+  // Templates Meta hasn't approved (or has stopped) stay visible, greyed with their state, so nobody wonders where they went.
+  const waiting = matching.filter((template) => !sendableTemplate(template));
+  const noneApproved = !templates.some(sendableTemplate);
   const [chosen, setChosen] = useState<InboxTemplate | null>(null);
   const [typed, setTyped] = useState<Record<number, string>>({});
   const [sending, setSending] = useState(false);
@@ -148,10 +155,15 @@ function TemplatePicker({ templates, variables, canManage, onClose, onSend }: { 
   return <ControlledModalDialog isOpen size="lg" title={t("Send a template")} onOpenChange={(open) => { if (!open && !sending) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button isDisabled={sending} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={sending} isDisabled={!selected || stillMissing.length > 0} onPress={async () => { if (!selected) return; setSending(true); await onSend(selected, filled?.missing.length ? parameters : undefined); setSending(false); }}>{t("Send template")}</Button></div>}>
     <div className={styles.templatePicker}>
-      <SearchInput label={t("Search templates")} value={search} onChange={setSearch} />
-      {!usable.length ? <p className={parts.muted}>{templates.length ? t("No matching templates.") : t("No approved templates. Sync them in Integrations.")}</p> : <div className={styles.templateList} role="listbox" aria-label={t("Templates")}>
+      {!connected ? <EmptyState title={t("WhatsApp isn't connected")} action={canManage ? <Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/integrations">{t("Connect WhatsApp")}</Link> : undefined} />
+        : noneApproved ? <EmptyState title={t("No approved templates yet")} action={canManage ? <Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/settings/inbox#inbox-templates">{t("New template")}</Link> : undefined} />
+        : <SearchInput label={t("Search templates")} value={search} onChange={setSearch} />}
+      {connected && !noneApproved && !matching.length ? <p className={parts.muted}>{t("No matching templates.")}</p> : null}
+      {connected && (usable.length || waiting.length) ? <div className={styles.templateList} role="listbox" aria-label={t("Templates")}>
         {usable.map((template) => <button key={template.id} type="button" role="option" aria-selected={selected?.id === template.id} onClick={() => { setChosen(template); setTyped({}); }}><strong>{template.code}</strong><small>{template.locale}</small></button>)}
-      </div>}
+        {waiting.map((template) => { const status = TEMPLATE_STATUS[template.providerStatus ?? "pending"] ?? TEMPLATE_STATUS.pending; return <button key={template.id} type="button" role="option" aria-selected={false} aria-disabled="true" disabled data-waiting="true"
+          title={template.providerReason ?? undefined}><strong>{template.code}</strong><small>{template.locale}</small><Badge tone={status.tone}>{!template.usable && template.providerStatus === "approved" ? t("Not numbered 1, 2, 3…") : t(status.label)}</Badge>{template.providerReason ? <small>{template.providerReason}</small> : null}</button>; })}
+      </div> : null}
       {selected && filled ? <p className={parts.preview}>{renderTemplate(selected.body, parameters)}</p> : null}
       {filled?.missing.length ? <div className={styles.templateValues}>
         {filled.missing.map((item) => <TextInput key={`${selected!.id}:${item.position}`} maxLength={1024} label={`{{${item.position}}} · ${fieldOf(item)}`}

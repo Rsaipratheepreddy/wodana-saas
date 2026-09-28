@@ -53,6 +53,15 @@ export const TEMPLATE_SOURCE_LABELS: Record<TemplateSource, MessageKey> = {
   "staff.first_name": tKey("Your first name"), "business.name": tKey("Business name"), "today.date": tKey("Today's date"),
 };
 
+/** Meta's review state of a WhatsApp template, as the inbox shows it (only approved ones can be sent). */
+export const TEMPLATE_STATUS: Record<NonNullable<InboxTemplate["providerStatus"]>, { label: MessageKey; tone: "neutral" | "success" | "warning" | "danger" | "info" }> = {
+  submitting: { label: tKey("Sending to Meta"), tone: "info" }, pending: { label: tKey("Waiting for Meta approval"), tone: "warning" },
+  approved: { label: tKey("Approved"), tone: "success" }, rejected: { label: tKey("Rejected"), tone: "danger" },
+  paused: { label: tKey("Paused by Meta"), tone: "warning" }, disabled: { label: tKey("Disabled by Meta"), tone: "danger" },
+};
+/** A template the team can send now: numbered 1, 2, 3… and approved here and at Meta. */
+export const sendableTemplate = (template: InboxTemplate) => template.usable && template.approved !== false && (template.providerStatus ?? "approved") === "approved";
+
 /** Business events that message the client on WhatsApp (Settings → Inbox → Client messages). */
 export const CLIENT_EVENT_LABELS: Record<string, MessageKey> = {
   "crm.enquiry.created": tKey("Welcome on a new enquiry"), "portal.quote_issued": tKey("Quotation ready"), "portal.invoice_issued": tKey("Invoice issued"),
