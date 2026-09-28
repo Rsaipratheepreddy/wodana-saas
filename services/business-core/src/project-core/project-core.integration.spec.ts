@@ -151,7 +151,9 @@ integration("projects core (plan §6.10)", () => {
           throw error;
         }
       };
-      return { withPermission: run, withAnyPermission: run, hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never;
+      // Reads that check their own rights (a project's money) run as a member, in the same savepoint.
+      const member = async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => run(_a, _w, permissions, fn);
+      return { withPermission: run, withAnyPermission: run, asMember: member, hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never;
     };
     const all = ["vendors.view", "vendors.manage", "vendors.approve", "purchasing.view", "purchasing.manage", "purchasing.approve", "stock.view", "stock.manage", "stock.adjust", "stock.receive", "stock.inspect", "workspace.settings.manage"];
     const buyer = { orders: new OrdersService(access(w.designer, all)), receiving: new ReceivingService(access(w.designer, all)), returns: new SupplierReturnsService(access(w.designer, all)),
@@ -2467,8 +2469,10 @@ integration("projects core (plan §6.10)", () => {
         asMember: async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => {
           await w.client.query("SAVEPOINT handover"); try { const result = await fn(w.client, { userId }); await w.client.query("RELEASE SAVEPOINT handover"); return result; }
           catch (error) { await w.client.query("ROLLBACK TO SAVEPOINT handover"); throw error; } },
-        hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => code === "projects.view" } as never, storage);
+        hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => code === "projects.view" || (userId === w.manager && code === "projects.manage") } as never, storage);
       const pm = as(w.manager);
+      // Stages are still running in this test: every issue and acceptance confirms that on purpose.
+      const open = { confirmOpen: true, openReason: "Stages still running in this test" };
       const kitchen = (await w.client.query("SELECT id FROM pre_project_rooms WHERE case_id = $1", [w.caseId])).rows[0].id;
       const first = randomUUID();
       await expect(as(w.designer).command(actor, w.workspaceId, projectId, { action: "create_pack", id: first, title: "Kitchen handover", areaIds: [kitchen] }))
@@ -2479,7 +2483,7 @@ integration("projects core (plan §6.10)", () => {
       const pdf = { buffer: Buffer.from("%PDF-1.4\n%warranty\n"), originalname: "warranty.pdf", mimetype: "application/pdf", size: 0 };
       state = await pm.uploadDocument(actor, w.workspaceId, projectId, first, randomUUID(), { kind: "warranty", title: "Hinge warranty" }, pdf);
       pack = state.packs[0];
-      state = await pm.command(actor, w.workspaceId, projectId, { action: "issue", packId: first, version: pack.version });
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "issue", packId: first, version: pack.version, ...open });
       pack = state.packs[0];
       expect([pack.status, pack.revision, pack.contentHash?.length, pack.documents.map((document) => [document.kind, document.title])]).toEqual(["issued", 1, 64, [["warranty", "Hinge warranty"]]]);
       await expect(pm.command(actor, w.workspaceId, projectId, { action: "update_pack", packId: first, title: "Changed", areaIds: [], version: pack.version })).rejects.toThrow(/An issued pack doesn't change/);
@@ -2496,11 +2500,12 @@ integration("projects core (plan §6.10)", () => {
 
       // Accepted only when no critical snag is open in the kitchen.
       const second = state.packs[0];
-      state = await pm.command(actor, w.workspaceId, projectId, { action: "issue", packId: second.id, version: second.version });
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "issue", packId: second.id, version: second.version, ...open });
       await w.client.query(`INSERT INTO work_items (id, workspace_id, project_id, number, type, title, severity, source, area_id, created_by)
         VALUES (gen_random_uuid(), $1, $2, 99, 'snag', 'Glass splashback cracked', 'critical', 'inspection', $3, $4)`, [w.workspaceId, projectId, kitchen, w.manager]);
       const issued = state.packs[0];
-      const acceptance = { action: "accept", packId: issued.id, decidedOn: "2026-09-27", decidedByName: "Maya Client", method: "signed_document", outstanding: ["Touch-up paint on the skirting"] };
+      const acceptance = { action: "accept", packId: issued.id, decidedOn: "2026-09-27", decidedByName: "Maya Client", method: "signed_document", outstanding: ["Touch-up paint on the skirting"], ...open,
+        balanceReason: "Final payment due on handover" };
       await expect(pm.command(actor, w.workspaceId, projectId, { ...acceptance, version: issued.version })).rejects.toThrow("Close the critical snag first: #99.");
       await w.client.query("UPDATE work_items SET status = 'done', completed_at = now(), completed_by = $2 WHERE project_id = $1 AND number = 99", [projectId, w.manager]);
       state = await pm.command(actor, w.workspaceId, projectId, { ...acceptance, version: issued.version });
@@ -2536,13 +2541,15 @@ integration("projects core (plan §6.10)", () => {
       expect((await pm.settings(actor, w.workspaceId)).months).toMatchObject({ buy: 18, make: 12, client: 0 });
 
       // The client accepts a whole-project handover on 26 September: warranties start that day.
-      const handover = new HandoverService(access(w.manager, ["projects.view"]), storage);
+      const handover = new HandoverService(access(w.manager, ["projects.view", "projects.manage"]), storage);
+      const open = { confirmOpen: true, openReason: "Stages still running in this test" };
       const pack = randomUUID();
       let packs = await handover.command(actor, w.workspaceId, projectId, { action: "create_pack", id: pack, title: "Handover", areaIds: [] });
       packs = await handover.uploadDocument(actor, w.workspaceId, projectId, pack, randomUUID(), { kind: "manual", title: "Care guide" },
         { buffer: Buffer.from("%PDF-1.4\n%care\n"), originalname: "care.pdf", mimetype: "application/pdf", size: 0 });
-      packs = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: pack, version: packs.packs[0].version });
-      await handover.command(actor, w.workspaceId, projectId, { action: "accept", packId: pack, version: packs.packs[0].version, decidedOn: "2026-09-26", decidedByName: "Maya Client", method: "signed_document" });
+      packs = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: pack, version: packs.packs[0].version, ...open });
+      await handover.command(actor, w.workspaceId, projectId, { action: "accept", packId: pack, version: packs.packs[0].version, decidedOn: "2026-09-26", decidedByName: "Maya Client", method: "signed_document",
+        ...open, balanceReason: "Final payment due on handover" });
       let state = await pm.state(actor, w.workspaceId, projectId);
       expect(state.items.map((item) => [item.title, item.months, item.startsOn, item.endsOn])).toEqual([
         ["Kitchen cabinets", 18, "2026-09-26", "2028-03-25"], ["Worktop", 18, "2026-09-26", "2028-03-25"], ["Under-cabinet lights", 18, "2026-09-26", "2028-03-25"]]);
@@ -2986,7 +2993,7 @@ integration("projects core (plan §6.10)", () => {
         { source: "line", boqLineId: need("Under-cabinet lights").sourceId, quantity: "1", unitPrice: "500", taxRate: "0" },
         { source: "line", boqLineId: need("Kitchen cabinets").sourceId, quantity: "4.5", unitPrice: "200", taxRate: "0" }]);
       const [oak, lights, cabinets] = ["Oak veneer", "Under-cabinet lights", "Kitchen cabinets"].map((title) => order.lines.find((line) => line.description === title)!);
-      const money = new ProjectMoneyService(access(w.manager, [...all, "commercial.costs.view", "commercial.costs.manage"]));
+      const money = new ProjectMoneyService(access(w.manager, [...all, "projects.view", "commercial.costs.view", "commercial.costs.manage"]));
       const read = () => money.read(actor, w.workspaceId, projectId);
       let state = await read();
       expect(state).toMatchObject({ currency: "AED", spent: "0.0000", committed: "2300.0000", forecast: "2300.0000", budget: null, uncosted: 0 });
@@ -3055,7 +3062,7 @@ integration("projects core (plan §6.10)", () => {
       expect(state.income).toMatchObject({ currency: "AED", agreed: `${agreed.toFixed(2)}00`, received: `${(agreed / 2).toFixed(2)}00` });
       expect(state.margin).toBe((Number(state.income.agreedNet) - 2288).toFixed(4));
       expect(state.available).toBe((agreed / 2 - 2288).toFixed(4));
-      await expect(new ProjectMoneyService(access(w.designer, all)).read(actor, w.workspaceId, projectId)).rejects.toThrow(/Not allowed/);
+      await expect(new ProjectMoneyService(access(w.designer, [...all, "projects.view"])).read(actor, w.workspaceId, projectId)).rejects.toThrow(/don't see this project's costs/);
       expect((await core.get(actor, w.workspaceId, projectId)).canSeeMoney).toBe(false);
     });
   });
@@ -3179,7 +3186,7 @@ integration("projects core (plan §6.10)", () => {
       expect(state.invoice).toMatchObject({ number: `FAC-INV-2026-00003`, dueDate: "2026-01-20", overdue: true });
 
       // The Money tab counts what's invoiced; the list shows every invoice with where it stands.
-      const money = new ProjectMoneyService(access(w.manager, [...all, "commercial.costs.view"]));
+      const money = new ProjectMoneyService(access(w.manager, [...all, "projects.view", "commercial.costs.view"]));
       expect((await money.read(actor, w.workspaceId, projectId)).income).toMatchObject({ invoiced: `${(half * 2).toFixed(2)}00` });
       overview = await viewer.overview(actor, w.workspaceId);
       expect(overview.invoices.map((item) => [item.number, item.status, item.overdue])).toEqual(expect.arrayContaining([
@@ -3555,7 +3562,7 @@ integration("projects core (plan §6.10)", () => {
       let detail = await core.get(actor, w.workspaceId, projectId);
       detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: scope.packages[0].id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
       detail = await core.command(actor, w.workspaceId, projectId, { action: "set_member", role: "site_supervisor", membershipId: w.designerMembership, version: detail.project.version });
-      const money = new ProjectMoneyService(access(w.manager, [...all, "commercial.costs.view", "commercial.costs.manage"]));
+      const money = new ProjectMoneyService(access(w.manager, [...all, "projects.view", "commercial.costs.view", "commercial.costs.manage"]));
       const labour = (state: Awaited<ReturnType<ProjectMoneyService["read"]>>, kind: string) => state.entries.filter((entry) => entry.source === "labour" && entry.description.startsWith(kind))
         .map((entry) => [entry.on, entry.description, entry.amount, entry.packageName]).sort((a, b) => `${a[0]}${a[1]}`.localeCompare(`${b[0]}${b[1]}`));
 
@@ -3750,7 +3757,7 @@ integration("projects core (plan §6.10)", () => {
       expect((await pm.state(actor, w.workspaceId, projectId)).claims.map((row) => row.reference)).toEqual(["PC-0004", "PC-0003", "PC-0002", "PC-0001"]);
 
       // Approved, it's a cost of its package; rejected, submitted and draft claims aren't.
-      const money = new ProjectMoneyService(access(w.manager, [...all, "commercial.costs.view"]));
+      const money = new ProjectMoneyService(access(w.manager, [...all, "projects.view", "commercial.costs.view"]));
       let costs = await money.read(actor, w.workspaceId, projectId);
       expect(costs.entries.filter((entry) => entry.source === "petty_cash").map((entry) => [entry.on, entry.description, entry.reference, entry.packageName, entry.amount]))
         .toEqual([["2026-09-25", "Taxi to the tile supplier", "PC-0001", kitchen.name, "45.5000"]]);

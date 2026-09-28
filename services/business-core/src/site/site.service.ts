@@ -50,6 +50,9 @@ export class SiteService {
       const action = String(body.action ?? "");
       let audit: Record<string, unknown> = {};
       const today = await this.today(client, workspaceId);
+      // On hold: nothing new is reported or started on site; reports already submitted can still be decided.
+      if (project.status === "on_hold" && ["save_report", "submit", "start_site"].includes(action))
+        throw new ConflictException("The project is on hold. Resume it before reporting on site.");
 
       if (action === "start_site" || action === "finish_site") {
         if (!who.manager) throw new ForbiddenException("Only the project manager starts or finishes site work.");
@@ -126,6 +129,8 @@ export class SiteService {
             throw error;
           }
         }
+        // The first report starts site work (nobody has to press "Start site work" first).
+        await client.query(`UPDATE delivery_projects SET site_started_on = $3 WHERE workspace_id = $1 AND id = $2 AND site_started_on IS NULL`, [workspaceId, projectId, reportDate]);
         for (const row of people) await client.query(`INSERT INTO site_report_workforce (id, workspace_id, report_id, trade, people) VALUES ($1, $2, $3, $4, $5)`, [randomUUID(), workspaceId, id, row.trade, row.people]);
         for (const entry of entries) await client.query(`INSERT INTO site_report_lines (id, workspace_id, report_id, boq_line_id, installed, note) VALUES ($1, $2, $3, $4, $5, $6)`,
           [randomUUID(), workspaceId, id, entry.boqLineId, entry.installed, entry.note]);

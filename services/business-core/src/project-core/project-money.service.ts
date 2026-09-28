@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { Dec } from "../catalog-core/decimal";
 import { currencyDecimals } from "../purchasing/orders";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { moneyAccess, projectViewer } from "./project-access";
 import { readProject } from "./project-core.store";
 import { readBudgets, readPackageMoney, readProjectCommitted, readProjectCosts, readProjectIncome } from "./project-money";
 
@@ -22,8 +23,15 @@ const NUMBER = /^\d{1,14}(\.\d{1,4})?$/;
 export class ProjectMoneyService {
   constructor(private readonly access: WorkspaceAccessService) {}
 
+  /** For people who see costs, and for a project's own team with `projects.costs.view` (then without margin). */
   read(actor: RequestActor, workspaceId: string, projectId: string) {
-    return this.access.withPermission(actor, workspaceId, "commercial.costs.view", async (client, user) => this.view(client, workspaceId, projectId, user.userId));
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const viewer = await projectViewer(client, this.access, workspaceId, projectId, user.userId);
+      const rights = await moneyAccess(client, this.access, workspaceId, user.userId, viewer);
+      if (!rights.costs) throw new ForbiddenException("You don't see this project's costs.");
+      const view = await this.view(client, workspaceId, projectId, user.userId);
+      return rights.margin ? view : { ...view, margin: null, marginHidden: true };
+    });
   }
 
   /** Sets one package's cost budget (or the budget for costs not in a package); version-checked, audited. */

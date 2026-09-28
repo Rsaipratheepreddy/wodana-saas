@@ -53,7 +53,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     name: "Project manager",
     description: "Runs delivery projects: sites, assignments, schedule, progress reviews and what still needs ordering",
     permissions: [
-      "projects.view", "projects.manage", "projects.report", "projects.review",
+      "projects.view", "projects.manage", "projects.report", "projects.review", "projects.costs.view",
       "projects.schedule.view", "projects.schedule.manage", "jobs.stage.manage",
       "pre_projects.view", "crm.opportunities.view", "catalog.view",
       "purchasing.view", "stock.view", "vendors.view", "hrms.team",

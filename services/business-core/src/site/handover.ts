@@ -1,6 +1,9 @@
 import { ConflictException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
+import { Dec } from "../catalog-core/decimal";
+import { projectBalance } from "../project-core/project-milestones";
+import { noticeStageReady } from "../project-core/project-stage-watch";
 import { raiseSnag } from "../project-core/project-work";
 import { startWarranty } from "./warranty";
 
@@ -32,6 +35,8 @@ export async function projectHandedOver(db: Db, workspaceId: string, project: { 
 export async function decideHandoverPack(db: Db, workspaceId: string, projectId: string, pack: { id: string; revision: number; title: string; areaIds: string[] }, input: {
   decision: "accept" | "refuse"; decidedOn: string; decidedByName: string; method: string; outstanding: string[]; reason: string;
   recordedBy: string | null; grantId: string | null; staffId: string;
+  /** Staff accepting with money still due: why, and who (someone who manages projects). The portal records the balance without it. */
+  balance?: { reason: string; acceptedBy: string } | null;
 }) {
   const within = (areaId: string | null) => !pack.areaIds.length || !areaId || pack.areaIds.includes(areaId);
   const from = input.grantId ? " (client portal)" : "";
@@ -48,6 +53,18 @@ export async function decideHandoverPack(db: Db, workspaceId: string, projectId:
     const warrantyStarted = await startWarranty(db, workspaceId, { projectId, packId: pack.id, areaIds: pack.areaIds, startsOn: input.decidedOn });
     for (const item of input.outstanding)
       await raiseSnag(db, workspaceId, { projectId, title: item, description: `Outstanding at handover (R${pack.revision})${from}`, severity: "minor", source: "client", actorId: input.staffId });
+    // Money still due at acceptance stays on the pack (with why, when staff accepted it).
+    const project = (await db.query<{ id: string; caseId: string; currency: string }>(`SELECT id, case_id AS "caseId", currency FROM delivery_projects WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, projectId])).rows[0];
+    const balance = await projectBalance(db, workspaceId, project);
+    if (Dec.of(balance.due).cmp(0) > 0)
+      await db.query(`UPDATE handover_packs SET balance_due = $3, balance_currency = $4, balance_reason = $5, balance_accepted_by = $6 WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, pack.id, balance.due, balance.currency, input.balance?.reason ?? null, input.balance?.acceptedBy ?? null]);
+    // Handed over in full: site work ends that day (it started with the first report or delivery at the latest).
+    if (await projectHandedOver(db, workspaceId, project))
+      await db.query(`UPDATE delivery_projects SET site_started_on = coalesce(site_started_on, $3), site_finished_on = coalesce(site_finished_on, greatest(coalesce(site_started_on, $3), $3))
+        WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, input.decidedOn]);
+    await noticeStageReady(db, workspaceId, projectId, input.recordedBy);
     return { warrantyStarted, next: null as string | null };
   }
   await db.query(`UPDATE handover_packs SET status = 'refused', decided_on = $3, decided_by_name = $4, decision_method = $5, decision_note = $6, recorded_by = $7,
