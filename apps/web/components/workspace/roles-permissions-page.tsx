@@ -7,6 +7,7 @@ import { ChevronDown, ChevronRight, Lock, Plus } from "lucide-react";
 import { Avatar, AvatarGroup, Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, IconMenuButton, SearchInput, SegmentedControl, SelectField, SettingsPage, Switch, TextAreaField, TextInput } from "@/design-system";
 import type { WorkspaceRole } from "@/lib/workspace/members";
 import {
+  approvalGaps,
   isSensitivePermission,
   permissionLabel,
   permissionSections,
@@ -72,6 +73,8 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
     return byRole;
   }, [initialData.members]);
   const [roles, setRoles] = useState(initialRoles);
+  // Saved roles only: a draft isn't who can approve today.
+  const approvalWarnings = useMemo(() => approvalGaps(initialData.permissions, roles, initialData.members, t), [initialData.permissions, initialData.members, roles, t]);
   const [drafts, setDrafts] = useState<Record<string, Set<string>>>(() => permissionDrafts(initialRoles));
   const [selectedRoleId, setSelectedRoleId] = useState(
     initialRoles.find((role) => !role.isSystem)?.id ?? initialRoles[0]?.id ?? "",
@@ -259,6 +262,13 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
       >
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
         {failure ? <Callout title={t("Role action failed")} tone="danger">{failure}</Callout> : null}
+        {approvalWarnings.length ? <Callout title={t("Approvals with nobody to cover")} tone="warning">
+          <ul className={styles.approvalGaps}>
+            {approvalWarnings.map((gap) => <li key={gap.code}>{gap.holders.length
+              ? t("Only {name} can {action}; their own work waits.", { name: gap.holders[0], action: gap.action })
+              : t("Nobody can {action}.", { action: gap.action })}</li>)}
+          </ul>
+        </Callout> : null}
 
         <div className={styles.layout}>
           <nav aria-label={t("Roles")} className={styles.rolesPane}>

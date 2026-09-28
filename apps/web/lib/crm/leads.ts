@@ -247,8 +247,10 @@ export type LeadsPageData = {
   defaultCurrency?: string;
   defaultLocale?: string;
   currentMembershipId?: string;
-  /** Role codes of the signed-in member; sources limited to roles are hidden from others. */
+  /** Role and team codes of the signed-in member in the one role vocabulary; sources limited to roles are hidden from others. */
   currentRoles?: string[];
+  /** Whether the list opens on the whole team (who can assign enquiries) rather than the member's own. */
+  seesTeam?: boolean;
   /** Whether the signed-in member may create a Sales pipeline (CRM settings); everyone else converts into the seeded one. */
   canManagePipelines?: boolean;
   leadOptions?: LeadOptions;

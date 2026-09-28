@@ -120,7 +120,9 @@ describe("LeadsPage", () => {
   it("starts a salesperson on their own new enquiries", () => {
     const data = structuredClone(leadsPageFixture);
     data.currentMembershipId = data.items[0].ownerMembershipId ?? "member-1";
+    // A salesperson who can't assign enquiries, whatever their role is called.
     data.currentRoles = ["sales_account_manager"];
+    data.seesTeam = false;
     data.items = [{ ...data.items[0], id: "mine", partyName: "My Client", status: "new", ownerMembershipId: data.currentMembershipId, isConverted: false }, { ...data.items[0], id: "theirs", partyName: "Their Client", status: "new", ownerMembershipId: "someone-else", isConverted: false }];
     render(<LeadsPage initialData={data} />);
     expect(screen.getByRole("button", { name: "Open My Client" })).toBeInTheDocument();

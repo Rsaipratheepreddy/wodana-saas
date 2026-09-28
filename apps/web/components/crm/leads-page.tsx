@@ -66,8 +66,6 @@ function humanize(value: string | null, notSet: string) {
     .join(" ");
 }
 
-/** Owners, admins and sales managers see the team; salespeople start from their own new enquiries (PLM-076). */
-const TEAM_ROLES = new Set(["owner", "administrator", "sales_manager", "sales_admin", "ops_admin"]);
 type EnquiryView = "new" | "contacted" | "come_back" | "all" | "unassigned";
 function listOf(status: CrmLeadStatus): "new" | "contacted" | "come_back" | "closed" {
   if (status === "new") return "new";
@@ -121,7 +119,8 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [items, setItems] = useState(initialData.items);
   const [nextCursor, setNextCursor] = useState(initialData.nextCursor);
-  const seesTeam = (serverData.currentRoles ?? []).some((role) => TEAM_ROLES.has(role)) || !serverData.currentMembershipId;
+  // Whoever assigns enquiries sees the team; salespeople start from their own new enquiries (PLM-076).
+  const seesTeam = serverData.seesTeam !== false || !serverData.currentMembershipId;
   const [leadView, setLeadView] = useState<EnquiryView>(seesTeam ? "all" : "new");
   const [contactLead, setContactLead] = useState<CrmLeadListItem | null>(null);
   const [savingLeadId, setSavingLeadId] = useState<string | null>(null);

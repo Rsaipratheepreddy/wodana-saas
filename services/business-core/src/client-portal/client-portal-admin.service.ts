@@ -17,6 +17,8 @@ import { optionalEmail, readPortalSettings, readProjectAccess, savePortalSetting
 import { portalUrl, readSite } from "./portal-site";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Names a case's client contacts and decision-makers (Sales sends its own quotes) without managing the portal. */
+const CONTACTS_MANAGE = "portal.contacts.manage";
 
 type Contact = { id: string; name: string; confirmedName: string | null; phone: string; email: string | null; role: "approver" | "viewer"; active: boolean; testContact: boolean;
   demoCode: boolean; lastSignedInAt: string | null; version: number };
@@ -241,8 +243,14 @@ export class ClientPortalAdminService {
   contacts(actor: RequestActor, workspaceId: string, caseId: string) {
     return this.access.withAnyPermission(actor, workspaceId, ["portal.manage", "pre_projects.view"], async (client, user) => ({
       contacts: await this.readContacts(client, workspaceId, this.caseId(caseId)),
-      canManage: await this.access.hasPermission(client, workspaceId, user.userId, "portal.manage"), demo: this.demo,
+      canManage: await this.canManageContacts(client, workspaceId, user.userId), demo: this.demo,
     }));
+  }
+
+  /** Who names a case's client contacts: portal managers, and whoever sends quotes (portal.contacts.manage). */
+  private async canManageContacts(client: PoolClient, workspaceId: string, userId: string) {
+    return await this.access.hasPermission(client, workspaceId, userId, "portal.manage")
+      || await this.access.hasPermission(client, workspaceId, userId, CONTACTS_MANAGE);
   }
 
   /**
@@ -251,7 +259,7 @@ export class ClientPortalAdminService {
    * quotation keeps that role until the quotation is withdrawn.
    */
   saveContact(actor: RequestActor, workspaceId: string, caseId: string, body: Record<string, unknown>) {
-    return this.access.withPermission(actor, workspaceId, "portal.manage", async (client, user) => {
+    return this.access.withAnyPermission(actor, workspaceId, ["portal.manage", CONTACTS_MANAGE], async (client, user) => {
       const id = this.caseId(caseId);
       await client.query(`SELECT 1 FROM pre_project_cases WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, id]);
       const name = typeof body.name === "string" ? body.name.trim() : "";

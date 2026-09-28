@@ -2,6 +2,8 @@ import { DesignPackagesService } from "../design/design-packages.service";
 import { Dec } from "../catalog-core/decimal";
 import { copyBuilderData } from "../quotation/quote-revision";
 import { noticeQuoteStep } from "../quotation/quote-notices";
+import { releasePhaseOnDealApproval, winOpportunityOnAcceptance } from "./quote-acceptance";
+import { noticeReceiptStep } from "./commercial-notices";
 import { effectivePortalBrand } from "./effective-brand";
 import { newQuoteDefaults } from "./quote-defaults";
 import { tellClients } from "../client-portal/portal-notices";
@@ -66,7 +68,7 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
-import { caseCurrency as currency, roundAmount, sumAmounts } from "./case-money";
+import { caseCurrency as currency, roundAmount, splitByPercent, sumAmounts } from "./case-money";
 import type { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { ConfigService } from "@nestjs/config";
@@ -130,6 +132,12 @@ export function preserveUnauthorizedCosts(lines: QuoteLine[], previous: Map<stri
 
 const BUILDER_LINE_KEYS = ["kind", "description", "pricingMode", "note", "version", "areaId", "fromAreaId", "workPackageId", "catalogItemId", "catalogVariantId",
   "catalogSnapshot", "formula", "length", "width", "height", "count", "dimensionUnit", "markupPercent", "discountKind", "discountValue", "taxCode", "lineTaxRate", "optionGroup", "imageAssetId", "catalogImageId", "changeOp", "boqLineId"];
+
+/** The people who submitted or Finance-verified a deal may not approve it (separation of duties). */
+export function dealSeparationBlocks(data: Pick<CommercialData, "ownerReview">, userId: string) {
+  const review = data.ownerReview;
+  return Boolean(review && (review.submittedById === userId || review.financeReviewedById === userId));
+}
 
 export function isManualQuotationLine(line: QuoteLine) {
   return !line.scopeId && !line.catalogLinks?.some((selection) => selection.role === "work");
@@ -468,22 +476,14 @@ export class CommercialService {
             user.userId,
             "commercial.estimate",
           ),
+          // Deal approval is a permission plus separation of duties, never a role name.
           canApproveDeal:
             (await this.access.hasPermission(
               client,
               workspaceId,
               user.userId,
               "commercial.deal.approve",
-            )) &&
-            (!data.palmFlow || Boolean((await client.query(
-              `SELECT 1 FROM workspace_memberships membership
-               JOIN effective_member_roles assigned ON assigned.membership_id=membership.id
-               JOIN roles role ON role.id=assigned.role_id
-               WHERE membership.workspace_id=$1 AND membership.user_id=$2
-                 AND membership.status='active' AND role.code IN ('owner','administrator')
-               LIMIT 1`,
-              [workspaceId, user.userId],
-            )).rowCount)),
+            )) && !dealSeparationBlocks(data, user.userId),
           canVerifyFinance: await this.access.hasPermission(
             client,
             workspaceId,
@@ -1406,6 +1406,8 @@ export class CommercialService {
           ? data.quotes.find((q) => q.id === b.quoteId)
           : undefined;
         const now = new Date().toISOString();
+        /** What issuing a quote actually delivered (Q-22): always the portal, and the emails that were queued. */
+        let sent: { portal: true; emailed: string[]; reason: string | null; decider: string; deciderHasEmail: boolean } | undefined;
         if (action === "set_palm_flow") {
           const template = await resolvedProjectWorkflowTemplate(client, workspaceId);
           if (template.code !== DEAL_FIRST_WORKFLOW_CODE)
@@ -2467,10 +2469,24 @@ export class CommercialService {
                 [workspaceId],
               )
             ).rows[0];
-            if (!settings)
+            if (!settings) {
+              // Say who can switch it on (by permission), so Sales isn't left at a dead end.
+              const managers = (await client.query<{ name: string }>(
+                `SELECT DISTINCT account.display_name AS name
+                   FROM workspace_memberships membership
+                   JOIN users account ON account.id = membership.user_id AND account.status = 'active'
+                   JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
+                   JOIN role_permissions granted ON granted.role_id = assigned.role_id
+                   JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'portal.manage'
+                  WHERE membership.workspace_id = $1 AND membership.status = 'active' AND membership.user_id <> $2
+                  ORDER BY account.display_name LIMIT 2`,
+                [workspaceId, user.userId])).rows.map((row) => row.name);
               throw new ConflictException(
-                "Enable the client portal in Workspace settings first.",
+                managers.length
+                  ? `The client portal is off. Ask ${managers.join(" or ")} to switch it on in Settings, then send again.`
+                  : "The client portal is off. Switch it on in Settings, then send again.",
               );
+            }
             // The quote goes to the case's client approver; with only one, the sender needn't pick them.
             const approvers = (
               await client.query<{ id: string }>(
@@ -2483,8 +2499,8 @@ export class CommercialService {
               : text(b.approverId, 80, true);
             if (!chosen)
               throw new ConflictException(approvers.length
-                ? "Choose which client approver receives this quote."
-                : "Add the client as an approver in the client portal first.");
+                ? "Choose which client decision-maker receives this quote."
+                : "Add the client's decision-maker first.");
             const grant = approvers.find((approver) => approver.id === chosen);
             if (!grant)
               throw new ConflictException("Choose an active client approver.");
@@ -2526,9 +2542,13 @@ export class CommercialService {
                 ? "awaiting_decision"
                 : "under_review";
             }
-            // The client hears their quotation or variation is ready (once per issued revision).
-            await tellClients(client, { workspaceId, caseId, event: "quote_issued", recordId: `${q.id}:${q.hash}`, title: `${q.title} (V${q.number})`,
+            // The client hears their quotation or variation is ready (once per issued revision), and the
+            // sender is told exactly what went out: "Sent" only claims the email that was queued.
+            const told = await tellClients(client, { workspaceId, caseId, event: "quote_issued", recordId: `${q.id}:${q.hash}`, title: `${q.title} (V${q.number})`,
               due: q.validUntil, demo: this.testMode });
+            const decider = (await client.query<{ name: string; email: string | null }>(
+              `SELECT name, email FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, grant.id])).rows[0];
+            sent = { portal: true, emailed: told.names ?? [], reason: told.reason, decider: decider?.name ?? "", deciderHasEmail: Boolean(decider?.email) };
           }
         } else if (action === "submit_owner_review") {
           if (record.opportunityStatus !== "won")
@@ -2563,7 +2583,7 @@ export class CommercialService {
               materials: checklistInput.materials === true,
               payment: checklistInput.payment === true,
             };
-          const commissionLines = dealInput(() => normalizeCommissionLines(b.commissionLines, acceptedQuoteValue(accepted)));
+          const commissionLines = dealInput(() => normalizeCommissionLines(b.commissionLines, acceptedQuoteValue(accepted), accepted.currency));
           const paymentProofUrl = dealInput(() => paymentProofLink(b.paymentProofUrl));
           data.ownerReview = {
             id:
@@ -2601,7 +2621,7 @@ export class CommercialService {
             const accepted = data.quotes.find(quote => quote.id === review.quoteId && quote.status === "accepted");
             if (!accepted || assertQuoteSnapshot(accepted) !== review.quoteHash)
               throw new ConflictException("The accepted quotation changed. Submit the deal again.");
-            const finalCommissionLines = dealInput(() => confirmCommissionAmounts(review.commissionLines ?? [], b.commissionLines, acceptedQuoteValue(accepted)));
+            const finalCommissionLines = dealInput(() => confirmCommissionAmounts(review.commissionLines ?? [], b.commissionLines, acceptedQuoteValue(accepted), accepted.currency));
             review.finalCommissionLines = finalCommissionLines;
             review.commission = sumAmounts(finalCommissionLines.map((line) => line.amount), accepted.currency);
             review.status = "pending_approval";
@@ -2614,28 +2634,17 @@ export class CommercialService {
           review.financeReviewedBy = user.displayName;
           review.financeReviewedById = user.userId;
         } else if (action === "decide_owner_review") {
+          // Anyone holding commercial.deal.approve decides (checked with the command), except the
+          // people who submitted or verified this deal.
           const review = data.ownerReview,
             decision = text(b.decision, 20, true);
-          if (data.palmFlow) {
-            const ownerOrAdmin = await client.query(
-              `SELECT 1 FROM workspace_memberships membership
-               JOIN effective_member_roles assigned ON assigned.membership_id=membership.id
-               JOIN roles role ON role.id=assigned.role_id
-               WHERE membership.workspace_id=$1 AND membership.user_id=$2
-                 AND membership.status='active' AND role.code IN ('owner','administrator')
-               LIMIT 1`,
-              [workspaceId, user.userId],
-            );
-            if (!ownerOrAdmin.rowCount)
-              throw new ForbiddenException("Only a Palm Owner or Administrator can approve the agreement and payment.");
-          }
           if (!review || review.status !== "pending_approval")
-            throw new ConflictException("Finance must confirm the Deal File before Owner approval.");
+            throw new ConflictException("Finance must confirm the Deal File before it is approved.");
           if (!["approve", "return", "reject"].includes(decision))
             throw new BadRequestException("Choose approve, return or reject.");
-          if (review.submittedById === user.userId || review.financeReviewedById === user.userId)
+          if (dealSeparationBlocks(data, user.userId))
             throw new ForbiddenException(
-              "A separate Owner or Administrator must review this submission.",
+              "Someone who didn't submit or verify this deal must approve it.",
             );
           if (record.opportunityStatus !== "won")
             throw new ConflictException("The linked opportunity must remain Won for Deal File approval.");
@@ -2669,12 +2678,12 @@ export class CommercialService {
                 "Verify the agreement and exact client material approvals before owner approval.",
               );
             if (data.palmFlow && !financeGatePaymentsReady(data, "release", accepted.id))
-              throw new ConflictException("Finance must verify this quotation round's payment before Owner approval.");
+              throw new ConflictException("Finance must verify this quotation round's payment before the deal is approved.");
             if (data.palmFlow?.scope.design && accepted.round === "design" &&
                 !palmDesignDepositReady(data, accepted))
               throw new ConflictException(data.palmFlow.designMinimumDeposit
-                ? `Verify at least ${data.palmFlow.designMinimumDeposit.currency} ${data.palmFlow.designMinimumDeposit.amount} for the design proposal before Owner approval and the Deal File.`
-                : "Verify the design proposal payment before Owner approval and the Deal File.");
+                ? `Verify at least ${data.palmFlow.designMinimumDeposit.currency} ${data.palmFlow.designMinimumDeposit.amount} for the design proposal before the deal is approved.`
+                : "Verify the design proposal payment before the deal is approved.");
             const snapshot = acceptedQuoteTotals(accepted);
             review.status = "approved";
             review.decisionNote = decisionNote;
@@ -2715,6 +2724,7 @@ export class CommercialService {
             };
             // A paid design round opens design work in Planning; the project itself starts from the accepted main quotation.
             if (data.palmFlow?.scope.design && accepted.round === "design") await startJourney(client, workspaceId, caseId, user.userId);
+            else if (accepted.round !== "design") await releasePhaseOnDealApproval(client, { workspaceId, caseId, actorUserId: user.userId });
           } else {
             review.status = decision === "return" ? "returned" : "rejected";
             review.decisionNote = decisionNote;
@@ -3015,13 +3025,10 @@ export class CommercialService {
           data.financeContext = financeContext;
           const agreementReference = text(b.reference, 200, true);
           if (!data.payments.some(payment => payment.sourceQuoteId === quote.id)) {
-            let allocated = 0;
+            // Exact shares in the contract currency's minor units; the last takes the rest, so they add up.
+            const shares = splitByPercent(acceptedTotal, (quote.paymentTerms ?? []).map((term) => term.percent), financeContext.currency);
             const roundPayments = (quote.paymentTerms ?? []).map((term, index) => {
-              const amount =
-                index === quote.paymentTerms.length - 1
-                  ? Math.round((acceptedTotal - allocated) * 100) / 100
-                  : Math.round(acceptedTotal * term.percent) / 100;
-              allocated += amount;
+              const amount = shares[index];
               return {
                 id: randomUUID(),
                 sourceQuoteId: quote.id,
@@ -3195,13 +3202,14 @@ export class CommercialService {
             },
             user.displayName,
             now,
+            user.userId,
           );
         } else if (action === "verify_payment") {
           const payment = data.payments.find((p) => p.id === b.paymentId);
           if (!payment) throw new NotFoundException("Payment not found.");
           if (payment.status === "verified")
             throw new ConflictException("Payment already verified.");
-          verifyReceipt(data, payment, user.displayName, now);
+          verifyReceipt(data, payment, user.displayName, now, user.userId);
           if (
             !releasePaymentIsOperational(payment) ||
             !paymentHasFinanceVerifiedReceipt(data, payment)
@@ -3230,6 +3238,9 @@ export class CommercialService {
           if (typed === "accept") validateDeduction(data, q);
           q.status = typed === "accept" ? "accepted" : typed === "changes" ? "changes_requested" : "declined";
           if (typed === "changes") newRequest(data, `Changes to quotation V${q.number}`, note, q.id);
+          // Acceptance is the sale: the opportunity is Won and the case moves on, with no manual step.
+          if (typed === "accept" && q.kind === "quotation")
+            await winOpportunityOnAcceptance(client, { workspaceId, caseId, quoteNumber: q.number, round: q.round ?? null, actorUserId: user.userId, source: "user" });
         } else throw new BadRequestException("Unknown commercial action.");
         await this.persist(
           client,
@@ -3248,10 +3259,20 @@ export class CommercialService {
         // A new revision starts from the previous one: carry each line's build-up and the discounts.
         if (action === "revise" && typeof b.quoteId === "string" && q && q.id !== b.quoteId)
           await copyBuilderData(client, workspaceId, caseId, b.quoteId, q.id);
-        if (q && ["submit", "return", "record_decision"].includes(action))
+        if (q && ["submit", "qs_approve", "approve", "return", "record_decision"].includes(action))
           await noticeQuoteStep(client, { workspaceId, caseId, quoteId: q.id, number: q.number, title: q.title, action, actorUserId: user.userId, revision: data.revision, note: typeof b.note === "string" ? b.note : "", decision: typeof b.decision === "string" ? b.decision : undefined,
             reviewPermission: data.palmFlow && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve" });
-        return { data };
+        // The payment hand-offs: Finance hears a receipt was reported; the reporter, the case owner, whoever
+        // approves a waiting deal and the client hear it was verified.
+        if (action === "report_payment_receipt" || action === "verify_payment") {
+          const payment = data.payments.find((item) => item.id === b.paymentId);
+          if (payment) await noticeReceiptStep(client, {
+            workspaceId, caseId, payment, step: action === "report_payment_receipt" ? "reported" : "verified", actorUserId: user.userId, revision: data.revision,
+            reporterUserId: data.receipts?.find((receipt) => receipt.paymentId === payment.id && receipt.status !== "rejected")?.reportedById ?? null,
+            dealWaiting: data.ownerReview?.status === "pending_approval" || data.ownerReview?.status === "pending_finance", demo: this.testMode,
+          });
+        }
+        return sent ? { data, sent } : { data };
       },
     );
   }
@@ -3263,7 +3284,7 @@ export class CommercialService {
     const pendingOwner = action === "review_deal_finance" && review.status === "pending_approval";
     const recipientPermission = pendingFinance ? "commercial.finance.verify" : pendingOwner ? "commercial.deal.approve" : null;
     const eventType = pendingFinance ? "commercial.deal.pending_finance" : pendingOwner ? "commercial.deal.pending_approval" : "commercial.deal.decision";
-    const subject = pendingFinance ? "Deal File needs Finance review" : pendingOwner ? "Deal File needs Owner approval" : review.status === "approved" ? "Deal File approved" : "Deal File returned for correction";
+    const subject = pendingFinance ? "Deal File needs Finance review" : pendingOwner ? "Deal File needs approval" : review.status === "approved" ? "Deal File approved" : "Deal File returned for correction";
     const body = pendingFinance ? "Verify payment evidence and final commission amounts." : pendingOwner ? "Review the Finance-confirmed Deal File." : review.decisionNote || review.financeNote || `Deal File status: ${review.status}.`;
     const recipients = recipientPermission
       ? await client.query<{ userId: string }>(
@@ -3275,13 +3296,9 @@ export class CommercialService {
            JOIN permissions permission ON permission.id=granted.permission_id
            WHERE membership.workspace_id=$1 AND membership.status='active'
              AND permission.code=$2 AND membership.user_id<>$3
-             AND ($4::boolean=false OR EXISTS (
-               SELECT 1 FROM effective_member_roles owner_assigned
-               JOIN roles owner_role ON owner_role.id=owner_assigned.role_id
-               WHERE owner_assigned.membership_id=membership.id
-                 AND owner_role.code IN ('owner','administrator')
-             ))`,
-          [workspaceId, recipientPermission, actorUserId, pendingOwner && Boolean(data.palmFlow)],
+             AND membership.user_id IS DISTINCT FROM $4::uuid`,
+          // Whoever may act is told, by permission; the submitter never approves their own deal.
+          [workspaceId, recipientPermission, actorUserId, pendingOwner ? review.submittedById ?? null : null],
         )
       : { rows: [{ userId: review.submittedById }] };
     for (const recipient of recipients.rows) {

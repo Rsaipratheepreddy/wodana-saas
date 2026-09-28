@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/auth/server";
 import { isWorkspaceAdministrator } from "@/lib/workspace/access";
 import { leadsPageFixture, type LeadsPageData } from "./leads";
+import { roleVocabularyKeys, withRoleVocabulary, type LeadOptions } from "./lead-options";
 
 export async function getLeadsPageData(): Promise<LeadsPageData> {
   const authProfile = await getAuthenticatedProfile();
@@ -53,16 +54,20 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     ? await ownersResponse.json() as { items: LeadsPageData["members"]; currentMembershipId: string | null }
     : { items: [], currentMembershipId: null };
   const currentMembership = authProfile.memberships.find((entry) => entry.workspaceId === membership.workspaceId);
+  const leadOptions = withRoleVocabulary(supporting[6] as LeadOptions | undefined);
+  const permissions = currentMembership?.allowedPermissions ?? [];
   return {
     defaultCurrency: workspace?.workspace?.defaultCurrency,
     defaultLocale: workspace?.workspace?.defaultLocale,
     canView: true,
-    currentRoles: currentMembership?.roles ?? [],
-    canManagePipelines: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
+    currentRoles: roleVocabularyKeys(currentMembership?.roles, leadOptions?.roleKeys),
+    // Whoever assigns enquiries starts on the team; everyone else on their own (PLM-076). A permission, never a role name.
+    seesTeam: isWorkspaceAdministrator(currentMembership?.roles) || permissions.includes("crm.leads.assign"),
+    canManagePipelines: isWorkspaceAdministrator(currentMembership?.roles) || permissions.includes("crm.settings.manage"),
     currentMembershipId: owners.currentMembershipId
       ?? (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
     salesOwners: owners.items,
-    leadOptions: supporting[6],
+    leadOptions,
     enquiryFields: supporting[7] as LeadsPageData["enquiryFields"],
     items: page.data ?? page.items ?? [],
     queues: supporting[0], assignmentPolicies: supporting[1], slaPolicies: supporting[2], intake: supporting[3], pipelines: supporting[4], members: supporting[5],

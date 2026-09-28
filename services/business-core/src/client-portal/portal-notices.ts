@@ -12,14 +12,18 @@ type Db = Pick<PoolClient, "query">;
  *   invoice_issued     a tax invoice was issued (payment due)     everyone on the project
  *   decision_waiting   a design, material list or handover waits  the project's decision-makers
  *   update_published   the team shared a status update            everyone on the project
+ *   payment_received   Finance verified a payment they made       everyone on the project
  * Nothing goes out while the portal is off, the project is paused, or the section it belongs to is hidden.
  * Each email opens the portal where the thing is.
  */
-export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published";
+export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "payment_received";
 
-const SECTION: Record<ClientEvent, Section> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress" };
+const SECTION: Record<ClientEvent, Section> = {
+  quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress", payment_received: "payments",
+};
 const TEMPLATE: Record<ClientEvent, string> = {
   quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
+  payment_received: "portal.payment_received",
 };
 
 const render = (template: string, variables: Record<string, string>) => template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
@@ -48,8 +52,8 @@ export async function tellClients(db: Db, input: {
   if (access?.paused) return { queued: 0, reason: "paused" as const };
   const section = SECTION[input.event];
   if (!effectiveSections(settings, access)[section]) return { queued: 0, reason: "hidden" as const };
-  const recipients = (await db.query<{ id: string }>(
-    `SELECT id FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND active AND email IS NOT NULL AND ($3::boolean = false OR test_contact)
+  const recipients = (await db.query<{ id: string; name: string }>(
+    `SELECT id, name FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND active AND email IS NOT NULL AND ($3::boolean = false OR test_contact)
        AND ($4::boolean = false OR role = 'approver') ORDER BY created_at`,
     [input.workspaceId, input.caseId, input.demo ?? (process.env.PORTAL_DEMO_OTP === "true" && process.env.NODE_ENV !== "production"), input.event === "decision_waiting"])).rows;
   if (!recipients.length) return { queued: 0, reason: "no_contact" as const };
@@ -66,6 +70,7 @@ export async function tellClients(db: Db, input: {
   const variables = { company: facts.company, project: facts.project, title: input.title, due, note: (input.note ?? "").slice(0, 480) };
   const link = await portalLink(db, input.workspaceId, settings.slug, `?project=${input.caseId}&open=${section}`);
   let queued = 0;
+  const names: string[] = [];
   for (const recipient of recipients) {
     const preference = (await db.query<{ enabled: boolean }>(
       `SELECT enabled FROM notification_preferences WHERE workspace_id = $1 AND recipient_type = 'portal_contact' AND recipient_id = $2 AND channel = 'email'
@@ -80,6 +85,7 @@ export async function tellClients(db: Db, input: {
         link, `${TEMPLATE[input.event]}:${input.recordId}:${recipient.id}`.slice(0, 160)])).rows[0];
     if (!inserted) continue;
     queued += 1;
+    names.push(recipient.name);
     // Wake the notification worker now rather than at its next poll.
     const eventId = randomUUID();
     await db.query(
@@ -87,7 +93,8 @@ export async function tellClients(db: Db, input: {
       [eventId, input.workspaceId, inserted.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: inserted.id,
         actorUserId: null, occurredAt: new Date().toISOString(), correlationId: inserted.correlationId, causationId: null, data: { channel: "email" } })]);
   }
-  return { queued, reason: null };
+  // Nothing queued with contacts in place means each one switched these emails off (or already has this one).
+  return queued ? { queued, reason: null, names } : { queued, reason: "not_sent" as const, names };
 }
 
 /**

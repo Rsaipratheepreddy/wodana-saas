@@ -4,9 +4,9 @@ import { notifyUserInApp, queueUserEmail } from "../notifications/default-templa
 type Db = Pick<PoolClient, "query">;
 
 /**
- * Who hears about a quote: reviewers when it's sent for review, the person who submitted it when it
- * comes back, and the Account Manager (and whoever built it) when the client decides. The person
- * who acted is never told about their own step.
+ * Who hears about a quote: reviewers when it's sent for review, the Account Manager (and whoever built it)
+ * when it's approved and ready to send or comes back, and again when the client decides. The person who
+ * acted is never told about their own step.
  */
 export async function noticeQuoteStep(db: Db, input: {
   workspaceId: string; caseId: string; quoteId: string; number: number; title: string; action: string; actorUserId: string; revision: number; note?: string; decision?: string;
@@ -42,6 +42,9 @@ export async function noticeQuoteStep(db: Db, input: {
         WHERE membership.workspace_id = $1 AND membership.status = 'active' AND permission.code = $2
         LIMIT 20`, [input.workspaceId, input.reviewPermission ?? "commercial.approve"])).rows.map((row) => row.userId);
     await tell(reviewers, "quotation.review_requested", true);
+  } else if (input.action === "qs_approve" || input.action === "approve") {
+    // The hand-off back to Sales: the estimate is approved, so the quote is ready to send to the client.
+    await tell([facts.ownerUserId, ...await editors(db, input)], "quotation.qs_approved", true);
   } else if (input.action === "return") {
     await tell([facts.ownerUserId, ...await editors(db, input)], "quotation.returned");
   } else if (input.action === "record_decision") {

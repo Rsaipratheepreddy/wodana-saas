@@ -9622,5 +9622,17 @@
   "Now as the factory": "Now as the factory",
   "Now as the site supervisor": "Now as the site supervisor",
   "Now as the client": "Now as the client",
-  "Approve deal file": "Approve deal file"
+  "Approve deal file": "Approve deal file",
+  "Approvals with nobody to cover": "Approvals with nobody to cover",
+  "Only {name} can {action}; their own work waits.": "Only {name} can {action}; their own work waits.",
+  "Nobody can {action}.": "Nobody can {action}.",
+  "Add client contacts and decision-makers": "Add client contacts and decision-makers",
+  "approve QS estimates": "approve QS estimates",
+  "verify client payments": "verify client payments",
+  "approve deals": "approve deals",
+  "approve orders": "approve orders",
+  "approve suppliers": "approve suppliers",
+  "approve factory output": "approve factory output",
+  "approve stock corrections": "approve stock corrections",
+  "approve supplier bills": "approve supplier bills"
 }

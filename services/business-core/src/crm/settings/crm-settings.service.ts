@@ -7,8 +7,16 @@ import { validateQualificationQuestionDefinitions } from "../leads/qualification
 import { ArchiveSettingDto, CreateCustomFieldDto, CreateQualificationFormDto, CreateSavedViewDto, CreateTaxonomyDto, QualificationQuestionDto, SetCustomFieldValueDto, UpdateCustomFieldDto, UpdateQualificationFormDto, UpdateSavedViewDto, UpdateTaxonomyDto } from "./dto/settings.dto";
 import { ConfigurationRevisionsService, type ConfigurationResourceType } from "../../workspaces/configuration-revisions.service";
 import type { RestoreConfigurationRevisionDto } from "../../workspaces/dto/restore-configuration-revision.dto";
+import { normaliseRoleCodes } from "../../workspaces/role-vocabulary";
 
 type Row = Record<string, unknown>;
+
+/** Roles a choice is limited to, stored in the one role vocabulary (lower-case, unique); none means everyone. */
+function storedRoleCodes(codes: string[] | undefined) {
+  const normalised = normaliseRoleCodes(codes);
+  return normalised.length ? normalised : null;
+}
+
 @Injectable()
 export class CrmSettingsService {
   constructor(
@@ -42,7 +50,7 @@ export class CrmSettingsService {
       const taxonomy = result.rows[0] as Row;
       const options: Row[] = [];
       for (const [index, option] of (input.options ?? []).entries()) {
-        const created = await client.query(`INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position, allowed_role_codes) VALUES ($1,$2,lower($3),$4,$5,$6) RETURNING id, code, label, position, status, version`, [workspaceId, taxonomy.id, option.code, option.label, option.position ?? index, option.allowedRoles?.length ? option.allowedRoles : null]);
+        const created = await client.query(`INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position, allowed_role_codes) VALUES ($1,$2,lower($3),$4,$5,$6) RETURNING id, code, label, position, status, version`, [workspaceId, taxonomy.id, option.code, option.label, option.position ?? index, storedRoleCodes(option.allowedRoles)]);
         options.push(created.rows[0] as Row);
       }
       const response = { ...taxonomy, options };
@@ -79,7 +87,7 @@ export class CrmSettingsService {
              ON CONFLICT (workspace_id, taxonomy_id, code) DO UPDATE SET label = EXCLUDED.label, position = EXCLUDED.position, status = 'active',
                allowed_role_codes = CASE WHEN $7 THEN EXCLUDED.allowed_role_codes ELSE crm_taxonomy_options.allowed_role_codes END,
                version = crm_taxonomy_options.version + 1, updated_at = now()`,
-            [workspaceId, taxonomyId, option.code, option.label, option.position ?? index, option.allowedRoles?.length ? option.allowedRoles : null, option.allowedRoles !== undefined],
+            [workspaceId, taxonomyId, option.code, option.label, option.position ?? index, storedRoleCodes(option.allowedRoles), option.allowedRoles !== undefined],
           );
         }
       }

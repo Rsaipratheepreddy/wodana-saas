@@ -20,9 +20,9 @@
     { "email": "noor.design@palmliving.test", "displayName": "Noor (Interior Designer)", "roleCodes": [], "team": "INTERIOR_DESIGN" },
     { "email": "omar.qs@palmliving.test", "displayName": "Omar (QS)", "roleCodes": ["quantity_surveyor"], "team": "QS" },
     { "email": "khalid.pm@palmliving.test", "displayName": "Khalid (Project Manager)", "roleCodes": ["project_manager"], "team": "PROJECT_MANAGERS" },
-    { "email": "layla.finance@palmliving.test", "displayName": "Layla (Finance)", "roleCodes": ["finance_reviewer"], "team": "FINANCE" },
-    { "email": "faisal.buyer@palmliving.test", "displayName": "Faisal (Procurement)", "roleCodes": [], "team": "PROCUREMENT" },
-    { "email": "rami.factory@palmliving.test", "displayName": "Rami (Factory)", "roleCodes": [], "team": "PRODUCTION" },
+    { "email": "layla.finance@palmliving.test", "displayName": "Layla (Finance)", "roleCodes": ["finance"], "team": "FINANCE" },
+    { "email": "faisal.buyer@palmliving.test", "displayName": "Faisal (Procurement)", "roleCodes": ["buyer"], "team": "PROCUREMENT" },
+    { "email": "rami.factory@palmliving.test", "displayName": "Rami (Factory)", "roleCodes": ["factory_lead"], "team": "PRODUCTION" },
     { "email": "sam.site@palmliving.test", "displayName": "Sam (Site Supervisor)", "roleCodes": ["site_supervisor"], "team": "PRODUCTION" }
   ],
   "businessUnits": [

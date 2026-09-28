@@ -156,11 +156,14 @@ integration("control plane with PostgreSQL", () => {
       `SELECT role.code, role.is_system AS "isSystem", count(granted.permission_id)::int AS permissions
          FROM roles role LEFT JOIN role_permissions granted ON granted.role_id = role.id
         WHERE role.workspace_id = $1 GROUP BY role.id ORDER BY role.code`, [workspaceId]);
+    // The people who approve and pay come with the kit too, so the Owner isn't the only one who can act.
     expect(roles.rows.map((role) => role.code)).toEqual([
-      "administrator", "finance_reviewer", "member", "operations_approver", "owner", "project_manager", "quantity_surveyor", "sales", "site_supervisor", "viewer",
+      "administrator", "buyer", "factory_lead", "finance", "finance_approver", "finance_reviewer", "member", "operations_approver", "owner", "project_manager",
+      "purchasing_approver", "qc_inspector", "quantity_surveyor", "sales", "site_supervisor", "storekeeper", "viewer",
     ]);
     const byCode = Object.fromEntries(roles.rows.map((role) => [role.code, role]));
-    expect(byCode.sales).toMatchObject({ isSystem: false, permissions: 19 });
+    // Sales sends its own quotes: it names the client's decision-maker (portal.contacts.manage).
+    expect(byCode.sales).toMatchObject({ isSystem: false, permissions: 20 });
     expect(byCode.project_manager.permissions).toBeGreaterThan(byCode.site_supervisor.permissions);
     const salesPermissions = await owner.query<{ code: string }>(
       `SELECT permission.code FROM role_permissions granted JOIN roles role ON role.id = granted.role_id

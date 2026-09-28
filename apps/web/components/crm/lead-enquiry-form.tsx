@@ -3,7 +3,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { Button, Callout, ControlledModalDialog, SelectField, TextInput, TextAreaField } from "@/design-system";
 import { salesOwnerChoices, type LeadsPageData } from "@/lib/crm/leads";
-import type { EnquiryDetails, LeadContact, LeadOptions } from "@/lib/crm/lead-options";
+import { sourceAllowedFor, type EnquiryDetails, type LeadContact, type LeadOptions } from "@/lib/crm/lead-options";
 import { countryForPhone, phoneCountry } from "@/lib/crm/phone";
 import { CrmPhoneField } from "./crm-phone-field";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
@@ -57,8 +57,8 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
   const referralBody = () => referralKind === "external" ? { name: referral.name, contact: referral.contact || undefined }
     : referralKind === "internal" ? { membershipId: referral.membershipId } : referralKind ? { option: referral.option } : undefined;
   const roles = initialData.currentRoles ?? [];
-  // A source limited to roles is offered only to people holding one (owners and admins always).
-  const sourceItems = (options?.sources ?? []).filter((item) => !item.allowedRoles?.length || item.id === existing?.source || roles.some((role) => item.allowedRoles!.includes(role) || role === "owner" || role === "administrator"));
+  // A source limited to roles is offered only to people holding one (owners and admins always), in one role vocabulary.
+  const sourceItems = (options?.sources ?? []).filter((item) => item.id === existing?.source || sourceAllowedFor(item, roles));
   const [mode, setMode] = useState("manual");
   // A salesperson who can own enquiries starts as the owner of the one they create.
   const ownerChoices = salesOwnerChoices(initialData);

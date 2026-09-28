@@ -491,8 +491,11 @@ export type FinanceReceipt = {
   providerDocumentId?: string;
   reportedAt: string;
   reportedBy: string;
+  /** Who reported a manual receipt (the separation rule and hand-off notices use the person, not the name). */
+  reportedById?: string;
   verifiedAt?: string;
   verifiedBy?: string;
+  verifiedById?: string;
   rejectedAt?: string;
   rejectionReason?: string;
 };

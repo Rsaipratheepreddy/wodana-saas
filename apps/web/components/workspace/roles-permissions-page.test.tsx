@@ -29,7 +29,7 @@ describe("RolesPermissionsPage", () => {
     expect(screen.getByRole("button", { name: "Quotations & finance 2 of 8 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Projects & work 4 of 7 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Supply & catalog 2 of 7 on" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Client portal 0 of 1 on" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Client portal 0 of 2 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "People 2 of 4 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "AI & platform 1 of 1 on" })).toBeInTheDocument();
     // Only the first area starts open; its rows carry no product-area column or icon.
