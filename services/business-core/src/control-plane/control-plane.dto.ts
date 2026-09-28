@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
-import { IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from "class-validator";
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from "class-validator";
 import { TENANT_LIFECYCLE_STATES } from "../workspaces/tenant-lifecycle.domain";
 
 const trim = ({ value }: { value: unknown }) => typeof value === "string" ? value.trim() : value;
@@ -37,4 +37,38 @@ export class VersionedDomainCommandDto {
 export class RecordCertificateDto {
   @IsInt() @Min(1) expectedVersion!: number;
   @IsDateString() expiresAt!: string;
+}
+
+/** Credits and prices travel as decimal strings (never floats): up to ten digits and four decimals. */
+const asDecimalText = ({ value }: { value: unknown }) => typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : value;
+const CREDITS = /^\d{1,10}(\.\d{1,4})?$/;
+const SIGNED_CREDITS = /^-?\d{1,10}(\.\d{1,4})?$/;
+
+export class AiCreditTopUpDto {
+  @Transform(asDecimalText) @IsString() @Matches(CREDITS) credits!: string;
+  /** The invoice or payment note the credits were paid with. */
+  @Transform(trim) @IsString() @MinLength(3) @MaxLength(200) reference!: string;
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(500) note?: string;
+}
+
+export class AiCreditAdjustmentDto {
+  @IsIn(["adjustment", "refund"]) kind!: "adjustment" | "refund";
+  @Transform(asDecimalText) @IsString() @Matches(SIGNED_CREDITS) credits!: string;
+  @Transform(trim) @IsString() @MinLength(3) @MaxLength(200) reference!: string;
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(500) note?: string;
+}
+
+export class AiCreditThresholdDto {
+  @IsInt() @Min(1) expectedVersion!: number;
+  /** Credits, or null for 20% of the balance after the last top-up. */
+  @ValidateIf((_, value) => value !== null) @Transform(asDecimalText) @IsString() @Matches(CREDITS) threshold!: string | null;
+}
+
+export class AiModelRateDto {
+  @IsInt() @Min(1) expectedVersion!: number;
+  @Transform(asDecimalText) @IsString() @Matches(CREDITS) listInput!: string;
+  @Transform(asDecimalText) @IsString() @Matches(CREDITS) listOutput!: string;
+  @Transform(asDecimalText) @IsString() @Matches(/^\d{1,3}(\.\d{1,3})?$/) margin!: string;
+  @IsBoolean() priceConfirmed!: boolean;
+  @IsBoolean() active!: boolean;
 }
