@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button, Callout, ControlledModalDialog, SelectField, TextInput, TextAreaField } from "@/design-system";
 import { salesOwnerChoices, type LeadsPageData } from "@/lib/crm/leads";
-import type { EnquiryDetails, LeadContact, LeadOptions } from "@/lib/crm/lead-options";
+import { sourceAllowedFor, type EnquiryDetails, type LeadContact, type LeadOptions } from "@/lib/crm/lead-options";
 import { countryForPhone, phoneCountry, phoneProblem, toE164 } from "@/lib/crm/phone";
 import { findContactMatches, type ClientMatch } from "@/lib/crm/client-match";
 import { CrmPhoneField } from "./crm-phone-field";
@@ -84,8 +84,8 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   const roles = initialData.currentRoles ?? [];
   const roleLimited = (id: string) => Boolean(options?.sources.find(item => item.id === id)?.allowedRoles?.length);
   // A source limited to roles is offered only to people holding one (owners and admins always).
-  const sourceItems = (options?.sources ?? []).filter((item) => item.id === existing?.source || (item.id !== RETURNING_SOURCE
-    && (!item.allowedRoles?.length || roles.some((role) => item.allowedRoles!.includes(role) || role === "owner" || role === "administrator"))));
+  // In one role vocabulary: any case, a role or its team (sourceAllowedFor).
+  const sourceItems = (options?.sources ?? []).filter((item) => item.id === existing?.source || (item.id !== RETURNING_SOURCE && sourceAllowedFor(item, roles)));
 
   // Owner: me for what I bring in myself, routing for the company's enquiries.
   const me = initialData.currentMembershipId;

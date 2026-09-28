@@ -169,8 +169,13 @@ integration("client portal (plan §6.22)", () => {
       await client.query("INSERT INTO workspaces(id,name,slug,default_currency,default_timezone,default_locale,created_by) VALUES($1,'Studio',$2,'AED','Asia/Dubai','en-AE',$3)", [workspaceId, slug, manager]);
       await client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active'),($4,$2,$5,'active')", [managerMembership, workspaceId, manager, designerMembership, designer]);
       await client.query("INSERT INTO crm_parties(id,workspace_id,type,display_name,normalized_name) VALUES($1,$2,'person','Maya Client','maya client')", [party, workspaceId]);
+      // A real pipeline: the client's acceptance moves the opportunity to its Won stage.
+      const pipeline = randomUUID(), proposalStage = randomUUID();
+      await client.query("INSERT INTO crm_pipelines(id,workspace_id,code,name) VALUES($1,$2,'sales','Sales')", [pipeline, workspaceId]);
+      await client.query(`INSERT INTO crm_pipeline_stages(id,workspace_id,pipeline_id,code,name,position,probability) VALUES
+        ($1,$3,$4,'proposal','Proposal',1,50), ($2,$3,$4,'won','Won',9,100)`, [proposalStage, randomUUID(), workspaceId, pipeline]);
       await client.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,pipeline_id,stage_id,owner_membership_id,title,reference,conversion_origin,conversion_request_hash,qualification_evidence,qualification_evidence_hash,converted_at)
-        VALUES($1,$2,$3,$4,$5,$6,'Villa 12','O-1','lead_qualification',repeat('a',64),'{}',repeat('b',64),now())`, [opportunity, workspaceId, party, randomUUID(), randomUUID(), designerMembership]);
+        VALUES($1,$2,$3,$4,$5,$6,'Villa 12','O-1','lead_qualification',repeat('a',64),'{}',repeat('b',64),now())`, [opportunity, workspaceId, party, pipeline, proposalStage, designerMembership]);
       await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, workspaceId, opportunity, manager]);
       await client.query("INSERT INTO pre_project_rooms(id,workspace_id,case_id,name) VALUES($1,$2,$3,'Kitchen')", [kitchen, workspaceId, caseId]);
       await client.query("INSERT INTO commercial_cases(workspace_id,case_id,revision,content) VALUES($1,$2,1,'{}')", [workspaceId, caseId]);
@@ -731,7 +736,10 @@ integration("client portal (plan §6.22)", () => {
       // Every command is audited with the client contact.
       const audits = (await w.client.query("SELECT action, source, actor_user_id, after->>'grantId' AS grant FROM audit_events WHERE workspace_id = $1 AND source = 'client_portal' ORDER BY occurred_at",
         [w.workspaceId])).rows;
-      expect(audits).toEqual([{ action: "client_portal.quote_decision", source: "client_portal", actor_user_id: null, grant: approver.id },
+      // Acceptance is the sale: the opportunity is Won and the case moves to Agree, on the client's record.
+      expect(audits).toEqual([{ action: "crm.opportunity.won.v1", source: "client_portal", actor_user_id: null, grant: approver.id },
+        { action: "pre_project.phase_advanced.v1", source: "client_portal", actor_user_id: null, grant: approver.id },
+        { action: "client_portal.quote_decision", source: "client_portal", actor_user_id: null, grant: approver.id },
         { action: "client_portal.request", source: "client_portal", actor_user_id: null, grant: approver.id }]);
       // The account manager hears the client's decision; the case owner hears the request, with a link to its thread.
       expect((await w.client.query("SELECT count(*)::int AS n FROM notifications WHERE workspace_id = $1 AND event_type = 'quotation.client_accepted'", [w.workspaceId])).rows[0].n).toBeGreaterThan(0);

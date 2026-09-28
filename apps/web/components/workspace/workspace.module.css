@@ -1852,3 +1852,7 @@
 .setupDot { position: absolute; inset-block-start: 0; inset-inline-end: 0; inline-size: var(--wd-space-2-5); block-size: var(--wd-space-2-5); border-radius: var(--wd-radius-round); background: var(--wd-color-danger-solid); border: 2px solid var(--wd-color-surface); }
 .setupItem small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .setupDialogHost { display: contents; }
+
+/* Home shows how many things wait for this person. */
+.navigationItem:has(.navigationCount) { grid-template-columns: 1.25rem minmax(0, 1fr) auto; }
+.navigationCount { justify-self: end; }

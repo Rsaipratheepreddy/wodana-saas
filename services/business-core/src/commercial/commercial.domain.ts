@@ -1,4 +1,6 @@
 import { priceQuote, PricingError } from "../quotation/quote-pricing";
+import { Dec } from "../catalog-core/decimal";
+import { currencyDecimals } from "../common/currency";
 import { canonicalHash } from "../crm/shared/crm-types";
 import {parseQuotationRichText} from "./quotation-rich-text";
 import { quotationLineVariant, quotationMaterialText } from "./quotation-presentation";
@@ -87,9 +89,11 @@ export function phone(input: unknown): string {
     );
   return p;
 }
-export const round = (n: number) =>
-  Math.round((n + Number.EPSILON) * 100) / 100;
-export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate"> & Partial<Pick<Quote, "pricing" | "discounts">>) {
+/** Two-place money for inputs without a currency (rates typed on a line), exactly: decimal, half away from zero. */
+export const round = (n: number) => Dec.of(n).round(2).toNumber();
+/** An amount as exact money in the currency's minor units (two places without one). */
+export const moneyOf = (n: number, currencyCode?: string) => Dec.of(n).round(currencyCode ? currencyDecimals(currencyCode) : 2);
+export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate"> & Partial<Pick<Quote, "pricing" | "discounts" | "currency">>) {
   // Quotes edited in the builder carry their pricing policy: price them with the shared engine.
   if (q.pricing) {
     let priced;
@@ -110,26 +114,25 @@ export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate"> & Partia
       net: Number(priced.net), tax: Number(priced.tax), total: Number(priced.total), margin: Number(priced.margin ?? 0),
     };
   }
+  // Older quotes without a pricing policy: the same arithmetic, exact, in the currency's minor units.
+  const places = q.currency ? currencyDecimals(q.currency) : 2;
+  const money = (value: Dec) => value.round(places);
   const includedLines = q.lines.filter((line) => !line.optional);
-  const subtotal = round(
-    includedLines.reduce((s, l) => s + round(l.quantity * l.rate), 0),
-  );
-  const cost = round(
-    includedLines.reduce((s, l) => s + round(l.quantity * (l.unitCost ?? 0)), 0),
-  );
-  const discount = round(q.discount);
-  if (discount > subtotal)
+  const subtotal = money(includedLines.reduce((sum, line) => sum.add(money(Dec.of(line.quantity).mul(line.rate))), Dec.ZERO));
+  const cost = money(includedLines.reduce((sum, line) => sum.add(money(Dec.of(line.quantity).mul(line.unitCost ?? 0))), Dec.ZERO));
+  const discount = money(Dec.of(q.discount));
+  if (discount.cmp(subtotal) > 0)
     throw new BadRequestException("Discount cannot exceed the subtotal.");
-  const net = round(subtotal - discount);
-  const tax = round((net * q.taxRate) / 100);
+  const net = subtotal.sub(discount);
+  const tax = money(net.mul(q.taxRate).div(100));
   return {
-    subtotal,
-    cost,
-    discount,
-    net,
-    tax,
-    total: round(net + tax),
-    margin: net ? round(((net - cost) / net) * 100) : 0,
+    subtotal: subtotal.toNumber(),
+    cost: cost.toNumber(),
+    discount: discount.toNumber(),
+    net: net.toNumber(),
+    tax: tax.toNumber(),
+    total: net.add(tax).toNumber(),
+    margin: net.isZero() ? 0 : net.sub(cost).div(net).mul(100).round(2).toNumber(),
   };
 }
 export function parseLines(input: unknown): QuoteLine[] {
@@ -335,7 +338,7 @@ export function assertQuoteSnapshot(q: Quote): string {
   if (
     !q.hash ||
     !matchesQuoteSnapshot(q) ||
-    round(totals(q).total) !== round(q.total)
+    moneyOf(totals(q).total, q.currency).cmp(moneyOf(q.total, q.currency)) !== 0
   )
     throw new ConflictException(
       "This quotation no longer matches its issued snapshot. Ask the project team to issue a new revision.",
@@ -371,15 +374,15 @@ export function quoteDecisionEvidence(
       line.optional && accepted.has(line.id) ? { ...line, optional: false } : line,
     ),
   });
-  const baseTotal = round(q.total);
-  const acceptedTotal = round(selectedTotals.total);
+  const baseTotal = moneyOf(q.total, q.currency);
+  const acceptedTotal = moneyOf(selectedTotals.total, q.currency);
   return {
     decision,
     quoteHash,
     selectedOptionLineIds: selected,
-    baseTotal,
-    optionsTotal: decision === "accept" ? round(acceptedTotal - baseTotal) : 0,
-    ...(decision === "accept" ? { acceptedTotal } : {}),
+    baseTotal: baseTotal.toNumber(),
+    optionsTotal: decision === "accept" ? acceptedTotal.sub(baseTotal).toNumber() : 0,
+    ...(decision === "accept" ? { acceptedTotal: acceptedTotal.toNumber() } : {}),
     decidedAt,
     decidedBy,
     ...(note ? { note } : {}),

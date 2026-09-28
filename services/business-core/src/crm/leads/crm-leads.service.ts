@@ -43,13 +43,13 @@ import {
 
 const ACTIVE_LEAD_STATUSES = ["new", "attempting_contact", "connected", "nurturing", "paused"];
 /** Who can own an enquiry: an active member (with an active account) holding enquiry view and manage and follow-up access. */
-const SALES_OWNER_PERMISSIONS = ["crm.leads.view", "crm.leads.manage", "crm.activities.manage"];
+export const SALES_OWNER_PERMISSIONS = ["crm.leads.view", "crm.leads.manage", "crm.activities.manage"];
 /**
  * The sales owners one rule decides, for both the list people pick from and the check on save:
  * $1 workspace, $2 one membership or null for all, $3/$4 the permissions and their count,
  * $5 a queue (available in it) or null.
  */
-const ELIGIBLE_SALES_OWNERS_SQL = `SELECT membership.id, coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS "displayName",
+export const ELIGIBLE_SALES_OWNERS_SQL = `SELECT membership.id, coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS "displayName",
          account.primary_email AS email
        FROM workspace_memberships membership
        JOIN users account ON account.id=membership.user_id AND account.status='active'
@@ -989,11 +989,11 @@ export class CrmLeadsService {
   addDefaultManagers(actor: RequestActor, workspaceId: string, queueId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
       await this.requireQueue(client, workspaceId, queueId);
+      // Everyone who can own an enquiry (the sales-owner rule, by permission): never a list of role names.
       const result = await client.query(`INSERT INTO crm_queue_members(workspace_id,queue_id,membership_id,capacity,weight,is_available,skills,languages,territories)
-        SELECT DISTINCT $1::uuid,$2::uuid,m.id,30,1,true,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb
-        FROM workspace_memberships m JOIN effective_member_roles mr ON mr.membership_id=m.id AND mr.workspace_id=m.workspace_id JOIN roles r ON r.id=mr.role_id AND r.workspace_id=m.workspace_id
-        WHERE m.workspace_id=$1 AND m.status='active' AND r.code IN ('owner','administrator','sales_executive')
-        ON CONFLICT(queue_id,membership_id) DO NOTHING RETURNING membership_id AS "membershipId"`, [workspaceId, queueId]);
+        SELECT $1::uuid,$6::uuid,eligible.id,30,1,true,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb
+        FROM (${ELIGIBLE_SALES_OWNERS_SQL}) eligible
+        ON CONFLICT(queue_id,membership_id) DO NOTHING RETURNING membership_id AS "membershipId"`, [workspaceId, null, SALES_OWNER_PERMISSIONS, SALES_OWNER_PERMISSIONS.length, null, queueId]);
       if (result.rowCount) await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source:'user', action:'crm.queue.default_managers_added.v1', entityType:'crm_queue', entityId:queueId, after:{members:result.rows} });
       return { added:result.rowCount ?? 0 };
     });

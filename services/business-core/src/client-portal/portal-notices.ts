@@ -76,8 +76,8 @@ export async function tellClients(db: Db, input: {
     if (whatsapp.sent) return { queued: 1, reason: null, channel: "whatsapp" as const, messageId: whatsapp.messageId };
     await recordClientMessageSkipped(db, input.workspaceId, whatsappEvent, input.recordId, whatsapp, true);
   }
-  const recipients = (await db.query<{ id: string }>(
-    `SELECT id FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND active AND email IS NOT NULL AND ($3::boolean = false OR test_contact)
+  const recipients = (await db.query<{ id: string; name: string }>(
+    `SELECT id, name FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND active AND email IS NOT NULL AND ($3::boolean = false OR test_contact)
        AND ($4::boolean = false OR role = 'approver') ORDER BY created_at`,
     [input.workspaceId, input.caseId, input.demo ?? (process.env.PORTAL_DEMO_OTP === "true" && process.env.NODE_ENV !== "production"), input.event === "decision_waiting"])).rows;
   if (!recipients.length) return { queued: 0, reason: "no_contact" as const };
@@ -94,6 +94,7 @@ export async function tellClients(db: Db, input: {
   const variables = { company: facts.company, project: facts.project, title: input.title, due, note: (input.note ?? "").slice(0, 480) };
   const link = await portalLink(db, input.workspaceId, settings.slug, `?project=${input.caseId}&open=${section}`);
   let queued = 0;
+  const names: string[] = [];
   for (const recipient of recipients) {
     const preference = (await db.query<{ enabled: boolean }>(
       `SELECT enabled FROM notification_preferences WHERE workspace_id = $1 AND recipient_type = 'portal_contact' AND recipient_id = $2 AND channel = 'email'
@@ -108,6 +109,7 @@ export async function tellClients(db: Db, input: {
         link, `${TEMPLATE[input.event]}:${input.recordId}:${recipient.id}`.slice(0, 160)])).rows[0];
     if (!inserted) continue;
     queued += 1;
+    names.push(recipient.name);
     // Wake the notification worker now rather than at its next poll.
     const eventId = randomUUID();
     await db.query(
@@ -115,7 +117,8 @@ export async function tellClients(db: Db, input: {
       [eventId, input.workspaceId, inserted.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: inserted.id,
         actorUserId: null, occurredAt: new Date().toISOString(), correlationId: inserted.correlationId, causationId: null, data: { channel: "email" } })]);
   }
-  return { queued, reason: null };
+  // Nothing queued with contacts in place means each one switched these emails off (or already has this one).
+  return queued ? { queued, reason: null, channel: "email" as const, names } : { queued, reason: "not_sent" as const, names };
 }
 
 /**

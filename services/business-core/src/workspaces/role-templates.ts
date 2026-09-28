@@ -26,8 +26,9 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
   {
     code: "sales",
     name: "Sales",
-    description: "Handles enquiries, follow-ups, the pipeline, planning cases and quotes; never sees internal costs",
-    permissions: [...CRM_DAY_TO_DAY, "pre_projects.view", "pre_projects.create", "pre_projects.edit", "catalog.view"],
+    description: "Handles enquiries, follow-ups, the pipeline, planning cases and quotes, and sends quotes to the client; never sees internal costs",
+    // Sends its own quotes: names the client's decision-maker on the case (portal.contacts.manage), not the portal.
+    permissions: [...CRM_DAY_TO_DAY, "pre_projects.view", "pre_projects.create", "pre_projects.edit", "catalog.view", "portal.contacts.manage"],
   },
   {
     code: "quantity_surveyor",

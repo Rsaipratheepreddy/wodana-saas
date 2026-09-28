@@ -10,10 +10,8 @@ export const DELIVER_TO = ["site", "factory", "warehouse", "pickup", "other"] as
 /** Orders that count as placed: approved or further. Drafts and orders waiting for approval are "in draft". */
 export const PLACED: OrderStatus[] = ["approved", "sent", "confirmed", "partly_received", "received", "closed"];
 
-/** Minor units of a currency (AED 2, JPY 0, KWD 3). */
-export function currencyDecimals(currency: string) {
-  try { return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2; } catch { return 2; }
-}
+/** Minor units of a currency (2 for most, 0 for JPY, 3 for KWD); one shared definition. */
+export { currencyDecimals } from "../common/currency";
 
 /**
  * A line's amounts, exactly: net = quantity × price less the discount, tax on the net, each rounded to

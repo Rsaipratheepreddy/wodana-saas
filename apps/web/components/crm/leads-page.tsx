@@ -68,8 +68,6 @@ function humanize(value: string | null, notSet: string) {
     .join(" ");
 }
 
-/** Owners, admins and sales managers see the team; salespeople start from their own new enquiries (PLM-076). */
-const TEAM_ROLES = new Set(["owner", "administrator", "sales_manager", "sales_admin", "ops_admin"]);
 type EnquiryView = "new" | "contacted" | "come_back" | "all" | "unassigned" | "review" | "duplicates";
 /** New enquiries are worked in respond-by order: the most urgent first (S-6). */
 const respondOrder = (lead: CrmLeadListItem) => lead.slaDueAt && ["active", "warning", "breached"].includes(lead.slaStatus ?? "") ? Date.parse(lead.slaDueAt) : Number.POSITIVE_INFINITY;
@@ -127,7 +125,8 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [items, setItems] = useState(initialData.items);
   const [nextCursor, setNextCursor] = useState(initialData.nextCursor);
-  const seesTeam = (serverData.currentRoles ?? []).some((role) => TEAM_ROLES.has(role)) || !serverData.currentMembershipId;
+  // Whoever assigns enquiries sees the team; salespeople start from their own new enquiries (PLM-076). A permission, never a role name.
+  const seesTeam = serverData.canAssign !== false || !serverData.currentMembershipId;
   const [leadView, setLeadView] = useState<EnquiryView>(seesTeam ? "all" : "new");
   const [contactLead, setContactLead] = useState<CrmLeadListItem | null>(null);
   const [savingLeadId, setSavingLeadId] = useState<string | null>(null);

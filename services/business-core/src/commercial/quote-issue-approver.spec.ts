@@ -37,12 +37,12 @@ describe("sending a quote to the client", () => {
 
   it("says to add the client in the portal when there is no approver", async () => {
     const { service } = setup([]);
-    await expect(issue(service)).rejects.toThrow("Add the client as an approver in the client portal first.");
+    await expect(issue(service)).rejects.toThrow("Add the client's decision-maker first.");
   });
 
   it("asks which approver when there are several", async () => {
     const { service } = setup(["grant-1", "grant-2"]);
-    await expect(issue(service)).rejects.toThrow("Choose which client approver receives this quote.");
+    await expect(issue(service)).rejects.toThrow("Choose which client decision-maker receives this quote.");
   });
 
   it("refuses an approver who isn't active on this case", async () => {

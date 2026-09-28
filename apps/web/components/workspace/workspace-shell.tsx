@@ -21,6 +21,7 @@ import {
 } from "./workspace-navigation";
 import { WorkspaceFlowNavigation } from "./workspace-flow-navigation";
 import { HomeTabs } from "./home-tabs";
+import { useWaitingCount } from "@/components/approvals/use-waiting-count";
 import { SettingsLayout } from "./settings-layout";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { WorkspaceAccountMenu } from "./workspace-account-menu";
@@ -67,6 +68,8 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
   const focus = registeredFocus;
   const baseModule = findWorkspaceModule(pathname, modules);
   const workspaceId = workspaces[0]?.id ?? "";
+  // What waits for this person across the modules (the Approvals tab's count).
+  const waiting = useWaitingCount(workspaceId);
   const activeModule = baseModule.id === "pre-project"
     ? { ...baseModule, navigation: preProjectNavigation(baseModule.navigation, pathname, selectedCase?.search) }
     : baseModule;
@@ -162,7 +165,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
               <li aria-current="page">{route.record && !recordTitle ? <span aria-busy="true">{currentCrumb}</span> : currentCrumb}</li>
             </ol>
           </nav>
-          {route.id === "home" || route.homeTab ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} /> : null}
+          {route.id === "home" || route.homeTab ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} counts={{ approvals: waiting }} /> : null}
           {route.nav === "team" ? <HomeTabs label="People" nested tabs={people} pathname={pathname} /> : null}
           <div className={styles.globalUtilities}>
             <TourPersonaBadge />

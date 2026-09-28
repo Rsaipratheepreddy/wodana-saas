@@ -603,7 +603,7 @@ export function applyExecution(
     manage();
     if (d.workflow?.template.code !== DEAL_FIRST_WORKFLOW_CODE ||
         d.workflow.currentStageKey !== "site_visit")
-      throw new ConflictException("Record the visit during the Palm site visit stage.");
+      throw new ConflictException("Record the visit during the site visit stage.");
     if (d.controls?.onHold)
       throw new ConflictException("Release the project hold before recording the site visit.");
     d.siteVisit = {

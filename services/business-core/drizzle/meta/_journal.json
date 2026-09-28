@@ -736,6 +736,13 @@
       "when": 1801190000001,
       "tag": "0157_default_quick_replies",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1801200000000,
+      "tag": "0158_quote_to_deal_handoffs",
+      "breakpoints": true
     }
   ]
 }

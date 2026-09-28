@@ -1,3 +1,6 @@
+import { Dec } from "../catalog-core/decimal";
+import { currencyDecimals } from "../common/currency";
+
 export type CommissionLine = {
   recipientName: string;
   type: "sales" | "designer" | "referral";
@@ -9,7 +12,8 @@ export type CommissionLine = {
 const commissionTypes = new Set(["sales", "designer", "referral"]);
 const commissionBases = new Set(["amount", "percent"]);
 
-export function normalizeCommissionLines(input: unknown, dealValue: number): CommissionLine[] {
+export function normalizeCommissionLines(input: unknown, dealValue: number, currencyCode?: string): CommissionLine[] {
+  const places = currencyCode ? currencyDecimals(currencyCode) : 2;
   if (!Array.isArray(input) || input.length < 1 || input.length > 3) {
     throw new Error("Add between one and three commission recipients.");
   }
@@ -25,16 +29,17 @@ export function normalizeCommissionLines(input: unknown, dealValue: number): Com
     if (typeof type !== "string" || !commissionTypes.has(type)) throw new Error(`Choose the type for commission ${index + 1}.`);
     if (typeof basis !== "string" || !commissionBases.has(basis)) throw new Error(`Choose amount or percentage for commission ${index + 1}.`);
     if (!Number.isFinite(value) || value <= 0 || (basis === "percent" && value > 100)) throw new Error(`Enter a valid value for commission ${index + 1}.`);
-    const amount = Math.round((basis === "percent" ? dealValue * value / 100 : value) * 100) / 100;
+    // Exact money in the deal currency's minor units, never float math.
+    const amount = (basis === "percent" ? Dec.of(dealValue).mul(value).div(100) : Dec.of(value)).round(places).toNumber();
     return { recipientName, type: type as CommissionLine["type"], basis: basis as CommissionLine["basis"], value, amount };
   });
-  if (lines.reduce((total, line) => total + line.amount, 0) > dealValue)
+  if (lines.reduce((total, line) => total.add(line.amount), Dec.ZERO).cmp(Dec.of(dealValue)) > 0)
     throw new Error("Total commissions cannot exceed the accepted deal value.");
   return lines;
 }
 
-export function confirmCommissionAmounts(provisional: CommissionLine[], input: unknown, dealValue: number) {
-  const final = normalizeCommissionLines(input, dealValue);
+export function confirmCommissionAmounts(provisional: CommissionLine[], input: unknown, dealValue: number, currencyCode?: string) {
+  const final = normalizeCommissionLines(input, dealValue, currencyCode);
   if (final.length !== provisional.length || final.some((line, index) => line.recipientName !== provisional[index].recipientName || line.type !== provisional[index].type)) {
     throw new Error("Finance may correct commission amounts; return the submission to Sales to change recipients or types.");
   }

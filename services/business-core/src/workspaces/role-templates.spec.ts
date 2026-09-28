@@ -27,6 +27,13 @@ describe("firm kit role templates", () => {
     }
   });
 
+  it("lets Sales send its own quotes: it names the client's decision-maker without managing the portal", () => {
+    const sales = roleTemplatesFor(["sales"])[0];
+    expect(sales.permissions).toContain("portal.contacts.manage");
+    expect(sales.permissions).not.toContain("portal.manage");
+    expect(readFileSync(resolve(migrationsDir, "0158_quote_to_deal_handoffs.sql"), "utf8")).toMatch(/role\.code = 'sales'[\s\S]*portal\.contacts\.manage/);
+  });
+
   it("lets Sales run enquiries, the pipeline, planning cases and quotes without seeing costs", () => {
     const sales = roleTemplatesFor(["sales"])[0];
     expect(sales.permissions).toEqual(expect.arrayContaining([

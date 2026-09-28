@@ -14,5 +14,5 @@ import { SupplierControlsService } from "./supplier-controls.service";
 import { SuppliersService } from "./suppliers.service";
 
 @Module({ imports: [WorkspacesModule, EmailModule], controllers: [PurchasingController, PayablesController], providers: [SuppliersService, PayablesService, PaymentRunsService, OrdersService, PriceRequestsService, ReceivingService, SupplierReturnsService, SupplierControlsService, BrandAssetStorageService],
-  exports: [OrdersService] })
+  exports: [OrdersService, PayablesService, PaymentRunsService] })
 export class PurchasingModule {}

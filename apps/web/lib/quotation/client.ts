@@ -27,6 +27,12 @@ async function request<T>(url: string, method = "GET", body?: unknown, signal?: 
   return data as T;
 }
 
+/**
+ * What sending a quote delivered: it is always in the client's portal; `channel` is how they were told
+ * (WhatsApp, email, or not at all), `emailed` who got the email, `reason` why nothing went out.
+ */
+export type IssueDelivery = { portal: true; channel: "whatsapp" | "email" | null; emailed: string[]; reason: string | null; decider: string; deciderHasEmail: boolean };
+
 /** The builder's calls for one quote. */
 export function quoteApi(workspaceId: string, caseId: string, quoteId: string) {
   const base = `cases/${caseId}/quotes/${encodeURIComponent(quoteId)}`;
@@ -40,7 +46,7 @@ export function quoteApi(workspaceId: string, caseId: string, quoteId: string) {
     paymentTerms: (terms: PaymentMilestone[]) => request<BuilderState>(quotationPath(workspaceId, `${base}/payment-terms`), "PUT", { terms }),
     /** A step on the quote's journey (submit, approve, issue, revise, record_decision…), through the commercial case. */
     step: (action: string, revision: number, extra: Record<string, unknown> = {}) =>
-      request<{ data: { revision: number; quotes: Array<{ id: string; number: number; status: string }> } }>(`/api/commercial/cases/${caseId}?${new URLSearchParams({ workspaceId })}`, "POST", { action, revision, quoteId, ...extra }),
+      request<{ data: { revision: number; quotes: Array<{ id: string; number: number; status: string }> }; sent?: IssueDelivery }>(`/api/commercial/cases/${caseId}?${new URLSearchParams({ workspaceId })}`, "POST", { action, revision, quoteId, ...extra }),
     aiDraft: () => request<AiProposal>(quotationPath(workspaceId, `${base}/ai/draft`), "POST", {}),
     aiEdit: (text: string, chat: { history?: Array<{ role: "estimator" | "assistant"; text: string }>; focusLineIds?: string[] } = {}) =>
       request<AiProposal>(quotationPath(workspaceId, `${base}/ai/edit`), "POST", { request: text, history: chat.history ?? [], focusLineIds: chat.focusLineIds ?? [] }),

@@ -463,10 +463,10 @@ function MilestoneRows({ rows, onChange, readOnly, total, currency }: {
       id: "amount",
       header: "Amount",
       size: 160,
-      accessorFn: (row: PaymentTerm) => paymentMilestoneAmounts(total, rows)[rows.findIndex((item) => item.id === row.id)],
+      accessorFn: (row: PaymentTerm) => paymentMilestoneAmounts(total, rows, currency ?? region.currency)[rows.findIndex((item) => item.id === row.id)],
       meta: { renderCell: (row: PaymentTerm) => {
         const index = rows.findIndex((item) => item.id === row.id);
-        return money(paymentMilestoneAmounts(total, rows)[index], currency ?? region.currency, region.locale);
+        return money(paymentMilestoneAmounts(total, rows, currency ?? region.currency)[index], currency ?? region.currency, region.locale);
       } },
     }] : []),
     {

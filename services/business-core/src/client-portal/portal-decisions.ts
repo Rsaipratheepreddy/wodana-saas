@@ -1,11 +1,12 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
-import { Dec } from "../catalog-core/decimal";
 import { controlledChangeCanRelease, controlledChangeForQuote } from "../commercial/change-control";
 import { actionable, newRequest, quoteDecisionEvidence } from "../commercial/commercial.domain";
 import type { ChangeRequest, CommercialData, Quote } from "../commercial/commercial.types";
 import { decidePortalDesign, portalReviewDesign } from "../commercial/portal-design-approval";
+import { winOpportunityOnAcceptance } from "../commercial/quote-acceptance";
+import { splitByPercent } from "../commercial/case-money";
 import { validateDeduction } from "../commercial/variation-controls";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { noticeProject } from "../project-core/project-notices";
@@ -167,14 +168,12 @@ export async function decideQuote(ctx: DecisionContext, body: Record<string, unk
   if (decision === "accept")
     for (const accepted of acceptedForEffects.values()) {
       if (accepted.kind === "variation" && accepted.direction !== "deduction" && data.agreement && !data.payments.some((payment) => payment.sourceQuoteId === accepted.id)) {
-        // Milestones split exactly to the cent; the last one takes what's left so they add up to the accepted total.
-        const total = Dec.of(String(accepted.clientDecision?.acceptedTotal ?? accepted.total)).round(2);
-        let allocated = Dec.ZERO;
-        for (const [index, term] of (accepted.paymentTerms ?? []).entries()) {
-          const share = index === (accepted.paymentTerms ?? []).length - 1 ? total.sub(allocated) : total.mul(String(term.percent)).div(100).round(2);
-          allocated = allocated.add(share);
+        // Milestones split exactly in the currency's minor units; the last one takes what's left so they add up to the accepted total.
+        const terms = accepted.paymentTerms ?? [];
+        const shares = splitByPercent(accepted.clientDecision?.acceptedTotal ?? accepted.total, terms.map((term) => term.percent), data.financeContext?.currency ?? accepted.currency);
+        for (const [index, term] of terms.entries()) {
           data.payments.push({ id: randomUUID(), sourceQuoteId: accepted.id, legalEntityId: data.financeContext?.legalEntityId, currency: data.financeContext?.currency,
-            agreementReference: data.agreement.reference, title: `Variation V${accepted.number} · ${term.title}`, trigger: term.trigger, amount: Number(share.toFixed(2)), dueDate: "",
+            agreementReference: data.agreement.reference, title: `Variation V${accepted.number} · ${term.title}`, trigger: term.trigger, amount: shares[index], dueDate: "",
             requiredForRelease: term.requiredForRelease, requiredForProduction: term.requiredForProduction === true, status: "pending", proof: "", reference: "" });
         }
       }
@@ -184,6 +183,9 @@ export async function decideQuote(ctx: DecisionContext, body: Record<string, unk
           currency: accepted.currency, status: "pending", reference: "", evidence: "" });
       }
     }
+  // The client's acceptance is the sale: the opportunity is Won and the case moves to Agree, with no manual step.
+  if (decision === "accept" && q.kind === "quotation")
+    await winOpportunityOnAcceptance(ctx.db, { workspaceId: ctx.workspaceId, caseId: row.caseId, quoteNumber: q.number, round: q.round ?? null, actorUserId: null, source: "client_portal", grantId: grant.id });
   await ctx.commercial.persist(ctx.db, ctx.workspaceId, row.caseId, data, grant.name, `Client ${decision} (portal)`, q.id, note);
   // The change request the team works from carries the photos; a decline keeps them on the decision.
   await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: asked ? "message" : "decision", targetId: asked ? asked.id : `quote:${q.id}`, files });

@@ -338,6 +338,7 @@ export function QuotationDocument({
                           paymentMilestoneAmounts(
                             quote.clientDecision?.acceptedTotal ?? totals.total,
                             quote.paymentTerms,
+                            quote.currency,
                           )[i],
                           quote.currency,
                           locale,

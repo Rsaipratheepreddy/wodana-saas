@@ -107,6 +107,7 @@ const EXACT_LABELS: Record<string, MessageKey> = {
   "pre_projects.record_client_design_decisions": tKey("Record client design decisions"),
   "pre_projects.review_designs": tKey("Review design revisions"),
   "pre_projects.verify_measurements": tKey("Verify site measurements"),
+  "portal.contacts.manage": tKey("Add client contacts and decision-makers"),
   "projects.schedule.override": tKey("Override project schedule conflicts"),
 };
 
@@ -239,7 +240,7 @@ const FIXTURE_PERMISSION_CODES = [
   "commercial.approve", "commercial.release", "commercial.override_price", "commercial.finance.verify",
   "commercial.estimate", "commercial.deal.approve",
   "commercial.costs.view", "commercial.costs.manage", "catalog.view", "catalog.manage",
-  "supplier_offers.view", "supplier_offers.manage", "vendors.view", "vendors.manage", "portal.manage",
+  "supplier_offers.view", "supplier_offers.manage", "vendors.view", "vendors.manage", "portal.manage", "portal.contacts.manage",
   "projects.view", "projects.manage", "projects.report", "projects.review", "projects.buy",
   "projects.schedule.view", "projects.schedule.manage", "projects.schedule.override",
   "hrms.self", "hrms.team", "hrms.manage", "hrms.evidence", "ai.suggestions.use",

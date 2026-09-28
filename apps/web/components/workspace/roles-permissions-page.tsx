@@ -25,7 +25,7 @@ const AVATAR_STACK = 3;
 
 type AccessFilter = "all" | "granted" | "denied";
 /** Approvals someone other than the person who raised the work gives. */
-const APPROVALS = ["purchasing.approve", "factory.approve", "stock.adjust", "payables.approve"] as const;
+const APPROVALS = ["commercial.estimate", "commercial.finance.verify", "commercial.deal.approve", "purchasing.approve", "vendors.approve", "factory.approve", "stock.adjust", "payables.approve"] as const;
 type RoleDialogItem = { mode: "new" } | { mode: "edit"; role: WorkspaceRole } | { mode: "duplicate"; role: WorkspaceRole } | null;
 
 function responseMessage(response: Response, fallback: string) {
@@ -253,6 +253,10 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   // Nobody approves their own order, output, count or bill: an approval only one person holds stalls when
   // they raised it (or are away), so the page says so.
   const approvalText: Record<(typeof APPROVALS)[number], [one: string, none: string]> = {
+    "commercial.estimate": [t("Only one person can approve QS estimates."), t("Nobody can approve QS estimates.")],
+    "commercial.finance.verify": [t("Only one person can verify client payments."), t("Nobody can verify client payments.")],
+    "commercial.deal.approve": [t("Only one person can approve deals."), t("Nobody can approve deals.")],
+    "vendors.approve": [t("Only one person can approve suppliers."), t("Nobody can approve suppliers.")],
     "purchasing.approve": [t("Only one person can approve orders."), t("Nobody can approve orders.")],
     "factory.approve": [t("Only one person can approve factory output."), t("Nobody can approve factory output.")],
     "stock.adjust": [t("Only one person can approve stock corrections."), t("Nobody can approve stock corrections.")],
