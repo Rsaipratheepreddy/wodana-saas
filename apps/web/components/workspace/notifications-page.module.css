@@ -1,0 +1,10 @@
+/* Home › Notifications: the bell's list at page size. */
+.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; max-inline-size: 48rem; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-3); }
+.settings { color: var(--wd-color-action-primary); font-size: var(--wd-text-sm); font-weight: 600; text-decoration: none; }
+.settings:hover { text-decoration: underline; }
+.list { display: grid; gap: var(--wd-space-1); }
+
+@media (max-width: 640px) {
+  .page { padding: var(--wd-space-4); }
+}

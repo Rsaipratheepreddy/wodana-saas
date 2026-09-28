@@ -9687,5 +9687,19 @@
   "AI analysis isn’t available to you. You can continue in Room builder.": "AI analysis isn’t available to you. You can continue in Room builder.",
   "AI could not finish this analysis. Please retry, or continue in Room builder.": "AI could not finish this analysis. Please retry, or continue in Room builder.",
   "AI is off for this workspace. Showing the record-based checklist.": "AI is off for this workspace. Showing the record-based checklist.",
-  "Record-based checklist. AI assistance isn't available to you.": "Record-based checklist. AI assistance isn't available to you."
+  "Record-based checklist. AI assistance isn't available to you.": "Record-based checklist. AI assistance isn't available to you.",
+  "In the app": "In the app",
+  "Notification settings didn't load.": "Notification settings didn't load.",
+  "Notification settings didn't load": "Notification settings didn't load",
+  "What you're told": "What you're told",
+  "{module}: {channel}": "{module}: {channel}",
+  "Quiet hours": "Quiet hours",
+  "Hold phone notifications": "Hold phone notifications",
+  "They arrive when quiet hours end. The inbox still has them.": "They arrive when quiet hours end. The inbox still has them.",
+  "Between": "Between",
+  "Notification settings": "Notification settings",
+  "Muted. Turn it back on in Notification settings.": "Muted. Turn it back on in Notification settings.",
+  "More for {name}": "More for {name}",
+  "Mute notices like this": "Mute notices like this",
+  "See all notifications": "See all notifications"
 }

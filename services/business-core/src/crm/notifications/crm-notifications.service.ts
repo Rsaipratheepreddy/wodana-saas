@@ -1,5 +1,5 @@
 import { TransactionalEmailService } from "../../email/transactional-email.service";
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { deliveryAllowlist, NOT_ALLOWLISTED } from "../../notifications/delivery-allowlist";
 import { staffEmailAction } from "../../notifications/staff-email-actions";
@@ -71,8 +71,12 @@ export class CrmNotificationsService {
     });
   }
   preference(actor: RequestActor, workspaceId: string, input: UpsertPreferenceDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
-      if (input.recipientType === "user" && input.recipientId !== actorUser.userId) {
+    // Your own preferences need only membership (a QS or Finance reviewer mutes their own notices);
+    // anyone else's need crm.communications.view, and another person's an administrator.
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
+      const own = input.recipientType === "user" && input.recipientId === actorUser.userId;
+      if (!own && !(await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.communications.view"))) throw new ForbiddenException("Permissions required: crm.communications.view");
+      if (input.recipientType === "user" && !own) {
         const admin = await client.query(`SELECT 1 FROM workspace_memberships membership JOIN effective_member_roles assigned ON assigned.membership_id=membership.id JOIN roles role ON role.id=assigned.role_id WHERE membership.workspace_id=$1 AND membership.user_id=$2 AND role.code IN ('owner','administrator')`, [workspaceId, actorUser.userId]);
         if (!admin.rowCount) throw new UnprocessableEntityException("Only administrators may change another user's preference");
       }
@@ -81,6 +85,12 @@ export class CrmNotificationsService {
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "notification.preference.changed.v1", entityType: "notification_preference", entityId: String(result.rows[0].id), after: result.rows[0] as Row });
       return result.rows[0];
     });
+  }
+  /** Your own preferences (per event and channel, and quiet hours), for Settings → Notifications. */
+  myPreferences(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => (await client.query(
+      `SELECT event_type AS "eventType",channel,enabled,quiet_hours AS "quietHours",version FROM notification_preferences
+       WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 ORDER BY event_type,channel`, [workspaceId, actorUser.userId])).rows);
   }
   // Your own notices, devices and push settings need only membership: every role is told about its work
   // (QS reviews, Finance verifications…). Every query below is bound to the signed-in user as recipient;

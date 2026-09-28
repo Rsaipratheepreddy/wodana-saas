@@ -68,6 +68,25 @@ describe("your own notifications need only membership", () => {
     expect(values).toEqual([workspaceId, qsUserId]);
   });
 
+  it("sets and reads your own preferences with membership alone (FD-5)", async () => {
+    const query = vi.fn(async () => ({ rows: [{ id: "p", eventType: "site.*", channel: "push", enabled: false, version: 1 }], rowCount: 1 }));
+    const { service, access } = memberWithoutPermissions(query);
+    await expect(service.preference(actor, workspaceId, { recipientType: "user", recipientId: qsUserId, eventType: "site.*", channel: "push", enabled: false })).resolves.toMatchObject({ enabled: false });
+    expect(access.withPermission).not.toHaveBeenCalled();
+    const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toMatch(/INSERT INTO notification_preferences/);
+    expect(values.slice(0, 5)).toEqual([workspaceId, "user", qsUserId, "site.*", "push"]);
+    await expect(service.myPreferences(actor, workspaceId)).resolves.toHaveLength(1);
+  });
+
+  it("still needs the permission to change anyone else's preference", async () => {
+    const query = vi.fn();
+    const { service } = memberWithoutPermissions(query);
+    await expect(service.preference(actor, workspaceId, { recipientType: "user", recipientId: notificationId, eventType: "*", channel: "email", enabled: false })).rejects.toThrow("crm.communications.view");
+    await expect(service.preference(actor, workspaceId, { recipientType: "party", recipientId: notificationId, eventType: "*", channel: "email", enabled: false })).rejects.toThrow("crm.communications.view");
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("keeps templates and policies (everyone's notices) behind their permissions", async () => {
     const query = vi.fn();
     const { service } = memberWithoutPermissions(query);

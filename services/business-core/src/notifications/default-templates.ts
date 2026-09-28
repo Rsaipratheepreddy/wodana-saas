@@ -401,6 +401,30 @@ export const PUSH_NOTICES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * When quiet hours ({ start: "22:00", end: "07:00", timezone }) are on now, the moment they end; otherwise null.
+ * A window may cross midnight. Without a time zone the hours are UTC.
+ */
+export function quietUntil(quietHours: Record<string, unknown> | null | undefined, now = new Date()): Date | null {
+  const pattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
+  const start = typeof quietHours?.start === "string" ? pattern.exec(quietHours.start) : null;
+  const end = typeof quietHours?.end === "string" ? pattern.exec(quietHours.end) : null;
+  if (!start || !end) return null;
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-GB", { timeZone: typeof quietHours?.timezone === "string" ? quietHours.timezone : "UTC", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  } catch { return null; }
+  const minuteOf = (hour: string, minute: string) => Number(hour) * 60 + Number(minute);
+  const current = minuteOf(parts.find((part) => part.type === "hour")?.value ?? "0", parts.find((part) => part.type === "minute")?.value ?? "0");
+  const from = minuteOf(start[1], start[2]);
+  const to = minuteOf(end[1], end[2]);
+  if (from === to) return null;
+  const inside = from < to ? current >= from && current < to : current >= from || current < to;
+  if (!inside) return null;
+  const wait = (to - current + 1440) % 1440;
+  return new Date(Math.floor(now.getTime() / 60_000) * 60_000 + wait * 60_000);
+}
+
+/**
  * Queues a push to one person's phone, inside the caller's tenant transaction, when they turned push on
  * (the app does it on sign-in) and have a registered phone; a preference for this event (or its module)
  * can switch it off. Idempotent per key. The worker sends it through Expo and falls back to the inbox.
@@ -415,14 +439,18 @@ export async function queueUserPush(db: Db, input: {
   templateId?: string | null;
   idempotencyKey: string;
 }) {
-  const preference = await db.query<{ enabled: boolean }>(
-    `SELECT enabled FROM notification_preferences
+  // The phone's switch ("*") must be on; the event's or its module's setting can still turn this one off.
+  const preferences = await db.query<{ eventType: string; enabled: boolean; quietHours: Record<string, unknown> | null }>(
+    `SELECT event_type AS "eventType", enabled, quiet_hours AS "quietHours" FROM notification_preferences
      WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='push'
-       AND event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*', '*')
-     ORDER BY CASE WHEN event_type::text=$3::text THEN 0 WHEN event_type::text='*' THEN 2 ELSE 1 END LIMIT 1`,
+       AND event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*', '*')`,
     [input.workspaceId, input.recipientUserId, input.eventType],
   );
-  if (preference.rows[0]?.enabled !== true) return { queued: false as const, reason: "push_off" };
+  const master = preferences.rows.find((row) => row.eventType === "*");
+  const specific = preferences.rows.find((row) => row.eventType === input.eventType) ?? preferences.rows.find((row) => row.eventType !== "*");
+  if (master?.enabled !== true || specific?.enabled === false) return { queued: false as const, reason: "push_off" };
+  // The person's quiet hours (on the phone's switch) hold a push until they end; the in-app notice is already there.
+  const scheduledFor = quietUntil(master.quietHours) ?? new Date();
   const device = await db.query(
     `SELECT 1 FROM device_endpoints WHERE workspace_id=$1 AND user_id=$2 AND status='active' LIMIT 1`,
     [input.workspaceId, input.recipientUserId],
@@ -431,10 +459,10 @@ export async function queueUserPush(db: Db, input: {
   const inserted = await db.query<{ id: string; correlationId: string }>(
     `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
        scheduled_for, subject, body, deep_link, idempotency_key, correlation_id)
-     VALUES ($1, $2, 'user', $3, 'push', $4, 'pending', now(), $5, $6, $7, $8, gen_random_uuid())
+     VALUES ($1, $2, 'user', $3, 'push', $4, 'pending', $9, $5, $6, $7, $8, gen_random_uuid())
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
      RETURNING id, correlation_id AS "correlationId"`,
-    [input.workspaceId, input.templateId ?? null, input.recipientUserId, input.eventType, input.subject, input.body, input.deepLink ?? null, input.idempotencyKey],
+    [input.workspaceId, input.templateId ?? null, input.recipientUserId, input.eventType, input.subject, input.body, input.deepLink ?? null, input.idempotencyKey, scheduledFor],
   );
   const notification = inserted.rows[0];
   if (!notification) return { queued: false as const, reason: "already_sent" };
