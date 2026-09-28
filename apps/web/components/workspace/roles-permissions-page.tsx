@@ -4,7 +4,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import Link from "next/link";
 import { useId, useMemo, useState, type FormEvent } from "react";
 import { ChevronDown, ChevronRight, Lock, Plus } from "lucide-react";
-import { Avatar, AvatarGroup, Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, IconMenuButton, SearchInput, SegmentedControl, SelectField, SettingsPage, Switch, TextAreaField, TextInput } from "@/design-system";
+import { Avatar, AvatarGroup, Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, IconMenuButton, SaveBar, SearchInput, SegmentedControl, SelectField, SettingsPage, Switch, TextAreaField, TextInput } from "@/design-system";
 import type { WorkspaceRole } from "@/lib/workspace/members";
 import {
   isSensitivePermission,
@@ -370,11 +370,8 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
           </section>
         </div>
 
-        {isEditable && changeCount > 0 ? <div aria-label={t("Unsaved changes")} className={styles.saveBar} role="region">
-          <span>{changeCount === 1 ? t("1 change") : t("{count} changes", { count: changeCount })}</span>
-          <Button isDisabled={saving} onPress={resetChanges} size="compact">{t("Discard")}</Button>
-          <Button isLoading={saving} onPress={() => void saveChanges()} size="compact" variant="primary">{t("Save")}</Button>
-        </div> : null}
+        {isEditable ? <SaveBar isDirty={changeCount > 0} isSaving={saving} message={changeCount === 1 ? t("1 change") : t("{count} changes", { count: changeCount })}
+          onDiscard={resetChanges} onSave={() => void saveChanges()} /> : null}
       </SettingsPage>
 
       <RoleDialog

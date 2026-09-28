@@ -112,6 +112,8 @@
   --wd-color-table-header: #fafafa;
   --wd-color-table-header-ink: #404040;
   --wd-color-border-control: #cfcfcf;
+  /* Checkbox, radio and switch boundaries: at least 3:1 against the surface. */
+  --wd-color-border-choice: #767676;
   --wd-color-overlay: rgb(16 19 18 / 46%);
   --wd-color-workspace-canvas: #ffffff;
   --wd-color-workspace-toolbar: #ffffff;
@@ -261,6 +263,8 @@
   --wd-table-cell-padding: var(--wd-space-3);
   --wd-table-max-width: 92rem;
   --wd-table-frame-radius: var(--wd-radius-md);
+  /* Checkbox and radio box, and the switch height. */
+  --wd-choice-size: 1.125rem;
   --wd-sidebar-rail: 3.5rem;
   --wd-sidebar-width: 15rem;
   --wd-topbar-height: 3.5rem;
@@ -399,6 +403,7 @@
   --wd-color-table-header: #212121;
   --wd-color-table-header-ink: #d6d6d6;
   --wd-color-border-control: #484848;
+  --wd-color-border-choice: #8c8c8c;
   --wd-color-overlay: rgb(0 0 0 / 68%);
   --wd-color-workspace-canvas: #191919;
   --wd-color-workspace-toolbar: #191919;
@@ -482,6 +487,7 @@
   --wd-color-border: #575757;
   --wd-color-border-strong: #000000;
   --wd-color-border-control: #000000;
+  --wd-color-border-choice: #000000;
   --wd-color-workspace-canvas: #ffffff;
   --wd-color-workspace-toolbar: #ffffff;
   --wd-color-sidebar: #ffffff;

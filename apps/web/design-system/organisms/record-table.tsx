@@ -2,7 +2,7 @@
 
 import { DataGrid, type DataGridProps } from "../patterns/data-grid";
 
-/** The product's default compact, enclosed record-table composition. */
-export function RecordTable<T>(props: Omit<DataGridProps<T>, "appearance" | "gridLines">) {
-  return <DataGrid appearance="contained" {...props} />;
+/** A read-only list in the shared table frame: DataGrid without column lines. */
+export function RecordTable<T>(props: Omit<DataGridProps<T>, "gridLines">) {
+  return <DataGrid {...props} />;
 }

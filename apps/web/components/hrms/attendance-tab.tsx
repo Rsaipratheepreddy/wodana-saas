@@ -62,7 +62,7 @@ export function AttendanceTab({ api, employee, attendance, openDay, onOpenDay }:
     {attendance.storage === "unavailable" ? <InlineNotice tone="error" message={t("This browser can't keep captures, so you can't check in here. Allow site storage and reload.")} /> : null}
     {attendance.error ? <InlineNotice tone="error" message={attendance.error} /> : null}
     <PendingCaptureNotice attendance={attendance} timezone={zone} />
-    {error && !loaded ? <ErrorState description={error} onRetry={() => void load()} /> : <DataGrid<AttendanceDay> appearance="flush" ariaLabel={t("My days")} columns={columns} data={rows}
+    {error && !loaded ? <ErrorState description={error} onRetry={() => void load()} /> : <DataGrid<AttendanceDay> ariaLabel={t("My days")} columns={columns} data={rows}
       getRowId={(row) => row.date} isLoading={!loaded} onRowAction={(row) => onOpenDay(row.date)} rowNumbers={false} selectable={false} wrapText searchLabel={t("Search days")}
       toolbarLeading={<PeriodStepper label={monthLabel(month, locale)} previousLabel={t("Previous month")} nextLabel={t("Next month")} canPrevious={month > firstMonth} canNext={month < today.slice(0, 7)}
         onPrevious={() => setMonth(shiftMonth(month, -1))} onNext={() => setMonth(shiftMonth(month, 1))} />}

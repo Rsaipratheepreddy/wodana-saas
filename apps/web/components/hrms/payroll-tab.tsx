@@ -71,10 +71,10 @@ export function PayrollTab({ api, boot }: { api: HrmsApi; boot: HrmsBootstrap })
   if (error && !current) return <>{tools}<ErrorState description={error} onRetry={() => void load()} /></>;
   const exportList = () => download(api.payrollExportUrl(month, view));
   return view === "employees"
-    ? <DataGrid<Employee> appearance="flush" ariaLabel={t("Employees")} columns={employeeColumns} data={current?.people ?? []} getRowId={(row) => row.membershipId} isLoading={!current}
+    ? <DataGrid<Employee> ariaLabel={t("Employees")} columns={employeeColumns} data={current?.people ?? []} getRowId={(row) => row.membershipId} isLoading={!current}
         rowNumbers={false} selectable={false} wrapText searchLabel={t("Search people")} toolbarLeading={tools} onExport={exportList}
         emptyContent={<EmptyState title={t("No one on payroll this month")} />} />
-    : <DataGrid<Worker> appearance="flush" ariaLabel={t("Crew workers")} columns={workerColumns} data={current?.workers ?? []} getRowId={(row) => row.workerId} isLoading={!current}
+    : <DataGrid<Worker> ariaLabel={t("Crew workers")} columns={workerColumns} data={current?.workers ?? []} getRowId={(row) => row.workerId} isLoading={!current}
         rowNumbers={false} selectable={false} wrapText searchLabel={t("Search workers")} toolbarLeading={tools} onExport={exportList}
         emptyContent={<EmptyState title={t("No crew days this month")} />} />;
 }

@@ -42,7 +42,7 @@ export function PriceRequests({ api, openId, onOpen, onOrder, refreshKey }: { ap
   ];
   if (error && !state) return denied ? <NoAccessState /> : <ErrorState description={error} onRetry={() => void load()} />;
   return <>
-    <DataGrid<PriceRequestRow> appearance="flush" ariaLabel={t("Price requests")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<PriceRequestRow> ariaLabel={t("Price requests")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search price requests")} rowNumbers={false} selectable={false} wrapText
       emptyContent={search.trim() ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No price requests")} description={t("Ask suppliers for prices from what projects need to order.")} />} />
     {openId ? <PriceRequestSheet api={api} requestId={openId} onChanged={() => void load()} onClose={() => onOpen(null)} onOrder={onOrder} /> : null}

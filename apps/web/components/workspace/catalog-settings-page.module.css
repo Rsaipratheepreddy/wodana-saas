@@ -172,7 +172,7 @@
 .multiPopover .pickerChoices { max-block-size:13rem; }
 /* Keep the price action visible when the portal is in a narrow browser panel. */
 .recordTable :global(.wd-table [data-column="price"]) { position:sticky; inset-inline-end:0; z-index:1; background:var(--wd-color-surface); border-inline-start:1px solid var(--wd-color-structural-divider); }
-.recordTable :global(.wd-table th[data-column="price"]) { background:var(--wd-color-surface-muted); }
+.recordTable :global(.wd-table th[data-column="price"]) { background:var(--wd-color-table-header); }
 .recordTable :global(.wd-table tr:hover td[data-column="price"]) { background:var(--wd-color-surface-hover); }
 
 /* Catalog controls use one compact field size across native and shared fields. */

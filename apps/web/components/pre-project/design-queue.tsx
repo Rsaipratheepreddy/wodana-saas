@@ -25,5 +25,5 @@ export function DesignQueue({ items, error }: { items: DesignQueueItem[]; error?
     { id: "step", header: t("Your step"), size: 190, accessorFn: (item) => t(STEP_LABEL[item.step] as never) },
     { id: "since", header: t("Waiting since"), size: 140, accessorFn: (item) => item.dueAt && item.step === "record_client" ? t("Due {date}", { date: date(item.dueAt) }) : date(item.since) },
   ];
-  return <DataGrid ariaLabel={t("Designs waiting on you")} appearance="flush" columns={columns} data={items} getRowId={(item) => item.designId} onRowAction={open} selectable={false} rowNumbers={false} showToolbar={false} pageSize={50} emptyTitle={t("Nothing waiting on you")} />;
+  return <DataGrid ariaLabel={t("Designs waiting on you")} columns={columns} data={items} getRowId={(item) => item.designId} onRowAction={open} selectable={false} rowNumbers={false} showToolbar={false} pageSize={50} emptyTitle={t("Nothing waiting on you")} />;
 }

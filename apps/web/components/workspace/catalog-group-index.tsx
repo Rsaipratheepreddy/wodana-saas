@@ -49,7 +49,7 @@ export function CatalogGroupIndex({items, catalogId, canManage=false, busy=false
       {records.some(r=>!recordGroupId(r))&&<button onClick={()=>onOpen("ungrouped")}><FolderOpen size={14}/>Ungrouped <span>{records.filter(r=>!recordGroupId(r)).length}</span></button>}
     </div>}
     <div className={tableStyles.tableRegion}>
-      <DataGrid appearance="flush" ariaLabel={label} columns={columns} data={visible} getRowId={r=>r.id} onRowAction={open} selectable={false} showToolbar={false} pageSize={25} emptyTitle={search?"No matches":`No ${archived?"archived ":""}${label.toLowerCase()} yet`} emptyDescription={catalogId?"Add a group with any name, or open All records to organise existing data.":"Create a catalog with any name. Start blank or with the starter library."}/>
+      <DataGrid ariaLabel={label} columns={columns} data={visible} getRowId={r=>r.id} onRowAction={open} selectable={false} showToolbar={false} pageSize={25} emptyTitle={search?"No matches":`No ${archived?"archived ":""}${label.toLowerCase()} yet`} emptyDescription={catalogId?"Add a group with any name, or open All records to organise existing data.":"Create a catalog with any name. Start blank or with the starter library."}/>
     </div>
   </section>;
 }
