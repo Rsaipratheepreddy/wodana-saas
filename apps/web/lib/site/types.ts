@@ -24,8 +24,16 @@ export type HandoverPack = {
   id: string; revision: number; title: string; areaIds: string[]; status: "draft" | "issued" | "accepted" | "refused"; replacesId: string | null; contentHash: string | null;
   issuedAt: string | null; issuedByName: string | null; decidedOn: string | null; decidedByName: string | null; decisionMethod: HandoverMethod | null; decisionNote: string; version: number;
   documents: Array<{ id: string; kind: HandoverKind; title: string; name: string; size: number; sha256: string }>;
+  /** Money still due when it was accepted, and why it was accepted anyway (staff), in the project's currency. */
+  balanceDue?: string | null; balanceCurrency?: string | null; balanceReason?: string | null;
 };
-export type HandoverState = { packs: HandoverPack[]; areas: Array<{ id: string; name: string }>; covered: boolean; canManage: boolean; open: { stages: string[]; snags: string[] } };
+export type HandoverState = {
+  packs: HandoverPack[]; areas: Array<{ id: string; name: string }>; covered: boolean; canManage: boolean; open: { stages: string[]; snags: string[] };
+  /** What the client still owes (agreed less verified receipts) and the milestones not invoiced yet. */
+  balance?: { currency: string; due: string; toInvoice: Array<{ id: string; title: string; amount: string; dueDate: string | null }> };
+  /** Whether this person may accept a handover while money is still due. */
+  canAcceptBalance?: boolean;
+};
 
 export type Supply = "make" | "buy" | "ready_made" | "subcontract" | "client" | "site_work";
 /** A scope line's warranty: from the handover it was accepted in, for its months. */

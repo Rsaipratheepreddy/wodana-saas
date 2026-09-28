@@ -271,7 +271,8 @@ export class SiteService {
       lines: await this.lines(client, workspaceId, projectId),
       members: await activeMembers(client, workspaceId),
       today: await this.today(client, workspaceId),
-      me: userId, canReport: who.onTeam && ["active", "on_hold"].includes(who.project.status), canApprove: who.manager, canManage: who.manager,
+      // Nothing new is reported while the project is on hold; reports already submitted can still be decided.
+      me: userId, canReport: who.onTeam && who.project.status === "active", canApprove: who.manager, canManage: who.manager && who.project.status === "active",
     };
   }
 

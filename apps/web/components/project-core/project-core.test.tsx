@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import type { CloseOut, LiveScope, MaterialsState, ProjectDetail, ProjectRow, SealedScope, StartState } from "@/lib/project-core/types";
+import type { CloseOut, LiveScope, MaterialsState, ProjectDetail, ProjectOverview, ProjectRow, SealedScope, StartState } from "@/lib/project-core/types";
 import { ProjectPage } from "./project-page";
 import { splitByPercent } from "./sealed-document";
 import { ProjectsPage } from "./projects-page";
@@ -29,9 +29,17 @@ const detail = (patch: Partial<ProjectDetail["project"]> = {}, stages?: ProjectD
   next: { stage: "Kickoff", kind: "confirm", text: "Kickoff meeting held", role: "project_manager", owner: "Omar Haddad" },
   updates: [], members: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], canManage: true, canClose: true, canSeeMoney: false, progress: 35,
 });
+/** The Overview's own read: blockers, the plan per stage, dates, money and activity. */
+const overview = (patch: Partial<ProjectOverview> = {}): ProjectOverview => ({
+  today: "2026-09-28", work: { open: 3, late: 1, blocked: 1, ready: 1, openSnags: 0, criticalSnags: 0, clientRequests: 0 },
+  blockers: [{ key: "late_work", count: 1, items: ["#4 Measure the kitchen"], href: `/workspace/projects/${PID}/plan?filter=late` }],
+  decisions: [], stagePlan: { s0: { start: "2026-09-20", end: "2026-09-25", open: 1, total: 2 } },
+  dates: { start: "2026-09-20", promise: "2099-12-12", planEnd: "2026-10-30", siteStarted: null, siteFinished: null },
+  money: null, activity: [{ id: "a1", at: "2026-09-27T08:00:00Z", action: "work.create", source: "user", actor: "Omar Haddad", subject: "#4 Measure the kitchen", detail: {} }], ...patch,
+});
 const mount = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
-    const value = respond(url, typeof init?.body === "string" ? JSON.parse(init.body) : undefined);
+    const value = !init?.body && url.includes("/overview") ? overview() : respond(url, typeof init?.body === "string" ? JSON.parse(init.body) : undefined);
     return value instanceof Error
       ? { ok: false, status: 409, json: async () => ({ message: value.message }) }
       : { ok: true, status: 200, json: async () => value };
@@ -158,12 +166,56 @@ describe("projects", () => {
     });
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
     expect(await screen.findByText(/· Omar Haddad/)).toBeInTheDocument();
-    await userEvent.click(screen.getAllByRole("button", { name: "Reopen" })[0]);
+    await userEvent.click(screen.getByRole("button", { name: "Project actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Reopen" }));
     const dialog = await screen.findByRole("dialog", { name: "Reopen the project" });
     expect(within(dialog).getByRole("button", { name: "Reopen" })).toBeDisabled();
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it's reopened/ }), "Handover signed too early");
     await userEvent.click(within(dialog).getByRole("button", { name: "Reopen" }));
     await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "reopen", reason: "Handover signed too early", version: 4 })]));
+  });
+
+  it("keeps the header to one line with the next action, and the details one click away", async () => {
+    mount(() => detail());
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
+    const heading = await screen.findByRole("heading", { level: 1, name: "Villa 12" });
+    const header = heading.closest("header")!;
+    expect(header).toHaveTextContent("PRJ-0007");
+    expect(header).toHaveTextContent("Kickoff · 1 of 2");
+    // The next step for this person: confirm the kickoff meeting.
+    expect(within(header).getByRole("button", { name: "Confirm: Kickoff meeting held" })).toBeInTheDocument();
+    // Seven tabs, in the order work happens.
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Overview", "Scope", "Plan", "Money", "Site", "Handover", "Updates"]);
+    // Narrow screen: the details open as a panel on demand, with the team by role.
+    await userEvent.click(within(header).getByRole("button", { name: "Show details" }));
+    const panel = await screen.findByRole("dialog", { name: "Details" });
+    expect(within(panel).getByText("Omar Haddad")).toBeInTheDocument();
+    expect(within(panel).getByText("Not named: Designer")).toBeInTheDocument();
+  });
+
+  it("shows what holds the project up, each linked to its list, and the latest activity", async () => {
+    mount(() => detail());
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
+    const blockers = await screen.findByRole("region", { name: "What holds it up" });
+    expect(within(blockers).getByRole("link", { name: /1 task late/ })).toHaveAttribute("href", `/workspace/projects/${PID}/plan?filter=late`);
+    expect(screen.getByRole("region", { name: "Next" })).toHaveTextContent("Kickoff meeting held");
+    expect(screen.getByRole("region", { name: "Recent activity" })).toHaveTextContent("Omar Haddad added #4 Measure the kitchen");
+    // Kickoff's planned work ended on the 25th and is still open.
+    expect(screen.getByText("3 days late")).toBeInTheDocument();
+  });
+
+  it("resumes a held project, offering to move the dates by the working days lost", async () => {
+    let current = { ...detail({ status: "on_hold", holdReason: "Client travelling" }), hold: { days: 7, workingDays: 5 } };
+    const fetcher = mount((_url, body) => {
+      if (body?.action === "resume") current = { ...detail({ version: 5 }), hold: null };
+      return current;
+    });
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    const dialog = await screen.findByRole("dialog", { name: "Resume the project" });
+    expect(within(dialog).getByRole("checkbox", { name: "Move open work and the handover date 5 working days later" })).toBeChecked();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "resume", shiftDates: true, version: 4 })]));
   });
 
   it("starts a project only once the start rules pass and a project manager is chosen", async () => {

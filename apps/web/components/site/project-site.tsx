@@ -168,6 +168,17 @@ function ReportDialog({ state, report, onClose, onSave }: {
   const [photos, setPhotos] = useState<File[]>([]);
   const [busy, setBusy] = useState<"save" | "submit" | null>(null);
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
+  // A new report can start from my last one: the same crew, and the items I was installing that aren't finished.
+  const previous = report ? null : state.reports.find((row) => row.authorId === state.me && row.reportDate < draft.reportDate && (row.workforce.length || row.lines.length)) ?? null;
+  const unfinished = (previous?.lines ?? []).filter((line) => {
+    const scope = state.lines.find((item) => item.id === line.boqLineId);
+    return scope && Number(scope.installed) < Number(scope.quantity);
+  });
+  const repeat = () => set({
+    workforce: previous!.workforce.map((row) => ({ trade: row.trade, people: String(row.people) })),
+    lines: [...draft.lines.filter((line) => line.boqLineId), ...unfinished.filter((line) => !draft.lines.some((item) => item.boqLineId === line.boqLineId))
+      .map((line) => ({ boqLineId: line.boqLineId, installed: "", note: "" }))],
+  });
   const input = () => ({
     reportDate: draft.reportDate, weather: draft.weather.trim(), safety: draft.safety, safetyNote: draft.safetyNote.trim(), forecast: draft.forecast, impact: draft.impact.trim(),
     recoveryOwnerId: draft.recoveryOwnerId || null, recoveryOn: draft.recoveryOn, noWorkReason: draft.noWorkReason.trim(), notes: draft.notes.trim(),
@@ -188,6 +199,10 @@ function ReportDialog({ state, report, onClose, onSave }: {
         <DateField label={t("Day")} isRequired value={parseDate(draft.reportDate)} onChange={(value) => set({ reportDate: value ? value.toString() : state.today })} />
         <TextInput label={t("Weather")} value={draft.weather} onChange={(weather) => set({ weather })} />
       </div>
+      {previous ? <div className={styles.row}>
+        <Button size="compact" onPress={repeat}>{t("Same crew as {date}", { date: previous.reportDate })}</Button>
+        <span className={styles.muted}>{[previous.workforce.map((row) => `${row.trade} ${row.people}`).join(" · "), unfinished.length ? t("{count} items still going", { count: unfinished.length }) : ""].filter(Boolean).join(" · ")}</span>
+      </div> : null}
       <fieldset className={styles.group}>
         <legend>{t("Who worked")}</legend>
         {draft.workforce.map((row, index) => <div key={index} className={styles.row}>

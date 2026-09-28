@@ -30,3 +30,4 @@
 .link { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
 .months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); }
 @media (max-width: 640px) { .months { grid-template-columns: minmax(0, 1fr); } }
+.balance { color: var(--wd-color-warning); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }

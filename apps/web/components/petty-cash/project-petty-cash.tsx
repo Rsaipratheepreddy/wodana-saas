@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
@@ -23,7 +23,7 @@ const plain = (value: string) => (value.includes(".") ? value.replace(/\.?0+$/, 
  * A project's petty cash: what the team spent for it, each claim with its receipt. Everyone sees their own
  * claims; whoever decides sees them all, the ones waiting first. Approved, a claim is a cost of the project.
  */
-export function ProjectPettyCash({ workspaceId, projectId }: { workspaceId: string; projectId: string }) {
+export function ProjectPettyCash({ workspaceId, projectId, switcher }: { workspaceId: string; projectId: string; /** The Money tab's views, first in the toolbar. */ switcher?: ReactNode }) {
   const t = useT();
   const format = useProjectFormat();
   const api = useMemo(() => pettyCashApi(workspaceId), [workspaceId]);
@@ -55,7 +55,7 @@ export function ProjectPettyCash({ workspaceId, projectId }: { workspaceId: stri
   const open = state?.claims.find((claim) => claim.id === openId) ?? null;
   return <div className={styles.list}>
     <DataGrid<PettyCashClaim> ariaLabel={t("Petty cash")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => setOpenId(row.id)}
-      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search claims")} rowNumbers={false} wrapText
+      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search claims")} rowNumbers={false} wrapText toolbarLeading={switcher}
       toolbarActions={state?.canClaim ? <Button variant="primary" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("New claim")}</Button> : undefined}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No petty cash yet")} />} />
     {state && open ? <ClaimSheet api={api} projectId={projectId} state={state} claim={open} onChanged={setState} onEdit={() => setEditing(open)} onClose={() => setOpenId(null)} /> : null}
