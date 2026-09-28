@@ -6,7 +6,8 @@ import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, Inline
 import { useT } from "@/lib/i18n/i18n-provider";
 import { APPROVAL_FILTERS, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
 import styles from "./waiting-for-you.module.css";
-import { APPROVALS_CHANGED } from "./use-waiting-count";
+import { APPROVALS_CHANGED, WAITING_SCOPES } from "./use-waiting-count";
+import { useLiveInvalidate } from "@/lib/workspace/live-events";
 
 type Pending = { row: ApprovalRow; decision: "approve" | "return" | "reject" };
 
@@ -32,6 +33,8 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     setLoadError("");
     try { setState(await api.mine()); } catch (cause) { setLoadError(cause instanceof Error ? cause.message : t("What's waiting for you could not be loaded.")); }
   };
+  // Something submitted or decided elsewhere shows up without a refresh.
+  useLiveInvalidate(workspaceId, WAITING_SCOPES, () => { if (!busy && !pending) void reload(); }, 1_500);
   const decide = async (row: ApprovalRow, decision: Pending["decision"], note = "") => {
     setBusy(`${row.kind}:${row.id}`); setError(""); setDone("");
     try {
@@ -75,7 +78,7 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
         .map((item) => ({ id: item.id, label: t(item.label), count: item.id === "all" ? state?.count ?? 0 : counts?.[item.id] ?? 0 }))} />
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {done ? <InlineNotice tone="success" message={done} /> : null}
-    {rows.length ? <DataGrid ariaLabel={t("Waiting for you")} appearance="flush" wrapText columns={columns} data={rows} getRowId={(row) => `${row.kind}:${row.id}`}
+    {rows.length ? <DataGrid ariaLabel={t("Waiting for you")} wrapText columns={columns} data={rows} getRowId={(row) => `${row.kind}:${row.id}`}
       onRowAction={(row) => router.push(row.href)} selectable={false} rowNumbers={false} showToolbar={false} pageSize={50} />
       : <EmptyState illustration="done" title={t("Nothing waiting for you")} description={t("Quotes, payments, deals, orders and reports that need you appear here.")} />}
     {pending ? <DecisionNote pending={pending} busy={Boolean(busy)} onClose={() => setPending(null)} onSave={(note) => void decide(pending.row, pending.decision, note)} /> : null}

@@ -13,11 +13,14 @@ export const RETURNING_CHANNEL = "old_leads";
  * when the workspace has a returning source configured.
  */
 export async function classifyRepeat(client: PoolClient, workspaceId: string, partyId: string): Promise<Repeat | null> {
+  // S-10: only an open enquiry from within the workspace's duplicate window makes a repeat a duplicate.
   const open = await client.query<{ id: string; reference: string | null; owner: string | null }>(
     `SELECT lead.id, enquiry.reference, lead.owner_membership_id AS owner FROM crm_leads lead
      JOIN crm_enquiries enquiry ON enquiry.id = lead.enquiry_id AND enquiry.workspace_id = lead.workspace_id
      WHERE lead.workspace_id = $1 AND lead.party_id = $2 AND lead.closed_at IS NULL
        AND lead.status NOT IN ('qualified', 'disqualified', 'duplicate')
+       AND lead.created_at >= now() - make_interval(days => coalesce(
+         (SELECT duplicate_window_days FROM workspace_sales_settings WHERE workspace_id = $1), 90))
      ORDER BY lead.created_at LIMIT 1`, [workspaceId, partyId]);
   if (open.rowCount) return { kind: "duplicate", originalLeadId: open.rows[0].id, originalReference: open.rows[0].reference, ownerMembershipId: open.rows[0].owner };
   const history = await client.query<{ owner: string | null }>(

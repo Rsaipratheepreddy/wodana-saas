@@ -1,37 +1,52 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { parseDate } from "@internationalized/date";
-import { Button, ControlledModalDialog, DateField, ErrorState, InlineNotice, InspectorSheet, MenuButton, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Badge, Button, ErrorState, InlineNotice, InspectorSheet, MenuButton, Skeleton, StageTracker, Tabs, type WorkflowStage } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
 import type { ReleaseCheck, WorkOrderState } from "@/lib/factory/types";
+import { Cell, NextStep, ProjectLinks, Section, operationsStyles as ops, projectHref } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
-import { WorkOrderStatusLabel, orderNumber } from "./factory-labels";
+import { WorkOrderStatusLabel, orderNumber, useFactoryLabels } from "./factory-labels";
+import { CheckDialog, DispatchDialog, DrawingDialog, QuantityDialog, ReportDialog, ScheduleDialog, SendOutDialog, TextDialog } from "./work-order-dialogs";
+import { WorkOrderHistory } from "./work-order-history";
 import { WorkOrderMaterials } from "./work-order-materials";
 import styles from "./factory.module.css";
 
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 type Dialog = "schedule" | "drawing" | "revise" | "quantity" | "report" | "check" | "hold" | "cancel" | "short_close" | "send_out" | "dispatch" | { refuse: string } | null;
+/** An action a list asks the opened work order to start with (its row's Next button). */
+export type WorkOrderIntent = "report" | "check" | "dispatch" | "drawing" | null;
+type Tab = "work" | "output" | "site" | "history";
 
 /**
- * One work order: what it makes and where, whether it can be released (each check with what's missing),
- * the output reported and who approved it, and the quality checks. The next step is the primary action.
+ * One work order: its state and stage, the one next step, then what it makes (with what's missing before
+ * it's released and where to fix it), its output and checks, its trips to site, and its history.
  */
-export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: FactoryApi; orderId: string; onChanged: () => void; onClose: () => void }) {
+export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose }: {
+  api: FactoryApi; orderId: string; intent?: WorkOrderIntent; onChanged: () => void; onClose: () => void;
+}) {
   const t = useT();
   const format = useProjectFormat();
+  const labels = useFactoryLabels();
   const [state, setState] = useState<WorkOrderState | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [tab, setTab] = useState<Tab>(intent === "report" || intent === "check" ? "output" : intent === "dispatch" ? "site" : "work");
   const [busy, setBusy] = useState(false);
+  const opened = useRef(false);
   const load = useCallback(async () => {
     try { setState(await api.order(orderId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The work order didn't load.")); }
   }, [api, orderId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  // A row's Next button opens the work order straight into its dialog, once it has loaded.
+  useEffect(() => {
+    if (!state || opened.current || !intent) return;
+    opened.current = true;
+    queueMicrotask(() => setDialog(intent));
+  }, [state, intent]);
   /** Runs one change; a clash with someone else's change reloads the work order and says so. */
   const run = async (action: string, input: Record<string, unknown> = {}) => {
     if (!state) return false;
@@ -44,12 +59,67 @@ export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: Fact
     } finally { setBusy(false); }
   };
   const order = state?.order;
-  const unit = (value: string) => `${quantityText(value) || "0"} ${order?.unit ?? ""}`.trim();
-  const checkLabel: Record<ReleaseCheck["key"], string> = {
-    running: t("Project running"), scope: t("Scope unchanged"), drawing: t("Drawing approved"), payment: t("Payment before production verified"), materials: t("Materials in"), schedule: t("Workcenter and dates"),
-  };
+  const unit = (value: string | null | undefined) => `${quantityText(value ?? "0") || "0"} ${order?.unit ?? ""}`.trim();
   const open = order ? ["planned", "released", "in_production", "on_hold"].includes(order.status) : false;
-  const blocked = Boolean(state?.releaseChecks.some((check) => !check.passed));
+  const failing = state?.releaseChecks.filter((check) => !check.passed) ?? [];
+  const pendingReports = state?.reports.filter((report) => report.status === "pending") ?? [];
+  const canSend = Boolean(state && (state.canManage || state.canIssue) && Number(state.atFactory) > 0);
+  const producing = order?.status === "in_production";
+  const canCheck = Boolean(state?.canApprove && state.settings.requireCheck && order && ["in_production", "ready"].includes(order.status) && Number(order.toCheck) > 0);
+  const canReport = Boolean(producing && state?.canReport && Number(order?.left) > 0);
+  const drawingDecider = Boolean(state?.canApprove);
+
+  // Where the work order is: planned, released, in production, checked, at site.
+  const stages = (): WorkflowStage[] => {
+    if (!order || !state) return [];
+    const steps = [t("Planned"), t("Released"), t("In production"), state.settings.requireCheck ? t("Checked") : t("Approved"), t("At site")];
+    const sent = state.dispatches.some((trip) => trip.status !== "cancelled");
+    const started = Boolean(order.releasedAt) && Number(order.made) + Number(order.pending) + Number(order.scrapped) > 0;
+    const at = order.status === "planned" ? 0 : order.status === "released" ? 1 : order.status === "in_production" ? 2
+      : order.status === "ready" ? (sent && Number(state.atFactory) === 0 ? 5 : 3)
+      : order.status === "on_hold" ? (!order.releasedAt ? 0 : started ? 2 : 1) : 5;
+    return steps.map((label, index) => ({ id: String(index), label,
+      state: index < at ? "complete" : index === at ? (order.status === "on_hold" ? "blocked" : "current") : "upcoming" }));
+  };
+
+  /** Where to fix a release check that fails: the project's orders, the drawing, its schedule, the project. */
+  const fix = (check: ReleaseCheck): ReactNode => {
+    if (!order || !state) return null;
+    switch (check.key) {
+      case "materials": return <Link className={ops.projectLink} href={`/workspace/purchasing?project=${order.projectId}`}>{t("Order materials")}</Link>;
+      case "drawing": return state.canManage ? <Button size="compact" variant="quiet" onPress={() => setDialog("drawing")}>{t("Record approval")}</Button> : null;
+      case "schedule": return state.canManage ? <Button size="compact" variant="quiet" onPress={() => setDialog("schedule")}>{t("Set where and when")}</Button> : null;
+      case "payment": return <Link className={ops.projectLink} href={projectHref(order.projectId, "money")}>{t("Open the project's money")}</Link>;
+      case "scope": return <Link className={ops.projectLink} href={projectHref(order.projectId, "scope")}>{t("Open the scope")}</Link>;
+      case "running": return <Link className={ops.projectLink} href={projectHref(order.projectId)}>{t("Open the project")}</Link>;
+      default: return null;
+    }
+  };
+
+  // The one next step, in words: what happens next and whose it is.
+  const nextStep = (): { title: string; detail?: string | null; tone?: "danger" | "warning"; actions?: ReactNode } | null => {
+    if (!order || !state) return null;
+    const until = format.until(order.plannedEnd);
+    switch (state.next) {
+      case "fix": return { title: t("Can't be released yet"), detail: failing.map((check) => labels.blocked[check.key]).join(" · "), tone: "warning" };
+      case "release": return { title: t("Ready to release"), detail: order.plannedStart ? t("Starts {date}", { date: format.day(order.plannedStart) }) : null };
+      case "start": return { title: t("Released: start it when the work begins"), detail: order.workcenterName };
+      case "approve": return { title: t("{quantity} made waits for approval", { quantity: unit(pendingReports.reduce((sum, report) => sum + Number(report.good), 0).toString()) }),
+        detail: state.canApprove ? null : t("Waiting for someone who approves factory work."), tone: "warning" };
+      case "check": return { title: t("{quantity} to check", { quantity: unit(order.toCheck) }), detail: state.canApprove ? null : t("Waiting for someone who approves factory work."), tone: "warning" };
+      case "report": return { title: t("{quantity} still to make", { quantity: unit(order.left) }),
+        detail: order.plannedEnd ? t("Due {date} · {until}", { date: format.day(order.plannedEnd), until: until?.text ?? "" }) : null, tone: until?.late ? "danger" : undefined };
+      case "send": return { title: t("{quantity} ready at the factory: send it to site", { quantity: unit(state.atFactory) }) };
+      case "resume": return { title: t("On hold: {reason}", { reason: order.holdReason ?? "" }), tone: "warning" };
+      case "decide_drawing": return { title: order.drawingNewer ? t("A newer drawing (R{number}) is in", { number: order.drawingNewer }) : t("The drawing changed: decide whether it goes on"),
+        detail: order.drawingNewer ? t("Record the new drawing, then someone who approves factory work lets it go on.") : drawingDecider ? order.holdReason : t("Waiting for someone who approves factory work."),
+        tone: "warning" };
+      default:
+        if (order.status === "ready") return { title: t("Made and at site") };
+        return null;
+    }
+  };
+
   const more = !order || !state?.canManage ? [] : [
     ...(open ? [{ id: "quantity", label: t("Change quantity") }] : []),
     ...(["released", "in_production", "on_hold"].includes(order.status) ? [{ id: "revise", label: t("Drawing changed") }] : []),
@@ -58,131 +128,177 @@ export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: Fact
     ...(open && !(Number(order.made) + Number(order.pending) + Number(order.scrapped)) ? [{ id: "cancel", label: t("Cancel work order") }] : []),
     ...(open && Number(order.made) + Number(order.pending) + Number(order.scrapped) > 0 ? [{ id: "short_close", label: t("Close short") }] : []),
   ];
-  const primary = !order || !state ? null
-    : order.status === "planned" && state.canManage ? <Button variant="primary" isLoading={busy} isDisabled={blocked} onPress={() => void run("release")}>{t("Release")}</Button>
-    : order.status === "released" && state.canManage ? <Button variant="primary" isLoading={busy} onPress={() => void run("start")}>{t("Start")}</Button>
-    : order.status === "on_hold" && (order.holdKind === "drawing" ? state.canApprove : state.canManage)
-      ? <Button variant="primary" isLoading={busy} onPress={() => void run("resume")}>{order.holdKind === "drawing" ? t("Go on with the new drawing") : t("Resume")}</Button>
+  // Reports someone else made, which this viewer can approve.
+  const approvable = pendingReports.filter((report) => state?.canApprove && report.reportedBy !== state.me);
+  // The one primary action: the next step when it's the viewer's to do (fixing a release check happens where it's missing).
+  type Act = "release" | "start" | "resume" | "use_drawing" | "decide_drawing" | "approve" | "check" | "report" | "send" | null;
+  const act: Act = !order || !state ? null
+    : state.next === "release" && state.canManage ? "release"
+    : state.next === "start" && state.canManage ? "start"
+    : state.next === "resume" && state.canManage ? "resume"
+    : state.next === "decide_drawing" && order.drawingNewer && state.canManage ? "use_drawing"
+    : state.next === "decide_drawing" && !order.drawingNewer && drawingDecider ? "decide_drawing"
+    : state.next === "approve" && approvable.length ? "approve"
+    : canCheck ? "check" : canReport ? "report" : canSend ? "send" : null;
+  const primary = act === "release" ? <Button variant="primary" isLoading={busy} onPress={() => void run("release")}>{t("Release")}</Button>
+    : act === "start" ? <Button variant="primary" isLoading={busy} onPress={() => void run("start")}>{t("Start")}</Button>
+    : act === "resume" ? <Button variant="primary" isLoading={busy} onPress={() => void run("resume")}>{t("Resume")}</Button>
+    : act === "use_drawing" ? <Button variant="primary" onPress={() => setDialog("revise")}>{t("Use the new drawing")}</Button>
+    : act === "decide_drawing" ? <Button variant="primary" isLoading={busy} onPress={() => void run("resume")}>{t("Go on with the new drawing")}</Button>
+    // One report waiting: approve it here; more: open them to decide each.
+    : act === "approve" ? <Button variant="primary" isLoading={busy} onPress={() => { if (approvable.length === 1) void run("decide_report", { reportId: approvable[0].id, decision: "approve" }); else setTab("output"); }}>
+      {t("Approve output")}</Button>
+    : act === "check" ? <Button variant="primary" onPress={() => setDialog("check")}>{t("Check quality")}</Button>
+    : act === "report" ? <Button variant="primary" onPress={() => setDialog("report")}>{t("Report output")}</Button>
+    : act === "send" ? <Button variant="primary" onPress={() => setDialog("dispatch")}>{t("Send to site")}</Button>
     : null;
-  const producing = order?.status === "in_production";
-  const canCheck = Boolean(state?.canApprove && state.settings.requireCheck && producing && Number(order?.toCheck) > 0);
+  // Reporting and checking go on side by side while it's made.
+  const secondary = <>
+    {canReport && act !== "report" ? <Button onPress={() => setDialog("report")}>{t("Report output")}</Button> : null}
+    {canCheck && act !== "check" ? <Button onPress={() => setDialog("check")}>{t("Check quality")}</Button> : null}
+  </>;
+  const step = nextStep();
+  const reworks = state?.reworks ?? [];
+  const outputCount = pendingReports.length + (canCheck ? 1 : 0);
+
+  const workPanel = !state || !order ? null : <div className={styles.sheet}>
+    {failing.length ? <Section title={t("Before it's released")}>
+      <ul className={ops.list}>{state.releaseChecks.map((check) => <li key={check.key}>
+        <Cell title={labels.check[check.key]} tone={check.passed ? "success" : "danger"}
+          meta={check.passed ? t("Done") : check.key === "materials" && check.detail?.length ? t("Not in: {items}", { items: check.detail.join(", ") }) : check.missing} />
+        {check.passed ? null : fix(check)}
+      </li>)}</ul>
+    </Section> : null}
+    <dl className={styles.facts}>
+      <div><dt>{t("Makes")}</dt><dd>{[unit(order.quantity), order.packageName, order.specification].filter(Boolean).join(" · ")}</dd></div>
+      <div><dt>{t("Where and when")}</dt><dd>
+        <span>{[order.workcenterName, [format.day(order.plannedStart), format.day(order.plannedEnd)].filter(Boolean).join(" – "),
+          order.plannedHours ? t("{hours} h", { hours: Number(order.plannedHours) }) : "", order.batchName ? t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName }) : ""]
+          .filter(Boolean).join(" · ") || "—"}</span>
+        {state.canManage && ["planned", "released", "on_hold"].includes(order.status) ? <Button size="compact" variant="quiet" onPress={() => setDialog("schedule")}>{t("Change")}</Button> : null}
+      </dd></div>
+      <div><dt>{t("Drawing")}</dt><dd>
+        <span>{order.drawingApprovedAt ? t("{reference}, approved by {name} on {date}", { reference: order.drawingRef, name: order.drawingApprovedByName ?? "", date: format.when(order.drawingApprovedAt) })
+          : t("Not approved yet")}</span>
+        {order.drawingNewer ? <Badge tone="warning">{t("R{number} is newer", { number: order.drawingNewer })}</Badge> : null}
+        {state.canManage && ["planned", "on_hold"].includes(order.status) && !failing.some((check) => check.key === "drawing") ? <Button size="compact" variant="quiet" onPress={() => setDialog(order.status === "on_hold" && order.drawingApprovedAt ? "revise" : "drawing")}>
+          {order.drawingApprovedAt ? t("Change") : t("Record approval")}</Button> : null}
+      </dd></div>
+      {order.notes ? <div><dt>{t("Notes")}</dt><dd>{order.notes}</dd></div> : null}
+    </dl>
+    <WorkOrderMaterials state={state} run={run} busy={busy} />
+    {state.operations.length ? <Section title={t("Done outside")}>
+      <ul className={ops.list}>{state.operations.map((operation) => <li key={operation.id}>
+        <Cell title={t("{step} at {supplier}", { step: operation.name, supplier: operation.supplierName })}
+          meta={<Link className={ops.projectLink} href={`/workspace/purchasing/orders?order=${operation.orderId}`}>{operation.orderNumber}</Link>} />
+        <Badge tone={operation.out ? "info" : "success"}>{operation.out ? t("{back} of {quantity} back", { back: quantityText(operation.back) || "0", quantity: unit(operation.quantity) }) : t("Back")}</Badge>
+      </li>)}</ul>
+    </Section> : null}
+  </div>;
+
+  const outputPanel = !state || !order ? null : <div className={styles.sheet}>
+    <dl className={styles.facts}>
+      <div><dt>{t("Ready")}</dt><dd>
+        <span>{t("{ready} of {quantity}", { ready: quantityText(order.passed) || "0", quantity: unit(order.quantity) })}</span>
+        {Number(order.toCheck) ? <Badge tone="warning">{t("{quantity} to check", { quantity: unit(order.toCheck) })}</Badge> : null}
+        {Number(order.scrapped) ? <span className={styles.muted}>{t("{quantity} scrapped", { quantity: unit(order.scrapped) })}</span> : null}
+        {Number(order.left) && order.status !== "planned" ? <span className={styles.muted}>{t("{quantity} still to make", { quantity: unit(order.left) })}</span> : null}
+      </dd></div>
+    </dl>
+    <Section title={t("Reports")}>
+      {state.reports.length ? <ul className={ops.list}>{state.reports.map((report) => <li key={report.id}>
+        <Cell title={[Number(report.good) ? t("{quantity} made", { quantity: unit(report.good) }) : "",
+            Number(report.scrap) ? t("{quantity} scrapped: {reason}", { quantity: unit(report.scrap), reason: report.scrapReason }) : "",
+            report.hours ? t("{hours} hours", { hours: quantityText(report.hours) }) : ""].filter(Boolean).join(" · ")}
+          meta={[report.reportedByName, format.when(report.reportedAt), report.note,
+            report.status === "approved" ? t("Approved by {name}", { name: report.decidedByName ?? "" }) : report.status === "refused" ? t("Refused by {name}: {note}", { name: report.decidedByName ?? "", note: report.decisionNote }) : ""]
+            .filter(Boolean).join(" · ")} tone={report.status === "refused" ? "danger" : undefined} />
+        {report.status === "pending" ? state.canApprove && report.reportedBy !== state.me ? <span className={styles.filters}>
+          <Button size="compact" variant="primary" isLoading={busy} onPress={() => void run("decide_report", { reportId: report.id, decision: "approve" })}>{t("Approve")}</Button>
+          <Button size="compact" variant="quiet" onPress={() => setDialog({ refuse: report.id })}>{t("Refuse")}</Button>
+        </span> : <Badge tone="warning">{t("Waiting for approval")}</Badge> : null}
+      </li>)}</ul> : <p className={ops.empty}>{t("Nothing reported yet.")}</p>}
+    </Section>
+    {state.checks.length ? <Section title={t("Quality checks")}>
+      <ul className={ops.list}>{state.checks.map((check) => <li key={check.id}>
+        <Cell title={[Number(check.passed) ? t("{quantity} passed", { quantity: unit(check.passed) }) : "",
+          Number(check.failed) ? t("{quantity} failed: {reason}", { quantity: unit(check.failed), reason: check.failReason }) : ""].filter(Boolean).join(" · ")}
+          meta={[check.checkedByName, format.when(check.checkedAt)].join(" · ")} tone={Number(check.failed) ? "danger" : undefined} />
+      </li>)}</ul>
+    </Section> : null}
+    {reworks.length ? <Section title={t("Made again")}>
+      <ul className={ops.list}>{reworks.map((rework) => <li key={rework.id}>
+        <Cell title={t("{quantity} sent back from site", { quantity: unit(rework.quantity) })} meta={[rework.reason, rework.byName, format.when(rework.at)].filter(Boolean).join(" · ")} tone="danger" />
+      </li>)}</ul>
+    </Section> : null}
+  </div>;
+
+  const sitePanel = !state || !order ? null : <div className={styles.sheet}>
+    <Section title={t("At the factory")} action={canSend ? <Button size="compact" onPress={() => setDialog("dispatch")}>{t("Send to site")}</Button> : null}>
+      <p className={ops.empty}>{Number(state.atFactory) > 0 ? t("{quantity} ready to go", { quantity: unit(state.atFactory) }) : t("Nothing waiting at the factory.")}</p>
+    </Section>
+    <Section title={t("Trips to site")}>
+      {state.dispatches.length ? <ul className={ops.list}>{state.dispatches.map((trip) => <li key={trip.id}>
+        <Cell title={<Link className={ops.projectLink} href={`/workspace/inventory/moves?move=${trip.id}`}>{t("Move {number}", { number: trip.number })}</Link>}
+          meta={[unit(trip.quantity), format.day(trip.sentOn), Number(trip.rejected) ? t("{quantity} refused: {reason}", { quantity: unit(trip.rejected), reason: trip.rejectReason ?? "" }) : ""]
+            .filter(Boolean).join(" · ")} tone={Number(trip.rejected) ? "danger" : undefined}>
+          {trip.returnId ? <small><Link className={ops.projectLink} href={`/workspace/inventory/moves?move=${trip.returnId}`}>
+            {trip.returnStatus === "received" ? t("Back at the factory on move {number}", { number: trip.returnNumber ?? 0 }) : t("Coming back on move {number}", { number: trip.returnNumber ?? 0 })}</Link></small> : null}
+        </Cell>
+        <Badge tone={trip.status === "in_transit" ? "info" : trip.status === "cancelled" ? "neutral" : Number(trip.rejected) || trip.short ? "warning" : "success"}>
+          {trip.status === "in_transit" ? t("On its way") : trip.status === "cancelled" ? t("Cancelled") : Number(trip.rejected) ? t("Partly refused")
+            : trip.short ? t("Arrived short: {quantity}", { quantity: unit(trip.received ?? "0") }) : t("Arrived")}</Badge>
+      </li>)}</ul> : <p className={ops.empty}>{t("Nothing sent to site yet.")}</p>}
+    </Section>
+  </div>;
 
   return <InspectorSheet isOpen size="lg" title={order ? `${orderNumber(order.number)} · ${order.title}` : t("Work order")} onOpenChange={(value) => { if (!value) onClose(); }}
-    footer={state && order && (primary || more.length || producing) ? <div className="wd-dialog-actions">
+    footer={state && order && (primary || more.length || canReport || canCheck) ? <div className="wd-dialog-actions">
       {more.length ? <MenuButton size="compact" label={t("More")} onAction={(id) => setDialog(id as Dialog)} items={more} /> : null}
       <span className={styles.spacer} />
-      {canCheck ? <Button onPress={() => setDialog("check")}>{t("Check quality")}</Button> : null}
-      {producing && state.canReport && Number(order.left) > 0 ? <Button variant="primary" onPress={() => setDialog("report")}>{t("Report output")}</Button> : primary}
+      {secondary}
+      {primary}
     </div> : null}>
     {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !order ? <Skeleton lines={8} shape="facts" /> : <div className={styles.sheet}>
-      <div className={styles.headRow}><WorkOrderStatusLabel status={order.status} /><span className={styles.muted}>{`${order.projectReference} · ${order.projectName}`}</span></div>
+      <div className={ops.recordHead}>
+        <div className={ops.recordFacts}>
+          <WorkOrderStatusLabel status={order.status} />
+          <ProjectLinks projects={[{ id: order.projectId, reference: order.projectReference, name: order.projectName }]} />
+          <span>{[order.projectName, order.packageName].filter(Boolean).join(" · ")}</span>
+        </div>
+        {!["cancelled", "short_closed"].includes(order.status) ? <StageTracker ariaLabel={t("Where the work order is")} stages={stages()} /> : null}
+        {step ? <NextStep title={step.title} detail={step.detail} tone={step.tone} actions={step.actions} /> : null}
+      </div>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
-      {order.status === "on_hold" ? <InlineNotice tone="info" message={t("On hold: {reason}", { reason: order.holdReason ?? "" })} /> : null}
+      {state.projectStatus === "on_hold" && open ? <InlineNotice tone="info" message={t("{project} is on hold.", { project: order.projectReference })} /> : null}
       {open && order.lineStatus === "omitted" ? <InlineNotice tone="error" message={t("A variation removed its scope line: cancel it, or close it short.")} />
         : open && Number(order.scopeOver) > 0 ? <InlineNotice tone="error" message={t("A variation reduced its scope line: {quantity} more are on work orders than it needs.", { quantity: unit(order.scopeOver) })} /> : null}
       {order.status === "cancelled" || order.status === "short_closed" ? <InlineNotice tone="info" message={`${order.status === "cancelled" ? t("Cancelled") : t("Closed short")}: ${order.closeReason ?? ""}`} /> : null}
-      <dl className={styles.facts}>
-        <div><dt>{t("Makes")}</dt><dd>{[unit(order.quantity), order.packageName, order.specification].filter(Boolean).join(" · ")}</dd></div>
-        <div><dt>{t("Ready")}</dt><dd>
-          <span>{t("{ready} of {quantity}", { ready: quantityText(order.passed) || "0", quantity: unit(order.quantity) })}</span>
-          {Number(order.scrapped) ? <span className={styles.muted}>{t("{quantity} scrapped", { quantity: unit(order.scrapped) })}</span> : null}
-          {Number(order.left) && order.status !== "planned" ? <span className={styles.muted}>{t("{quantity} still to make", { quantity: unit(order.left) })}</span> : null}
-        </dd></div>
-        <div><dt>{t("Where and when")}</dt><dd>
-          <span>{[order.workcenterName, [format.day(order.plannedStart), format.day(order.plannedEnd)].filter(Boolean).join(" – "),
-            order.plannedHours ? t("{hours} h", { hours: Number(order.plannedHours) }) : "", order.batchName ? t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName }) : ""]
-            .filter(Boolean).join(" · ") || "—"}</span>
-          {state.canManage && ["planned", "released", "on_hold"].includes(order.status) ? <Button size="compact" variant="quiet" onPress={() => setDialog("schedule")}>{t("Change")}</Button> : null}
-        </dd></div>
-        <div><dt>{t("Drawing")}</dt><dd>
-          <span>{order.drawingApprovedAt ? t("{reference}, approved by {name} on {date}", { reference: order.drawingRef, name: order.drawingApprovedByName ?? "", date: format.when(order.drawingApprovedAt) })
-            : t("Not approved yet")}</span>
-          {state.canManage && ["planned", "on_hold"].includes(order.status) ? <Button size="compact" variant="quiet" onPress={() => setDialog("drawing")}>
-            {order.drawingApprovedAt ? t("Change") : t("Record approval")}</Button> : null}
-        </dd></div>
-        {order.notes ? <div><dt>{t("Notes")}</dt><dd>{order.notes}</dd></div> : null}
-      </dl>
-
-      <WorkOrderMaterials state={state} run={run} busy={busy} />
-
-      {state.releaseChecks.length ? <section className={styles.stack} aria-label={t("Before it's released")}>
-        <h3 className={styles.subhead}>{t("Before it's released")}</h3>
-        <ul className={styles.list}>{state.releaseChecks.map((check) => <li key={check.key} className={styles.check} data-passed={check.passed}>
-          <span>{checkLabel[check.key]}</span>
-          <small>{check.passed ? t("Done") : check.key === "materials" && check.detail?.length ? t("Not in: {items}", { items: check.detail.join(", ") }) : t("Missing")}</small>
-        </li>)}</ul>
-      </section> : null}
-
-      {state.reports.length ? <section className={styles.stack} aria-label={t("Output")}>
-        <h3 className={styles.subhead}>{t("Output")}</h3>
-        <ul className={styles.list}>{state.reports.map((report) => <li key={report.id}>
-          <span className={styles.nameCell}>
-            <span>{[Number(report.good) ? t("{quantity} made", { quantity: unit(report.good) }) : "",
-              Number(report.scrap) ? t("{quantity} scrapped: {reason}", { quantity: unit(report.scrap), reason: report.scrapReason }) : "",
-              report.hours ? t("{hours} hours", { hours: quantityText(report.hours) }) : ""].filter(Boolean).join(" · ")}</span>
-            <small>{[report.reportedByName, format.when(report.reportedAt), report.note,
-              report.status === "approved" ? t("Approved by {name}", { name: report.decidedByName ?? "" }) : report.status === "refused" ? t("Refused by {name}: {note}", { name: report.decidedByName ?? "", note: report.decisionNote }) : ""]
-              .filter(Boolean).join(" · ")}</small>
-          </span>
-          {report.status === "pending" ? state.canApprove && report.reportedBy !== state.me ? <span className={styles.filters}>
-            <Button size="compact" variant="primary" isLoading={busy} onPress={() => void run("decide_report", { reportId: report.id, decision: "approve" })}>{t("Approve")}</Button>
-            <Button size="compact" variant="quiet" onPress={() => setDialog({ refuse: report.id })}>{t("Refuse")}</Button>
-          </span> : <small className={styles.muted}>{t("Waiting for approval")}</small> : null}
-        </li>)}</ul>
-      </section> : null}
-
-      {state.operations.length ? <section className={styles.stack} aria-label={t("Done outside")}>
-        <h3 className={styles.subhead}>{t("Done outside")}</h3>
-        <ul className={styles.list}>{state.operations.map((operation) => <li key={operation.id}>
-          <span className={styles.nameCell}><span>{t("{step} at {supplier}", { step: operation.name, supplier: operation.supplierName })}</span>
-            <small><Link href={`/workspace/purchasing/orders?order=${operation.orderId}`}>{operation.orderNumber}</Link></small></span>
-          <small className={operation.out ? undefined : styles.muted}>{operation.out ? t("{back} of {quantity} back", { back: quantityText(operation.back) || "0", quantity: unit(operation.quantity) }) : t("Back")}</small>
-        </li>)}</ul>
-      </section> : null}
-
-      {state.dispatches.length || Number(state.atFactory) > 0 ? <section className={styles.stack} aria-label={t("To site")}>
-        <div className={styles.filters}>
-          <h3 className={styles.subhead}>{t("To site")}</h3>
-          {Number(state.atFactory) > 0 ? <span className={styles.muted}>{t("{quantity} at the factory", { quantity: unit(state.atFactory) })}</span> : null}
-          <span className={styles.spacer} />
-          {Number(state.atFactory) > 0 && (state.canManage || state.canIssue) ? <Button size="compact" onPress={() => setDialog("dispatch")}>{t("Send to site")}</Button> : null}
-        </div>
-        {state.dispatches.length ? <ul className={styles.list}>{state.dispatches.map((trip) => <li key={trip.id}>
-          <span className={styles.nameCell}><Link href={`/workspace/inventory/moves?move=${trip.id}`}>{t("Move {number}", { number: trip.number })}</Link><small>{format.day(trip.sentOn)}</small></span>
-          <small>{`${unit(trip.quantity)} · ${trip.status === "in_transit" ? t("On its way") : trip.status === "cancelled" ? t("Cancelled")
-            : trip.short ? t("Arrived short: {quantity}", { quantity: unit(trip.received ?? "0") }) : t("Arrived")}`}</small>
-        </li>)}</ul> : null}
-      </section> : null}
-
-      {state.checks.length ? <section className={styles.stack} aria-label={t("Quality checks")}>
-        <h3 className={styles.subhead}>{t("Quality checks")}</h3>
-        <ul className={styles.list}>{state.checks.map((check) => <li key={check.id}>
-          <span className={styles.nameCell}>
-            <span>{[Number(check.passed) ? t("{quantity} passed", { quantity: unit(check.passed) }) : "",
-              Number(check.failed) ? t("{quantity} failed: {reason}", { quantity: unit(check.failed), reason: check.failReason }) : ""].filter(Boolean).join(" · ")}</span>
-            <small>{[check.checkedByName, format.when(check.checkedAt)].join(" · ")}</small>
-          </span>
-        </li>)}</ul>
-      </section> : null}
+      <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(key as Tab)} items={[
+        { id: "work", label: t("Work"), count: failing.length || undefined, panel: workPanel },
+        { id: "output", label: t("Output"), count: outputCount || undefined, panel: outputPanel },
+        { id: "site", label: t("To site"), count: state.dispatches.length || undefined, panel: sitePanel },
+        { id: "history", label: t("History"), panel: <WorkOrderHistory state={state} /> },
+      ]} />
     </div>}
 
     {state && order && dialog === "schedule" ? <ScheduleDialog state={state} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("update", input)) setDialog(null); }} /> : null}
-    {state && order && dialog === "drawing" ? <TextDialog title={t("Drawing approval")} label={t("Approved drawing (number or revision)")} action={t("Save")} initial={order.drawingRef}
-      onClose={() => setDialog(null)} onSave={async (reference) => { if (await run("approve_drawing", { reference })) setDialog(null); }} /> : null}
+    {state && order && dialog === "drawing" ? <DrawingDialog state={state} onClose={() => setDialog(null)}
+      onSave={async (input) => { if (await run("approve_drawing", input)) setDialog(null); }} /> : null}
+    {state && order && dialog === "revise" ? <DrawingDialog state={state} revise onClose={() => setDialog(null)}
+      onSave={async (input) => { if (await run("revise_drawing", input)) setDialog(null); }} /> : null}
     {state && order && dialog === "report" ? <ReportDialog unit={order.unit} left={order.left} onClose={() => setDialog(null)}
-      onSave={async (input) => { if (await run("report", { id: crypto.randomUUID(), ...input })) setDialog(null); }} /> : null}
+      onSave={async (input) => { if (await run("report", { id: crypto.randomUUID(), ...input })) { setDialog(null); setTab("output"); } }} /> : null}
     {state && order && dialog === "check" ? <CheckDialog unit={order.unit} waiting={order.toCheck} onClose={() => setDialog(null)}
-      onSave={async (input) => { if (await run("check", { id: crypto.randomUUID(), ...input })) setDialog(null); }} /> : null}
-    {state && order && dialog === "revise" ? <ReviseDialog onClose={() => setDialog(null)}
-      onSave={async (reference, note) => { if (await run("revise_drawing", { reference, note })) setDialog(null); }} /> : null}
+      onSave={async (input) => { if (await run("check", { id: crypto.randomUUID(), ...input })) { setDialog(null); setTab("output"); } }} /> : null}
     {state && order && dialog === "quantity" ? <QuantityDialog unit={order.unit} current={order.quantity}
       floor={String(Number(order.passed) + Number(order.toCheck) + Number(order.pending))} onClose={() => setDialog(null)}
       onSave={async (quantity) => { if (await run("set_quantity", { quantity })) setDialog(null); }} /> : null}
     {state && order && dialog === "send_out" ? <SendOutDialog state={state} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("send_out", { operationId: crypto.randomUUID(), ...input })) setDialog(null); }} /> : null}
     {state && order && dialog === "dispatch" ? <DispatchDialog unit={order.unit} available={state.atFactory} onClose={() => setDialog(null)}
-      onSave={async (input) => { if (await run("dispatch", { id: crypto.randomUUID(), ...input })) setDialog(null); }} /> : null}
+      onSave={async (input) => { if (await run("dispatch", { id: crypto.randomUUID(), ...input })) { setDialog(null); setTab("site"); } }} /> : null}
     {dialog === "hold" ? <TextDialog title={t("Put on hold")} label={t("Why")} action={t("Put on hold")} onClose={() => setDialog(null)}
       onSave={async (reason) => { if (await run("hold", { reason })) setDialog(null); }} /> : null}
     {dialog === "cancel" ? <TextDialog title={t("Cancel work order")} label={t("Why it's cancelled")} action={t("Cancel work order")} onClose={() => setDialog(null)}
@@ -192,180 +308,4 @@ export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: Fact
     {dialog && typeof dialog === "object" ? <TextDialog title={t("Refuse the report")} label={t("Why it's refused")} action={t("Refuse")} onClose={() => setDialog(null)}
       onSave={async (note) => { if (await run("decide_report", { reportId: dialog.refuse, decision: "refuse", note })) setDialog(null); }} /> : null}
   </InspectorSheet>;
-}
-
-function TextDialog({ title, label, action, initial = "", onClose, onSave }: { title: string; label: string; action: string; initial?: string; onClose: () => void; onSave: (value: string) => Promise<void> }) {
-  const t = useT();
-  const [value, setValue] = useState(initial);
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!value.trim()} onPress={async () => { setBusy(true); await onSave(value.trim()); setBusy(false); }}>{action}</Button></div>}>
-    <TextAreaField label={label} isRequired value={value} onChange={setValue} />
-  </ControlledModalDialog>;
-}
-
-function ScheduleDialog({ state, onClose, onSave }: { state: WorkOrderState; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
-  const t = useT();
-  const [workcenterId, setWorkcenterId] = useState(state.order.workcenterId ?? "");
-  const [start, setStart] = useState(state.order.plannedStart);
-  const [end, setEnd] = useState(state.order.plannedEnd);
-  const [notes, setNotes] = useState(state.order.notes);
-  const [hours, setHours] = useState(state.order.plannedHours ? quantityText(state.order.plannedHours) : "");
-  const [busy, setBusy] = useState(false);
-  const valid = !start || !end || end >= start;
-  return <ControlledModalDialog isOpen size="md" title={t("Where and when")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); await onSave({ workcenterId: workcenterId || null, plannedStart: start, plannedEnd: end, plannedHours: hours || null, notes: notes.trim() }); setBusy(false);
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <SelectField label={t("Workcenter")} placeholder={t("Choose")} selectedKey={workcenterId} onSelectionChange={(key) => setWorkcenterId(key ? String(key) : "")}
-        items={state.workcenters.map((center) => ({ id: center.id, label: center.name }))} />
-      <div className={styles.pair}>
-        <DateField label={t("Start")} value={start ? parseDate(start) : null} onChange={(value) => setStart(value ? value.toString() : null)} />
-        <DateField label={t("Finish")} value={end ? parseDate(end) : null} onChange={(value) => setEnd(value ? value.toString() : null)}
-          isInvalid={!valid} errorMessage={valid ? undefined : t("The finish can't be before the start.")} />
-      </div>
-      <TextInput label={t("Hours it takes")} inputMode="decimal" suffix={t("h")} value={hours} onChange={(value) => setHours(numeric(value))} />
-      <TextAreaField label={t("Notes")} value={notes} onChange={setNotes} />
-    </div>
-  </ControlledModalDialog>;
-}
-
-/** What was made and scrapped since the last report, and the hours it took; never more good than is still to make. */
-function ReportDialog({ unit, left, onClose, onSave }: { unit: string; left: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
-  const t = useT();
-  const [good, setGood] = useState("");
-  const [scrap, setScrap] = useState("");
-  const [hours, setHours] = useState("");
-  const [scrapReason, setScrapReason] = useState("");
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const over = Number(good) > Number(left);
-  // Hours are optional: more than none, at most 1,000 on one report, to the hundredth.
-  const badHours = Boolean(hours) && (!/^\d{1,4}(\.\d{1,2})?$/.test(hours) || Number(hours) <= 0 || Number(hours) > 1000);
-  const valid = Number(good || 0) + Number(scrap || 0) > 0 && !over && !badHours && (!Number(scrap) || scrapReason.trim());
-  return <ControlledModalDialog isOpen size="md" title={t("Report output")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); await onSave({ good: good || "0", scrap: scrap || "0", scrapReason: scrapReason.trim(), note: note.trim(), ...(hours ? { hours } : {}) }); setBusy(false);
-      }}>{t("Report output")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <div className={styles.pair}>
-        <TextInput label={t("Made")} inputMode="decimal" suffix={unit || undefined} value={good} onChange={(value) => setGood(numeric(value))}
-          isInvalid={over} errorMessage={over ? t("Only {quantity} is still to make.", { quantity: `${quantityText(left)} ${unit}`.trim() }) : undefined} />
-        <TextInput label={t("Scrapped")} inputMode="decimal" suffix={unit || undefined} value={scrap} onChange={(value) => setScrap(numeric(value))} />
-      </div>
-      {Number(scrap) ? <TextInput label={t("Why it was scrapped")} isRequired value={scrapReason} onChange={setScrapReason} /> : null}
-      <TextInput label={t("Hours worked")} inputMode="decimal" value={hours} onChange={(value) => setHours(numeric(value))}
-        isInvalid={badHours} errorMessage={badHours ? t("More than 0 and at most 1000, with up to 2 decimals.") : undefined} />
-      <TextAreaField label={t("Note")} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
-}
-
-/** A quality check of approved output: what passed goes into stock; what failed says why and is made again. */
-function CheckDialog({ unit, waiting, onClose, onSave }: { unit: string; waiting: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
-  const t = useT();
-  const [passed, setPassed] = useState(quantityText(waiting));
-  const [failed, setFailed] = useState("");
-  const [failReason, setFailReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  const over = Number(passed || 0) + Number(failed || 0) > Number(waiting);
-  const valid = Number(passed || 0) + Number(failed || 0) > 0 && !over && (!Number(failed) || failReason.trim());
-  return <ControlledModalDialog isOpen size="md" title={t("Check quality")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); await onSave({ passed: passed || "0", failed: failed || "0", failReason: failReason.trim() }); setBusy(false);
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <p className={styles.muted}>{t("{quantity} waiting to be checked.", { quantity: `${quantityText(waiting)} ${unit}`.trim() })}</p>
-      <div className={styles.pair}>
-        <TextInput label={t("Passed")} inputMode="decimal" suffix={unit || undefined} value={passed} onChange={(value) => setPassed(numeric(value))} isInvalid={over}
-          errorMessage={over ? t("Only {quantity} is waiting.", { quantity: `${quantityText(waiting)} ${unit}`.trim() }) : undefined} />
-        <TextInput label={t("Failed")} inputMode="decimal" suffix={unit || undefined} value={failed} onChange={(value) => setFailed(numeric(value))} />
-      </div>
-      {Number(failed) ? <TextInput label={t("Why it failed")} isRequired value={failReason} onChange={setFailReason} /> : null}
-    </div>
-  </ControlledModalDialog>;
-}
-
-/** A new drawing for work already released: it stops until someone else lets it go on. */
-function ReviseDialog({ onClose, onSave }: { onClose: () => void; onSave: (reference: string, note: string) => Promise<void> }) {
-  const t = useT();
-  const [reference, setReference] = useState("");
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Drawing changed")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reference.trim() || !note.trim()} onPress={async () => { setBusy(true); await onSave(reference.trim(), note.trim()); setBusy(false); }}>
-        {t("Put on hold")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <TextInput label={t("New drawing (number or revision)")} isRequired value={reference} onChange={setReference} />
-      <TextAreaField label={t("What changed")} isRequired value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
-}
-
-/** How many the work order makes: never below what's made or waiting, never past its line. */
-function QuantityDialog({ unit, current, floor, onClose, onSave }: { unit: string; current: string; floor: string; onClose: () => void; onSave: (quantity: string) => Promise<void> }) {
-  const t = useT();
-  const [quantity, setQuantity] = useState(quantityText(current));
-  const [busy, setBusy] = useState(false);
-  const under = Number(quantity) < Number(floor);
-  return <ControlledModalDialog isOpen size="md" title={t("Change quantity")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!(Number(quantity) > 0) || under} onPress={async () => { setBusy(true); await onSave(quantity); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
-      isInvalid={under} errorMessage={under ? t("{quantity} is already made or waiting.", { quantity: `${quantityText(floor)} ${unit}`.trim() }) : undefined} />
-  </ControlledModalDialog>;
-}
-
-/** A step a supplier does on the work order's goods: a draft service order the buyer places; checks wait until the goods are back. */
-function SendOutDialog({ state, onClose, onSave }: { state: WorkOrderState; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
-  const t = useT();
-  const [name, setName] = useState("");
-  const [vendorId, setVendorId] = useState(state.suppliers.find((supplier) => supplier.approved)?.id ?? "");
-  const [quantity, setQuantity] = useState(quantityText(state.order.quantity));
-  const [price, setPrice] = useState("");
-  const [back, setBack] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const over = Number(quantity) > Number(state.order.quantity);
-  return <ControlledModalDialog isOpen size="md" title={t("Send a step out")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!name.trim() || !vendorId || !(Number(quantity) > 0) || over} onPress={async () => {
-        setBusy(true); await onSave({ name: name.trim(), vendorId, quantity, unitPrice: price || "0", expectedDate: back }); setBusy(false);
-      }}>{t("Create service order")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <TextInput label={t("What the supplier does")} isRequired value={name} onChange={setName} />
-      <SelectField label={t("Supplier")} placeholder={t("Choose")} selectedKey={vendorId} onSelectionChange={(key) => setVendorId(key ? String(key) : "")}
-        items={state.suppliers.map((supplier) => ({ id: supplier.id, label: supplier.approved ? supplier.name : t("{name} (not approved)", { name: supplier.name }) }))} />
-      <div className={styles.pair}>
-        <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={state.order.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
-          isInvalid={over} errorMessage={over ? t("Up to {quantity}.", { quantity: `${quantityText(state.order.quantity)} ${state.order.unit}`.trim() }) : undefined} />
-        <TextInput label={t("Price each")} inputMode="decimal" value={price} onChange={(value) => setPrice(numeric(value))} />
-      </div>
-      <DateField label={t("Back by")} value={back ? parseDate(back) : null} onChange={(value) => setBack(value ? value.toString() : null)} />
-    </div>
-  </ControlledModalDialog>;
-}
-
-/** Made goods from the factory to the project's site: a move the site receives. */
-function DispatchDialog({ unit, available, onClose, onSave }: { unit: string; available: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
-  const t = useT();
-  const [quantity, setQuantity] = useState(quantityText(available));
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const over = Number(quantity) > Number(available);
-  return <ControlledModalDialog isOpen size="md" title={t("Send to site")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!(Number(quantity) > 0) || over} onPress={async () => { setBusy(true); await onSave({ quantity, note: note.trim() }); setBusy(false); }}>
-        {t("Send to site")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
-        isInvalid={over} errorMessage={over ? t("Only {quantity} at the factory.", { quantity: `${quantityText(available)} ${unit}`.trim() }) : undefined} />
-      <TextInput label={t("Note")} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
 }

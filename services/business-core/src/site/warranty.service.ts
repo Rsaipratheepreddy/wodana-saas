@@ -92,6 +92,24 @@ export class WarrantyService {
         await client.query(`UPDATE warranty_claims SET status = $3, decision_note = $4, decided_by = $5, decided_at = now(), snag_id = $6, version = version + 1 WHERE workspace_id = $1 AND id = $2`,
           [workspaceId, claim.id, decision, note, user.userId, snagId]);
         audit = { claimId: claim.id, decision, note, snagId };
+      } else if (action === "link_variation") {
+        // A chargeable claim goes on as a variation of the project: priced, sent and accepted like any change.
+        if (!who.manager) throw new ForbiddenException("Only the project manager starts a variation for a claim.");
+        const claim = (await client.query<{ id: string; status: string; version: number; variationId: string | null }>(
+          `SELECT id, status, version, variation_quote_id AS "variationId" FROM warranty_claims WHERE workspace_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+          [workspaceId, projectId, uuid(body.claimId, "Claim")])).rows[0];
+        if (!claim) throw new NotFoundException("Claim not found.");
+        if (body.version !== claim.version) throw new ConflictException("This claim changed elsewhere. Reload to see it.");
+        if (claim.status !== "chargeable") throw new ConflictException("Only a chargeable claim becomes a variation.");
+        const quoteId = uuid(body.quoteId, "Variation");
+        if (claim.variationId === quoteId) return this.read(client, workspaceId, projectId, user.userId);
+        if (claim.variationId) throw new ConflictException("This claim already has its variation.");
+        const variation = (await client.query(
+          `SELECT 1 FROM commercial_quotes quote JOIN delivery_projects project ON project.workspace_id = quote.workspace_id AND project.case_id = quote.case_id
+            WHERE quote.workspace_id = $1 AND project.id = $2 AND quote.id = $3 AND quote.kind = 'variation'`, [workspaceId, projectId, quoteId])).rowCount;
+        if (!variation) throw new BadRequestException("Choose a variation of this project.");
+        await client.query(`UPDATE warranty_claims SET variation_quote_id = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, claim.id, quoteId]);
+        audit = { claimId: claim.id, variationId: quoteId };
       } else throw new BadRequestException("Unknown action.");
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `warranty.${action}`, entityType: "project", entityId: projectId, after: audit });
       return this.read(client, workspaceId, projectId, user.userId);
@@ -134,11 +152,15 @@ export class WarrantyService {
          LEFT JOIN pre_project_rooms room ON room.workspace_id = line.workspace_id AND room.case_id = project.case_id AND room.id = line.area_id
         WHERE item.workspace_id = $1 AND item.project_id = $2 ORDER BY line.position`, [workspaceId, projectId])).rows;
     const claims = (await client.query<{ id: string; number: number; raisedOn: string; raisedByName: string; channel: string; description: string; areaId: string | null; lineId: string | null;
-      lineTitle: string | null; status: string; decisionNote: string; decidedByName: string | null; snagId: string | null; snagNumber: number | null; snagStatus: string | null; version: number }>(
+      lineTitle: string | null; status: string; decisionNote: string; decidedByName: string | null; snagId: string | null; snagNumber: number | null; snagStatus: string | null; version: number;
+      variationId: string | null; variationNumber: number | null; variationStatus: string | null; variationApplied: string | null }>(
       `SELECT claim.id, claim.number, claim.raised_on::text AS "raisedOn", claim.raised_by_name AS "raisedByName", claim.channel, claim.description, claim.area_id AS "areaId",
               claim.boq_line_id AS "lineId", line.title AS "lineTitle", claim.status, claim.decision_note AS "decisionNote", decider.display_name AS "decidedByName", claim.snag_id AS "snagId",
-              snag.number AS "snagNumber", snag.status AS "snagStatus", claim.version
+              snag.number AS "snagNumber", snag.status AS "snagStatus", claim.version, claim.variation_quote_id AS "variationId", variation.number AS "variationNumber",
+              variation.status AS "variationStatus",
+              (SELECT seal.revision_label FROM project_scope_seals seal WHERE seal.workspace_id = claim.workspace_id AND seal.project_id = claim.project_id AND seal.quote_id = claim.variation_quote_id) AS "variationApplied"
          FROM warranty_claims claim
+         LEFT JOIN commercial_quotes variation ON variation.workspace_id = claim.workspace_id AND variation.id = claim.variation_quote_id
          LEFT JOIN project_boq_lines line ON line.workspace_id = claim.workspace_id AND line.id = claim.boq_line_id
          LEFT JOIN users decider ON decider.id = claim.decided_by
          LEFT JOIN work_items snag ON snag.workspace_id = claim.workspace_id AND snag.id = claim.snag_id
@@ -148,8 +170,12 @@ export class WarrantyService {
     const areas = (await client.query<{ id: string; name: string }>(
       `SELECT room.id, room.name FROM pre_project_rooms room JOIN delivery_projects project ON project.workspace_id = room.workspace_id AND project.case_id = room.case_id
         WHERE room.workspace_id = $1 AND project.id = $2 ORDER BY room.name`, [workspaceId, projectId])).rows;
+    // What a chargeable claim's variation starts from: the project's planning record and its accepted quotation.
+    const origin = (await client.query<{ caseId: string; quoteId: string }>(`SELECT case_id AS "caseId", quote_id AS "quoteId" FROM delivery_projects WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, projectId])).rows[0];
     return {
       items: items.map((item) => ({ ...item, active: item.months > 0 && item.startsOn <= today && today <= item.endsOn })), claims, lines, areas, today,
+      caseId: origin?.caseId ?? null, baselineQuoteId: origin?.quoteId ?? null,
       canRecord: who.onTeam && who.status !== "cancelled", canManage: who.manager && who.status !== "cancelled",
     };
   }
@@ -183,7 +209,7 @@ export class WarrantyService {
       [workspaceId, projectId])).rows.map((row) => row.userId).filter((id) => id !== actorId);
     for (const userId of new Set(people)) {
       const message = { workspaceId, recipientUserId: userId, code: "warranty.claim", eventType: "warranty.claim", variables: { title: facts?.title ?? "", clientName: facts?.clientName ?? "", actor,
-        note: note.slice(0, 480) }, deepLink: `/workspace/projects/${projectId}/warranty` };
+        note: note.slice(0, 480) }, deepLink: `/workspace/projects/${projectId}/handover?view=warranty` };
       await notifyUserInApp(client, { ...message, idempotencyKey: `warranty.claim:${key}:${userId}` });
       await queueUserEmail(client, { ...message, idempotencyKey: `warranty.claim:${key}:${userId}:email` });
     }

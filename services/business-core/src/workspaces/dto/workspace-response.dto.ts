@@ -236,7 +236,7 @@ export class EmailDeliveryResponseDto {
   @ApiProperty({ enum: ["sent", "not_configured", "failed"] })
   status!: string;
 
-  @ApiPropertyOptional({ enum: ["mailgun"], nullable: true })
+  @ApiPropertyOptional({ enum: ["mailgun", "ses"], nullable: true })
   provider!: string | null;
 
   @ApiPropertyOptional({ type: String, nullable: true })

@@ -8,6 +8,7 @@ import type { PortalMaterials } from "@/lib/client-portal/types";
 import type { PortalFormat } from "../portal-format";
 import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
+import { AttachFiles } from "../forms/attach-files";
 import { ConfirmCode } from "./confirm-code";
 
 type Choice = "approved" | "rejected";
@@ -20,6 +21,8 @@ export function MaterialsSheet({ list, caseId, api, format, channels, onDecided 
   const [choices, setChoices] = useState<Record<string, { decision: Choice | null; note: string }>>(
     () => Object.fromEntries(list.items.map((item) => [item.id, { decision: null, note: "" }])));
   const [confirming, setConfirming] = useState(false);
+  const [uploads, setUploads] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [id] = useState(commandId);
   const ready = list.items.every((item) => choices[item.id]?.decision && (choices[item.id].decision === "approved" || choices[item.id].note.trim()));
   const set = (itemId: string, change: Partial<{ decision: Choice; note: string }>) => setChoices((current) => ({ ...current, [itemId]: { ...current[itemId], ...change } }));
@@ -27,7 +30,7 @@ export function MaterialsSheet({ list, caseId, api, format, channels, onDecided 
   if (confirming) return <ConfirmCode api={api} channels={channels} purpose={`materials:${caseId}:${list.id}:submit`} confirmLabel={t("Send my decision")}
     onBack={() => setConfirming(false)}
     onConfirm={async (proof) => {
-      await api.command(id, { action: "materials_decision", caseId, revisionId: list.id, ...proof,
+      await api.command(id, { action: "materials_decision", caseId, revisionId: list.id, uploadIds: uploads, ...proof,
         decisions: list.items.map((item) => ({ itemId: item.id, decision: choices[item.id].decision, note: choices[item.id].note.trim() })) });
       onDecided();
     }} />;
@@ -51,8 +54,8 @@ export function MaterialsSheet({ list, caseId, api, format, channels, onDecided 
         </> : item.decision ? <p className={styles.body}><StateLabel state={item.decision} />{item.note ? ` · ${item.note}` : ""}</p> : null}
       </div>)}
     </div>
-    {list.canDecide ? <div className={styles.choices}>
-      <Button variant="primary" isDisabled={!ready} onPress={() => setConfirming(true)}>{t("Continue")}</Button>
-    </div> : list.decidedBy ? <p className={styles.muted}>{t("{name} decided on {date}.", { name: list.decidedBy, date: format.date(list.decidedAt) })}</p> : null}
+    {list.canDecide ? <><AttachFiles caseId={caseId} api={api} onChange={setUploads} onBusy={setUploading} photosOnly /><div className={styles.choices}>
+      <Button variant="primary" isDisabled={!ready || uploading} onPress={() => setConfirming(true)}>{t("Continue")}</Button>
+    </div></> : list.decidedBy ? <p className={styles.muted}>{t("{name} decided on {date}.", { name: list.decidedBy, date: format.date(list.decidedAt) })}</p> : null}
   </div>;
 }

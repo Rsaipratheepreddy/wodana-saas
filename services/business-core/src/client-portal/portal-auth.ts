@@ -115,8 +115,21 @@ export async function sendCode(db: Db, workspaceId: string, codes: PortalCodes, 
             max(created_at) FILTER (WHERE phone = $2 AND purpose = $4) AS last
        FROM client_portal_challenges WHERE workspace_id = $1 AND created_at > now() - interval '10 minutes'`,
     [workspaceId, phone, input.requester, purpose])).rows[0];
-  if (recent.last && Date.now() - new Date(recent.last).getTime() < RESEND_SECONDS * 1000)
+  if (recent.last && Date.now() - new Date(recent.last).getTime() < RESEND_SECONDS * 1000) {
+    // A code sent seconds ago is still live (the page was reloaded, or the client is on a second device): they type that
+    // one. Nothing new is sent, and the answer has the same shape for anyone who asks.
+    const live = (await db.query<{ id: string; channel: Channel; expiresIn: number; resendAfter: number }>(
+      `SELECT id, channel, greatest(1, ceil(extract(epoch FROM expires_at - now())))::int AS "expiresIn",
+              greatest(1, ceil($5::int - extract(epoch FROM now() - created_at)))::int AS "resendAfter"
+         FROM client_portal_challenges
+        WHERE workspace_id = $1 AND phone = $2 AND purpose = $3 AND consumed_at IS NULL AND expires_at > now() AND attempts < $4
+        ORDER BY created_at DESC LIMIT 1`, [workspaceId, phone, purpose, MAX_ATTEMPTS, RESEND_SECONDS])).rows[0];
+    if (live) {
+      const email = input.session && live.channel === "email" ? (await grantsFor(db, workspaceId, phone, codes.demo)).find((grant) => grant.email)?.email : null;
+      return { challengeId: live.id, channel: live.channel, expiresIn: live.expiresIn, resendAfter: live.resendAfter, ...(email ? { sentTo: maskEmail(email) } : {}) };
+    }
     throw new HttpException({ message: "A code is on its way. You can ask for another in a few seconds.", retryAfter: RESEND_SECONDS }, 429);
+  }
   if (recent.number >= PER_NUMBER || recent.requester >= PER_REQUESTER || recent.total >= PER_WORKSPACE)
     throw new HttpException({ message: "Too many codes were requested. Wait a few minutes, then try again.", retryAfter: 600 }, 429);
   const grants = await grantsFor(db, workspaceId, phone, codes.demo);

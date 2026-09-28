@@ -49,27 +49,24 @@ export async function readHomeOverview(client: Pick<PoolClient, "query">, worksp
     const visible = `project.workspace_id=$1 AND project.status='active' AND ($3::boolean OR EXISTS (
       SELECT 1 FROM project_assignments assignment WHERE assignment.workspace_id=project.workspace_id
       AND assignment.project_id=project.id AND assignment.membership_id=$2 AND assignment.active))`;
+    // The project's current stage, from the stages table (never the retired project JSON).
     const projects = (await client.query<Row>(`SELECT project.id,project.name AS title,
-        coalesce(execution.content->>'phase','planning') AS detail,project.created_at AS date,count(*) OVER()::int AS total
+        coalesce((SELECT stage.name FROM project_stages stage WHERE stage.workspace_id=project.workspace_id AND stage.project_id=project.id AND stage.status='current' LIMIT 1),'') AS detail,
+        project.started_at AS date,count(*) OVER()::int AS total
       FROM delivery_projects project
-      LEFT JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
-      WHERE ${visible}
-      ORDER BY project.created_at DESC,project.id LIMIT 5`, [workspaceId, membershipId, access.manageProjects])).rows;
+      WHERE ${visible} AND project.started_at IS NOT NULL
+      ORDER BY project.promise_date ASC NULLS LAST,project.id LIMIT 5`, [workspaceId, membershipId, access.manageProjects])).rows;
     result.metrics.activeProjects = count(projects);
-    result.projects = items(projects, row => `/workspace/projects/${encodeURIComponent(row.id)}/overview`);
-    const tasks = (await client.query<Row>(`SELECT task.value->>'id' AS id,task.value->>'title' AS title,
-        project.name AS detail,nullif(task.value->>'end','') AS date,project.id AS "projectId",
-        task.value->>'location' AS location,count(*) OVER()::int AS total
-      FROM delivery_projects project
-      JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
-      CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(execution.content->'tasks')='array'
-        THEN execution.content->'tasks' ELSE '[]'::jsonb END) task(value)
-      WHERE ${visible} AND (task.value->>'ownerId'=$2::text OR coalesce(task.value->'assigneeIds','[]'::jsonb) ? $2::text)
-        AND task.value->>'status' NOT IN ('completed','cancelled')
-      ORDER BY nullif(task.value->>'end','') ASC NULLS LAST,project.id,task.value->>'id' LIMIT 5`,
-      [workspaceId, membershipId, access.manageProjects])).rows;
+    result.projects = items(projects, row => `/workspace/projects/${encodeURIComponent(row.id)}`);
+    // My open project work: work items given to me on running projects, soonest due first.
+    const tasks = (await client.query<Row>(`SELECT item.id,'#'||item.number||' '||item.title AS title,
+        project.name AS detail,item.due_date::text AS date,project.id AS "projectId",count(*) OVER()::int AS total
+      FROM work_items item
+      JOIN delivery_projects project ON project.workspace_id=item.workspace_id AND project.id=item.project_id
+      WHERE item.workspace_id=$1 AND item.assignee_membership_id=$2 AND item.status NOT IN ('done','cancelled') AND project.status='active'
+      ORDER BY item.due_date ASC NULLS LAST,item.number LIMIT 5`, [workspaceId, membershipId])).rows;
     result.metrics.myProjectTasks = count(tasks);
-    result.tasks = items(tasks, row => `/workspace/tasks?projectId=${encodeURIComponent(row.projectId ?? '')}&taskId=${encodeURIComponent(row.id)}`);
+    result.tasks = items(tasks, row => `/workspace/projects/${encodeURIComponent(row.projectId ?? '')}/plan?item=${encodeURIComponent(row.id)}`);
   }
   return result;
 }

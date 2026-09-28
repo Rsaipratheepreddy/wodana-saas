@@ -9,6 +9,7 @@ import type { PortalHandover } from "@/lib/client-portal/types";
 import type { PortalFormat } from "../portal-format";
 import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
+import { AttachFiles } from "../forms/attach-files";
 import { ConfirmCode } from "./confirm-code";
 
 /**
@@ -22,11 +23,13 @@ export function HandoverSheet({ pack, caseId, api, format, channels, onDecided }
   const [decision, setDecision] = useState<"accept" | "refuse" | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [text, setText] = useState("");
+  const [uploads, setUploads] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [id] = useState(commandId);
   if (decision && confirming) return <ConfirmCode api={api} channels={channels} purpose={`handover:${caseId}:${pack.id}:${decision}`}
     confirmLabel={decision === "accept" ? t("Accept handover") : t("Send")} onBack={() => setConfirming(false)}
     onConfirm={async (proof) => {
-      await api.command(id, { action: "handover_decision", caseId, packId: pack.id, decision, ...proof,
+      await api.command(id, { action: "handover_decision", caseId, packId: pack.id, decision, uploadIds: uploads, ...proof,
         ...(decision === "accept" ? { outstanding: text.split("\n").map((line) => line.trim()).filter(Boolean) } : { reason: text.trim() }) });
       onDecided();
     }} />;
@@ -42,13 +45,15 @@ export function HandoverSheet({ pack, caseId, api, format, channels, onDecided }
     </ul>
     {pack.status !== "issued" && pack.decidedOn ? <p className={styles.muted}>{t("{name} decided on {date}.", { name: pack.decidedBy ?? "", date: format.date(pack.decidedOn) })}</p> : null}
     {pack.note && pack.status !== "issued" ? <p className={styles.body}>{pack.note}</p> : null}
+    {pack.canDecide && pack.balance ? <p className={styles.body}>{t("Balance due {amount}. Your invoice and how to pay it are under Payments.", { amount: format.money(pack.balance.due, pack.balance.currency) })}</p> : null}
     {pack.canDecide ? <>
       {decision ? <TextAreaField label={decision === "accept" ? t("Anything still to finish? One per line (optional)") : t("What needs fixing first?")} value={text}
         onChange={setText} maxLength={decision === "accept" ? 9000 : 1000} isRequired={decision === "refuse"} autoFocus /> : null}
+      {decision ? <AttachFiles caseId={caseId} api={api} onChange={setUploads} onBusy={setUploading} photosOnly /> : null}
       <div className={styles.choices}>
         {decision ? <>
           <Button onPress={() => { setDecision(null); setText(""); }}>{t("Back")}</Button>
-          <Button variant="primary" isDisabled={decision === "refuse" && !text.trim()} onPress={() => setConfirming(true)}>{t("Continue")}</Button>
+          <Button variant="primary" isDisabled={(decision === "refuse" && !text.trim()) || uploading} onPress={() => setConfirming(true)}>{t("Continue")}</Button>
         </> : <>
           <Button onPress={() => setDecision("refuse")}>{t("Not yet")}</Button>
           <Button variant="primary" onPress={() => setDecision("accept")}>{t("Accept handover")}</Button>

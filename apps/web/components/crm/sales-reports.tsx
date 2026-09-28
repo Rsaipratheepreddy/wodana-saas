@@ -137,9 +137,9 @@ export function SalesReports({ initialData, regionLabel }: { initialData: LeadsP
       : <>
         <dl className={styles.metrics} aria-label={t("{name} summary", { name: t(title as never) })}>{metrics.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{loading ? "…" : value}</dd></div>)}</dl>
         {report === "lead-flow"
-          ? <DataGrid key={`${report}:${activeGroup}`} ariaLabel={t("Enquiry breakdown")} appearance="flush" columns={enquiryColumns} data={loading ? [] : rows} isLoading={loading} getRowId={(row) => String(row.id ?? row.label)} selectable={false} rowNumbers={false} showToolbar={false} pageSize={50}
+          ? <DataGrid key={`${report}:${activeGroup}`} ariaLabel={t("Enquiry breakdown")} columns={enquiryColumns} data={loading ? [] : rows} isLoading={loading} getRowId={(row) => String(row.id ?? row.label)} selectable={false} rowNumbers={false} showToolbar={false} pageSize={50}
             exportFileName="enquiries-report.csv" emptyTitle={t("No enquiries in this period")} emptyDescription={t("Choose a longer period.")} />
-          : <DataGrid key={report} ariaLabel={t("{name} breakdown", { name: t(title as never) })} appearance="flush" columns={otherColumns} data={loading ? [] : gridRows} isLoading={loading} getRowId={(row) => row.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={50}
+          : <DataGrid key={report} ariaLabel={t("{name} breakdown", { name: t(title as never) })} columns={otherColumns} data={loading ? [] : gridRows} isLoading={loading} getRowId={(row) => row.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={50}
             exportFileName={`${report}-report.csv`} emptyTitle={t("Nothing in this period")} emptyDescription={t("Choose a longer period.")} />}
       </>}
   </section>;

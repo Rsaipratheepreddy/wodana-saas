@@ -8,7 +8,9 @@ import { notifyUserInApp } from "../notifications/default-templates";
 import { readLocations, type StockLocation } from "../purchasing/receiving";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { raiseSnag } from "../project-core/project-work";
+import { reworkFromSite } from "../factory/factory-rework";
 import { averageCost, move, onHand, readMovements, readStock, readTransfer, readTransfers, stockItemFor } from "./stock";
+import { processStockLevels, readReorderPoints } from "./stock-levels";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -145,6 +147,8 @@ export class InventoryService {
         }
       }
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `stock.${action}`, entityType: "stock_item", entityId: itemId, after: { batchId, location: location.id, ...audit } });
+      // Free stock taken below its reorder point tells the people who keep and buy it straight away.
+      await processStockLevels(client, workspaceId, [itemId]);
       return this.state(client, workspaceId, user.userId);
     });
   }
@@ -203,6 +207,7 @@ export class InventoryService {
     }
     const receivers = await this.holders(client, workspaceId, ["stock.receive", "stock.manage"]);
     await this.tell(client, workspaceId, "stock.transfer_sent", receivers, user.userId, `${id}:sent`, { transfer: String(number), from: from.name, to: to.name, note: "" }, id);
+    await processStockLevels(client, workspaceId, [...new Set(lines.map((line) => line.itemId))]);
     await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "stock.transfer_sent", entityType: "stock_transfer", entityId: id, after: { number, from: from.id, to: to.id, lines } });
     return this.transferDetail(client, workspaceId, id, user.userId);
   }
@@ -223,6 +228,8 @@ export class InventoryService {
         const receivedOn = body.receivedOn ? date(body.receivedOn, "Date") : await this.today(client, workspaceId);
         const inputs = Array.isArray(body.lines) ? (body.lines as Array<Record<string, unknown>>) : [];
         const short: string[] = [];
+        // Goods that arrived but are refused there (damaged, wrong, not to spec) go straight back on a return trip.
+        const refused: Array<{ itemId: string; itemName: string; unit: string; projectId: string | null; quantity: string; reason: string }> = [];
         for (const line of lines) {
           const input = inputs.find((item) => item?.id === line.id);
           const received = input ? amount(input.received, `${line.itemName}: arrived`) : line.quantity;
@@ -232,7 +239,13 @@ export class InventoryService {
             if (!lossReason) throw new BadRequestException(`Say what happened to the rest of ${line.itemName}.`);
             short.push(`${line.itemName} ${Dec.of(line.quantity).sub(received).toString()}: ${lossReason}`);
           }
-          await client.query(`UPDATE stock_transfer_lines SET received = $3, loss_reason = $4 WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id, received, Dec.of(received).cmp(line.quantity) < 0 ? lossReason : ""]);
+          const rejected = input?.rejected === undefined || input.rejected === null || input.rejected === "" ? "0" : amount(input.rejected, `${line.itemName}: refused`);
+          const rejectReason = text(input?.rejectReason, 500, "Reason");
+          if (Dec.of(rejected).cmp(received) > 0) throw new BadRequestException(`${line.itemName}: more is refused than arrived.`);
+          if (Dec.of(rejected).cmp(0) > 0 && !rejectReason) throw new BadRequestException(`Say why ${line.itemName} is refused.`);
+          if (Dec.of(rejected).cmp(0) > 0) refused.push({ itemId: line.itemId, itemName: line.itemName, unit: line.unit, projectId: line.projectId, quantity: rejected, reason: rejectReason });
+          await client.query(`UPDATE stock_transfer_lines SET received = $3, loss_reason = $4, rejected = $5, reject_reason = $6 WHERE workspace_id = $1 AND id = $2`,
+            [workspaceId, line.id, received, Dec.of(received).cmp(line.quantity) < 0 ? lossReason : "", rejected, Dec.of(rejected).cmp(0) > 0 ? rejectReason : ""]);
           if (Dec.of(received).cmp(0) > 0) {
             const sent = await this.sentCost(client, workspaceId, transferId, line.itemId, line.projectId);
             await move(client, workspaceId, { batchId: transferId, itemId: line.itemId, locationId: transfer.toLocationId, projectId: line.projectId, kind: "transfer_in", quantity: Dec.of(received).toString(),
@@ -253,9 +266,42 @@ export class InventoryService {
         }
         if (short.length) await this.tell(client, workspaceId, "stock.transfer_short", [transfer.sentBy], user.userId, `${transferId}:short`,
           { transfer: String(transfer.number), from: transfer.fromName, to: transfer.toName, note: short.join("; ").slice(0, 480) }, transferId);
-        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "stock.transfer_received", entityType: "stock_transfer", entityId: transferId, after: { receivedOn, short } });
+        let returnId: string | null = null;
+        if (refused.length) {
+          // The refused goods leave where they arrived on a return trip to where they came from, tied to this move.
+          const reasons = refused.map((line) => `${line.itemName} ${Dec.of(line.quantity).toString()} ${line.unit}: ${line.reason}`.replace(/\s+:/, ":")).join("; ");
+          returnId = randomUUID();
+          await this.sendWith(client, workspaceId, user.userId, { id: returnId, fromLocationId: transfer.toLocationId, toLocationId: transfer.fromLocationId, sentOn: receivedOn,
+            note: `Refused at ${transfer.toName}: ${reasons}`.slice(0, 500), lines: refused.map((line) => ({ itemId: line.itemId, projectId: line.projectId, quantity: line.quantity })) });
+          await client.query(`UPDATE stock_transfers SET returned_from_id = $3, work_order_id = $4 WHERE workspace_id = $1 AND id = $2`, [workspaceId, returnId, transferId, site?.workOrderId ?? null]);
+          await this.tell(client, workspaceId, "stock.transfer_rejected", [transfer.sentBy], user.userId, `${transferId}:rejected`,
+            { transfer: String(transfer.number), from: transfer.fromName, to: transfer.toName, note: reasons.slice(0, 480) }, transferId);
+          if (site?.projectId) {
+            const made = site.workOrderId ? (await client.query<{ packageId: string | null; boqLineId: string; number: number }>(
+              `SELECT package_id AS "packageId", boq_line_id AS "boqLineId", number FROM work_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, site.workOrderId])).rows[0] : null;
+            await raiseSnag(client, workspaceId, { projectId: site.projectId, title: `Move ${transfer.number}: goods refused at site`, description: reasons, severity: "major", source: "delivery",
+              packageId: made?.packageId ?? null, boqLineId: made?.boqLineId ?? null, actorId: user.userId });
+          }
+          // Made goods refused at site are made again: their work order goes back into production for that much.
+          if (site?.workOrderId) {
+            const quantity = refused.reduce((total, line) => total.add(line.quantity), Dec.ZERO).toString();
+            await reworkFromSite(client, workspaceId, { workOrderId: site.workOrderId, quantity, reason: refused.map((line) => line.reason).join("; "), dispatchId: transferId, returnId, actorId: user.userId });
+          }
+        }
+        // A return trip bringing refused made goods back: they're taken back into production (remade and checked again), so they don't count twice.
+        const back = (await client.query<{ returnedFromId: string | null; workOrderId: string | null; number: number | null }>(
+          `SELECT moved.returned_from_id AS "returnedFromId", moved.work_order_id AS "workOrderId", made.number FROM stock_transfers moved
+             LEFT JOIN work_orders made ON made.workspace_id = moved.workspace_id AND made.id = moved.work_order_id WHERE moved.workspace_id = $1 AND moved.id = $2`, [workspaceId, transferId])).rows[0];
+        if (back?.returnedFromId && back.workOrderId)
+          for (const line of (await readTransfer(client, workspaceId, transferId))!.lines)
+            if (line.received && Dec.of(line.received).cmp(0) > 0)
+              await move(client, workspaceId, { batchId: randomUUID(), itemId: line.itemId, locationId: transfer.toLocationId, projectId: line.projectId, kind: "adjust",
+                quantity: Dec.of(line.received).neg().toString(), forProjectId: line.projectId, reason: `Back into production for rework on WO-${String(back.number).padStart(4, "0")}`,
+                movedOn: receivedOn, actorId: user.userId });
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "stock.transfer_received", entityType: "stock_transfer", entityId: transferId, after: { receivedOn, short, refused, returnId } });
       } else if (action === "cancel") {
         if (!(await this.access.hasPermission(client, workspaceId, user.userId, "stock.manage"))) throw new ForbiddenException("You can't cancel moves.");
+        if (transfer.returnedFromId && transfer.workOrderId) throw new ConflictException("Refused made goods go back to the factory to be made again; receive this trip when it arrives.");
         const reason = required(body.reason, 500, "Say why the move is cancelled.");
         const today = await this.today(client, workspaceId);
         for (const line of lines) {
@@ -267,6 +313,48 @@ export class InventoryService {
         await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "stock.transfer_cancelled", entityType: "stock_transfer", entityId: transferId, after: { reason } });
       } else throw new BadRequestException("Unknown action.");
       return this.transferDetail(client, workspaceId, transferId, user.userId);
+    });
+  }
+
+  /**
+   * Sets, changes or removes an item's reorder point (at one place, or every place together): the free stock
+   * at or below which it's low, what to order then and from whom. Version-checked; replayed safely by its id.
+   */
+  setReorderPoint(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
+    return this.access.withAnyPermission(actor, workspaceId, ["stock.manage", "stock.adjust"], async (client, user) => {
+      const id = uuid(body.id, "Reorder point");
+      const existing = (await client.query<{ itemId: string; locationId: string | null; version: number }>(
+        `SELECT item_id AS "itemId", location_id AS "locationId", version FROM stock_reorder_points WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, id])).rows[0];
+      if (existing && body.version !== existing.version) throw new ConflictException("Someone else changed this reorder point. Reload to see their change.");
+      if (body.remove === true) {
+        if (!existing) return this.state(client, workspaceId, user.userId);
+        await client.query(`DELETE FROM stock_reorder_points WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "stock.reorder_point_removed", entityType: "stock_item", entityId: existing.itemId, before: existing });
+        return this.state(client, workspaceId, user.userId);
+      }
+      const itemId = existing?.itemId ?? await this.item(client, workspaceId, body.itemId);
+      const locationId = existing ? existing.locationId : body.locationId ? (await this.location(client, workspaceId, body.locationId)).id : null;
+      const reorderAt = amount(body.reorderAt, "Reorder at");
+      const reorderQuantity = body.reorderQuantity === undefined || body.reorderQuantity === null || body.reorderQuantity === "" ? null : amount(body.reorderQuantity, "Order");
+      if (reorderQuantity !== null && Dec.of(reorderQuantity).isZero()) throw new BadRequestException("Order more than zero, or leave it empty.");
+      const vendorId = optionalUuid(body.vendorId, "Supplier");
+      if (vendorId && !(await client.query(`SELECT 1 FROM workspace_vendors WHERE workspace_id = $1 AND id = $2 AND status <> 'archived'`, [workspaceId, vendorId])).rowCount)
+        throw new BadRequestException("Choose a supplier that isn't archived.");
+      if (existing)
+        await client.query(`UPDATE stock_reorder_points SET reorder_at = $3, reorder_quantity = $4, vendor_id = $5, updated_by = $6, version = version + 1, updated_at = now()
+          WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, reorderAt, reorderQuantity, vendorId, user.userId]);
+      else {
+        const clash = (await client.query(`SELECT 1 FROM stock_reorder_points WHERE workspace_id = $1 AND item_id = $2 AND location_id IS NOT DISTINCT FROM $3::uuid`,
+          [workspaceId, itemId, locationId])).rowCount;
+        if (clash) throw new ConflictException("This item already has a reorder point there. Change that one.");
+        await client.query(`INSERT INTO stock_reorder_points (id, workspace_id, item_id, location_id, reorder_at, reorder_quantity, vendor_id, updated_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [id, workspaceId, itemId, locationId, reorderAt, reorderQuantity, vendorId, user.userId]);
+      }
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: existing ? "stock.reorder_point_changed" : "stock.reorder_point_set", entityType: "stock_item", entityId: itemId,
+        after: { locationId, reorderAt, reorderQuantity, vendorId } });
+      // Already short when it's set: the people who keep and buy stock hear now, not tomorrow.
+      await processStockLevels(client, workspaceId, [itemId]);
+      return this.state(client, workspaceId, user.userId);
     });
   }
 
@@ -362,6 +450,7 @@ export class InventoryService {
           WHERE request.workspace_id = $1 AND request.status = 'pending' ORDER BY request.requested_at`, [workspaceId])).rows,
       me: userId,
       currency: (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? "",
+      reorderPoints: await readReorderPoints(client, workspaceId),
       ...(await this.rights(client, workspaceId, userId)),
     };
   }

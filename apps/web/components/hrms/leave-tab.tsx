@@ -71,7 +71,7 @@ export function LeaveTab({ api, employee, requesting, onRequestDone, openId, onO
   return <>
     {yearBalances ? yearBalances.length ? <ul className={styles.balances} aria-label={t("Balances")}>{yearBalances.map((balance) => <li key={balance.leaveTypeId}>{balanceLine(balance, format, t)}</li>)}</ul> : null
       : <Skeleton lines={1} />}
-    <DataGrid<LeaveRequest> appearance="flush" ariaLabel={t("My leave")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!requests} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<LeaveRequest> ariaLabel={t("My leave")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!requests} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search leave")} rowNumbers={false} selectable={false} wrapText
       toolbarLeading={<PeriodStepper label={format.year(year)} previousLabel={t("Previous year")} nextLabel={t("Next year")}
         canNext={year <= thisYear} onPrevious={() => setYear(year - 1)} onNext={() => setYear(year + 1)} />}

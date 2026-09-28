@@ -41,15 +41,20 @@ export function ProjectHandover({ workspaceId, projectId }: { workspaceId: strin
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   if (!state) return <Skeleton lines={6} shape="rows" />;
   const statusLabel = { draft: t("Draft"), issued: t("Issued"), accepted: t("Accepted"), refused: t("Refused") };
+  // Money the client still owes: shown on the pack and asked about when accepting.
+  const owed = Boolean(state.balance && /[1-9]/.test(state.balance.due));
   const areaNames = (pack: HandoverPack) => (pack.areaIds.length ? state.areas.filter((area) => pack.areaIds.includes(area.id)).map((area) => area.name).join(", ") : t("Whole project"));
 
   return <div className={styles.site}>
     <div className={styles.toolbar}>
       <span className={styles.muted}>{state.covered ? t("Handed over") : t("Not handed over yet")}</span>
+      {owed ? <span className={styles.balance}>{t("Balance due {amount}", { amount: format.money(state.balance!.due, state.balance!.currency) })}</span> : null}
       <span className={styles.spacer} />
       {state.canManage ? <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "new" })}><Plus aria-hidden="true" size={14} />{t("New pack")}</Button> : null}
     </div>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
+    {owed && state.balance!.toInvoice.length && state.packs.some((pack) => pack.status !== "accepted") ? <InlineNotice tone="info" message={t("Not invoiced yet: {items}",
+      { items: state.balance!.toInvoice.map((row) => `${row.title} (${format.money(row.amount, state.balance!.currency)})`).join(", ") })} /> : null}
     {!state.packs.length ? <EmptyState illustration={null} title={t("No handover pack yet")} description={t("Gather the drawings, warranties, manuals and care guides the client receives.")} />
       : <ul className={styles.reports} aria-label={t("Handover packs")}>{state.packs.map((pack) => <li key={pack.id} className={styles.report}>
         <div className={styles.reportHead}>
@@ -62,6 +67,9 @@ export function ProjectHandover({ workspaceId, projectId }: { workspaceId: strin
               how: methods[pack.decisionMethod ?? "signed_document"], items: pack.decisionNote.split("\n").join(", ") })
             : t("Accepted by {name} on {date} ({how})", { name: pack.decidedByName ?? "", date: format.day(pack.decidedOn), how: methods[pack.decisionMethod ?? "signed_document"] })
           : t("Refused by {name} on {date}: {reason}", { name: pack.decidedByName ?? "", date: format.day(pack.decidedOn), reason: pack.decisionNote })} /> : null}
+        {pack.status === "accepted" && pack.balanceDue ? <p className={styles.muted}>{pack.balanceReason
+          ? t("Accepted with {amount} due: {reason}", { amount: format.money(pack.balanceDue, pack.balanceCurrency ?? ""), reason: pack.balanceReason })
+          : t("Accepted with {amount} due", { amount: format.money(pack.balanceDue, pack.balanceCurrency ?? "") })}</p> : null}
         <ul className={styles.facts}>{pack.documents.map((document) => <li key={document.id} className={styles.document}>
           <a href={api.documentUrl(document.id)} target="_blank" rel="noreferrer">{document.title}</a>
           <span className={styles.muted}>{kinds[document.kind]}</span>
@@ -84,6 +92,7 @@ export function ProjectHandover({ workspaceId, projectId }: { workspaceId: strin
       onSave={async (title, areaIds) => { if (await run("create_pack", { id: crypto.randomUUID(), title, areaIds })) setDialog(null); }} /> : null}
     {dialog && dialog.kind !== "new" && dialog.kind !== "issue" ? <DecisionDialog mode={dialog.kind} methods={methods} today={format.today()} onClose={() => setDialog(null)}
       open={dialog.kind === "accept" ? state.open : undefined}
+      balance={dialog.kind === "accept" && owed ? { text: format.money(state.balance!.due, state.balance!.currency), allowed: Boolean(state.canAcceptBalance) } : undefined}
       onSave={async (input) => { if (await run(dialog.kind, { packId: dialog.pack.id, version: dialog.pack.version, ...input })) setDialog(null); }} /> : null}
     {dialog?.kind === "issue" ? <OpenWorkDialog open={state.open} onClose={() => setDialog(null)}
       onSave={async (openReason) => { if (await run("issue", { packId: dialog.pack.id, version: dialog.pack.version, confirmOpen: true, openReason })) setDialog(null); }} /> : null}
@@ -149,8 +158,11 @@ function OpenWorkDialog({ open, onClose, onSave }: { open: HandoverState["open"]
   </ControlledModalDialog>;
 }
 
-function DecisionDialog({ mode, methods, today, open, onClose, onSave }: {
-  mode: "accept" | "refuse"; methods: Record<HandoverMethod, string>; today: string; open?: HandoverState["open"]; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>;
+function DecisionDialog({ mode, methods, today, open, balance, onClose, onSave }: {
+  mode: "accept" | "refuse"; methods: Record<HandoverMethod, string>; today: string; open?: HandoverState["open"];
+  /** Money still due at acceptance: its amount, and whether this person may accept anyway (with why). */
+  balance?: { text: string; allowed: boolean };
+  onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>;
 }) {
   const t = useT();
   const [decidedOn, setDecidedOn] = useState(today);
@@ -159,15 +171,16 @@ function DecisionDialog({ mode, methods, today, open, onClose, onSave }: {
   const [items, setItems] = useState<string[]>([]);
   const [reason, setReason] = useState("");
   const [openReason, setOpenReason] = useState("");
+  const [balanceReason, setBalanceReason] = useState("");
   const [busy, setBusy] = useState(false);
   const confirmOpen = mode === "accept" && hasOpenWork(open);
-  const valid = name.trim() && (mode === "accept" || reason.trim()) && (!confirmOpen || openReason.trim());
+  const valid = name.trim() && (mode === "accept" || reason.trim()) && (!confirmOpen || openReason.trim()) && (!balance || (balance.allowed && balanceReason.trim()));
   return <ControlledModalDialog isOpen size="md" title={mode === "accept" ? t("Record acceptance") : t("Record refusal")} onOpenChange={(open) => { if (!open) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
         setBusy(true);
         await onSave({ decidedOn, decidedByName: name.trim(), method, ...(mode === "accept" ? { outstanding: items.map((item) => item.trim()).filter(Boolean) } : { reason: reason.trim() }),
-          ...(confirmOpen ? { confirmOpen: true, openReason: openReason.trim() } : {}) });
+          ...(confirmOpen ? { confirmOpen: true, openReason: openReason.trim() } : {}), ...(balance ? { balanceReason: balanceReason.trim() } : {}) });
         setBusy(false);
       }}>{t("Save")}</Button></div>}>
     <div className={styles.dialogBody}>
@@ -186,6 +199,10 @@ function DecisionDialog({ mode, methods, today, open, onClose, onSave }: {
         <Button size="compact" variant="quiet" onPress={() => setItems([...items, ""])}><Plus aria-hidden="true" size={14} />{t("Add an item")}</Button>
       </fieldset> : <TextAreaField label={t("Why the client refused it")} isRequired value={reason} onChange={setReason} />}
       {confirmOpen && open ? <><OpenWorkList open={open} /><TextAreaField label={t("Why hand over with work still open")} isRequired value={openReason} onChange={setOpenReason} /></> : null}
+      {balance ? balance.allowed
+        ? <><InlineNotice tone="info" message={t("Balance due {amount}", { amount: balance.text })} />
+            <TextAreaField label={t("Why accept before it's paid")} isRequired value={balanceReason} onChange={setBalanceReason} /></>
+        : <InlineNotice tone="error" message={t("{amount} is still due. Someone who manages projects accepts a handover with a balance.", { amount: balance.text })} /> : null}
     </div>
   </ControlledModalDialog>;
 }

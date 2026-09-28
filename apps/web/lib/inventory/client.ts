@@ -26,6 +26,8 @@ export function inventoryApi(workspaceId: string) {
     transferCommand: (id: string, action: string, input: Record<string, unknown> = {}) => request<TransferState>(at(`transfers/${id}`), "POST", { ...input, action }),
     /** Applies or refuses a stock correction waiting for approval. */
     decideAdjustment: (id: string, action: "approve" | "reject", note = "") => request<StockState>(at(`adjustments/${id}`), "POST", { action, note }),
+    /** Sets, changes (version-checked) or removes an item's reorder point; returns stock as it is. */
+    setReorderPoint: (input: Record<string, unknown>) => request<StockState>(at("reorder-points"), "POST", input),
     locations: () => request<{ locations: StockLocation[]; canManage: boolean }>(at("locations")),
     saveLocation: (input: Record<string, unknown>) => request<{ locations: StockLocation[] }>(at("locations"), "POST", input),
   };

@@ -1,5 +1,5 @@
 /* Factory: what to make, work orders, their output and checks. */
-.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; max-inline-size: 72rem; }
+.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; }
 .stack { display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
 .muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .spacer { flex: 1; }
@@ -12,12 +12,6 @@
 .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
 .lateText { color: var(--wd-color-danger); }
 
-.status { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-sm); white-space: nowrap; }
-.status::before { content: ""; inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); background: var(--wd-color-text-disabled); }
-.status[data-tone="info"]::before { background: var(--wd-color-info); }
-.status[data-tone="warning"]::before { background: var(--wd-color-warning); }
-.status[data-tone="success"]::before { background: var(--wd-color-success); }
-.status[data-tone="danger"]::before { background: var(--wd-color-danger); }
 
 .sheet { display: grid; gap: var(--wd-space-4); }
 .headRow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); padding-block-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
@@ -45,3 +39,8 @@
 .linkButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
 .list a { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
 @media (max-width: 48rem) { .nameCell { max-inline-size: 16rem; } }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-3); }
+/* Selected lines keep their actions in view while the list scrolls. */
+.selectionBar { position: sticky; inset-block-end: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3);
+  border-block-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); }
+.selectionActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin-inline-start: auto; }

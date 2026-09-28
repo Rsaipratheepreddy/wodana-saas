@@ -178,34 +178,6 @@ export function sectionState(section: PermissionSection, granted: ReadonlySet<st
   return { on, total, state: on === 0 ? "none" : on === total ? "all" : "mixed" };
 }
 
-/** The approvals someone must be able to give, other than the person whose work it is. */
-const APPROVALS: Array<{ code: string; action: MessageKey }> = [
-  { code: "commercial.estimate", action: tKey("approve QS estimates") },
-  { code: "commercial.finance.verify", action: tKey("verify client payments") },
-  { code: "commercial.deal.approve", action: tKey("approve deals") },
-  { code: "purchasing.approve", action: tKey("approve orders") },
-  { code: "vendors.approve", action: tKey("approve suppliers") },
-  { code: "factory.approve", action: tKey("approve factory output") },
-  { code: "stock.adjust", action: tKey("approve stock corrections") },
-  { code: "payables.approve", action: tKey("approve supplier bills") },
-];
-
-export type ApprovalGap = { code: string; action: string; holders: string[] };
-
-/**
- * Approvals that at most one active person can give. Nobody approves their own work, so one holder means
- * their own orders, bills or reports wait for nobody. Only approvals this workspace has are checked.
- */
-export function approvalGaps(permissions: WorkspacePermissionDefinition[], roles: WorkspaceRole[], members: RoleMemberSummary[] | null | undefined, t: Translate = english): ApprovalGap[] {
-  if (!members) return [];
-  const known = new Set(permissions.map((permission) => permission.code));
-  return APPROVALS.filter((approval) => known.has(approval.code)).flatMap((approval) => {
-    const granting = new Set(roles.filter((role) => role.permissions.includes(approval.code)).map((role) => role.code));
-    const holders = members.filter((member) => member.roles.some((code) => granting.has(code))).map((member) => member.displayName);
-    return holders.length > 1 ? [] : [{ code: approval.code, action: t(approval.action), holders }];
-  });
-}
-
 /** One sentence that ends with punctuation, so notes can follow it without running on. */
 export function roleSentence(description: string | null | undefined, fallback: string) {
   const text = (description ?? "").trim() || fallback;

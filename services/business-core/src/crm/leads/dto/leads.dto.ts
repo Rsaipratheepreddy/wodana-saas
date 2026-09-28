@@ -131,12 +131,42 @@ export class ProcessSlaDto {
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(100) limit?: number;
 }
 
+/** LF-1: who already has this mobile or email. */
+export class ContactMatchQueryDto {
+  @IsOptional() @IsString() @MaxLength(40) mobile?: string;
+  @IsOptional() @IsString() @MaxLength(3) countryCode?: string;
+  @IsOptional() @IsString() @MaxLength(320) email?: string;
+}
+
+/** S-3: confirm a form enquiry's client: the suggested existing client, or a different person. */
+export class ConfirmClientDto {
+  @IsInt() @Min(1) version!: number;
+  @IsIn(["same", "different"]) decision!: "same" | "different";
+  @IsOptional() @IsUUID() partyId?: string;
+  @IsOptional() @IsString() @MaxLength(240) reason?: string;
+}
+
+/** S-10: "Not a duplicate — open as new", with the reason. */
+export class ReopenDuplicateDto {
+  @IsInt() @Min(1) version!: number;
+  @IsString() @IsNotEmpty() @MaxLength(240) reason!: string;
+}
+
+export class UpdateSalesSettingsDto {
+  @IsInt() @Min(0) version!: number;
+  @IsOptional() @IsInt() @Min(0) @Max(10) takeoverCap?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(1440) unownedEscalationMinutes?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(1440) clientReviewMinutes?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(730) duplicateWindowDays?: number;
+  @IsOptional() @IsUUID() salesAdminMembershipId?: string | null;
+}
+
 export class LogContactDto {
   @IsInt() @Min(1) version!: number;
   @IsIn(["call", "whatsapp", "email", "meeting", "sms"]) channel!: "call" | "whatsapp" | "email" | "meeting" | "sms";
   @IsIn(["no_answer", "message_sent_no_reply", "willing_to_talk", "come_back_later", "not_interested"])
   outcome!: "no_answer" | "message_sent_no_reply" | "willing_to_talk" | "come_back_later" | "not_interested";
-  @IsString() @MaxLength(4000) note!: string;
+  @IsOptional() @IsString() @MaxLength(4000) note?: string;
   @IsOptional() @IsString() @MaxLength(160) reason?: string;
   @IsOptional() @IsString() nextActionAt?: string;
 }

@@ -13,22 +13,38 @@ import { MaterialsSheet } from "./decisions/materials-sheet";
 import { QuestionSheet } from "./decisions/question-sheet";
 import { QuoteSheet } from "./decisions/quote-sheet";
 import { ClaimForm } from "./forms/claim-form";
+import { BoardDetail, IdeaForm, PinDetail } from "./forms/idea-forms";
+import { IssueForm } from "./forms/issue-form";
 import { NewMessage, Thread } from "./forms/message-forms";
-import { usePortalFormat, type PortalFormat } from "./portal-format";
+import { PaidForm } from "./forms/paid-form";
+import { isolate, usePortalFormat, type PortalFormat } from "./portal-format";
 import { usePortalLabels } from "./portal-labels";
 import styles from "./portal.module.css";
 import { DecisionsSection } from "./sections/decisions-section";
 import { DocumentsSection } from "./sections/documents-section";
 import { HomeSection } from "./sections/home-section";
 import { MessagesSection } from "./sections/messages-section";
+import { MoodboardSection } from "./sections/moodboard-section";
 import { PaymentsSection } from "./sections/payments-section";
 import { ProgressSection } from "./sections/progress-section";
 import type { PortalTarget, SectionProps } from "./sections/section-types";
 import { WarrantySection } from "./sections/warranty-section";
 
 type Tab = "home" | PortalSection;
-const SECTIONS = { home: HomeSection, progress: ProgressSection, decisions: DecisionsSection, payments: PaymentsSection, documents: DocumentsSection, warranty: WarrantySection,
-  messages: MessagesSection } as const;
+const SECTIONS = { home: HomeSection, progress: ProgressSection, moodboard: MoodboardSection, decisions: DecisionsSection, payments: PaymentsSection, documents: DocumentsSection,
+  warranty: WarrantySection, messages: MessagesSection } as const;
+const DECISION_STEPS = ["quote", "design", "definition", "materials", "handover", "request"];
+
+/** A section is a tab when it's shared and has something in it (or something the client can do there). */
+function hasContent(project: PortalProject, section: PortalSection) {
+  if (!project.sections[section] || project[section] === null) return false;
+  if (section === "progress") { const p = project.progress!; return Boolean(p.stages.length || p.updates.length || p.photoDays.length || p.issues.length || p.canReportIssue); }
+  if (section === "moodboard") { const m = project.moodboard!; return Boolean(m.boards.length || m.pins.length || m.canAdd); }
+  if (section === "payments") return project.payments!.milestones.length > 0;
+  if (section === "documents") return project.documents!.length > 0;
+  if (section === "warranty") return project.warranty!.rooms.length > 0 || project.warranty!.claims.length > 0;
+  return true;
+}
 
 /** Where a link from an email points: ?project=<id>&open=<section>. */
 function fromLocation() {
@@ -49,37 +65,39 @@ export function PortalWorkspace({ view, site, api, reload }: { view: PortalView;
   const [notice, setNotice] = useState("");
   const project = view.projects.find((item) => item.id === projectId) ?? view.projects[0];
   if (!project) return <EmptyState illustration="locked" title={t("No projects to show")} description={t("Your project team hasn't shared a project with you yet.")} />;
-  const tabs: Tab[] = ["home", ...PORTAL_SECTIONS.filter((section) => project.sections[section] && project[section] !== null)];
+  const tabs: Tab[] = ["home", ...PORTAL_SECTIONS.filter((section) => hasContent(project, section))];
   const current: Tab = tabs.includes(tab) ? tab : "home";
   const go = (next: Tab) => { setTab(next); setNotice(""); };
   const done = (message: string) => async () => { setTarget(null); setNotice(message); await reload(); };
-  const props: SectionProps = { project, site, api, format, open: (next) => { setNotice(""); setTarget(next); }, go };
+  const props: SectionProps = { project, site, api, format, today: view.today, open: (next) => { setNotice(""); setTarget(next); }, go, reload };
+  const counts: Partial<Record<Tab, number>> = { decisions: project.next.filter((step) => DECISION_STEPS.includes(step.kind)).length, messages: project.unread };
   const Section = SECTIONS[current];
-  const dialog = target ? dialogFor(target, project, { site, customer: view.contact.name, api, format, done, reload, t }) : null;
+  const dialog = target ? dialogFor(target, project, { site, customer: view.contact.name, api, format, done, reload, today: view.today, t }) : null;
   return <>
     <div className={styles.projectHead}>
       {view.projects.length > 1 ? <SelectField label={t("Project")} selectedKey={project.id} onSelectionChange={(key) => { if (key) { setProjectId(String(key)); setTab("home"); } }}
         items={view.projects.map((item) => ({ id: item.id, label: item.title }))} /> : null}
-      <h1 className={styles.title}>{project.title}</h1>
-      <p className={styles.meta}>{[labels.projectStates[project.status], project.reference].filter(Boolean).join(" · ")}</p>
+      <h1 className={styles.title} dir="auto">{project.title}</h1>
+      <p className={styles.meta}>{[labels.projectStates[project.status], isolate(project.reference)].filter(Boolean).join(" · ")}</p>
     </div>
     {project.paused ? <EmptyState illustration="locked" title={t("Your project page is paused")}
       description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
-      {tabs.length > 1 ? <div className={styles.nav}><PillTabs ariaLabel={t("Sections")} selectedKey={current} onSelectionChange={(key) => go(key as Tab)} tour="portal-tab"
-        items={tabs.map((id) => ({ id, label: labels.sections[id] }))} /></div> : null}
+      {tabs.length > 1 ? <div className={styles.nav}><PillTabs ariaLabel={t("Sections")} selectedKey={current} onSelectionChange={(key) => go(key as Tab)} tour="portal-tab" layout="scroll"
+        items={tabs.map((id) => ({ id, label: labels.sections[id], count: counts[id] || undefined }))} /></div> : null}
       {notice ? <InlineNotice tone="success" message={notice} /> : null}
       <div role="tabpanel" aria-label={labels.sections[current]}><Section {...props} /></div>
     </>}
-    {dialog ? <ControlledModalDialog isOpen onOpenChange={(open) => { if (!open) setTarget(null); }} size={target?.kind === "quote" ? "xl" : "md"} title={dialog.title}>
+    {dialog ? <ControlledModalDialog isOpen onOpenChange={(open) => { if (!open) setTarget(null); }} size={target?.kind === "quote" ? "xl" : target?.kind === "board" ? "lg" : "md"} title={dialog.title}>
       {dialog.body}
     </ControlledModalDialog> : null}
   </>;
 }
 
-type Tools = { site: PortalSite; customer: string; api: PortalApi; format: PortalFormat; done: (message: string) => () => Promise<void>; reload: () => Promise<void>; t: ReturnType<typeof useT> };
+type Tools = { site: PortalSite; customer: string; api: PortalApi; format: PortalFormat; done: (message: string) => () => Promise<void>; reload: () => Promise<void>; today: string;
+  t: ReturnType<typeof useT> };
 
 /** The dialog for what was opened: a decision at its revision, a conversation or a form. */
-function dialogFor(target: PortalTarget, project: PortalProject, { site, customer, api, format, done, reload, t }: Tools) {
+function dialogFor(target: PortalTarget, project: PortalProject, { site, customer, api, format, done, reload, today, t }: Tools) {
   const decisions = project.decisions;
   const channels = site.signIn.channels;
   const common = { caseId: project.id, api, format, channels };
@@ -110,6 +128,24 @@ function dialogFor(target: PortalTarget, project: PortalProject, { site, custome
   }
   if (target.kind === "new-message") return { title: t("New message"), body: <NewMessage caseId={project.id} api={api} onDone={done(t("Your message was sent to your project team."))} /> };
   if (target.kind === "claim" && project.warranty)
-    return { title: t("Report a problem"), body: <ClaimForm project={project} api={api} onDone={done(t("Thank you. Your project team will be in touch about it."))} /> };
+    return { title: t("Report a problem"), body: <ClaimForm project={project} api={api} areaId={target.areaId} onDone={done(t("Thank you. Your project team will be in touch about it."))} /> };
+  if (target.kind === "board") {
+    const board = project.moodboard?.boards.find((item) => item.id === target.id);
+    return board ? { title: `${board.title} · V${board.number}`, body: <BoardDetail board={board} caseId={project.id} api={api} format={format} onChanged={() => void reload()} /> } : null;
+  }
+  if (target.kind === "pin") {
+    const pin = project.moodboard?.pins.find((item) => item.id === target.id);
+    return pin ? { title: pin.title, body: <PinDetail pin={pin} caseId={project.id} api={api} format={format} onChanged={() => void reload()}
+      onRemoved={done(t("The idea was removed from your moodboard."))} /> } : null;
+  }
+  if (target.kind === "idea" && project.moodboard)
+    return { title: t("Add an idea"), body: <IdeaForm project={project} api={api} onDone={done(t("Added to your moodboard. Your design team will see it."))} /> };
+  if (target.kind === "paid") {
+    const milestone = project.payments?.milestones.find((item) => item.id === target.id);
+    return milestone ? { title: milestone.title, body: <PaidForm milestone={milestone} caseId={project.id} currency={project.payments!.currency} today={today} api={api} format={format}
+      onDone={done(t("Thank you. We'll check your payment and let you know."))} /> } : null;
+  }
+  if (target.kind === "issue" && project.progress)
+    return { title: t("Report an issue"), body: <IssueForm project={project} api={api} onDone={done(t("Thank you. Your project manager will look at it."))} /> };
   return null;
 }

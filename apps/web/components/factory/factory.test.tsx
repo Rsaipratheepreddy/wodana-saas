@@ -71,7 +71,7 @@ describe("factory", () => {
 
   it("releases a work order only when its checks pass, and records the drawing approval", async () => {
     nav.query = "order=w1";
-    let current = order();
+    let current = order({}, { next: "fix" });
     const fetcher = mount((url, body) => {
       if (url.includes("/orders/w1")) {
         if (body?.action === "approve_drawing") current = order({ drawingRef: String(body.reference), drawingApprovedAt: "2026-09-27T10:00:00Z", drawingApprovedByName: "Omar", version: 3 });
@@ -83,8 +83,11 @@ describe("factory", () => {
     const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
     const checks = await within(sheet).findByRole("region", { name: "Before it's released" });
     expect(within(checks).getByText("Not in: Oak veneer")).toBeInTheDocument();
-    expect(within(sheet).getByRole("button", { name: "Release" })).toBeDisabled();
-    await userEvent.click(within(sheet).getByRole("button", { name: "Record approval" }));
+    // What's missing says where to fix it; nothing offers to release it yet.
+    expect(within(sheet).getByRole("status", { name: "Next step" })).toHaveTextContent("Can't be released yet");
+    expect(within(checks).getByRole("link", { name: "Order materials" })).toHaveAttribute("href", "/workspace/purchasing?project=p1");
+    expect(within(sheet).queryByRole("button", { name: "Release" })).toBeNull();
+    await userEvent.click(within(checks).getByRole("button", { name: "Record approval" }));
     const dialog = await screen.findByRole("dialog", { name: "Drawing approval" });
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Approved drawing/ }), "K-01 rev B");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
@@ -103,7 +106,8 @@ describe("factory", () => {
     const fetcher = mount((url) => (url.includes("/orders/w1") ? order({ ...producing, pending: "2.5000", left: "0.5000" }, { reports }) : factory()));
     page("orders");
     const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
-    const output = await within(sheet).findByRole("region", { name: "Output" });
+    await userEvent.click(await within(sheet).findByRole("tab", { name: /Output/ }));
+    const output = await within(sheet).findByRole("region", { name: "Reports" });
     expect(within(output).getByText("2 m made · 0.5 m scrapped: Chipped edge · 6.5 hours")).toBeInTheDocument();
     // My own report waits for someone else; theirs I can approve.
     expect(within(output).getAllByRole("button", { name: "Approve" })).toHaveLength(1);
@@ -200,11 +204,94 @@ describe("factory", () => {
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "set_quantity", quantity: "2", version: 2 }));
     unmount();
 
-    mount((url) => (url.includes("/orders/w1") ? order({ status: "on_hold", holdKind: "drawing", holdReason: "Drawing changed to K-01 rev C: Handles moved", releasedAt: "2026-09-27T09:00:00Z" }) : factory()));
+    mount((url) => (url.includes("/orders/w1") ? order({ status: "on_hold", holdKind: "drawing", holdReason: "Drawing changed to K-01 rev C: Handles moved", releasedAt: "2026-09-27T09:00:00Z" },
+      { next: "decide_drawing" }) : factory()));
     page("orders");
     const held = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
-    expect(await within(held).findByText("On hold: Drawing changed to K-01 rev C: Handles moved")).toBeInTheDocument();
+    expect(await within(held).findByText("Drawing changed to K-01 rev C: Handles moved")).toBeInTheDocument();
     expect(within(held).getByRole("button", { name: "Go on with the new drawing" })).toBeInTheDocument();
+  });
+
+  it("opens on what needs me: releases in place, says why others are blocked, and releases several at once (D-22, D-45)", async () => {
+    const ready = { ...row({ id: "w1" }), next: "release" as const, mine: true, blocked: [] };
+    const stuck = { ...row({ id: "w2", number: 8, title: "Wardrobes" }), next: "fix" as const, mine: true, blocked: [{ key: "materials" as const, missing: "materials aren't in" }] };
+    const vanity = { ...row({ id: "w3", number: 9, title: "Vanity" }), next: "release" as const, mine: true, blocked: [] };
+    const making = { ...row({ id: "w4", number: 10, title: "Doors", status: "in_production", pending: "1.0000" }), next: "approve" as const, mine: false };
+    const fetcher = mount((url, body) => (body ? order({ status: "released" }) : factory({ orders: [ready, stuck, vanity, making] })));
+    page("orders");
+    const grid = await screen.findByRole("grid", { name: "Work orders" }).catch(() => screen.findByRole("table", { name: "Work orders" }));
+    await within(grid).findByText("Wardrobes");
+    expect(screen.getByRole("button", { name: /^Needs me\s*3$/ })).toHaveAttribute("aria-pressed", "true");
+    // Someone else approves the doors' output: not mine.
+    expect(grid).not.toHaveTextContent("Doors");
+    expect(within(grid).getByText("Materials not in")).toBeInTheDocument();
+    await userEvent.click(within(grid).getByRole("button", { name: "Release WO-0007" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ url: expect.stringContaining("/orders/w1"), body: { action: "release", version: 2 } }));
+    expect(await screen.findByText("Released 1.")).toBeInTheDocument();
+
+    // Only the ones that can go are released together.
+    for (const box of within(grid).getAllByRole("checkbox", { name: /Select row/ })) await userEvent.click(box);
+    await userEvent.click(await screen.findByRole("button", { name: "Release (2)" }));
+    await waitFor(() => expect(posts(fetcher).filter((call) => call.body.action === "release").map((call) => call.url.split("?")[0])).toEqual(
+      ["/api/factory/orders/w1", "/api/factory/orders/w1", "/api/factory/orders/w3"]));
+    await userEvent.click(screen.getByRole("button", { name: /^Blocked\s*1$/ }));
+    expect(grid).toHaveTextContent("Wardrobes");
+    expect(grid).not.toHaveTextContent("Vanity");
+  });
+
+  it("plans a work order for each selected line, for all that's left, when its work needs it (D-22)", async () => {
+    const second = { ...line, lineId: "l2", title: "Wardrobes", left: "2.0000", planned: "0", quantity: "2.0000", suggestedStart: "2099-10-10", suggestedEnd: "2099-10-20" };
+    const held = { ...line, lineId: "l3", projectId: "p2", projectReference: "PRJ-0008", projectName: "Villa 14", title: "Vanity", projectStatus: "on_hold" as const };
+    const fetcher = mount((url, body) => (body ? order({ id: String(body.id) }) : factory({ toMake: [line, second, held] })));
+    page();
+    const table = await screen.findByRole("table", { name: "To make" }).catch(() => screen.findByRole("grid", { name: "To make" }));
+    // A project on hold waits in its own list.
+    expect(table).not.toHaveTextContent("Vanity");
+    expect(screen.getByRole("button", { name: /^On hold\s*1$/ })).toBeInTheDocument();
+    await userEvent.click(within(table).getByRole("checkbox", { name: "Select PRJ-0007 Kitchen cabinets" }));
+    await userEvent.click(within(table).getByRole("checkbox", { name: "Select PRJ-0007 Wardrobes" }));
+    await userEvent.click(screen.getByRole("button", { name: "Plan work orders (2)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Plan work orders (2)" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Plan work orders (2)" }));
+    await waitFor(() => expect(posts(fetcher).map((call) => call.body)).toEqual([
+      expect.objectContaining({ lineId: "l1", quantity: "1.5000", workcenterId: "c1", plannedStart: "2099-10-05", plannedEnd: "2099-10-16" }),
+      expect.objectContaining({ lineId: "l2", quantity: "2.0000", workcenterId: "c1", plannedStart: "2099-10-10", plannedEnd: "2099-10-20" }),
+    ]));
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/factory/orders");
+  });
+
+  it("holds work when a newer drawing comes in: the manager records it from the project's designs, someone else lets it go on (D-26)", async () => {
+    nav.query = "order=w1";
+    const stale = order({ status: "on_hold", holdKind: "drawing", holdReason: "The drawing Kitchen R1 has a newer revision (R2).", releasedAt: "2026-09-27T09:00:00Z",
+      drawingRef: "Kitchen R1", drawingApprovedAt: "2026-09-20T09:00:00Z", drawingApprovedByName: "Omar", drawingNewer: 2 },
+    { next: "decide_drawing", designs: [{ designId: "d1", versionId: "v2", title: "Kitchen", number: 2, documentType: "drawing" }] });
+    const fetcher = mount((url) => (url.includes("/orders/w1") ? stale : factory()));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    expect(await within(sheet).findByRole("status", { name: "Next step" })).toHaveTextContent("A newer drawing (R2) is in");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Use the new drawing" }));
+    const dialog = await screen.findByRole("dialog", { name: "Drawing changed" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /What changed/ }), "Handles moved");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Put on hold" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "revise_drawing", versionId: "v2", note: "Handles moved", version: 2 }));
+  });
+
+  it("shows goods the site refused, the trip bringing them back, and what's made again", async () => {
+    nav.query = "order=w1";
+    mount((url) => (url.includes("/orders/w1") ? order({ status: "in_production", releasedAt: "2026-09-27T09:00:00Z", passed: "2.0000", left: "1.0000", reworked: "1.0000" }, {
+      dispatches: [{ id: "t1", number: 5, status: "received", sentOn: "2099-10-08", quantity: "3.0000", received: "3.0000", short: false, rejected: "1.0000", rejectReason: "Scratched door",
+        returnId: "t2", returnNumber: 6, returnStatus: "in_transit" }],
+      reworks: [{ id: "rw1", quantity: "1.0000", reason: "Scratched door", source: "site", at: "2099-10-09T10:00:00Z", byName: "Sami Site" }] }) : factory()));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    await userEvent.click(await within(sheet).findByRole("tab", { name: /To site/ }));
+    const trips = await within(sheet).findByRole("region", { name: "Trips to site" });
+    expect(within(trips).getByText(/1 m refused: Scratched door/)).toBeInTheDocument();
+    expect(within(trips).getByRole("link", { name: "Coming back on move 6" })).toHaveAttribute("href", "/workspace/inventory/moves?move=t2");
+    expect(within(trips).getByText("Partly refused")).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("tab", { name: /Output/ }));
+    const again = await within(sheet).findByRole("region", { name: "Made again" });
+    expect(within(again).getByText("1 m sent back from site")).toBeInTheDocument();
   });
 
   it("shows each workcenter's weeks and the days booked over capacity", async () => {
@@ -263,9 +350,10 @@ describe("factory", () => {
     expect(within(outside).getByText("Polishing at Nile Marble")).toBeInTheDocument();
     expect(within(outside).getByText("1 of 3 m back")).toBeInTheDocument();
     expect(within(outside).getByRole("link", { name: "FAC-PO-2026-00004" })).toHaveAttribute("href", "/workspace/purchasing/orders?order=po1");
-    const site = within(sheet).getByRole("region", { name: "To site" });
-    expect(within(site).getByText("1 m · Arrived short: 0.5 m")).toBeInTheDocument();
-    await userEvent.click(within(site).getByRole("button", { name: "Send to site" }));
+    await userEvent.click(within(sheet).getByRole("tab", { name: /To site/ }));
+    const trips = await within(sheet).findByRole("region", { name: "Trips to site" });
+    expect(within(trips).getByText("Arrived short: 0.5 m")).toBeInTheDocument();
+    await userEvent.click(within(within(sheet).getByRole("region", { name: "At the factory" })).getByRole("button", { name: "Send to site" }));
     const dialog = await screen.findByRole("dialog", { name: "Send to site" });
     expect(within(dialog).getByRole("textbox", { name: "Quantity" })).toHaveValue("2");
     await userEvent.click(within(dialog).getByRole("button", { name: "Send to site" }));

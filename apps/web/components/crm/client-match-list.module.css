@@ -1,0 +1,16 @@
+.list { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wd-space-3);
+  padding: var(--wd-space-3);
+  border-radius: var(--wd-radius-sm);
+  background: var(--wd-color-surface-muted);
+}
+.facts { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; font-size: var(--wd-text-xs); }
+.facts > strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.facts > span { color: var(--wd-color-text-secondary); overflow-wrap: anywhere; }
+.enquiry { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }

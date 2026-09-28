@@ -1,0 +1,175 @@
+"use client";
+
+import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import Link from "next/link";
+import { FileText, Send, StickyNote, Zap } from "lucide-react";
+import { Badge, Button, ControlledModalDialog, EmptyState, IconButton, SearchInput, SegmentedControl, TextInput, useConfirmationDialog } from "@/design-system";
+import { crmRequest, type RecordData } from "@/lib/crm/client";
+import { fillQuickReply, fillTemplate, quickReplyQuery, renderTemplate, sendableTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_STATUS, windowLeft, type ChatContext, type InboxOwner, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { submitChatOnEnter } from "../chat-composer";
+import styles from "../crm-inbox.module.css";
+import parts from "./inbox-parts.module.css";
+
+const timeout = () => AbortSignal.timeout(20_000);
+
+export type ComposerLookups = { quickReplies: QuickReply[]; templates: InboxTemplate[]; owners: InboxOwner[]; canManage: boolean };
+
+/**
+ * The reply box: free text inside WhatsApp's 24-hour window (with its countdown), an approved template
+ * outside it, "/" quick replies filled from the chat's records, and internal notes with @mentions.
+ * A reply someone else sent since you opened the chat asks before sending.
+ */
+export function InboxComposer({ workspaceId, thread, lookups, variables, draft, onDraftChange, onSent, now, blocked }: {
+  workspaceId: string; thread: RecordData; lookups: ComposerLookups; variables: ChatContext["variables"];
+  draft: string; onDraftChange: (value: string) => void; onSent: () => Promise<void>; now: number; blocked: string;
+}) {
+  const t = useT();
+  const id = thread.id;
+  const [mode, setMode] = useState<"reply" | "note">("reply");
+  const [busy, setBusy] = useState(false), [failure, setFailure] = useState(""), [notice, setNotice] = useState("");
+  const [picking, setPicking] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const [mentions, setMentions] = useState<InboxOwner[]>([]);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const saving = useRef(false), attempt = useRef<{ text: string; id: string } | null>(null);
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
+  const messages = (thread.messages ?? []) as RecordData[];
+  const lastOutbound = [...messages].reverse().find((message) => message.direction === "outbound")?.id ?? null;
+  // What the person saw when they started typing; a newer reply from someone else asks before sending.
+  const seenOutbound = useRef<string | null | undefined>(undefined);
+  if (seenOutbound.current === undefined) seenOutbound.current = lastOutbound;
+  const mine = useRef(new Set<string>());
+  const isWhatsApp = thread.channel === "whatsapp";
+  const inboundAt = Date.parse(String(thread.lastInboundAt ?? ""));
+  const left = windowLeft(thread.windowClosesAt ?? (Number.isFinite(inboundAt) ? new Date(inboundAt + 86_400_000).toISOString() : null), now);
+  const windowClosed = isWhatsApp && left <= 0;
+  const needsTemplate = mode === "reply" && windowClosed;
+  const replyBlocked = mode === "reply" ? blocked : !thread.canSend ? blocked : "";
+  const query = quickReplyQuery(draft);
+  const replies = useMemo(() => query === null ? [] : lookups.quickReplies.filter((reply) => reply.status === "active" && reply.shortcut.startsWith(query)).slice(0, 8), [query, lookups.quickReplies]);
+  const mentionQuery = mode === "note" ? /(?:^|\s)@([^\s@]*)$/.exec(draft)?.[1]?.toLowerCase() ?? null : null;
+  const people = mentionQuery === null ? [] : lookups.owners.filter((owner) => owner.displayName.toLowerCase().includes(mentionQuery)).slice(0, 6);
+  const popup: Array<{ id: string; label: string; detail?: string; pick: () => void }> = query !== null && mode === "reply"
+    ? replies.map((reply) => ({ id: reply.id, label: `/${reply.shortcut}`, detail: reply.body, pick: () => { onDraftChange(fillQuickReply(reply.body, variables)); setHighlight(0); input.current?.focus(); } }))
+    : people.map((person) => ({ id: person.id, label: person.displayName, pick: () => { onDraftChange(draft.replace(/@([^\s@]*)$/, `@${person.displayName} `)); setMentions((current) => current.some((item) => item.id === person.id) ? current : [...current, person]); setHighlight(0); input.current?.focus(); } }));
+  useLayoutEffect(() => { if (input.current) { input.current.style.height = "auto"; input.current.style.height = `${Math.min(input.current.scrollHeight, 112)}px`; } }, [draft]);
+
+  const send = async (body: { bodyText?: string; templateId?: string; templateParameters?: string[] }, after?: () => void, confirmed = false): Promise<void> => {
+    if (saving.current) return;
+    const text = body.bodyText?.trim() ?? "";
+    const newer = lastOutbound && lastOutbound !== seenOutbound.current && !mine.current.has(lastOutbound);
+    if (mode === "reply" && newer && !confirmed) {
+      requestConfirmation({ title: t("Someone else replied"), body: t("A teammate replied since you opened this chat. Send yours too?"), confirmLabel: t("Send anyway"), confirmVariant: "primary", onConfirm: () => void send(body, after, true) });
+      return;
+    }
+    const key = `${mode}:${body.templateId ?? ""}:${JSON.stringify(body.templateParameters ?? [])}:${text}`;
+    if (attempt.current?.text !== key) attempt.current = { text: key, id: crypto.randomUUID() };
+    saving.current = true; setBusy(true); setFailure(""); setNotice("");
+    try {
+      const note = mode === "note" || thread.channel === "internal";
+      const mentioned = note ? mentions.filter((person) => text.includes(`@${person.displayName}`)).map((person) => person.id) : [];
+      const result = await crmRequest(workspaceId, `conversations/${id}/messages`, "POST", {
+        direction: note ? "internal" : "outbound", ...(note ? {} : { purpose: "service" }),
+        ...(body.templateId ? { templateId: body.templateId, ...(body.templateParameters ? { templateParameters: body.templateParameters } : {}) } : { bodyText: text }), ...(mentioned.length ? { mentions: mentioned } : {}), clientMessageId: attempt.current.id,
+      }, timeout());
+      mine.current.add(result.id); seenOutbound.current = result.id;
+      attempt.current = null; setMentions([]);
+      setNotice(note ? t("Note added") : t("Message queued"));
+      after?.();
+      await onSent();
+    } catch (error) { setFailure(error instanceof Error ? error.message : t("Message could not be sent. Your draft is saved.")); }
+    finally { saving.current = false; setBusy(false); input.current?.focus(); }
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (popup.length && ["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) {
+      event.preventDefault();
+      if (event.key === "ArrowDown") setHighlight((index) => (index + 1) % popup.length);
+      else if (event.key === "ArrowUp") setHighlight((index) => (index - 1 + popup.length) % popup.length);
+      else if (event.key === "Escape") onDraftChange(draft.replace(/[/@]\S*$/, ""));
+      else popup[Math.min(highlight, popup.length - 1)].pick();
+      return;
+    }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); return; }
+    submitChatOnEnter(event);
+  };
+
+  return <form className={styles.composer} data-mode={mode} aria-busy={busy} onSubmit={async (event) => {
+    event.preventDefault();
+    if (replyBlocked || needsTemplate || !draft.trim() || popup.length) return;
+    await send({ bodyText: draft }, () => onDraftChange(""));
+  }}>
+    <div className={styles.composerTools}>
+      {thread.channel !== "internal" ? <SegmentedControl label={t("Message type")} value={mode} onChange={(value) => { setMode(value as "reply" | "note"); setFailure(""); }} options={[{ id: "reply", label: t("Reply") }, { id: "note", label: t("Note") }]} /> : null}
+      {mode === "reply" && isWhatsApp && left > 0 && !replyBlocked ? <span className={styles.windowChip}>{t("Window closes in {time}", { time: left >= 3_600_000 ? t("{count} h", { count: Math.floor(left / 3_600_000) }) : t("{count} m", { count: Math.max(1, Math.floor(left / 60_000)) }) })}</span> : null}
+      <span className={styles.toolSpacer} />
+      {mode === "reply" && isWhatsApp ? <Button size="compact" variant="quiet" isDisabled={Boolean(replyBlocked)} onPress={() => setPicking(true)}><FileText aria-hidden="true" size={15} />{t("Templates")}</Button> : null}
+      {mode === "reply" && !needsTemplate ? <IconButton aria-label={t("Quick replies")} size="compact" isDisabled={Boolean(replyBlocked)} onPress={() => { onDraftChange("/"); input.current?.focus(); }}><Zap size={15} /></IconButton> : null}
+    </div>
+    {replyBlocked ? <p className={styles.composerNotice}>{replyBlocked}{isWhatsApp && thread.whatsappConnected === false && lookups.canManage ? <> <Link href="/workspace/integrations">{t("Connect WhatsApp")}</Link></> : null}</p> : null}
+    {needsTemplate && !replyBlocked ? <div className={styles.windowClosed}><p>{t("More than 24 hours since the client's last message. Choose a template to restart the chat.")}</p><Button size="compact" variant="primary" onPress={() => setPicking(true)}>{t("Choose template")}</Button></div> : null}
+    {!needsTemplate ? <div className={styles.composerInput} data-note={mode === "note" || undefined}>
+      {popup.length ? <div className={styles.suggestions} role="listbox" id={`suggest-${id}`} aria-label={query !== null ? t("Quick replies") : t("People")}>
+        {popup.map((item, index) => <button key={item.id} id={`suggest-${id}-${index}`} type="button" role="option" aria-selected={index === highlight} onMouseDown={(event) => event.preventDefault()} onClick={item.pick}><strong>{item.label}</strong>{item.detail ? <small>{item.detail}</small> : null}</button>)}
+      </div> : query !== null && mode === "reply" ? <div className={styles.suggestions} role="status" data-empty={!lookups.quickReplies.some((reply) => reply.status === "active") || undefined}>{lookups.quickReplies.some((reply) => reply.status === "active")
+        ? <><span>{t("No quick reply starts with /{query}", { query })}</span><Link href="/workspace/settings/inbox#new-quick-reply">{t("New quick reply")}</Link></>
+        : <EmptyState illustration={null} icon={<Zap aria-hidden="true" size={18} />} title={t("No quick replies yet")}
+          action={<Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/settings/inbox#new-quick-reply">{t("New quick reply")}</Link>} />}</div> : null}
+      {mode === "note" ? <StickyNote aria-hidden="true" className={styles.noteMark} size={16} /> : null}
+      <label className="wd-visually-hidden" htmlFor={`message-${id}`}>{mode === "note" ? t("Note") : t("Message")}</label>
+      <textarea ref={input} rows={1} id={`message-${id}`} value={draft} maxLength={4096} readOnly={busy || !thread.canSend}
+        placeholder={mode === "note" ? t("Note for the team · @ to mention") : t("Type a message · / for quick replies")}
+        role={popup.length ? "combobox" : undefined} aria-expanded={popup.length ? true : undefined} aria-controls={popup.length ? `suggest-${id}` : undefined}
+        aria-activedescendant={popup.length ? `suggest-${id}-${Math.min(highlight, popup.length - 1)}` : undefined} aria-autocomplete={popup.length ? "list" : undefined}
+        onChange={(event) => { onDraftChange(event.target.value); setNotice(""); setHighlight(0); }} onKeyDown={onKeyDown} aria-describedby={`message-help-${id}`} />
+      <Button className={styles.sendButton} aria-label={mode === "note" ? t("Add note") : t("Send message")} variant="primary" type="submit" isDisabled={!draft.trim() || Boolean(replyBlocked)} isLoading={busy}><Send data-directional="true" size={19} /></Button>
+    </div> : null}
+    <div className={styles.composerFooter} id={`message-help-${id}`}><span role="status">{notice}</span><small>{mode === "note" ? t("Only your team sees notes") : thread.signatureEnabled ? t("Signed with your first name") : t("Enter to send · Shift+Enter for a new line")}</small></div>
+    {failure ? <p className={styles.error} role="alert">{failure}{isWhatsApp && windowClosed && mode === "reply" ? <> <Button size="compact" variant="quiet" onPress={() => setPicking(true)}>{t("Choose template")}</Button></> : null}</p> : null}
+    {picking ? <TemplatePicker templates={lookups.templates} variables={variables} canManage={lookups.canManage} connected={thread.whatsappConnected !== false} onClose={() => setPicking(false)} onSend={async (template, templateParameters) => { setPicking(false); await send({ templateId: template.id, templateParameters }); }} /> : null}
+    {confirmationDialog}
+  </form>;
+}
+
+/**
+ * Approved templates with a preview filled from the chat's records. A value the chat does not have is named
+ * with its field and can be typed for this one message; until it is, Send stays off.
+ */
+function TemplatePicker({ templates, variables, canManage, connected, onClose, onSend }: { templates: InboxTemplate[]; variables: ChatContext["variables"]; canManage: boolean; connected: boolean; onClose: () => void; onSend: (template: InboxTemplate, parameters?: string[]) => Promise<void> }) {
+  const t = useT();
+  const [search, setSearch] = useState("");
+  const matching = templates.filter((template) => `${template.code} ${template.body}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const usable = matching.filter(sendableTemplate);
+  // Templates Meta hasn't approved (or has stopped) stay visible, greyed with their state, so nobody wonders where they went.
+  const waiting = matching.filter((template) => !sendableTemplate(template));
+  const noneApproved = !templates.some(sendableTemplate);
+  const [chosen, setChosen] = useState<InboxTemplate | null>(null);
+  const [typed, setTyped] = useState<Record<number, string>>({});
+  const [sending, setSending] = useState(false);
+  const selected = chosen ?? usable[0] ?? null;
+  const filled = selected ? fillTemplate(selected, variables) : null;
+  const parameters = filled ? filled.parameters.map((value, index) => value || (typed[selected!.positions[index]] ?? "").trim()) : [];
+  const stillMissing = filled?.missing.filter((item) => !(typed[item.position] ?? "").trim()) ?? [];
+  const unmapped = filled?.missing.find((item) => !item.source);
+  const fieldOf = (item: { position: number; source: keyof typeof TEMPLATE_SOURCE_LABELS | null }) => item.source ? t(TEMPLATE_SOURCE_LABELS[item.source]) : t("No field yet");
+  return <ControlledModalDialog isOpen size="lg" title={t("Send a template")} onOpenChange={(open) => { if (!open && !sending) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button isDisabled={sending} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={sending} isDisabled={!selected || stillMissing.length > 0} onPress={async () => { if (!selected) return; setSending(true); await onSend(selected, filled?.missing.length ? parameters : undefined); setSending(false); }}>{t("Send template")}</Button></div>}>
+    <div className={styles.templatePicker}>
+      {!connected ? <EmptyState title={t("WhatsApp isn't connected")} action={canManage ? <Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/integrations">{t("Connect WhatsApp")}</Link> : undefined} />
+        : noneApproved ? <EmptyState title={t("No approved templates yet")} action={canManage ? <Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/settings/inbox#inbox-templates">{t("New template")}</Link> : undefined} />
+        : <SearchInput label={t("Search templates")} value={search} onChange={setSearch} />}
+      {connected && !noneApproved && !matching.length ? <p className={parts.muted}>{t("No matching templates.")}</p> : null}
+      {connected && (usable.length || waiting.length) ? <div className={styles.templateList} role="listbox" aria-label={t("Templates")}>
+        {usable.map((template) => <button key={template.id} type="button" role="option" aria-selected={selected?.id === template.id} onClick={() => { setChosen(template); setTyped({}); }}><strong>{template.code}</strong><small>{template.locale}</small></button>)}
+        {waiting.map((template) => { const status = TEMPLATE_STATUS[template.providerStatus ?? "pending"] ?? TEMPLATE_STATUS.pending; return <button key={template.id} type="button" role="option" aria-selected={false} aria-disabled="true" disabled data-waiting="true"
+          title={template.providerReason ?? undefined}><strong>{template.code}</strong><small>{template.locale}</small><Badge tone={status.tone}>{!template.usable && template.providerStatus === "approved" ? t("Not numbered 1, 2, 3…") : t(status.label)}</Badge>{template.providerReason ? <small>{template.providerReason}</small> : null}</button>; })}
+      </div> : null}
+      {selected && filled ? <p className={parts.preview}>{renderTemplate(selected.body, parameters)}</p> : null}
+      {filled?.missing.length ? <div className={styles.templateValues}>
+        {filled.missing.map((item) => <TextInput key={`${selected!.id}:${item.position}`} maxLength={1024} label={`{{${item.position}}} · ${fieldOf(item)}`}
+          description={item.source ? t("This chat has no value for it. Type it for this message.") : undefined} value={typed[item.position] ?? ""} onChange={(value) => setTyped((current) => ({ ...current, [item.position]: value }))} />)}
+        {unmapped && canManage ? <Link href="/workspace/settings/inbox#inbox-templates">{t("Map its variables")}</Link> : null}
+      </div> : null}
+    </div>
+  </ControlledModalDialog>;
+}

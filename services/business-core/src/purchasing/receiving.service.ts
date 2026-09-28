@@ -5,7 +5,8 @@ import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp } from "../notifications/default-templates";
-import { move, stockFromReceipt } from "../inventory/stock";
+import { move, readTransfers, stockFromReceipt } from "../inventory/stock";
+import { closeSettledBlockers } from "./purchasing-blockers";
 import { event as boqEvent } from "../project-core/project-scope";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
@@ -33,20 +34,13 @@ export class ReceivingService {
   /** What's expected, what's waiting for inspection and what arrived lately. */
   deliveries(actor: RequestActor, workspaceId: string) {
     return this.access.withAnyPermission(actor, workspaceId, ["purchasing.view", "stock.receive", "stock.inspect"], async (client, user) => {
-      const open = (await readOrders(client, workspaceId)).filter((order) => (RECEIVABLE as readonly string[]).includes(order.status));
-      // Lines still to come count credits, cancellations, returns to be replaced and reversed receipts, as the order does;
-      // an order is due when the first of those lines is.
-      const left: Array<{ orderId: string; lines: number; due: string | null }> = [];
-      for (const order of open) {
-        const coming = (await readOrderLines(client, workspaceId, order.id)).filter((line) => outstanding(line).cmp(0) > 0);
-        left.push({ orderId: order.id, lines: coming.length, due: coming.map((line) => line.due).filter((value): value is string => Boolean(value)).sort()[0] ?? null });
-      }
+      // Lines still to come count credits, cancellations, returns to be replaced and reversed receipts, as the order does
+      // (read with the orders); an order is due when the first of those lines is.
+      const open = (await readOrders(client, workspaceId)).filter((order) => (RECEIVABLE as readonly string[]).includes(order.status) && order.linesLeft > 0);
       const deliverTo = new Map((await client.query<{ id: string; deliverTo: string }>(`SELECT id, deliver_to AS "deliverTo" FROM purchase_orders WHERE workspace_id = $1 AND id = ANY($2::uuid[])`,
         [workspaceId, open.map((order) => order.id)])).rows.map((row) => [row.id, row.deliverTo]));
-      const expected = open.map((order) => {
-        const row = left.find((item) => item.orderId === order.id);
-        return { ...order, deliverTo: deliverTo.get(order.id) ?? "site", linesLeft: row?.lines ?? 0, due: row?.due ?? null };
-      }).filter((order) => order.linesLeft > 0).sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"));
+      const expected = open.map((order) => ({ ...order, deliverTo: deliverTo.get(order.id) ?? "site" }))
+        .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"));
       return {
         expected,
         inspection: await readReceipts(client, workspaceId, { pending: true }),
@@ -58,6 +52,39 @@ export class ReceivingService {
         userId: user.userId,
       };
     });
+  }
+
+  /**
+   * What's on its way to one project's site (D-20): supplier orders delivering there with lines still to come
+   * for the project, and moves (factory dispatches included) on their way to its site. Each can be received
+   * where it arrives by someone who receives goods.
+   */
+  arrivals(actor: RequestActor, workspaceId: string, projectId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.view", "stock.receive", "stock.view", "projects.manage", "projects.report"], async (client, user) => {
+      const orders = (await readOrders(client, workspaceId)).filter((order) => (RECEIVABLE as readonly string[]).includes(order.status) && order.linesLeft > 0
+        && order.projects.some((project) => project.id === projectId));
+      const rows = [];
+      for (const order of orders) {
+        const detail = (await client.query<{ deliverTo: string }>(`SELECT deliver_to AS "deliverTo" FROM purchase_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id])).rows[0];
+        if (detail?.deliverTo !== "site") continue;
+        const items = (await readOrderLines(client, workspaceId, order.id)).filter((line) => line.projectId === projectId && outstanding(line).cmp(0) > 0)
+          .map((line) => ({ description: line.description, left: outstanding(line).toString(), unit: line.unit, due: line.due }));
+        if (items.length) rows.push({ ...order, items });
+      }
+      const moves = (await readTransfers(client, workspaceId)).filter((move) => move.status === "in_transit" && move.toKind === "site" && move.toProjectId === projectId);
+      const has = (code: string) => this.access.hasPermission(client, workspaceId, user.userId, code);
+      const canReceive = (await has("purchasing.manage")) || (await has("stock.receive"));
+      return { orders: rows, moves, canReceive, canReceiveMoves: canReceive || (await has("stock.manage")) };
+    });
+  }
+
+  /** The active managers of the projects an order is for. */
+  private async projectManagers(client: Db, workspaceId: string, orderId: string) {
+    return (await client.query<{ userId: string }>(
+      `SELECT DISTINCT membership.user_id AS "userId" FROM project_assignments assignment
+         JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
+        WHERE assignment.workspace_id = $1 AND assignment.active AND assignment.is_manager
+          AND assignment.project_id IN (SELECT project_id FROM purchase_order_lines WHERE workspace_id = $1 AND order_id = $2 AND project_id IS NOT NULL)`, [workspaceId, orderId])).rows.map((row) => row.userId);
   }
 
   /** Everything the receive form needs for one order: what's left on each line, where it can go and the rules. */
@@ -163,11 +190,13 @@ export class ReceivingService {
 
     await settleOrder(client, workspaceId, orderId);
     await stockFromReceipt(client, workspaceId, { receiptId: id, lines: lines.map((line) => ({ receiptLineId: line.id, accepted: line.accepted })), actorId: receiverId });
+    // Work that waited on these goods can start.
+    await closeSettledBlockers(client, workspaceId, { orderId }, receiverId);
     await orderEvent(client, workspaceId, orderId, "received", { receipt: number, location: location.name, lines: lines.length, inspection: settings.requireInspection }, receiverId);
     await this.booked(client, workspaceId, order, lines, receiverId);
     const pending = lines.some((line) => Dec.of(line.pending).cmp(0) > 0);
     if (pending) await this.tell(client, workspaceId, order, id, "purchasing.inspection_needed", await this.inspectors(client, workspaceId), receiverId, location.name);
-    else await this.tell(client, workspaceId, order, id, "purchasing.received", [order.createdBy], receiverId, location.name);
+    else await this.tell(client, workspaceId, order, id, "purchasing.received", [order.createdBy, ...await this.projectManagers(client, workspaceId, orderId)], receiverId, location.name);
     await this.rejectedNotice(client, workspaceId, order, id, lines, receiverId);
     // Less arrived than the supplier's delivery note says: the buyer claims the rest.
     const missing = lines.filter((line) => line.noted !== null && Dec.of(line.noted).cmp(line.received) > 0)
@@ -213,12 +242,14 @@ export class ReceivingService {
       if (done) await client.query(`UPDATE goods_receipts SET inspected_by = $3, inspected_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, receiptId, user.userId]);
       await settleOrder(client, workspaceId, order.id);
       await stockFromReceipt(client, workspaceId, { receiptId, lines: results.map((line) => ({ receiptLineId: line.id, accepted: line.take })), actorId: user.userId });
+      await closeSettledBlockers(client, workspaceId, { orderId: order.id }, user.userId);
       const settled = results.map((line) => ({ orderLineId: line.orderLineId, description: line.description, accepted: line.take, rejected: line.refuse, rejectReason: line.reason, rejectKind: line.kind }));
       await orderEvent(client, workspaceId, order.id, "inspected", { receipt: receipt.number, done, accepted: settled.filter((line) => Dec.of(line.accepted).cmp(0) > 0).length,
         rejected: settled.filter((line) => Dec.of(line.rejected).cmp(0) > 0).length }, user.userId);
       await this.booked(client, workspaceId, order, settled, user.userId);
       const pass = createHash("sha256").update(results.map((line) => line.id).sort().join(",")).digest("hex").slice(0, 16);
-      await this.tell(client, workspaceId, order, receiptId, "purchasing.received", [order.createdBy, receipt.receivedBy], user.userId, receipt.locationName, pass);
+      await this.tell(client, workspaceId, order, receiptId, "purchasing.received", [order.createdBy, receipt.receivedBy, ...await this.projectManagers(client, workspaceId, order.id)], user.userId,
+        receipt.locationName, pass);
       await this.rejectedNotice(client, workspaceId, order, receiptId, settled, user.userId, [receipt.receivedBy], pass);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "goods_receipt.inspected", entityType: "goods_receipt", entityId: receiptId, after: { lines: settled } });
       return this.detail(client, workspaceId, receiptId, user.userId);

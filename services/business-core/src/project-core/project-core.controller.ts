@@ -9,6 +9,7 @@ import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/referen
 import { LabourRatesService } from "./labour-rates.service";
 import { ProjectCoreService } from "./project-core.service";
 import { ProjectMoneyService } from "./project-money.service";
+import { ProjectOverviewService } from "./project-overview.service";
 import { ProjectWorkService } from "./project-work.service";
 
 /** Projects: start from an accepted quotation, then stages, team and status. Bodies are validated in the service. */
@@ -17,7 +18,7 @@ import { ProjectWorkService } from "./project-work.service";
 @Controller("workspaces/:workspaceId/project-core")
 export class ProjectCoreController {
   constructor(private readonly projects: ProjectCoreService, private readonly work: ProjectWorkService, private readonly money: ProjectMoneyService,
-    private readonly labourRates: LabourRatesService) {}
+    private readonly labourRates: LabourRatesService, private readonly overviews: ProjectOverviewService) {}
 
   @Get("settings")
   settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.projects.settings(actor, workspaceId); }
@@ -68,6 +69,16 @@ export class ProjectCoreController {
   @Get("projects/:projectId/money")
   projectMoney(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
     return this.money.read(actor, workspaceId, projectId);
+  }
+
+  @Get("projects/:projectId/overview")
+  overview(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
+    return this.overviews.overview(actor, workspaceId, projectId);
+  }
+
+  @Get("projects/:projectId/money/milestones")
+  milestones(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
+    return this.overviews.milestones(actor, workspaceId, projectId);
   }
 
   @Put("projects/:projectId/money/budgets")

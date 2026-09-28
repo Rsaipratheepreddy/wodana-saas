@@ -232,3 +232,33 @@ export async function raiseSnag(db: Db, workspaceId: string, input: { projectId:
   await workEvent(db, workspaceId, id, "created", { type: "snag", source: input.source }, input.actorId);
   return { id, number };
 }
+
+/**
+ * Raises a blocker on a project from another record (a supplier line that arrives after the work needs it):
+ * numbered like any work, given to someone, and put before the work it holds up, so that work shows as
+ * blocked until the blocker is done.
+ */
+export async function raiseBlocker(db: Db, workspaceId: string, input: { projectId: string; title: string; description: string; packageId?: string | null;
+  boqLineId?: string | null; assigneeMembershipId: string | null; blocks: string[]; actorId: string }) {
+  await db.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, input.projectId]);
+  const number = (await db.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM work_items WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, input.projectId])).rows[0].next;
+  const id = (await db.query<{ id: string }>(
+    `INSERT INTO work_items (id, workspace_id, project_id, number, type, package_id, boq_line_id, title, description, priority, assignee_membership_id, created_by)
+     VALUES (gen_random_uuid(), $1, $2, $3, 'blocker', $4, $5, $6, $7, 'high', $8, $9) RETURNING id`,
+    [workspaceId, input.projectId, number, input.packageId ?? null, input.boqLineId ?? null, input.title.slice(0, 300), input.description.slice(0, 10000),
+      input.assigneeMembershipId, input.actorId])).rows[0].id;
+  for (const successorId of new Set(input.blocks))
+    await db.query(`INSERT INTO work_item_links (workspace_id, project_id, predecessor_id, successor_id, kind, lag_days, created_by) VALUES ($1, $2, $3, $4, 'fs', 0, $5)
+      ON CONFLICT DO NOTHING`, [workspaceId, input.projectId, id, successorId, input.actorId]);
+  await workEvent(db, workspaceId, id, "created", { type: "blocker", blocks: input.blocks.length }, input.actorId);
+  return { id, number };
+}
+
+/** Closes a blocker another record raised, once what it waited for happened (it stays in the history). */
+export async function resolveBlocker(db: Db, workspaceId: string, itemId: string, actorId: string, note: string) {
+  const closed = await db.query(
+    `UPDATE work_items SET status = 'done', completed_at = now(), completed_by = $3, version = version + 1, updated_at = now()
+      WHERE workspace_id = $1 AND id = $2 AND status NOT IN ('done', 'cancelled')`, [workspaceId, itemId, actorId]);
+  if (closed.rowCount) await workEvent(db, workspaceId, itemId, "resolved", { note: note.slice(0, 500) }, actorId);
+  return Boolean(closed.rowCount);
+}

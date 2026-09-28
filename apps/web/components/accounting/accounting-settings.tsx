@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { parseDate } from "@internationalized/date";
-import { Button, DateField, EmptyState, InlineNotice, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
+import { Button, DateField, EmptyState, InlineNotice, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { accountingApi, type AccountingApi } from "@/lib/accounting/client";
 import type { AccountingCompany, AccountingConnection, AccountingSettings, ProviderOption } from "@/lib/accounting/types";
@@ -45,6 +45,15 @@ function CompanyAccounting({ api, company, connections, onSaved }: { api: Accoun
   const [options, setOptions] = useState<Options>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // What was saved last, to tell unsaved changes apart and to discard them.
+  const current = { connectionId, startDate, ids, taxCodes, active };
+  const [savedState, setSavedState] = useState(() => JSON.stringify(current));
+  const [justSaved, setJustSaved] = useState(false);
+  const dirty = JSON.stringify(current) !== savedState;
+  const discard = () => {
+    const last = JSON.parse(savedState) as typeof current;
+    setConnectionId(last.connectionId); setStartDate(last.startDate); setIds(last.ids); setTaxCodes(last.taxCodes); setActive(last.active); setError("");
+  };
   useEffect(() => {
     if (!connectionId) return;
     let live = true;
@@ -97,15 +106,14 @@ function CompanyAccounting({ api, company, connections, onSaved }: { api: Accoun
         <Switch aria-label={t("Posting")} isSelected={active} onChange={setActive} />
       </SettingsRow>
     </> : null}
-    <div className={styles.actions}>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!connectionId || !startDate} onPress={async () => {
-        setBusy(true); setError("");
-        try {
-          onSaved(await api.saveLink({ legalEntityId: company.id, connectionId, startDate, active, version: link?.version ?? 0, ...Object.fromEntries(Object.entries(ids).map(([key, value]) => [key, value || null])),
-            taxCodes: Object.entries(taxCodes).filter(([, value]) => value).map(([rate, providerTaxId]) => ({ rate, providerTaxId })) }));
-        } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
-        setBusy(false);
-      }}>{t("Save")}</Button>
-    </div>
+    <SaveBar isDirty={dirty} isSaving={busy} saved={justSaved} isDisabled={!connectionId || !startDate} onDiscard={discard} onSave={async () => {
+      setBusy(true); setError("");
+      try {
+        onSaved(await api.saveLink({ legalEntityId: company.id, connectionId, startDate, active, version: link?.version ?? 0, ...Object.fromEntries(Object.entries(ids).map(([key, value]) => [key, value || null])),
+          taxCodes: Object.entries(taxCodes).filter(([, value]) => value).map(([rate, providerTaxId]) => ({ rate, providerTaxId })) }));
+        setSavedState(JSON.stringify(current)); setJustSaved(true);
+      } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+      setBusy(false);
+    }} />
   </SettingsSection>;
 }

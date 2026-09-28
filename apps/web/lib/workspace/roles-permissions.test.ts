@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  approvalGaps,
   permissionArea,
   permissionLabel,
   roleMutationCapabilities,
@@ -45,31 +44,5 @@ describe("workspace permissions catalogue", () => {
       .toEqual({ canCreate: false, canEdit: false, canDelete: false });
     expect(roleMutationCapabilities(["workspace.roles.manage"], ["studio_lead"]))
       .toEqual({ canCreate: true, canEdit: true, canDelete: true });
-  });
-});
-
-describe("approvals with nobody to cover", () => {
-  const role = (code: string, permissions: string[]) => ({ id: code, code, name: code, description: "", isSystem: false, version: 1, permissions });
-  const permissions = ["purchasing.approve", "factory.approve", "commercial.deal.approve"].map((code) => ({ code, description: code }));
-  const roles = [
-    role("owner", ["purchasing.approve", "factory.approve", "commercial.deal.approve"]),
-    role("purchasing_approver", ["purchasing.approve"]),
-    role("factory_lead", ["factory.approve"]),
-  ];
-
-  it("names approvals only one person can give, and only the ones this workspace has", () => {
-    const members = [
-      { id: "1", displayName: "Olivia", roles: ["owner"] },
-      { id: "2", displayName: "Faisal", roles: ["purchasing_approver"] },
-    ];
-    // Orders have two approvers (the Owner and Faisal); deals and factory output only the Owner. Stock corrections aren't in this workspace.
-    expect(approvalGaps(permissions, roles, members)).toEqual([
-      { code: "commercial.deal.approve", action: "approve deals", holders: ["Olivia"] },
-      { code: "factory.approve", action: "approve factory output", holders: ["Olivia"] },
-    ]);
-  });
-
-  it("says nothing when it can't see who holds what", () => {
-    expect(approvalGaps(permissions, roles, null)).toEqual([]);
   });
 });

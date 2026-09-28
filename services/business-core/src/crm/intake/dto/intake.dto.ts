@@ -108,6 +108,12 @@ export class CreateIntakeEventDto {
   attribution?: AttributionTouchDto[];
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => IntakeConsentDto)
   consents?: IntakeConsentDto[];
+  /**
+   * LF-1: the person entering the enquiry already said who the client is: this existing client
+   * (`existing` with `partyId`) or a different person (`new`). Staff entry only; ignored elsewhere.
+   */
+  @IsOptional() @IsIn(["existing", "new"]) identity?: "existing" | "new";
+  @IsOptional() @IsUUID() partyId?: string;
 }
 
 export class ListIntakeQueryDto {

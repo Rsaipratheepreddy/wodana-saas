@@ -37,6 +37,7 @@ export class InternalCrmConversationsController {
   @Post("workspaces/:workspaceId/conversations/:conversationId/inbound-messages") inbound(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() input: CreateMessageDto) { return this.conversations.addInboundInternal(workspaceId, conversationId, input); }
   @Post("messages/:messageId/receipt") receipt(@Param("messageId", ParseUUIDPipe) messageId: string, @Body() input: MessageReceiptDto) { return this.conversations.recordReceipt(messageId, input); }
   @Post("provider-messages") providerMessage(@Body() input: ProviderInboundMessageDto) { return this.conversations.ingestProviderMessage(input); }
+  @Post("provider-echoes") providerEcho(@Body() input: ProviderInboundMessageDto) { return this.conversations.ingestProviderEcho(input); }
   @Post("provider-receipts") providerReceipt(@Body() input: ProviderMessageReceiptDto) { return this.conversations.recordProviderReceipt(input); }
   @Post("workspaces/:workspaceId/sequences/process") processSequences(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: ProcessDueSequencesDto) { return this.conversations.processDueSequencesInternal(workspaceId, input.limit); }
 }

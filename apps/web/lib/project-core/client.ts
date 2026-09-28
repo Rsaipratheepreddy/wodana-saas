@@ -1,4 +1,4 @@
-import type { CloseOut, LabourRates, LineHistoryEntry, ProjectMoney, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
+import type { CloseOut, LabourRates, LineHistoryEntry, Milestones, ProjectMoney, ProjectOverview, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -37,6 +37,10 @@ export function projectApi(workspaceId: string) {
     /** Sets one package's cost budget (packageId null: costs not in a package); version-checked. */
     saveBudget: (projectId: string, input: { packageId: string | null; amount: string; note?: string; version: number }) =>
       request<ProjectMoney>(path(`projects/${projectId}/money/budgets`), "PUT", input),
+    /** The Overview: blockers, the plan per stage, key dates, money at a glance and recent activity. */
+    overview: (projectId: string) => request<ProjectOverview>(path(`projects/${projectId}/overview`)),
+    /** The project's payment milestones with their invoice and receipt (Money → Client). */
+    milestones: (projectId: string) => request<Milestones>(path(`projects/${projectId}/money/milestones`)),
     /** What cancelling the project needs settled first, and what it does by itself. */
     closeOut: (projectId: string) => request<CloseOut>(path(`projects/${projectId}/close-out`)),
     line: (projectId: string, lineId: string) => request<{ history: LineHistoryEntry[] }>(path(`projects/${projectId}/lines/${lineId}`)),

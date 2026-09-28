@@ -13,6 +13,7 @@ import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import {
   findWorkspaceModule,
   homeTabs,
+  peopleTabs,
   productNavigation,
   type WorkspaceIdentity,
   type WorkspaceModuleDefinition,
@@ -88,6 +89,8 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
   const mobileOpen = mobileNavigationPath === pathname;
   // Products sit in the top bar; company and account settings open from the utilities.
   const settingsModule = modules.find((module) => module.id === "workspace");
+  // People's areas (directory, teams, roles, attendance), as far as the person can open them.
+  const people = peopleTabs(modules);
   // The Settings gear opens the first Settings page this person can use.
   const settingsHref = productNavigation(modules).flatMap((section) => section.items).find((item) => item.id === "settings")?.href ?? route.trail.find((crumb) => crumb.id === "settings")?.href ?? "/workspace/settings/profile";
   useEffect(() => {
@@ -158,11 +161,12 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
           {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? t("Back to quotations") : t("Back to planning")) : t("Back to CRM")}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
           <nav aria-label={t("Breadcrumb")} className={styles.breadcrumbs}>
             <ol>
-              {crumbs.map((crumb) => <li key={crumb.id}><Link href={crumb.id === "settings" ? settingsHref : crumb.href}>{t(crumb.label as never)}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li>)}
+              {crumbs.map((crumb) => <li key={crumb.id}><Link href={crumb.id === "settings" ? settingsHref : crumb.id === "people" ? people[0]?.href ?? crumb.href : crumb.href}>{t(crumb.label as never)}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li>)}
               <li aria-current="page">{route.record && !recordTitle ? <span aria-busy="true">{currentCrumb}</span> : currentCrumb}</li>
             </ol>
           </nav>
           {route.id === "home" || route.homeTab ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} counts={{ approvals: waiting }} /> : null}
+          {route.nav === "team" ? <HomeTabs label="People" nested tabs={people} pathname={pathname} /> : null}
           <div className={styles.globalUtilities}>
             <TourPersonaBadge />
             <div className={styles.woddyControl}>

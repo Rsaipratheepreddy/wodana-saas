@@ -45,6 +45,7 @@ import { AccountingModule } from "./accounting/accounting.module";
 import { PettyCashModule } from "./petty-cash/petty-cash.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { ApprovalsModule } from "./approvals/approvals.controller";
+import { NotificationsModule } from "./notifications/notifications.module";
 
 @Module({
   imports: [
@@ -102,6 +103,7 @@ import { ApprovalsModule } from "./approvals/approvals.controller";
     PettyCashModule,
     ApprovalsModule,
     HrmsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
 })

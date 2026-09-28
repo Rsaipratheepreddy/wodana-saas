@@ -27,7 +27,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     code: "sales",
     name: "Sales",
     description: "Handles enquiries, follow-ups, the pipeline, planning cases and quotes, and sends quotes to the client; never sees internal costs",
-    // Sends its own quotes: names the client's decision-maker on the case (portal.contacts.manage).
+    // Sends its own quotes: names the client's decision-maker on the case (portal.contacts.manage), not the portal.
     permissions: [...CRM_DAY_TO_DAY, "pre_projects.view", "pre_projects.create", "pre_projects.edit", "catalog.view", "portal.contacts.manage"],
   },
   {
@@ -44,21 +44,6 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.finance.verify", "payables.view", "receivables.view"],
   },
   {
-    code: "finance",
-    name: "Finance",
-    description: "Enters supplier bills and client invoices, records payments and petty cash, and verifies client receipts and deals",
-    permissions: [
-      "pre_projects.view", "crm.opportunities.view", "projects.view", "commercial.costs.view", "commercial.finance.verify",
-      "payables.view", "payables.manage", "receivables.view", "receivables.manage", "accounting.manage",
-    ],
-  },
-  {
-    code: "finance_approver",
-    name: "Finance approver",
-    description: "Approves held supplier bills and payment runs that someone else prepared",
-    permissions: ["projects.view", "payables.view", "payables.approve", "receivables.view"],
-  },
-  {
     code: "operations_approver",
     name: "Operations approver",
     description: "Approves Finance-verified deals and authorizes their release to production",
@@ -69,7 +54,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     name: "Project manager",
     description: "Runs delivery projects: sites, assignments, schedule, progress reviews and what still needs ordering",
     permissions: [
-      "projects.view", "projects.manage", "projects.report", "projects.review",
+      "projects.view", "projects.manage", "projects.report", "projects.review", "projects.costs.view",
       "projects.schedule.view", "projects.schedule.manage", "jobs.stage.manage",
       "pre_projects.view", "crm.opportunities.view", "catalog.view",
       "purchasing.view", "stock.view", "vendors.view", "hrms.team",
@@ -85,54 +70,54 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "hrms.self", "hrms.team",
     ],
   },
+  // Delivery work beyond the Owner: someone buys, someone else approves, the store keeps and counts
+  // stock, the factory lead runs and approves output, an inspector checks it. Separation of duties is
+  // enforced by the commands (nobody approves an order, report or correction they raised).
   {
     code: "buyer",
     name: "Buyer",
-    description: "Raises purchase orders, chases suppliers and receives what arrives; someone else approves the orders",
-    permissions: [
-      "projects.view", "projects.buy", "catalog.view", "purchasing.view", "purchasing.manage",
-      "vendors.view", "vendors.manage", "supplier_offers.view", "supplier_offers.manage", "stock.view", "stock.receive",
-    ],
+    description: "Buys what projects need: price requests, orders to suppliers, confirmations and chasing late deliveries",
+    permissions: ["projects.view", "purchasing.view", "purchasing.manage", "vendors.view", "vendors.manage", "stock.view", "stock.receive", "catalog.view"],
   },
   {
     code: "purchasing_approver",
     name: "Purchasing approver",
-    description: "Approves purchase orders, new suppliers, stock corrections and orders beyond a project's money in hand",
-    permissions: [
-      "projects.view", "purchasing.view", "purchasing.approve", "vendors.view", "vendors.approve",
-      "stock.view", "stock.adjust", "projects.funds_override",
-    ],
-  },
-  {
-    code: "factory_lead",
-    name: "Factory lead",
-    description: "Plans and releases factory work, reports output and approves what the team made",
-    permissions: [
-      "projects.view", "projects.schedule.view", "catalog.view", "stock.view",
-      "factory.view", "factory.manage", "factory.report", "factory.approve",
-    ],
-  },
-  {
-    code: "qc_inspector",
-    name: "QC inspector",
-    description: "Checks factory output and incoming goods before they are accepted",
-    permissions: ["projects.view", "factory.view", "factory.approve", "stock.view", "stock.inspect"],
+    description: "Approves the orders others raise, supplier alternatives and new suppliers",
+    permissions: ["projects.view", "purchasing.view", "purchasing.approve", "vendors.view", "vendors.approve", "stock.view"],
   },
   {
     code: "storekeeper",
     name: "Storekeeper",
-    description: "Receives, moves and counts stock; corrections go to an approver",
-    permissions: ["projects.view", "catalog.view", "purchasing.view", "stock.view", "stock.manage", "stock.receive", "stock.inspect"],
+    description: "Receives deliveries, keeps stock by place, issues and moves it, and counts it",
+    permissions: ["projects.view", "purchasing.view", "stock.view", "stock.manage", "stock.receive", "stock.adjust", "catalog.view"],
   },
-];
-
-/**
- * The permissions that approve someone else's work, each with the words the Roles page uses when
- * only one active person holds it (nobody can cover them, and they can't approve their own work).
- */
-export const APPROVAL_PERMISSIONS: readonly string[] = [
-  "commercial.estimate", "commercial.approve", "commercial.finance.verify", "commercial.deal.approve",
-  "purchasing.approve", "vendors.approve", "stock.adjust", "factory.approve", "payables.approve", "projects.review",
+  {
+    code: "factory_lead",
+    name: "Factory lead",
+    description: "Plans and releases work orders, approves others' output and sends made goods to site",
+    permissions: ["projects.view", "factory.view", "factory.manage", "factory.report", "factory.approve", "stock.view", "stock.manage", "purchasing.view", "catalog.view"],
+  },
+  {
+    code: "qc_inspector",
+    name: "QC inspector",
+    description: "Checks factory output and inspects deliveries; never checks their own work",
+    permissions: ["projects.view", "factory.view", "factory.approve", "stock.view", "stock.inspect", "purchasing.view"],
+  },
+  {
+    code: "finance",
+    name: "Finance",
+    description: "Enters supplier invoices, records payments and client receipts, and verifies deal payments",
+    permissions: [
+      "pre_projects.view", "crm.opportunities.view", "commercial.finance.verify", "commercial.costs.view",
+      "payables.view", "payables.manage", "receivables.view", "receivables.manage", "accounting.manage", "purchasing.view", "projects.view",
+    ],
+  },
+  {
+    code: "finance_approver",
+    name: "Finance approver",
+    description: "Approves held supplier invoices and payment runs that someone else prepared",
+    permissions: ["payables.view", "payables.approve", "receivables.view", "purchasing.view", "projects.view"],
+  },
 ];
 
 export const ROLE_TEMPLATE_CODES: readonly string[] = ROLE_TEMPLATES.map((template) => template.code);

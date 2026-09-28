@@ -9,6 +9,8 @@ import { plain } from "@/lib/quotation/format";
 import type { AiChange, AiProposal, BuilderLine, BuilderState, LineOp } from "@/lib/quotation/types";
 import { AiAssistanceSetting } from "@/components/workspace/ai-assistance-setting";
 import styles from "./quote-chat.module.css";
+import { AiPauseNotice } from "@/components/workspace/ai-pause-notice";
+import { isAiPauseMessage } from "@/lib/ai/pause";
 
 type Api = ReturnType<typeof quoteApi>;
 type Turn = {
@@ -17,7 +19,7 @@ type Turn = {
   text: string;
   proposal?: AiProposal;
   picked?: Set<string>;
-  state: "thinking" | "ready" | "applied" | "discarded" | "failed";
+  state: "thinking" | "ready" | "applied" | "discarded" | "failed" | "paused";
   applied?: number;
   undo?: LineOp[] | null;
   undone?: boolean;
@@ -50,7 +52,7 @@ export function QuoteChat({ state, api, workspaceId, onApply, contextLine, onCle
   const assistant = state.assistant;
 
   const update = (id: string, patch: Partial<Turn>) => setTurns((current) => current.map((turn) => (turn.id === id ? { ...turn, ...patch } : turn)));
-  const history = () => turns.filter((turn) => turn.state !== "thinking" && turn.state !== "failed").slice(-8)
+  const history = () => turns.filter((turn) => turn.state !== "thinking" && turn.state !== "failed" && turn.state !== "paused").slice(-8)
     .map((turn) => ({ role: turn.role, text: turn.role === "assistant" ? describe(turn) : turn.text }));
 
   const ask = async (request: string, kind: "draft" | "edit") => {
@@ -64,6 +66,7 @@ export function QuoteChat({ state, api, workspaceId, onApply, contextLine, onCle
       const proposal = kind === "draft" ? await api.aiDraft() : await api.aiEdit(request, { history: earlier, focusLineIds: contextLine ? [contextLine.id] : [] });
       update(answer.id, { state: "ready", text: proposal.summary, proposal, picked: new Set(proposal.changes.map((change) => change.key)) });
     } catch (cause) {
+      if (cause instanceof Error && isAiPauseMessage(cause.message)) { update(answer.id, { state: "paused", text: cause.message }); return; }
       update(answer.id, { state: "failed", text: cause instanceof Error ? cause.message : t("The assistant didn't answer. Try again, or carry on by hand.") });
     } finally { setBusy(false); }
   };
@@ -138,6 +141,7 @@ function AnswerView({ turn, state, onPick, onApply, onDiscard, onUndo, onFocusLi
 }) {
   const t = useT();
   if (turn.state === "thinking") return <div className={styles.answer} aria-busy="true"><span className={styles.thinking}><Sparkles aria-hidden="true" size={14} />{t("Working it out…")}</span><Skeleton lines={3} /></div>;
+  if (turn.state === "paused") return <div className={styles.answer}><AiPauseNotice message={turn.text} /></div>;
   if (turn.state === "failed") return <div className={styles.answer} data-failed><p>{turn.text}</p></div>;
   const proposal = turn.proposal!;
   const picked = turn.picked ?? new Set<string>();

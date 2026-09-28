@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Put, Query, StreamableFile } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Put, Query, StreamableFile, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { Public } from "../auth/public.decorator";
+import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/reference-upload";
 import { ClientPortalAdminService } from "./client-portal-admin.service";
 import { ClientPortalService } from "./client-portal.service";
 
@@ -34,6 +36,19 @@ export class ClientPortalController {
     @Headers("authorization") auth = "") {
     const file = await this.portal.file(slug, bearer(auth), kind, id, preview === "1");
     return new StreamableFile(file.body, { type: file.mimeType, disposition: `inline; filename="${encodeURIComponent(file.name)}"` });
+  }
+
+  /** A photo or PDF the client adds to a project, before sending it with something. */
+  @Post("cases/:caseId/uploads/:id") @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 0 } }))
+  upload(@Param("slug") slug: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("id", ParseUUIDPipe) id: string, @UploadedFile() file: ReferenceUpload | undefined,
+    @Headers("authorization") auth = "") {
+    return this.portal.upload(slug, bearer(auth), caseId, id, file);
+  }
+
+  /** A tax invoice or receipt of the client's, to print or save as PDF. */
+  @Get("cases/:caseId/documents/:kind/:id") document(@Param("slug") slug: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("kind") kind: string,
+    @Param("id") id: string, @Headers("authorization") auth = "") {
+    return this.portal.document(slug, bearer(auth), caseId, kind, id.slice(0, 80));
   }
 }
 
@@ -100,5 +115,56 @@ export class ClientPortalAdminController {
   @Post("cases/:caseId/contacts/:contactId/sign-out") signOut(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
     @Param("caseId", ParseUUIDPipe) caseId: string, @Param("contactId", ParseUUIDPipe) contactId: string) {
     return this.admin.signOutContact(actor, workspaceId, caseId, contactId);
+  }
+
+  // What the client did, for the team: the moodboard, reported payments, issues, conversations and their files.
+
+  @Get("cases/:caseId/moodboard") moodboard(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string) {
+    return this.admin.moodboard(actor, workspaceId, caseId);
+  }
+
+  @Post("cases/:caseId/moodboard/share") shareMoodboard(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string, @Body() body: unknown) {
+    return this.admin.shareMoodboard(actor, workspaceId, caseId, object(body));
+  }
+
+  @Post("cases/:caseId/moodboard/reply") replyMoodboard(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string, @Body() body: unknown) {
+    return this.admin.replyMoodboard(actor, workspaceId, caseId, object(body));
+  }
+
+  @Get("cases/:caseId/payment-reports") paymentReports(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string) {
+    return this.admin.paymentReports(actor, workspaceId, caseId);
+  }
+
+  @Post("payment-reports/:reportId") decidePaymentReport(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("reportId", ParseUUIDPipe) reportId: string, @Body() body: unknown) {
+    return this.admin.decidePaymentReport(actor, workspaceId, reportId, object(body));
+  }
+
+  @Get("projects/:projectId/issues") issues(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("projectId", ParseUUIDPipe) projectId: string) {
+    return this.admin.issues(actor, workspaceId, projectId);
+  }
+
+  @Post("projects/:projectId/issues/:issueId") triageIssue(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("projectId", ParseUUIDPipe) projectId: string, @Param("issueId", ParseUUIDPipe) issueId: string, @Body() body: unknown) {
+    return this.admin.triageIssue(actor, workspaceId, projectId, issueId, object(body));
+  }
+
+  @Get("cases/:caseId/threads") threads(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string) {
+    return this.admin.threads(actor, workspaceId, caseId);
+  }
+
+  @Post("cases/:caseId/threads/:threadId/read") readThread(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string, @Param("threadId", ParseUUIDPipe) threadId: string) {
+    return this.admin.readThreadAsTeam(actor, workspaceId, caseId, threadId);
+  }
+
+  @Get("cases/:caseId/files/:assetId") async clientFile(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string, @Param("assetId", ParseUUIDPipe) assetId: string, @Query("preview") preview: string | undefined) {
+    const file = await this.admin.clientFile(actor, workspaceId, caseId, assetId, preview === "1");
+    return new StreamableFile(file.body, { type: file.mimeType, disposition: `inline; filename="${encodeURIComponent(file.name)}"` });
   }
 }

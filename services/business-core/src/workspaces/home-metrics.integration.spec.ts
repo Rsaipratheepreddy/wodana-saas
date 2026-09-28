@@ -175,6 +175,8 @@ integration("Home metrics with PostgreSQL", () => {
       await audit("mfa.login_verified", "auth_mfa", entity, "2026-09-15T05:19:00Z");
       await audit("crm.lead.created.v1", "crm_lead", leads[0], "2026-09-15T05:10:00Z");
       await audit("project.started", "project", lateProject, "2026-09-15T05:00:00Z");
+      // An earlier change to the same project shows only as its latest one.
+      await audit("project.updated", "project", lateProject, "2026-09-15T04:55:00Z");
       await audit("quotation.lines_changed.v1", "commercial_case", caseId, "2026-09-15T04:50:00Z", { title: "Kitchen quote" });
       await audit("client_invoice.issued", "client_invoice", entity, "2026-09-15T04:40:00Z", { number: "INV-7" });
       await audit("workspace.member_invited", "workspace_invitation", entity, "2026-09-15T04:30:00Z");
@@ -258,7 +260,7 @@ integration("Home metrics with PostgreSQL", () => {
     });
   });
 
-  it("lists the newest safe audit events with links", async () => {
+  it("lists the newest safe audit events with links, one per record", async () => {
     await scenario(async (client, { workspaceId, membershipId, lead, caseId, late }) => {
       const { activity } = await readHomeMetrics(client, workspaceId, membershipId, { ...all, enquiries: false, quotes: false, payments: false, projects: false, storage: false }, now);
       expect(activity).toEqual([

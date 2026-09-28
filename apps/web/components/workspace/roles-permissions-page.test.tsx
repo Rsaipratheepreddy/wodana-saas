@@ -12,6 +12,19 @@ const rolesNav = () => within(screen.getByRole("navigation", { name: "Roles" }))
 const area = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name} \\d+ of \\d+ on$`) });
 
 describe("RolesPermissionsPage", () => {
+  it("says when only one person, or nobody, can approve orders, output, stock corrections or bills", () => {
+    const data = structuredClone(rolesPermissionsFixture);
+    const owner = data.roles.find((role) => role.code === "owner")!;
+    owner.permissions = [...new Set([...owner.permissions, "purchasing.approve", "factory.approve"])];
+    data.roles.push({ ...owner, id: "approver-role", code: "purchasing_approver", name: "Purchasing approver", isSystem: false, permissions: ["purchasing.approve"] });
+    data.members = [...(data.members ?? []), { ...(data.members ?? [])[0], id: "second", displayName: "Second approver", roles: ["purchasing_approver"] }];
+    render(<RolesPermissionsPage initialData={data} />);
+    const warning = screen.getByText(/Approvals need a second person/).closest(".wd-callout") ?? document.body;
+    expect(within(warning as HTMLElement).queryByText(/approve orders/)).not.toBeInTheDocument();
+    expect(within(warning as HTMLElement).getByText(/Only one person can approve factory output\./)).toBeInTheDocument();
+    expect(within(warning as HTMLElement).getByText(/Nobody can approve supplier bills\./)).toBeInTheDocument();
+  });
+
   it("lists roles beside the selected role and groups capabilities by area with counts", () => {
     render(<RolesPermissionsPage initialData={structuredClone(rolesPermissionsFixture)} />);
 

@@ -21,8 +21,9 @@ logger = logging.getLogger("wodana.worker")
 
 async def run() -> None:
     settings = get_settings()
-    # DELIVERY_ALLOWLIST parses, and is refused in production, before anything can be sent.
-    settings.validate_delivery_settings()
+    # DELIVERY_ALLOWLIST parses and is refused in production, and a production worker delivers
+    # live, all before anything can be sent.
+    settings.validate_worker_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -54,6 +55,9 @@ async def run() -> None:
         adapter,
         settings.worker_consumer_group,
         settings.worker_consumer_name,
+        release=settings.wodana_release_id,
+        adapter_mode=settings.notification_adapter_mode,
+        heartbeat_file=settings.worker_heartbeat_file,
     )
     try:
         await client.ping()

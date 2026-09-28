@@ -81,8 +81,14 @@ export async function noticeReceiptStep(db: Db, input: {
     if (result.queued) told += 1;
     if (input.step === "reported") await queueUserEmail(db, { ...message, idempotencyKey: `${key}:email` });
   }
-  if (input.step === "verified")
-    await tellClients(db, { workspaceId: input.workspaceId, caseId: input.caseId, event: "payment_received", recordId: `${input.payment.id}:${input.revision}`,
-      title: `${input.payment.title} · ${amount}`, demo: input.demo });
+  if (input.step === "verified") {
+    // The client hears it once: not again when Finance already answered their own payment report ("recorded").
+    const alreadyTold = (await db.query(
+      `SELECT 1 FROM client_portal_payment_notices WHERE workspace_id = $1 AND case_id = $2 AND payment_id = $3 AND status = 'recorded' LIMIT 1`,
+      [input.workspaceId, input.caseId, input.payment.id])).rowCount;
+    if (!alreadyTold)
+      await tellClients(db, { workspaceId: input.workspaceId, caseId: input.caseId, event: "payment_checked", recordId: `verified:${input.payment.id}`,
+        title: input.payment.title, note: `We received your payment of ${amount} for ${input.payment.title}. Thank you.`, demo: input.demo });
+  }
   return { told };
 }

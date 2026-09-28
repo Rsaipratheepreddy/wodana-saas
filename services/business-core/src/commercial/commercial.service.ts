@@ -113,6 +113,7 @@ import type {
 import type { ProjectData } from "../projects/execution.types";
 import { ConfigurationRevisionsService } from "../workspaces/configuration-revisions.service";
 import type { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-configuration-revision.dto";
+import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
 
 /** Remove internal cost and margin truth without mutating the persisted commercial aggregate. */
 export function commercialDataForCostAccess(data: CommercialData, canViewCosts: boolean): CommercialData {
@@ -132,6 +133,14 @@ export function preserveUnauthorizedCosts(lines: QuoteLine[], previous: Map<stri
 
 const BUILDER_LINE_KEYS = ["kind", "description", "pricingMode", "note", "version", "areaId", "fromAreaId", "workPackageId", "catalogItemId", "catalogVariantId",
   "catalogSnapshot", "formula", "length", "width", "height", "count", "dimensionUnit", "markupPercent", "discountKind", "discountValue", "taxCode", "lineTaxRate", "optionGroup", "imageAssetId", "catalogImageId", "changeOp", "boqLineId"];
+
+/**
+ * What issuing a quote delivered (Q-22): it is always in the client's portal; `channel` is how they were told
+ * (WhatsApp, email, or not at all), `emailed` who got the email, and `reason` why nothing went out.
+ */
+export type IssueDelivery = {
+  portal: true; channel: "whatsapp" | "email" | null; emailed: string[]; reason: string | null; decider: string; deciderHasEmail: boolean;
+};
 
 /** The people who submitted or Finance-verified a deal may not approve it (separation of duties). */
 export function dealSeparationBlocks(data: Pick<CommercialData, "ownerReview">, userId: string) {
@@ -327,7 +336,18 @@ export class CommercialService {
       quoteId,
       note,
     });
+    const verifiedBefore = new Set((await client.query<{ id: string }>(
+      `SELECT id FROM commercial_payments WHERE workspace_id = $1 AND case_id = $2 AND status = 'verified'`, [workspaceId, caseId])).rows.map((row) => row.id));
     await commercialRepository.save(client, workspaceId, caseId, data);
+    // A payment verified in this save: the client gets the receipt on WhatsApp (once per payment).
+    const received = data.payments.filter((payment) => payment.status === "verified" && !verifiedBefore.has(payment.id));
+    if (received.length) {
+      const owner = await partyOfCase(client, workspaceId, caseId);
+      for (const payment of received) {
+        const result = await sendClientEvent(client, { workspaceId, event: "receivables.payment_received", partyId: owner.partyId, leadId: owner.leadId, recordKey: payment.id, record: { paymentId: payment.id }, config: this.config, actorUserId });
+        if (!result.sent) await recordClientMessageSkipped(client, workspaceId, "receivables.payment_received", payment.id, result, false);
+      }
+    }
     for (const quote of data.quotes)
       await ensureJobForSource(client, workspaceId, { type: "quote", id: quote.id, caseId }, actorUserId);
     for (const payment of data.payments) {
@@ -1416,7 +1436,7 @@ export class CommercialService {
           : undefined;
         const now = new Date().toISOString();
         /** What issuing a quote actually delivered (Q-22): always the portal, and the emails that were queued. */
-        let sent: { portal: true; emailed: string[]; reason: string | null; decider: string; deciderHasEmail: boolean } | undefined;
+        let sent: IssueDelivery | undefined;
         if (action === "set_palm_flow") {
           const template = await resolvedProjectWorkflowTemplate(client, workspaceId);
           if (template.code !== DEAL_FIRST_WORKFLOW_CODE)
@@ -2557,7 +2577,8 @@ export class CommercialService {
               due: q.validUntil, demo: this.testMode });
             const decider = (await client.query<{ name: string; email: string | null }>(
               `SELECT name, email FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, grant.id])).rows[0];
-            sent = { portal: true, emailed: told.names ?? [], reason: told.reason, decider: decider?.name ?? "", deciderHasEmail: Boolean(decider?.email) };
+            sent = { portal: true, channel: "channel" in told ? told.channel ?? null : null, emailed: "names" in told ? told.names ?? [] : [], reason: told.reason,
+              decider: decider?.name ?? "", deciderHasEmail: Boolean(decider?.email) };
           }
         } else if (action === "submit_owner_review") {
           if (record.opportunityStatus !== "won")

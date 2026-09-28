@@ -115,6 +115,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         items: [
           { href: "/workspace/settings/profile", icon: "members", id: "profile", label: tKey("Profile") },
           { href: "/workspace/settings/security", icon: "security", id: "security", label: tKey("Sign-in security") },
+          { href: "/workspace/settings/notifications", icon: "settings", id: "notification-settings", label: tKey("Notifications") },
         ],
       },
       {
@@ -123,37 +124,40 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         items: [
           { href: "/workspace/company", icon: "company", id: "company", label: tKey("Company profile") },
           { href: "/workspace/language", icon: "language", id: "workspace-language", label: tKey("Workspace language") },
-          { href: "/workspace/settings/design-packages", icon: "designs", id: "design-packages", label: tKey("Design packages") },
+          { href: "/workspace/legal-entities", icon: "company", id: "business-records", label: tKey("Business records") },
+          { href: "/workspace/billing", icon: "billing", id: "billing", label: tKey("Billing") },
+          { href: "/workspace/settings/ai-credits", icon: "billing", id: "ai-credits", label: tKey("AI credits") },
+          { href: "/workspace/settings/audit-logs", icon: "audit", id: "audit-log", label: tKey("Audit history") },
+          { href: "/workspace/organizations", icon: "companies", id: "organizations-account", label: tKey("Manage workspaces"), showInSidebar: false },
+          { href: "/workspace/gallery", icon: "designs", id: "gallery", label: tKey("Gallery"), showInSidebar: false },
+        ],
+      },
+      {
+        // How each module works for this firm.
+        id: "workspace-modules",
+        label: tKey("Modules"),
+        items: [
           { href: "/workspace/settings/quotations", icon: "commercial", id: "quotation-settings", label: tKey("Quotations") },
+          { href: "/workspace/settings/design-packages", icon: "designs", id: "design-packages", label: tKey("Design packages") },
           { href: "/workspace/settings/projects", icon: "projects", id: "project-settings", label: tKey("Projects") },
           { href: "/workspace/settings/purchasing", icon: "procurement", id: "purchasing-settings", label: tKey("Purchasing") },
           { href: "/workspace/settings/inventory", icon: "materialPlan", id: "inventory-settings", label: tKey("Stock places") },
           { href: "/workspace/settings/factory", icon: "production", id: "factory-settings", label: tKey("Factory") },
           { href: "/workspace/settings/accounting", icon: "integrations", id: "accounting-settings", label: tKey("Accounting") },
           { href: "/workspace/settings/attendance", icon: "calendar", id: "attendance-settings", label: tKey("Attendance & leave") },
-          { href: "/workspace/gallery", icon: "designs", id: "gallery", label: tKey("Gallery"), showInSidebar: false },
+          { href: "/workspace/settings/inbox", icon: "conversations", id: "inbox-settings", label: tKey("Inbox") },
+          { href: "/workspace/settings/reminders", icon: "settings", id: "reminder-settings", label: tKey("Reminders") },
+          { href: "/workspace/settings/client-portal", icon: "settings", id: "client-portal-settings", label: tKey("Client portal") },
         ],
       },
       {
+        // These pages live in People (sidebar → People); Settings links to them rather than copying them.
         id: "workspace-people",
-        label: tKey("Team & access"),
+        label: tKey("People & access"),
         items: [
           { href: "/workspace/members", icon: "members", id: "members", label: tKey("People") },
-          // Groups are persisted, but do not yet drive project ownership, work
-          // assignment, capacity, or delivery. Keep the route available while
-          // withholding it from the primary workspace navigation until it does.
-          { href: "/workspace/teams", icon: "teams", id: "teams", label: tKey("Teams"), showInSidebar: false },
+          { href: "/workspace/teams", icon: "teams", id: "teams", label: tKey("Teams") },
           { href: "/workspace/roles", icon: "roles", id: "roles", label: tKey("Roles & permissions") },
-        ],
-      },
-      {
-        id: "workspace-account",
-        label: tKey("Records & billing"),
-        items: [
-          { href: "/workspace/legal-entities", icon: "company", id: "business-records", label: tKey("Business records") },
-          { href: "/workspace/billing", icon: "billing", id: "billing", label: tKey("Billing") },
-          { href: "/workspace/organizations", icon: "companies", id: "organizations-account", label: tKey("Manage workspaces"), showInSidebar: false },
-          { href: "/workspace/settings/audit-logs", icon: "audit", id: "audit-log", label: tKey("Audit history") },
         ],
       },
       {
@@ -161,8 +165,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         label: tKey("Connections"),
         items: [
           { href: "/workspace/integrations", icon: "integrations", id: "integrations", label: tKey("Integrations") },
-          { href: "/workspace/settings/client-portal", icon: "settings", id: "client-portal-settings", label: tKey("Client portal") },
-          { href: "/workspace/settings/reminders", icon: "settings", id: "reminder-settings", label: tKey("Reminders") },
+          { href: "/workspace/settings/delivery", icon: "settings", id: "delivery-health", label: tKey("Delivery") },
         ],
       },
     ],
@@ -346,7 +349,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/hrms", icon: "activity", id: "hrms-overview", label: tKey("Attendance") },
           { href: "/workspace/hrms/leave", icon: "calendar", id: "hrms-leave", label: tKey("Leave") },
           { href: "/workspace/hrms/team", icon: "teams", id: "hrms-team", label: tKey("Team") },
-          { href: "/workspace/hrms/people", icon: "members", id: "hrms-people", label: tKey("People") },
+          { href: "/workspace/hrms/people", icon: "members", id: "hrms-people", label: tKey("HR records") },
           // Tabs of People reached from the page itself and from notices; named here for the breadcrumb.
           { href: "/workspace/hrms/time", icon: "calendar", id: "hrms-time", label: tKey("Time"), showInSidebar: false },
           { href: "/workspace/hrms/documents", icon: "members", id: "hrms-documents", label: tKey("Documents"), showInSidebar: false },
@@ -384,14 +387,25 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
       ...(allowed.has("global-factory") ? [{ id: "factory", label: tKey("Factory"), href: "/workspace/factory", icon: "production" as const }] : []),
     ] },
     { id: "utilities", label: tKey("Company"), items: [
-      ...(allowed.has("hrms-overview") ? [{ id: "team", label: tKey("People"), description: tKey("Team, attendance and leave"), href: "/workspace/hrms", icon: "members" as const }] : []),
+      ...(peopleTabs(modules).slice(0, 1).map(tab => ({ id: "team", label: tKey("People"), description: tKey("Team, attendance and leave"), href: tab.href, icon: "members" as const }))),
       ...(allowed.has("pre-project-catalogs") ? [{ id: "resources", label: tKey("Catalog"), description: tKey("Shared items, materials and prices"), href: "/workspace/catalogs", icon: "materialPlan" as const }] : []),
       ...(modules.some(module => module.navigation.some(group => group.items.some(item => item.id === "gallery"))) ? [{ id: "gallery", label: tKey("Gallery"), description: tKey("Your brochure to share"), href: "/workspace/gallery", icon: "designs" as const }] : []),
       ...(allowed.has("integrations") ? [{ id: "integrations", label: tKey("Connections"), href: "/workspace/integrations", icon: "integrations" as const }] : []),
-      ...(modules.find(module => module.id === "workspace")?.navigation.flatMap(group => group.items).filter(item => item.showInSidebar !== false && item.id !== "integrations").sort((a, b) => Number(b.id === "company") - Number(a.id === "company")).slice(0, 1).map(item => ({ id: "settings", label: tKey("Settings"), href: item.href, icon: "settings" as const })) ?? []),
+      ...(modules.find(module => module.id === "workspace")?.navigation.flatMap(group => group.items).filter(item => item.showInSidebar !== false && !["integrations", "members", "teams", "roles"].includes(item.id)).sort((a, b) => Number(b.id === "company") - Number(a.id === "company")).slice(0, 1).map(item => ({ id: "settings", label: tKey("Settings"), href: item.href, icon: "settings" as const })) ?? []),
     ] },
   ];
   return sections.filter(section => section.items.length);
+}
+
+/** People's areas, in the top bar on every People page: the directory first, then teams, roles, and attendance and leave. */
+export function peopleTabs(modules: WorkspaceModuleDefinition[]): { id: string; label: string; href: string }[] {
+  const allowed = new Set(modules.flatMap(module => module.navigation.flatMap(group => group.items).map(item => item.id)));
+  return [
+    { id: "members", label: tKey("Directory"), href: "/workspace/members" },
+    { id: "teams", label: tKey("Teams"), href: "/workspace/teams" },
+    { id: "roles", label: tKey("Roles"), href: "/workspace/roles" },
+    { id: "hrms-overview", label: tKey("Attendance & leave"), href: "/workspace/hrms" },
+  ].filter(tab => allowed.has(tab.id));
 }
 
 /** The tabs on Home: the overview plus the person's own queues. */

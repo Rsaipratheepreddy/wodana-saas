@@ -8,7 +8,12 @@ import { TransitionTenantLifecycleDto } from "../workspaces/dto/tenant-operation
 import { TenantDomainsService } from "../workspaces/tenant-domains.service";
 import { AccountDirectoryService } from "./account-directory.service";
 import { ControlPlaneSweepService } from "./control-plane-sweep.service";
+import { AiCreditsConsoleService } from "./ai-credits-console.service";
 import {
+  AiCreditAdjustmentDto,
+  AiCreditThresholdDto,
+  AiCreditTopUpDto,
+  AiModelRateDto,
   ChangeSeatLimitDto,
   ListAccountsQueryDto,
   RecordCertificateDto,
@@ -79,6 +84,7 @@ export class OperatorOrganizationsController {
     private readonly support: SupportSessionsService,
     private readonly seatsService: OrganizationSeatsService,
     private readonly domains: TenantDomainsService,
+    private readonly credits: AiCreditsConsoleService,
   ) {}
 
   @Get("lifecycle")
@@ -200,9 +206,67 @@ export class OperatorOrganizationsController {
     return this.domains.completeRollback(this.key(key), domainId, input.expectedVersion, request.platformOperator!.userId, correlationId);
   }
 
+  @Get("ai-credits")
+  @RequireOperatorPermission("tenants.read")
+  aiCredits(@Param("key") key: string, @Req() request: OperatorRequest) {
+    return this.credits.organization(this.key(key), request.platformOperator!.userId);
+  }
+
+  @Post("ai-credits/top-ups")
+  @RequireOperatorPermission("billing.manage")
+  topUpAiCredits(@Param("key") key: string, @Body() input: AiCreditTopUpDto,
+    @Headers("idempotency-key") idempotencyKey: string | undefined, @Req() request: OperatorRequest) {
+    return this.credits.topUp(this.key(key), input, idempotencyKey, request.platformOperator!.userId);
+  }
+
+  @Post("ai-credits/adjustments")
+  @RequireOperatorPermission("billing.manage")
+  adjustAiCredits(@Param("key") key: string, @Body() input: AiCreditAdjustmentDto,
+    @Headers("idempotency-key") idempotencyKey: string | undefined, @Req() request: OperatorRequest) {
+    return this.credits.adjust(this.key(key), input, idempotencyKey, request.platformOperator!.userId);
+  }
+
+  @Patch("ai-credits/threshold")
+  @RequireOperatorPermission("billing.manage")
+  aiCreditThreshold(@Param("key") key: string, @Body() input: AiCreditThresholdDto, @Req() request: OperatorRequest) {
+    return this.credits.setThreshold(this.key(key), input, request.platformOperator!.userId);
+  }
+
   private key(value: string) {
     if (!KEY.test(value)) throw new BadRequestException("Choose a valid organization.");
     return value;
+  }
+}
+
+const MODEL = /^[a-zA-Z0-9._:-]{1,120}$/;
+
+/** AI credits across organizations (balance, this month's use, last top-up, today's platform cap) and the model rates. */
+@ApiTags("operator console")
+@Public()
+@UseGuards(InternalServiceGuard, PlatformOperatorGuard, PlatformOperatorPermissionGuard)
+@ApiHeader({ name: "x-wodana-internal-token", required: true })
+@ApiHeader({ name: "x-wodana-operator-session", required: true })
+@Controller("internal/operator/ai-credits")
+export class OperatorAiCreditsController {
+  constructor(private readonly credits: AiCreditsConsoleService) {}
+
+  @Get()
+  @RequireOperatorPermission("tenants.read")
+  list(@Req() request: OperatorRequest) {
+    return this.credits.list(request.platformOperator!.userId);
+  }
+
+  @Get("rates")
+  @RequireOperatorPermission("tenants.read")
+  rates(@Req() request: OperatorRequest) {
+    return this.credits.rates(request.platformOperator!.userId);
+  }
+
+  @Patch("rates/:model")
+  @RequireOperatorPermission("billing.manage")
+  setRate(@Param("model") model: string, @Body() input: AiModelRateDto, @Req() request: OperatorRequest) {
+    if (!MODEL.test(model)) throw new BadRequestException("Choose a valid model.");
+    return this.credits.setRate(model, input, request.platformOperator!.userId);
   }
 }
 

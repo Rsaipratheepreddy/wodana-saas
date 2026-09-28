@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
 import type { Batch, FactoryState } from "@/lib/factory/types";
@@ -24,13 +24,13 @@ export function Batches({ api, state, error, openId, onReload, onOpen, onOpenOrd
       <span>{row.workcenterName ?? "—"}</span>{row.plannedOn ? <small>{format.day(row.plannedOn)}</small> : null}</span> } },
     { id: "orders", header: t("Work orders"), accessorFn: (row) => row.orders, size: 200, meta: { renderCell: (row) => <span className={styles.nameCell}>
       <span>{row.orders === 1 ? t("1 work order") : t("{count} work orders", { count: row.orders })}</span><small>{row.projects.join(", ")}</small></span> } },
-    { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 120, meta: { renderCell: (row) => <span className={styles.status} data-tone={row.status === "started" ? "info" : row.status === "closed" ? "success" : "neutral"}>
-      {statusLabel[row.status]}</span> } },
+    { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 120, meta: { renderCell: (row) => <Badge tone={row.status === "started" ? "info" : row.status === "closed" ? "success" : "neutral"}>
+      {statusLabel[row.status]}</Badge> } },
   ], [t, format, statusLabel]);
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   const batch = state?.batches.find((row) => row.id === openId) ?? null;
   return <>
-    <DataGrid<Batch> appearance="flush" ariaLabel={t("Batches")} columns={columns} data={state?.batches ?? []} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<Batch> ariaLabel={t("Batches")} columns={columns} data={state?.batches ?? []} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       rowNumbers={false} selectable={false} wrapText
       emptyContent={<EmptyState title={t("No batches yet")} description={t("Select work orders in Work orders to run them together.")} />} />
     {batch && state ? <BatchSheet api={api} batch={batch} state={state} onChanged={onReload} onClose={() => onOpen(null)} onOpenOrder={onOpenOrder} /> : null}

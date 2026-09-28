@@ -43,7 +43,16 @@ describe("client payment hand-offs", () => {
     const db = fakeDb({ "commercial.deal.approve": ["olivia", "layla"] });
     await noticeReceiptStep(db, { workspaceId: "ws", caseId: "case", payment, step: "verified", actorUserId: "layla", revision: 5, reporterUserId: "omar", dealWaiting: true, demo: false });
     expect(told(db)).toEqual(["olivia:commercial.receipt_verified:app", "omar:commercial.receipt_verified:app", "sara:commercial.receipt_verified:app"]);
-    expect(tellClients).toHaveBeenCalledWith(db, expect.objectContaining({ event: "payment_received", caseId: "case", recordId: "pay-1:5", title: "Advance · AED 1234.50" }));
+    expect(tellClients).toHaveBeenCalledWith(db, expect.objectContaining({ event: "payment_checked", caseId: "case", recordId: "verified:pay-1", title: "Advance",
+      note: "We received your payment of AED 1234.50 for Advance. Thank you." }));
+  });
+
+  it("doesn't tell the client twice when Finance already answered their own payment report", async () => {
+    const db = fakeDb({});
+    const base = db.query.bind(db);
+    db.query = async (sql: string, params: unknown[] = []) => sql.includes("client_portal_payment_notices") ? { rows: [{}], rowCount: 1 } : base(sql, params);
+    await noticeReceiptStep(db, { workspaceId: "ws", caseId: "case", payment, step: "verified", actorUserId: "layla", revision: 5, reporterUserId: null, dealWaiting: false });
+    expect(tellClients).not.toHaveBeenCalled();
   });
 
   it("asks nobody extra when no deal waits on the money", async () => {

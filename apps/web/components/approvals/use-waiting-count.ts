@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { approvalsApi } from "@/lib/approvals/approvals";
+import { useLiveInvalidate } from "@/lib/workspace/live-events";
 
 /** Refreshes the count everywhere it's shown (after a decision in the list, say). */
 export const APPROVALS_CHANGED = "wodana:approvals-changed";
+/** The live-event scopes that can change what waits for someone. */
+export const WAITING_SCOPES = ["approvals", "notifications"] as const;
 const REFRESH_MS = 60_000;
 
 type Entry = { count: number | null; listeners: Set<(count: number | null) => void>; timer: ReturnType<typeof setInterval> | null; loading: boolean };
@@ -26,6 +29,8 @@ async function refresh(workspaceId: string) {
  */
 export function useWaitingCount(workspaceId: string) {
   const [count, setCount] = useState<number | null>(() => entries.get(workspaceId)?.count ?? null);
+  // Every hand-off tells its approvers (a notice) and every decision its submitter: either refreshes the count.
+  useLiveInvalidate(workspaceId, WAITING_SCOPES, () => void refresh(workspaceId), 1_500);
   useEffect(() => {
     if (!workspaceId) return;
     let entry = entries.get(workspaceId);

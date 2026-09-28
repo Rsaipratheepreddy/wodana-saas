@@ -50,6 +50,15 @@ describe("Woddy chat", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it("says calmly that AI credits are used up, with the next step, instead of an error to retry", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ message: "AI credits are used up. Ask your admin to top up.", paused: true }), { status: 402 })));
+    const { user, input } = await openChat();
+    await user.type(input, "What next?{Enter}");
+    expect(await screen.findByRole("status")).toHaveTextContent("AI credits are used up. Ask your admin to top up.");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(input).toHaveValue("What next?");
+  });
+
   it("stops an in-flight reply and restores the question", async () => {
     vi.stubGlobal("fetch", vi.fn((_url: string, options: RequestInit) => new Promise((_resolve, reject) => options.signal?.addEventListener("abort", () => reject(new DOMException("Stopped", "AbortError"))))));
     const { user, input } = await openChat();

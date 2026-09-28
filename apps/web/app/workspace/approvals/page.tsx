@@ -6,6 +6,7 @@ import { getAuthenticatedProfile } from "@/lib/auth/server";
 import { getWaitingForYou } from "@/lib/approvals/server";
 import { getDesignQueue } from "@/lib/pre-project/server";
 import { DesignQueue } from "@/components/pre-project/design-queue";
+import { LiveRefresh } from "@/components/workspace/live-refresh";
 import { projectRead } from "@/lib/projects/server";
 import type { ApprovalQueuePage } from "../../../../../services/business-core/src/projects/project-approval-queue";
 import styles from "./page.module.css";
@@ -34,7 +35,8 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
     content = <WaitingForYouList workspaceId={workspaceId} initial={waiting.data} initialError={waiting.failed ? t("What's waiting for you could not be loaded.") : undefined} />;
   } else if (source === "designs") {
     const queue = await getDesignQueue();
-    content = <DesignQueue items={queue.items} error={queue.error} />;
+    // Design reviews are read on the server: a change in Planning re-renders them.
+    content = <><DesignQueue items={queue.items} error={queue.error} /><LiveRefresh workspaceId={workspaceId} scopes={["planning", "approvals"]} /></>;
   } else {
     let initial: ApprovalQueuePage = { rows: [], nextCursor: null, memberId: "", canReview: false };
     let error = "";

@@ -1,5 +1,6 @@
 import { MemberProfileService } from "./member-profile.service";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
+import { seedDefaultQuickReplies } from "../crm/conversations/inbox/default-quick-replies";
 import { acceptPendingInvitation } from "./invitation-acceptance";
 import {
   BadRequestException,
@@ -46,6 +47,7 @@ import { UpdateWorkspaceAppearanceDto } from "./dto/update-workspace-appearance.
 import { UpdateHomeLayoutDto } from "./dto/update-home-layout.dto";
 import { readHomeOverview } from "./home-overview";
 import { readHomeMetrics } from "./home-metrics";
+import { readHomeSummary } from "./home-summary";
 import { WorkspaceAccessService } from "./workspace-access.service";
 import { DEFAULT_CRM_AUTOMATION_TEMPLATES } from "../crm/automations/default-automation-templates";
 import { parseProjectWorkflowTemplate } from "../projects/project-workflow";
@@ -213,6 +215,7 @@ export class WorkspacesService {
           await this.insertDefaultCrmAutomations(client, workspaceId);
           await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(undefined));
           await seedDefaultNotificationTemplates(client, workspaceId);
+          await seedDefaultQuickReplies(client, workspaceId);
           await client.query(
             `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
              VALUES ($1, $2, now() + interval '14 days')`,
@@ -398,6 +401,7 @@ export class WorkspacesService {
         );
         await this.insertDefaultCrmAutomations(client, workspaceId);
         await seedDefaultNotificationTemplates(client, workspaceId);
+        await seedDefaultQuickReplies(client, workspaceId);
         // The kit's Sales pipeline, so a salesperson's first conversion needs no CRM-settings permission.
         await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(setup?.firmKit.configuration.salesPipeline));
         if (setup) {
@@ -605,6 +609,7 @@ export class WorkspacesService {
     await this.insertDefaultCrmAutomations(client, workspaceId);
     await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(undefined));
           await seedDefaultNotificationTemplates(client, workspaceId);
+    await seedDefaultQuickReplies(client, workspaceId);
     await client.query(
       `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
        VALUES ($1, $2, now() + interval '14 days')`,
@@ -1186,6 +1191,40 @@ export class WorkspacesService {
       ]);
       return readHomeMetrics(client, workspaceId, membership.rows[0].id, {
         enquiries, quotes, payments, projects, manageProjects, activity, storage: settings || data, followUps, orders,
+      });
+    });
+  }
+
+  /**
+   * Home's overview for the caller in one tenant transaction: what needs them today, what is coming up, the
+   * business flow they can see and the records to jump back into. Every source follows their permissions.
+   */
+  async homeSummary(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const membership = await client.query<{ id: string }>(
+        `SELECT id FROM workspace_memberships WHERE workspace_id=$1 AND user_id=$2 AND status='active'`,
+        [workspaceId, user.userId],
+      );
+      if (!membership.rows[0]) throw new NotFoundException("Workspace membership not found");
+      const codes = [
+        "crm.activities.view", "crm.communications.view", "crm.leads.view", "crm.leads.assign", "pre_projects.view", "projects.view",
+        "projects.manage", "receivables.view", "purchasing.view", "factory.view", "pre_projects.review_designs",
+        "pre_projects.record_client_design_decisions", "commercial.estimate", "commercial.approve", "commercial.finance.verify",
+        "purchasing.approve", "hrms.manage",
+      ] as const;
+      const granted = await Promise.all(codes.map((code) => this.access.hasPermission(client, workspaceId, user.userId, code)));
+      const can = (code: (typeof codes)[number]) => granted[codes.indexOf(code)];
+      return readHomeSummary(client, { workspaceId, membershipId: membership.rows[0].id, userId: user.userId }, {
+        followUps: can("crm.activities.view"), replies: can("crm.communications.view"), leads: can("crm.leads.view"),
+        assignLeads: can("crm.leads.assign"), planning: can("pre_projects.view"), projects: can("projects.view") || can("projects.manage"),
+        manageProjects: can("projects.manage"), receivables: can("receivables.view"), purchasing: can("purchasing.view"), factory: can("factory.view"),
+        approvals: {
+          designs: can("pre_projects.view"), reviewDesigns: can("pre_projects.review_designs"),
+          recordClientDesigns: can("pre_projects.record_client_design_decisions"),
+          reviewQuotes: can("commercial.estimate") || can("commercial.approve"), verifyPayments: can("commercial.finance.verify"),
+          approveOrders: can("purchasing.approve"), manageLeave: can("hrms.manage"),
+          projects: can("projects.view") || can("projects.manage"), manageProjects: can("projects.manage"),
+        },
       });
     });
   }

@@ -4,10 +4,9 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import Link from "next/link";
 import { useId, useMemo, useState, type FormEvent } from "react";
 import { ChevronDown, ChevronRight, Lock, Plus } from "lucide-react";
-import { Avatar, AvatarGroup, Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, IconMenuButton, SearchInput, SegmentedControl, SelectField, SettingsPage, Switch, TextAreaField, TextInput } from "@/design-system";
+import { Avatar, AvatarGroup, Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, IconMenuButton, SaveBar, SearchInput, SegmentedControl, SelectField, SettingsPage, Switch, TextAreaField, TextInput } from "@/design-system";
 import type { WorkspaceRole } from "@/lib/workspace/members";
 import {
-  approvalGaps,
   isSensitivePermission,
   permissionLabel,
   permissionSections,
@@ -25,6 +24,8 @@ const PEOPLE_HREF = "/workspace/members";
 const AVATAR_STACK = 3;
 
 type AccessFilter = "all" | "granted" | "denied";
+/** Approvals someone other than the person who raised the work gives. */
+const APPROVALS = ["commercial.estimate", "commercial.finance.verify", "commercial.deal.approve", "purchasing.approve", "vendors.approve", "factory.approve", "stock.adjust", "payables.approve"] as const;
 type RoleDialogItem = { mode: "new" } | { mode: "edit"; role: WorkspaceRole } | { mode: "duplicate"; role: WorkspaceRole } | null;
 
 function responseMessage(response: Response, fallback: string) {
@@ -73,8 +74,6 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
     return byRole;
   }, [initialData.members]);
   const [roles, setRoles] = useState(initialRoles);
-  // Saved roles only: a draft isn't who can approve today.
-  const approvalWarnings = useMemo(() => approvalGaps(initialData.permissions, roles, initialData.members, t), [initialData.permissions, initialData.members, roles, t]);
   const [drafts, setDrafts] = useState<Record<string, Set<string>>>(() => permissionDrafts(initialRoles));
   const [selectedRoleId, setSelectedRoleId] = useState(
     initialRoles.find((role) => !role.isSystem)?.id ?? initialRoles[0]?.id ?? "",
@@ -251,6 +250,22 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   };
 
   const headingId = `${baseId}-role`;
+  // Nobody approves their own order, output, count or bill: an approval only one person holds stalls when
+  // they raised it (or are away), so the page says so.
+  const approvalText: Record<(typeof APPROVALS)[number], [one: string, none: string]> = {
+    "commercial.estimate": [t("Only one person can approve QS estimates."), t("Nobody can approve QS estimates.")],
+    "commercial.finance.verify": [t("Only one person can verify client payments."), t("Nobody can verify client payments.")],
+    "commercial.deal.approve": [t("Only one person can approve deals."), t("Nobody can approve deals.")],
+    "vendors.approve": [t("Only one person can approve suppliers."), t("Nobody can approve suppliers.")],
+    "purchasing.approve": [t("Only one person can approve orders."), t("Nobody can approve orders.")],
+    "factory.approve": [t("Only one person can approve factory output."), t("Nobody can approve factory output.")],
+    "stock.adjust": [t("Only one person can approve stock corrections."), t("Nobody can approve stock corrections.")],
+    "payables.approve": [t("Only one person can approve supplier bills."), t("Nobody can approve supplier bills.")],
+  };
+  const approvalGaps = APPROVALS.flatMap((code) => {
+    const holders = new Set((initialData.members ?? []).filter((member) => member.roles.some((roleCode) => roles.find((role) => role.code === roleCode)?.permissions.includes(code))).map((member) => member.id));
+    return holders.size > 1 ? [] : [approvalText[code][holders.size ? 0 : 1]];
+  });
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
@@ -262,13 +277,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
       >
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
         {failure ? <Callout title={t("Role action failed")} tone="danger">{failure}</Callout> : null}
-        {approvalWarnings.length ? <Callout title={t("Approvals with nobody to cover")} tone="warning">
-          <ul className={styles.approvalGaps}>
-            {approvalWarnings.map((gap) => <li key={gap.code}>{gap.holders.length
-              ? t("Only {name} can {action}; their own work waits.", { name: gap.holders[0], action: gap.action })
-              : t("Nobody can {action}.", { action: gap.action })}</li>)}
-          </ul>
-        </Callout> : null}
+        {approvalGaps.length ? <Callout title={t("Approvals need a second person")} tone="warning">{approvalGaps.join(" ")}</Callout> : null}
 
         <div className={styles.layout}>
           <nav aria-label={t("Roles")} className={styles.rolesPane}>
@@ -380,11 +389,8 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
           </section>
         </div>
 
-        {isEditable && changeCount > 0 ? <div aria-label={t("Unsaved changes")} className={styles.saveBar} role="region">
-          <span>{changeCount === 1 ? t("1 change") : t("{count} changes", { count: changeCount })}</span>
-          <Button isDisabled={saving} onPress={resetChanges} size="compact">{t("Discard")}</Button>
-          <Button isLoading={saving} onPress={() => void saveChanges()} size="compact" variant="primary">{t("Save")}</Button>
-        </div> : null}
+        {isEditable ? <SaveBar isDirty={changeCount > 0} isSaving={saving} message={changeCount === 1 ? t("1 change") : t("{count} changes", { count: changeCount })}
+          onDiscard={resetChanges} onSave={() => void saveChanges()} /> : null}
       </SettingsPage>
 
       <RoleDialog

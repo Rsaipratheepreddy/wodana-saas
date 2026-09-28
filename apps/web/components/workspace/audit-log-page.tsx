@@ -148,7 +148,7 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
 
         {failure ? <Callout title={t("Audit log could not be updated")} tone="danger">{failure}</Callout> : null}
 
-        <DataGrid ariaLabel={t("Workspace audit log")} appearance="flush" columns={columns} data={visibleItems} getRowId={(item) => item.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} hasMoreRows={Boolean(nextCursor)} footerActions={nextCursor ? <Button isLoading={loadingMore} onPress={() => void loadMore()} size="compact">{t("Load more")}</Button> : undefined} emptyTitle={t("No audit events found")} emptyDescription={t("Try a different source, period, or search.")} />
+        <DataGrid ariaLabel={t("Workspace audit log")} columns={columns} data={visibleItems} getRowId={(item) => item.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} hasMoreRows={Boolean(nextCursor)} footerActions={nextCursor ? <Button isLoading={loadingMore} onPress={() => void loadMore()} size="compact">{t("Load more")}</Button> : undefined} emptyTitle={t("No audit events found")} emptyDescription={t("Try a different source, period, or search.")} />
       </>}
     </SettingsPage>
 

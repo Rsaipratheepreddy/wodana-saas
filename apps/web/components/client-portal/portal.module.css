@@ -198,6 +198,53 @@
 .message { display: grid; gap: var(--wd-space-1); max-inline-size: 85%; padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
 .message[data-mine="true"] { justify-self: end; background: var(--wd-color-action-primary-subtle); }
 .skeleton { display: grid; gap: var(--wd-phi-3); }
+.seen { display: inline-flex; align-items: center; gap: var(--wd-space-1); justify-self: end; margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.itemMeta[data-tone="danger"] { color: var(--wd-color-danger); }
+/* A small icon that stays on the line with its words. */
+.inlineIcon { display: inline-flex; align-items: center; gap: var(--wd-space-1); vertical-align: middle; }
+.itemButton[data-unread] .itemTitle { font-weight: var(--wd-weight-semibold); }
+/* Big enough to tap on a phone, one row that scrolls sideways. */
+.nav :global(.wd-pill-tab) { min-block-size: var(--wd-control-md); }
+
+/* Files the client adds (while adding) and has sent. */
+.attach { display: grid; gap: var(--wd-space-2); }
+.attachList { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.attachItem { display: grid; grid-template-columns: var(--wd-space-12) minmax(0, 1fr) auto auto; align-items: center; gap: var(--wd-space-2); }
+.attachItem[data-status="failed"] .itemMeta { color: var(--wd-color-danger); }
+.attachThumb { display: grid; place-items: center; inline-size: var(--wd-space-12); block-size: var(--wd-space-12); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); object-fit: cover; }
+.attachName { overflow: hidden; font-size: var(--wd-text-sm); text-overflow: ellipsis; white-space: nowrap; }
+.fileStrip { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.fileTile { display: inline-flex; align-items: center; gap: var(--wd-space-1); overflow: hidden; min-block-size: var(--wd-space-12); max-inline-size: 12rem; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); color: var(--wd-color-text); font-size: var(--wd-text-xs); text-decoration: none; }
+.fileTile:has(svg) { padding-inline: var(--wd-space-2); }
+.fileTile img { display: block; inline-size: var(--wd-space-16); block-size: var(--wd-space-16); object-fit: cover; }
+.fileTile span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fileTile:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+
+/* The moodboard: boards wide, ideas in a grid of cards. */
+.boards { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
+.pins { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.card { display: grid; grid-template-rows: auto 1fr; overflow: hidden; border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
+.cardMedia { display: block; overflow: hidden; aspect-ratio: 4 / 3; padding: 0; border: 0; background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); cursor: pointer; }
+.pins .cardMedia { aspect-ratio: 1; }
+.cardMedia img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.cardMedia:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.cardPlaceholder { display: grid; place-content: center; justify-items: center; gap: var(--wd-space-2); block-size: 100%; padding: var(--wd-space-3); overflow: hidden; font-size: var(--wd-text-sm); }
+.cardPlaceholder .body { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 5; text-align: start; }
+.cardBody { display: grid; align-content: start; gap: var(--wd-space-1); padding: var(--wd-space-3); min-inline-size: 0; }
+.cardBody .itemTitle { font-size: var(--wd-text-md); }
+.cardActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-1); margin-block-start: var(--wd-space-1); }
+.reactions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
+.reactions :global(.wd-button[aria-pressed="true"]) { background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); }
+
+/* Warranty: one line per room, opened for its items. */
+.disclosure { border-block-end: 1px solid var(--wd-color-structural-divider); }
+.disclosure > summary { list-style: none; border-block-end: 0; cursor: pointer; }
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.disclosureIcon { transition: transform var(--wd-duration-fast) var(--wd-ease-standard); }
+.disclosure[open] .disclosureIcon { transform: rotate(180deg); }
+.subList { display: grid; gap: var(--wd-space-1); margin: 0; padding-block: 0 var(--wd-space-3); padding-inline-start: var(--wd-space-4); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.disclosure > div { padding-block-end: var(--wd-space-3); }
 
 @media (max-width: 640px) {
   /* A narrow screen: the logo a little smaller, the language and sign-out free to shrink or take the next line (never clipped). */
@@ -212,5 +259,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .itemButton { transition: none; }
+  .itemButton, .disclosureIcon { transition: none; }
 }

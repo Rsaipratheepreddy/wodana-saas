@@ -41,8 +41,10 @@ async def ready() -> dict[str, Any]:
         await redis_client.aclose()
 
     try:
+        # Reachability only: Business Core's own readiness also fails on a silent worker in
+        # production, and this API (OAuth callbacks, webhooks) must keep serving while it's down.
         async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.get(f"{settings.business_core_url}/health/ready")
+            response = await client.get(f"{settings.business_core_url}/health/live")
             response.raise_for_status()
         checks["business_core"] = "ok"
     except (httpx.HTTPError, ValueError):

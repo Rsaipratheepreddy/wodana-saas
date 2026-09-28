@@ -5,6 +5,8 @@ import { FileSpreadsheet, Sparkles } from "lucide-react";
 import { Badge, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { readCatalogImportFile } from "@/lib/workspace/catalog-import-file";
+import { AiPauseNotice } from "@/components/workspace/ai-pause-notice";
+import { isAiPauseMessage } from "@/lib/ai/pause";
 import { loadAiSettings } from "@/lib/workspace/ai-settings";
 import { catalogApi, detectMapping, rowsFromSheet, type ImportPlan, type ImportRow, type SheetMapping } from "@/lib/workspace/catalog-v2";
 import styles from "./catalog-page.module.css";
@@ -90,7 +92,7 @@ export function CatalogImportDialog({ workspaceId, catalogId, isOpen, onClose, o
 
   return <ControlledModalDialog footer={footer} isOpen={isOpen} onOpenChange={(open) => { if (!open) close(); }} size="lg" title={t("Import items")}>
     <div className={styles.importBody}>
-      {error ? <Callout title={t("Could not import")} tone="danger">{error}</Callout> : null}
+      {isAiPauseMessage(error) ? <AiPauseNotice message={error} /> : error ? <Callout title={t("Could not import")} tone="danger">{error}</Callout> : null}
       {!sheets.length ? <label className={styles.drop}>
         <EmptyState illustration="upload" title={t("Choose a spreadsheet")} description={t("Excel (.xlsx) or CSV. Each sheet becomes a category.")} />
         <input accept=".xlsx,.csv,.tsv" aria-label={t("Choose a spreadsheet")} className="wd-visually-hidden" onChange={(event) => void choose(event.target.files?.[0])} type="file" />

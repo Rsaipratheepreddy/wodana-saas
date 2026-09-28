@@ -66,6 +66,17 @@ class ConnectedProviderAdapter:
         self.google = google
         self.providers = providers
 
+    async def whatsapp_templates(self, workspace_id: str) -> list[dict[str, Any]]:
+        return await self.providers.whatsapp_templates_internal(workspace_id)
+
+    async def whatsapp_health(self, workspace_id: str) -> dict[str, Any]:
+        return await self.providers.whatsapp_health_internal(workspace_id)
+
+    async def submit_whatsapp_template(
+        self, workspace_id: str, template: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self.providers.submit_whatsapp_template_internal(workspace_id, template)
+
     async def deliver(self, job: DeliveryJob) -> DeliveryResult:
         try:
             destination = job.destination or {}
@@ -113,6 +124,8 @@ class ConnectedProviderAdapter:
                         {
                             "templateName": job.template_code,
                             "language": (job.locale or "en_US").replace("-", "_"),
+                            # The values of the template's {{1}}…{{n}}, snapshotted by business-core.
+                            "bodyParameters": list(job.template_parameters),
                         }
                     )
                 else:
@@ -123,8 +136,9 @@ class ConnectedProviderAdapter:
                         action="message.send", idempotency_key=job.id, payload=payload
                     ),
                 )
+                # Meta accepting a message is not delivery: its status webhook says delivered or read.
                 return DeliveryResult(
-                    result="delivered",
+                    result="accepted",
                     provider="whatsapp",
                     provider_message_id=str(result["id"]),
                 )

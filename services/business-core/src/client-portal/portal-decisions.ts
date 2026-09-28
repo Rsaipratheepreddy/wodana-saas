@@ -14,6 +14,7 @@ import { recordMaterialDecision } from "../project-core/project-materials";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { decideHandoverPack } from "../site/handover";
 import type { Grant, PortalContact } from "./portal-auth";
+import { attach, ownUploads } from "./portal-files";
 import { readCase } from "./portal-read";
 import { effectiveSections, readProjectAccess, type PortalSettings, type Section } from "./portal-settings";
 
@@ -132,6 +133,8 @@ export async function decideQuote(ctx: DecisionContext, body: Record<string, unk
   if (controlled && !controlled.control!.quoteIds.every((id) => data.quotes.some((quote) => quote.id === id && quote.status === "issued")))
     throw new ConflictException("Your project team is still preparing the rest of this change. You'll be told when it's ready to decide.");
   actionable(q);
+  // Photos of what they'd like changed go with the decision (never with an acceptance).
+  const files = decision === "accept" ? [] : await ownUploads(ctx.db, ctx.workspaceId, ctx.contact, row.caseId, body.uploadIds);
   const challengeId = await code(ctx, `quote:${row.caseId}:${q.id}:${decision}`, body);
   q.decidedAt = new Date().toISOString();
   q.decidedBy = grant.name;
@@ -161,7 +164,7 @@ export async function decideQuote(ctx: DecisionContext, body: Record<string, unk
     controlled.status = "under_review";
     controlled.resolution = "";
   }
-  if (decision === "changes" && !controlled) newRequest(data, `Changes to quotation V${q.number}`, note, q.id);
+  const asked = decision === "changes" && !controlled ? newRequest(data, `Changes to quotation V${q.number}`, note, q.id) : null;
   if (decision === "accept")
     for (const accepted of acceptedForEffects.values()) {
       if (accepted.kind === "variation" && accepted.direction !== "deduction" && data.agreement && !data.payments.some((payment) => payment.sourceQuoteId === accepted.id)) {
@@ -184,6 +187,8 @@ export async function decideQuote(ctx: DecisionContext, body: Record<string, unk
   if (decision === "accept" && q.kind === "quotation")
     await winOpportunityOnAcceptance(ctx.db, { workspaceId: ctx.workspaceId, caseId: row.caseId, quoteNumber: q.number, round: q.round ?? null, actorUserId: null, source: "client_portal", grantId: grant.id });
   await ctx.commercial.persist(ctx.db, ctx.workspaceId, row.caseId, data, grant.name, `Client ${decision} (portal)`, q.id, note);
+  // The change request the team works from carries the photos; a decline keeps them on the decision.
+  await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: asked ? "message" : "decision", targetId: asked ? asked.id : `quote:${q.id}`, files });
   // The account manager and whoever built it hear the client's decision.
   await noticeQuoteStep(ctx.db, { workspaceId: ctx.workspaceId, caseId: row.caseId, quoteId: q.id, number: q.number, title: q.title, action: "record_decision",
     actorUserId: NIL, revision: data.revision, note, decision });
@@ -198,11 +203,13 @@ export async function decideDesign(ctx: DecisionContext, body: Record<string, un
   const versionId = uuid(body.versionId, "Design");
   const decision = typeof body.decision === "string" ? body.decision : "";
   const note = words(body.note, 5000, "Add a note.");
+  const files = decision === "accept" ? [] : await ownUploads(ctx.db, ctx.workspaceId, ctx.contact, row.caseId, body.uploadIds);
   const challengeId = typeof body.challengeId === "string" ? body.challengeId : "";
   const result = await decidePortalDesign(ctx.db, ctx.workspaceId, row.caseId, grant, { versionId, decision, note, challengeId },
     async () => ((await ctx.verify(`design:${row.caseId}:${versionId}:${decision}`, challengeId, typeof body.code === "string" ? body.code : "")) ? ctx.contact.phone : null));
   if ("invalidCode" in result) throw new UnauthorizedException("That code isn't right or has expired. Ask for a new one.");
-  return { ok: true, entity: { type: "pre_project_case", id: row.caseId }, audit: { versionId, decision } };
+  await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: "decision", targetId: `design:${versionId}`, files });
+  return { ok: true, entity: { type: "pre_project_case", id: row.caseId }, audit: { versionId, decision, files: files.length } };
 }
 
 export async function decideDefinition(ctx: DecisionContext, body: Record<string, unknown>) {
@@ -212,11 +219,13 @@ export async function decideDefinition(ctx: DecisionContext, body: Record<string
   const decision = body.decision === "accept" ? "accept" as const : body.decision === "changes" ? "changes" as const : null;
   if (!decision) throw new BadRequestException("Confirm it, or ask for changes.");
   const note = words(body.note, 5000, "Say what should change.", decision === "changes");
+  const files = decision === "changes" ? await ownUploads(ctx.db, ctx.workspaceId, ctx.contact, row.caseId, body.uploadIds) : [];
   const challengeId = typeof body.challengeId === "string" ? body.challengeId : "";
   const result = await ctx.definitions.decidePortal(ctx.db, ctx.workspaceId, row.caseId, grant, { baselineId, decision, note, challengeId },
     async () => ((await ctx.verify(`definition:${row.caseId}:${baselineId}:${decision}`, challengeId, typeof body.code === "string" ? body.code : "")) ? ctx.contact.phone : null));
   if (result && typeof result === "object" && "invalidCode" in result) throw new UnauthorizedException("That code isn't right or has expired. Ask for a new one.");
-  return { ok: true, entity: { type: "pre_project_case", id: row.caseId }, audit: { baselineId, decision } };
+  await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: "decision", targetId: `definition:${baselineId}`, files });
+  return { ok: true, entity: { type: "pre_project_case", id: row.caseId }, audit: { baselineId, decision, files: files.length } };
 }
 
 /** A decision the team asked for (one of the choices they offered), answered once. */
@@ -267,6 +276,7 @@ export async function decideMaterials(ctx: DecisionContext, body: Record<string,
   if (!current) throw new NotFoundException("This material list isn't there any more.");
   // Two decision-makers: the first decision stands and the other sees it.
   if (current.status !== "sent") throw new ConflictException(current.decidedByGrant === grant.id ? "You already decided this list." : "Someone on your side already decided this list. Reload to see it.");
+  const files = await ownUploads(ctx.db, ctx.workspaceId, ctx.contact, row.caseId, body.uploadIds);
   await code(ctx, `materials:${row.caseId}:${revisionId}:submit`, body);
   const decisions = (Array.isArray(body.decisions) ? body.decisions : []).map((raw) => {
     const item = (raw ?? {}) as Record<string, unknown>;
@@ -274,6 +284,7 @@ export async function decideMaterials(ctx: DecisionContext, body: Record<string,
   });
   const result = await recordMaterialDecision(ctx.db, ctx.workspaceId, row.projectId, { decisions, note: words(body.note, 2000, "") }, null,
     { grantId: grant.id, name: grant.name, revisionId });
+  await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: "decision", targetId: `materials:${revisionId}`, files });
   const team = (await ctx.db.query<{ id: string }>(`SELECT membership_id AS id FROM project_assignments WHERE workspace_id = $1 AND project_id = $2 AND active`,
     [ctx.workspaceId, row.projectId])).rows.map((member) => member.id);
   await noticeProject(ctx.db, { workspaceId: ctx.workspaceId, projectId: row.projectId, key: `materials:${result.number}`, actorUserId: NIL, notice: result.signedOff
@@ -301,6 +312,7 @@ export async function decideHandover(ctx: DecisionContext, body: Record<string, 
   const reason = words(body.reason, 1000, "Say why you're not accepting it yet.", decision === "refuse");
   const outstanding = decision === "accept" && Array.isArray(body.outstanding)
     ? body.outstanding.map((item) => (typeof item === "string" ? item.trim().slice(0, 300) : "")).filter(Boolean).slice(0, 30) : [];
+  const files = await ownUploads(ctx.db, ctx.workspaceId, ctx.contact, row.caseId, body.uploadIds);
   await code(ctx, `handover:${row.caseId}:${packId}:${decision}`, body);
   // Snags from the portal are recorded under the project manager, or whoever issued the pack.
   const staffId = (await ctx.db.query<{ userId: string }>(
@@ -309,6 +321,7 @@ export async function decideHandover(ctx: DecisionContext, body: Record<string, 
       WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND assignment.is_manager LIMIT 1`, [ctx.workspaceId, row.projectId])).rows[0]?.userId ?? pack.issuedBy;
   const decided = await decideHandoverPack(ctx.db, ctx.workspaceId, row.projectId, pack, { decision, decidedOn: ctx.today, decidedByName: grant.name, method: "portal",
     outstanding, reason, recordedBy: null, grantId: grant.id, staffId });
+  await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: "decision", targetId: `handover:${packId}`, files });
   await tellTeam(ctx.db, ctx.workspaceId, row.projectId, decision === "accept" ? "handover.accepted" : "handover.refused", grant.name,
     decision === "accept" ? `${grant.name} accepted R${pack.revision} in the portal${outstanding.length ? ` with ${outstanding.length} item${outstanding.length === 1 ? "" : "s"} outstanding` : ""}.` : reason,
     `${decision}:${pack.id}`, "/handover", false);
@@ -332,6 +345,7 @@ export async function claimWarranty(ctx: DecisionContext, body: Record<string, u
   if (!covered.length) throw new ConflictException("Nothing on this project is under warranty today. Call your project team for help.");
   if (lineId && !covered.some((item) => item.lineId === lineId)) throw new BadRequestException("Choose an item that's under warranty.");
   if (areaId && !covered.some((item) => item.areaId === areaId)) throw new BadRequestException("Choose an area that's under warranty.");
+  const files = await ownUploads(ctx.db, ctx.workspaceId, ctx.contact, row.caseId, body.uploadIds, 6);
   await ctx.db.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [ctx.workspaceId, row.projectId]);
   const id = randomUUID();
   const number = (await ctx.db.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM warranty_claims WHERE workspace_id = $1 AND project_id = $2`,
@@ -340,43 +354,21 @@ export async function claimWarranty(ctx: DecisionContext, body: Record<string, u
     `INSERT INTO warranty_claims (id, workspace_id, project_id, number, raised_on, raised_by_name, channel, description, area_id, boq_line_id, created_by, client_grant_id)
      VALUES ($1, $2, $3, $4, $5, $6, 'portal', $7, $8, $9, NULL, $10)`,
     [id, ctx.workspaceId, row.projectId, number, ctx.today, grant.name.slice(0, 200), description, areaId, lineId, grant.id]);
-  await tellTeam(ctx.db, ctx.workspaceId, row.projectId, "warranty.claim", grant.name, `${grant.name}: ${description}`, `claim:${id}`, "/warranty", true);
-  return { ok: true, claimId: id, number, entity: { type: "project", id: row.projectId }, audit: { claimId: id, number } };
+  await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: "warranty_claim", targetId: id, files });
+  await tellTeam(ctx.db, ctx.workspaceId, row.projectId, "warranty.claim", grant.name, `${grant.name}: ${description}${files.length ? ` (${files.length} photo${files.length === 1 ? "" : "s"})` : ""}`,
+    `claim:${id}`, "/handover?view=warranty", true);
+  return { ok: true, claimId: id, number, entity: { type: "project", id: row.projectId }, audit: { claimId: id, number, files: files.length } };
 }
 
-// ---------- messages ----------
-
-export async function raiseRequest(ctx: DecisionContext, body: Record<string, unknown>) {
-  const { grant, row } = await grantFor(ctx, body.caseId, "messages");
-  const title = words(body.title, 240, "Give it a short title.", true);
-  const detail = words(body.detail, 6000, "Say what you need.", true);
-  const data = await ctx.commercial.load(ctx.db, ctx.workspaceId, row.caseId);
-  const request = newRequest(data, title, detail);
-  await ctx.commercial.persist(ctx.db, ctx.workspaceId, row.caseId, data, grant.name, "Client request (portal)");
-  await noticeClientMessage(ctx.db, ctx.workspaceId, row, { code: "request.client_raised", actor: grant.name, request, note: detail, key: request.id });
-  return { ok: true, requestId: request.id, entity: { type: "pre_project_case", id: row.caseId }, audit: { requestId: request.id } };
-}
-
-export async function comment(ctx: DecisionContext, body: Record<string, unknown>) {
-  const { grant, row } = await grantFor(ctx, body.caseId, "messages");
-  const text = words(body.text, 6000, "Write your message.", true);
-  const data = await ctx.commercial.load(ctx.db, ctx.workspaceId, row.caseId);
-  const request = data.requests.find((item) => item.id === body.requestId && !item.decisionRequest);
-  if (!request) throw new NotFoundException("This conversation isn't there any more.");
-  const commentId = randomUUID();
-  request.comments.push({ id: commentId, author: grant.name, at: new Date().toISOString(), text, visibility: "client", fromClient: true } as (typeof request.comments)[number]);
-  await ctx.commercial.persist(ctx.db, ctx.workspaceId, row.caseId, data, grant.name, "Client message (portal)");
-  await noticeClientMessage(ctx.db, ctx.workspaceId, row, { code: "request.client_replied", actor: grant.name, request, note: text, key: commentId });
-  return { ok: true, entity: { type: "pre_project_case", id: row.caseId }, audit: { requestId: request.id } };
-}
+// ---------- messages (portal-messages.ts) ----------
 
 /**
  * The case owner, the engagement owner and, once the project has started, its managers hear a client's
- * request or reply in-app, once per message (the key is the request or comment id). The link opens that
- * request thread on the planning case, where the team reads and replies.
+ * request or reply in-app (and by email from the portal), once per message (the key is the request or comment
+ * id). The link opens that request thread on the planning case, where the team reads and replies.
  */
 export async function noticeClientMessage(db: Db, workspaceId: string, row: { caseId: string; projectId: string | null; title: string; reference: string | null; projectName: string | null },
-  input: { code: "request.client_raised" | "request.client_replied"; actor: string; request: Pick<ChangeRequest, "id" | "number" | "title">; note: string; key: string }) {
+  input: { code: "request.client_raised" | "request.client_replied"; actor: string; request: Pick<ChangeRequest, "id" | "number" | "title">; note: string; key: string; email?: boolean }) {
   const facts = (await db.query<{ clientName: string; ownerUserId: string | null; engagementOwnerUserId: string | null }>(
     `SELECT coalesce(party.display_name, opportunity.title) AS "clientName", owner.user_id AS "ownerUserId", engagement_owner.user_id AS "engagementOwnerUserId"
        FROM pre_project_cases pre_case
@@ -395,8 +387,11 @@ export async function noticeClientMessage(db: Db, workspaceId: string, row: { ca
   const title = row.projectId ? `${row.reference} · ${row.projectName}` : row.title;
   const variables = { title, clientName: facts.clientName, actor: input.actor, request: `CR-${String(input.request.number).padStart(3, "0")} · ${input.request.title}`, note: input.note.slice(0, 480) };
   const deepLink = `/workspace/pre-projects/cases/${row.caseId}/variations?request=${encodeURIComponent(input.request.id)}`;
-  for (const userId of people)
+  for (const userId of people) {
     await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: input.code, eventType: input.code, variables, deepLink, idempotencyKey: `${input.code}:${input.key}:${userId}` });
+    if (input.email)
+      await queueUserEmail(db, { workspaceId, recipientUserId: userId, code: input.code, eventType: input.code, variables, deepLink, idempotencyKey: `${input.code}:${input.key}:${userId}:email` });
+  }
 }
 
 /** The project manager (and the account manager for claims) hear what the client did, in-app and, for claims, by email. */

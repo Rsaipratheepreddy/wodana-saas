@@ -7,6 +7,7 @@ import type { OperatorPermission } from "@/lib/internal/auth";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { consoleApi, type AccountSummary, type LifecycleOverview } from "@/lib/internal/console";
 import { ActivityTab } from "./activity-tab";
+import { AiCreditsTab } from "./ai-credits-tab";
 import { BillingTab } from "./billing-tab";
 import { DomainsTab } from "./domains-tab";
 import { useConsoleFormat, useConsoleLabels } from "./labels";
@@ -17,7 +18,7 @@ import { SeatsTab } from "./seats-tab";
 import { SupportTab } from "./support-tab";
 import styles from "./control-plane.module.css";
 
-const TABS = ["overview", "organizations", "plan", "seats", "domains", "billing", "support", "activity"] as const;
+const TABS = ["overview", "organizations", "plan", "seats", "ai-credits", "domains", "billing", "support", "activity"] as const;
 export type AccountTab = typeof TABS[number];
 
 /** Account inspector (§6.1): one account, its organizations, and each organization's control records. */
@@ -60,7 +61,7 @@ export function AccountPage({ accountId, permissions, operatorUserId }: { accoun
   };
 
   if (error && !account) return <div className={styles.page}><ErrorState description={error} onRetry={() => void load()} /></div>;
-  if (!account || !organization) return <div className={styles.page}><PageSkeleton variant="detail" tabs={8} /></div>;
+  if (!account || !organization) return <div className={styles.page}><PageSkeleton variant="detail" tabs={9} /></div>;
   const current = lifecycle?.workspaceId === organization.workspaceId ? lifecycle : null;
   const state = labels.state[current?.state ?? organization.state];
   const owner = labels.invitation(organization.owner.invitationStatus, organization.owner.deliveryStatus);
@@ -74,6 +75,7 @@ export function AccountPage({ accountId, permissions, operatorUserId }: { accoun
       onSelect={(key) => go({ org: key, tab: "overview" })} /> },
     { id: "plan", label: t("Plan"), panel: <PlanTab orgKey={orgKey} organization={organization} canManage={can("entitlements.manage")} /> },
     { id: "seats", label: t("Seats"), panel: <SeatsTab orgKey={orgKey} canManage={can("billing.manage")} onChanged={refresh} /> },
+    { id: "ai-credits", label: t("AI credits"), panel: <AiCreditsTab orgKey={orgKey} canManage={can("billing.manage")} /> },
     { id: "domains", label: t("Domains"), panel: <DomainsTab orgKey={orgKey} canManage={can("domains.manage")} /> },
     { id: "billing", label: t("Billing"), panel: <BillingTab orgKey={orgKey} /> },
     { id: "support", label: t("Support"), panel: <SupportTab orgKey={orgKey} permissions={permissions} operatorUserId={operatorUserId} /> },

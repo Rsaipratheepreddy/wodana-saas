@@ -22,8 +22,15 @@ function blendHex(foreground, background, percent) {
 function resolve(name, values, seen = new Set()) {
   if (seen.has(name) || !values[name]) throw new Error(`Unresolved design token: ${name}`);
   seen.add(name);
-  return values[name].replace(/var\((--wd-[\w-]+)(?:,\s*([^()]+))?\)/g,
-    (_, reference, fallback) => values[reference] ? resolve(reference, values, new Set(seen)) : fallback?.trim() ?? (() => { throw new Error(`Unresolved design token: ${reference}`); })())
+  // Inner references first, repeated until none is left, so a fallback that is itself a
+  // var() (var(--tenant, var(--wd-neutral-100))) resolves too.
+  let value = values[name];
+  for (let previous = ''; previous !== value;) {
+    previous = value;
+    value = value.replace(/var\((--wd-[\w-]+)(?:,\s*([^()]+))?\)/g,
+      (_, reference, fallback) => values[reference] ? resolve(reference, values, new Set(seen)) : fallback?.trim() ?? (() => { throw new Error(`Unresolved design token: ${reference}`); })());
+  }
+  return value
     .replace(/rgb\((\d+) (\d+) (\d+) \/ (\d+)%\)/g,
       (_, r, g, b, a) => `rgba(${r}, ${g}, ${b}, ${Number(a) / 100})`)
     // Native colors cannot evaluate CSS color-mix. Use the static brand fallback;
