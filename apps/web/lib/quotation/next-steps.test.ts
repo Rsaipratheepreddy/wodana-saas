@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommercialState } from "@/lib/commercial/types";
-import { nextSteps } from "./next-steps";
+import { declinedSteps, nextSteps } from "./next-steps";
 
 const quote = { id: "q1", round: "main" };
 const state = (data: Partial<CommercialState["data"]>, can: Partial<CommercialState> = {}): CommercialState => ({
@@ -45,5 +45,11 @@ describe("what happens after the client accepts", () => {
   it("asks for a payment plan when none is due before the start", () => {
     const steps = nextSteps(state({ agreement: { quoteId: "q1", status: "executed" } as never }, { canEdit: true }), quote, "c", false);
     expect(steps[1]).toMatchObject({ label: "Set the payment plan", state: "current", action: { label: "Open payments" } });
+  });
+
+  it("after a decline, offers closing the open opportunity as Lost, and nothing once it's closed", () => {
+    expect(declinedSteps(state({}, { opportunityId: "o1", opportunityStatus: "open" }))).toEqual([expect.objectContaining({
+      key: "lost", action: { label: "Open opportunity", href: "/workspace/crm/opportunities?record=o1" } })]);
+    expect(declinedSteps(state({}, { opportunityId: "o1", opportunityStatus: "lost" }))).toEqual([]);
   });
 });

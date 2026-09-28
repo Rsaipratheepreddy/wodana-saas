@@ -521,7 +521,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           how: state.quote.clientDecision.recordedBy ? t(" · recorded by {name}", { name: state.quote.clientDecision.recordedBy }) : "",
         }) + (state.quote.clientDecision.note ? ` — ${state.quote.clientDecision.note}` : "")} /> : null}
         <RevisionChanges key={state.quote.id} state={state} api={api} />
-        {state.quote.status === "accepted" && state.quote.kind === "quotation" ? <QuoteNextSteps key={`next:${state.quote.id}:${state.quote.revision}`} workspaceId={workspaceId} caseId={caseId} quote={{ id: state.quote.id, round: state.quote.round }} projectStarted={Boolean(state.project)} /> : null}
+        {["accepted", "declined"].includes(state.quote.status) && state.quote.kind === "quotation" ? <QuoteNextSteps key={`next:${state.quote.id}:${state.quote.revision}`} workspaceId={workspaceId} caseId={caseId} quote={{ id: state.quote.id, round: state.quote.round, status: state.quote.status }} projectStarted={Boolean(state.project)} /> : null}
         {error ? <InlineNotice tone="error" message={error} /> : null}
         {flowNotice ? <InlineNotice tone={flowNotice.tone} message={flowNotice.message} /> : null}
         {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={["internal_review", "internal_approved"].includes(state.quote.status)

@@ -1,7 +1,17 @@
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { CommercialState } from "@/lib/commercial/types";
 
-export type NextStepKey = "agreement" | "payment" | "deal" | "project";
+export type NextStepKey = "agreement" | "payment" | "deal" | "project" | "lost";
+
+/**
+ * After the client declines: a new revision is in the header; if nothing more is coming, the opportunity is
+ * closed as Lost with the reason (on the opportunity, where Won and Lost are recorded).
+ */
+export function declinedSteps(commercial: CommercialState): NextStep[] {
+  if (commercial.opportunityStatus !== "open" || !commercial.opportunityId) return [];
+  return [{ key: "lost", label: tKey("Close the opportunity as Lost, with the reason, if nothing more is coming"), state: "current",
+    action: { label: tKey("Open opportunity"), href: `/workspace/crm/opportunities?record=${commercial.opportunityId}` }, holders: [] }];
+}
 export type NextStep = {
   key: NextStepKey;
   label: MessageKey;

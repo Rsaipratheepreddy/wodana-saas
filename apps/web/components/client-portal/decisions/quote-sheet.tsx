@@ -13,6 +13,7 @@ import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
 import { AttachFiles } from "../forms/attach-files";
 import { ConfirmCode } from "./confirm-code";
+import { sumExact } from "@/lib/money-exact";
 
 type Decision = "accept" | "changes" | "decline";
 
@@ -33,8 +34,8 @@ export function QuoteSheet({ quote, caseId, slug, brand, customer, api, format, 
   const [id] = useState(commandId);
   const optional = quote.lines.filter((line) => line.optional);
   // What the chosen options add, priced by the quotation's own engine.
-  const cents = (value: number) => Math.round(value * 100);
-  const withOptions = (cents(quote.total) + optional.filter((line) => options.includes(line.id)).reduce((sum, line) => sum + cents(line.optionPrice ?? 0), 0)) / 100;
+  // Exact in the currency's minor units (0, 2 or 3 places), never float cents.
+  const withOptions = sumExact([quote.total, ...optional.filter((line) => options.includes(line.id)).map((line) => line.optionPrice ?? 0)], quote.currency);
   const print = `/portal/${encodeURIComponent(slug)}/print?${new URLSearchParams({ case: caseId, quote: quote.id, ...(quote.hash ? { snapshot: quote.hash } : {}) })}`;
   const labels: Record<Decision, string> = { accept: t("Accept"), changes: t("Ask for changes"), decline: t("Decline") };
 

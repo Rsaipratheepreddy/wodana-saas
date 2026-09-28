@@ -327,7 +327,7 @@ export function QuotationDocumentPage({
                       <td>{term.percent}%</td>
                       <td>
                         {money(
-                          paymentMilestoneAmounts(totals.total, quote.paymentTerms)[i],
+                          paymentMilestoneAmounts(totals.total, quote.paymentTerms, quote.currency)[i],
                           quote.currency,
                           locale,
                         )}
