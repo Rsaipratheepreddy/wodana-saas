@@ -64,9 +64,6 @@
 .empty { display: grid; justify-items: center; gap: var(--wd-space-3); padding-block: var(--wd-space-8); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .empty p { margin: 0; }
 
-/* Unsaved changes stay in reach while the list scrolls. */
-.saveBar { position: sticky; inset-block-end: 0; z-index: var(--wd-z-sticky); display: flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); padding-block: var(--wd-space-3); background: var(--wd-color-floating-surface); backdrop-filter: blur(var(--wd-glass-blur)); }
-.saveBar > span { margin-inline-end: auto; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; }
 
 .form { display: grid; }
 .formColumns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--wd-space-5) var(--wd-space-4); }
