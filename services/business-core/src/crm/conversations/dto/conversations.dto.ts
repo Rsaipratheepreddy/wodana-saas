@@ -1,8 +1,14 @@
 import { Type } from "class-transformer";
-import { IsArray, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsISO8601, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
 
 export class ListConversationsQueryDto {
-  @IsOptional() @IsIn(["open", "closed"]) status?: string;
+  /** Open, Snoozed or Resolved ('closed'). */
+  @IsOptional() @IsIn(["open", "snoozed", "closed"]) status?: string;
+  /** Mine, Unassigned, Team (people who share a queue with me) or All. */
+  @IsOptional() @IsIn(["mine", "unassigned", "team", "all"]) view?: string;
+  @IsOptional() @IsUUID() labelId?: string;
+  /** Longest-waiting first (the default for Open) or most recent first. */
+  @IsOptional() @IsIn(["waiting", "recent"]) sort?: string;
   @IsOptional() @IsString() @MaxLength(200) search?: string;
   @IsOptional() @IsIn(["true", "false"]) unread?: string;
   @IsOptional() @IsUUID() partyId?: string;
@@ -15,7 +21,11 @@ export class ListConversationsQueryDto {
 
 export class UpdateConversationDto {
   @IsInt() @Min(1) version!: number;
-  @IsOptional() @IsIn(["open", "closed"]) status?: string;
+  @IsOptional() @IsIn(["open", "snoozed", "closed"]) status?: string;
+  /** Required with status snoozed: when the chat comes back. */
+  @IsOptional() @IsISO8601({ strict: true }) snoozedUntil?: string;
+  /** Link the chat to the client's enquiry (null unlinks). */
+  @IsOptional() @IsUUID() leadId?: string | null;
   @IsOptional() @IsString() @IsNotEmpty() @MaxLength(500) subject?: string;
   @IsOptional() @IsUUID() ownerMembershipId?: string | null;
 }
@@ -41,6 +51,8 @@ export class CreateMessageDto {
   @IsOptional() @IsString() @MaxLength(100_000) bodyText?: string;
   @IsOptional() @IsString() @MaxLength(200_000) bodyHtml?: string;
   @IsOptional() @IsUUID() templateId?: string;
+  /** Values for the template's {{1}}…{{n}}; when omitted they are filled from the chat's records. */
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(1024, { each: true }) templateParameters?: string[];
   @IsOptional() @IsString() @MaxLength(80) purpose?: string;
   @IsOptional() @IsString() @MaxLength(500) providerMessageId?: string;
   @IsOptional() @IsObject() metadata?: Record<string, unknown>;

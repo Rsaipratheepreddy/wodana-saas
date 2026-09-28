@@ -227,6 +227,13 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.off_track", channel: "in_app", subject: "{{title}} is off track", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.signed_off", channel: "in_app", subject: "Design signed off · {{clientName}}", body: "The design is approved. It's ready to quote.", variables: ["clientName"] },
   { code: "design.signed_off", channel: "email", subject: "Design signed off: {{clientName}}", body: "The design for {{clientName}} is signed off and ready to quote.\n\nOpen the case to start the quotation.", variables: ["clientName"] },
+  // Team inbox (crm/conversations/inbox/inbox-notices.ts): one notice per chat until it is read.
+  { code: "crm.inbox_message", channel: "in_app", subject: "{{clientName}} wrote", body: "{{summary}}", variables: ["clientName", "summary"] },
+  { code: "crm.inbox_message", channel: "push", subject: "{{clientName}} wrote", body: "{{summary}}", variables: ["clientName", "summary"] },
+  { code: "crm.inbox_assigned", channel: "in_app", subject: "Chat with {{clientName}} is yours", body: "{{reason}}", variables: ["clientName", "reason"] },
+  { code: "crm.inbox_assigned", channel: "push", subject: "Chat with {{clientName}} is yours", body: "{{reason}}", variables: ["clientName", "reason"] },
+  { code: "crm.inbox_woke", channel: "in_app", subject: "Chat with {{clientName}} is back", body: "You snoozed it until now.", variables: ["clientName"] },
+  { code: "crm.inbox_unassigned", channel: "in_app", subject: "{{clientName}} is waiting", body: "Nobody could take this new chat. Assign it.", variables: ["clientName"] },
   // Client portal notices (client-portal/portal-notices.ts): to client contacts, by email.
   { code: "portal.quote_issued", channel: "email", subject: "{{title}} is ready for you", body: "{{company}} sent you {{title}} for {{project}}.\n\nOpen your project page to read it and give your decision.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.invoice_issued", channel: "email", subject: "Invoice {{title}} from {{company}}", body: "{{company}} issued invoice {{title}} for {{project}}. {{due}}\n\nOpen your project page to see it and what's left to pay.", variables: ["company", "project", "title", "due", "note"] },
@@ -268,7 +275,7 @@ export async function seedDefaultNotificationTemplates(db: Db, workspaceId: stri
   }
 }
 
-const render = (template: string, variables: Record<string, string>) =>
+export const renderNoticeText = (template: string, variables: Record<string, string>) =>
   template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
 
 /**
@@ -307,10 +314,56 @@ export async function notifyUserInApp(db: Db, input: {
      VALUES ($1, $2, 'user', $3, 'in_app', $4, 'delivered', $5, $6, $7, $8, gen_random_uuid(), now())
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING`,
     [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
+      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
       input.deepLink ?? null, input.idempotencyKey],
   );
   // A key already used means this notice was already sent: nothing new is queued.
+  return inserted.rowCount ? { queued: true as const } : { queued: false as const, reason: "already_sent" };
+}
+
+/**
+ * Queues a push for one user from the workspace's approved push template, only when the person has a
+ * registered device and has not switched push off (the in-app notice is always the record). Idempotent per key.
+ */
+export async function queueUserPush(db: Db, input: {
+  workspaceId: string;
+  recipientUserId: string;
+  code: string;
+  eventType: string;
+  variables: Record<string, string>;
+  deepLink?: string;
+  idempotencyKey: string;
+}) {
+  const device = await db.query(
+    `SELECT 1 FROM device_endpoints WHERE workspace_id=$1 AND user_id=$2 AND status='active' LIMIT 1`,
+    [input.workspaceId, input.recipientUserId],
+  );
+  if (!device.rowCount) return { queued: false as const, reason: "no_device" };
+  const preference = await db.query<{ enabled: boolean }>(
+    `SELECT enabled FROM notification_preferences
+     WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='push'
+       AND event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*', '*')
+     ORDER BY CASE WHEN event_type::text=$3::text THEN 0 WHEN event_type::text='*' THEN 2 ELSE 1 END LIMIT 1`,
+    [input.workspaceId, input.recipientUserId, input.eventType],
+  );
+  if (preference.rows[0]?.enabled !== true) return { queued: false as const, reason: "recipient_preference" };
+  const template = await db.query<{ id: string; subject: string | null; body: string }>(
+    `SELECT id, subject_template AS subject, body_template AS body FROM notification_templates
+     WHERE workspace_id=$1 AND code=$2 AND channel='push' AND status='approved' AND locale='en'
+     ORDER BY version_number DESC LIMIT 1`,
+    [input.workspaceId, input.code],
+  );
+  if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
+  const row = template.rows[0];
+  const inserted = await db.query(
+    `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
+       scheduled_for, subject, body, deep_link, idempotency_key, correlation_id)
+     VALUES ($1, $2, 'user', $3, 'push', $4, 'pending', now(), $5, $6, $7, $8, gen_random_uuid())
+     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING`,
+    [input.workspaceId, row.id, input.recipientUserId, input.eventType,
+      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
+      input.deepLink ?? null, input.idempotencyKey],
+  );
   return inserted.rowCount ? { queued: true as const } : { queued: false as const, reason: "already_sent" };
 }
 
@@ -351,7 +404,7 @@ export async function queueUserEmail(db: Db, input: {
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
      RETURNING id, correlation_id AS "correlationId"`,
     [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
+      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
       input.deepLink ?? null, input.idempotencyKey],
   );
   const notification = inserted.rows[0];
