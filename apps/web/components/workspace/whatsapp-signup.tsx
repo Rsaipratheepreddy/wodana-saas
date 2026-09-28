@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Button, Callout, ControlledModalDialog, TextInput } from "@/design-system";
+import { Button, Callout, Checkbox, ControlledModalDialog, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 
 type MetaSdk = {
@@ -29,6 +29,7 @@ function Signup({ setup, workspaceId, onClose }: { setup: WhatsAppSetup; workspa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pin, setPin] = useState("");
+  const [existingApp, setExistingApp] = useState(false);
   const [finished, setFinished] = useState(false);
   const pinRef = useRef("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,11 +94,16 @@ function Signup({ setup, workspaceId, onClose }: { setup: WhatsAppSetup; workspa
       if (!response.authResponse?.code) { if (timer.current) clearTimeout(timer.current); setError(t("Meta authorization was cancelled. You can try again.")); setBusy(false); return; }
       details.current.code = response.authResponse.code;
       window.dispatchEvent(new Event("wodana-meta-code"));
-    }, { config_id: setup.configId, response_type: "code", override_default_response_type: true, extras: { setup: {}, sessionInfoVersion: "3" } });
+    }, { config_id: setup.configId, response_type: "code", override_default_response_type: true,
+      // Coexistence keeps the WhatsApp Business app working on the same number; Meta runs its own onboarding for it.
+      extras: { setup: {}, sessionInfoVersion: "3", ...(existingApp ? { featureType: "whatsapp_business_app_onboarding" } : {}) } });
   }} variant="primary">{busy ? t("Completing connection…") : t("Continue with Meta")}</Button>}>
     {error ? <Callout title={t("Connection needs attention")} tone="danger">{error}</Callout> : null}
     <p>{t("Each organization uses its own number. Choose an account you administer. An existing WhatsApp Business app number must complete Meta’s coexistence setup.")}</p>
-    <TextInput label={t("Registration PIN (only for a new Cloud API sender)")} inputType="password" value={pin} onChange={setPin} isDisabled={busy} />
-    <p>{t("For a new sender, enter a six-digit two-step verification PIN and retain it securely. Continuing authorizes registration if Meta reports that this sender is not connected. Wodana does not save the PIN.")}</p>
+    <Checkbox isSelected={existingApp} isDisabled={busy} onChange={setExistingApp}>{t("I already use the WhatsApp Business app on this number")}</Checkbox>
+    {existingApp ? null : <>
+      <TextInput label={t("Registration PIN (only for a new Cloud API sender)")} inputType="password" value={pin} onChange={setPin} isDisabled={busy} />
+      <p>{t("For a new sender, enter a six-digit two-step verification PIN and retain it securely. Continuing authorizes registration if Meta reports that this sender is not connected. Wodana does not save the PIN.")}</p>
+    </>}
   </ControlledModalDialog>;
 }

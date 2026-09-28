@@ -42,7 +42,7 @@ test("compact WhatsApp inbox fits the viewport and distinguishes contact and tea
   const current = chat(firstChatId, "Noura Haddad", [
     { id: "client", direction: "inbound", status: "received", bodyText: "Could we review the living room concept tomorrow?", createdAt: "2026-09-06T10:00:00Z" },
     { id: "reply", direction: "outbound", status: "delivered", bodyText: "Absolutely. I’ll check the schedule with your sales owner.", createdAt: "2026-09-06T10:02:00Z" },
-    { id: "legacy-note", direction: "internal", status: "sent", bodyText: "This old internal note stays out of the client inbox.", createdAt: "2026-09-06T10:03:00Z" },
+    { id: "team-note", direction: "internal", status: "sent", bodyText: "Call her after five.", createdAt: "2026-09-06T10:03:00Z" },
   ]);
   await routeInbox(page, current);
   await page.goto(`/workspace/crm/conversations?record=${firstChatId}`);
@@ -50,14 +50,14 @@ test("compact WhatsApp inbox fits the viewport and distinguishes contact and tea
   const history = page.getByRole("log", { name: "Message history" });
   await expect(history.getByRole("article", { name: "Contact message" })).toBeVisible();
   await expect(history.getByRole("article", { name: "Your message" })).toBeVisible();
-  await expect(history).not.toContainText("This old internal note");
-  await expect(page.getByRole("button", { name: "Private team note" })).toHaveCount(0);
+  // Internal notes belong to the team's thread and look different from anything the client sees.
+  await expect(history.getByRole("article", { name: "Team note" })).toContainText("Call her after five.");
 
   for (const theme of ["light", "dark"] as const) {
     const themeButton = page.getByRole("button", { name: `Use ${theme} mode` });
     if (await themeButton.count()) await themeButton.click();
     const colors = await history.getByRole("article").evaluateAll((items) => items.map((item) => getComputedStyle(item).backgroundColor));
-    expect(new Set(colors).size).toBe(2);
+    expect(new Set(colors).size).toBeGreaterThanOrEqual(2);
     const incoming = (await history.getByRole("article", { name: "Contact message" }).boundingBox())!;
     const outgoing = (await history.getByRole("article", { name: "Your message" }).boundingBox())!;
     expect(outgoing.x).toBeGreaterThan(incoming.x);

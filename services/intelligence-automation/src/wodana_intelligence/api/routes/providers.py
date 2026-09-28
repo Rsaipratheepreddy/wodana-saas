@@ -262,6 +262,52 @@ async def webhook(provider: Provider, request: Request, service: Service) -> dic
             ):
                 continue
             if provider == "whatsapp":
+                # Meta's template review results arrive per account, not per phone number.
+                template_updates = [
+                    change.get("value", {})
+                    for change in entry.get("changes", [])
+                    if change.get("field") == "message_template_status_update"
+                    and isinstance(change.get("value"), dict)
+                ]
+                if template_updates:
+                    await service.core.whatsapp_templates_synced(
+                        workspace,
+                        [
+                            {
+                                "id": str(update.get("message_template_id", "")),
+                                "name": str(update.get("message_template_name", "")),
+                                "language": str(update.get("message_template_language", "")),
+                                "status": str(update.get("event", "PENDING")),
+                                "reason": (
+                                    str(update.get("reason"))[:500]
+                                    if update.get("reason") not in (None, "", "NONE")
+                                    else None
+                                ),
+                            }
+                            for update in template_updates
+                        ],
+                        False,
+                    )
+                # The number's standing (quality, messaging limit) changes are per account too.
+                quality_updates = [
+                    change.get("value", {})
+                    for change in entry.get("changes", [])
+                    if change.get("field") == "phone_number_quality_update"
+                    and isinstance(change.get("value"), dict)
+                ]
+                for update in quality_updates:
+                    event_name = str(update.get("event", "")).upper()
+                    await service.core.whatsapp_templates_synced(
+                        workspace,
+                        [],
+                        False,
+                        {
+                            "quality": "RED" if event_name == "FLAGGED" else "GREEN" if event_name == "UNFLAGGED" else None,
+                            "limit": update.get("current_limit"),
+                            "status": None,
+                            "event": event_name or None,
+                        },
+                    )
                 changes = [
                     change
                     for change in entry.get("changes", [])
@@ -303,6 +349,28 @@ async def webhook(provider: Provider, request: Request, service: Service) -> dic
                                     "connectionId": connection,
                                     "messageType": kind,
                                     **_whatsapp_media_metadata(message, kind),
+                                },
+                            }
+                        )
+                    # Coexistence: what the owner sent from the WhatsApp Business app shows in the thread.
+                    for echo in value.get("message_echoes", []):
+                        if not isinstance(echo, dict) or not echo.get("id") or not echo.get("to"):
+                            continue
+                        kind = str(echo.get("type", "text"))
+                        await service.core.ingest_provider_echo(
+                            {
+                                "workspaceId": workspace,
+                                "channel": "whatsapp",
+                                "providerThreadId": str(echo["to"]),
+                                "providerMessageId": str(echo["id"]),
+                                "contact": f"+{str(echo['to']).lstrip('+')}",
+                                "bodyText": _whatsapp_body(echo, kind),
+                                "metadata": {
+                                    "provider": "whatsapp",
+                                    "connectionId": connection,
+                                    "messageType": kind,
+                                    "sentFromPhone": True,
+                                    **_whatsapp_media_metadata(echo, kind),
                                 },
                             }
                         )

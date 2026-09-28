@@ -1,0 +1,30 @@
+/* Shared pieces of the team inbox: label chips, the wait chip and the settings page. */
+.label { display: inline-flex; align-items: center; gap: var(--wd-space-1); max-inline-size: 12rem; min-block-size: 1.25rem; padding-inline: var(--wd-space-1-5); border-radius: var(--wd-radius-2xs); font-size: var(--wd-text-2xs); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.label::before { content: ""; flex-shrink: 0; inline-size: 6px; block-size: 6px; border-radius: 50%; background: currentColor; }
+.label[data-color="viz-1"] { background: var(--wd-color-viz-1-soft); color: var(--wd-color-viz-1); }
+.label[data-color="viz-2"] { background: var(--wd-color-viz-2-soft); color: var(--wd-color-viz-2); }
+.label[data-color="viz-3"] { background: var(--wd-color-viz-3-soft); color: var(--wd-color-viz-3); }
+.label[data-color="viz-4"] { background: var(--wd-color-viz-4-soft); color: var(--wd-color-viz-4); }
+.label[data-color="viz-5"] { background: var(--wd-color-viz-5-soft); color: var(--wd-color-viz-5); }
+.label[data-color="viz-6"] { background: var(--wd-color-viz-6-soft); color: var(--wd-color-viz-6); }
+.wait { display: inline-flex; align-items: center; gap: var(--wd-space-1); flex-shrink: 0; padding-inline: var(--wd-space-1-5); border-radius: var(--wd-radius-2xs); background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); font-size: var(--wd-text-2xs); font-weight: 600; white-space: nowrap; }
+.wait[data-level="late"] { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
+.page { display: grid; gap: var(--wd-space-6); max-inline-size: 64rem; }
+.inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.inline :global(.wd-field) { min-inline-size: 14rem; }
+.name { display: grid; gap: var(--wd-space-0-5); }
+.name small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rowActions { display: flex; align-items: center; gap: var(--wd-space-1); }
+.form { display: grid; gap: var(--wd-space-3); }
+.swatches { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.swatches button { display: inline-grid; place-items: center; min-inline-size: 2.75rem; min-block-size: 2.75rem; border: 0; border-radius: var(--wd-radius-sm); background: transparent; cursor: pointer; }
+.swatches button[aria-pressed="true"] { outline: 2px solid var(--wd-color-action-primary); outline-offset: 1px; }
+.swatches button:focus-visible { outline: 2px solid var(--wd-color-action-primary); outline-offset: 2px; }
+.fields { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); }
+.preview { margin: 0; padding: var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); font-size: var(--wd-text-sm); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.preview mark { padding-inline: var(--wd-space-0-5); border-radius: var(--wd-radius-2xs); background: var(--wd-color-warning-subtle); color: inherit; }
+.variables { display: grid; gap: var(--wd-space-3); }
+.muted { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.name small.reason { color: var(--wd-color-danger); }
+.starterList { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; max-block-size: 22rem; overflow-y: auto; }
+.starterList li { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }

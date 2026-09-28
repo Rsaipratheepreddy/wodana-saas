@@ -12,6 +12,10 @@ function service(newOwnerUserId: string) {
   const conversation = { id: conversationId, party_id: "party", lead_id: leadId, channel: "whatsapp", subject: null, status: "open", owner_membership_id: null, version: 1 };
   const query = vi.fn(async (sql: string, values: unknown[] = []) => {
     calls.push({ sql, values });
+    // The team inbox: the new owner is someone who works the inbox; who they are, the client and who assigned it.
+    if (sql.startsWith("SELECT 1 FROM (")) return { rows: [{}], rowCount: 1 };
+    if (sql.includes("JOIN users account ON account.id = membership.user_id")) return { rows: [{ userId: newOwnerUserId, displayName: "Owner" }], rowCount: 1 };
+    if (sql.includes('AS "clientName"')) return { rows: [{ clientName: "Dr Maya Nair", actorName: "Sara" }], rowCount: 1 };
     if (sql.includes("FROM crm_conversations") && sql.includes("FOR UPDATE")) return { rows: [conversation], rowCount: 1 };
     if (sql.includes("FROM crm_conversations")) return { rows: [conversation], rowCount: 1 };
     if (sql.includes("FROM workspace_memberships WHERE id")) return { rows: [{}], rowCount: 1 };

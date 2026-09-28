@@ -104,3 +104,28 @@ async def test_oversized_push_is_not_retried() -> None:
     ))
     assert result.result == "permanent_failure"
     assert result.error_code == "MessageTooBig"
+
+
+class FakeWhatsApp:
+    def __init__(self) -> None:
+        self.requests: list[dict] = []
+
+    async def send_whatsapp_notification(self, _workspace: str, request: object) -> dict:
+        self.requests.append(request.payload)  # type: ignore[attr-defined]
+        return {"id": "wamid.accepted", "status": "accepted"}
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_template_sends_its_values_and_is_only_accepted() -> None:
+    providers = FakeWhatsApp()
+    adapter = ConnectedProviderAdapter(object(), object(), providers)  # type: ignore[arg-type]
+    result = await adapter.deliver(DeliveryJob(
+        id=UUID(NOTIFICATION_ID), workspaceId=UUID(WORKSPACE_ID), attempt=1,
+        channel="whatsapp", body="Hi Noura, quote V2 is ready.",
+        destination={"normalizedValue": "+15551234567"},
+        templateCode="quote_ready", locale="en_US", templateParameters=["Noura", "V2"],
+    ))
+    assert result.result == "accepted"
+    assert result.provider_message_id == "wamid.accepted"
+    assert providers.requests[0]["bodyParameters"] == ["Noura", "V2"]
+    assert providers.requests[0]["templateName"] == "quote_ready"

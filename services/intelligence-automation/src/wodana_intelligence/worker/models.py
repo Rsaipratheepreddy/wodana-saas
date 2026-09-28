@@ -29,6 +29,9 @@ class DeliveryJob(BaseModel):
     body: str
     destination: Optional[dict[str, Any]] = None
     template_code: Optional[str] = Field(default=None, alias="templateCode")
+    template_parameters: list[str] = Field(
+        default_factory=list, alias="templateParameters", max_length=20
+    )
     locale: Optional[str] = None
     deep_link: Optional[str] = Field(default=None, alias="deepLink")
 

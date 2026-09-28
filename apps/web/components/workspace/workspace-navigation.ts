@@ -144,6 +144,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/factory", icon: "production", id: "factory-settings", label: tKey("Factory") },
           { href: "/workspace/settings/accounting", icon: "integrations", id: "accounting-settings", label: tKey("Accounting") },
           { href: "/workspace/settings/attendance", icon: "calendar", id: "attendance-settings", label: tKey("Attendance & leave") },
+          { href: "/workspace/settings/inbox", icon: "conversations", id: "inbox-settings", label: tKey("Inbox") },
           { href: "/workspace/settings/reminders", icon: "settings", id: "reminder-settings", label: tKey("Reminders") },
           { href: "/workspace/settings/client-portal", icon: "settings", id: "client-portal-settings", label: tKey("Client portal") },
         ],

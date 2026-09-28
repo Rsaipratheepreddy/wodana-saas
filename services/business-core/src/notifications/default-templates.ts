@@ -266,8 +266,17 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.off_track", channel: "in_app", subject: "{{title}} is off track", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.signed_off", channel: "in_app", subject: "Design signed off · {{clientName}}", body: "The design is approved. It's ready to quote.", variables: ["clientName"] },
   { code: "design.signed_off", channel: "email", subject: "Design signed off: {{clientName}}", body: "The design for {{clientName}} is signed off and ready to quote.\n\nOpen the case to start the quotation.", variables: ["clientName"] },
+  // Team inbox (crm/conversations/inbox/inbox-notices.ts): one notice per chat until it is read.
+  { code: "crm.inbox_message", channel: "in_app", subject: "{{clientName}} wrote", body: "{{summary}}", variables: ["clientName", "summary"] },
+  { code: "crm.inbox_woke", channel: "in_app", subject: "Chat with {{clientName}} is back", body: "You snoozed it until now.", variables: ["clientName"] },
+  { code: "crm.number_health", channel: "in_app", subject: "Your WhatsApp number is {{status}}", body: "{{reason}}", variables: ["status", "reason"] },
+  { code: "crm.template_status", channel: "in_app", subject: "Template {{name}} is {{status}}", body: "{{reason}}", variables: ["name", "status", "reason"] },
+  { code: "crm.inbox_mention", channel: "in_app", subject: "{{actor}} mentioned you", body: "{{clientName}}: {{summary}}", variables: ["actor", "clientName", "summary"] },
+  { code: "crm.inbox_unassigned", channel: "in_app", subject: "{{clientName}} is waiting", body: "Nobody could take this new chat. Assign it.", variables: ["clientName"] },
   // Client portal notices (client-portal/portal-notices.ts): to client contacts, by email.
   { code: "portal.quote_issued", channel: "email", subject: "{{title}} is ready for you", body: "{{company}} sent you {{title}} for {{project}}.\n\nOpen your project page to read it and give your decision.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "portal.payment_due", channel: "email", subject: "Payment reminder · {{title}}", body: "A reminder from {{company}}: {{title}} for {{project}} is due. {{due}}\n\nOpen your project page to see it and pay.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "receivables.payment_overdue", channel: "in_app", subject: "{{client}} hasn't paid {{title}}", body: "A week past due. Reminders sent: {{count}}.", variables: ["client", "title", "count"] },
   { code: "portal.invoice_issued", channel: "email", subject: "Invoice {{title}} from {{company}}", body: "{{company}} issued invoice {{title}} for {{project}}. {{due}}\n\nOpen your project page to see it and what's left to pay.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.decision_waiting", channel: "email", subject: "{{title}} is waiting for your decision", body: "{{company}} needs your decision on {{title}} for {{project}}. {{due}}\n\nOpen your project page to review it.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.update_published", channel: "email", subject: "New update on {{project}}", body: "{{note}}\n\nOpen your project page to see the progress.", variables: ["company", "project", "title", "due", "note"] },
@@ -310,7 +319,7 @@ export async function seedDefaultNotificationTemplates(db: Db, workspaceId: stri
   }
 }
 
-const render = (template: string, variables: Record<string, string>) =>
+export const renderNoticeText = (template: string, variables: Record<string, string>) =>
   template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
 
 /**
@@ -343,8 +352,8 @@ export async function notifyUserInApp(db: Db, input: {
   );
   if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
   const row = template.rows[0];
-  const subject = row.subject ? render(row.subject, input.variables) : null;
-  const body = render(row.body, input.variables);
+  const subject = row.subject ? renderNoticeText(row.subject, input.variables) : null;
+  const body = renderNoticeText(row.body, input.variables);
   const inserted = await db.query(
     `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
        subject, body, deep_link, idempotency_key, correlation_id, delivered_at)
@@ -403,7 +412,7 @@ export async function queueUserPushFromTemplate(db: Db, input: {
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
      RETURNING id, correlation_id AS "correlationId"`,
     [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
+      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
       input.deepLink ?? null, input.idempotencyKey],
   );
   const notification = inserted.rows[0] as { id: string; correlationId: string } | undefined;
@@ -455,7 +464,7 @@ export async function queueUserEmail(db: Db, input: {
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
      RETURNING id, correlation_id AS "correlationId"`,
     [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
+      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
       input.deepLink ?? null, input.idempotencyKey],
   );
   const notification = inserted.rows[0];
@@ -488,6 +497,8 @@ export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "hrms.leave_requested", "hrms.leave_approved", "hrms.leave_rejected", "hrms.timesheet_submitted", "hrms.crew_day_submitted", "hrms.attendance_to_review",
   "quotation.review_requested", "design.review_requested",
   "crm.lead_assigned", "crm.lead_taken_over_to", "crm.conversation_assigned",
+  // Team inbox: a client wrote in a chat that is yours (one notice per chat), or someone mentioned you in a note.
+  "crm.inbox_message", "crm.inbox_mention",
 ]);
 
 /**
