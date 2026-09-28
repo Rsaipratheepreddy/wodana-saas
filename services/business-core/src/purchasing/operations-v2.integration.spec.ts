@@ -362,7 +362,10 @@ integration("operations v2 (plan §6.14–6.16, D-8, D-11, D-20, D-26, D-38, D-4
       const joinery = randomUUID(), wo = randomUUID();
       await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery" });
       let order = await maker.plan(actor, w.workspaceId, { id: wo, lineId: cabinets.id, quantity: "3", workcenterId: joinery, plannedStart: "2026-10-05", plannedEnd: "2026-10-09" });
-      let row = (await maker.state(actor, w.workspaceId)).orders.find((item) => item.id === wo)!;
+      const board = await maker.state(actor, w.workspaceId);
+      // The workspace's day, as a date the list compares due dates with.
+      expect(board.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      let row = board.orders.find((item) => item.id === wo)!;
       expect([row.next, row.mine, row.blocked.map((check) => check.key)]).toEqual(["fix", true, ["drawing"]]);
       // The kitchen's technical drawing: R1 approved internally, R2 still a draft.
       const design = randomUUID(), r1 = randomUUID(), r2 = randomUUID(), asset = randomUUID();

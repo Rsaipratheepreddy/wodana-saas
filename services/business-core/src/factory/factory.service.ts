@@ -61,7 +61,7 @@ export class FactoryService {
       }
       return {
         toMake: await readToMake(client, workspaceId), orders: rows, workcenters: await readWorkcenters(client, workspaceId), batches: await readBatches(client, workspaceId),
-        requireCheck: settings.requireCheck, today: await workspaceDay(client, workspaceId), ...rights,
+        requireCheck: settings.requireCheck, today: (await workspaceDay(client, workspaceId)).today, ...rights,
       };
     });
   }
