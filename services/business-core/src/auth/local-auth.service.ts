@@ -455,7 +455,7 @@ export class LocalAuthService {
           mfaEnrollmentDeadline: prior.mfaEnrollmentDeadline ?? undefined,
         }),
         refreshToken: nextToken,
-        accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+        accessTokenExpiresIn: this.accessTokenSeconds(),
         refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
       };
     });
@@ -520,7 +520,7 @@ export class LocalAuthService {
       enabled: true,
       recoveryCodes: confirmed.recoveryCodes,
       accessToken: this.signAccessToken(actor, current.familyId, confirmed.assurance),
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
     };
   }
 
@@ -538,7 +538,7 @@ export class LocalAuthService {
     await this.updateSessionAssurance(actorUser.userId, current.familyId, assurance);
     return {
       accessToken: this.signAccessToken(actor, current.familyId, assurance),
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
       verifiedAt: assurance.mfaVerifiedAt,
       authenticationMethods: assurance.authenticationMethods,
     };
@@ -585,7 +585,7 @@ export class LocalAuthService {
     return {
       enabled: false,
       accessToken: this.signAccessToken(actor, current.familyId, assurance),
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
     };
   }
 
@@ -608,7 +608,7 @@ export class LocalAuthService {
       authenticationMethod: actor.provider,
       passwordChangedAt: credential.rows[0]?.passwordChangedAt ?? null,
       policy: {
-        accessTokenMinutes: ACCESS_TOKEN_SECONDS / 60,
+        accessTokenMinutes: this.accessTokenSeconds() / 60,
         refreshSessionDays: REFRESH_TOKEN_DAYS,
         maxFailedAttempts: MAX_FAILED_ATTEMPTS,
         lockMinutes: LOCK_MINUTES,
@@ -1026,7 +1026,7 @@ export class LocalAuthService {
     return {
       accessToken: this.signAccessToken(actor, result.familyId, assurance),
       refreshToken: result.refreshToken,
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
       refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
       selectedWorkspaceId,
       profile: selectedProfile,
@@ -1070,9 +1070,15 @@ export class LocalAuthService {
         subject: actor.subject,
         issuer: this.config.get<string>("LOCAL_AUTH_ISSUER", "wodana-local"),
         audience: this.config.get<string>("LOCAL_AUTH_AUDIENCE", "wodana-web"),
-        expiresIn: ACCESS_TOKEN_SECONDS,
+        expiresIn: this.accessTokenSeconds(),
       },
     );
+  }
+
+  /** How long a sign-in stays valid before a silent refresh: AUTH_ACCESS_TOKEN_MINUTES (5–1440), default 15. */
+  private accessTokenSeconds() {
+    const minutes = Number(this.config.get<string>("AUTH_ACCESS_TOKEN_MINUTES", ""));
+    return Number.isInteger(minutes) && minutes >= 5 && minutes <= 1440 ? minutes * 60 : ACCESS_TOKEN_SECONDS;
   }
 
   private deviceLimit(userId: string) {
