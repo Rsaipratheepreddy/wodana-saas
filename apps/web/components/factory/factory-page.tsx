@@ -13,6 +13,9 @@ import { Schedule } from "./schedule";
 import { ToMake } from "./to-make";
 import { WorkOrders } from "./work-orders";
 import styles from "./factory.module.css";
+import { useLiveInvalidate } from "@/lib/workspace/live-events";
+
+const FACTORY_SCOPES = ["factory"] as const;
 
 /** Factory: what's left to make across running projects, and the work orders. A work order opens in place. */
 export function FactoryPage({ workspaceId, section: initialSection }: { workspaceId: string; section: FactorySection }) {
@@ -29,6 +32,8 @@ export function FactoryPage({ workspaceId, section: initialSection }: { workspac
     try { setState(await api.state()); setError(""); setRefresh((value) => value + 1); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The factory didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  // A release, report or check by someone else shows without a reload.
+  useLiveInvalidate(workspaceId, FACTORY_SCOPES, () => void load(), 2_000);
   const go = (next: FactorySection, open?: string | null) => {
     const base = `/workspace/factory${next === "to-make" ? "" : `/${next}`}`;
     move(next, open ? `${base}?${next === "batches" ? "batch" : "order"}=${open}` : base);

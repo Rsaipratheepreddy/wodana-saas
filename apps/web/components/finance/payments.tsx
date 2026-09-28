@@ -39,7 +39,7 @@ export function Payments({ api, state, error, openId, onReload, onOpen, onOpenBi
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   const payment = state?.payments.find((row) => row.id === openId) ?? null;
   return <>
-    <DataGrid<SupplierPayment> appearance="flush" ariaLabel={t("Payments")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<SupplierPayment> ariaLabel={t("Payments")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search payments")} rowNumbers={false} wrapText
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No payments yet")} description={t("Record one from an approved invoice or a supplier.")} />} />
     {payment && state ? <PaymentSheet api={api} payment={payment} canManage={state.canManage} bills={state.bills} onChanged={onReload} onClose={() => onOpen(null)} onOpenBill={onOpenBill} /> : null}

@@ -11,6 +11,7 @@ import type { PortalBrand } from "@/lib/commercial/types";
 import type { PortalFormat } from "../portal-format";
 import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
+import { AttachFiles } from "../forms/attach-files";
 import { ConfirmCode } from "./confirm-code";
 
 type Decision = "accept" | "changes" | "decline";
@@ -27,6 +28,8 @@ export function QuoteSheet({ quote, caseId, slug, brand, customer, api, format, 
   const [confirming, setConfirming] = useState(false);
   const [note, setNote] = useState("");
   const [options, setOptions] = useState<string[]>([]);
+  const [uploads, setUploads] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [id] = useState(commandId);
   const optional = quote.lines.filter((line) => line.optional);
   // What the chosen options add, priced by the quotation's own engine.
@@ -38,7 +41,7 @@ export function QuoteSheet({ quote, caseId, slug, brand, customer, api, format, 
   if (decision && confirming) return <ConfirmCode api={api} channels={channels} purpose={`quote:${caseId}:${quote.id}:${decision}`} confirmLabel={labels[decision]}
     onBack={() => setConfirming(false)}
     onConfirm={async (proof) => {
-      await api.command(id, { action: "quote_decision", caseId, quoteId: quote.id, decision, note: note.trim(), selectedOptionLineIds: decision === "accept" ? options : [],
+      await api.command(id, { action: "quote_decision", caseId, quoteId: quote.id, decision, note: note.trim(), selectedOptionLineIds: decision === "accept" ? options : [], uploadIds: decision === "accept" ? [] : uploads,
         hash: quote.hash, ...proof });
       onDecided();
     }} />;
@@ -60,12 +63,13 @@ export function QuoteSheet({ quote, caseId, slug, brand, customer, api, format, 
       <div className={styles.total}><span>{t("Total")}</span><span className={styles.amount}>{format.money(withOptions, quote.currency)}</span></div>
       <p className={styles.muted}>{t("Valid until {date}", { date: format.date(quote.validUntil) })}</p>
       {decision && decision !== "accept"
-        ? <TextAreaField label={decision === "changes" ? t("What would you like changed?") : t("Why are you declining?")} value={note} onChange={setNote} maxLength={6000} isRequired autoFocus />
+        ? <><TextAreaField label={decision === "changes" ? t("What would you like changed?") : t("Why are you declining?")} value={note} onChange={setNote} maxLength={6000} isRequired autoFocus />
+          <AttachFiles caseId={caseId} api={api} onChange={setUploads} onBusy={setUploading} /></>
         : null}
       <div className={styles.choices}>
         {decision ? <>
           <Button onPress={() => { setDecision(null); setNote(""); }}>{t("Back")}</Button>
-          <Button variant="primary" isDisabled={decision !== "accept" && !note.trim()} onPress={() => setConfirming(true)}>{t("Continue")}</Button>
+          <Button variant="primary" isDisabled={(decision !== "accept" && !note.trim()) || uploading} onPress={() => setConfirming(true)}>{t("Continue")}</Button>
         </> : <>
           <Button variant="quiet" onPress={() => setDecision("decline")}>{labels.decline}</Button>
           <Button onPress={() => setDecision("changes")}>{labels.changes}</Button>

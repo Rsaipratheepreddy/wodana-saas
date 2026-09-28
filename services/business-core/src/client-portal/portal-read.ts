@@ -1,9 +1,12 @@
 import type { PoolClient } from "pg";
-import { Dec } from "../catalog-core/decimal";
 import { commercialRepository } from "../commercial/commercial-repository";
-import type { ChangeRequest, CommercialData } from "../commercial/commercial.types";
-import { readInvoices, readMilestonePaid, withBalances } from "../receivables/receivables";
+import type { CommercialData } from "../commercial/commercial.types";
 import type { Grant, PortalContact } from "./portal-auth";
+import { ASSUME_PRESENT, readAttachments, type FilePresence } from "./portal-files";
+import { readIssues } from "./portal-issues";
+import { readMessages } from "./portal-messages";
+import { readMoodboard, takesIdeas } from "./portal-moodboard";
+import { readPayments } from "./portal-payments";
 import { portalQuote } from "./portal-quote";
 import { effectiveSections, readProjectAccess, type PortalSettings, type Section, type Sections } from "./portal-settings";
 
@@ -17,7 +20,7 @@ type Db = Pick<PoolClient, "query">;
 
 type CaseRow = {
   caseId: string; caseStatus: string; title: string; projectId: string | null; projectName: string | null; reference: string | null; projectStatus: string | null;
-  startedAt: string | null; startDate: string | null; promiseDate: string | null; currency: string | null;
+  startedAt: string | null; startDate: string | null; promiseDate: string | null; completedOn: string | null; currency: string | null;
 };
 
 const IMAGE = /^image\/(png|jpeg|webp|gif)$/;
@@ -31,53 +34,71 @@ export async function readCase(db: Db, workspaceId: string, caseId: string): Pro
   return (await db.query<CaseRow>(
     `SELECT pre_case.id AS "caseId", pre_case.status AS "caseStatus", opportunity.title, project.id AS "projectId", project.name AS "projectName",
             project.reference, project.status AS "projectStatus", project.started_at AS "startedAt", project.start_date::text AS "startDate",
-            project.promise_date::text AS "promiseDate", trim(project.currency) AS currency
+            project.promise_date::text AS "promiseDate", trim(project.currency) AS currency,
+            (project.completed_at AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS "completedOn"
        FROM pre_project_cases pre_case
+       JOIN workspaces workspace ON workspace.id = pre_case.workspace_id
        JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
        LEFT JOIN delivery_projects project ON project.workspace_id = pre_case.workspace_id AND project.case_id = pre_case.id AND project.started_at IS NOT NULL
                                            AND project.status <> 'archived'
       WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0];
 }
 
-export async function readView(db: Db, workspaceId: string, contact: PortalContact, settings: PortalSettings, definitions: DefinitionSource) {
+/** `files` says which stored files are really there (a photo whose file is missing is left out, never shown broken). */
+export async function readView(db: Db, workspaceId: string, contact: PortalContact, settings: PortalSettings, definitions: DefinitionSource,
+  files: FilePresence = ASSUME_PRESENT) {
   const today = await workspaceToday(db, workspaceId);
   const projects = [];
   for (const grant of contact.grants) {
     const row = await readCase(db, workspaceId, grant.caseId);
     if (!row) continue;
-    projects.push(await readProject(db, workspaceId, grant, row, settings, today, definitions));
+    projects.push(await readProject(db, workspaceId, grant, row, settings, today, definitions, files));
   }
   return { contact: { name: contact.name, nameConfirmed: contact.nameConfirmed, phone: contact.phone }, today, projects };
 }
 
-async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseRow, settings: PortalSettings, today: string, definitions: DefinitionSource) {
+async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseRow, settings: PortalSettings, today: string, definitions: DefinitionSource,
+  files: FilePresence) {
   const access = row.projectId ? await readProjectAccess(db, workspaceId, row.projectId) : null;
   const sections = effectiveSections(settings, access);
   const started = Boolean(row.projectId);
+  const running = started && ["active", "on_hold"].includes(row.projectStatus ?? "");
   const base = {
     id: row.caseId, title: row.projectName ?? row.title, reference: row.reference, role: grant.role,
     status: (row.projectStatus ?? "planning") as "planning" | "active" | "on_hold" | "completed" | "cancelled",
     paused: Boolean(access?.paused),
   };
-  if (access?.paused) return { ...base, sections, manager: null, stage: null, handoverDate: null, next: [], latestUpdate: null, progress: null, decisions: null,
-    payments: null, documents: null, warranty: null, messages: null };
+  if (access?.paused) return { ...base, sections, manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, rooms: [], next: [],
+    unread: 0, latestUpdate: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null, messages: null };
   const commercial = await loadCommercial(db, workspaceId, row.caseId);
   const on = (section: Section) => sections[section];
-  const progress = started && on("progress") ? await readProgress(db, workspaceId, row.projectId!, settings) : null;
-  const decisions = on("decisions") ? await readDecisions(db, workspaceId, grant, row, commercial, today, definitions) : null;
-  const payments = on("payments") ? await readPayments(db, workspaceId, row, commercial, settings, today) : null;
+  const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files) : null;
+  const moodboard = on("moodboard") ? await readMoodboard(db, workspaceId, grant, row.caseId, takesIdeas(row), files) : null;
+  const decisions = on("decisions") ? await readDecisions(db, workspaceId, grant, row, commercial, today, definitions, files) : null;
+  const payments = on("payments") ? await readPayments(db, workspaceId, row, settings, today) : null;
   const documents = on("documents") ? await readDocuments(db, workspaceId, row, commercial) : null;
   const warranty = started && on("warranty") ? await readWarranty(db, workspaceId, row, today) : null;
-  const messages = on("messages") ? { requests: commercial.requests.filter((request) => !request.decisionRequest).map((request) => portalRequest(request, grant)) } : null;
+  const messages = on("messages") ? await readMessages(db, workspaceId, grant, row.caseId, commercial) : null;
   const stage = started ? await readStage(db, workspaceId, row.projectId!, row.projectStatus!, settings) : null;
   const latestUpdate = progress?.updates[0] ?? null;
+  const dates = started && settings.progress.dates;
   return {
     ...base, sections: sections as Sections,
     manager: started ? await readManager(db, workspaceId, row.projectId!) : null,
-    stage, handoverDate: started && settings.progress.dates ? row.promiseDate : null,
+    // The planned handover while the work is on; once it's handed over, when it was, and the warranty.
+    stage, handoverDate: dates && running ? row.promiseDate : null, handedOverOn: dates && row.projectStatus === "completed" ? row.completedOn : null,
+    warrantyUntil: warranty?.rooms.map((room) => room.until).sort().at(-1) ?? null,
+    rooms: on("progress") || on("moodboard") ? await readRooms(db, workspaceId, row.caseId) : [],
     next: nextSteps(decisions, payments),
-    latestUpdate, progress, decisions, payments, documents, warranty, messages,
+    unread: messages?.unread ?? 0,
+    latestUpdate, progress, moodboard, decisions, payments, documents, warranty, messages,
   };
+}
+
+/** The rooms of the project, for the client to say where something is. */
+async function readRooms(db: Db, workspaceId: string, caseId: string) {
+  return (await db.query<{ id: string; name: string }>(
+    `SELECT id, name FROM pre_project_rooms WHERE workspace_id = $1 AND case_id = $2 ORDER BY name, id`, [workspaceId, caseId])).rows;
 }
 
 export type PortalProject = Awaited<ReturnType<typeof readProject>>;
@@ -112,7 +133,8 @@ async function readStage(db: Db, workspaceId: string, projectId: string, status:
   return { number: Math.min(index + 1, stages.length), total: stages.length, name: settings.progress.stageNames ? stages[Math.min(index, stages.length - 1)].name : null };
 }
 
-async function readProgress(db: Db, workspaceId: string, projectId: string, settings: PortalSettings) {
+async function readProgress(db: Db, workspaceId: string, row: CaseRow, settings: PortalSettings, running: boolean, files: FilePresence) {
+  const projectId = row.projectId!;
   const stages = (await readStages(db, workspaceId, projectId)).map((stage) => ({
     name: settings.progress.stageNames ? stage.name : null,
     state: (stage.status === "done" ? "done" : stage.status === "current" ? "current" : "upcoming") as "done" | "current" | "upcoming",
@@ -122,23 +144,29 @@ async function readProgress(db: Db, workspaceId: string, projectId: string, sett
     `SELECT id, created_at AS at, note AS text FROM project_status_updates
       WHERE workspace_id = $1 AND project_id = $2 AND shared_at IS NOT NULL AND btrim(note) <> '' ORDER BY created_at DESC LIMIT 50`, [workspaceId, projectId])).rows
     .map((update) => ({ id: update.id, at: new Date(update.at).toISOString(), text: update.text })) : [];
-  const photos = settings.progress.photos ? (await db.query<{ id: string; on: string }>(
-    `SELECT photo.id, report.report_date::text AS on FROM site_report_photos photo
+  const shared = settings.progress.photos ? (await db.query<{ id: string; on: string; objectKey: string; previewKey: string | null }>(
+    `SELECT photo.id, report.report_date::text AS on, photo.object_key AS "objectKey", photo.preview_key AS "previewKey" FROM site_report_photos photo
        JOIN site_reports report ON report.workspace_id = photo.workspace_id AND report.id = photo.report_id
       WHERE photo.workspace_id = $1 AND report.project_id = $2 AND report.status = 'approved' AND photo.shared_at IS NOT NULL AND photo.mime_type LIKE 'image/%'
       ORDER BY report.report_date DESC, photo.created_at LIMIT 240`, [workspaceId, projectId])).rows : [];
+  // Only photos whose file is there: a missing file is left out (and logged), never a broken picture.
+  const photos = await files.present(shared);
   const days = new Map<string, Array<{ id: string }>>();
   for (const photo of photos) days.set(photo.on, [...(days.get(photo.on) ?? []), { id: photo.id }]);
-  return { stages, updates, photoDays: [...days].map(([on, list]) => ({ on, photos: list })) };
+  return { stages, updates, photoDays: [...days].map(([on, list]) => ({ on, photos: list })),
+    issues: await readIssues(db, workspaceId, row.caseId, projectId), canReportIssue: running };
 }
 
-async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: CaseRow, commercial: CommercialData, today: string, definitions: DefinitionSource) {
+async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: CaseRow, commercial: CommercialData, today: string, definitions: DefinitionSource,
+  files: FilePresence) {
   const approver = grant.role === "approver";
   const quotes = commercial.quotes.filter((quote) => quote.issuedAt).map((quote) => portalQuote(quote, grant.id, grant.role));
-  const designs = (await db.query<{ id: string; title: string; type: string; number: number; status: string; dueAt: string | null; room: string | null; item: string | null; mimeType: string }>(
+  const found = (await db.query<{ id: string; title: string; type: string; number: number; status: string; dueAt: string | null; room: string | null; item: string | null;
+    mimeType: string; objectKey: string; previewKey: string | null }>(
     `SELECT version.id, design.title, design.document_type AS type, version.number,
             CASE WHEN version.status = 'client_review' AND version.client_review_expires_at <= now() THEN 'expired' ELSE version.status END AS status,
-            version.client_review_expires_at AS "dueAt", room.name AS room, entry.title AS item, asset.mime_type AS "mimeType"
+            version.client_review_expires_at AS "dueAt", room.name AS room, entry.title AS item, asset.mime_type AS "mimeType",
+            asset.object_key AS "objectKey", asset.preview_key AS "previewKey"
        FROM pre_project_design_versions version
        JOIN pre_project_designs design ON design.workspace_id = version.workspace_id AND design.id = version.design_id
        JOIN pre_project_brief_assets asset ON asset.workspace_id = version.workspace_id AND asset.id = version.asset_id
@@ -147,9 +175,15 @@ async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: Cas
       WHERE version.workspace_id = $1 AND version.case_id = $2 AND design.archived_at IS NULL
         AND version.status IN ('client_review', 'approved', 'changes_requested', 'rejected')
         AND version.number = (SELECT max(number) FROM pre_project_design_versions latest WHERE latest.workspace_id = design.workspace_id AND latest.design_id = design.id)
-      ORDER BY coalesce(room.name, ''), design.title`, [workspaceId, row.caseId])).rows
-    .map((design) => ({ id: design.id, title: design.title, type: design.type, number: design.number, status: design.status, dueAt: design.dueAt ? new Date(design.dueAt).toISOString() : null,
-      room: design.room, item: design.item, mimeType: design.mimeType, canDecide: approver && design.status === "client_review" && row.caseStatus === "active" }));
+      ORDER BY coalesce(room.name, ''), design.title`, [workspaceId, row.caseId])).rows;
+  const designs = [];
+  for (const design of found) designs.push({
+    id: design.id, title: design.title, type: design.type, number: design.number, status: design.status, dueAt: design.dueAt ? new Date(design.dueAt).toISOString() : null,
+    room: design.room, item: design.item, mimeType: design.mimeType,
+    // A picture only when its file is there; otherwise the client opens the file.
+    hasPreview: design.mimeType.startsWith("image/") && ((await files.has(design.previewKey)) || (await files.has(design.objectKey))),
+    canDecide: approver && design.status === "client_review" && row.caseStatus === "active",
+  });
   const requests = commercial.requests.filter((request) => request.decisionRequest).map((request) => {
     const asked = request.decisionRequest!;
     return {
@@ -240,46 +274,6 @@ async function readHandovers(db: Db, workspaceId: string, projectId: string, app
   }));
 }
 
-async function readPayments(db: Db, workspaceId: string, row: CaseRow, commercial: CommercialData, settings: PortalSettings, today: string) {
-  const amounts = settings.invoiceAmounts;
-  const show = (value: string | number | null) => (amounts && value !== null ? Dec.of(value).toFixed(4) : null);
-  const milestones = (await db.query<{ id: string; title: string; amount: string; currency: string | null; dueDate: string | null; payUrl: string | null }>(
-    `SELECT id, title, amount::text AS amount, nullif(currency, '') AS currency, due_date::text AS "dueDate", detail->'invoice'->>'paymentUrl' AS "payUrl"
-       FROM commercial_payments WHERE workspace_id = $1 AND case_id = $2 AND amount > 0 ORDER BY sort_order`, [workspaceId, row.caseId])).rows;
-  const paid = await readMilestonePaid(db, workspaceId, milestones.map((milestone) => ({ caseId: row.caseId, paymentId: milestone.id })));
-  const receipts = (await db.query<{ paymentId: string; amount: string; receivedOn: string | null }>(
-    `SELECT allocation.payment_id AS "paymentId", allocation.amount::text AS amount,
-            left(coalesce(receipt.detail->>'verifiedAt', receipt.detail->>'reportedAt', ''), 10) AS "receivedOn"
-       FROM commercial_allocations allocation
-       JOIN commercial_receipts receipt ON receipt.workspace_id = allocation.workspace_id AND receipt.case_id = allocation.case_id AND receipt.id = allocation.receipt_id
-      WHERE allocation.workspace_id = $1 AND allocation.case_id = $2 AND receipt.status = 'finance_verified' AND allocation.detail->>'reversedAt' IS NULL
-      ORDER BY 3`, [workspaceId, row.caseId])).rows;
-  const invoices = row.projectId ? await withBalances(db, workspaceId, await readInvoices(db, workspaceId, { projectId: row.projectId }), today) : [];
-  const live = new Map(invoices.filter((invoice) => invoice.status === "issued").map((invoice) => [invoice.paymentId, invoice]));
-  const currency = row.currency ?? milestones.find((milestone) => milestone.currency)?.currency ?? invoices[0]?.currency ?? null;
-  return {
-    currency, showAmounts: amounts,
-    invoices: invoices.map((invoice) => ({
-      id: invoice.id, number: invoice.number, milestone: invoice.milestoneTitle, issueDate: invoice.issueDate, dueDate: invoice.dueDate, currency: invoice.currency,
-      total: show(invoice.total), paid: show(invoice.paid), balance: show(invoice.balance),
-      status: (invoice.status === "credited" ? "credited" : Dec.of(invoice.balance).cmp(0) <= 0 ? "paid" : invoice.overdue ? "overdue" : "due") as "credited" | "paid" | "overdue" | "due",
-      receipts: invoice.status === "issued" ? receipts.filter((receipt) => receipt.paymentId === invoice.paymentId).map((receipt) => ({ amount: show(receipt.amount), receivedOn: receipt.receivedOn || null })) : [],
-    })),
-    schedule: milestones.map((milestone) => {
-      const received = paid.get(`${row.caseId}|${milestone.id}`) ?? Dec.ZERO;
-      const invoice = live.get(milestone.id);
-      const settled = received.cmp(milestone.amount) >= 0;
-      const status = settled ? "paid" : received.cmp(0) > 0 ? "part_paid" : invoice ? (invoice.overdue ? "overdue" : "due") : "upcoming";
-      return {
-        id: milestone.id, title: milestone.title, amount: show(milestone.amount), paid: show(received.toFixed(4)), dueDate: invoice?.dueDate ?? milestone.dueDate,
-        status: status as "paid" | "part_paid" | "overdue" | "due" | "upcoming", invoiceNumber: invoice?.number ?? null,
-        // A pay link only when one exists and something is still owed.
-        payUrl: !settled && milestone.payUrl && /^https:\/\//.test(milestone.payUrl) ? milestone.payUrl : null,
-      };
-    }),
-  };
-}
-
 /** Files published to the client: the signed agreement, approved designs and issued handover packs. */
 async function readDocuments(db: Db, workspaceId: string, row: CaseRow, commercial: CommercialData) {
   const documents: Array<{ id: string; kind: "agreement" | "design" | "handover"; title: string; group: string; date: string | null; mimeType: string }> = [];
@@ -310,6 +304,10 @@ async function readDocuments(db: Db, workspaceId: string, row: CaseRow, commerci
   return documents;
 }
 
+/**
+ * What's covered, by room (one line each: how many items, until when), and the client's claims with their photos.
+ * The areas and lines are what a claim can name.
+ */
 async function readWarranty(db: Db, workspaceId: string, row: CaseRow, today: string) {
   const items = (await db.query<{ lineId: string; title: string; area: string | null; areaId: string | null; startsOn: string; endsOn: string; months: number }>(
     `SELECT item.boq_line_id AS "lineId", line.title, room.name AS area, room.id AS "areaId", item.starts_on::text AS "startsOn", item.ends_on::text AS "endsOn", item.months
@@ -321,32 +319,32 @@ async function readWarranty(db: Db, workspaceId: string, row: CaseRow, today: st
   const claims = (await db.query<{ id: string; number: number; raisedOn: string; description: string; status: string; note: string }>(
     `SELECT id, number, raised_on::text AS "raisedOn", description, status, decision_note AS note FROM warranty_claims
       WHERE workspace_id = $1 AND project_id = $2 ORDER BY number DESC`, [workspaceId, row.projectId])).rows;
-  const active = items.filter((item) => item.startsOn <= today && today <= item.endsOn);
+  const photos = await readAttachments(db, workspaceId, row.caseId, ["warranty_claim"]);
+  const live = (item: { startsOn: string; endsOn: string }) => item.startsOn <= today && today <= item.endsOn;
+  const active = items.filter(live);
   const areas = new Map(active.filter((item) => item.areaId).map((item) => [item.areaId!, item.area!]));
+  const rooms = new Map<string, { id: string | null; name: string | null; items: typeof items }>();
+  for (const item of items) {
+    const key = item.areaId ?? "";
+    rooms.set(key, { id: item.areaId, name: item.area, items: [...(rooms.get(key)?.items ?? []), item] });
+  }
   return {
-    items: items.map((item) => ({ id: item.lineId, title: item.title, area: item.area, startsOn: item.startsOn, endsOn: item.endsOn,
-      active: item.startsOn <= today && today <= item.endsOn })),
+    rooms: [...rooms.values()].map((room) => ({
+      id: room.id, name: room.name, until: room.items.map((item) => item.endsOn).sort().at(-1)!, active: room.items.some(live),
+      // The same work in a room is one line ("Wall painting, 2 coats" once, however many walls).
+      items: [...new Map(room.items.map((item) => [item.title, item])).values()].map((item) => ({ id: item.lineId, title: item.title, until: item.endsOn, active: live(item) })),
+    })),
     claims: claims.map((claim) => ({ id: claim.id, number: claim.number, raisedOn: claim.raisedOn, description: claim.description,
       status: claim.status as "open" | "covered" | "not_covered" | "chargeable",
       // Why it isn't covered (or what's charged) is written for the client; a covered claim just gets fixed.
-      reason: ["not_covered", "chargeable"].includes(claim.status) ? claim.note : "" })),
+      reason: ["not_covered", "chargeable"].includes(claim.status) ? claim.note : "", files: photos.get(`warranty_claim:${claim.id}`) ?? [] })),
     areas: [...areas].map(([id, name]) => ({ id, name })),
     lines: active.map((item) => ({ id: item.lineId, title: item.title, areaId: item.areaId })),
     canClaim: active.length > 0 && ["active", "on_hold", "completed"].includes(row.projectStatus ?? ""),
   };
 }
 
-/** A request thread: the team's replies are "your project team", never a person's name. */
-export function portalRequest(request: ChangeRequest, grant: Grant) {
-  return {
-    id: request.id, number: request.number, title: request.title, detail: request.detail, status: request.status, createdAt: request.createdAt,
-    resolution: request.resolution,
-    comments: request.comments.filter((comment) => comment.visibility === "client").map((comment) => ({
-      id: comment.id, at: comment.at, text: comment.text,
-      fromClient: (comment as { fromClient?: boolean }).fromClient ?? comment.author === grant.name,
-    })),
-  };
-}
+export { portalRequest } from "./portal-messages";
 
 type Decisions = Awaited<ReturnType<typeof readDecisions>>;
 type Payments = Awaited<ReturnType<typeof readPayments>>;
@@ -364,8 +362,8 @@ function nextSteps(decisions: Decisions | null, payments: Payments | null) {
     for (const request of decisions.requests.filter((item) => item.canDecide)) steps.push({ kind: "request", id: request.id, title: request.title, due: request.dueDate });
   }
   if (payments)
-    for (const invoice of payments.invoices.filter((item) => item.status === "due" || item.status === "overdue"))
-      steps.push({ kind: "invoice", id: invoice.id, title: invoice.number, due: invoice.dueDate });
+    for (const milestone of payments.milestones.filter((item) => item.invoice && ["due", "overdue", "part_paid"].includes(item.status)))
+      steps.push({ kind: "invoice", id: milestone.invoice!.id, title: milestone.invoice!.number, due: milestone.dueDate });
   return steps;
 }
 

@@ -1,12 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, SelectField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
+import { Button, SelectField, EmptyState, InlineNotice, SaveBar, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { purchasingApi } from "@/lib/purchasing/client";
 import type { PurchasingSettings } from "@/lib/purchasing/types";
 import { quantityText } from "./order-labels";
-import styles from "./purchasing.module.css";
 
 /** Settings → Purchasing: from what amount an order needs approval, what must be true before one is placed, and how deliveries are received. */
 export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string }) {
@@ -16,14 +15,18 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
   const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean; adjustLimit: string; ahead: string; invoiceTolerance: string; guard: "off" | "warn" | "strict"; runs: boolean } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // The form as last loaded or saved, to tell unsaved changes apart and to discard them.
+  const [baseline, setBaseline] = useState("");
+  const [justSaved, setJustSaved] = useState(false);
   const accept = (next: { settings: PurchasingSettings; canManage: boolean; currency: string | null }) => {
     setData(next);
     const value = next.settings.approvalThreshold;
-    setForm({ approval: value !== null, always: value !== null && Number(value) === 0, threshold: value && Number(value) ? value.replace(/\.?0+$/, "") : "",
+    const loaded = ({ approval: value !== null, always: value !== null && Number(value) === 0, threshold: value && Number(value) ? value.replace(/\.?0+$/, "") : "",
       signoff: next.settings.requireMaterialSignoff, approved: next.settings.requireApprovedSupplier, inspection: next.settings.requireInspection,
       tolerance: quantityText(next.settings.receiveTolerancePercent) || "0", sitePhoto: next.settings.requireSitePhoto,
       adjustLimit: next.settings.stockAdjustApprovalValue ? quantityText(next.settings.stockAdjustApprovalValue) : "", ahead: String(next.settings.orderAheadDays),
       invoiceTolerance: quantityText(next.settings.invoiceTolerancePercent) || "0", guard: next.settings.spendingGuard, runs: next.settings.paymentRunsRequired });
+    setForm(loaded); setBaseline(JSON.stringify(loaded));
   };
   const load = useCallback(async () => {
     try { accept(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
@@ -40,7 +43,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
         requireInspection: form.inspection, receiveTolerancePercent: form.tolerance || "0", requireSitePhoto: form.sitePhoto,
         stockAdjustApprovalValue: form.adjustLimit || null, orderAheadDays: Number(form.ahead || "0"), invoiceTolerancePercent: form.invoiceTolerance || "0", spendingGuard: form.guard,
         paymentRunsRequired: form.runs });
-      accept({ ...data, settings });
+      accept({ ...data, settings }); setJustSaved(true);
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     setBusy(false);
   };
@@ -104,8 +107,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
           onChange={(value) => setForm({ ...form, adjustLimit: value.replace(/[^\d.]/g, "") })} />
       </SettingsRow>
     </SettingsSection>
-    {readOnly ? null : <div className={styles.actions}>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={(form.approval && !form.always && !(Number(form.threshold) > 0)) || Number(form.tolerance || 0) > 50 || Number(form.invoiceTolerance || 0) > 50} onPress={() => void save()}>{t("Save")}</Button>
-    </div>}
+    {readOnly ? null : <SaveBar isDirty={JSON.stringify(form) !== baseline} isSaving={busy} saved={justSaved} onDiscard={() => { setForm(JSON.parse(baseline)); setError(""); }} onSave={() => void save()}
+      isDisabled={(form.approval && !form.always && !(Number(form.threshold) > 0)) || Number(form.tolerance || 0) > 50 || Number(form.invoiceTolerance || 0) > 50} />}
   </SettingsPage>;
 }

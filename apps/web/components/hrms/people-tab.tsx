@@ -44,7 +44,7 @@ export function PeopleTab({ api, boot, openId, onOpen, onOpenDocument }: {
     .sort((a, b) => a.name.localeCompare(b.name));
   const open = openId ? people?.find((person) => person.membershipId === openId) ?? null : null;
   return <>
-    <DataGrid<HrmsPerson> appearance="flush" ariaLabel={t("People")} columns={columns} data={rows} getRowId={(row) => row.membershipId} isLoading={!people}
+    <DataGrid<HrmsPerson> ariaLabel={t("People")} columns={columns} data={rows} getRowId={(row) => row.membershipId} isLoading={!people}
       onRowAction={(row) => onOpen(row.membershipId)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search people")} rowNumbers={false} selectable={false} wrapText
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No one yet")} />} />
     {open && people ? <PersonSheet key={open.membershipId} api={api} boot={boot} person={open} people={people} onClose={() => onOpen(null)} onSaved={() => void load()}

@@ -28,7 +28,9 @@ ROUTED_TENANT_HOSTS="${ROUTED_TENANT_HOSTS:-}"
 IMAGE="wodana-web:${RELEASE_NAME}"
 DEPLOY_CORE="${DEPLOY_CORE:-0}"
 CORE_IMAGE="wodana-core:${RELEASE_NAME}"
-DEPLOY_INTELLIGENCE="${DEPLOY_INTELLIGENCE:-0}"
+# The worker (email, WhatsApp, push, SLA/takeover timers, reminders) calls one core's port, so it ships
+# with every core release. Web-only releases keep the running worker and still require it to be live.
+DEPLOY_INTELLIGENCE="${DEPLOY_INTELLIGENCE:-$DEPLOY_CORE}"
 INTELLIGENCE_IMAGE="wodana-intelligence:${RELEASE_NAME}"
 CURRENT_CORE_PORT="${CURRENT_CORE_PORT:-}"
 CURRENT_CORE_RELEASE_DIR="${CURRENT_CORE_RELEASE_DIR:-}"
@@ -43,6 +45,7 @@ REMOTE_ARCHIVE="/tmp/${RELEASE_NAME}.web-image.tar.gz"
 [[ "$NGINX_SITE" == "wodana.ai" || "$NGINX_SITE" == "plm.wodana.ai" ]] || { echo "NGINX_SITE must be wodana.ai or plm.wodana.ai." >&2; exit 1; }
 [[ "$DEPLOY_CORE" == 0 || "$DEPLOY_CORE" == 1 ]] || exit 1
 [[ "$DEPLOY_INTELLIGENCE" == 0 || "$DEPLOY_INTELLIGENCE" == 1 ]] || exit 1
+[[ "$DEPLOY_CORE" == 0 || "$DEPLOY_INTELLIGENCE" == 1 ]] || { echo "A core release ships its worker too (the worker calls this core's port): keep DEPLOY_INTELLIGENCE=1." >&2; exit 1; }
 [[ "$SKIP_IMAGE_BUILD" == 0 || "$SKIP_IMAGE_BUILD" == 1 ]] || exit 1
 [[ "$REMOTE_IMAGE_READY" == 0 || "$REMOTE_IMAGE_READY" == 1 ]] || exit 1
 [[ "$NGINX_CONFIG_PATH" == /etc/nginx/sites-available/wodana.ai || "$NGINX_CONFIG_PATH" == /etc/nginx/sites-available/plm.wodana.ai || "$NGINX_CONFIG_PATH" == /etc/nginx/sites-enabled/plm.wodana.ai ]] || { echo "Unsupported Nginx config path." >&2; exit 1; }
@@ -96,11 +99,31 @@ if [[ "$DEPLOY_CORE" == 1 && -z "$CORE_PORT" ]]; then echo "Set an unused CORE_P
 CORE_PORT="${CORE_PORT:-$CURRENT_CORE_PORT}"
 CURRENT_CORE_RELEASE_DIR="${CURRENT_CORE_RELEASE_DIR:-$CURRENT_RELEASE_DIR}"
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
-  [[ -n "$CURRENT_INTELLIGENCE_PORT" && -n "$CURRENT_INTELLIGENCE_RELEASE_DIR" && -n "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" ]] || {
-    echo "Set CURRENT_INTELLIGENCE_PORT, CURRENT_INTELLIGENCE_RELEASE_DIR and CURRENT_INTELLIGENCE_WORKER_CONTAINER for an Intelligence deployment." >&2
-    exit 1
-  }
-  "${SSH[@]}" "$REMOTE" "test -f '$CURRENT_INTELLIGENCE_RELEASE_DIR/intelligence.env' && docker inspect '$CURRENT_INTELLIGENCE_WORKER_CONTAINER' >/dev/null"
+  # Found from the live release when not given: the Intelligence API port the live web calls, the newest
+  # release that runs it (its intelligence.env is reused) and the running worker, if any (none is fine:
+  # this release then starts the first one).
+  if [[ -z "$CURRENT_INTELLIGENCE_PORT" ]]; then
+    CURRENT_INTELLIGENCE_PORT="$("${SSH[@]}" "$REMOTE" "sed -n 's@.*INTELLIGENCE_API_URL: http://127.0.0.1:\\([0-9]*\\)/api/v1.*@\\1@p' '$CURRENT_RELEASE_DIR/compose.yaml' | head -n 1")"
+  fi
+  [[ "$CURRENT_INTELLIGENCE_PORT" =~ ^[0-9]+$ ]] || { echo "Could not resolve the live Intelligence API port; set CURRENT_INTELLIGENCE_PORT." >&2; exit 1; }
+  [[ "$CURRENT_INTELLIGENCE_PORT" != "$INTELLIGENCE_PORT" ]] || { echo "Set an unused INTELLIGENCE_PORT (the live Intelligence API uses ${CURRENT_INTELLIGENCE_PORT})." >&2; exit 1; }
+  if [[ -z "$CURRENT_INTELLIGENCE_RELEASE_DIR" ]]; then
+    CURRENT_INTELLIGENCE_RELEASE_DIR="$("${SSH[@]}" "$REMOTE" "for d in \$(ls -1dt /opt/wodana/releases/*/); do d=\${d%/}; if test -f \"\$d/intelligence.env\" && grep -q -- '--port, \"${CURRENT_INTELLIGENCE_PORT}\"' \"\$d/compose.yaml\" 2>/dev/null; then echo \"\$d\"; break; fi; done")"
+  fi
+  [[ "$CURRENT_INTELLIGENCE_RELEASE_DIR" =~ ^/opt/wodana/releases/[a-zA-Z0-9._-]+$ ]] || { echo "Could not find the release running the Intelligence API on ${CURRENT_INTELLIGENCE_PORT}; set CURRENT_INTELLIGENCE_RELEASE_DIR." >&2; exit 1; }
+  if [[ -z "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" ]]; then
+    RUNNING_WORKERS="$("${SSH[@]}" "$REMOTE" "docker ps --filter label=com.docker.compose.service=intelligence-worker --format '{{.Names}}'")"
+    [[ "$(printf '%s\n' "$RUNNING_WORKERS" | grep -c .)" -le 1 ]] || { printf 'Several workers are running:\n%s\nSet CURRENT_INTELLIGENCE_WORKER_CONTAINER to the live one and stop the rest.\n' "$RUNNING_WORKERS" >&2; exit 1; }
+    CURRENT_INTELLIGENCE_WORKER_CONTAINER="$RUNNING_WORKERS"
+  fi
+  [[ -z "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" || "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]+$ ]] || exit 1
+  "${SSH[@]}" "$REMOTE" "test -f '$CURRENT_INTELLIGENCE_RELEASE_DIR/intelligence.env'"
+  if [[ -n "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" ]]; then
+    "${SSH[@]}" "$REMOTE" "docker inspect '$CURRENT_INTELLIGENCE_WORKER_CONTAINER' >/dev/null"
+    echo "Preflight: worker ${CURRENT_INTELLIGENCE_WORKER_CONTAINER} is replaced by this release's worker."
+  else
+    echo "Preflight: no worker is running; this release starts one."
+  fi
 else
   CURRENT_INTELLIGENCE_PORT="$INTELLIGENCE_PORT"
 fi
@@ -232,7 +255,7 @@ if [[ "$DEPLOY_CORE" == 1 ]]; then
 fi
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
   test -f "$CURRENT_INTELLIGENCE_RELEASE_DIR/intelligence.env"
-  docker inspect "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" >/dev/null
+  if [[ -n "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" ]]; then docker inspect "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" >/dev/null; fi
   if ss -ltn | awk '{print $4}' | grep -Eq ":${INTELLIGENCE_PORT}$"; then echo "Intelligence port is occupied." >&2; exit 1; fi
 fi
 
@@ -242,7 +265,14 @@ CURRENT_WEB_PORT="$(awk '$1 == "web:" { in_web=1; next } in_web && $1 == "PORT:"
 mkdir -m 700 "$RELEASE_DIR"
 cp "$CURRENT_RELEASE_DIR/web.env" "$RELEASE_DIR/web.env"
 cp "$NGINX_CONFIG_PATH" "$RELEASE_DIR/nginx-before.conf"
-if [[ "$DEPLOY_CORE" == 1 ]]; then cp "$CURRENT_CORE_RELEASE_DIR/core.env" "$RELEASE_DIR/core.env"; fi
+if [[ "$DEPLOY_CORE" == 1 ]]; then
+  cp "$CURRENT_CORE_RELEASE_DIR/core.env" "$RELEASE_DIR/core.env"
+  # Every AI call now goes through Business Core's gateway: a model key kept only for the web moves to the core.
+  if ! grep -q '^GEMINI_API_KEY=.' "$RELEASE_DIR/core.env" && grep -q '^GEMINI_API_KEY=.' "$RELEASE_DIR/web.env"; then
+    grep -E '^GEMINI_(API_KEY|MODEL)=' "$RELEASE_DIR/web.env" >> "$RELEASE_DIR/core.env"
+    echo "The AI key now lives with Business Core (copied from web.env)."
+  fi
+fi
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then cp "$CURRENT_INTELLIGENCE_RELEASE_DIR/intelligence.env" "$RELEASE_DIR/intelligence.env"; fi
 if [[ "$APPLY_PENDING_MIGRATIONS" == 1 ]]; then
   MIGRATION_ARCHIVE="/tmp/${RELEASE_NAME}.migrations.tar.gz"
@@ -339,20 +369,27 @@ cat >> "$RELEASE_DIR/compose.yaml" <<COMPOSE
       interval: 10s
       start_period: 15s
       retries: 8
+  # Required: every email, WhatsApp and push, and every SLA, takeover and reminder timer. Started after
+  # the previous worker stops (below), then proven live through the core's readiness.
   intelligence-worker:
     image: ${INTELLIGENCE_IMAGE}
     network_mode: host
     env_file: [./intelligence.env]
     environment:
       BUSINESS_CORE_URL: http://127.0.0.1:${CORE_PORT}/api/v1
+      WODANA_RELEASE_ID: ${RELEASE_NAME}
     command: [python, -m, wodana_intelligence.worker]
-    profiles: [delivery]
     init: true
     restart: unless-stopped
     mem_limit: 256m
     logging:
       driver: json-file
       options: {max-size: 10m, max-file: "3"}
+    healthcheck:
+      test: [CMD, python, -m, wodana_intelligence.worker.healthcheck]
+      interval: 10s
+      start_period: 30s
+      retries: 4
 COMPOSE
 fi
 if [[ "$DEPLOY_CORE" == 1 ]]; then
@@ -364,7 +401,45 @@ fi
 
 cd "$RELEASE_DIR"
 docker compose -f compose.yaml config --quiet
-curl -fsS "http://127.0.0.1:${CURRENT_CORE_PORT}/api/v1/health/ready" >/dev/null
+
+# Business Core readiness, explained. In production a silent or stale worker makes it not ready; a
+# release that starts its own worker ($2 = 1) accepts that one failure until its worker reports.
+core_ready() {
+  local port="$1" allow_worker="${2:-0}" response
+  response="$(curl -sS --max-time 10 -w '\n%{http_code}' "http://127.0.0.1:${port}/api/v1/health/ready" 2>/dev/null || true)"
+  python3 - "$allow_worker" "$response" <<'PY'
+import json, sys
+allow_worker = sys.argv[1] == "1"
+body, _, code = sys.argv[2].rpartition("\n")
+try:
+    payload = json.loads(body) if body.strip() else {}
+except ValueError:
+    payload = {}
+if code == "200":
+    sys.exit(0)
+failures = payload.get("criticalFailures") or []
+checks = payload.get("checks") or {}
+if allow_worker and failures and set(failures) <= {"worker", "workerDelivery"}:
+    print(f"Business Core is ready apart from its worker ({checks.get('worker', 'unknown')}); this release starts one.")
+    sys.exit(0)
+print(f"Business Core is not ready (HTTP {code or 'no answer'}): {', '.join(failures) or 'unknown'}; checks: {json.dumps(checks)}", file=sys.stderr)
+if "worker" in failures or "workerDelivery" in failures:
+    print("The delivery worker is not live: redeploy with DEPLOY_INTELLIGENCE=1 (and NOTIFICATION_ADAPTER_MODE=live in intelligence.env), or restart the live worker container.", file=sys.stderr)
+sys.exit(1)
+PY
+}
+
+# Waits until the core's readiness shows this release's worker beating with live delivery.
+await_worker() {
+  local port="$1" release="$2" deadline=$((SECONDS + 120))
+  until curl -fsS --max-time 10 "http://127.0.0.1:${port}/api/v1/health/ready" 2>/dev/null \
+    | python3 -c 'import json,sys; c=json.load(sys.stdin).get("checks",{}); sys.exit(0 if c.get("worker")=="ok" and c.get("workerRelease")==sys.argv[1] and c.get("workerDelivery")=="live" else 1)' "$release"; do
+    (( SECONDS < deadline )) || { echo "The new worker did not report live delivery within two minutes." >&2; return 1; }
+    sleep 5
+  done
+}
+
+core_ready "$CURRENT_CORE_PORT" "$DEPLOY_INTELLIGENCE"
 
 # Snapshot the live state directly. The older host-wide backup script contains a
 # historical container inventory and can fail after those superseded containers
@@ -504,9 +579,13 @@ PY
     exit 1
   }
 fi
-docker compose -f compose.yaml up -d --wait --wait-timeout 180
+# The worker starts later, once the previous one has stopped.
+SERVICES=(web)
+[[ "$DEPLOY_CORE" == 0 ]] || SERVICES+=(business-core)
+[[ "$DEPLOY_INTELLIGENCE" == 0 ]] || SERVICES+=(intelligence-api)
+docker compose -f compose.yaml up -d --wait --wait-timeout 180 "${SERVICES[@]}"
 curl -fsS "http://127.0.0.1:${WEB_PORT}/login" >/dev/null
-curl -fsS "http://127.0.0.1:${CORE_PORT}/api/v1/health/ready" >/dev/null
+core_ready "$CORE_PORT" "$DEPLOY_INTELLIGENCE"
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
   curl -fsS "http://127.0.0.1:${INTELLIGENCE_PORT}/api/v1/health/ready" >/dev/null
 fi
@@ -559,9 +638,13 @@ curl -fsSI ${PUBLIC_URL}/login | grep -qi 'X-Wodana-Release: ${CURRENT_RELEASE}'
 ROLLBACK
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
 cat >> rollback.sh <<ROLLBACK
-docker compose -f "\$DIR/compose.yaml" --profile delivery stop intelligence-worker >/dev/null 2>&1 || true
-docker start "${CURRENT_INTELLIGENCE_WORKER_CONTAINER}" >/dev/null
+docker compose -f "\$DIR/compose.yaml" stop intelligence-worker >/dev/null 2>&1 || true
 ROLLBACK
+if [[ -n "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" ]]; then
+  printf 'docker start %q >/dev/null\n' "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" >> rollback.sh
+else
+  printf '%s\n' "echo 'No worker ran before this release: nothing delivers until a worker is started.' >&2" >> rollback.sh
+fi
 fi
 printf '%s\n' "printf '%s\\n' 'Rollback completed and the previous release is live.'" >> rollback.sh
 chmod 700 rollback.sh
@@ -571,9 +654,14 @@ worker_switched=0
 restore_proxy() {
   status=$?
   if [[ "$worker_switched" == 1 ]]; then
-    docker compose -f "$RELEASE_DIR/compose.yaml" --profile delivery stop intelligence-worker >/dev/null 2>&1 || true
-    docker start "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" >/dev/null 2>&1 || true
-    echo "Worker cutover failed; the previous worker was restarted." >&2
+    docker compose -f "$RELEASE_DIR/compose.yaml" logs --no-color --tail=100 intelligence-worker > "$RELEASE_DIR/worker-startup.log" 2>&1 || true
+    docker compose -f "$RELEASE_DIR/compose.yaml" stop intelligence-worker >/dev/null 2>&1 || true
+    if [[ -n "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" ]]; then
+      docker start "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" >/dev/null 2>&1 || true
+      echo "Worker cutover failed; the previous worker was restarted (see worker-startup.log)." >&2
+    else
+      echo "Worker cutover failed and no worker ran before; nothing delivers until one runs (see worker-startup.log)." >&2
+    fi
   fi
   if [[ "$cutover_started" == 1 ]]; then
     cp "$RELEASE_DIR/nginx-before.conf" "$NGINX_CONFIG_PATH"
@@ -585,6 +673,17 @@ restore_proxy() {
 }
 trap restore_proxy ERR
 
+# The worker switches first: stop the previous one, start this release's and wait until the core's
+# readiness shows it beating with live delivery. A worker that doesn't come up leaves the proxy alone.
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
+  worker_switched=1
+  if [[ -n "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" ]]; then docker stop "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" >/dev/null; fi
+  docker compose -f compose.yaml up -d --wait --wait-timeout 120 intelligence-worker
+  await_worker "$CORE_PORT" "$RELEASE_NAME"
+  docker compose -f compose.yaml logs --no-color --tail=50 intelligence-worker > worker-startup.log
+  if grep -q 'Traceback (most recent call last)' worker-startup.log; then echo "The new worker logged an error at start-up." >&2; false; fi
+fi
+
 cutover_started=1
 cp nginx-current.conf "$NGINX_CONFIG_PATH"
 nginx -t
@@ -592,18 +691,9 @@ systemctl reload nginx
 
 curl -fsS "${PUBLIC_URL}/login" >/dev/null
 curl -fsS "${PUBLIC_URL}/workspace/pre-projects/requirements" >/dev/null
+# Fails in production unless a worker beats: a release never goes live with nothing delivering.
 curl -fsS "${PUBLIC_URL}/api/v1/health/ready" >/dev/null
 curl -fsSI "${PUBLIC_URL}/login" | grep -qi "X-Wodana-Release: ${RELEASE_NAME}"
-if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
-  worker_switched=1
-  docker stop "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" >/dev/null
-  docker compose -f compose.yaml --profile delivery up -d intelligence-worker
-  sleep 3
-  NEW_WORKER="$(docker compose -f compose.yaml --profile delivery ps -q intelligence-worker)"
-  [[ -n "$NEW_WORKER" && "$(docker inspect -f '{{.State.Running}}' "$NEW_WORKER")" == true ]]
-  docker compose -f compose.yaml --profile delivery logs --no-color --tail=50 intelligence-worker > worker-startup.log
-  ! grep -q 'Traceback (most recent call last)' worker-startup.log
-fi
 cutover_started=0
 trap - ERR
 

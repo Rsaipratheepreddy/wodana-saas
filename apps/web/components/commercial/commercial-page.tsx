@@ -65,6 +65,7 @@ export function CommercialPage({
   embedded = false,
   projectId,
   openRequestId,
+  openPaymentId,
 }: {
   initial: CommercialState;
   record: PreProjectCase;
@@ -77,6 +78,8 @@ export function CommercialPage({
   projectId?: string;
   /** A change request to open as the page loads (a notification's link). */
   openRequestId?: string;
+  /** A payment milestone whose client payment report opens as the page loads (a notification's link). */
+  openPaymentId?: string;
 }) {
   const t = useT();
   const router = useRouter();
@@ -495,6 +498,7 @@ export function CommercialPage({
         ) : ["contracts", "payment-plan"].includes(section) ? (
           <AgreementPayments
             initialView={section === "payment-plan" ? "payments" : "agreement"}
+            openPaymentId={openPaymentId}
             state={state}
             run={run}
             busy={busy}

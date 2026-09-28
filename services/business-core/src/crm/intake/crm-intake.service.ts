@@ -39,6 +39,8 @@ import { classifyRepeat } from "../leads/repeat-rules";
 import { notifyUserInApp } from "../../notifications/default-templates";
 import { enquiryTitle, refreshEnquiryTitlesForParty } from "../leads/enquiry-title";
 import { countryFromLocale, needsWorkspacePhoneCountry, normalizeIntakePartyPhones } from "./intake-phone";
+import { loadSalesSettings, salesSchedule } from "../leads/sales-attention";
+import { addSlaMinutes } from "../leads/sla-schedule";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -277,9 +279,16 @@ export class CrmIntakeService {
     input: CreateIntakeEventDto,
   ) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
-      if (input.assignment && input.assignment.mode !== "unassigned" &&
-          !await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.leads.assign")) {
-        throw new ForbiddenException("Lead assignment permission is required");
+      // Routing decides for itself, and a salesperson may own what they bring in (LF-1); giving an
+      // enquiry to someone else needs the assignment permission.
+      const owner = input.assignment?.mode === "manual" ? input.assignment.ownerMembershipId : undefined;
+      if (owner) {
+        const own = await client.query(
+          `SELECT 1 FROM workspace_memberships WHERE workspace_id=$1 AND id=$2 AND user_id=$3 AND status='active'`,
+          [workspaceId, owner, actorUser.userId]);
+        if (!own.rowCount && !await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.leads.assign")) {
+          throw new ForbiddenException("Lead assignment permission is required");
+        }
       }
       await validateLeadOptions(client, workspaceId, input);
       await assertSourceAllowed(client, workspaceId, actorUser.userId, input.source);
@@ -547,6 +556,30 @@ export class CrmIntakeService {
     // Serialize identity resolution within this workspace: simultaneous submissions with
     // different request keys must see the first committed contact, not create two people.
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:crm-identity`]);
+    const recordsFor = (partyId: string) => this.createReadyRecords(client, workspaceId, actorUserId, {
+      intakeEventId, partyId, source: input.source, channel: input.channel, receivedAt, title: input.title ?? "",
+      summary: input.summary ?? null, serviceType: input.serviceType ?? null, attribution: input.attribution ?? [],
+      consents: input.consents ?? [], legalEntityId: input.legalEntityId ?? null,
+    });
+    if (sourceActor === "user" && input.identity) {
+      // LF-1: the person entering it already answered "is this an existing client?", so nothing waits for review.
+      let partyId: string;
+      if (input.identity === "existing") {
+        const party = await client.query<{ id: string }>(
+          `SELECT id FROM crm_parties WHERE workspace_id=$1 AND id=$2 AND status='active' FOR KEY SHARE`, [workspaceId, input.partyId ?? null]);
+        if (!party.rowCount) throw new UnprocessableEntityException("The selected client is no longer active. Search again.");
+        partyId = party.rows[0].id;
+      } else {
+        partyId = await this.createPartyFromPayload(client, workspaceId, actorUserId, input.party);
+      }
+      const records = await recordsFor(partyId);
+      const resolutionType = input.identity === "existing" ? "review_attach" : "review_create_new";
+      await this.resolveIntake(client, workspaceId, {
+        intakeEventId, expectedStatus: "processing", resolutionType, partyId, actorUserId, source: sourceActor,
+        correlationId: eventCorrelationId, evidence: { decision: input.identity === "existing" ? "staff_selected_existing" : "staff_confirmed_new" },
+      });
+      return { intakeEventId, status: "ready", resolutionType, matchedExistingParty: input.identity === "existing", ...records };
+    }
     const matches = await this.identityMatches(client, workspaceId, input.party);
     const exact = matches.filter((match) => match.strength === "exact");
     if (exact.length === 1) {
@@ -570,6 +603,10 @@ export class CrmIntakeService {
       return { intakeEventId, status: "ready", resolutionType: "verified_contact", matchedExistingParty: true, ...records };
     }
     if (matches.length) {
+      // S-3: a likely-but-unproven match never parks the enquiry. It is created at once on a provisional
+      // client, routed and timed like any other; the possible matches wait on it as "Confirm client".
+      const partyId = await this.createPartyFromPayload(client, workspaceId, actorUserId, input.party);
+      const records = await recordsFor(partyId);
       for (const match of matches) {
         await client.query(
           `INSERT INTO crm_identity_candidates
@@ -579,18 +616,20 @@ export class CrmIntakeService {
           [workspaceId, intakeEventId, match.partyId, match.strength, match.score, JSON.stringify(match.reasons)],
         );
       }
-      await client.query(
-        `UPDATE crm_intake_events SET status = 'duplicate_candidate', version = version + 1
-         WHERE id = $1 AND workspace_id = $2`,
-        [intakeEventId, workspaceId],
-      );
+      await this.resolveIntake(client, workspaceId, {
+        intakeEventId, expectedStatus: "processing", resolutionType: "new_identity", partyId, actorUserId, source: sourceActor,
+        correlationId: eventCorrelationId, evidence: { matchStrength: "fuzzy", provisional: true, candidateCount: matches.length },
+      });
+      const settings = await loadSalesSettings(client, workspaceId);
+      await client.query(`UPDATE crm_leads SET client_review_due_at=$3 WHERE workspace_id=$1 AND id=$2`,
+        [workspaceId, records.leadId, addSlaMinutes(new Date(), settings.clientReviewMinutes, await salesSchedule(client, workspaceId))]);
       await this.events.record(client, {
         workspaceId, actorUserId, source: sourceActor,
         action: "crm.identity.review_required.v1", entityType: "crm_intake", entityId: intakeEventId,
         correlationId: eventCorrelationId,
-        after: { candidateCount: matches.length },
+        after: { candidateCount: matches.length, provisionalPartyId: partyId, leadId: records.leadId },
       });
-      return { intakeEventId, status: "duplicate_candidate", candidates: matches };
+      return { intakeEventId, status: "ready", resolutionType: "new_identity", matchedExistingParty: false, clientMatches: matches.length, ...records };
     }
 
     const partyId = await this.createPartyFromPayload(client, workspaceId, actorUserId, input.party);

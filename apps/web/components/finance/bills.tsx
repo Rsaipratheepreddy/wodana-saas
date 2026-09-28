@@ -40,7 +40,7 @@ export function Bills({ api, state, error, openId, onReload, onOpen }: {
   ], [t, format, today]);
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   return <>
-    <DataGrid<Bill> appearance="flush" ariaLabel={t("Supplier invoices")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<Bill> ariaLabel={t("Supplier invoices")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search invoices")} rowNumbers={false} wrapText
       toolbarLeading={<SegmentedControl label={t("Show")} value={show} onChange={(value) => setShow(value as Show)} options={[{ id: "open", label: t("To act on") }, { id: "all", label: t("All") }]} />}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={show === "open" ? t("Nothing to act on") : t("No supplier invoices yet")} />} />

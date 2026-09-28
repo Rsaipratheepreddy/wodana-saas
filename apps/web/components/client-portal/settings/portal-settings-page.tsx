@@ -4,7 +4,7 @@ import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Button, DesignSystemProvider, EmailInput, ErrorState, InlineNotice, PhoneField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput,
+  DesignSystemProvider, EmailInput, ErrorState, InlineNotice, PhoneField, SaveBar, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { staffPortalApi } from "@/lib/client-portal/client";
@@ -33,6 +33,7 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const load = useCallback(async () => {
     try {
       const result = await api.settings();
@@ -45,7 +46,7 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
   if (!draft || !saved || !site) return <Skeleton lines={8} shape="form" />;
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
   const editable = canManage && !busy;
-  const change = (patch: Partial<Draft>) => { setNotice(""); setDraft((current) => (current ? { ...current, ...patch } : current)); };
+  const change = (patch: Partial<Draft>) => { setNotice(""); setJustSaved(false); setDraft((current) => (current ? { ...current, ...patch } : current)); };
   const save = async () => {
     setBusy(true); setError(""); setNotice("");
     try {
@@ -56,13 +57,13 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
           whatsapp: joinPhone(draft.support.whatsapp.country, draft.support.whatsapp.national) },
       });
       const next = toDraft(result.settings, result.site.region.country ?? "");
-      setSite(result.site); setSaved(next); setDraft(next); setNotice(t("Saved."));
+      setSite(result.site); setSaved(next); setDraft(next); setJustSaved(true);
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   };
   const progressRows: Array<[keyof Draft["progress"], string]> = [["stageNames", t("Stage names")], ["dates", t("Dates")], ["updates", t("Updates the team shares")],
     ["photos", t("Site photos the team shares")]];
-  return <SettingsPage title={t("Client portal")} actions={canManage ? <Button variant="primary" size="compact" isDisabled={!dirty} isLoading={busy} onPress={() => void save()}>{t("Save")}</Button> : null}>
+  return <SettingsPage title={t("Client portal")}>
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
     <SettingsSection id="portal-access" title={t("Access")}>
@@ -104,6 +105,7 @@ export function PortalSettingsPage({ workspaceId }: { workspaceId: string }) {
     <SettingsSection id="portal-preview" title={t("Preview")}>
       <PortalPreview site={site} draft={draft} />
     </SettingsSection>
+    {canManage ? <SaveBar isDirty={dirty} isSaving={busy} saved={justSaved} onDiscard={() => { setDraft(saved); setError(""); }} onSave={() => void save()} /> : null}
   </SettingsPage>;
 }
 

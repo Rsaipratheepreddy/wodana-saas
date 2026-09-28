@@ -35,7 +35,7 @@ export function SupplierReturns({ api, rows, search, onSearch, toolbar, onOpen }
       <span>{format.when(row.createdAt)}</span><small>{row.createdByName}</small></span> } },
   ], [t, format]);
   const shown = (rows ?? []).filter((row) => !search.trim() || `${row.number} ${row.orderNumber} ${row.supplierName}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
-  return <DataGrid<SupplierReturnRow> appearance="flush" ariaLabel={t("Returns")} columns={columns} data={shown} getRowId={(row) => row.id} isLoading={!rows} onRowAction={(row) => onOpen(row.id)}
+  return <DataGrid<SupplierReturnRow> ariaLabel={t("Returns")} columns={columns} data={shown} getRowId={(row) => row.id} isLoading={!rows} onRowAction={(row) => onOpen(row.id)}
     onSearchChange={onSearch} searchValue={search} searchLabel={t("Search deliveries")} toolbarLeading={toolbar} rowNumbers={false} selectable={false} wrapText
     emptyContent={search.trim() ? <NoResultsState onClear={() => onSearch("")} /> : <EmptyState title={t("No returns")} description={t("Return goods to the supplier from a delivery.")} />} />;
 }

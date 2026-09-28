@@ -1,11 +1,14 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { ChevronDown } from "lucide-react";
 import { Button, Callout, ControlledModalDialog, SelectField, TextInput, TextAreaField } from "@/design-system";
 import { salesOwnerChoices, type LeadsPageData } from "@/lib/crm/leads";
 import type { EnquiryDetails, LeadContact, LeadOptions } from "@/lib/crm/lead-options";
-import { countryForPhone, phoneCountry } from "@/lib/crm/phone";
+import { countryForPhone, phoneCountry, phoneProblem, toE164 } from "@/lib/crm/phone";
+import { findContactMatches, type ClientMatch } from "@/lib/crm/client-match";
 import { CrmPhoneField } from "./crm-phone-field";
+import { ClientMatchList } from "./client-match-list";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 import { enquiryFields, isShown } from "@/lib/crm/enquiry-fields";
 import { changedValues, EnquiryCustomInputs, saveLeadFields, type CustomValues } from "./enquiry-custom-inputs";
@@ -21,9 +24,25 @@ export type EditableEnquiry = {
   customFields?: CustomValues | null;
 };
 
-export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
+/** The system sets this source for a known client; nobody picks it by hand. */
+const RETURNING_SOURCE = "returning_customer";
+const ROUTING = "automatic";
+const UNASSIGNED = "unassigned";
+const EMAIL = /^\S+@\S+\.\S+$/;
+const quiet = { tooShort: () => "x", tooLong: () => "x", invalid: () => "x", notMobile: () => "x", chooseCountry: "x" };
+
+type Identity = { kind: "existing"; partyId: string; name: string } | { kind: "new" } | null;
+
+/**
+ * LF-1: the staff enquiry form. The mobile comes first and is matched as it is typed, so an existing
+ * client is recognised while they are on the phone. The required fields come next; everything
+ * else waits under More details. Also edits an enquiry's details.
+ */
+export function LeadEnquiryForm({ initialData, existing, onClose, onSaved, onOpenLead }: {
   initialData: LeadsPageData; existing?: EditableEnquiry; onClose: () => void;
-  onSaved: (leadId: string) => Promise<void>;
+  onSaved: (leadId: string, reference?: string) => Promise<void>;
+  /** Opens an existing enquiry instead of creating a new one. */
+  onOpenLead?: (leadId: string) => void;
 }) {
   const t = useT();
   const areaLabel = administrativeAreaLabel(countryFromLocale(initialData.defaultLocale));
@@ -48,127 +67,174 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
   const areaOptions = options?.areas?.[details.emirate ?? ""] ?? [];
   const [customAreaSelected, setCustomAreaSelected] = useState(() => Boolean(existing?.details?.area && !(options?.areas?.[existing.details.emirate ?? ""] ?? []).some(item => item.id === existing.details?.area)));
   const areaChoice = customAreaSelected ? "other" : details.area ?? "";
-  const [source, setSource] = useState(existing?.source ?? options?.sources.find(s => s.id === "company")?.id ?? options?.sources[0]?.id ?? "");
-  const [channel, setChannel] = useState(existing?.channel ?? options?.channels[source]?.find(c => c.id === "call")?.id ?? options?.channels[source]?.[0]?.id ?? "");
+  // No silent default: the person says where it came from.
+  const [source, setSource] = useState(existing?.source ?? "");
+  const [channel, setChannel] = useState(existing?.channel ?? "");
+  const channelItems = options?.channels[source] ?? [];
   // Only a real correction is sent, so an older source that is no longer offered stays as it was.
   const sourceChanged = Boolean(existing) && (source !== (existing?.source ?? "") || channel !== (existing?.channel ?? ""));
   const [referral, setReferral] = useState({ name: existing?.referral?.name ?? "", contact: existing?.referral?.contact ?? "", membershipId: existing?.referral?.membershipId ?? "", option: existing?.referral?.option ?? "" });
-  const referralKind = source !== "referral" ? null : channel === "internal" || channel === "broker" || channel === "partner" ? channel : "external";
+  const referralKind = source !== "referral" ? null : channel === "internal" || channel === "broker" || channel === "partner" ? channel : channel ? "external" : null;
   const referralBody = () => referralKind === "external" ? { name: referral.name, contact: referral.contact || undefined }
     : referralKind === "internal" ? { membershipId: referral.membershipId } : referralKind ? { option: referral.option } : undefined;
   const roles = initialData.currentRoles ?? [];
+  const roleLimited = (id: string) => Boolean(options?.sources.find(item => item.id === id)?.allowedRoles?.length);
   // A source limited to roles is offered only to people holding one (owners and admins always).
-  const sourceItems = (options?.sources ?? []).filter((item) => !item.allowedRoles?.length || item.id === existing?.source || roles.some((role) => item.allowedRoles!.includes(role) || role === "owner" || role === "administrator"));
-  const [mode, setMode] = useState("manual");
-  // A salesperson who can own enquiries starts as the owner of the one they create.
-  const ownerChoices = salesOwnerChoices(initialData);
-  const [ownerMembershipId, setOwner] = useState(() => ownerChoices.some(member => member.id === initialData.currentMembershipId) ? initialData.currentMembershipId! : "");
+  const sourceItems = (options?.sources ?? []).filter((item) => item.id === existing?.source || (item.id !== RETURNING_SOURCE
+    && (!item.allowedRoles?.length || roles.some((role) => item.allowedRoles!.includes(role) || role === "owner" || role === "administrator"))));
+
+  // Owner: me for what I bring in myself, routing for the company's enquiries.
+  const me = initialData.currentMembershipId;
+  const ownerChoices = salesOwnerChoices(initialData).filter(member => initialData.canAssign !== false || member.id === me);
+  const meCanOwn = ownerChoices.some(member => member.id === me);
+  const routingConfigured = initialData.assignmentPolicies.some(policy => policy.status === "active") || initialData.queues.some(queue => queue.status === "active" && queue.isFallback);
+  const defaultOwner = (forSource: string) => meCanOwn && (roleLimited(forSource) || !routingConfigured) ? me! : routingConfigured ? ROUTING : meCanOwn ? me! : UNASSIGNED;
+  const [owner, setOwnerChoice] = useState(() => defaultOwner(existing?.source ?? ""));
+  const ownerTouched = useRef(false);
   const [queueId, setQueue] = useState("");
+
   const inFlight = useRef(false);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState("");
   const [savedId, setSavedId] = useState<string>();
-  const [matches, setMatches] = useState<Array<{ id: string; partyId: string; partyName: string; version: number }>>([]);
-  const [matchChoice, setMatchChoice] = useState("");
+  const [more, setMore] = useState(() => Boolean(existing && (existing.party.email || existing.party.company || existing.party.phone || existing.summary || existing.details?.budgetRange || existing.details?.campaign || existing.details?.internalNotes)));
+
+  // Who already has this mobile or email (LF-1). Results belong to the query that found them.
+  const [found, setFound] = useState<{ key: string; matches: ClientMatch[] }>({ key: "", matches: [] });
+  const [checkingKey, setCheckingKey] = useState("");
+  const [chosen, setIdentity] = useState<Identity>(null);
+  const mobileCountry = contact.mobileCountryCode ?? "";
+  const mobile = contact.mobile?.trim() ?? "";
+  const email = contact.email?.trim() ?? "";
+  const matchQuery = useMemo(() => {
+    if (existing) return null;
+    const fullMobile = mobile && !phoneProblem(mobile, mobileCountry, quiet, { mobile: true }) ? toE164(mobile, mobileCountry) ?? "" : "";
+    const validEmail = EMAIL.test(email) ? email : "";
+    return fullMobile || validEmail ? { mobile: fullMobile || undefined, email: validEmail || undefined } : null;
+  }, [existing, mobile, mobileCountry, email]);
+  const matchKey = matchQuery ? JSON.stringify(matchQuery) : "";
+  const matches = matchKey && found.key === matchKey ? found.matches : [];
+  const checking = Boolean(matchKey) && checkingKey === matchKey;
+  // A different set of people needs a fresh answer.
+  const identity: Identity = chosen?.kind === "existing" ? (matches.some(match => match.partyId === chosen.partyId) ? chosen : null)
+    : chosen?.kind === "new" && matches.length ? chosen : null;
+  useEffect(() => {
+    if (!matchKey) return;
+    const query = JSON.parse(matchKey) as { mobile?: string; email?: string };
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setCheckingKey(matchKey);
+      findContactMatches(initialData.workspaceId, query, controller.signal)
+        .then(result => setFound({ key: matchKey, matches: Array.isArray(result?.matches) ? result.matches : [] }))
+        .catch(() => { if (!controller.signal.aborted) setFound({ key: matchKey, matches: [] }); })
+        .finally(() => { if (!controller.signal.aborted) setCheckingKey(""); });
+    }, 300);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [matchKey, initialData.workspaceId]);
+
   const set = (key: keyof LeadContact) => (value: string) => setContact(previous => ({ ...previous, [key]: value }));
   const setDetail = (key: keyof EnquiryDetails) => (value: string) => setDetails(previous => ({ ...previous, [key]: value }));
+  const chooseSource = (value: string) => {
+    setSource(value);
+    const channels = options?.channels[value] ?? [];
+    setChannel(channels.length === 1 ? channels[0].id : "");
+    if (!existing && !ownerTouched.current) setOwnerChoice(defaultOwner(value));
+  };
   const formId = existing ? `edit-enquiry-${existing.id}` : "create-crm-lead";
+  const name = identity?.kind === "existing" ? identity.name : contact.displayName;
+
   const save = async (event: FormEvent) => {
     event.preventDefault(); if (inFlight.current) return; inFlight.current = true; setSaving(true); setFailure("");
     try {
       if (savedId) { await onSaved(savedId); return; }
-      if (matches.length) {
-        if (!matchChoice) throw new Error(t("Choose an existing client or a different person."));
-        const candidate = matches.find(item => item.id === matchChoice) ?? matches[0];
-        const response = await fetch(`/api/workspace/crm/data/duplicate-candidates/${candidate.id}/review?workspaceId=${initialData.workspaceId}`, {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ version: candidate.version, decision: matchChoice === "new" ? "create_new" : "attach", ...(matchChoice !== "new" ? { partyId: candidate.partyId } : {}), reason: matchChoice === "new" ? "User confirmed a different client in the enquiry form." : "User confirmed the existing client in the enquiry form." }),
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.message ?? t("The client could not be linked. Please retry."));
-        if (!result.leadId) throw new Error(t("The enquiry was received. Refresh the enquiries list to check its status."));
-        setSavedId(result.leadId);
-        await saveLeadFields(initialData.workspaceId, result.leadId, changedValues(undefined, customValues));
-        await onSaved(result.leadId); return;
-      }
-      if (!contact.displayName.trim()) throw new Error(t("Enter a customer name."));
+      if (!existing && matches.length && !identity) throw new Error(t("Choose the existing client or Different person."));
+      if (!name.trim()) throw new Error(t("Enter a customer name."));
       if (!contact.mobile?.trim()) throw new Error(t("Enter a mobile number."));
       if (hasRegions && !details.emirate?.trim()) throw new Error(t("Select the {area}.", { area: translateKnown(t, areaLabel).toLowerCase() }));
       if (details.emirate !== "other" && customAreaSelected && !details.area?.trim()) throw new Error(t("Enter the area name."));
-      if (!existing && mode === "manual" && !ownerMembershipId) throw new Error(t("Choose a salesperson, automatic routing, or leave unassigned."));
-      const enquiryDetails = Object.fromEntries(["emirate", "area", "location", "customerType", "budgetRange", "campaign", "internalNotes"].map(key => [key, details[key as keyof EnquiryDetails] ?? ""]));
       if (!source) throw new Error(t("Choose where this enquiry came from."));
       if (!channel) throw new Error(t("Choose the channel for this source."));
-      if (shown("customerType") && options?.customerTypes.length && !details.customerType) throw new Error(t("Choose the client type."));
+      if (options?.customerTypes.length && shown("customerType") && !details.customerType) throw new Error(t("Choose the client type."));
+      if (!existing && !owner) throw new Error(t("Choose an owner, routing, or leave unassigned."));
+      const enquiryDetails = Object.fromEntries(["emirate", "area", "location", "customerType", "budgetRange", "campaign", "internalNotes"].map(key => [key, details[key as keyof EnquiryDetails] ?? ""]));
       const referralChanged = Boolean(existing) && JSON.stringify(referralBody()) !== JSON.stringify(existing?.referral ? { ...(existing.referral.name ? { name: existing.referral.name } : {}), ...(existing.referral.contact ? { contact: existing.referral.contact } : {}), ...(existing.referral.membershipId ? { membershipId: existing.referral.membershipId } : {}), ...(existing.referral.option ? { option: existing.referral.option } : {}) } : undefined);
+      const assignment = owner === ROUTING ? { mode: "automatic" } : owner === UNASSIGNED ? { mode: "unassigned" } : { mode: "manual", ownerMembershipId: owner, ...(queueId ? { queueId } : {}) };
       const body = existing ? { version: existing.version, serviceType, summary, party: contact, details: enquiryDetails, ...(sourceChanged ? { source, channel } : {}), ...(referralKind && (sourceChanged || referralChanged) ? { referral: referralBody() } : {}) }
-        : { workspaceId: initialData.workspaceId, requestId, ...contact, serviceType, summary, source, channel, details: enquiryDetails, ...(referralKind ? { referral: referralBody() } : {}),
-            assignment: { mode, ...(mode === "manual" ? { ownerMembershipId, ...(queueId ? { queueId } : {}) } : {}) } };
+        : { workspaceId: initialData.workspaceId, requestId, ...contact, displayName: name, serviceType, summary, source, channel, details: enquiryDetails, ...(referralKind ? { referral: referralBody() } : {}), assignment,
+            ...(identity?.kind === "existing" ? { identity: "existing", partyId: identity.partyId } : identity?.kind === "new" ? { identity: "new" } : {}) };
       const response = await fetch(existing ? `/api/workspace/crm/data/leads/${existing.id}/details?workspaceId=${initialData.workspaceId}` : "/api/workspace/crm/leads", {
         method: existing ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(". ") : result.message ?? t("The enquiry could not be saved."));
-      if (result.status === "duplicate_candidate") {
-        const response = await fetch(`/api/workspace/crm/data/intake-events/${result.intakeEventId}?workspaceId=${initialData.workspaceId}`);
-        const intake = await response.json();
-        if (!response.ok) throw new Error(t("Client matches could not be loaded. Try saving again."));
-        const pending = (intake.candidates ?? []).filter((item: { status: string }) => item.status === "pending");
-        if (!pending.length) throw new Error(t("This enquiry has already been reviewed. Refresh the enquiries list to check its status."));
-        setMatches(pending); setMatchChoice(""); return;
-      }
       const id = existing?.id ?? result.leadId;
       if (!id) throw new Error(t("The enquiry was received. Refresh the enquiries list to check its status."));
       setSavedId(id);
       await saveLeadFields(initialData.workspaceId, id, changedValues(existing?.customFields, customValues));
-      await onSaved(id);
+      await onSaved(id, !existing && typeof result.reference === "string" ? result.reference : undefined);
     } catch (error) { setFailure(error instanceof Error ? error.message : t("The enquiry could not be saved.")); }
     finally { inFlight.current = false; setSaving(false); }
   };
+
+  const ownerItems = [
+    ...(routingConfigured ? [{ id: ROUTING, label: t("Use routing rules") }] : []),
+    ...ownerChoices.map(member => ({ id: member.id, label: member.id === me ? t("Me ({name})", { name: member.displayName || member.email }) : member.displayName || member.email })),
+    { id: UNASSIGNED, label: t("Leave unassigned") },
+  ];
+  const locked = saving || Boolean(savedId);
   return <ControlledModalDialog isOpen isDismissable={!saving} onOpenChange={open => { if (!open && !saving) onClose(); }} size="lg"
     title={existing ? t("Edit enquiry") : t("New enquiry")} description={existing?.reference ?? undefined}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose} isDisabled={saving}>{t("Cancel")}</Button><Button form={formId} type="submit" variant="primary" isDisabled={!options} isLoading={saving}>{savedId ? t("Refresh enquiry") : existing ? t("Save changes") : matches.length ? t("Save enquiry") : t("Create enquiry")}</Button></div>}>
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose} isDisabled={saving}>{t("Cancel")}</Button><Button form={formId} type="submit" variant="primary" isDisabled={!options} isLoading={saving}>{savedId ? t("Refresh enquiry") : existing ? t("Save changes") : t("Create enquiry")}</Button></div>}>
     <form id={formId} className={styles.leadForm} onSubmit={save}>
       {failure && <Callout title={t("Enquiry not saved")} tone="danger">{failure}</Callout>}
       {!options && <Callout title={t("Enquiry options unavailable")} tone="warning">{t("Refresh Enquiries to load the current configuration.")}</Callout>}
-      {matches.length > 0 && <section className={styles.clientMatch} aria-label={t("Choose client")}>
-        <strong>{t("Is this an existing client?")}</strong>
-        <p>{t("Your enquiry is saved as a draft. Choose who it belongs to; a matching name does not always mean the same person.")}</p>
-        <SelectField label={t("Client for this enquiry")} items={[...matches.map(item => ({ id: item.id, label: item.partyName })), { id: "new", label: t("Different person — create a new client") }]} selectedKey={matchChoice || null} onSelectionChange={key => setMatchChoice(String(key ?? ""))} isDisabled={saving || Boolean(savedId)} />
-      </section>}
-      <fieldset className={styles.enquiryFields} disabled={saving || Boolean(savedId) || matches.length > 0}>
-        <div className={styles.formColumns}><TextInput isRequired label={t("Customer name")} value={contact.displayName} onChange={set("displayName")} /><CrmPhoneField label={t("Mobile")} required value={contact.mobile ?? ""} onChange={set("mobile")} countryCode={contact.mobileCountryCode ?? ""} onCountryChange={set("mobileCountryCode")} locale={initialData.defaultLocale} /></div>
-        {shown("email") || hasRegions ? <div className={styles.formColumns}>{shown("email") ? <TextInput label={t("Email")} inputType="email" value={contact.email ?? ""} onChange={set("email")} /> : null}{hasRegions ? <SelectField label={translateKnown(t, areaLabel)} isRequired items={withExisting(options?.emirates, existing?.details?.emirate ?? "")} selectedKey={details.emirate || null} onSelectionChange={key => { setCustomAreaSelected(false); setDetails(previous => ({ ...previous, emirate: String(key ?? ""), area: "" })); }} /> : null}</div> : null}
-        {shown("area") ? <div className={styles.formColumns}>{details.emirate === "other" || !areaOptions.length
-          ? <TextInput label={t("Area / city · optional")} value={details.area ?? ""} onChange={setDetail("area")} />
-          : <><SelectField label={t("Area · optional")} items={[{ id: "", label: t("Not specified") }, ...areaOptions, { id: "other", label: t("Other area") }]} selectedKey={areaChoice} onSelectionChange={key => { setCustomAreaSelected(key === "other"); setDetail("area")(key === "other" ? "" : String(key ?? "")); }} />{customAreaSelected ? <TextInput isRequired label={t("Area name")} value={details.area ?? ""} onChange={setDetail("area")} /> : null}</>}</div> : null}
-        <div className={styles.formColumns}><SelectField label={t("Enquiry type")} isRequired items={withExisting(options?.enquiryTypes, existing?.serviceType ?? "")} selectedKey={serviceType} onSelectionChange={key => key && setServiceType(String(key))} />{shown("budgetRange") ? <SelectField label={t("Budget range · optional")} items={[{ id: "", label: t("Not provided") }, ...withExisting(options?.budgetRanges, existing?.details?.budgetRange ?? "")]} selectedKey={details.budgetRange ?? ""} onSelectionChange={key => setDetail("budgetRange")(String(key ?? ""))} /> : null}</div>
-        {shown("customerType") && Boolean(options?.customerTypes.length || existing?.details?.customerType) && <SelectField label={t("Client type")} isRequired={Boolean(options?.customerTypes.length)} items={withExisting(options?.customerTypes, existing?.details?.customerType ?? "")} selectedKey={details.customerType || null} onSelectionChange={key => setDetail("customerType")(String(key ?? ""))} />}
-        {shown("summary") ? <TextAreaField label={t("Project description · optional")} value={summary} onChange={setSummary} placeholder={t("What would the customer like to do?")} /> : null}
-        <EnquiryCustomInputs className={styles.formColumns} fields={fields} values={customValues} onChange={(id, value) => setCustomValues(current => ({ ...current, [id]: value }))} />
-        <div className={styles.formColumns}><SelectField label={t("Source")} isRequired items={withExisting(sourceItems, existing?.source ?? "")} selectedKey={source} onSelectionChange={key => { const value = String(key); setSource(value); setChannel(options?.channels[value]?.[0]?.id ?? ""); }} /><SelectField label={t("Channel")} isRequired items={withExisting(options?.channels[source], source === existing?.source ? existing?.channel ?? "" : "")} selectedKey={channel} onSelectionChange={key => key && setChannel(String(key))} /></div>
-        {referralKind === "external" ? <div className={styles.formColumns}><TextInput isRequired label={t("Referred by")} value={referral.name} onChange={value => setReferral(current => ({ ...current, name: value }))} /><TextInput label={t("Referrer contact · optional")} value={referral.contact} onChange={value => setReferral(current => ({ ...current, contact: value }))} /></div>
+      <fieldset className={styles.enquiryFields} disabled={locked}>
+        <CrmPhoneField label={t("Mobile")} required value={contact.mobile ?? ""} onChange={set("mobile")} countryCode={contact.mobileCountryCode ?? ""} onCountryChange={set("mobileCountryCode")} locale={initialData.defaultLocale} />
+        {!existing && matches.length > 0 ? <section className={styles.clientMatch} aria-label={t("Existing client?")} aria-live="polite">
+          <strong>{t("Existing client?")}</strong>
+          <ClientMatchList label={t("Clients with this mobile or email")} matches={matches} actions={(match) => <>
+            {match.open && match.leadId && onOpenLead ? <Button size="compact" isDisabled={locked} onPress={() => onOpenLead(match.leadId!)}>{t("Open it")}</Button> : null}
+            <Button size="compact" variant={identity?.kind === "existing" && identity.partyId === match.partyId ? "primary" : "secondary"} isDisabled={locked}
+              aria-pressed={identity?.kind === "existing" && identity.partyId === match.partyId}
+              onPress={() => setIdentity({ kind: "existing", partyId: match.partyId, name: match.name })}>{match.open ? t("Add to this client") : t("Add as returning")}</Button>
+          </>} />
+          <div><Button size="compact" variant={identity?.kind === "new" ? "primary" : "quiet"} aria-pressed={identity?.kind === "new"} isDisabled={locked} onPress={() => setIdentity({ kind: "new" })}>{t("Different person")}</Button></div>
+        </section> : checking ? <p className={styles.routingHint} aria-live="polite">{t("Checking for an existing client…")}</p> : null}
+        <TextInput isRequired label={t("Customer name")} value={name} isReadOnly={identity?.kind === "existing"} onChange={set("displayName")} />
+        <SelectField label={t("Enquiry type")} isRequired items={withExisting(options?.enquiryTypes, existing?.serviceType ?? "")} selectedKey={serviceType || null} onSelectionChange={key => key && setServiceType(String(key))} />
+        <div className={styles.formColumns}>
+          <SelectField label={t("Source")} isRequired placeholder={t("Choose source")} items={withExisting(sourceItems, existing?.source ?? "")} selectedKey={source || null} onSelectionChange={key => chooseSource(String(key ?? ""))} />
+          <SelectField label={t("Channel")} isRequired isDisabled={!source} placeholder={t("Choose channel")} items={withExisting(channelItems, source === existing?.source ? existing?.channel ?? "" : "")} selectedKey={channel || null} onSelectionChange={key => setChannel(String(key ?? ""))} />
+        </div>
+        {referralKind === "external" ? <div className={styles.formColumns}><TextInput isRequired label={t("Referred by")} value={referral.name} onChange={value => setReferral(current => ({ ...current, name: value }))} /><TextInput label={t("Referrer contact")} value={referral.contact} onChange={value => setReferral(current => ({ ...current, contact: value }))} /></div>
           : referralKind === "internal" ? <SelectField isRequired label={t("Referred by")} items={initialData.members.filter(member => member.status === "active").map(member => ({ id: member.id, label: member.displayName || member.email }))} selectedKey={referral.membershipId || null} onSelectionChange={key => setReferral(current => ({ ...current, membershipId: String(key ?? "") }))} />
           : referralKind ? <SelectField isRequired label={t("Referred by")} items={withExisting(referralKind === "broker" ? options?.referralBrokers : options?.referralPartners, existing?.referral?.option ?? "")} selectedKey={referral.option || null} onSelectionChange={key => setReferral(current => ({ ...current, option: String(key ?? "") }))} />
           : null}
-        {!existing && <>
-          <div className={styles.formColumns}><SelectField label={t("Assignment")} items={[{ id: "manual", label: t("Choose sales owner") }, { id: "automatic", label: t("Use routing rules") }, { id: "unassigned", label: t("Leave unassigned") }]} selectedKey={mode} onSelectionChange={key => key && setMode(String(key))} />
-            {mode === "manual" ? <SelectField isRequired label={t("Sales owner")} items={ownerChoices.map(member => ({ id: member.id, label: member.displayName || member.email }))} selectedKey={ownerMembershipId || null} onSelectionChange={key => setOwner(String(key ?? ""))} /> : <p className={styles.routingHint}>{mode === "automatic" ? t("Uses the matching rule or default team and available capacity.") : t("The enquiry stays visible in Unassigned.")}</p>}
-          </div>
-        </>}
-        <section className={styles.moreDetails} aria-label={t("Additional details")}>
-          <h3>{t("Additional details")}</h3>
-          <div className={styles.leadForm}>
-            <TextInput label={t("Enquiry reference")} value={existing?.reference ?? t("Assigned after save")} isReadOnly description={t("The system assigns this ID. The enquiry title follows the customer name and property location.")} />
-            <div className={styles.formColumns}><TextInput label={t("Company")} value={contact.company ?? ""} onChange={set("company")} /><TextInput label={t("Job position")} value={contact.jobPosition ?? ""} onChange={set("jobPosition")} /></div>
-            <div className={styles.formColumns}><CrmPhoneField label={t("Phone")} value={contact.phone ?? ""} onChange={set("phone")} countryCode={contact.phoneCountryCode ?? ""} onCountryChange={set("phoneCountryCode")} locale={initialData.defaultLocale} /><TextInput label={t("Website")} value={contact.website ?? ""} onChange={set("website")} /></div>
-            <TextInput label={t("Address")} value={contact.address ?? ""} onChange={set("address")} />
-            <div className={styles.formColumns}><TextInput label={t("Campaign")} value={details.campaign ?? ""} onChange={setDetail("campaign")} /></div>
-            {!existing && mode === "manual" && <SelectField label={t("Sales team · optional")} items={[{ id: "", label: t("No team selected") }, ...initialData.queues.filter(q => q.status === "active").map(q => ({ id: q.id, label: q.name }))]} selectedKey={queueId} onSelectionChange={key => setQueue(String(key ?? ""))} />}
-            <TextAreaField label={t("Internal notes")} value={details.internalNotes ?? ""} onChange={setDetail("internalNotes")} />
-          </div>
-        </section>
-        {!existing && <p className={styles.routingHint}>{t("The enquiry reference is assigned automatically.")}</p>}
+        {hasRegions || shown("area") ? <div className={styles.formColumns}>
+          {hasRegions ? <SelectField label={translateKnown(t, areaLabel)} isRequired items={withExisting(options?.emirates, existing?.details?.emirate ?? "")} selectedKey={details.emirate || null} onSelectionChange={key => { setCustomAreaSelected(false); setDetails(previous => ({ ...previous, emirate: String(key ?? ""), area: "" })); }} /> : null}
+          {shown("area") ? details.emirate === "other" || !areaOptions.length
+            ? <TextInput label={t("Area / city")} value={details.area ?? ""} onChange={setDetail("area")} />
+            : <SelectField label={t("Area")} items={[{ id: "", label: t("Not specified") }, ...areaOptions, { id: "other", label: t("Other area") }]} selectedKey={areaChoice} onSelectionChange={key => { setCustomAreaSelected(key === "other"); setDetail("area")(key === "other" ? "" : String(key ?? "")); }} /> : null}
+        </div> : null}
+        {customAreaSelected && shown("area") ? <TextInput isRequired label={t("Area name")} value={details.area ?? ""} onChange={setDetail("area")} /> : null}
+        {shown("customerType") && Boolean(options?.customerTypes.length || existing?.details?.customerType) && <SelectField label={t("Client type")} isRequired={Boolean(options?.customerTypes.length)} items={withExisting(options?.customerTypes, existing?.details?.customerType ?? "")} selectedKey={details.customerType || null} onSelectionChange={key => setDetail("customerType")(String(key ?? ""))} />}
+        {!existing ? <SelectField label={t("Owner")} isRequired items={ownerItems} selectedKey={owner || null} onSelectionChange={key => { ownerTouched.current = true; setOwnerChoice(String(key ?? "")); }} /> : null}
+
+        <Button className={styles.moreToggle} variant="quiet" size="compact" aria-expanded={more} aria-controls={`${formId}-more`} onPress={() => setMore(value => !value)}>
+          <ChevronDown size={14} aria-hidden="true" data-open={more || undefined} />{t("More details")}
+        </Button>
+        <div id={`${formId}-more`} className={styles.leadForm} hidden={!more}>
+          {shown("email") ? <TextInput label={t("Email")} inputType="email" value={contact.email ?? ""} onChange={set("email")} /> : null}
+          {shown("budgetRange") ? <SelectField label={t("Budget range")} items={[{ id: "", label: t("Not provided") }, ...withExisting(options?.budgetRanges, existing?.details?.budgetRange ?? "")]} selectedKey={details.budgetRange ?? ""} onSelectionChange={key => setDetail("budgetRange")(String(key ?? ""))} /> : null}
+          {shown("summary") ? <TextAreaField label={t("Project description")} value={summary} onChange={setSummary} placeholder={t("What would the customer like to do?")} /> : null}
+          <div className={styles.formColumns}><TextInput label={t("Company")} value={contact.company ?? ""} onChange={set("company")} /><TextInput label={t("Job position")} value={contact.jobPosition ?? ""} onChange={set("jobPosition")} /></div>
+          <div className={styles.formColumns}><CrmPhoneField label={t("Phone")} kind="any" value={contact.phone ?? ""} onChange={set("phone")} countryCode={contact.phoneCountryCode ?? ""} onCountryChange={set("phoneCountryCode")} locale={initialData.defaultLocale} /><TextInput label={t("Website")} value={contact.website ?? ""} onChange={set("website")} /></div>
+          <TextInput label={t("Address")} value={contact.address ?? ""} onChange={set("address")} />
+          <TextInput label={t("Campaign")} value={details.campaign ?? ""} onChange={setDetail("campaign")} />
+          {!existing && owner !== ROUTING && owner !== UNASSIGNED ? <SelectField label={t("Sales team")} items={[{ id: "", label: t("No team selected") }, ...initialData.queues.filter(q => q.status === "active").map(q => ({ id: q.id, label: q.name }))]} selectedKey={queueId} onSelectionChange={key => setQueue(String(key ?? ""))} /> : null}
+          <TextAreaField label={t("Internal notes")} value={details.internalNotes ?? ""} onChange={setDetail("internalNotes")} />
+          <EnquiryCustomInputs className={styles.formColumns} fields={fields} values={customValues} onChange={(id, value) => setCustomValues(current => ({ ...current, [id]: value }))} />
+        </div>
       </fieldset>
     </form>
   </ControlledModalDialog>;

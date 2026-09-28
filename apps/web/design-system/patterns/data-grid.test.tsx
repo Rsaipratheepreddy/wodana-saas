@@ -113,17 +113,20 @@ describe("DataGrid", () => {
     expect(screen.queryByText("Palm Villa")).not.toBeInTheDocument();
     expect(screen.getByText("No records found")).toBeInTheDocument();
   });
-  it("supports a flush, non-selectable directory table", () => {
-    render(<DesignSystemProvider><DataGrid appearance="flush" ariaLabel="Directory" columns={columns} data={rows} getRowId={(row) => row.id} selectable={false} showFooter={false} /></DesignSystemProvider>);
+  it("supports a non-selectable directory table", () => {
+    render(<DesignSystemProvider><DataGrid ariaLabel="Directory" columns={columns} data={rows} getRowId={(row) => row.id} selectable={false} showFooter={false} /></DesignSystemProvider>);
     expect(screen.getByRole("table", { name: "Directory" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     expect(screen.queryByText(/per page/)).not.toBeInTheDocument();
   });
-  it("provides the enclosed table treatment without changing row behavior", () => {
-    const { container } = render(<DesignSystemProvider><DataGrid appearance="contained" ariaLabel="Compact projects" columns={columns} data={rows} getRowId={(row) => row.id} selectable={false} /></DesignSystemProvider>);
+  it("has one table look: the shared frame, with column lines only for sheets that ask", () => {
+    const { container, rerender } = render(<DesignSystemProvider><DataGrid ariaLabel="Compact projects" columns={columns} data={rows} getRowId={(row) => row.id} selectable={false} /></DesignSystemProvider>);
     const grid = container.querySelector(".wd-data-grid");
-    expect(grid).toHaveAttribute("data-appearance", "contained");
-    expect(grid).toHaveAttribute("data-grid-lines", "true");
+    expect(grid).not.toHaveAttribute("data-appearance");
+    expect(grid).not.toHaveAttribute("data-grid-lines");
+    expect(grid?.querySelector(".wd-table-scroll > table.wd-table")).not.toBeNull();
+    rerender(<DesignSystemProvider><DataGrid gridLines ariaLabel="Compact projects" columns={columns} data={rows} getRowId={(row) => row.id} selectable={false} /></DesignSystemProvider>);
+    expect(container.querySelector(".wd-data-grid")).toHaveAttribute("data-grid-lines", "true");
     expect(screen.getByRole("table", { name: "Compact projects" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });

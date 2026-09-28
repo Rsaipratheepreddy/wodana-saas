@@ -32,7 +32,7 @@ export function LeaveTypeSettings({ api, creating, onCreateDone }: { api: HrmsAp
   if (error && !types) return <ErrorState description={error} onRetry={() => void load()} />;
   const saved = () => { setEditing(null); onCreateDone(); void load(); };
   return <>
-    <DataGrid<LeaveType> appearance="flush" ariaLabel={t("Leave types")} columns={columns} data={[...(types ?? [])].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name))}
+    <DataGrid<LeaveType> ariaLabel={t("Leave types")} columns={columns} data={[...(types ?? [])].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name))}
       getRowId={(row) => row.id} isLoading={!types} onRowAction={setEditing} rowNumbers={false} selectable={false} wrapText searchLabel={t("Search leave types")}
       emptyContent={<EmptyState title={t("No leave types yet")} />} />
     {editing ? <LeaveTypeDialog key={editing.id} api={api} type={editing} onClose={() => setEditing(null)} onSaved={saved} /> : null}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { Button, EmptyState, InlineNotice, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, EmptyState, InlineNotice, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { quotationPath } from "@/lib/quotation/client";
 import { VIEW_LABEL } from "@/lib/quotation/format";
@@ -104,7 +104,7 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
         <Switch aria-label={t("Review before sending")} isDisabled={readOnly} isSelected={form.internalReview} onChange={(value) => set("internalReview", value)} />
       </SettingsRow>
     </SettingsSection>
-    {readOnly ? null : <div className={styles.actions}>{saved ? <span className={styles.saved}>{t("Saved")}</span> : null}<Button size="compact" variant="primary" isLoading={busy} isDisabled={!dirty} onPress={() => void save()}>{t("Save")}</Button></div>}
+    {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} saved={saved} onDiscard={() => { setForm(data.settings); setError(""); }} onSave={() => void save()} />}
 
     <ProposalKitSettings workspaceId={workspaceId} />
 

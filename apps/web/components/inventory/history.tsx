@@ -48,7 +48,7 @@ export function History({ api, itemId, onClearItem, refreshKey }: { api: Invento
     { id: "by", header: t("By"), accessorFn: (row) => row.byName, size: 140, meta: { mobileHidden: true } },
   ], [t, format, kinds, source]);
   if (error && !rows) return <ErrorState description={error} onRetry={() => void load()} />;
-  return <DataGrid<MovementRow> appearance="flush" ariaLabel={t("History")} columns={columns} data={shown} getRowId={(row) => row.id} isLoading={!rows}
+  return <DataGrid<MovementRow> ariaLabel={t("History")} columns={columns} data={shown} getRowId={(row) => row.id} isLoading={!rows}
     onSearchChange={setSearch} searchValue={search} searchLabel={t("Search history")} rowNumbers={false} selectable={false} wrapText
     toolbarLeading={itemId ? <Button size="compact" variant="quiet" onPress={onClearItem}>{t("Show every item")}</Button> : undefined}
     emptyContent={search.trim() ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No stock changes yet")} />} />;

@@ -66,7 +66,7 @@ describe("LeadsPage", () => {
     expect(within(table).queryByRole("columnheader", { name: /Channel/i })).not.toBeInTheDocument();
     expect(within(table).queryByRole("columnheader", { name: /Captured via/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Kanban" })).not.toBeInTheDocument();
-    expect(table.closest(".wd-data-grid")).toHaveAttribute("data-appearance", "flush");
+    expect(table.closest(".wd-table-scroll")).not.toBeNull();
     expect(within(table).getByRole("button",{name:/Open Dr Maya Nair/})).toBeInTheDocument();
     const search = screen.getByRole("searchbox", { name: "Search enquiries" });
     fireEvent.change(search, { target: { value: "Amira Al Mansoori" } });
@@ -258,7 +258,7 @@ describe("LeadsPage", () => {
   it.each(["automatic", "unassigned"])("creates the enquiry and initial %s routing in one request", async (mode) => {
     const user = userEvent.setup();
     const createdLead: CrmLeadListItem = { ...structuredClone(leadsPageFixture.items[0]), id: "62000000-0000-4000-8000-000000000098", reference: "E-0006", partyName: "Layla Karim", title: "E-0006", version: 2 };
-    const fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => url === "/api/workspace/crm/leads" ? { status: "ready", leadId: createdLead.id, reference: createdLead.reference } : url.includes("/data/leads/") ? createdLead : { data: [createdLead, ...structuredClone(leadsPageFixture.items)], nextCursor: null } }));
+    const fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("contact-match") ? { valid: true, message: null, matches: [] } : url === "/api/workspace/crm/leads" ? { status: "ready", leadId: createdLead.id, reference: createdLead.reference } : url.includes("/data/leads/") ? createdLead : { data: [createdLead, ...structuredClone(leadsPageFixture.items)], nextCursor: null } }));
     vi.stubGlobal("fetch", fetchMock);
     const fixture = structuredClone(leadsPageFixture);
     fixture.defaultLocale = "en-AE";
@@ -266,16 +266,19 @@ describe("LeadsPage", () => {
     render(<LeadsPage initialData={fixture} />);
     await user.click(screen.getByRole("button", { name: "New enquiry" }));
     const dialog = await screen.findByRole("dialog", { name: "New enquiry" });
-    await user.type(within(dialog).getByLabelText(/Customer name/), "Layla Karim");
     await user.type(within(dialog).getByRole("textbox", { name: "Mobile" }), "050 123 4567");
+    await user.type(within(dialog).getByLabelText(/Customer name/), "Layla Karim");
+    await user.click(within(dialog).getByRole("button", { name: /Source/ }));
+    await user.click(screen.getByRole("option", { name: "Company" }));
     await user.click(within(dialog).getByRole("button", { name: /Emirate/ }));
     await user.click(screen.getByRole("option", { name: "Dubai" }));
-    await user.click(within(dialog).getByRole("button", { name: /Assignment/ }));
+    await user.click(within(dialog).getByRole("button", { name: /Owner/ }));
     await user.click(screen.getByRole("option", { name: mode === "automatic" ? "Use routing rules" : "Leave unassigned" }));
     await user.click(within(dialog).getByRole("button", { name: "Create enquiry" }));
-    expect(await screen.findByText("Enquiry created.")).toBeInTheDocument();
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/workspace/crm/leads");
-    const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, {body:string}])[1].body);
+    // The reference is said once saved; the form has no placeholder for it (LF-1).
+    expect(await screen.findByText("Enquiry E-0006 created.")).toBeInTheDocument();
+    const create = fetchMock.mock.calls.find(([url]) => url === "/api/workspace/crm/leads") as unknown as [string, { body: string }];
+    const body = JSON.parse(create[1].body);
     expect(body).toMatchObject({ displayName: "Layla Karim", assignment: { mode }, source: "company", channel: "call" });
     expect(body).not.toHaveProperty("title");
     expect(fetchMock.mock.calls.some(([url]) => url.includes("/auto-assign"))).toBe(false);

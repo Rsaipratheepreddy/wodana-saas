@@ -7,27 +7,33 @@ import { Plus, X } from "lucide-react";
 import { Button, Checkbox, ControlledModalDialog, DateField, EmptyState, ErrorState, IconButton, InlineNotice, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { siteApi } from "@/lib/site/client";
+import { useLiveInvalidate } from "@/lib/workspace/live-events";
 import type { Outlook, Safety, SiteReport, SiteState } from "@/lib/site/types";
 import { ProjectCrewDays } from "../hrms/crew-days";
 import { ProjectSiteAccess } from "../hrms/site-access";
 import { useProjectFormat } from "../project-core/format";
 import { PhotoPicker, SavedPhotos } from "../purchasing/delivery-photos";
 import { quantityText } from "../purchasing/order-labels";
+import { ClientIssues, useClientIssues } from "./client-issues";
 import styles from "./site.module.css";
 
 const numeric = (value: string) => value.replace(/[^\d.-]/g, "");
 
-type SiteView = "reports" | "crew-days" | "access";
+type SiteView = "reports" | "crew-days" | "access" | "issues";
 
 /**
  * A project's site: whether site work is running, the reports waiting for approval, and the day-by-day
  * reports — who worked, what was installed, safety and whether the plan is at risk; and, beside them, each
- * crew's day (a notice's `?crewDay=` link opens that one).
+ * crew's day (a notice's `?crewDay=` link opens that one) and the issues the client reported in the portal
+ * (`?issue=` opens one).
  */
 export function ProjectSite({ workspaceId, projectId, projectName = "" }: { workspaceId: string; projectId: string; projectName?: string }) {
   const t = useT();
-  const linkedDay = useSearchParams()?.get("crewDay") ?? null;
-  const [view, setView] = useState<SiteView>(linkedDay ? "crew-days" : "reports");
+  const params = useSearchParams();
+  const linkedDay = params?.get("crewDay") ?? null;
+  const linkedIssue = params?.get("issue") ?? null;
+  const [view, setView] = useState<SiteView>(linkedDay ? "crew-days" : linkedIssue ? "issues" : "reports");
+  const issues = useClientIssues(workspaceId, projectId);
   const format = useProjectFormat();
   const api = useMemo(() => siteApi(workspaceId, projectId), [workspaceId, projectId]);
   const [state, setState] = useState<SiteState | null>(null);
@@ -39,6 +45,8 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
     try { setState(await api.state()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The site didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  // Someone else's report or approval on this project shows without a refresh (a report being edited stays put).
+  useLiveInvalidate(workspaceId, [`project:${projectId}`], () => { if (!editing && !returning) void load(); });
   const run = async (action: string, input: Record<string, unknown> = {}) => {
     setNotice("");
     try { setState(await api.command(action, input)); return true; }
@@ -52,9 +60,14 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
   if (!state) return <Skeleton lines={6} shape="rows" />;
   const onTeam = state.canReport || state.canManage;
   const switcher = <SegmentedControl label={t("Show")} value={view} onChange={(value) => setView(value as SiteView)}
-    options={[{ id: "reports", label: t("Reports") }, { id: "crew-days", label: t("Crew days") }, ...(onTeam ? [{ id: "access", label: t("Access") }] : [])]} />;
+    options={[{ id: "reports", label: t("Reports") }, { id: "crew-days", label: t("Crew days") }, ...(onTeam ? [{ id: "access", label: t("Access") }] : []),
+      // Only once the client has reported something (or a notice links here).
+      ...(issues.data?.issues.length || view === "issues" ? [{ id: "issues", label: t("Client issues"), count: issues.toTriage || undefined }] : [])]} />;
   if (view === "crew-days") return <div className={styles.site}>
     <ProjectCrewDays workspaceId={workspaceId} projectId={projectId} openId={linkedDay} switcher={switcher} me={state.me} onTeam={onTeam} />
+  </div>;
+  if (view === "issues") return <div className={styles.site}>
+    <ClientIssues projectId={projectId} client={issues} switcher={switcher} openId={linkedIssue} />
   </div>;
   if (view === "access") return <div className={styles.site}>
     <ProjectSiteAccess workspaceId={workspaceId} projectId={projectId} projectName={projectName} members={state.members} switcher={switcher} />

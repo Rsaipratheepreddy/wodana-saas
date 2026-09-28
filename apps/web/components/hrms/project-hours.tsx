@@ -36,7 +36,7 @@ export function ProjectHours({ workspaceId, projectId, switcher }: { workspaceId
   if (error && !data) return <>{tools}{error.denied ? <NoAccessState /> : <ErrorState description={error.message} onRetry={() => void load()} />}</>;
   const needle = search.trim().toLocaleLowerCase();
   const rows = (data?.rows ?? []).filter((row) => !needle || `${row.name} ${row.stageName ?? ""}`.toLocaleLowerCase().includes(needle));
-  return <DataGrid<Row> appearance="flush" ariaLabel={t("Hours")} columns={columns} data={rows} getRowId={(row) => `${row.membershipId}:${row.stageId ?? ""}`} isLoading={!data}
+  return <DataGrid<Row> ariaLabel={t("Hours")} columns={columns} data={rows} getRowId={(row) => `${row.membershipId}:${row.stageId ?? ""}`} isLoading={!data}
     onSearchChange={setSearch} searchValue={search} searchLabel={t("Search people")} rowNumbers={false} selectable={false} wrapText toolbarLeading={tools}
     emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No approved hours yet")} />} />;
 }

@@ -22,8 +22,8 @@ function blendHex(foreground, background, percent) {
 function resolve(name, values, seen = new Set()) {
   if (seen.has(name) || !values[name]) throw new Error(`Unresolved design token: ${name}`);
   seen.add(name);
-  // Innermost references first, so a fallback that is itself a token (`var(--a, var(--b))`) resolves
-  // before the outer one; a runtime-only variable (the workspace's brand surface) takes its fallback.
+  // Inner references first, repeated until none is left, so a fallback that is itself a
+  // var() (var(--tenant, var(--wd-neutral-100))) resolves too.
   let value = values[name];
   for (let previous = ''; previous !== value;) {
     previous = value;

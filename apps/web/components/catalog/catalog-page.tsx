@@ -88,7 +88,6 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
       <section className={styles.content} aria-label={t("Items")}>
         {error ? <ErrorState onRetry={() => void loadItems()} description={error} />
           : <DataGrid<CatalogItemRow>
-              appearance="flush"
               ariaLabel={t("Catalog items")}
               columns={columns}
               data={items}

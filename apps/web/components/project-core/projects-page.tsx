@@ -73,7 +73,6 @@ export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: stri
   return <div className={styles.page} data-tour="project-list">
     <PageHeader title={t("Projects")} actions={canStart ? <Button variant="primary" onPress={() => setPicking(true)}><Play aria-hidden="true" size={15} />{t("Start project")}</Button> : null} />
     <DataGrid<ProjectRow>
-      appearance="flush"
       ariaLabel={t("Projects")}
       columns={columns}
       data={visible}

@@ -1,4 +1,4 @@
-import { CONTACT_CHANNELS, CONTACT_OUTCOMES } from "@/lib/crm/contact";
+import { CONTACT_CHANNELS, CONTACT_OUTCOMES, UNANSWERED_OUTCOMES, type ContactOutcome } from "@/lib/crm/contact";
 import { invalidRequest, isSameOrigin, UUID, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 import { getServerT } from "@/lib/i18n/server";
 
@@ -18,9 +18,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ lea
   if (!UUID.test(workspaceId) || !UUID.test(leadId)) return invalidRequest(t("A valid workspace and enquiry are required."));
   if (!Number.isInteger(version) || version < 1) return invalidRequest(t("A current enquiry version is required."));
   if (!(CONTACT_CHANNELS as readonly string[]).includes(channel) || !(CONTACT_OUTCOMES as readonly string[]).includes(outcome)) return invalidRequest(t("Choose how you contacted the client and the outcome."));
-  if (!note || note.length > 4000 || reason.length > 160 || (nextActionAt && Number.isNaN(Date.parse(nextActionAt)))) return invalidRequest(t("Check the note, reason and follow-up date."));
+  // A try that reached nobody may go without a note; the server writes "No answer · attempt 3" (S-16).
+  const noteOptional = UNANSWERED_OUTCOMES.includes(outcome as ContactOutcome);
+  if ((!note && !noteOptional) || note.length > 4000 || reason.length > 160 || (nextActionAt && Number.isNaN(Date.parse(nextActionAt)))) return invalidRequest(t("Check the note, reason and follow-up date."));
   return workspaceJsonResponse(`/workspaces/${workspaceId}/crm/leads/${leadId}/contacts`, {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ version, channel, outcome, note, ...(reason ? { reason } : {}), ...(nextActionAt ? { nextActionAt } : {}) }),
+    body: JSON.stringify({ version, channel, outcome, ...(note ? { note } : {}), ...(reason ? { reason } : {}), ...(nextActionAt ? { nextActionAt } : {}) }),
   }, t("The contact could not be logged."));
 }

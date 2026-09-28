@@ -37,7 +37,7 @@ export function UnmatchedList({ rows, search, onSearch, toolbar, onOpen }: {
       {row.status === "open" ? t("To match") : row.status === "matched" ? t("Matched") : t("Sent back")}</span> } },
   ], [t, format]);
   const shown = rows.filter((row) => !search.trim() || `${row.supplierName} ${row.locationName} ${row.deliveryNote}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
-  return <DataGrid<UnmatchedDelivery> appearance="flush" ariaLabel={t("Without an order")} columns={columns} data={shown} getRowId={(row) => row.id} onRowAction={(row) => onOpen(row.id)}
+  return <DataGrid<UnmatchedDelivery> ariaLabel={t("Without an order")} columns={columns} data={shown} getRowId={(row) => row.id} onRowAction={(row) => onOpen(row.id)}
     onSearchChange={onSearch} searchValue={search} searchLabel={t("Search deliveries")} toolbarLeading={toolbar} rowNumbers={false} selectable={false} wrapText
     emptyContent={search.trim() ? <NoResultsState onClear={() => onSearch("")} /> : <EmptyState title={t("Nothing waiting to be matched")} />} />;
 }
