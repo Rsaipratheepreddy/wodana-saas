@@ -114,7 +114,8 @@ export async function applyConversationChange(db: Db, events: CrmEventsService, 
               (SELECT coalesce(nullif(btrim(display_name), ''), primary_email) FROM users WHERE id = $3) AS "actorName"`,
       [workspaceId, before.party_id ?? null, actorUserId],
     );
-    await noticeAssigned(db, { workspaceId, conversationId, ownerMembershipId: owner, actorUserId, clientName: facts.rows[0]?.clientName ?? "A client", reason: `Assigned by ${facts.rows[0]?.actorName ?? "a teammate"}`, version: response.version });
+    await noticeAssigned(db, { workspaceId, conversationId, leadId: (after.lead_id as string | null) ?? null, ownerMembershipId: owner, actorUserId,
+      client: facts.rows[0]?.clientName ?? String(after.subject ?? "a client"), assignedBy: facts.rows[0]?.actorName ?? "Auto-assign", version: response.version });
   }
   return { after: response, changed: true };
 }

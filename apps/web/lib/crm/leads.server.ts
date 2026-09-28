@@ -37,12 +37,15 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
   if (!response.ok) throw new Error("Leads could not be loaded.");
 
   const page = await response.json() as Pick<LeadsPageData, "items" | "nextCursor"> & { data?: LeadsPageData["items"] };
-  const supporting = await Promise.all(["crm/queues", "crm/assignment-policies", "crm/sla-policies", "crm/intake-inbox?limit=100", "crm/pipelines", "members", "crm/lead-options", "crm/enquiry-fields"].map(async (path) => {
+  const supporting = await Promise.all(["crm/queues", "crm/assignment-policies", "crm/sla-policies", "crm/intake-inbox?limit=100", "crm/pipelines", "members", "crm/lead-options", "crm/enquiry-fields", "crm/sales-settings"].map(async (path) => {
     const result = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}/${path}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
-    if (result.status === 403) return path === "crm/enquiry-fields" ? undefined : [];
+    const single = path === "crm/lead-options" || path === "crm/enquiry-fields" || path === "crm/sales-settings";
+    if (result.status === 403) return single && path !== "crm/lead-options" ? undefined : [];
+    // An older server without Sales settings keeps the page working with the defaults.
+    if (path === "crm/sales-settings" && result.status === 404) return undefined;
     if (!result.ok) throw new Error("CRM configuration could not be loaded.");
     const payload = await result.json();
-    return path === "crm/lead-options" || path === "crm/enquiry-fields" ? payload : Array.isArray(payload) ? payload : payload.data ?? [];
+    return single ? payload : Array.isArray(payload) ? payload : payload.data ?? [];
   }));
   const workspaceResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
   const workspace = workspaceResponse.ok ? await workspaceResponse.json() : null;
@@ -59,11 +62,14 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     canView: true,
     currentRoles: currentMembership?.roles ?? [],
     canManagePipelines: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
+    canAssign: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.leads.assign"),
+    canManageSales: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
     currentMembershipId: owners.currentMembershipId
       ?? (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
     salesOwners: owners.items,
     leadOptions: supporting[6],
     enquiryFields: supporting[7] as LeadsPageData["enquiryFields"],
+    salesSettings: supporting[8] as LeadsPageData["salesSettings"],
     items: page.data ?? page.items ?? [],
     queues: supporting[0], assignmentPolicies: supporting[1], slaPolicies: supporting[2], intake: supporting[3], pipelines: supporting[4], members: supporting[5],
     nextCursor: page.nextCursor,

@@ -51,6 +51,20 @@ CREATE OR REPLACE FUNCTION public.list_crm_workspaces_with_due_work() RETURNS TA
       WHERE lead.ownership_due_at <= now() AND lead.owner_membership_id IS NOT NULL
         AND lead.status IN ('new','attempting_contact','connected','nurturing')
     UNION ALL
+    SELECT lead.workspace_id FROM crm_leads lead
+      WHERE lead.escalation_due_at <= now() OR lead.client_review_due_at <= now()
+         OR (lead.status = 'paused' AND lead.next_action_at <= now())
+    UNION ALL
+    SELECT workspace.id FROM workspaces workspace
+      CROSS JOIN LATERAL (SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_timezone_names zone WHERE zone.name = workspace.default_timezone)
+        THEN workspace.default_timezone ELSE 'UTC' END AS name) zone
+      WHERE workspace.status = 'active'
+        AND (now() AT TIME ZONE zone.name)::time >= time '09:00'
+        AND NOT EXISTS (SELECT 1 FROM crm_sales_digests digest WHERE digest.workspace_id = workspace.id
+          AND digest.digest_date = (now() AT TIME ZONE zone.name)::date)
+        AND EXISTS (SELECT 1 FROM crm_leads lead WHERE lead.workspace_id = workspace.id
+          AND lead.status IN ('new','attempting_contact','connected','nurturing'))
+    UNION ALL
     SELECT enrollment.workspace_id
       FROM crm_sequence_enrollments enrollment
       JOIN crm_sequences sequence

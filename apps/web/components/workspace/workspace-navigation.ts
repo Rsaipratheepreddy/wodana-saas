@@ -115,6 +115,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         items: [
           { href: "/workspace/settings/profile", icon: "members", id: "profile", label: tKey("Profile") },
           { href: "/workspace/settings/security", icon: "security", id: "security", label: tKey("Sign-in security") },
+          { href: "/workspace/settings/notifications", icon: "settings", id: "notification-settings", label: tKey("Notifications") },
         ],
       },
       {
@@ -163,6 +164,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         label: tKey("Connections"),
         items: [
           { href: "/workspace/integrations", icon: "integrations", id: "integrations", label: tKey("Integrations") },
+          { href: "/workspace/settings/delivery", icon: "settings", id: "delivery-health", label: tKey("Delivery") },
         ],
       },
     ],

@@ -78,6 +78,8 @@ function routeTable() {
     { id: "calendar", label: "Calendar", href: "/workspace/crm/follow-ups?view=schedule", nav: "daily-follow-ups", paths: ["/workspace/crm/follow-ups"], query: { view: ["schedule", "calendar"] } },
     { id: "calendar-legacy", label: "Calendar", href: "/workspace/crm/follow-ups?view=schedule", nav: "daily-follow-ups", paths: ["/workspace/crm/calendar"] },
     { id: "inbox", label: "Inbox", href: "/workspace/crm/conversations", nav: "inbox", paths: ["/workspace/crm/conversations"] },
+    // Every notice, opened from the bell.
+    { id: "notifications", label: "Notifications", href: "/workspace/notifications", parent: "home", paths: ["/workspace/notifications"] },
 
     // Business
     { id: "sales", label: "Sales", href: "/workspace/crm", nav: "sales", paths: ["/workspace/crm"] },

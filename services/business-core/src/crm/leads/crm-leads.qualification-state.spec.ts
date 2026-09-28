@@ -31,6 +31,7 @@ describe("CRM lead qualification presentation", () => {
       if (sql.includes("FROM crm_sla_instances")) return { rows: [], rowCount: 0 };
       if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry", externalEventId: "lead-ad-42", correlationId: "correlation-42" }], rowCount: 1 };
       if (sql.includes("FROM crm_attribution_touches")) return { rows: [{ id: "touch", source: "instagram", medium: "shared_link", campaign: "summer" }], rowCount: 1 };
+      if (sql.includes("FROM crm_identity_candidates candidate")) return { rows: [], rowCount: 0 };
       throw new Error(`Unexpected query: ${sql}`);
     });
     const access = {
@@ -76,7 +77,8 @@ describe("CRM lead qualification presentation", () => {
         qualification_evidence: evidence, qualification_evidence_hash: "b".repeat(64),
       }], rowCount: 1 };
       if (sql.includes("FROM crm_lead_qualification_values") || sql.includes("FROM crm_assignment_history")
-        || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")) return { rows: [], rowCount: 0 };
+        || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")
+        || sql.includes("FROM crm_identity_candidates candidate")) return { rows: [], rowCount: 0 };
       if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry" }], rowCount: 1 };
       throw new Error(`Unexpected query: ${sql}`);
     });
@@ -102,7 +104,8 @@ describe("CRM lead qualification presentation", () => {
       }], rowCount: 1 };
       if (sql.includes("person.display_name AS \"ownerName\"")) return { rows: [{ ownerName: "Sara Sales" }], rowCount: 1 };
       if (sql.includes("FROM crm_lead_qualification_values") || sql.includes("FROM crm_assignment_history")
-        || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")) return { rows: [], rowCount: 0 };
+        || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")
+        || sql.includes("FROM crm_identity_candidates candidate")) return { rows: [], rowCount: 0 };
       if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry" }], rowCount: 1 };
       throw new Error(`Unexpected query: ${sql}`);
     });

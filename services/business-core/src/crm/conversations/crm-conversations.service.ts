@@ -8,12 +8,12 @@ import { WorkspaceAccessService } from "../../workspaces/workspace-access.servic
 import { CrmEventsService } from "../shared/crm-events.service";
 import { CrmNotificationsService } from "../notifications/crm-notifications.service";
 import { CrmMessageReceiptService } from "./crm-message-receipt.service";
+import { notifyUserInApp } from "../../notifications/default-templates";
 import { decodeCursor, encodeCursor, normalizeEmail, normalizeLoosePhone, normalizeName, stableHash } from "../shared/crm-types";
 import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSequenceDto, ListConversationsQueryDto, MessageReceiptDto, ProviderInboundMessageDto, ProviderMessageReceiptDto, SequenceVersionDto, StopSequenceEnrollmentDto, UpdateSequenceDto, UpdateConversationDto } from "./dto/conversations.dto";
 import { applyConversationChange, mapConversation, recordChatEvent } from "./inbox/inbox-commands";
 import { INBOX_MEMBERS_SQL, inboxQueue, selectInboxOwner } from "./inbox/inbox-assignment";
 import { inboxLink, noticeChat, readChatNotices, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
-import { notifyUserInApp, queueUserPush } from "../../notifications/default-templates";
 import { inboundSummary, normalizeTemplateParameter, renderTemplate, stageFilterSql, templateParametersProblem, templatePlaceholders, withSignature, type TemplateVariableSource } from "./inbox/inbox-rules";
 import { resolveTemplateSources } from "./inbox/template-variables";
 
@@ -859,7 +859,7 @@ export class CrmConversationsService {
     });
   }
 
-  /** Each person @mentioned in a note (who can open the inbox, and is not the writer) is told in-app and by push. */
+  /** Each person @mentioned in a note (who can open the inbox, and is not the writer) is told in-app; the push follows it. */
   private async noticeMentions(client: PoolClient, workspaceId: string, conversation: Record<string, unknown>, mentions: string[], messageId: string, bodyText: string | null, actorUserId: string | null) {
     const people = await client.query<{ userId: string }>(`SELECT inbox."userId" FROM (${INBOX_MEMBERS_SQL}) inbox WHERE inbox."membershipId" = ANY($2::uuid[])`, [workspaceId, mentions]);
     const facts = await client.query<{ actor: string | null; clientName: string | null }>(
@@ -871,8 +871,7 @@ export class CrmConversationsService {
     for (const { userId } of people.rows) {
       if (userId === actorUserId) continue;
       const key = `crm:inbox:mention:${messageId}:${userId}`;
-      const raised = await notifyUserInApp(client, { workspaceId, recipientUserId: userId, code: "crm.inbox_mention", eventType: "crm.inbox.mention", variables, deepLink, idempotencyKey: key });
-      if (raised.queued) await queueUserPush(client, { workspaceId, recipientUserId: userId, code: "crm.inbox_mention", eventType: "crm.inbox.mention", variables, deepLink, idempotencyKey: `${key}:push` });
+      await notifyUserInApp(client, { workspaceId, recipientUserId: userId, code: "crm.inbox_mention", eventType: "crm.inbox.mention", variables, deepLink, idempotencyKey: key });
     }
   }
 

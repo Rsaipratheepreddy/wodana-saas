@@ -8,6 +8,7 @@ import { crmRequest, label, type RecordData } from "@/lib/crm/client";
 import { CLIENT_EVENT_LABELS, eventLine, snoozePresets, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CrmDateTimeField } from "../crm-date-time-field";
 import { ChatContextPanel } from "./chat-context";
 import { InboxComposer } from "./inbox-composer";
@@ -168,7 +169,9 @@ function useLiveConversation(workspaceId: string, id: string) {
     catch (error) { if (!request.signal.aborted) setFailure(error instanceof Error ? error.message : t("Chat could not be refreshed.")); }
     finally { if (controller.current === request) pending.current = false; }
   }, [workspaceId, id, t]);
-  useEffect(() => { const initial = setTimeout(() => void refresh(), 0); const timer = setInterval(() => { if (document.visibilityState === "visible") void refresh(true); }, 5_000); return () => { clearTimeout(initial); clearInterval(timer); controller.current?.abort(); }; }, [refresh]);
+  // A new message, receipt or change to this chat re-reads it at once; polling is the fallback.
+  const live = useLiveInvalidate(workspaceId, [`conversation:${id}`], () => void refresh(true), 500);
+  useEffect(() => { const initial = setTimeout(() => void refresh(), 0); const timer = setInterval(() => { if (document.visibilityState === "visible") void refresh(true); }, pollEvery(live, 5_000)); return () => { clearTimeout(initial); clearInterval(timer); controller.current?.abort(); }; }, [refresh, live]);
   return { thread, failure, refresh };
 }
 

@@ -164,6 +164,8 @@ describe("TransactionalEmailService", () => {
       status: "failed",
       provider: "mailgun",
       messageId: null,
+      // Delivery health shows why, without the recipient.
+      errorCode: "MAILGUN_HTTP_401",
     });
   });
 });

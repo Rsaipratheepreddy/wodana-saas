@@ -12,6 +12,8 @@ if (native) {
   });
 }
 
+const opened = new Set<string>();
+
 /** The link a push notification carries (`deepLink`, as in the inbox). */
 const linkOf = (response: Notifications.NotificationResponse | null) => {
   const data = response?.notification.request.content.data as Record<string, unknown> | undefined;
@@ -19,17 +21,19 @@ const linkOf = (response: Notifications.NotificationResponse | null) => {
   return typeof link === 'string' ? link : null;
 };
 
-/**
- * Opening a push notification opens the same record in the app. Registering this phone for pushes
- * (consent, then the Expo token with `crm/device-endpoints`) plugs in here once the project has an EAS id.
- */
+/** Opening a push notification opens the same record in the app (registration: `push-registration.ts`). */
 export function useNotificationOpens() {
   const router = useRouter();
   useEffect(() => {
     if (!native) return;
     const open = (response: Notifications.NotificationResponse | null) => {
-      const route = appRouteFor(linkOf(response));
-      if (route) router.push(route as Href);
+      if (!response) return;
+      // The last response survives a sign-in (the layout mounts again): each push opens once.
+      const identifier = response.notification.request.identifier;
+      if (opened.has(identifier)) return;
+      opened.add(identifier);
+      // A push the app has no screen for opens the inbox, where the notice opens on the web.
+      router.push((appRouteFor(linkOf(response)) ?? '/inbox') as Href);
     };
     void Notifications.getLastNotificationResponseAsync().then(open).catch(() => undefined);
     const subscription = Notifications.addNotificationResponseReceivedListener(open);

@@ -14,7 +14,8 @@ configuration only; adding these files does not deploy or change a server.
 - Next.js serves the tenant, client, and internal portals.
 - Business Core owns PostgreSQL records and runs migrations before startup.
 - Intelligence API handles OAuth callbacks and signed QuickBooks/WhatsApp webhooks.
-- Intelligence Worker runs CRM automation, provider delivery, and accounting reconciliation.
+- Intelligence Worker (required) runs provider delivery (email, WhatsApp, push), CRM automation, SLA and
+  takeover timers, reminders and accounting reconciliation.
 - PostgreSQL, Redis AOF data, and local object files use named persistent volumes.
 
 Redis is durable because it contains encrypted tenant provider credentials, OAuth state, queues, and
@@ -143,5 +144,22 @@ curl -fsS https://api.DOMAIN/api/v1/health/ready
 ```
 
 `checks.worker` in that response is the intelligence worker's heartbeat (`ok`, `stale (Ns)`,
-`not-reporting`). A stale or silent worker keeps the API ready but is listed under `degraded`:
-nothing is being delivered and no timer runs until the worker is back.
+`not-reporting`), with `checks.workerRelease` and `checks.workerDelivery` (`live`). The worker delivers
+every email, WhatsApp and push and runs every SLA, takeover and reminder timer, so in production a
+stale or silent worker makes Business Core **not ready** (HTTP 503, `criticalFailures: ["worker"]`).
+A freshly started core allows three minutes for its worker to report. Workspace owners see the same
+state, per channel, in Settings → Connections → Delivery.
+
+## Releases on the native host
+
+`deploy-web.native-host.sh` ships the worker with every core release (`DEPLOY_CORE=1` implies
+`DEPLOY_INTELLIGENCE=1`; set an unused `INTELLIGENCE_PORT`). The live Intelligence port, its release
+directory and the running worker are found automatically; override them with `CURRENT_INTELLIGENCE_*`
+when needed. The script stops the previous worker, starts the new one, and waits until the core's
+readiness shows `workerRelease` equal to the new release with `workerDelivery: live` before it switches
+the proxy. A worker that doesn't come up restarts the previous one and leaves the proxy alone. Every
+release, web-only ones included, fails its readiness step when no worker beats.
+
+`intelligence.env` needs `ENVIRONMENT=production` and `NOTIFICATION_ADAPTER_MODE=live` (a production
+worker refuses to start otherwise). The container healthcheck is
+`python -m wodana_intelligence.worker.healthcheck`.

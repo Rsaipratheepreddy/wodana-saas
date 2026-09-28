@@ -46,7 +46,14 @@ export function appRouteFor(link: string | null | undefined): string | null {
       if (section === 'leads') return id(rest[1]) ? `/sales/${rest[1]}` : q('lead') ? `/sales/${q('lead')}` : '/sales';
       if (section === 'opportunities') return id(rest[1]) ? `/sales/opportunity/${rest[1]}` : q('record') ? `/sales/opportunity/${q('record')}` : '/sales/opportunities';
       if (section === 'follow-ups' || section === 'activities') return '/sales/follow-ups';
+      // The app has no thread screen: a conversation opens the enquiry it belongs to.
+      if (section === 'conversations' || section === 'inbox') return q('lead') ? `/sales/${q('lead')}` : null;
       return null;
+    }
+    case 'tasks': {
+      const projectId = q('projectId');
+      const taskId = q('taskId');
+      return projectId && taskId ? `/projects/${projectId}/task/${taskId}` : '/projects/tasks';
     }
     case 'purchasing': {
       const section = rest[0] ?? '';
@@ -59,7 +66,7 @@ export function appRouteFor(link: string | null | undefined): string | null {
     case 'factory':
       return q('order') ? `/factory/${q('order')}` : '/factory';
     case 'inventory':
-      return rest[0] === 'moves' && q('move') ? `/purchasing/move/${q('move')}` : null;
+      return rest[0] === 'moves' && q('move') ? `/purchasing/move/${q('move')}` : '/purchasing';
     case 'pre-projects': {
       const caseId = id(rest[0] === 'cases' ? rest[1] : rest[0]);
       return caseId ? `/survey/${caseId}` : '/survey';

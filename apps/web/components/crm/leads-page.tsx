@@ -3,8 +3,8 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 
-import { useMemo, useRef, useState, type FormEvent } from "react";
-import { CalendarClock, CalendarDays, CheckCircle2, BriefcaseBusiness, ContactRound, Globe, ListFilter, PhoneCall, Plus, RefreshCw, Type, UserRoundPlus, UsersRound } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { CalendarClock, CalendarDays, CheckCircle2, BriefcaseBusiness, ContactRound, Globe, ListFilter, PhoneCall, Plus, RefreshCw, Timer, Type, UserRoundPlus, UsersRound } from "lucide-react";
 import {
   Badge,
   Button,
@@ -48,6 +48,8 @@ import { customValueText, enquiryFields, isShown } from "@/lib/crm/enquiry-field
 import type { IntegrationsPageData } from "@/lib/workspace/integrations";
 import { IntegrationsPage } from "@/components/workspace/integrations-page";
 import { LogContactDialog } from "./log-contact-dialog";
+import { RespondByChip, useNow } from "./respond-by-chip";
+import { respondBy } from "@/lib/crm/sales-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown, type Translate } from "@/lib/i18n/keys";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
@@ -68,7 +70,11 @@ function humanize(value: string | null, notSet: string) {
 
 /** Owners, admins and sales managers see the team; salespeople start from their own new enquiries (PLM-076). */
 const TEAM_ROLES = new Set(["owner", "administrator", "sales_manager", "sales_admin", "ops_admin"]);
-type EnquiryView = "new" | "contacted" | "come_back" | "all" | "unassigned";
+type EnquiryView = "new" | "contacted" | "come_back" | "all" | "unassigned" | "review" | "duplicates";
+/** New enquiries are worked in respond-by order: the most urgent first (S-6). */
+const respondOrder = (lead: CrmLeadListItem) => lead.slaDueAt && ["active", "warning", "breached"].includes(lead.slaStatus ?? "") ? Date.parse(lead.slaDueAt) : Number.POSITIVE_INFINITY;
+/** How often the list checks for new and changed enquiries while it is on screen (S-5). */
+const REFRESH_EVERY = 30_000;
 function listOf(status: CrmLeadStatus): "new" | "contacted" | "come_back" | "closed" {
   if (status === "new") return "new";
   if (status === "attempting_contact" || status === "connected" || status === "nurturing") return "contacted";
@@ -143,6 +149,9 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const [autoBusy, setAutoBusy] = useState(false);
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const referenceTime = Date.parse(serverData.referenceTime);
+  // Relative times tick while the page is open (S-5).
+  const now = Math.max(useNow(60_000), referenceTime);
+  const unowned = useMemo(() => items.filter((lead) => !lead.isConverted && ACTIVE_STATUSES.has(lead.status) && lead.status !== "paused" && !lead.ownerMembershipId).length, [items]);
 
   const openSection = (section: EnquirySection) => {
     if (section === activeSection) return;
@@ -160,9 +169,14 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
     if (lead.isConverted && view !== "all") return false;
     if (view === "all") return true;
     if (view === "unassigned") return ACTIVE_STATUSES.has(lead.status) && !lead.ownerMembershipId;
+    if (view === "review") return Boolean(lead.clientMatches) && lead.status !== "duplicate";
+    if (view === "duplicates") return lead.status === "duplicate";
     return listOf(lead.status) === view;
   };
-  const visibleItems = useMemo(() => scoped.filter((lead) => inView(lead, leadView)), [scoped, leadView]);
+  const visibleItems = useMemo(() => {
+    const listed = scoped.filter((lead) => inView(lead, leadView));
+    return leadView === "new" ? [...listed].sort((a, b) => respondOrder(a) - respondOrder(b)) : listed;
+  }, [scoped, leadView]);
   const viewCount = (view: EnquiryView) => scoped.filter((lead) => inView(lead, view)).length;
   const sources = useMemo(() => [...new Set(items.map(lead => lead.source))].sort(), [items]);
 
@@ -192,6 +206,38 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
     setItems(page.data);
     setNextCursor(page.nextCursor);
     if (focusLeadId) setCardLead(page.data.find((lead) => lead.id === focusLeadId) ?? null);
+  };
+
+  // S-5: while the list is on screen it refreshes itself. Changed rows update in place; new ones wait
+  // behind "n new enquiries" so nothing jumps under the cursor.
+  const [latest, setLatest] = useState<CrmLeadListItem[]>([]);
+  const incoming = useMemo(() => latest.filter((lead) => !items.some((item) => item.id === lead.id) && (seesTeam || lead.ownerMembershipId === serverData.currentMembershipId)), [latest, items, seesTeam, serverData.currentMembershipId]);
+  useEffect(() => {
+    if (activeSection !== "leads" || !initialData.canView || sectionDenied) return;
+    let stopped = false;
+    const poll = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      if (mutationInFlight.current) return;
+      try {
+        const response = await fetch(`/api/workspace/crm/leads?${new URLSearchParams({ workspaceId: initialData.workspaceId })}`, { cache: "no-store" });
+        if (!response.ok || stopped || mutationInFlight.current) return;
+        const page = await response.json() as { data?: CrmLeadListItem[] };
+        const fresh = new Map((page.data ?? []).map((lead) => [lead.id, lead]));
+        setItems((current) => current.map((lead) => {
+          const next = fresh.get(lead.id);
+          return next && next.version >= lead.version ? { ...lead, ...next } : lead;
+        }));
+        setLatest(page.data ?? []);
+      } catch { /* the next pass tries again */ }
+    };
+    const timer = window.setInterval(() => void poll(), REFRESH_EVERY);
+    const onVisible = () => { if (document.visibilityState === "visible") void poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { stopped = true; window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
+  }, [activeSection, initialData.canView, initialData.workspaceId, sectionDenied]);
+  const showIncoming = () => {
+    setItems((current) => [...incoming, ...current.filter((lead) => !incoming.some((item) => item.id === lead.id))]);
+    setLatest([]);
   };
 
   const refresh = async () => {
@@ -269,7 +315,13 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const columns: DataGridColumn<CrmLeadListItem>[] = [
     { accessorKey: "partyName", header: t("Customer"), size: 220, meta: { headerIcon: <ContactRound size={14}/> }, cell: ({row:{original:lead}}) => { const name = customerDisplayName(lead.partyName); return <button type="button" className={styles.sheetLead} data-tour={!lead.isConverted && !["disqualified", "paused"].includes(lead.status) && hasResolvedEnquiryType(lead.serviceType) ? "enquiry-customer" : undefined} data-tour-safe onClick={() => setCardLead(lead)} aria-label={t("Open {name}", { name })} title={name}><Avatar name={name} roles={["client"]} seed={lead.id} size="sm" /><span className={styles.clientRequest}><strong>{name}</strong>{lead.reference ? <small>{lead.reference}</small> : null}</span></button>; } },
     { accessorKey: "title", header: t("Enquiry title"), size: 240, meta: { headerIcon: <Type size={14}/> }, cell: ({getValue}) => <span className={styles.sheetText} title={String(getValue())}>{String(getValue())}</span> },
-    { id: "status", header: t("Status"), size: 140, accessorFn: lead => statusText(lead), meta: { headerIcon: <CheckCircle2 size={14}/> }, cell: ({row:{original:lead}}) => <Badge tone={statusTone(lead)}>{statusText(lead)}</Badge> },
+    { id: "status", header: t("Status"), size: 170, accessorFn: lead => statusText(lead), meta: { headerIcon: <CheckCircle2 size={14}/> }, cell: ({row:{original:lead}}) => <span className={styles.attentionFlags}>
+      <Badge tone={statusTone(lead)}>{statusText(lead)}</Badge>
+      {lead.clientMatches && lead.status !== "duplicate" ? <Badge tone="warning">{t("Confirm client")}</Badge> : null}
+      {lead.contactAttempts && ACTIVE_STATUSES.has(lead.status) ? <Badge tone="neutral">{t("Attempt {count}", { count: lead.contactAttempts })}</Badge> : null}
+      {lead.escalatedAt && ACTIVE_STATUSES.has(lead.status) ? <Badge tone="danger">{t("Escalated")}</Badge> : null}
+    </span> },
+    { id: "respondBy", header: t("Respond by"), size: 210, accessorFn: lead => Number.isFinite(respondOrder(lead)) ? lead.slaDueAt : undefined, sortUndefined: "last", meta: { headerIcon: <Timer size={14}/> }, cell: ({row:{original:lead}}) => respondBy(lead, now) ? <RespondByChip lead={lead} now={now} /> : <span className={styles.sheetText}>—</span> },
     { id: "source", header: t("Source"), size: 150, accessorFn: lead => sourceLabel(lead.source), filterFn: "equalsString", meta: { headerIcon: <Globe size={14}/>, filterOptions: sources.map(source=>({id:sourceLabel(source),label:sourceLabel(source)})) }, cell: ({row:{original:lead}}) => <SourceChip source={lead.source} displayLabel={sourceLabel(lead.source)} /> },
     { id: "channel", header: t("Channel"), size: 140, accessorFn: lead => initialData.leadOptions?.channels[lead.source]?.find(option => option.id === lead.channel)?.label ?? humanize(lead.channel, notSet), meta: { headerIcon: <Globe size={14}/> } },
     { id: "intakeMethod", header: t("Captured via"), size: 145, accessorFn: lead => humanize(lead.intakeMethod ?? null, notSet), cell: ({ row }) => <span className={styles.intakeChip}>{humanize(row.original.intakeMethod ?? null, notSet)}</span> },
@@ -282,7 +334,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
     </button>{!lead.ownerMembershipId && ACTIVE_STATUSES.has(lead.status) && !lead.isConverted ? <Button size="compact" isDisabled={busy} onPress={() => void runAutoAssign(lead)} aria-label={t("Auto-assign {name}", { name: customerDisplayName(lead.partyName) })}>{t("Auto")}</Button> : null}</div> },
     { accessorKey: "nextActionAt", header: t("Next follow-up"), size: 160, meta: { headerIcon: <CalendarClock size={14}/> }, cell: ({row:{original:lead}}) => {
       if (lead.status === "qualified") return <Button size="compact" variant="quiet" onPress={() => setCardLead(lead)}>{t("View linked records")}</Button>;
-      const action = nextActionLabel(lead.nextActionAt, referenceTime, lead.status, t, localFormat);
+      const action = nextActionLabel(lead.nextActionAt, now, lead.status, t, localFormat);
       return <Button size="compact" className={styles.nextAction} data-overdue={action.overdue || undefined} isDisabled={busy || lead.isConverted || ["qualified", "disqualified"].includes(lead.status)} aria-label={t("Follow up with {name}", { name: customerDisplayName(lead.partyName) })} onPress={() => scheduleFollowUp(lead)}><CalendarClock size={14} aria-hidden="true" />{lead.nextActionAt ? action.label : t("Schedule")}</Button>;
     } },
     { id: "contact", header: t("Action"), size: 150, meta: { headerIcon: <PhoneCall size={14}/> }, enableSorting: false, cell: ({row:{original:lead}}) => ACTIVE_STATUSES.has(lead.status) && !lead.isConverted ? <Button size="compact" variant="secondary" isDisabled={busy} aria-label={t("Log contact · {name}", { name: customerDisplayName(lead.partyName) })} onPress={() => setContactLead(lead)}><PhoneCall size={14} aria-hidden="true" />{t("Log contact")}</Button> : null },
@@ -334,6 +386,8 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
               <Button size="compact" variant="quiet" onPress={() => openSection("assignment")}>{t("Assignment settings")}</Button>
             </>}
           </section>}
+          {seesTeam && unowned > 0 && leadView !== "unassigned" ? <Callout title={unowned === 1 ? t("1 enquiry has no owner") : t("{count} enquiries have no owner", { count: unowned })} tone="warning" actions={<Button size="compact" onPress={() => setLeadView("unassigned")}>{t("Show them")}</Button>}>{t("Assign them before the client waits longer.")}</Callout> : null}
+          {incoming.length ? <div className={styles.newRows}><Button size="compact" variant="secondary" onPress={showIncoming}>{incoming.length === 1 ? t("1 new enquiry · Show") : t("{count} new enquiries · Show", { count: incoming.length })}</Button></div> : null}
           <DataGrid keepEmptyTable compactToolbar selectable={false} emptyContent={<div className={styles.illustratedEmpty}><Image src="/images/empty-states/enquiries.png" width={112} height={112} alt={items.length ? t("No matching enquiries") : t("Your enquiries will appear here")} /><span>{items.length ? t("No matching enquiries") : t("No enquiries yet")}</span></div>} key={initialData.workspaceId} ariaLabel={t("CRM enquiries")} persistKey="crm-enquiries-v4" rowNumbers={false} columns={columns} data={visibleItems} getRowId={lead => lead.id}
             initialColumnVisibility={{emirate:false,updatedAt:false,title:false,channel:false,intakeMethod:false,serviceType:false,priority:false,createdAt:false,budgetRange:false,customerType:false,area:false,campaign:false}} searchLabel={t("Search enquiries")} exportFileName="enquiries.csv"
 
@@ -344,6 +398,8 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
           { id: "contacted", label: t("Contacted"), count: viewCount("contacted") },
           { id: "come_back", label: t("Come back to"), count: viewCount("come_back") },
           ...(seesTeam ? [{ id: "unassigned" as const, label: t("Unassigned"), count: viewCount("unassigned") }] : []),
+          ...(viewCount("review") ? [{ id: "review" as const, label: t("Needs review"), count: viewCount("review") }] : []),
+          ...(viewCount("duplicates") ? [{ id: "duplicates" as const, label: t("Duplicates"), count: viewCount("duplicates") }] : []),
           { id: "all", label: t("All") },
         ]} />}
             toolbarActions={<><IconMenuButton ariaLabel={t("More actions")} items={[{ id: "import", label: t("Import CSV") }, { id: "review", label: t("Intake review") }]} onAction={(id) => id === "import" ? setImportOpen(true) : setReviewOpen(true)} /><Button size="compact" variant="primary" onPress={() => setCreateOpen(true)}><Plus size={14} aria-hidden="true"/>{t("New enquiry")}</Button></>}
@@ -370,10 +426,10 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
           router.push(`/workspace/crm/opportunities?record=${encodeURIComponent(record.id)}`);
         }} /> : null}
 
-        {createOpen ? <LeadEnquiryForm initialData={initialData} onClose={() => setCreateOpen(false)} onSaved={async () => {
+        {createOpen ? <LeadEnquiryForm initialData={initialData} onClose={() => setCreateOpen(false)} onOpenLead={(leadId) => { setCreateOpen(false); setLinkedLead(leadId); }} onSaved={async (_leadId, reference) => {
           await reloadLeads();
           setCreateOpen(false);
-          setStatusMessage(t("Enquiry created."));
+          setStatusMessage(reference ? t("Enquiry {reference} created.", { reference }) : t("Enquiry created."));
         }} /> : null}
 
 
@@ -389,9 +445,11 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
           setStatusMessage(saved.ownerMembershipId ? t("Assignment updated.") : t("No available sales owner. The enquiry remains in its queue."));
         }} /> : null}
         {followUp ? <NewFollowUpDialog workspaceId={initialData.workspaceId} initialLead={{ ...followUp }} onClose={() => setFollowUp(null)} onCreated={async () => { await reloadLeads(); setFollowUp(null); setStatusMessage(t("Follow-up scheduled.")); }} /> : null}
-        {contactLead ? <LogContactDialog workspaceId={initialData.workspaceId} lead={{ id: contactLead.id, version: contactLead.version, name: customerDisplayName(contactLead.partyName) }} onClose={() => setContactLead(null)} onLogged={(saved) => {
-          setItems((current) => current.map((item) => item.id === contactLead.id ? { ...item, status: saved.status as CrmLeadStatus, version: saved.version, nextActionAt: saved.nextActionAt, updatedAt: saved.updatedAt ?? item.updatedAt } : item));
-          setStatusMessage(t("{name} · Contact logged.", { name: customerDisplayName(contactLead.partyName) }));
+        {contactLead ? <LogContactDialog workspaceId={initialData.workspaceId} slaPolicies={initialData.slaPolicies} lead={{ id: contactLead.id, version: contactLead.version, name: customerDisplayName(contactLead.partyName) }} onClose={() => setContactLead(null)} onLogged={(saved, outcome) => {
+          setItems((current) => current.map((item) => item.id === contactLead.id ? { ...item, status: saved.status as CrmLeadStatus, version: saved.version, nextActionAt: saved.nextActionAt, updatedAt: saved.updatedAt ?? item.updatedAt, ...(saved.contactAttempts !== undefined ? { contactAttempts: saved.contactAttempts } : {}), slaStatus: item.slaStatus === "active" || item.slaStatus === "warning" || item.slaStatus === "breached" ? "met" : item.slaStatus } : item));
+          setStatusMessage(saved.contactAttempts && (outcome === "no_answer" || outcome === "message_sent_no_reply")
+            ? t("{name} · Attempt {count} logged.", { name: customerDisplayName(contactLead.partyName), count: saved.contactAttempts })
+            : t("{name} · Contact logged.", { name: customerDisplayName(contactLead.partyName) }));
           setContactLead(null);
         }} /> : null}
         {confirmationDialog}

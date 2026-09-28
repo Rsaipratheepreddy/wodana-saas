@@ -614,43 +614,71 @@
     {
       "idx": 87,
       "version": "7",
-      "when": 1801113900000,
-      "tag": "0139_team_inbox",
+      "when": 1801113700000,
+      "tag": "0137_client_portal_v2",
       "breakpoints": true
     },
     {
       "idx": 88,
       "version": "7",
-      "when": 1801117500000,
-      "tag": "0140_whatsapp_template_manager",
+      "when": 1801113800000,
+      "tag": "0138_delivery_health",
       "breakpoints": true
     },
     {
       "idx": 89,
       "version": "7",
-      "when": 1801121100000,
-      "tag": "0141_client_event_messages",
+      "when": 1801114300000,
+      "tag": "0143_sales_no_lost_leads",
       "breakpoints": true
     },
     {
       "idx": 90,
       "version": "7",
-      "when": 1801124700000,
-      "tag": "0142_payment_reminders",
+      "when": 1801117400000,
+      "tag": "0139_conversation_assigned_notice",
       "breakpoints": true
     },
     {
       "idx": 91,
       "version": "7",
-      "when": 1801128300000,
-      "tag": "0143_block_and_hide",
+      "when": 1801121000000,
+      "tag": "0144_team_inbox",
       "breakpoints": true
     },
     {
       "idx": 92,
       "version": "7",
-      "when": 1801131900000,
-      "tag": "0144_number_health",
+      "when": 1801124600000,
+      "tag": "0145_whatsapp_template_manager",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1801128200000,
+      "tag": "0146_client_event_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1801131800000,
+      "tag": "0147_payment_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1801135400000,
+      "tag": "0148_block_and_hide",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1801139000000,
+      "tag": "0149_number_health",
       "breakpoints": true
     }
   ]

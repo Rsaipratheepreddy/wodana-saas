@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CalendarClock, CircleSlash, Mail, MessageCircle, MessageSquareText, Phone, PhoneMissed, ThumbsUp, Users, type LucideIcon } from "lucide-react";
-import { Button, ControlledModalDialog, InlineNotice, TextAreaField, TextInput } from "@/design-system";
+import { Button, ControlledModalDialog, InlineNotice, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
-import { logLeadContact, type ContactChannel, type ContactOutcome, type LoggedContact } from "@/lib/crm/contact";
+import { logLeadContact, UNANSWERED_OUTCOMES, type ContactChannel, type ContactOutcome, type LoggedContact } from "@/lib/crm/contact";
+import type { CrmSlaPolicy } from "@/lib/crm/leads";
+import { deadlineText, quickFollowUps, salesHours, wallClock } from "@/lib/crm/sales-time";
+import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { CrmDateTimeField } from "./crm-date-time-field";
 import styles from "./log-contact-dialog.module.css";
 
@@ -13,21 +16,21 @@ const CHANNEL_ICONS: Record<ContactChannel, LucideIcon> = { call: Phone, whatsap
 const OUTCOME_ICONS: Record<ContactOutcome, LucideIcon> = { no_answer: PhoneMissed, message_sent_no_reply: MessageSquareText, willing_to_talk: ThumbsUp, come_back_later: CalendarClock, not_interested: CircleSlash };
 const OUTCOME_TONES: Partial<Record<ContactOutcome, string>> = { willing_to_talk: "success", come_back_later: "attention", not_interested: "danger" };
 
-/** Tomorrow at 10:00 local time, as the field's yyyy-mm-ddThh:mm value. */
-function tomorrowMorning(now = new Date()) {
-  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 10, 0);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}T10:00`;
-}
-
-/** PLM-042: record one contact attempt; the outcome moves the enquiry to the right list. */
-export function LogContactDialog({ workspaceId, lead, onClose, onLogged }: {
+/**
+ * PLM-042: record one contact attempt; the outcome moves the enquiry to the right list. S-16: a try
+ * that reached nobody is one tap (the note is written for you), and the next try is one chip away,
+ * inside Sales working hours.
+ */
+export function LogContactDialog({ workspaceId, lead, slaPolicies = [], onClose, onLogged }: {
   workspaceId: string;
   lead: { id: string; version: number; name: string };
+  /** The Sales working hours come from the first-response policy. */
+  slaPolicies?: CrmSlaPolicy[];
   onClose: () => void;
   onLogged: (saved: LoggedContact, outcome: ContactOutcome) => void;
 }) {
   const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const [channel, setChannel] = useState<ContactChannel>("call");
   const [outcome, setOutcome] = useState<ContactOutcome | null>(null);
   const [note, setNote] = useState("");
@@ -35,6 +38,9 @@ export function LogContactDialog({ workspaceId, lead, onClose, onLogged }: {
   const [followUp, setFollowUp] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const hours = useMemo(() => salesHours(slaPolicies, timeZone), [slaPolicies, timeZone]);
+  const [now] = useState(() => new Date());
+  const suggestions = useMemo(() => quickFollowUps(hours, now), [hours, now]);
 
   const channels: Array<{ id: ContactChannel; label: string }> = [
     { id: "call", label: t("Call") }, { id: "whatsapp", label: t("WhatsApp") }, { id: "email", label: t("Email") }, { id: "meeting", label: t("Meeting") }, { id: "sms", label: t("SMS") },
@@ -46,27 +52,34 @@ export function LogContactDialog({ workspaceId, lead, onClose, onLogged }: {
     { id: "come_back_later", label: t("Come back later") },
     { id: "not_interested", label: t("Not interested") },
   ];
+  const unanswered = outcome !== null && UNANSWERED_OUTCOMES.includes(outcome);
   const needsFollowUp = outcome === "come_back_later";
   const showFollowUp = outcome !== null && outcome !== "not_interested";
+  const chipLabel = (id: (typeof suggestions)[number]["id"], at: Date) => {
+    const when = deadlineText(at.toISOString(), { locale, timeZone }, now);
+    return id === "two_hours" ? t("In 2 h · {when}", { when }) : id === "next_day" ? t("Next working day · {when}", { when }) : t("In 3 days · {when}", { when });
+  };
 
   const choose = (next: ContactOutcome) => {
     setOutcome(next); setError("");
     // Suggest a next step where one is expected; the person can change or clear it.
-    if (!followUp && (next === "no_answer" || next === "message_sent_no_reply" || next === "come_back_later")) setFollowUp(tomorrowMorning());
+    if (!followUp && UNANSWERED_OUTCOMES.includes(next)) setFollowUp(wallClock(suggestions[0].at, timeZone));
+    if (!followUp && next === "come_back_later") setFollowUp(wallClock(suggestions[1].at, timeZone));
   };
 
   const save = async () => {
     if (!outcome) { setError(t("Choose the outcome of this contact.")); return; }
-    if (!note.trim()) { setError(t("Add a note about this contact.")); return; }
+    if (!unanswered && !note.trim()) { setError(t("Add a note about this contact.")); return; }
     if (outcome === "not_interested" && !reason.trim()) { setError(t("Add the reason the client is not interested.")); return; }
-    const next = showFollowUp && followUp ? new Date(followUp) : null;
-    if (needsFollowUp && (!next || next.getTime() <= Date.now())) { setError(t("Book a follow-up date in the future.")); return; }
+    const [date = "", time = ""] = followUp.split("T");
+    const nextAt = showFollowUp && date && time ? zonedToUtc(date, time, timeZone) : null;
+    if (needsFollowUp && (!nextAt || Date.parse(nextAt) <= Date.now())) { setError(t("Book a follow-up date in the future.")); return; }
     setSaving(true); setError("");
     try {
       const saved = await logLeadContact(workspaceId, lead.id, {
         version: lead.version, channel, outcome, note: note.trim(),
         ...(outcome === "not_interested" ? { reason: reason.trim() } : {}),
-        ...(next ? { nextActionAt: next.toISOString() } : {}),
+        ...(nextAt ? { nextActionAt: nextAt } : {}),
       });
       onLogged(saved, outcome);
     } catch (reasonError) { setError(reasonError instanceof Error ? translateKnown(t, reasonError.message) : t("The contact could not be logged.")); }
@@ -96,9 +109,17 @@ export function LogContactDialog({ workspaceId, lead, onClose, onLogged }: {
           return <button aria-checked={outcome === id} className={styles.outcome} data-tone={OUTCOME_TONES[id]} key={id} onClick={() => choose(id)} role="radio" type="button"><Icon aria-hidden="true" size={15} /><span>{label}</span></button>;
         })}</div>
       </div>
-      <TextAreaField isRequired label={t("Note")} maxLength={4000} onChange={setNote} placeholder={t("What did you discuss?")} value={note} />
+      <TextAreaField isRequired={!unanswered} label={t("Note")} maxLength={4000} onChange={setNote} placeholder={unanswered ? t("Noted as an attempt if you leave it empty") : t("What did you discuss?")} value={note} />
       {outcome === "not_interested" ? <TextInput isRequired label={t("Reason")} maxLength={160} onChange={setReason} value={reason} /> : null}
-      {showFollowUp ? <CrmDateTimeField isRequired={needsFollowUp} label={needsFollowUp ? t("Come back on") : t("Next follow-up")} onChange={setFollowUp} value={followUp} /> : null}
+      {showFollowUp ? <div className={styles.group}>
+        <div className={styles.chips} role="group" aria-label={t("Suggested times")}>
+          {suggestions.map(({ id, at }) => {
+            const value = wallClock(at, timeZone);
+            return <button key={id} type="button" className={styles.channel} aria-pressed={followUp === value} onClick={() => setFollowUp(value)}>{chipLabel(id, at)}</button>;
+          })}
+        </div>
+        <CrmDateTimeField isRequired={needsFollowUp} label={needsFollowUp ? t("Come back on") : t("Next follow-up")} onChange={setFollowUp} value={followUp} />
+      </div> : null}
       {error ? <InlineNotice message={error} tone="error" /> : null}
     </div>
   </ControlledModalDialog>;

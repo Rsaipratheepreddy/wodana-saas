@@ -18,23 +18,31 @@ const site: PortalSite = {
 
 const project = (patch: Partial<PortalProject> = {}): PortalProject => ({
   id: "c1", title: "Villa 12", reference: "PRJ-0042", role: "approver", status: "active", paused: false,
-  sections: { progress: true, decisions: true, payments: true, documents: true, warranty: false, messages: true },
-  manager: "Omar Manager", stage: { number: 2, total: 5, name: "Production" }, handoverDate: "2026-12-01",
+  sections: { progress: true, moodboard: true, decisions: true, payments: true, documents: true, warranty: false, messages: true },
+  manager: "Omar Manager", stage: { number: 2, total: 5, name: "Production" }, handoverDate: "2026-12-01", handedOverOn: null, warrantyUntil: null,
+  rooms: [{ id: "k1", name: "Kitchen" }], unread: 0,
   next: [{ kind: "materials", id: "r1", title: "R1", due: null }],
   latestUpdate: { id: "u1", at: "2026-09-25T09:00:00.000Z", text: "Cabinets are in the factory." },
   progress: { stages: [{ name: "Design", state: "done", startedOn: "2026-09-01", finishedOn: "2026-09-10" }, { name: "Production", state: "current", startedOn: "2026-09-11", finishedOn: null },
     { name: "Installation", state: "upcoming", startedOn: null, finishedOn: null }], updates: [{ id: "u1", at: "2026-09-25T09:00:00.000Z", text: "Cabinets are in the factory." }],
-    photoDays: [{ on: "2026-09-25", photos: [{ id: "p1" }] }] },
+    photoDays: [{ on: "2026-09-25", photos: [{ id: "p1" }] }], issues: [], canReportIssue: true },
+  moodboard: { canAdd: true, boards: [{ id: "b1", title: "Kitchen concept", room: "Kitchen", number: 2, status: "client_review", mimeType: "image/png", sharedAt: "2026-09-20T09:00:00.000Z",
+    hasImage: true, reaction: null, comments: [] }],
+    pins: [{ id: "pin1", title: "Warm oak", note: "Like this grain", link: null, room: null, addedAt: "2026-09-21T09:00:00.000Z", feeling: "love", fromClient: false, mine: false, author: null,
+      photos: [{ id: "a1" }], reaction: "like", comments: [{ id: "cm1", text: "Glad you like it.", at: "2026-09-22T09:00:00.000Z", fromClient: false, mine: false, author: null }] }] },
   decisions: { quotes: [], designs: [], requests: [], definition: null, handovers: [],
     materials: { id: "r1", number: 1, status: "sent", sentAt: "2026-09-24T09:00:00.000Z", decidedAt: null, decidedBy: null, canDecide: true,
       items: [{ id: "m1", name: "Oak veneer", specification: "Crown cut", quantity: "12.0000", unit: "m²", areas: ["Kitchen"], decision: null, note: "" },
         { id: "m2", name: "Brass handles", specification: "", quantity: null, unit: "", areas: [], decision: null, note: "" }] } },
-  payments: { currency: "USD", showAmounts: true, schedule: [
-    { id: "p1", title: "Advance", amount: "5000.0000", paid: "5000.0000", dueDate: null, status: "paid", invoiceNumber: "INV-1", payUrl: null },
-    { id: "p2", title: "Before production", amount: "5000.0000", paid: "0.0000", dueDate: "2026-10-01", status: "upcoming", invoiceNumber: null, payUrl: "https://pay.example.com/p2" }],
-    invoices: [{ id: "i1", number: "INV-1", milestone: "Advance", issueDate: "2026-09-20", dueDate: "2026-09-27", currency: "USD", total: "5000.0000", paid: "5000.0000", balance: "0.0000",
-      status: "paid", receipts: [{ amount: "5000.0000", receivedOn: "2026-09-21" }] }] },
-  documents: [], warranty: null, messages: { requests: [] },
+  payments: { currency: "USD", showAmounts: true, milestones: [
+    { id: "p3", title: "Before installation", amount: "2000.0000", paid: "0.0000", left: "2000.0000", dueDate: "2026-09-20", status: "overdue",
+      invoice: { id: "11111111-1111-4111-8111-111111111113", number: "INV-3", issueDate: "2026-09-10" }, receipts: [], payUrl: null, report: null, canReport: true },
+    { id: "p1", title: "Advance", amount: "5000.0000", paid: "5000.0000", left: "0.0000", dueDate: null, status: "paid",
+      invoice: { id: "11111111-1111-4111-8111-111111111111", number: "INV-1", issueDate: "2026-09-20" },
+      receipts: [{ id: "22222222-2222-4222-8222-222222222221", amount: "5000.0000", receivedOn: "2026-09-21" }], payUrl: null, report: null, canReport: false },
+    { id: "p2", title: "Before production", amount: "5000.0000", paid: "0.0000", left: "5000.0000", dueDate: "2026-10-01", status: "upcoming", invoice: null, receipts: [],
+      payUrl: "https://pay.example.com/p2", report: null, canReport: true }] },
+  documents: [], warranty: null, messages: { requests: [], unread: 0 },
   ...patch,
 });
 
@@ -121,30 +129,38 @@ describe("client portal", () => {
     mount(() => ({ body: view() }));
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    expect(await screen.findByText("Stage 2 of 5 · Production")).toBeInTheDocument();
+    expect(await screen.findByText("Stage 2 of 5 · \u2068Production\u2069")).toBeInTheDocument();
     expect(screen.getByText("Cabinets are in the factory.")).toBeInTheDocument();
-    expect(screen.getByText("Your project manager: Omar Manager")).toBeInTheDocument();
+    expect(screen.getByText("Your project manager: \u2068Omar Manager\u2069")).toBeInTheDocument();
+    expect(screen.getByText("Handover planned for Dec 1, 2026 · in 65 days")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Material list to sign off/ })).toBeInTheDocument();
     const tabs = screen.getByRole("tablist", { name: "Sections" });
-    expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Home", "Progress", "Decisions", "Payments", "Documents", "Messages"]);
+    // Documents has nothing in it, so it isn't a tab; a count shows the decision that waits.
+    expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Home", "Progress", "Moodboard", "Decisions1", "Payments", "Messages"]);
+    expect(tabs).toHaveAttribute("data-layout", "scroll");
     await user.click(within(tabs).getByRole("tab", { name: "Payments" }));
-    expect(await screen.findByText("INV-1 · Advance")).toBeInTheDocument();
-    expect(screen.getAllByText("$5,000.00").length).toBeGreaterThan(0);
+    // One row per payment, overdue first, with its invoice to print and what was received.
+    const rows = await screen.findAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("Before installation");
+    expect(within(rows[0]).getByText("Overdue")).toBeInTheDocument();
+    expect(within(rows[0]).getByRole("link", { name: "Invoice \u2068INV-3\u2069" }))
+      .toHaveAttribute("href", "/portal/studio/print?case=c1&invoice=11111111-1111-4111-8111-111111111113");
+    expect(screen.getByText(/Received .*5,000\.00.* on Sep 21, 2026/).closest("a")).toHaveAttribute("href", "/portal/studio/print?case=c1&receipt=22222222-2222-4222-8222-222222222221");
+    expect(screen.queryByText("Invoices")).toBeNull();
     expect(screen.getByRole("link", { name: /Pay/ })).toHaveAttribute("href", "https://pay.example.com/p2");
     await user.click(within(tabs).getByRole("tab", { name: "Progress" }));
     expect(await screen.findByRole("img", { name: /Site photo 1/ })).toHaveAttribute("src", "/api/client-portal/studio/files/photo/p1?preview=1");
   });
 
   it("hides amounts when the tenant keeps them out, and says so when a project is paused", async () => {
-    const hidden = project({ payments: { ...project().payments!, showAmounts: false, schedule: project().payments!.schedule.map((item) => ({ ...item, amount: null, paid: null })),
-      invoices: [{ ...project().payments!.invoices[0], total: null, paid: null, balance: null,
-      receipts: [{ amount: null, receivedOn: "2026-09-21" }] }] } });
+    const hidden = project({ payments: { ...project().payments!, showAmounts: false, milestones: project().payments!.milestones.map((item) => ({ ...item, amount: null, paid: null, left: null,
+      receipts: item.receipts.map((receipt) => ({ ...receipt, amount: null })) })) } });
     mount(() => ({ body: view({}, [hidden, project({ id: "c2", title: "Beach house", paused: true })]) }));
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
     await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Payments" }));
     expect(await screen.findByText("Received on Sep 21, 2026")).toBeInTheDocument();
-    expect(screen.queryAllByText("$5,000.00")).toEqual([]);
+    expect(screen.queryAllByText(/\$5,000\.00/)).toEqual([]);
     await user.click(screen.getByRole("button", { name: /Project/ }));
     await user.click(await screen.findByRole("option", { name: "Beach house" }));
     expect(await screen.findByText("Your project page is paused")).toBeInTheDocument();
@@ -196,10 +212,135 @@ describe("client portal", () => {
     expect(screen.getByRole("textbox", { name: /Mobile number/ })).toHaveValue("");
   });
 
-  it("reads right to left in Arabic", async () => {
+  it("reads right to left in Arabic, with user text and names isolated", async () => {
     mount(() => ({ body: view() }));
     const { container } = render(<I18nProvider language="ar"><PortalApp site={site} /></I18nProvider>);
     await screen.findByRole("heading", { name: "Villa 12" });
     expect(container.querySelector("[data-portal-root]")).toHaveAttribute("dir", "rtl");
+    expect(screen.getByRole("heading", { name: "Villa 12" })).toHaveAttribute("dir", "auto");
+    expect(screen.getByText("Cabinets are in the factory.")).toHaveAttribute("dir", "auto");
+    expect(screen.getByText(/⁨Omar Manager⁩/)).toBeInTheDocument();
+  });
+
+  it("says a finished project is completed (an adjective, not the verb) in Arabic", async () => {
+    mount(() => ({ body: view({}, [project({ status: "completed", handoverDate: null, handedOverOn: "2026-09-28", warrantyUntil: "2027-09-27" })]) }));
+    render(<I18nProvider language="ar"><PortalApp site={site} /></I18nProvider>);
+    expect(await screen.findByText(/^مكتمل/)).toBeInTheDocument();
+    expect(screen.queryByText(/إكمال/)).toBeNull();
+    expect(screen.getByText(/^تم التسليم في/)).toBeInTheDocument();
+  });
+
+  it("names the product's own stages in the client's language and a tenant's own stage as they wrote it", async () => {
+    const staged = project({ stage: { number: 2, total: 3, name: "Delivery and installation" }, progress: { ...project().progress!,
+      stages: [{ name: "Kickoff", state: "done", startedOn: null, finishedOn: null }, { name: "Delivery and installation", state: "current", startedOn: null, finishedOn: null },
+        { name: "Villa blessing", state: "upcoming", startedOn: null, finishedOn: null }] } });
+    mount(() => ({ body: view({}, [staged]) }));
+    const user = userEvent.setup();
+    render(<I18nProvider language="ar"><PortalApp site={site} /></I18nProvider>);
+    expect(await screen.findByText(/التوريد والتركيب/)).toBeInTheDocument();
+    await user.click(within(screen.getByRole("tablist")).getAllByRole("tab")[1]);
+    expect(await screen.findByText("الانطلاق")).toBeInTheDocument();
+    expect(screen.getByText("Villa blessing")).toBeInTheDocument();
+  });
+
+  it("goes straight to the code step when a code is already on its way, and says so as information", async () => {
+    mount((url) => (url.endsWith("/view") ? { status: 401, body: {} }
+      : { status: 429, body: { message: "A code is on its way. You can ask for another in a few seconds.", retryAfter: 20 } }));
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    await user.type(await screen.findByRole("textbox", { name: /Mobile number/ }), "2025550123");
+    await user.click(screen.getByRole("button", { name: "Send code by WhatsApp" }));
+    const notice = await screen.findByText("A code is on its way. You can ask for another in a few seconds.");
+    expect(notice.closest("[data-tone]")).toHaveAttribute("data-tone", "info");
+  });
+
+  it("says when a finished project was handed over and until when its warranty runs", async () => {
+    mount(() => ({ body: view({}, [project({ status: "completed", handoverDate: null, handedOverOn: "2026-09-28", warrantyUntil: "2027-09-27" })]) }));
+    render(<PortalApp site={site} />);
+    expect(await screen.findByText("Handed over on Sep 28, 2026 · warranty until Sep 27, 2027")).toBeInTheDocument();
+    expect(screen.queryByText(/Handover planned/)).toBeNull();
+  });
+
+  it("likes a board, comments on an idea and adds the client's own idea with a photo", async () => {
+    const fetcher = mount((url) => (url.includes("/uploads/") ? { body: { id: url.split("/").at(-1), name: "sofa.jpg", mimeType: "image/jpeg", hasPreview: true } }
+      : url.endsWith("/command") ? { body: { ok: true } } : { body: view() }));
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Moodboard" }));
+    await user.click(await screen.findByRole("button", { name: "I like Kitchen concept" }));
+    await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "react", caseId: "c1", targetKind: "design", targetId: "b1", reaction: "like" })]));
+    // Liked already: pressing it again takes the like back.
+    expect(screen.getByRole("button", { name: "I like Warm oak" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "Open Warm oak" }));
+    const pin = await screen.findByRole("dialog", { name: "Warm oak" });
+    expect(within(pin).getByText("Your design team")).toBeInTheDocument();
+    await user.type(within(pin).getByRole("textbox", { name: "Comment" }), "Could it be lighter?");
+    await user.click(within(pin).getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(sent(fetcher, "command").at(-1)).toEqual(expect.objectContaining({ action: "board_comment", targetKind: "pin", targetId: "pin1", text: "Could it be lighter?" })));
+    await user.click(within(pin).getByRole("button", { name: "Close dialog" }));
+    await user.click(await screen.findByRole("button", { name: "Add an idea" }));
+    const idea = await screen.findByRole("dialog", { name: "Add an idea" });
+    await user.upload(within(idea).getByLabelText("Add photos"), new File(["x"], "sofa.jpg", { type: "image/jpeg" }));
+    expect(await within(idea).findByText("Added")).toBeInTheDocument();
+    await user.type(within(idea).getByRole("textbox", { name: "What do you like about it?" }), "This sofa");
+    await user.click(within(idea).getByRole("button", { name: "Add to moodboard" }));
+    await waitFor(() => expect(sent(fetcher, "command").at(-1)).toEqual(expect.objectContaining({ action: "add_inspiration", caseId: "c1", note: "This sofa",
+      uploadIds: [expect.stringMatching(/^[0-9a-f-]{36}$/)] })));
+    const upload = fetcher.mock.calls.find(([url]) => String(url).includes("/uploads/"))!;
+    expect(String(upload[0])).toMatch(/^\/api\/client-portal\/studio\/cases\/c1\/uploads\/[0-9a-f-]{36}$/);
+  });
+
+  it("tells the team the client has paid, with the bank reference", async () => {
+    const fetcher = mount((url) => (url.endsWith("/command") ? { body: { ok: true } } : { body: view() }));
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Payments" }));
+    const [overdue] = await screen.findAllByRole("listitem");
+    await user.click(within(overdue).getByRole("button", { name: "I've paid" }));
+    const dialog = await screen.findByRole("dialog", { name: "Before installation" });
+    expect(within(dialog).getByRole("button", { name: "Send" })).toBeDisabled();
+    await user.type(within(dialog).getByRole("textbox", { name: "Bank reference" }), "TT-4455");
+    await user.type(within(dialog).getByRole("textbox", { name: /Amount paid/ }), "2000");
+    await user.click(within(dialog).getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "report_payment", caseId: "c1", paymentId: "p3", paidOn: "2026-09-27",
+      amount: "2000", reference: "TT-4455", uploadIds: [] })]));
+    expect(await screen.findByText("Thank you. We'll check your payment and let you know.")).toBeInTheDocument();
+  });
+
+  it("reports an issue while the work is on and shows what the team decided", async () => {
+    const reported = project({ progress: { ...project().progress!, issues: [{ id: "is1", number: 1, raisedOn: "2026-09-26", description: "Chipped panel", area: "Kitchen",
+      status: "declined", reason: "That's the sample, not your panel.", files: [{ id: "f1", name: "chip.jpg", mimeType: "image/jpeg", hasPreview: true }] }] } });
+    const fetcher = mount((url) => (url.endsWith("/command") ? { body: { ok: true } } : { body: view({}, [reported]) }));
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Progress" }));
+    expect(await screen.findByText("Chipped panel")).toBeInTheDocument();
+    expect(screen.getByText("Not taken up")).toBeInTheDocument();
+    expect(screen.getByText("That's the sample, not your panel.")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Photo: chip.jpg" })).toHaveAttribute("src", "/api/client-portal/studio/files/asset/f1?preview=1");
+    await user.click(screen.getByRole("button", { name: "Report an issue" }));
+    const dialog = await screen.findByRole("dialog", { name: "Report an issue" });
+    await user.type(within(dialog).getByRole("textbox", { name: /What's wrong/ }), "Scratch on the worktop");
+    await user.click(within(dialog).getByRole("button", { name: "Send report" }));
+    await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "report_issue", caseId: "c1", description: "Scratch on the worktop", uploadIds: [] })]));
+  });
+
+  it("counts unread replies, marks them read when the thread opens, and shows the team has seen the client's message", async () => {
+    const thread = { id: "t1", number: 1, title: "Reading light", detail: "Can we add one?", status: "open", createdAt: "2026-09-20T09:00:00.000Z", resolution: "",
+      files: [{ id: "f2", name: "plan.pdf", mimeType: "application/pdf", hasPreview: false }], lastAt: "2026-09-22T09:00:00.000Z", seenByTeam: false, unread: 1,
+      comments: [{ id: "c9", at: "2026-09-22T09:00:00.000Z", text: "Yes, we'll add it.", fromClient: false, files: [] }] };
+    const fetcher = mount((url) => (url.endsWith("/command") ? { body: { ok: true } }
+      : { body: view({}, [project({ unread: 1, messages: { requests: [thread], unread: 1 } })]) }));
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    const tabs = await screen.findByRole("tablist", { name: "Sections" });
+    expect(within(tabs).getByRole("tab", { name: /Messages/ })).toHaveTextContent("Messages1");
+    expect(screen.getByRole("button", { name: /New reply from your team/ })).toBeInTheDocument();
+    await user.click(within(tabs).getByRole("tab", { name: /Messages/ }));
+    await user.click(await screen.findByRole("button", { name: /Reading light/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reading light" });
+    expect(within(dialog).getByRole("link", { name: /plan\.pdf/ })).toHaveAttribute("href", "/api/client-portal/studio/files/asset/f2");
+    await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "read_thread", caseId: "c1", requestId: "t1" })]));
+    expect(within(dialog).queryByText("Seen by your project team")).toBeNull();
   });
 });

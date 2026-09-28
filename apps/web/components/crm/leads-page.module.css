@@ -240,3 +240,9 @@
 
 .listBar { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); padding-block-end: var(--wd-space-1); }
 .listBar > :global(.wd-list-tabs) { flex: 1; min-inline-size: 0; border-block-end: 0; }
+.moreToggle { justify-self: start; }
+.moreToggle svg { transition: transform var(--wd-duration-fast) var(--wd-ease-standard); }
+.moreToggle svg[data-open] { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .moreToggle svg { transition: none; } }
+.attentionFlags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
+.newRows { display: flex; justify-content: center; margin-block-end: var(--wd-space-2); }

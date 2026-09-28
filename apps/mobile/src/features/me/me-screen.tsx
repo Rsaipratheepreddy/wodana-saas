@@ -2,9 +2,13 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
-import { ArrowLeftRight, CalendarClock, CalendarDays, CloudUpload, FileText, Languages, LogIn, LogOut, Plane, Users } from 'lucide-react-native';
+import { ArrowLeftRight, Bell, CalendarClock, CalendarDays, CloudUpload, FileText, Languages, LogIn, LogOut, Plane, Users } from 'lucide-react-native';
 import { useAuth } from '../../auth/provider';
-import { useApi } from '../../core/api';
+import { errorMessage, useApi } from '../../core/api';
+import { openSettings } from '../../core/media';
+import { ToggleRow } from '../../ui/fields';
+import { useToast } from '../../ui/toast';
+import { unregisterThisPhone, usePushState, useSetPush } from '../shell/push-registration';
 import { useFormat } from '../../core/format';
 import { languages, preferenceLocale, useLanguage, useT, type AppLanguage } from '../../core/i18n';
 import { useOutbox } from '../../core/outbox';
@@ -44,6 +48,9 @@ export function MeScreen() {
   const api = useApi();
   const organization = useOrganization();
   const workspaces = session.profile.memberships.length;
+  const push = usePushState();
+  const setPush = useSetPush();
+  const toast = useToast();
 
   const open = current.data && !current.data.endedAt ? current.data : null;
   const segment = open?.segments[open.segments.length - 1];
@@ -99,6 +106,16 @@ export function MeScreen() {
     </Section> : null}
 
     <Section>
+      {push.state === 'on' || push.state === 'off' || push.state === 'not-registered'
+        ? <ToggleRow first label={t('Notifications on this phone')} value={push.state === 'on'}
+          detail={setPush.isPending ? t('Saving…') : push.state === 'on' ? t('Work given to you, approvals and site alerts arrive as pushes.') : t('Off: notices wait in the inbox.')}
+          onChange={(enabled) => setPush.mutate(enabled, { onError: (error) => toast.show(errorMessage(error, t('Notifications could not be changed.')), 'error') })} />
+        : <ListRow first icon={Bell} title={t('Notifications on this phone')}
+          detail={push.state === 'blocked' ? t('Not allowed in the phone’s settings') : t('Not available on this device')}
+          onPress={push.state === 'blocked' ? openSettings : undefined} />}
+    </Section>
+
+    <Section>
       <ListRow first icon={Languages} title={t('Language')} detail={language.label} onPress={() => setChoosingLanguage(true)} />
       {workspaces > 1 ? <ListRow icon={ArrowLeftRight} title={t('Switch workspace')} detail={session.membership.workspaceName}
         onPress={() => { organization.chooseWorkspace(true); void client.signOut(); }} /> : null}
@@ -110,6 +127,10 @@ export function MeScreen() {
       options={languages.map((item) => ({ value: item.id, label: item.label }))} onChange={(next) => { if (next) void chooseLanguage(next); }} />
     <ConfirmSheet open={signingOut} onClose={() => setSigningOut(false)} danger title={t('Sign out?')} action={t('Sign out')}
       detail={waiting ? t('{count} captures are still waiting to send. They send after you sign in again.', { count: waiting }) : undefined}
-      onConfirm={() => client.signOut()} />
+      onConfirm={async () => {
+        // This phone stops getting the person's pushes; signing out never waits more than a moment on it.
+        await Promise.race([unregisterThisPhone(api).catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 3000))]);
+        await client.signOut();
+      }} />
   </Screen>;
 }

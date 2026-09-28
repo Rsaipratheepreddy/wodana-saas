@@ -7,12 +7,13 @@ import { InternalServiceGuard } from "../../auth/internal-service.guard";
 import { WorkspacesModule } from "../../workspaces/workspaces.module";
 import { CrmLeadsController, InternalCrmSlasController } from "./crm-leads.controller";
 import { CrmLeadsService } from "./crm-leads.service";
+import { CrmSalesAttentionService } from "./crm-sales-attention.service";
 import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
 
 @Module({
   imports: [WorkspacesModule],
   controllers: [RequirementNoteAssetsController, RequirementNotesController, CrmLeadsController, InternalCrmSlasController],
-  providers: [BriefService, BrandAssetStorageService, RequirementNotesService, CrmSlaLifecycleService, CrmLeadsService, InternalServiceGuard],
+  providers: [BriefService, BrandAssetStorageService, RequirementNotesService, CrmSlaLifecycleService, CrmLeadsService, CrmSalesAttentionService, InternalServiceGuard],
   exports: [CrmLeadsService, CrmSlaLifecycleService],
 })
 export class CrmLeadsModule {}

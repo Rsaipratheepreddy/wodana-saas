@@ -505,13 +505,27 @@ await request(`/public/crm/lead-forms/${sharedForm.token}`, {
 });
 const duplicateResponses = await request(`/workspaces/${workspaceId}/crm/lead-forms/${sharedForm.id}/responses`);
 assert.equal(duplicateResponses.data.length, 2);
-const duplicateResponse = duplicateResponses.data.find(response => response.status === "duplicate_candidate");
-assert(duplicateResponse, "Repeated unverified contact must remain a duplicate candidate for review.");
+const duplicateResponse = duplicateResponses.data.find(response => response.id !== sharedResponses.data[0].id);
+assert(duplicateResponse, "The repeated contact's form response must be recorded.");
+// S-3: a likely-existing client never parks the enquiry; it is worked at once on a provisional client.
+assert.equal(duplicateResponse.status, "ready", "A repeated unverified contact must become a worked enquiry, not wait in review.");
 assert(duplicateResponse.candidateCount > 0);
 assert.equal(duplicateResponse.consentStatus, "granted");
 const duplicateIntake = await request(`/workspaces/${workspaceId}/crm/intake-events/${duplicateResponse.id}`);
-assert(duplicateIntake.candidates.length > 0);
+assert(duplicateIntake.candidates.some(candidate => candidate.status === "pending"));
 assert.deepEqual(duplicateIntake.payload.formRawAnswers, duplicateAnswers);
+const provisionalList = await request(`/workspaces/${workspaceId}/crm/leads?search=${encodeURIComponent("Noor A.")}`);
+const provisionalLead = provisionalList.data.find(candidate => candidate.partyId === duplicateIntake.resolvedPartyId);
+assert(provisionalLead, "The repeated contact's enquiry must be in the list.");
+assert(provisionalLead.clientMatches > 0, "The enquiry must carry Confirm client.");
+const provisionalDetail = await request(`/workspaces/${workspaceId}/crm/leads/${provisionalLead.id}`);
+assert(provisionalDetail.clientMatches.some(match => match.partyId === sharedLead.partyId));
+const confirmedLead = await request(`/workspaces/${workspaceId}/crm/leads/${provisionalLead.id}/confirm-client`, {
+  body: { version: provisionalDetail.version, decision: "same", partyId: sharedLead.partyId },
+});
+assert.equal(confirmedLead.partyId, sharedLead.partyId, "Confirming the client moves the enquiry onto the existing client.");
+const confirmedIntake = await request(`/workspaces/${workspaceId}/crm/intake-events/${duplicateResponse.id}`);
+assert(!confirmedIntake.candidates.some(candidate => candidate.status === "pending"));
 
 let palmSalesTeam = null;
 let staffAssignedLead = null;
@@ -1493,8 +1507,9 @@ assert.equal(controlled.quoteIds.length, 2);
 assert.deepEqual(controlled.quoteIds.map((id) => changePrepared.data.quotes.find((quote) => quote.id === id).direction), ["deduction", "addition"]);
 
 const jobs = await request(`/workspaces/${workspaceId}/jobs`);
-assert.equal(jobs.total, palmFixture ? 3 : 2);
-assert.equal(jobs.items.length, palmFixture ? 3 : 2);
+// The repeated form contact is a worked enquiry of its own now (S-3), so it has a Job too.
+assert.equal(jobs.total, palmFixture ? 4 : 3);
+assert.equal(jobs.items.length, palmFixture ? 4 : 3);
 assert(jobs.items.every((item) => /^J-\d{6,}$/.test(item.reference)));
 const projectJobSummary = jobs.items.find((item) => item.links.some((link) => link.type === "project" && link.id === projectId));
 const sharedJobSummary = jobs.items.find((item) => item.links.some((link) => link.type === "enquiry" && link.id === sharedLead.enquiryId));
@@ -1588,7 +1603,7 @@ for (const [person, roleCode, permissionCodes] of [
   await request(`/workspaces/invitations/${invite.id}/accept`, { headers: person, method: "POST" });
 }
 const viewerJobs = await request(`/workspaces/${workspaceId}/jobs`, { headers: jobViewer });
-assert.equal(viewerJobs.total, palmFixture ? 3 : 2);
+assert.equal(viewerJobs.total, palmFixture ? 4 : 3);
 const viewerProjectJob = viewerJobs.items.find((item) => item.jobId === projectJobSummary.jobId);
 assert(viewerProjectJob);
 assert.deepEqual(viewerProjectJob.links.map((link) => link.type).sort(), ["enquiry", "lead"]);
@@ -1624,8 +1639,8 @@ if (process.env.DATABASE_URL) {
       "SELECT id,reference FROM job_identities WHERE workspace_id=$1",
       [workspaceId],
     );
-    assert.equal(jobs.rowCount, palmFixture ? 3 : 2,
-      "the shared-link, staff-created Palm enquiry, and qualified enquiry must each retain a Job");
+    assert.equal(jobs.rowCount, palmFixture ? 4 : 3,
+      "the shared-link, repeated-contact, staff-created Palm and qualified enquiries must each retain a Job");
     assert(jobs.rows.every((row) => /^J-\d{6,}$/.test(row.reference)));
     const projectJob = await database.query(
       `SELECT job_id FROM job_identity_links

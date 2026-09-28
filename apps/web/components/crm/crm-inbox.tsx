@@ -10,12 +10,14 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { ENQUIRY_STAGE_LABELS, nextChatId, snoozePresets, type ChatState, type InboxLabel, type InboxOwner, type InboxSummary, type InboxView } from "@/lib/crm/inbox";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
+import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CrmProductShell, useCrmTime } from "./crm-product-shell";
 import { ConversationThread, DeliveryState, inboxDate } from "./inbox/chat-thread";
 import { LabelChip, useInboxLookups, useNow, WaitChip } from "./inbox/inbox-parts";
 import styles from "./crm-inbox.module.css";
 
 type ChatPage = { data: RecordData[]; nextCursor: string | null };
+const LIST_SCOPES = ["conversations"] as const;
 const timeout = () => AbortSignal.timeout(20_000);
 const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 
@@ -82,12 +84,14 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
     } catch (error) { if (!request.signal.aborted) setFailure(error instanceof Error ? error.message : t("Chats could not be loaded.")); }
     finally { if (controller.current === request) requestPending.current = false; if (!request.signal.aborted) setBusy(false); }
   }, [workspaceId, query, loadSummary, t]);
+  // A new message or reply re-reads the list at once; polling is the fallback (a minute while live).
+  const live = useLiveInvalidate(initialData.canView ? workspaceId : "", LIST_SCOPES, () => { if (!cursorRef.current) void reload(false, true); });
   useEffect(() => {
     if (!initialData.canView) return;
     const timer = setTimeout(() => void reload(), 0);
-    const poll = setInterval(() => { if (document.visibilityState === "visible" && !cursorRef.current) void reload(false, true); }, 8_000);
+    const poll = setInterval(() => { if (document.visibilityState === "visible" && !cursorRef.current) void reload(false, true); }, pollEvery(live, 8_000));
     return () => { clearTimeout(timer); clearInterval(poll); controller.current?.abort(); };
-  }, [reload, initialData.canView]);
+  }, [reload, initialData.canView, live]);
   useEffect(() => { setPicked(new Set()); }, [query]);
   // What a chat can be filtered by: its enquiry, opportunity or project stage, or no record at all.
   useEffect(() => {

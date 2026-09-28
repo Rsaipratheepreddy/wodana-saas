@@ -4,12 +4,16 @@ import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { json } from "express";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { enhanceOpenApiFromValidation } from "./common/openapi-validation-schema";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  // The quotation plan sends the case's reference files (up to 12 MB, base64) to the AI gateway; every
+  // other request keeps the 2 MB limit.
+  app.use("/api/v1/workspaces/:workspaceId/ai/generate", json({ limit: "20mb" }));
   app.useBodyParser("json", { limit: "2mb" });
   const config = app.get(ConfigService);
   const webOrigin = config.get<string>("WEB_ORIGIN", "http://localhost:3000");

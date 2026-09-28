@@ -28,8 +28,21 @@ export function usePortalFormat(region: PortalSite["region"]) {
     };
     const number = (value: string | number | null | undefined) => (value === null || value === undefined || value === "" ? ""
       : safe(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 4 }).format(String(value) as unknown as number), String(value)));
-    return { locale, money, date, number };
+    return { locale, money: (value: string | number | null | undefined, currency?: string | null) => isolate(money(value, currency)), date, number };
   }, [language, region.country, region.currency, region.locale, region.timeZone]);
+}
+
+/**
+ * A name, reference or amount set inside a sentence keeps its own direction (Unicode first-strong isolate), so
+ * "Maya (QA Manager)" or "PRJ-0002" read right in an Arabic sentence and an Arabic name reads right in English.
+ */
+export function isolate(text: string | null | undefined) {
+  return text ? `⁨${text}⁩` : "";
+}
+
+/** Whole days from one calendar date (YYYY-MM-DD) to another. */
+export function daysBetween(from: string, to: string) {
+  return Math.round((Date.parse(`${to.slice(0, 10)}T00:00:00Z`) - Date.parse(`${from.slice(0, 10)}T00:00:00Z`)) / 86_400_000);
 }
 
 export type PortalFormat = ReturnType<typeof usePortalFormat>;

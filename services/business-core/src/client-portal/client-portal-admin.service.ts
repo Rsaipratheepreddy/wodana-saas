@@ -10,8 +10,14 @@ import { canonicalHash } from "../crm/shared/crm-types";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { PreProjectDefinitionService } from "../pre-projects/pre-project-definition.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { demoCodeInput, endSessions, mobileNumber, portalCodes, setDemoCode, type Grant, type PortalCodes, type PortalContact } from "./portal-auth";
+import { FilePresence, readStored } from "./portal-files";
 import { inviteClient, readClientAccess, revokeClient, type InviteDelivery } from "./portal-invitations";
+import { readStaffIssues, triageIssue } from "./portal-issues";
+import { markRead, readStaffThreads } from "./portal-messages";
+import { readStaffBoard, replyBoard, shareBoard } from "./portal-moodboard";
+import { decideNotice, readCaseNotices } from "./portal-payments";
 import { readView } from "./portal-read";
 import { optionalEmail, readPortalSettings, readProjectAccess, savePortalSettings, saveProjectAccess, SECTIONS } from "./portal-settings";
 import { portalUrl, readSite } from "./portal-site";
@@ -29,10 +35,12 @@ type Command = { id: string; version: number; hash: string };
 @Injectable()
 export class ClientPortalAdminService {
   private readonly codes: PortalCodes;
+  private readonly presence: FilePresence;
 
   constructor(private readonly access: WorkspaceAccessService, private readonly config: ConfigService, private readonly mailer: TransactionalEmailService,
-    @Optional() private readonly definitions?: PreProjectDefinitionService) {
+    @Optional() private readonly definitions?: PreProjectDefinitionService, @Optional() private readonly storage?: BrandAssetStorageService) {
     this.codes = portalCodes(config);
+    this.presence = new FilePresence(storage);
   }
 
   /**
@@ -51,7 +59,8 @@ export class ClientPortalAdminService {
       const settings = await readPortalSettings(client, workspaceId);
       const contact: PortalContact = { sessionId: "preview", phone: "", name: grant.name, nameConfirmed: true, grants: [grant] };
       const definitions = this.definitions ?? { portalData: async () => null };
-      return { site: await readSite(client, workspaceId, settings, this.demo), view: await readView(client, workspaceId, contact, settings, definitions), preview: true as const };
+      return { site: await readSite(client, workspaceId, settings, this.demo), view: await readView(client, workspaceId, contact, settings, definitions, this.storage ? this.presence : undefined),
+        preview: true as const };
     });
   }
 
@@ -303,6 +312,111 @@ export class ClientPortalAdminService {
   private caseId(value: string) {
     if (!UUID.test(value)) throw new NotFoundException("Project not found.");
     return value;
+  }
+
+  private async caseExists(client: PoolClient, workspaceId: string, caseId: string) {
+    const id = this.caseId(caseId);
+    if (!(await client.query(`SELECT 1 FROM pre_project_cases WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rowCount) throw new NotFoundException("Project not found.");
+    return id;
+  }
+
+  // ---------- what the client did, for the team ----------
+
+  /** The case's moodboard as the client sees it: which pins are shown to them, their likes and dislikes, and the comments both ways. */
+  moodboard(actor: RequestActor, workspaceId: string, caseId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, ["pre_projects.view", "projects.view"], async (client, user) => ({
+      ...(await readStaffBoard(client, workspaceId, await this.caseExists(client, workspaceId, caseId))),
+      canEdit: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit"),
+    }));
+  }
+
+  /** Shows or hides moodboard pins in the client's portal. */
+  shareMoodboard(actor: RequestActor, workspaceId: string, caseId: string, body: Record<string, unknown>) {
+    return this.access.withPermission(actor, workspaceId, "pre_projects.edit", async (client, user) => {
+      const id = await this.caseExists(client, workspaceId, caseId);
+      const changed = await shareBoard(client, workspaceId, id, user.userId, body);
+      if (changed.length) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: body.shared ? "client_portal.moodboard_shared" : "client_portal.moodboard_hidden",
+        entityType: "pre_project_case", entityId: id, after: { entryIds: changed } });
+      return { ...(await readStaffBoard(client, workspaceId, id)), canEdit: true };
+    });
+  }
+
+  /** The design team answers the client on a board or pin. */
+  replyMoodboard(actor: RequestActor, workspaceId: string, caseId: string, body: Record<string, unknown>) {
+    return this.access.withPermission(actor, workspaceId, "pre_projects.edit", async (client, user) => {
+      const id = await this.caseExists(client, workspaceId, caseId);
+      const result = await replyBoard(client, workspaceId, id, user.userId, body);
+      if (!result.replayed) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "client_portal.moodboard_replied", entityType: "pre_project_case", entityId: id,
+        after: { commentId: result.id, targetKind: body.targetKind, targetId: body.targetId } });
+      return { ...(await readStaffBoard(client, workspaceId, id)), canEdit: true };
+    });
+  }
+
+  /** The payments the client reported on a case, for finance to check against the bank. */
+  paymentReports(actor: RequestActor, workspaceId: string, caseId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, ["pre_projects.view", "receivables.view", "commercial.finance.verify"], async (client, user) => ({
+      reports: await readCaseNotices(client, workspaceId, await this.caseExists(client, workspaceId, caseId)),
+      canDecide: await this.access.hasPermission(client, workspaceId, user.userId, "commercial.finance.verify"),
+    }));
+  }
+
+  /** Finance closes a client's payment report: recorded (the receipt is in), or not received with a reason the client reads. */
+  decidePaymentReport(actor: RequestActor, workspaceId: string, reportId: string, body: Record<string, unknown>) {
+    return this.access.withPermission(actor, workspaceId, "commercial.finance.verify", async (client, user) => {
+      const result = await decideNotice(client, workspaceId, user.userId, reportId, body);
+      if (result.changed) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `client_portal.payment_${body.decision}`, entityType: "pre_project_case",
+        entityId: result.caseId, after: { reportId, note: typeof body.note === "string" ? body.note.trim() : "" } });
+      return { reports: await readCaseNotices(client, workspaceId, result.caseId), canDecide: true };
+    });
+  }
+
+  /** The issues the client reported on a project, for its managers to triage. */
+  issues(actor: RequestActor, workspaceId: string, projectId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const { caseId, canManage } = await this.projectRole(client, workspaceId, projectId, user.userId);
+      return { issues: await readStaffIssues(client, workspaceId, caseId, projectId), caseId, canTriage: canManage };
+    });
+  }
+
+  /** The project manager accepts a client's issue as a snag (with a severity) or declines it with a reason. */
+  triageIssue(actor: RequestActor, workspaceId: string, projectId: string, issueId: string, body: Record<string, unknown>) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const { caseId, canManage } = await this.projectRole(client, workspaceId, projectId, user.userId);
+      if (!canManage) throw new ForbiddenException("Only the project manager triages the client's issues.");
+      const result = await triageIssue(client, workspaceId, projectId, user.userId, issueId, body);
+      if (result.changed) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: body.decision === "accept" ? "client_portal.issue_accepted" : "client_portal.issue_declined",
+        entityType: "project", entityId: projectId, after: { issueId, severity: body.severity ?? null, snagId: result.snagId ?? null } });
+      return { issues: await readStaffIssues(client, workspaceId, caseId, projectId), caseId, canTriage: true };
+    });
+  }
+
+  /** Per conversation on a case: the client's files and when the client last read it. */
+  threads(actor: RequestActor, workspaceId: string, caseId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, ["pre_projects.view", "projects.view"], async (client) =>
+      readStaffThreads(client, workspaceId, await this.caseExists(client, workspaceId, caseId)));
+  }
+
+  /** Someone on the team opened a conversation: the client sees it was seen. */
+  readThreadAsTeam(actor: RequestActor, workspaceId: string, caseId: string, threadId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, ["pre_projects.view", "projects.view"], async (client, user) => {
+      const id = await this.caseExists(client, workspaceId, caseId);
+      const data = (await commercialRepository.load(client, workspaceId, id))?.content as CommercialData | undefined;
+      if (!data?.requests?.some((request) => request.id === threadId)) throw new NotFoundException("Conversation not found.");
+      await markRead(client, workspaceId, id, threadId, "team", user.userId);
+      return { ok: true };
+    });
+  }
+
+  /** A file the client added (an inspiration photo, proof of payment, a photo of a problem), for the team. */
+  clientFile(actor: RequestActor, workspaceId: string, caseId: string, assetId: string, preview: boolean) {
+    return this.access.withAnyPermission(actor, workspaceId, ["pre_projects.view", "projects.view", "receivables.view", "commercial.finance.verify"], async (client) => {
+      const id = this.caseId(caseId);
+      const row = UUID.test(assetId) ? (await client.query<{ objectKey: string; previewKey: string | null; mimeType: string; name: string }>(
+        `SELECT object_key AS "objectKey", preview_key AS "previewKey", mime_type AS "mimeType", original_name AS name FROM pre_project_brief_assets
+          WHERE workspace_id = $1 AND case_id = $2 AND id = $3 AND client_grant_id IS NOT NULL`, [workspaceId, id, assetId])).rows[0] : undefined;
+      if (!row) throw new NotFoundException("File not found.");
+      return readStored(this.storage, row, preview);
+    });
   }
 
   private async namedOnIssuedQuote(client: PoolClient, workspaceId: string, caseId: string, grantId: string) {

@@ -117,6 +117,14 @@ export function phoneProblem(national: string, country: string, text: PhoneProbl
   return null;
 }
 
+/** A valid local number in its country as E.164 (+971501234567), dropping any trunk prefix; null if invalid. */
+export function toE164(national: string, country: string): string | null {
+  const upper = country.toUpperCase();
+  if (!national.trim() || !isSupportedCountry(upper)) return null;
+  const parsed = parsePhoneNumberFromString(national.trim(), { defaultCountry: upper as CountryCode, extract: false });
+  return parsed?.isValid() ? parsed.number : null;
+}
+
 /** A local number and its country as one international number (+9715…), for storing. */
 export function joinPhone(country: string, national: string): string {
   const digits = national.replace(/[^\d]/g, "");

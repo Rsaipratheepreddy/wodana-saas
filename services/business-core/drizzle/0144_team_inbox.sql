@@ -230,6 +230,20 @@ CREATE OR REPLACE FUNCTION public.list_crm_workspaces_with_due_work() RETURNS TA
       WHERE lead.ownership_due_at <= now() AND lead.owner_membership_id IS NOT NULL
         AND lead.status IN ('new','attempting_contact','connected','nurturing')
     UNION ALL
+    SELECT lead.workspace_id FROM crm_leads lead
+      WHERE lead.escalation_due_at <= now() OR lead.client_review_due_at <= now()
+         OR (lead.status = 'paused' AND lead.next_action_at <= now())
+    UNION ALL
+    SELECT workspace.id FROM workspaces workspace
+      CROSS JOIN LATERAL (SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_timezone_names zone WHERE zone.name = workspace.default_timezone)
+        THEN workspace.default_timezone ELSE 'UTC' END AS name) zone
+      WHERE workspace.status = 'active'
+        AND (now() AT TIME ZONE zone.name)::time >= time '09:00'
+        AND NOT EXISTS (SELECT 1 FROM crm_sales_digests digest WHERE digest.workspace_id = workspace.id
+          AND digest.digest_date = (now() AT TIME ZONE zone.name)::date)
+        AND EXISTS (SELECT 1 FROM crm_leads lead WHERE lead.workspace_id = workspace.id
+          AND lead.status IN ('new','attempting_contact','connected','nurturing'))
+    UNION ALL
     SELECT enrollment.workspace_id
       FROM crm_sequence_enrollments enrollment
       JOIN crm_sequences sequence
@@ -253,19 +267,15 @@ BEGIN
   END IF;
 END $$;
 --> statement-breakpoint
--- Staff notices: a client wrote (one per chat until it is read), a chat is yours, a snoozed chat is back,
+-- Staff notices: a client wrote (one per chat until it is read), a mention in a note, a snoozed chat is back,
 -- and nobody could take a new chat.
 INSERT INTO notification_templates (workspace_id, code, channel, locale, version_number, status, subject_template, body_template, variables, approved_at)
 SELECT workspace.id, template.code, template.channel, 'en', 1, 'approved', template.subject, template.body, template.variables::jsonb, now()
   FROM workspaces workspace
  CROSS JOIN (VALUES
    ('crm.inbox_message', 'in_app', '{{clientName}} wrote', '{{summary}}', '["clientName","summary"]'),
-   ('crm.inbox_message', 'push', '{{clientName}} wrote', '{{summary}}', '["clientName","summary"]'),
-   ('crm.inbox_assigned', 'in_app', 'Chat with {{clientName}} is yours', '{{reason}}', '["clientName","reason"]'),
-   ('crm.inbox_assigned', 'push', 'Chat with {{clientName}} is yours', '{{reason}}', '["clientName","reason"]'),
    ('crm.inbox_woke', 'in_app', 'Chat with {{clientName}} is back', 'You snoozed it until now.', '["clientName"]'),
    ('crm.inbox_mention', 'in_app', '{{actor}} mentioned you', '{{clientName}}: {{summary}}', '["actor","clientName","summary"]'),
-   ('crm.inbox_mention', 'push', '{{actor}} mentioned you', '{{clientName}}: {{summary}}', '["actor","clientName","summary"]'),
    ('crm.inbox_unassigned', 'in_app', '{{clientName}} is waiting', 'Nobody could take this new chat. Assign it.', '["clientName"]')
  ) AS template (code, channel, subject, body, variables)
 ON CONFLICT (workspace_id, code, channel, locale, version_number) DO NOTHING;

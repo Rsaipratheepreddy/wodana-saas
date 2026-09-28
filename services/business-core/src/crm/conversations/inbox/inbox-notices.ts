@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import { notifyUserInApp, queueUserPush, renderNoticeText } from "../../../notifications/default-templates";
+import { notifyUserInApp, renderNoticeText } from "../../../notifications/default-templates";
 import { INBOX_MEMBERS_SQL } from "./inbox-assignment";
 
 type Db = Pick<PoolClient, "query">;
@@ -77,21 +77,17 @@ export async function noticeChat(db: Db, input: {
     return false;
   }
   const raised = await notifyUserInApp(db, { workspaceId: input.workspaceId, recipientUserId: input.recipientUserId, code: input.code, eventType: input.eventType, variables: input.variables, deepLink, idempotencyKey: input.idempotencyKey });
-  if (raised.queued && input.code === "crm.inbox_message") {
-    await queueUserPush(db, { workspaceId: input.workspaceId, recipientUserId: input.recipientUserId, code: input.code, eventType: input.eventType, variables: input.variables, deepLink, idempotencyKey: `${input.idempotencyKey}:push` });
-  }
   return raised.queued;
 }
 
-/** The new owner hears that the chat is theirs (not when they took it themselves). */
-export async function noticeAssigned(db: Db, input: { workspaceId: string; conversationId: string; ownerMembershipId: string; actorUserId: string | null; clientName: string; reason: string; version: number }) {
+/** The new owner hears that the chat is theirs (not when they took it themselves); the push follows the in-app notice. */
+export async function noticeAssigned(db: Db, input: { workspaceId: string; conversationId: string; leadId: string | null; ownerMembershipId: string; actorUserId: string | null; client: string; assignedBy: string; version: number }) {
   const owner = await userOfMembership(db, input.workspaceId, input.ownerMembershipId);
   if (!owner || owner.userId === input.actorUserId) return;
-  const variables = { clientName: input.clientName, reason: input.reason };
-  const key = `crm:inbox:assigned:${input.conversationId}:${input.version}:${owner.userId}`;
-  const deepLink = inboxLink(input.conversationId);
-  const raised = await notifyUserInApp(db, { workspaceId: input.workspaceId, recipientUserId: owner.userId, code: "crm.inbox_assigned", eventType: "crm.inbox.assigned", variables, deepLink, idempotencyKey: key });
-  if (raised.queued) await queueUserPush(db, { workspaceId: input.workspaceId, recipientUserId: owner.userId, code: "crm.inbox_assigned", eventType: "crm.inbox.assigned", variables, deepLink, idempotencyKey: `${key}:push` });
+  // The web opens the thread; the phone, which has no thread screen, opens the enquiry it belongs to.
+  const deepLink = `${inboxLink(input.conversationId)}${input.leadId ? `&lead=${input.leadId}` : ""}`;
+  await notifyUserInApp(db, { workspaceId: input.workspaceId, recipientUserId: owner.userId, code: "crm.conversation_assigned", eventType: "crm.conversation.assigned",
+    variables: { client: input.client, assignedBy: input.assignedBy }, deepLink, idempotencyKey: `conversation-assigned:${input.conversationId}:${input.version}` });
 }
 
 /** When someone reads the chat, its unread notices are read too. */
