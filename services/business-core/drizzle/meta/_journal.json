@@ -694,6 +694,20 @@
       "when": 1801160600000,
       "tag": "0155_ai_credit_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1801190000000,
+      "tag": "0156_inbox_auto_replies",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1801190000001,
+      "tag": "0157_default_quick_replies",
+      "breakpoints": true
     }
   ]
 }

@@ -69,6 +69,30 @@ export type ClientMessageRow = {
   template: { body: string; providerStatus: string; approved: boolean } | null;
 };
 
+/** Auto replies (Settings → Inbox → Auto replies), shared with business-core (crm/conversations/inbox/auto-reply-rules.ts). */
+export type AutoReplyScope = {
+  connectionId: string | null;
+  greeting: { enabled: boolean; text: string; silenceDays: number };
+  away: { enabled: boolean; text: string; windowHours: number };
+  /** Null values follow the workspace's working week, work calendar and time zone. */
+  hours: { workingDays: number[] | null; start: string | null; end: string | null; timeZone: string | null };
+  version: number;
+};
+export type AutoRepliesState = {
+  canManage: boolean; businessName: string | null; workspace: AutoReplyScope;
+  numbers: Array<{ connectionId: string; number: string | null; accountName: string | null; isDefault: boolean; override: AutoReplyScope | null }>;
+  defaults: { workingDays: number[]; start: string; end: string; timeZone: string };
+};
+export const AUTO_REPLY_FIELDS = ["contact.first_name", "contact.name", "business.name"] as const;
+export type AutoReplyField = (typeof AUTO_REPLY_FIELDS)[number];
+
+/** The auto reply as the client reads it; a field without a value is left out and the sentence closed up. */
+export function renderAutoReply(text: string, values: Partial<Record<AutoReplyField, string | null>>) {
+  return text
+    .replace(/\{\{\s*([a-z_]+\.[a-z_]+)\s*\}\}/g, (_all, name: string) => ((AUTO_REPLY_FIELDS as readonly string[]).includes(name) ? values[name as AutoReplyField]?.trim() ?? "" : ""))
+    .replace(/[ \t]+([,.!?;:])/g, "$1").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "").trim();
+}
+
 const PLACEHOLDER = /\{\{\s*(\d{1,2})\s*\}\}/g;
 
 /** The body as the client will read it: each {{n}} replaced by its value, or left visible when it has none. */

@@ -5,7 +5,9 @@ import { RequestActor } from "../../auth/actor";
 import { DatabaseService } from "../../database/database.service";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
-import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessageDto, CreateQuickReplyDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto } from "./dto/inbox.dto";
+import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessageDto, CreateQuickReplyDto, RemoveAutoRepliesDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateAutoRepliesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto } from "./dto/inbox.dto";
+import { readAutoReplyScopes, workspaceHours } from "./inbox/auto-replies";
+import { AUTO_REPLY_FIELDS, unknownAutoReplyFields, validTimeZone } from "./inbox/auto-reply-rules";
 import { INBOX_MEMBERS_SQL } from "./inbox/inbox-assignment";
 import { applyConversationChange, recordChatEvent, type ConversationChange } from "./inbox/inbox-commands";
 import { inboxLink, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
@@ -301,6 +303,75 @@ export class CrmInboxService {
     });
   }
 
+  /** Auto replies: the workspace's greeting and away message, each WhatsApp number's own (if any), and what "the workspace's hours" are. */
+  autoReplies(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => this.readAutoReplies(client, workspaceId, actorUser.userId));
+  }
+
+  /** Saves one scope (the workspace, or one number) as a whole; safe to repeat, version-checked and audited. */
+  updateAutoReplies(actor: RequestActor, workspaceId: string, input: UpdateAutoRepliesDto) {
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+      const connectionId = input.connectionId ?? null;
+      if (connectionId) {
+        const number = await client.query(`SELECT 1 FROM integration_connections WHERE workspace_id = $1 AND id = $2 AND provider = 'whatsapp' AND status = 'connected'`, [workspaceId, connectionId]);
+        if (!number.rowCount) throw new UnprocessableEntityException("Choose a connected WhatsApp number");
+      }
+      const next = {
+        greetingEnabled: input.greetingEnabled, greetingText: input.greetingText.trim(), silenceDays: input.greetingSilenceDays,
+        awayEnabled: input.awayEnabled, awayText: input.awayText.trim(), windowHours: input.awayWindowHours,
+        workingDays: input.workingDays?.length ? [...new Set(input.workingDays)].sort((a, b) => a - b) : null,
+        start: input.dayStart ?? null, end: input.dayEnd ?? null, timeZone: input.timeZone?.trim() || null,
+      };
+      if (next.greetingEnabled && !next.greetingText) throw new UnprocessableEntityException("Write the greeting message");
+      if (next.awayEnabled && !next.awayText) throw new UnprocessableEntityException("Write the away message");
+      const unknown = [...unknownAutoReplyFields(next.greetingText), ...unknownAutoReplyFields(next.awayText)];
+      if (unknown.length) throw new UnprocessableEntityException(`Auto replies can't fill {{${unknown[0]}}}`);
+      if ((next.start === null) !== (next.end === null)) throw new UnprocessableEntityException("Set both the opening and the closing time");
+      if (next.start && next.start === next.end) throw new UnprocessableEntityException("The closing time must differ from the opening time");
+      if (next.timeZone && !validTimeZone(next.timeZone)) throw new UnprocessableEntityException("Choose a valid time zone");
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`auto-replies:${workspaceId}:${connectionId ?? "workspace"}`]);
+      const found = await client.query<Row>(
+        `SELECT id, greeting_enabled AS "greetingEnabled", greeting_text AS "greetingText", greeting_silence_days AS "silenceDays",
+                away_enabled AS "awayEnabled", away_text AS "awayText", away_window_hours AS "windowHours", working_days AS "workingDays",
+                to_char(day_start, 'HH24:MI') AS start, to_char(day_end, 'HH24:MI') AS "end", time_zone AS "timeZone", version
+           FROM crm_auto_reply_settings WHERE workspace_id = $1 AND connection_id IS NOT DISTINCT FROM $2::uuid FOR UPDATE`, [workspaceId, connectionId]);
+      const before = found.rows[0];
+      const current: Row | null = before ? { ...before, workingDays: (before.workingDays as number[] | null)?.map(Number) ?? null } : null;
+      const same = current && (Object.keys(next) as Array<keyof typeof next>).every((key) => JSON.stringify(current[key] ?? null) === JSON.stringify(next[key]));
+      if (same) return this.readAutoReplies(client, workspaceId, actorUser.userId);
+      if (Number(current?.version ?? 0) !== input.version) throw new ConflictException("Auto replies changed; reload and try again");
+      const values = [workspaceId, connectionId, next.greetingEnabled, next.greetingText, next.silenceDays, next.awayEnabled, next.awayText, next.windowHours, next.workingDays, next.start, next.end, next.timeZone, actorUser.userId];
+      const saved = current
+        ? await client.query<{ id: string; version: number }>(
+          `UPDATE crm_auto_reply_settings SET greeting_enabled = $3, greeting_text = $4, greeting_silence_days = $5, away_enabled = $6, away_text = $7,
+                  away_window_hours = $8, working_days = $9::smallint[], day_start = $10::time, day_end = $11::time, time_zone = $12, updated_by = $13,
+                  version = version + 1, updated_at = now()
+            WHERE workspace_id = $1 AND connection_id IS NOT DISTINCT FROM $2::uuid RETURNING id, version`, values)
+        : await client.query<{ id: string; version: number }>(
+          `INSERT INTO crm_auto_reply_settings (workspace_id, connection_id, greeting_enabled, greeting_text, greeting_silence_days, away_enabled, away_text,
+                  away_window_hours, working_days, day_start, day_end, time_zone, updated_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::smallint[], $10::time, $11::time, $12, $13) RETURNING id, version`, values);
+      const previous = current ? Object.fromEntries(Object.entries(current).filter(([key]) => key !== "id")) : null;
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.inbox.auto_replies.updated.v1", entityType: "crm_auto_reply_settings", entityId: saved.rows[0].id,
+        before: previous, after: { connectionId, ...next, version: saved.rows[0].version } });
+      return this.readAutoReplies(client, workspaceId, actorUser.userId);
+    });
+  }
+
+  /** A number goes back to the workspace's auto replies (its own are removed); safe to repeat. */
+  removeAutoRepliesOverride(actor: RequestActor, workspaceId: string, connectionId: string, input: RemoveAutoRepliesDto) {
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+      const found = await client.query<{ id: string; version: number }>(`SELECT id, version FROM crm_auto_reply_settings WHERE workspace_id = $1 AND connection_id = $2 FOR UPDATE`, [workspaceId, connectionId]);
+      const row = found.rows[0];
+      if (!row) return this.readAutoReplies(client, workspaceId, actorUser.userId);
+      if (Number(row.version) !== input.version) throw new ConflictException("Auto replies changed; reload and try again");
+      await client.query(`DELETE FROM crm_auto_reply_settings WHERE workspace_id = $1 AND id = $2`, [workspaceId, row.id]);
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.inbox.auto_replies.override_removed.v1", entityType: "crm_auto_reply_settings", entityId: row.id,
+        before: { connectionId, version: row.version }, after: { connectionId, followsWorkspace: true } });
+      return this.readAutoReplies(client, workspaceId, actorUser.userId);
+    });
+  }
+
   /** Approved WhatsApp templates (latest version per name and language) with their variables and mapping. */
   templates(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
@@ -445,6 +516,25 @@ export class CrmInboxService {
       queues: queues.rows, whatsapp: { connected: Boolean(number.rowCount), number: number.rows[0]?.number ?? null, accountName: number.rows[0]?.accountName ?? null, health: number.rows[0]?.health ?? null, quality: number.rows[0]?.quality ?? null, limit: number.rows[0]?.limit ?? null },
       seats: seats.rows[0]?.seats ?? 0, businessName: business.rows[0]?.name ?? null,
       workday: { start: calendar.rows[0]?.dayStart ?? null, days: calendar.rows[0]?.workingDays ?? null },
+    };
+  }
+
+  private async readAutoReplies(client: PoolClient, workspaceId: string, userId: string) {
+    const scopes = await readAutoReplyScopes(client, workspaceId);
+    const numbers = await client.query<{ connectionId: string; number: string | null; accountName: string | null; isDefault: boolean }>(
+      `SELECT id AS "connectionId", configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName",
+              COALESCE((configuration->>'isDefault')::boolean, false) AS "isDefault"
+         FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
+        ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, created_at, id`, [workspaceId]);
+    const business = await client.query<{ name: string }>(`SELECT coalesce(nullif(btrim(branding.display_name), ''), workspace.name) AS name FROM workspaces workspace LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id WHERE workspace.id = $1`, [workspaceId]);
+    const hours = await workspaceHours(client, workspaceId);
+    return {
+      canManage: await this.access.hasPermission(client, workspaceId, userId, "crm.settings.manage"),
+      businessName: business.rows[0]?.name ?? null,
+      workspace: scopes.workspace,
+      numbers: numbers.rows.map((row) => ({ ...row, override: scopes.numbers.find((scope) => scope.connectionId === row.connectionId) ?? null })),
+      defaults: { workingDays: hours.workingDays, start: hours.start, end: hours.end, timeZone: hours.timeZone },
+      fields: AUTO_REPLY_FIELDS,
     };
   }
 

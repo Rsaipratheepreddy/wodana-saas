@@ -238,10 +238,11 @@ function MessageBubble({ message, partyName, workspaceId, time, onHide, canShowH
   const direction = String(message.direction);
   const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata as Record<string, unknown> : {};
   const automatic = typeof metadata.automatic === "string" ? metadata.automatic : null;
+  const autoReply = automatic === "auto_reply";
   const sender = direction === "inbound" ? partyName : automatic ? t("Automatic") : metadata.sentFromPhone ? t("Sent from phone") : message.authorship === "automation" || message.senderType === "system" ? t("Automation") : String(message.senderName ?? t("Team"));
   return <article className={styles.message} data-direction={direction} data-automatic={automatic ? true : undefined} aria-label={direction === "inbound" ? t("Contact message") : direction === "internal" ? t("Team note") : t("Your message")}>
     <span className={styles.messageAvatar}><Avatar name={sender} size="sm" /></span>
-    <strong className={styles.messageSender}>{sender}{direction === "internal" ? <span className={styles.noteTag}>{t("Note")}</span> : null}{automatic ? <span className={styles.automaticTag}>{t(CLIENT_EVENT_LABELS[automatic] ?? "Client message")}</span> : null}</strong>
+    <strong className={styles.messageSender}>{sender}{direction === "internal" ? <span className={styles.noteTag}>{t("Note")}</span> : null}{automatic ? <span className={styles.automaticTag}>{autoReply ? t("Auto reply") : t(CLIENT_EVENT_LABELS[automatic] ?? "Client message")}</span> : null}</strong>
     {message.hiddenAt ? <p className={styles.hiddenText}>{t("Hidden by {name}", { name: String(message.hiddenByName ?? t("Someone")) })}{canShowHidden && onHide ? <> <Button size="compact" variant="quiet" onPress={() => onHide(message.id, false)}>{t("Show again")}</Button></> : null}</p>
       : <MessageContent message={message} workspaceId={workspaceId} />}
     {onHide && !message.hiddenAt ? <IconButton aria-label={t("Hide message")} className={styles.hideButton} size="compact" variant="quiet" onPress={() => onHide(message.id, true)}><EyeOff size={13} /></IconButton> : null}

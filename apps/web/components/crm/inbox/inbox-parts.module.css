@@ -28,3 +28,10 @@
 .name small.reason { color: var(--wd-color-danger); }
 .starterList { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; max-block-size: 22rem; overflow-y: auto; }
 .starterList li { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+/* Settings → Inbox → Auto replies */
+.message, .hours { display: grid; gap: var(--wd-space-3); inline-size: 100%; min-inline-size: 0; }
+.weekdays { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; border: 0; min-inline-size: 0; }
+.weekdays legend { padding: 0; margin-block-end: var(--wd-space-2); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }
+.weekdays > div { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
+@media (max-width: 640px) { .pair { grid-template-columns: minmax(0, 1fr); } }
