@@ -43,7 +43,10 @@ export function appRouteFor(link: string | null | undefined): string | null {
     }
     case 'crm': {
       const section = rest[0] ?? '';
-      if (section === 'leads') return id(rest[1]) ? `/sales/${rest[1]}` : q('lead') ? `/sales/${q('lead')}` : '/sales';
+      if (section === 'leads') {
+        const lead = id(rest[1]) ?? q('lead') ?? q('record');
+        return lead ? `/sales/${lead}` : '/sales';
+      }
       if (section === 'opportunities') return id(rest[1]) ? `/sales/opportunity/${rest[1]}` : q('record') ? `/sales/opportunity/${q('record')}` : '/sales/opportunities';
       if (section === 'follow-ups' || section === 'activities') return '/sales/follow-ups';
       // The app has no thread screen: a conversation opens the enquiry it belongs to.
@@ -71,6 +74,30 @@ export function appRouteFor(link: string | null | undefined): string | null {
       const caseId = id(rest[0] === 'cases' ? rest[1] : rest[0]);
       return caseId ? `/survey/${caseId}` : '/survey';
     }
+    case 'approvals':
+      return '/approvals';
+    default:
+      return null;
+  }
+}
+
+/** Where the server says a notice leads (`POST crm/notifications/:id/open`), for links the app can't read itself (a job). */
+export type NoticeDestination = { module?: string; screen?: string; recordId?: string | null; actionId?: string | null } | null | undefined;
+
+export function routeForDestination(destination: NoticeDestination): string | null {
+  if (!destination) return null;
+  const record = id(destination.recordId);
+  const action = id(destination.actionId);
+  const screen = destination.screen && /^[a-z-]+$/.test(destination.screen) ? destination.screen : 'overview';
+  switch (destination.module) {
+    case 'projects':
+      return record ? appRouteFor(`/workspace/projects/${record}/${screen}${action ? `?record=${action}` : ''}`) : '/projects';
+    case 'pre-project':
+      return record ? `/survey/${record}` : '/survey';
+    case 'crm':
+      if (screen === 'leads') return record ? `/sales/${record}` : '/sales';
+      if (screen === 'deals') return record ? `/sales/opportunity/${record}` : '/sales/opportunities';
+      return null;
     default:
       return null;
   }

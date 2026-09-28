@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarCheck, CheckCircle2, CloudOff, CloudUpload, Inbox, ListChecks, LogIn, LogOut, PackageCheck, PhoneCall, Users } from 'lucide-react-native';
+import { CalendarCheck, CheckCircle2, ClipboardCheck, CloudOff, CloudUpload, Inbox, ListChecks, LogIn, LogOut, PackageCheck, PhoneCall, Users } from 'lucide-react-native';
 import type { HomeOverview } from '../../../../../packages/contracts/src/home';
 import { useApi } from '../../core/api';
 import { appRouteFor } from '../../core/deep-links';
@@ -14,6 +14,7 @@ import { Banner, Card, Empty, ListRow, Screen, Section, Shimmer } from '../../ui
 import { Button, Row, Text } from '../../ui/primitives';
 import { useBootstrap, useCrewDays, useCurrentAttendance, useLeaveRequests, usePendingTime, useReviews } from '../hrms/api';
 import { minutesSince, MODE_LABEL } from '../hrms/model';
+import { useWaitingCount } from '../approvals/api';
 import { useInbox } from '../inbox/api';
 import { useOpenWork } from '../projects/api';
 import { WorkTrailing } from '../projects/plan-screen';
@@ -44,11 +45,12 @@ export function TodayScreen() {
   const crewDays = useCrewDays(null, hrms && !!bootstrap.data?.permissions.crews);
   const work = useOpenWork('mine');
   const inbox = useInbox();
+  const waiting = useWaitingCount();
   const deliveries = useDeliveries(session.has('projects') && session.can('stock.receive', 'purchasing.manage'));
   const overview = useQuery({ queryKey: ['home-overview', api.workspaceId], queryFn: () => api.get<HomeOverview>('home-overview') });
   const today = format.today();
 
-  const refresh = () => { void current.refetch(); void work.refetch(); void overview.refetch(); void inbox.refetch(); void deliveries.refetch(); void teamLeave.refetch(); void teamReviews.refetch(); };
+  const refresh = () => { void current.refetch(); void work.refetch(); void overview.refetch(); void inbox.refetch(); void deliveries.refetch(); void teamLeave.refetch(); void teamReviews.refetch(); void waiting.refetch(); };
   const open = current.data && !current.data.endedAt ? current.data : null;
   const segment = open?.segments[open.segments.length - 1];
   const due = (work.data?.items ?? []).filter((item) => item.dueDate && item.dueDate <= today).slice(0, 5);
@@ -59,7 +61,7 @@ export function TodayScreen() {
   const followUps = overview.data?.sales ?? [];
   const expected = (deliveries.data?.expected ?? []).filter((order) => !order.due || order.due <= today).slice(0, 3);
   const blocked = outbox.items.filter((item) => item.status === 'blocked');
-  const nothing = !due.length && !approvals && !followUps.length && !expected.length && !(inbox.unread > 0);
+  const nothing = !due.length && !approvals && !waiting.count && !followUps.length && !expected.length && !(inbox.unread > 0);
   const loading = work.isLoading || overview.isLoading;
 
   return <Screen large title={t('Today')} subtitle={format.longDay(today)} onRefresh={refresh} refreshing={current.isRefetching || work.isRefetching}>
@@ -78,6 +80,10 @@ export function TodayScreen() {
         <Button label={open ? t('Check out') : t('Check in')} icon={open ? LogOut : LogIn} variant={open ? 'secondary' : 'primary'} onPress={() => router.push('/hrms/attendance')} />
       </Row>
     </Card> : null}
+
+    {waiting.count ? <Section>
+      <ListRow first icon={ClipboardCheck} iconTone="warning" title={t('{count} waiting for you', { count: waiting.count })} onPress={() => router.push('/approvals')} />
+    </Section> : null}
 
     {approvals ? <Section>
       <ListRow first icon={Users} iconTone="warning" title={t('{count} to approve', { count: approvals })} detail={t('Leave, attendance, timesheets and crew days')} onPress={() => router.push('/hrms/team')} />

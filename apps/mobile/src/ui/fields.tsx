@@ -149,7 +149,7 @@ export function FilterChips<V extends string>({ value, options, onChange }: { va
   return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2) }}>
     {options.map((option) => {
       const selected = option.value === value;
-      return <Pressable key={option.value} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => { haptic.tap(); onChange(option.value); }}
+      return <Pressable key={option.value} accessibilityRole="button" accessibilityState={{ selected }} hitSlop={4} onPress={() => { haptic.tap(); onChange(option.value); }}
         style={({ pressed }) => ({ minHeight: 36, paddingHorizontal: theme.space(3), borderRadius: theme.radius.pill, justifyContent: 'center', borderWidth: 1,
           borderColor: selected ? theme.colors.actionPrimary : theme.colors.borderControl, backgroundColor: selected ? theme.colors.actionPrimary : pressed ? theme.colors.surfacePressed : theme.colors.surface })}>
         <Text variant="label" style={{ fontSize: theme.size.sm, color: selected ? theme.colors.actionOnPrimary : theme.colors.text }}>{option.label}</Text>
