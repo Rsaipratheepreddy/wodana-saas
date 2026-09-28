@@ -1,0 +1,7 @@
+[Unit]
+Description=Wodana database and files backup to S3
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wodana/prod/backup.sh

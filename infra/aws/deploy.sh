@@ -25,17 +25,13 @@ printf 'RELEASE=%s\n' "$R" > "$P/.env"
 cd "$P"
 docker compose up -d --remove-orphans --wait --wait-timeout 300
 
-# nginx: HTTPS once the certificate exists, plain HTTP before that.
-install -m 644 "$S"/infra/aws/nginx/wodana-{routes,proxy,http-include,http-redirect}.conf /etc/nginx/snippets/
-printf 'map "" $wodana_release { default "%s"; }\n' "$R" > /etc/nginx/conf.d/wodana-release.conf
-if [ -f /etc/letsencrypt/live/wodana-prod/fullchain.pem ]; then
-  sed 's/__HTTP_MODE__/redirect/' "$S/infra/aws/nginx/wodana.conf" > /etc/nginx/sites-available/wodana
-else
-  sed -e 's/__HTTP_MODE__/include/' -e '/# __TLS_BEGIN__/,/# __TLS_END__/d' "$S/infra/aws/nginx/wodana.conf" > /etc/nginx/sites-available/wodana
-fi
-ln -sf /etc/nginx/sites-available/wodana /etc/nginx/sites-enabled/wodana
-rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx
+# Host scripts, nginx (HTTPS once the certificate exists), certificate and backup timers.
+install -m 755 "$S"/infra/aws/{deploy,render-nginx,sync-tenant-certificates,backup}.sh "$P/"
+mkdir -p "$P/nginx" && install -m 644 "$S"/infra/aws/nginx/*.conf "$P/nginx/"
+install -m 644 "$S"/infra/aws/systemd/wodana-{certificates,backup}.{service,timer} /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now wodana-certificates.timer wodana-backup.timer
+"$P/render-nginx.sh"
 
 curl -fsS -o /dev/null -w "web %{http_code}\n" -H "Host: admin.wodana.ai" http://127.0.0.1/login
 curl -fsS -o /dev/null -w "core %{http_code}\n" -H "Host: admin.wodana.ai" http://127.0.0.1/api/v1/health/ready
