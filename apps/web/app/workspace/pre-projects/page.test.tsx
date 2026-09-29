@@ -15,7 +15,7 @@ describe("Planning entry and saved selectors", () => {
   beforeEach(() => { getPreProjects.mockReset().mockResolvedValue(data); });
 
   it("opens the Planning board by default", async () => {
-    loadProjectsBoard.mockResolvedValue({ projects: [], planning: data, palmFlowEnabled: false });
+    loadProjectsBoard.mockResolvedValue({ projects: [], planning: data, servicePathEnabled: false });
     const element = await Page({ searchParams: Promise.resolve({}) });
     expect(element.type.name).toBe("PlanningList");
     expect(element.props.planning).toBe(data);

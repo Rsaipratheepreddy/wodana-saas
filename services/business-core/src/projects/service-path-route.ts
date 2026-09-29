@@ -1,5 +1,5 @@
 /** The enquiry scope is selected in CRM; a label alone cannot decide whether work is made to order. */
-export type PalmFlowScope = {
+export type ServicePathScope = {
   design: boolean;
   mainQuotation: boolean;
   materialSelection: boolean;
@@ -9,7 +9,7 @@ export type PalmFlowScope = {
   installation: boolean;
 };
 
-export type PalmFlowStage =
+export type ServicePathStage =
   | "enquiry"
   | "requirements"
   | "design_quote"
@@ -32,14 +32,14 @@ export type PalmFlowStage =
   | "snagging"
   | "client_handover";
 
-export type PalmFlowRoute = {
+export type ServicePathRoute = {
   /** The single Deal File / Project Ref is created after this round is paid and owner-approved. */
   firstPaidRound: "design" | "main";
-  crm: PalmFlowStage[];
-  project: PalmFlowStage[];
+  crm: ServicePathStage[];
+  project: ServicePathStage[];
 };
 
-export function palmFlowRoute(scope: PalmFlowScope): PalmFlowRoute {
+export function servicePathRoute(scope: ServicePathScope): ServicePathRoute {
   if (!scope.design && !scope.mainQuotation)
     throw new Error("Select design or a main fitout/furniture quotation.");
   if (!scope.mainQuotation && (scope.materialSelection || scope.procurement || scope.manufacturing || scope.siteWorks || scope.installation))
@@ -49,8 +49,8 @@ export function palmFlowRoute(scope: PalmFlowScope): PalmFlowRoute {
   if (scope.materialSelection && !scope.procurement)
     throw new Error("A material list requires a procurement stage.");
 
-  const crm: PalmFlowStage[] = ["enquiry", "requirements"];
-  const project: PalmFlowStage[] = [];
+  const crm: ServicePathStage[] = ["enquiry", "requirements"];
+  const project: ServicePathStage[] = [];
   if (scope.design) {
     crm.push("design_quote", "design_qs_review", "design_client_approval", "design_agreement_payment");
   } else {
@@ -71,7 +71,7 @@ export function palmFlowRoute(scope: PalmFlowScope): PalmFlowRoute {
 }
 
 /** A site plan supports measured design/build work; it is not a prerequisite to quote ready-made furniture. */
-export function palmQuotationRequiresSitePlan(scope: PalmFlowScope, round: "design" | "main" | undefined): boolean {
+export function quotationRequiresSitePlan(scope: ServicePathScope, round: "design" | "main" | undefined): boolean {
   if (round === "design") return false;
   return scope.design || scope.manufacturing || scope.siteWorks;
 }

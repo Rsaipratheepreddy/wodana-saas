@@ -6,7 +6,7 @@ import {readWorkQueue} from './project-work-queue';
 import {readSupplyQueue} from './project-supply-queue';
 import {projectMemberRecipientsSql} from './project-member-access';
 import { projectInventory, materialInventory } from "./project-inventory";
-import { assertPalmCommercialStageReady, assertPalmManufacturingPaymentReady, commercialExecutionReady } from "./project-readiness";
+import { assertServicePathStageReady, assertManufacturingPaymentReady, commercialExecutionReady } from "./project-readiness";
 import { paymentIsVerified } from "../commercial/accounting-invoice";
 import {
   financeGatePaymentsReady,
@@ -546,8 +546,8 @@ export class ExecutionService {
         const summary = projectWorkflowSummary(data);
         if (summary?.nextStage && data.workflow?.template.code === DEAL_FIRST_WORKFLOW_CODE) {
           try {
-            assertPalmCommercialStageReady(data.workflow.template.code, summary.nextStage.key, r.commercial);
-            assertPalmManufacturingPaymentReady(data.workflow.template.code, summary.nextStage.key, r.commercial);
+            assertServicePathStageReady(data.workflow.template.code, summary.nextStage.key, r.commercial);
+            assertManufacturingPaymentReady(data.workflow.template.code, summary.nextStage.key, r.commercial);
           } catch (error) {
             if (error instanceof ConflictException)
               return { ...summary, nextBlocker: error.message };
@@ -1331,7 +1331,7 @@ export class ExecutionService {
         });
       } else {
         let designOnlySignedOff = false;
-        if (action === "complete_project" && row.commercial?.palmFlow && !row.commercial.palmFlow.scope.mainQuotation) {
+        if (action === "complete_project" && row.commercial?.servicePath && !row.commercial.servicePath.scope.mainQuotation) {
           const signoff = (await ctx.client.query<{ total: number; approved: number }>(
             `SELECT count(*)::int AS total,
                     count(*) FILTER (WHERE version.status='approved' AND NOT EXISTS (
@@ -1352,8 +1352,8 @@ export class ExecutionService {
           designOnlySignedOff = true;
         }
         if (action === "workflow_transition") {
-          assertPalmCommercialStageReady(d.workflow?.template.code, b.toStageKey, row.commercial);
-          assertPalmManufacturingPaymentReady(d.workflow?.template.code, b.toStageKey, row.commercial);
+          assertServicePathStageReady(d.workflow?.template.code, b.toStageKey, row.commercial);
+          assertManufacturingPaymentReady(d.workflow?.template.code, b.toStageKey, row.commercial);
         }
         if (
           action === "complete_project" &&

@@ -34,8 +34,8 @@ export function QuoteList({ initial, baseHref }: { initial: CommercialState; bas
   const quotes = [...data.quotes].sort((a, b) => b.number - a.number);
   const replaced = quotes.filter((quote) => !OPEN.includes(quote.status));
   const shown = showReplaced ? quotes : quotes.filter((quote) => OPEN.includes(quote.status));
-  const needsPath = Boolean(initial.palmFlowEnabled && !data.palmFlow);
-  const canStartMain = Boolean(data.palmFlow?.scope.design && data.palmFlow.scope.mainQuotation && data.dealFile
+  const needsPath = Boolean(initial.servicePathEnabled && !data.servicePath);
+  const canStartMain = Boolean(data.servicePath?.scope.design && data.servicePath.scope.mainQuotation && data.dealFile
     && !data.quotes.some((quote) => quote.kind === "quotation" && quote.round === "main"));
   const canCreate = initial.canEdit && (!data.quotes.length || canStartMain);
 
@@ -44,7 +44,7 @@ export function QuoteList({ initial, baseHref }: { initial: CommercialState; bas
     try {
       const url = commercialPath(initial.workspaceId, `cases/${initial.caseId}`);
       let revision = data.revision;
-      if (needsPath) revision = (await jsonRequest<{ data: CommercialState["data"] }>(url, "POST", { action: "set_palm_flow", revision, scope: SERVICE_PATHS[path].scope })).data.revision;
+      if (needsPath) revision = (await jsonRequest<{ data: CommercialState["data"] }>(url, "POST", { action: "set_service_path", revision, scope: SERVICE_PATHS[path].scope })).data.revision;
       const result = await jsonRequest<{ data: CommercialState["data"] }>(url, "POST", { action: "create", revision });
       const created = result.data.quotes.at(-1);
       if (created) router.push(hrefOf(created.id)); else router.refresh();

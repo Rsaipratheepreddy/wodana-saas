@@ -3,7 +3,7 @@ import { BrandAssetStorageService } from "../../workspaces/brand-asset-storage.s
 import { WorkspacesModule } from "../../workspaces/workspaces.module";
 import { CrmNotificationsModule } from "../notifications/crm-notifications.module";
 import { CrmMessageReceiptModule } from "./crm-message-receipt.module";
-import { CrmAttachmentsController, InternalCrmAttachmentsController } from "./crm-attachments.controller";
+import { CrmAttachmentTargetsController, CrmAttachmentsController, InternalCrmAttachmentsController } from "./crm-attachments.controller";
 import { CrmAttachmentsService } from "./crm-attachments.service";
 import { CrmConversationsController, InternalCrmConversationsController } from "./crm-conversations.controller";
 import { CrmConversationsService } from "./crm-conversations.service";
@@ -15,7 +15,7 @@ import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
 
 @Module({
   imports: [WorkspacesModule, CrmNotificationsModule, CrmMessageReceiptModule],
-  controllers: [CrmInboxController, InternalCrmInboxController, CrmConversationsController, InternalCrmConversationsController, CrmAttachmentsController, InternalCrmAttachmentsController],
+  controllers: [CrmInboxController, InternalCrmInboxController, CrmConversationsController, InternalCrmConversationsController, CrmAttachmentsController, CrmAttachmentTargetsController, InternalCrmAttachmentsController],
   providers: [CrmConversationsService, CrmInboxService, CrmWhatsAppTemplatesService, CrmPaymentRemindersService, CrmAttachmentsService, CrmScheduledMessagesService, BrandAssetStorageService],
   exports: [CrmConversationsService, CrmInboxService, CrmScheduledMessagesService],
 })

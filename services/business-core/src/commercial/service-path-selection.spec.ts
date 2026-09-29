@@ -45,18 +45,18 @@ function setup(code = "design_build_deal_first", quoteCount = 0) {
 describe("Palm service-path selection", () => {
   it("records the selected path before quotation work starts", async () => {
     const { service, data, access, persist } = setup();
-    await service.command({} as never, "workspace", "case", { action: "set_palm_flow", revision: 0, scope });
-    expect(data.palmFlow).toMatchObject({ scope, selectedBy: "sales" });
+    await service.command({} as never, "workspace", "case", { action: "set_service_path", revision: 0, scope });
+    expect(data.servicePath).toMatchObject({ scope, selectedBy: "sales" });
     expect(access.withPermissions).toHaveBeenCalledWith(expect.anything(), "workspace", ["pre_projects.view", "pre_projects.edit"], expect.any(Function));
     expect(persist).toHaveBeenCalledOnce();
   });
 
   it("does not alter other tenants or a Palm case with an existing quote", async () => {
     const other = setup("standard_delivery");
-    await expect(other.service.command({} as never, "workspace", "case", { action: "set_palm_flow", revision: 0, scope })).rejects.toThrow("not configured");
+    await expect(other.service.command({} as never, "workspace", "case", { action: "set_service_path", revision: 0, scope })).rejects.toThrow("not configured");
     expect(other.persist).not.toHaveBeenCalled();
     const quoted = setup("design_build_deal_first", 1);
-    await expect(quoted.service.command({} as never, "workspace", "case", { action: "set_palm_flow", revision: 0, scope })).rejects.toThrow("before preparing");
+    await expect(quoted.service.command({} as never, "workspace", "case", { action: "set_service_path", revision: 0, scope })).rejects.toThrow("before preparing");
     expect(quoted.persist).not.toHaveBeenCalled();
   });
 });

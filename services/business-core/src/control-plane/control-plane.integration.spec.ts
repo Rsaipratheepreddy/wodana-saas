@@ -176,7 +176,8 @@ integration("control plane with PostgreSQL", () => {
     const codes = salesPermissions.rows.map((row) => row.code);
     expect(codes).toEqual(expect.arrayContaining(["crm.leads.manage", "crm.opportunities.manage", "pre_projects.create", "pre_projects.edit", "ai.suggestions.use"]));
     expect([...codes].sort()).toEqual([...new Set([...salesTemplate.permissions, "ai.suggestions.use"])].sort());
-    expect(codes.some((code) => code.startsWith("commercial.") || code === "crm.settings.manage")).toBe(false);
+    // No costs, approvals or settings; recording a client's decision given outside the portal is Sales' (Q-24).
+    expect(codes.filter((code) => code.startsWith("commercial.") || code === "crm.settings.manage")).toEqual(["commercial.record_decision"]);
 
     const pipelines = await owner.query<{ code: string; isDefault: boolean; status: string; stages: number }>(
       `SELECT pipeline.code, pipeline.is_default AS "isDefault", pipeline.status,

@@ -57,7 +57,7 @@ describe("Planning list", () => {
 
   it("filters by planning stage and status, and says when nothing matches", async () => {
     const paid = { ...project, id: "project-2", caseId: "case-2", workflow: { templateCode: "design_build_deal_first", currentStageKey: "concept", currentStageName: "Concept" } };
-    render(<PlanningList projects={[paid]} planning={list([planning, { ...planning, id: "case-3", title: "Paused office", status: "on_hold" } as PreProjectListItem])} workflow={workflow} palmFlowEnabled />);
+    render(<PlanningList projects={[paid]} planning={list([planning, { ...planning, id: "case-3", title: "Paused office", status: "on_hold" } as PreProjectListItem])} workflow={workflow} servicePathEnabled />);
     await userEvent.click(screen.getByRole("radio", { name: "In design" }));
     expect(screen.getByText("PRJ-0007")).toBeVisible();
     expect(screen.queryByText("Paused office")).not.toBeInTheDocument();

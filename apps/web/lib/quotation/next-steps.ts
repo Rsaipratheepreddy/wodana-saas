@@ -49,7 +49,7 @@ export function nextSteps(commercial: CommercialState, quote: { id: string; roun
       : { key: "payment", label: due.length ? tKey("Report the payment") : tKey("Set the payment plan"), state: commercial.canEdit ? "current" : "waiting",
         action: commercial.canEdit ? { label: due.length ? tKey("Report payment") : tKey("Open payments"), href: `${base}/payment-plan` } : null, holders: [] });
 
-  const usesDeals = Boolean(commercial.palmFlowEnabled || data.ownerReview);
+  const usesDeals = Boolean(commercial.servicePathEnabled || data.ownerReview);
   if (usesDeals) {
     const review = data.ownerReview?.quoteId === quote.id ? data.ownerReview : null;
     const design = quote.round === "design";

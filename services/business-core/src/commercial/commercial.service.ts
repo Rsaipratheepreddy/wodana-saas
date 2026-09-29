@@ -32,10 +32,10 @@ import {
   validateControlledChangeSources,
 } from "./change-control";
 import { startJourney } from "../design/design-journey.store";
-import { palmFlowRoute, palmQuotationRequiresSitePlan, type PalmFlowScope } from "../projects/palm-flow-route";
+import { servicePathRoute, quotationRequiresSitePlan, type ServicePathScope } from "../projects/service-path-route";
 import { resolvedProjectWorkflowTemplate } from "../projects/project-workflow.repository";
 import { qsEstimateCurrent, qsEstimateHash } from "./qs-estimate";
-import { activeAcceptedBaseQuote, beginPalmMainRound } from "./palm-commercial-rounds";
+import { activeAcceptedBaseQuote, beginMainRound } from "./service-path-rounds";
 import { captureApprovedDesignBaseline } from "../projects/project-design-control";
 import { ensureJobForSource } from "../jobs/job-identity.store";
 import { verifiedInvoiceSnapshot } from "./accounting-invoice";
@@ -57,9 +57,9 @@ import {
   financeGatePaymentsReady,
   isOperationalEvidence,
   materialApprovalsComplete,
-  palmMaterialListSignedOff,
+  materialListSignedOff,
   ownerReviewInputsReady,
-  palmDesignDepositReady,
+  designDepositReady,
   quotationApprovalSources,
   releasePaymentIsOperational,
 } from "./release-integrity";
@@ -427,7 +427,7 @@ export class CommercialService {
       async (client, user) => {
         const record = await this.caseRecord(client, workspaceId, caseId);
         const data = await this.load(client, workspaceId, caseId);
-        const palmFlowEnabled = (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === DEAL_FIRST_WORKFLOW_CODE;
+        const servicePathEnabled = (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === DEAL_FIRST_WORKFLOW_CODE;
         const canEditCosts = await this.access.hasPermission(
           client,
           workspaceId,
@@ -473,7 +473,7 @@ export class CommercialService {
           workspaceId,
           caseId,
           ...record,
-          palmFlowEnabled,
+          servicePathEnabled,
           data: commercialDataForCostAccess(data, canViewCosts),
           contacts,
           portalSlug: settings.rows[0]?.slug ?? null,
@@ -1444,14 +1444,15 @@ export class CommercialService {
         let sent: IssueDelivery | undefined;
         /** Who recorded a client's decision given outside the portal (Q-24). */
         let recorder: "approver" | "sales" | null = null;
-        if (action === "set_palm_flow") {
+        // The deal-first service path (Q-37); "set_palm_flow" is its former name, still accepted from older clients.
+        if (action === "set_service_path" || action === "set_palm_flow") {
           const template = await resolvedProjectWorkflowTemplate(client, workspaceId);
           if (template.code !== DEAL_FIRST_WORKFLOW_CODE)
             throw new BadRequestException("This project flow is not configured for this workspace.");
           if (data.quotes.length || data.dealFile)
             throw new ConflictException("Choose the service path before preparing a quotation.");
           const supplied = object(b.scope);
-          const keys: Array<keyof PalmFlowScope> = [
+          const keys: Array<keyof ServicePathScope> = [
             "design", "mainQuotation", "materialSelection", "procurement",
             "manufacturing", "siteWorks", "installation",
           ];
@@ -1459,13 +1460,13 @@ export class CommercialService {
             if (typeof supplied[key] !== "boolean")
               throw new BadRequestException(`Choose whether ${key} applies to this enquiry.`);
             return [key, supplied[key]];
-          })) as PalmFlowScope;
+          })) as ServicePathScope;
           try {
-            palmFlowRoute(scope);
+            servicePathRoute(scope);
           } catch (error) {
             throw new BadRequestException(error instanceof Error ? error.message : "Invalid service path.");
           }
-          data.palmFlow = { scope, selectedAt: now, selectedBy: user.userId, designMinimumDeposit: await DesignPackagesService.minimumDeposit(client, workspaceId) };
+          data.servicePath = { scope, selectedAt: now, selectedBy: user.userId, designMinimumDeposit: await DesignPackagesService.minimumDeposit(client, workspaceId) };
         } else if (action === "create_change_case") {
           const kind = text(b.kind, 40, true) as ControlledChangeKind;
           if (!controlledChangeKinds.includes(kind))
@@ -1832,13 +1833,13 @@ export class CommercialService {
             );
           const kind =
             action === "variation" ? "variation" : (q?.kind ?? "quotation");
-          const mainRound = action === "create" && data.quotes.length > 0 && Boolean(data.palmFlow);
+          const mainRound = action === "create" && data.quotes.length > 0 && Boolean(data.servicePath);
           if (action === "create" && data.quotes.length && !mainRound)
             throw new ConflictException("Use Create revision for the existing quotation.");
-          if (mainRound) beginPalmMainRound(data);
+          if (mainRound) beginMainRound(data);
           if (action === "create" &&
               (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === DEAL_FIRST_WORKFLOW_CODE &&
-              !data.palmFlow)
+              !data.servicePath)
             throw new ConflictException("Choose the enquiry's service path before preparing its quotation.");
           const defaults = await newQuoteDefaults(client, workspaceId, caseId);
           // A first quote starts with the firm's default payment plan; revisions and variations keep their source's (Q-34).
@@ -1847,8 +1848,8 @@ export class CommercialService {
             id: randomUUID(),
             number: Math.max(0, ...data.quotes.map((q) => q.number)) + 1,
             kind,
-            round: action === "create" && data.palmFlow
-              ? mainRound ? "main" : palmFlowRoute(data.palmFlow.scope).firstPaidRound
+            round: action === "create" && data.servicePath
+              ? mainRound ? "main" : servicePathRoute(data.servicePath.scope).firstPaidRound
               : q?.round,
             direction: action === "variation" ? "addition" : q?.direction,
             familyId: action === "revise" ? (q?.familyId ?? q?.id) : undefined,
@@ -2354,8 +2355,8 @@ export class CommercialService {
                 {
                   target: "pricing",
                   requireIncludedScope: linked.length > 0,
-                  requireSitePlan: data.palmFlow
-                    ? palmQuotationRequiresSitePlan(data.palmFlow.scope, q.round)
+                  requireSitePlan: data.servicePath
+                    ? quotationRequiresSitePlan(data.servicePath.scope, q.round)
                     : true,
                   scopeReferences: linked.map((line) => ({
                     scopeId: line.scopeId!,
@@ -2395,11 +2396,11 @@ export class CommercialService {
                   })),
                   now,
                   q.definitionBaseline,
-                  { includePackageDesigns: Boolean(data.palmFlow?.scope.design && q.round === "main") },
+                  { includePackageDesigns: Boolean(data.servicePath?.scope.design && q.round === "main") },
                 );
               } else {
                 delete q.definitionBaseline;
-                if (data.palmFlow && q.round === "main") {
+                if (data.servicePath && q.round === "main") {
                   q.designEvidence = await captureApprovedDesignBaseline(
                     client,
                     workspaceId,
@@ -2407,7 +2408,7 @@ export class CommercialService {
                     q.lines.map((line) => ({ scopeLineId: line.id, title: line.title })),
                     now,
                     undefined,
-                    { includePackageDesigns: data.palmFlow.scope.design },
+                    { includePackageDesigns: data.servicePath.scope.design },
                   );
                 } else delete q.designEvidence;
               }
@@ -2430,7 +2431,7 @@ export class CommercialService {
               && !(await this.access.hasPermission(client, workspaceId, user.userId, "commercial.approve")))
               throw new ForbiddenException(`The discount is above the ${threshold}% your firm allows without approval. Someone who approves quotes must approve this quote.`);
             if (action === "qs_approve") {
-              if (!data.palmFlow || q.kind !== "quotation")
+              if (!data.servicePath || q.kind !== "quotation")
                 throw new ConflictException("QS estimate review applies to a quotation round in the deal-first workflow.");
               const estimate = totals(q);
               if (estimate.cost <= 0)
@@ -2440,14 +2441,14 @@ export class CommercialService {
                 sellingTotal: estimate.total, reviewedAt: now,
                 reviewedById: user.userId, reviewedBy: user.displayName,
               };
-            } else if (data.palmFlow && q.kind === "quotation") {
+            } else if (data.servicePath && q.kind === "quotation") {
               throw new ConflictException("A Quantity Surveyor must review this quotation before it is issued.");
             }
             q.status = "internal_approved";
             q.approvedBy = user.displayName;
           }
           if (action === "return") {
-            const reviewPermission = data.palmFlow && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve";
+            const reviewPermission = data.servicePath && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve";
             if (!(await this.access.hasPermission(client, workspaceId, user.userId, reviewPermission))
               && !(await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit")))
               throw new ForbiddenException("Only the quote's reviewer or someone who edits this case can send it back.");
@@ -2482,7 +2483,7 @@ export class CommercialService {
                 [workspaceId, caseId])).rows[0].count;
               if (open) throw new ConflictException(`Decide every requirement before sending: ${open} still to decide.`);
             }
-            if (data.palmFlow && q.kind === "quotation" && !qsEstimateCurrent(q))
+            if (data.servicePath && q.kind === "quotation" && !qsEstimateCurrent(q))
               throw new ConflictException("The QS estimate review is missing or the quotation changed. Return it for a fresh review.");
             const controlledRequest = controlledChangeForQuote(data, q.id);
             const isCaseSibling = (other: Quote) =>
@@ -2560,7 +2561,7 @@ export class CommercialService {
             q.brand = await effectivePortalBrand(client, workspaceId);
             // Brand is frozen only on issue. It changes the public snapshot,
             // not the QS-reviewed quantities, costs or selling prices.
-            if (data.palmFlow && q.kind === "quotation" && q.qsEstimate)
+            if (data.servicePath && q.kind === "quotation" && q.qsEstimate)
               q.qsEstimate.quoteHash = qsEstimateHash(q);
             q.hash = freezeHash(q);
             for (const id of q.requestIds) {
@@ -2704,24 +2705,24 @@ export class CommercialService {
             if (!review.finalCommissionLines?.length || !review.paymentProofUrl || !review.financeReviewedById)
               throw new ConflictException("Finance verification and payment proof are required before approval.");
             if (Object.entries(review.checklist).some(([key, checked]) =>
-              !checked && !(data.palmFlow && key === "materials")))
+              !checked && !(data.servicePath && key === "materials")))
               throw new ConflictException(
                 "Complete every owner review check before approval.",
               );
             if (
-              !(data.palmFlow
+              !(data.servicePath
                 ? agreementIsOperational(data.agreement) && agreementMatchesAcceptedQuote(data.agreement, accepted)
                 : ownerReviewInputsReady(data, accepted))
             )
               throw new ConflictException(
                 "Verify the agreement and exact client material approvals before owner approval.",
               );
-            if (data.palmFlow && !financeGatePaymentsReady(data, "release", accepted.id))
+            if (data.servicePath && !financeGatePaymentsReady(data, "release", accepted.id))
               throw new ConflictException("Finance must verify this quotation round's payment before the deal is approved.");
-            if (data.palmFlow?.scope.design && accepted.round === "design" &&
-                !palmDesignDepositReady(data, accepted))
-              throw new ConflictException(data.palmFlow.designMinimumDeposit
-                ? `Verify at least ${data.palmFlow.designMinimumDeposit.currency} ${data.palmFlow.designMinimumDeposit.amount} for the design proposal before the deal is approved.`
+            if (data.servicePath?.scope.design && accepted.round === "design" &&
+                !designDepositReady(data, accepted))
+              throw new ConflictException(data.servicePath.designMinimumDeposit
+                ? `Verify at least ${data.servicePath.designMinimumDeposit.currency} ${data.servicePath.designMinimumDeposit.amount} for the design proposal before the deal is approved.`
                 : "Verify the design proposal payment before the deal is approved.");
             const snapshot = acceptedQuoteTotals(accepted);
             review.status = "approved";
@@ -2762,7 +2763,7 @@ export class CommercialService {
               approvedBy: user.displayName,
             };
             // A paid design round opens design work in Planning; the project itself starts from the accepted main quotation.
-            if (data.palmFlow?.scope.design && accepted.round === "design") await startJourney(client, workspaceId, caseId, user.userId);
+            if (data.servicePath?.scope.design && accepted.round === "design") await startJourney(client, workspaceId, caseId, user.userId);
             else if (accepted.round !== "design") await releasePhaseOnDealApproval(client, { workspaceId, caseId, actorUserId: user.userId });
           } else {
             review.status = decision === "return" ? "returned" : "rejected";
@@ -2778,7 +2779,7 @@ export class CommercialService {
             throw new ConflictException(
               "Accept the quotation before preparing material approvals.",
             );
-          if (data.palmFlow &&
+          if (data.servicePath &&
               (accepted.round !== "main" || data.dealFile?.quoteId !== accepted.id || data.ownerReview?.status !== "approved"))
             throw new ConflictException("Book material selection after the main agreement, payment and Owner-approved Deal File.");
           const approvals =
@@ -3328,7 +3329,7 @@ export class CommercialService {
         if (q && ["submit", "qs_approve", "approve", "return", "record_decision"].includes(action))
           await noticeQuoteStep(client, { workspaceId, caseId, quoteId: q.id, number: q.number, title: q.title, action, actorUserId: user.userId, revision: data.revision, note: typeof b.note === "string" ? b.note : "", decision: typeof b.decision === "string" ? b.decision : undefined,
             recordedBySales: action === "record_decision" && recorder === "sales",
-            reviewPermission: data.palmFlow && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve" });
+            reviewPermission: data.servicePath && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve" });
         // The payment hand-offs: Finance hears a receipt was reported; the reporter, the case owner, whoever
         // approves a waiting deal and the client hear it was verified.
         if (action === "report_payment_receipt" || action === "verify_payment") {

@@ -21,6 +21,9 @@
 .pageActions :global(.wd-button) { block-size: 2.25rem; min-block-size: 2.25rem; border-radius: var(--wd-radius-sm); padding: 0 var(--wd-space-3); font-size: var(--wd-text-xs); }
 .pageActions :global(.wd-search-field) { inline-size: clamp(12rem, 22vw, 20rem); min-inline-size: 0; block-size: 2.25rem; min-block-size: 2.25rem; border-radius: var(--wd-radius-sm); box-shadow: none; }
 .pageActions :global(.wd-search-field .wd-input) { min-inline-size: 0; font-size: var(--wd-text-xs); }
+.bulkActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.bulkForm { display: flex; flex-direction: column; gap: var(--wd-space-4); }
+.bulkFailures { margin: 0; padding-inline-start: var(--wd-space-4); display: flex; flex-direction: column; gap: var(--wd-space-1); }
 .statusMessage { margin: 0 0 var(--wd-space-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .boardRegion { min-inline-size: 0; }
 .boardToolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-4); min-block-size: 3.25rem; padding-block-end: var(--wd-space-3); border-block-end: 0; }

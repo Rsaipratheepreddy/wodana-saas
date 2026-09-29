@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from "class-validator";
+import { IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from "class-validator";
 export class CreateAutomationDto {
   @IsString() @Matches(/^[a-z][a-z0-9_.-]{0,98}$/) code!: string;
   @IsString() @IsNotEmpty() @MaxLength(200) name!: string;
@@ -18,6 +18,9 @@ export class UpdateAutomationPresetDto {
   @IsBoolean() enabled!: boolean;
   @IsOptional() @IsArray() @IsIn(["in_app", "email"], { each: true }) channels?: string[];
   @IsOptional() @IsIn(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]) weekday?: string;
+  /** Approval reminders (AU-3): hours before the approver is reminded, and before the owners are told. */
+  @IsOptional() @IsInt() @Min(1) @Max(720) remindAfterHours?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(720) escalateAfterHours?: number;
 }
 export class ListAutomationRunsQueryDto { @IsOptional() @IsUUID() definitionId?: string; }
 export class ApprovalDecisionDto {

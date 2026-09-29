@@ -17,6 +17,7 @@ import { useWoddy, useWoddyComposer, useWoddyRecord } from "../woddy-chat";
 import { useWoddyPrivateAsk, WoddyPrivateReplies } from "@/components/woddy/woddy-private-replies";
 import { LabelChip, useNow } from "./inbox-parts";
 import styles from "../crm-inbox.module.css";
+import { SaveToProject } from "./save-to-project";
 
 type ChatPage = { data: RecordData[]; nextCursor: string | null };
 const timeout = () => AbortSignal.timeout(20_000);
@@ -320,10 +321,13 @@ function MessageContent({ message, workspaceId, conversationId }: { message: Rec
   const text = typeof message.bodyText === "string" ? message.bodyText : "";
   const template = metadata.template && typeof metadata.template === "object" ? metadata.template as { code?: string } : null;
   const fallbackName = t("{kind} attachment", { kind: label(file?.kind ?? kind) });
+  // A client's photo or PDF can be filed into one of their projects (IN-18).
+  const saveable = file && file.status === "stored" && String(message.direction) === "inbound" && ["image", "document"].includes(file.kind);
   return <>{file ? <ChatFile file={file} url={attachmentUrl(workspaceId, conversationId, file.id)} fallbackName={fallbackName} />
     : media ? <span className={styles.mediaFile} aria-disabled="true">{kind === "video" ? <Video aria-hidden="true" size={16} /> : <FileText aria-hidden="true" size={16} />}<span>{fileName ?? fallbackName}</span></span> : null}
     {!media ? <p>{text || t("This message has no plain-text preview.")}</p> : !isFilePlaceholder(text, file?.fileName ?? fileName) ? <p>{text}</p> : null}
-    {template?.code ? <small className={styles.templateTag}><FileText aria-hidden="true" size={12} />{template.code}</small> : null}</>;
+    {template?.code ? <small className={styles.templateTag}><FileText aria-hidden="true" size={12} />{template.code}</small> : null}
+    {saveable ? <SaveToProject workspaceId={workspaceId} conversationId={conversationId} attachmentId={file.id} name={file.fileName ?? fallbackName} /> : null}</>;
 }
 
 export function inboxDate(value: unknown, locale: string, timeZone: string, empty: string) {

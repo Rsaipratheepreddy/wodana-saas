@@ -8,7 +8,7 @@ import {
   commercialReleaseInputsReady,
   commercialReleaseReady,
   materialApprovalsComplete,
-  palmMaterialListSignedOff,
+  materialListSignedOff,
   paymentHasFinanceVerifiedReceipt,
   releasePaymentIsOperational,
   requestBlocksRelease,
@@ -34,7 +34,7 @@ export function PreExecutionFlow({
   const data = state.data;
   const accepted = activeDeliveryQuote(data);
   const requiredPayments = data.payments.filter(
-    (payment) => payment.requiredForRelease && (!data.palmFlow || payment.sourceQuoteId === accepted?.id),
+    (payment) => payment.requiredForRelease && (!data.servicePath || payment.sourceQuoteId === accepted?.id),
   );
   const verifiedPayments = requiredPayments.filter((payment) =>
     releasePaymentIsOperational(payment) && paymentHasFinanceVerifiedReceipt(data, payment)).length;
@@ -46,7 +46,7 @@ export function PreExecutionFlow({
       releasePaymentIsOperational(payment) && paymentHasFinanceVerifiedReceipt(data, payment));
   const openChanges = data.requests.filter(requestBlocksRelease).length;
   const materialsReady = Boolean(
-    accepted && (data.palmFlow ? palmMaterialListSignedOff(data, accepted) : materialApprovalsComplete(accepted, data.materialApprovals)),
+    accepted && (data.servicePath ? materialListSignedOff(data, accepted) : materialApprovalsComplete(accepted, data.materialApprovals)),
   );
   const ownerAndDealReady = Boolean(
     accepted &&
@@ -57,7 +57,7 @@ export function PreExecutionFlow({
   );
   const designReady = Boolean(
     accepted &&
-      (data.palmFlow && !data.palmFlow.scope.design || Boolean(
+      (data.servicePath && !data.servicePath.scope.design || Boolean(
         state.releaseReadiness &&
         state.releaseReadiness.designsRequired > 0 &&
         state.releaseReadiness.designsApproved === state.releaseReadiness.designsRequired,

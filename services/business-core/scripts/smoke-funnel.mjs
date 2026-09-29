@@ -11,7 +11,7 @@ if (!["127.0.0.1", "localhost"].includes(new URL(api).hostname))
 const run = randomUUID();
 const palmFixture = process.env.WODANA_SYNTHETIC_FIXTURE === "palm";
 const palmIntakeProfile = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-crm-intake-profile.json", import.meta.url), "utf8"));
-const palmWorkflowFixture = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-project-workflow.json", import.meta.url), "utf8"));
+const servicePathWorkflowFixture = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-project-workflow.json", import.meta.url), "utf8"));
 if (process.env.WODANA_SYNTHETIC_FIXTURE && !palmFixture)
   throw new Error("WODANA_SYNTHETIC_FIXTURE only accepts the isolated palm profile.");
 const fixture = palmFixture ? {
@@ -358,20 +358,20 @@ assert.equal(archivedWorkflow.status, "archived");
 assert.equal(archivedWorkflow.version, 2);
 assert.equal((await request(workflowPath)).defaultTemplate.source, "built_in");
 const projectWorkflowTemplateId = randomUUID();
-const projectWorkflowStages = palmFixture ? palmWorkflowFixture.stages : workflowFallback.defaultTemplate.stages.map(
+const projectWorkflowStages = palmFixture ? servicePathWorkflowFixture.stages : workflowFallback.defaultTemplate.stages.map(
   (stage, index) => ({
     ...stage,
     visibleName: index === 0 ? "Mobilisation" : stage.visibleName,
   }),
 );
-const projectWorkflowCode = palmFixture ? palmWorkflowFixture.code : "tenant_delivery";
+const projectWorkflowCode = palmFixture ? servicePathWorkflowFixture.code : "tenant_delivery";
 const projectFirstStageName = palmFixture ? "Deal File" : "Mobilisation";
 await request(`${workflowPath}/${projectWorkflowTemplateId}`, {
   method: "PUT",
   body: {
     version: 0,
     code: projectWorkflowCode,
-    name: palmFixture ? palmWorkflowFixture.name : "Tenant delivery",
+    name: palmFixture ? servicePathWorkflowFixture.name : "Tenant delivery",
     description: "The default frozen by new projects in this workspace.",
     isDefault: true,
     stages: projectWorkflowStages,
@@ -1289,7 +1289,7 @@ async function commercial(action, body = {}, headers = owner) {
   });
 }
 
-if (palmFixture) await commercial("set_palm_flow", { scope: {
+if (palmFixture) await commercial("set_service_path", { scope: {
   design: false, mainQuotation: true, materialSelection: false, procurement: true,
   manufacturing: false, siteWorks: false, installation: true,
 } });

@@ -75,9 +75,9 @@ const row = (input: Omit<ApprovalRow, "canDecide" | "reason" | "version" | "pare
 const quotes: Source = async (db, ctx) => {
   const [estimate, approve] = [await ctx.can("commercial.estimate"), await ctx.can("commercial.approve")];
   if (!estimate && !approve) return [];
-  const rows = (await db.query<{ id: string; caseId: string; number: number; title: string; kind: string; amount: string; currency: string; since: Date; palm: boolean; revision: number; client: string }>(
+  const rows = (await db.query<{ id: string; caseId: string; number: number; title: string; kind: string; amount: string; currency: string; since: Date; servicePath: boolean; revision: number; client: string }>(
     `SELECT quote.id, quote.case_id AS "caseId", quote.number, quote.title, quote.kind, quote.total::text AS amount, quote.currency, quote.updated_at AS since,
-            (commercial.content ? 'palmFlow' AND commercial.content->'palmFlow' <> 'null'::jsonb) AS palm, commercial.revision,
+            (commercial.content ? 'servicePath' AND commercial.content->'servicePath' <> 'null'::jsonb) AS "servicePath", commercial.revision,
             coalesce(party.display_name, opportunity.title) AS client
        FROM commercial_quotes quote
        JOIN commercial_cases commercial ON commercial.workspace_id = quote.workspace_id AND commercial.case_id = quote.case_id
@@ -86,11 +86,11 @@ const quotes: Source = async (db, ctx) => {
        LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
       WHERE quote.workspace_id = $1 AND quote.status = 'internal_review'
       ORDER BY quote.updated_at LIMIT 100`, [ctx.workspaceId])).rows;
-  return rows.filter((quote) => (quote.palm && quote.kind === "quotation" ? estimate : approve)).map((quote) => row({
+  return rows.filter((quote) => (quote.servicePath && quote.kind === "quotation" ? estimate : approve)).map((quote) => row({
     kind: "quote_review", group: "quotes", id: quote.id, title: `Q-${quote.number} · ${quote.title}`, subject: quote.client, project: null,
     amount: quote.amount, currency: quote.currency, since: quote.since, own: false, version: quote.revision, parentId: quote.caseId,
     href: `/workspace/pre-projects/cases/${quote.caseId}/quotations?quote=${quote.id}`,
-    decide: { approve: quote.palm && quote.kind === "quotation" ? "qs_approve" : "approve", other: "return", approveNeedsNote: false },
+    decide: { approve: quote.servicePath && quote.kind === "quotation" ? "qs_approve" : "approve", other: "return", approveNeedsNote: false },
   }));
 };
 

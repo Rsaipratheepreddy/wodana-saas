@@ -287,7 +287,7 @@ export class GalleryService {
   }
 
   /** A visitor's list sent through the firm's own enquiry form; the picked items go on the enquiry. */
-  async publicEnquiry(slug: string, input: { requestId?: unknown; revision?: unknown; answers?: unknown; phoneCountryCodes?: unknown; serviceConsent?: unknown; selection?: unknown }) {
+  async publicEnquiry(slug: string, input: { requestId?: unknown; revision?: unknown; answers?: unknown; phoneCountryCodes?: unknown; serviceConsent?: unknown; selection?: unknown; website?: unknown; elapsedMs?: unknown }) {
     const workspaceId = await this.published(slug);
     const found = await this.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => {
       const settings = await ensureGallery(client, workspaceId);
@@ -305,6 +305,9 @@ export class GalleryService {
       serviceConsent: input.serviceConsent === true,
       link: { ...(found.source ? { source: found.source } : {}), ...(found.channel ? { channel: found.channel } : {}), placement: "gallery" },
       selection: found.titles,
+      // The same junk checks as the enquiry form's own page (S-13).
+      ...(typeof input.website === "string" ? { website: input.website.slice(0, 500) } : {}),
+      ...(typeof input.elapsedMs === "number" && Number.isFinite(input.elapsedMs) ? { elapsedMs: input.elapsedMs } : {}),
     });
   }
 

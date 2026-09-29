@@ -690,7 +690,7 @@ export class QuotationBuilderService {
     const discounts = await readDiscounts(client, workspaceId, caseId, quoteId);
     const policy: PricingPolicy = { currencyDecimals: decimals, pricesIncludeTax: settings.pricesIncludeTax, rounding: settings.rounding };
     const pricing = priceQuote(lines.map((line) => pricedInput(line, quote.taxRate)), discounts, policy);
-    const commercial = (await client.query<{ revision: number; palm: boolean }>(`SELECT revision, content ? 'palmFlow' AND content->'palmFlow' <> 'null'::jsonb AS palm FROM commercial_cases WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
+    const commercial = (await client.query<{ revision: number; servicePath: boolean }>(`SELECT revision, content ? 'servicePath' AND content->'servicePath' <> 'null'::jsonb AS "servicePath" FROM commercial_cases WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
     const revision = commercial?.revision ?? 0;
     const family = (await client.query<{ id: string; number: number; status: string; total: string; createdAt: string | null }>(
       `SELECT id, number, status, total::text AS total, detail->>'createdAt' AS "createdAt" FROM commercial_quotes
@@ -705,8 +705,8 @@ export class QuotationBuilderService {
         paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], approvedBy: (quote.detail.approvedBy as string | undefined) ?? null,
         clientDecision: decision ? { decision: decision.decision, decidedBy: decision.decidedBy, decidedAt: decision.decidedAt, note: decision.note ?? "", method: decision.method ?? null, recordedBy: decision.recordedBy ?? null, evidence: decision.evidence ?? null } : null },
       family,
-      flow: { internalReview: settings.internalReview, reviewAction: commercial?.palm && quote.kind === "quotation" ? "qs_approve" : "approve",
-        canReview: await can(commercial?.palm && quote.kind === "quotation" ? "commercial.estimate" : "commercial.approve"),
+      flow: { internalReview: settings.internalReview, reviewAction: commercial?.servicePath && quote.kind === "quotation" ? "qs_approve" : "approve",
+        canReview: await can(commercial?.servicePath && quote.kind === "quotation" ? "commercial.estimate" : "commercial.approve"),
         ...await (async () => { const recorder = await decisionRecorder(client, can, { workspaceId, caseId, userId }); return { canRecordDecision: Boolean(recorder), decisionEvidenceRequired: recorder === "sales" }; })() },
       paymentTemplates: (await client.query<{ id: string; name: string; milestones: unknown }>(`SELECT id, name, milestones FROM commercial_payment_templates WHERE workspace_id = $1 AND status = 'active' ORDER BY name`, [workspaceId])).rows,
       settings,

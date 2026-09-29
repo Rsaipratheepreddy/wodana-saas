@@ -77,6 +77,8 @@
 .answerChoices { padding: 0; margin: 0; border: 0; display: grid; gap: var(--wd-space-3); font-size: var(--wd-text-sm); }
 .answerChoices legend { margin-block-end: var(--wd-space-3); font-weight: 500; }
 .answerChoices p { margin: 0; color: var(--wd-color-text-secondary); }
+/* The hidden field only scripts fill in (S-13): out of sight, out of the tab order and the accessibility tree. */
+.trap { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .customerConsent { display: grid; gap: var(--wd-space-1-5); padding: var(--wd-space-4) var(--wd-space-5); background: var(--wd-color-surface); }
 .customerConsent small { padding-inline-start: var(--wd-space-6); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: 1.45; }
 .customerFooter { display: flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-4); padding-block: var(--wd-space-2); }

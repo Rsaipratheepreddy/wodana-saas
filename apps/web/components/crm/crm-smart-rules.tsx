@@ -23,7 +23,13 @@ type Rule = {
   version: number;
   channels: Channel[];
   weekday: string;
+  /** Approval reminders (AU-3). */
+  remindAfterHours?: number;
+  escalateAfterHours?: number;
 };
+
+const REMIND_HOURS = [4, 8, 12, 24, 48, 72];
+const ESCALATE_HOURS = [24, 48, 72, 96, 168];
 
 const weekdays = [
   { id: "monday", label: tKey("Monday") },
@@ -43,7 +49,7 @@ function safeSetupHref(value: unknown) {
 
 /** Rules that belong to Sales; the rest (client decisions, project progress) live in Settings → Reminders. */
 export const SALES_RULES = ["enquiry_ownership", "response_escalation"];
-export const DELIVERY_RULES = ["decision_reminders", "weekly_progress"];
+export const DELIVERY_RULES = ["decision_reminders", "approval_reminders", "weekly_progress"];
 
 export function CrmSmartRules({ initialData, codes = SALES_RULES, title, embedded = false }: { initialData: CrmScreenPageData; codes?: string[]; title?: string; embedded?: boolean }) {
   const t = useT();
@@ -51,7 +57,7 @@ export function CrmSmartRules({ initialData, codes = SALES_RULES, title, embedde
   const [saving, setSaving] = useState<string | null>(null);
   const [failure, setFailure] = useState("");
 
-  const save = async (rule: Rule, patch: Partial<Pick<Rule, "enabled" | "channels" | "weekday">>) => {
+  const save = async (rule: Rule, patch: Partial<Pick<Rule, "enabled" | "channels" | "weekday" | "remindAfterHours" | "escalateAfterHours">>) => {
     const next = { ...rule, ...patch };
     setSaving(rule.code);
     setFailure("");
@@ -61,6 +67,7 @@ export function CrmSmartRules({ initialData, codes = SALES_RULES, title, embedde
         enabled: next.enabled,
         channels: next.channels,
         weekday: next.weekday,
+        ...(next.code === "approval_reminders" ? { remindAfterHours: next.remindAfterHours, escalateAfterHours: next.escalateAfterHours } : {}),
       });
     } catch (error) {
       setRules((current) => current.map((item) => item.code === rule.code ? rule : item));
@@ -82,6 +89,15 @@ export function CrmSmartRules({ initialData, codes = SALES_RULES, title, embedde
             {rule.code === "weekly_progress" ? <>
               <SelectField aria-label={t("Weekly progress day")} isDisabled={saving === rule.code} items={weekdays.map((day) => ({ ...day, label: t(day.label) }))} label={t("Send on")} onSelectionChange={(key) => key && void save(rule, { weekday: String(key) })} selectedKey={rule.weekday} />
               <Checkbox isDisabled={saving === rule.code} isSelected={rule.channels.includes("email")} onChange={(selected) => void save(rule, { channels: selected ? ["in_app", "email"] : ["in_app"] })}>{t("Email opted-in team members")}</Checkbox>
+            </> : null}
+            {rule.code === "approval_reminders" ? <>
+              <SelectField label={t("Remind after")} isDisabled={saving === rule.code} selectedKey={String(rule.remindAfterHours ?? 24)}
+                items={REMIND_HOURS.map((hours) => ({ id: String(hours), label: t("{count} hours", { count: hours }) }))}
+                onSelectionChange={(key) => key && void save(rule, { remindAfterHours: Number(key), escalateAfterHours: Math.max(Number(key), rule.escalateAfterHours ?? 48) })} />
+              <SelectField label={t("Tell the owners after")} isDisabled={saving === rule.code} selectedKey={String(rule.escalateAfterHours ?? 48)}
+                items={ESCALATE_HOURS.filter((hours) => hours >= (rule.remindAfterHours ?? 24)).map((hours) => ({ id: String(hours), label: t("{count} hours", { count: hours }) }))}
+                onSelectionChange={(key) => key && void save(rule, { escalateAfterHours: Number(key) })} />
+              <Checkbox isDisabled={saving === rule.code} isSelected={rule.channels.includes("email")} onChange={(selected) => void save(rule, { channels: selected ? ["in_app", "email"] : ["in_app"] })}>{t("Email as well")}</Checkbox>
             </> : null}
             <Switch aria-label={rule.enabled ? t("Turn off {name}", { name: rule.name }) : t("Turn on {name}", { name: rule.name })} isDisabled={saving === rule.code} isSelected={rule.enabled} onChange={(enabled) => void save(rule, { enabled })}>{saving === rule.code ? t("Saving") : rule.enabled ? t("On") : t("Off")}</Switch>
           </div>

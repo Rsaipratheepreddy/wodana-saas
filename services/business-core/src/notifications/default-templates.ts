@@ -24,6 +24,11 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     body: "{{memberName}} accepted your invitation.",
     variables: ["memberName", "workspaceName"],
   },
+  // Approvals that wait (approvals/approval-chasers.ts): the approver, then the owners.
+  { code: "approvals.reminder", channel: "in_app", subject: "Still waiting for you · {{title}}", body: "It has waited {{hours}} hours.", variables: ["title", "hours", "approvers"] },
+  { code: "approvals.reminder", channel: "email", subject: "Still waiting for you · {{title}}", body: "{{title}} has waited {{hours}} hours for your decision.\n\nOpen it to approve or send it back.", variables: ["title", "hours", "approvers"] },
+  { code: "approvals.escalated", channel: "in_app", subject: "Waiting {{hours}} hours · {{title}}", body: "Still with {{approvers}}.", variables: ["title", "hours", "approvers"] },
+  { code: "approvals.escalated", channel: "email", subject: "Waiting {{hours}} hours · {{title}}", body: "{{title}} has waited {{hours}} hours. It is still with {{approvers}}.\n\nOpen it to decide it or chase them.", variables: ["title", "hours", "approvers"] },
   // Offboarding (workspaces/member-offboarding.ts): the successor hears what they took over.
   { code: "workspace.work_handed_over", channel: "in_app", subject: "{{memberName}}'s work is yours", body: "{{note}}", variables: ["memberName", "note"] },
   {
@@ -323,6 +328,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "crm.inbox_mention", channel: "in_app", subject: "{{actor}} mentioned you", body: "{{clientName}}: {{summary}}", variables: ["actor", "clientName", "summary"] },
   { code: "crm.inbox_unassigned", channel: "in_app", subject: "{{clientName}} is waiting", body: "Nobody could take this new chat. Assign it.", variables: ["clientName"] },
   // A message someone scheduled ("Send later") could not go at its time: they are told why.
+  { code: "crm.inbox_scheduled_cancelled", channel: "in_app", subject: "{{clientName}} replied first", body: "Your scheduled message was cancelled so it doesn't land on top of their reply: \"{{preview}}\"", variables: ["clientName", "preview"] },
   { code: "crm.inbox_scheduled_failed", channel: "in_app", subject: "Your message to {{clientName}} wasn't sent", body: "{{reason}}", variables: ["clientName", "reason"] },
   // Client portal notices (client-portal/portal-notices.ts): to client contacts, by email.
   { code: "portal.quote_issued", channel: "email", subject: "{{title}} is ready for you", body: "{{company}} sent you {{title}} for {{project}}.\n\nOpen your project page to read it and give your decision.", variables: ["company", "project", "title", "due", "note"] },

@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { DatabaseService } from "../../database/database.service";
 import { BrandAssetStorageService } from "../../workspaces/brand-asset-storage.service";
-import type { ReferenceUpload } from "../../workspaces/reference-upload";
+import { prepareReferenceUpload, type ReferenceUpload } from "../../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { ATTACHMENT_MAX_BYTES, fetchRetryDelayMinutes, safeFileName, sendableProblem, servedAs, sniffSendable } from "./inbox/attachment-rules";
@@ -77,6 +77,62 @@ export class CrmAttachmentsService {
         [workspaceId, attachmentId, conversationId])).rows[0];
       if (!row || row.status !== "stored" || !row.object_key) throw new NotFoundException("This file isn't available.");
       return this.readStored(row);
+    });
+  }
+
+  /** The client's cases a chat file can be filed to (IN-18): their planning cases and the projects started from them. */
+  saveTargets(actor: RequestActor, workspaceId: string, conversationId: string) {
+    return this.access.withPermission(actor, workspaceId, "pre_projects.edit", async (client) => {
+      const cases = await client.query<{ caseId: string; title: string; projectReference: string | null }>(
+        `SELECT pre_case.id AS "caseId", coalesce(project.name, opportunity.title) AS title, project.reference AS "projectReference"
+           FROM crm_conversations conversation
+           JOIN crm_opportunities opportunity ON opportunity.workspace_id = conversation.workspace_id AND opportunity.party_id = conversation.party_id
+           JOIN pre_project_cases pre_case ON pre_case.workspace_id = opportunity.workspace_id AND pre_case.opportunity_id = opportunity.id AND pre_case.status IN ('draft', 'active', 'on_hold', 'released')
+           LEFT JOIN delivery_projects project ON project.workspace_id = pre_case.workspace_id AND project.case_id = pre_case.id
+          WHERE conversation.workspace_id = $1 AND conversation.id = $2 ORDER BY pre_case.updated_at DESC LIMIT 20`, [workspaceId, conversationId]);
+      return { items: cases.rows };
+    });
+  }
+
+  /**
+   * Save to project (IN-18): a client's photo or PDF from the chat becomes one of the case's files (the same place
+   * uploads on the case and the started project read from), only for a case of the chat's own client. The client
+   * id makes it idempotent: saving again returns the same file.
+   */
+  saveToCase(actor: RequestActor, workspaceId: string, conversationId: string, attachmentId: string, input: { caseId: string; fileId: string }) {
+    return this.access.withPermission(actor, workspaceId, "pre_projects.edit", async (client, user) => {
+      if (!(await this.access.hasPermission(client, workspaceId, user.userId, "crm.communications.view"))) throw new NotFoundException("This file isn't available.");
+      const row = (await client.query<Row>(
+        `SELECT attachment.* FROM crm_message_attachments attachment
+           LEFT JOIN crm_messages message ON message.workspace_id = attachment.workspace_id AND message.id = attachment.message_id
+          WHERE attachment.workspace_id = $1 AND attachment.id = $2 AND attachment.conversation_id = $3 AND message.hidden_at IS NULL`,
+        [workspaceId, attachmentId, conversationId])).rows[0];
+      if (!row || row.status !== "stored" || !row.object_key) throw new NotFoundException("This file isn't available.");
+      const target = await client.query(
+        `SELECT 1 FROM crm_conversations conversation
+           JOIN crm_opportunities opportunity ON opportunity.workspace_id = conversation.workspace_id AND opportunity.party_id = conversation.party_id
+           JOIN pre_project_cases pre_case ON pre_case.workspace_id = opportunity.workspace_id AND pre_case.opportunity_id = opportunity.id
+          WHERE conversation.workspace_id = $1 AND conversation.id = $2 AND pre_case.id = $3`, [workspaceId, conversationId, input.caseId]);
+      if (!target.rowCount) throw new UnprocessableEntityException("Choose one of this client's projects.");
+      const stored = await this.storage.read(String(row.object_key)).catch(() => { throw new NotFoundException("This file isn't available."); });
+      const body = Buffer.from(stored.body);
+      const digest = createHash("sha256").update(body).digest("hex");
+      const existing = await client.query(`SELECT id, sha256 FROM pre_project_brief_assets WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, input.caseId, input.fileId]);
+      if (existing.rowCount) {
+        if (existing.rows[0].sha256 !== digest) throw new ConflictException("This file id belongs to another file.");
+        return { id: input.fileId, caseId: input.caseId, saved: true };
+      }
+      const prepared = await prepareReferenceUpload({ buffer: body, originalname: String(row.file_name ?? "Client file"), mimetype: String(row.content_type ?? "") } as ReferenceUpload, { allowVideo: true });
+      const key = `pre-projects/${workspaceId}/${input.caseId}/${input.fileId}`;
+      await this.storage.put(`${key}/original`, body, prepared.mimeType);
+      if (prepared.preview) await this.storage.put(`${key}/preview.webp`, prepared.preview, "image/webp");
+      await client.query(
+        `INSERT INTO pre_project_brief_assets (id, workspace_id, case_id, original_name, mime_type, byte_size, object_key, preview_key, sha256, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [input.fileId, workspaceId, input.caseId, prepared.name, prepared.mimeType, body.length, `${key}/original`, prepared.preview ? `${key}/preview.webp` : null, digest, user.userId]);
+      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.message.attachment_saved_to_case.v1", entityType: "crm_conversation", entityId: conversationId,
+        after: { attachmentId, caseId: input.caseId, fileId: input.fileId, name: prepared.name } });
+      return { id: input.fileId, caseId: input.caseId, saved: true };
     });
   }
 

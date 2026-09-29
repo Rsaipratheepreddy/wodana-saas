@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CommercialData, DealFile, OwnerReview, Quote } from "../commercial/commercial.types";
-import { assertPalmCommercialStageReady } from "./project-readiness";
+import { assertServicePathStageReady } from "./project-readiness";
 
 const design = { id: "design", kind: "quotation", round: "design", status: "accepted", lines: [] } as Quote;
 const main = { id: "main", kind: "quotation", round: "main", status: "draft", lines: [] } as Quote;
 const data = (): CommercialData => ({
-  palmFlow: {
+  servicePath: {
     scope: { design: true, mainQuotation: true, materialSelection: true, procurement: true, manufacturing: true, siteWorks: true, installation: true },
     selectedAt: "now", selectedBy: "sales",
   },
@@ -16,11 +16,11 @@ const data = (): CommercialData => ({
 });
 
 const advance = (to: string, value: CommercialData) =>
-  assertPalmCommercialStageReady("design_build_deal_first", to, value);
+  assertServicePathStageReady("design_build_deal_first", to, value);
 
 describe("Palm project stage evidence", () => {
   it("blocks every stage when the first paid Deal File is missing or inconsistent", () => {
-    expect(() => assertPalmCommercialStageReady("design_build_deal_first", "site_visit", null))
+    expect(() => assertServicePathStageReady("design_build_deal_first", "site_visit", null))
       .toThrow("first paid, Owner-approved Deal File");
     const missing = data();
     missing.dealFile = null;
@@ -28,7 +28,7 @@ describe("Palm project stage evidence", () => {
     const changed = data();
     changed.ownerReview!.status = "returned";
     expect(() => advance("design_specifications", changed)).toThrow("first paid, Owner-approved Deal File");
-    expect(() => assertPalmCommercialStageReady("default_delivery", "site_visit", null)).not.toThrow();
+    expect(() => assertServicePathStageReady("default_delivery", "site_visit", null)).not.toThrow();
   });
 
   it("keeps the first design approval valid while the main round is in review", () => {

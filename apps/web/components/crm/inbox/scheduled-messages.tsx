@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Clock3, TriangleAlert } from "lucide-react";
-import { Button, FormDialog, TextAreaField, useConfirmationDialog, useDesignSystem, useReadOnlyReason } from "@/design-system";
+import { Button, Checkbox, FormDialog, TextAreaField, useConfirmationDialog, useDesignSystem, useReadOnlyReason } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -33,14 +33,17 @@ export function windowOpenAt(windowClosesAt: string | null | undefined, sendAt: 
  * "Send later": when a reply or a template goes, in the workspace's time zone. Free text only while WhatsApp's window
  * will still be open then (the server checks the same); a template at any time.
  */
-export function ScheduleDialog({ title, initial, freeText, windowClosesAt, text, onTextChange, onClose, onSchedule }: {
+export function ScheduleDialog({ title, initial, freeText, windowClosesAt, text, onTextChange, onClose, onSchedule, offerCancelOnReply = false }: {
   title: string; initial?: string; freeText: boolean; windowClosesAt?: string | null;
   /** Editing a scheduled free-text message: its words can change too. */
   text?: string; onTextChange?: (value: string) => void;
-  onClose: () => void; onSchedule: (sendAt: string) => Promise<void>;
+  onClose: () => void; onSchedule: (sendAt: string, options: { cancelOnReply: boolean }) => Promise<void>;
+  /** Offer "Cancel if the client replies first" (a new message; X-1). */
+  offerCancelOnReply?: boolean;
 }) {
   const t = useT();
   const { timeZone } = useDesignSystem();
+  const [cancelOnReply, setCancelOnReply] = useState(true);
   const [value, setValue] = useState(() => initial ?? wallTime(new Date(Date.now() + 3_600_000), timeZone));
   const [start] = useState(value);
   const submit = async () => {
@@ -49,11 +52,12 @@ export function ScheduleDialog({ title, initial, freeText, windowClosesAt, text,
     if (!sendAt || Date.parse(sendAt) < Date.now() + 60_000) throw new Error(t("Choose a time at least a minute from now"));
     if (freeText && windowClosesAt !== undefined && !windowOpenAt(windowClosesAt, sendAt)) throw new Error(t("WhatsApp's 24-hour window will be closed by then. Choose an earlier time or a template."));
     if (onTextChange && !text?.trim()) throw new Error(t("Write a message"));
-    await onSchedule(sendAt);
+    await onSchedule(sendAt, { cancelOnReply });
   };
   return <FormDialog isDirty={value !== start} onClose={onClose} onSubmit={submit} submitLabel={t("Schedule")} title={title}>
     {onTextChange ? <TextAreaField isRequired label={t("Message")} value={text ?? ""} maxLength={4096} onChange={onTextChange} /> : null}
     <CrmDateTimeField label={t("Send at")} value={value} onChange={setValue} isRequired />
+    {offerCancelOnReply ? <Checkbox isSelected={cancelOnReply} onChange={setCancelOnReply}>{t("Cancel it if the client replies first")}</Checkbox> : null}
   </FormDialog>;
 }
 

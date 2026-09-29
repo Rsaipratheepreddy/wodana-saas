@@ -245,7 +245,7 @@ describe("CRM inbox", () => {
     await user.click(screen.getByRole("button", { name: "Send later" }));
     const dialog = await screen.findByRole("dialog", { name: "Send later" });
     await user.click(within(dialog).getByRole("button", { name: "Schedule" }));
-    await waitFor(() => expect(posted("/scheduled-messages")).toEqual([{ clientRequestId: expect.any(String), sendAt: expect.any(String), bodyText: "We are on our way" }]));
+    await waitFor(() => expect(posted("/scheduled-messages")).toEqual([{ clientRequestId: expect.any(String), sendAt: expect.any(String), bodyText: "We are on our way", cancelOnReply: true }]));
     const [scheduled] = posted("/scheduled-messages");
     expect(Date.parse(scheduled.sendAt) - Date.now()).toBeGreaterThan(50 * 60_000);
     expect(await screen.findByText("Scheduled")).toBeInTheDocument();

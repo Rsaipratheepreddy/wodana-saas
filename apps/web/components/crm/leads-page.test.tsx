@@ -131,7 +131,7 @@ describe("LeadsPage", () => {
     expect(screen.queryByRole("button", { name: /Unassigned/ })).not.toBeInTheDocument();
   });
 
-  it.each(["table action"])("qualifies a lead through %s and keeps the planning handoff", async (entry) => {
+  it.each(["table action"])("converts a lead in one click through the %s and offers View opportunity (S-39)", async (entry) => {
     const user = userEvent.setup(), data = structuredClone(leadsPageFixture), lead = data.items[0];
     const converted = { ...lead, status: "qualified" as const, isConverted: true, version: lead.version + 1, nextActionAt: null };
     const fetchMock = vi.fn(async (url: string) => {
@@ -144,11 +144,9 @@ describe("LeadsPage", () => {
 
     expect(entry).toBe("table action");
     await user.click(screen.getByRole("button", { name: `Convert ${lead.partyName} to opportunity` }));
-    const dialog = await screen.findByRole("dialog", { name: "Convert to opportunity" });
-    expect(within(dialog).getByDisplayValue(lead.title)).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Convert to opportunity" }));
-
-    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/workspace/crm/opportunities?record=71000000-0000-4000-8000-000000000001"));
+    // No dialog: what the enquiry already says is used, and the list stays with a link to the new opportunity.
+    expect(await screen.findByRole("link", { name: "View opportunity" })).toHaveAttribute("href", "/workspace/crm/opportunities?record=71000000-0000-4000-8000-000000000001");
+    expect(router.push).not.toHaveBeenCalled();
     const conversionRequest = fetchMock.mock.calls.find(call => call[0].includes(`/leads/${lead.id}/qualify`)) as unknown as [string, { body: string }];
     expect(JSON.parse(conversionRequest[1].body)).toMatchObject({
       partyId: lead.partyId,
@@ -156,6 +154,7 @@ describe("LeadsPage", () => {
       pipelineId: data.pipelines[0].id,
       ownerMembershipId: lead.ownerMembershipId,
       title: lead.title,
+      nextActionAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     });
     const row = screen.getByRole("button", { name: /Open Dr Maya Nair/ }).closest("tr")!;
     expect(screen.queryByRole("dialog", { name: "Convert to opportunity" })).not.toBeInTheDocument();

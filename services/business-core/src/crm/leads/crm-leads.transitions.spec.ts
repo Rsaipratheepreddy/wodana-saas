@@ -134,4 +134,21 @@ describe("CRM lead status moves", () => {
     await stopped.service.transition({} as never, "workspace", "lead", { version: 5, status: "disqualified", reason: "Not a fit" });
     expect(stopped.query.mock.calls.some(([sql, params]) => sql.includes("sla_instance_id=$2") && sql.includes("completion_outcome") && params?.[2] === "cancelled")).toBe(true);
   });
+
+  it("marks junk as spam: closed with the reason, out of reports, its contact blocked, audited (S-13)", async () => {
+    const { service, query, events } = setup("new");
+    await service.markSpam({} as never, "workspace", "lead", { version: 5 });
+    const statusUpdate = query.mock.calls.find(([sql]) => sql.includes("UPDATE crm_leads SET status"));
+    expect(statusUpdate?.[1]?.slice(0, 2)).toEqual(["disqualified", "Spam"]);
+    expect(query.mock.calls.some(([sql, params]) => sql.includes("SET spam_at = now()") && params?.[2] === "user")).toBe(true);
+    expect(query.mock.calls.some(([sql, params]) => sql.includes("UPDATE crm_parties SET blocked_at") && params?.[1] === "party")).toBe(true);
+    expect(events.record.mock.calls.map(([, event]) => event.action)).toEqual(["crm.lead.disqualified.v1", "crm.lead.marked_spam.v1"]);
+  });
+
+  it("does not block a client who has other real work with the firm", async () => {
+    const { service, query } = setup("connected", { converted: true });
+    await service.markSpam({} as never, "workspace", "lead", { version: 5 }).catch(() => undefined);
+    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_parties SET blocked_at"))).toBe(false);
+  });
 });
+

@@ -74,7 +74,7 @@ it("requires Finance to acknowledge payment proof before confirming a submitted 
   await waitFor(()=>expect(run).toHaveBeenCalledWith("review_deal_finance", expect.objectContaining({decision:"confirm",paymentVerified:true,commissionLines:[{recipientName:"Sales A",type:"sales",basis:"amount",value:10}]})));
 });
 
-function readyMadePalmState(): CommercialState {
+function readyMadeServicePathState(): CommercialState {
   const quote = {
     id: "main", number: 1, round: "main", kind: "quotation", status: "accepted", hash: "main-hash",
     title: "Ready-made furniture", currency: "AED", lines: [],
@@ -85,7 +85,7 @@ function readyMadePalmState(): CommercialState {
     releaseReadiness: { designsRequired: 0, designsApproved: 0 },
     data: {
       revision: 1, quotes: [quote], requests: [], audit: [], release: null, materialApprovals: [],
-      palmFlow: { selectedAt: "2026-09-25", selectedBy: "sales", scope: {
+      servicePath: { selectedAt: "2026-09-25", selectedBy: "sales", scope: {
         design: false, mainQuotation: true, materialSelection: false, procurement: true,
         manufacturing: false, siteWorks: false, installation: true,
       } },

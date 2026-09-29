@@ -13,7 +13,7 @@ function setup(granted: string[]) {
   };
   const service = new CommercialService(access as never, {} as never, {} as never, {} as never);
   const data = { revision: 3, quotes: [structuredClone(quote)], requests: [], agreement: null, payments: [], audit: [], release: null,
-    palmFlow: { scope: { design: true, mainQuotation: true } } } as unknown as CommercialData;
+    servicePath: { scope: { design: true, mainQuotation: true } } } as unknown as CommercialData;
   vi.spyOn(service, "caseRecord").mockResolvedValue({ status: "active" } as never);
   vi.spyOn(service, "load").mockResolvedValue(data);
   const persist = vi.spyOn(service, "persist").mockResolvedValue(undefined);

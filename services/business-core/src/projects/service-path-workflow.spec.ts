@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { builtInProjectWorkflow, parseProjectWorkflowTemplate } from "./project-workflow";
-import { palmProjectWorkflowTemplate } from "./palm-project-workflow";
+import { servicePathWorkflowTemplate } from "./service-path-workflow";
 import { emptyProject, applyExecution, type ExecutionActor } from "./execution.domain";
 import { projectWorkflowGateResults } from "./project-workflow";
 
@@ -8,7 +8,7 @@ const base = builtInProjectWorkflow();
 
 describe("Palm Deal project stages", () => {
   it("keeps one Project Ref and the full design-to-delivery sequence", () => {
-    const template = palmProjectWorkflowTemplate(base, {
+    const template = servicePathWorkflowTemplate(base, {
       design: true, mainQuotation: true, materialSelection: true, procurement: true,
       manufacturing: true, siteWorks: true, installation: true,
     });
@@ -26,7 +26,7 @@ describe("Palm Deal project stages", () => {
   });
 
   it("ends a moodboards-only project after design", () => {
-    const template = palmProjectWorkflowTemplate(base, {
+    const template = servicePathWorkflowTemplate(base, {
       design: true, mainQuotation: false, materialSelection: false, procurement: false,
       manufacturing: false, siteWorks: false, installation: false,
     });
@@ -37,7 +37,7 @@ describe("Palm Deal project stages", () => {
   });
 
   it("requires a post-payment visit record before detailed design", () => {
-    const template = palmProjectWorkflowTemplate(base, {
+    const template = servicePathWorkflowTemplate(base, {
       design: true, mainQuotation: false, materialSelection: false, procurement: false,
       manufacturing: false, siteWorks: false, installation: false,
     });
@@ -55,7 +55,7 @@ describe("Palm Deal project stages", () => {
   });
 
   it("completes signed-off design work without inventing installation handovers", () => {
-    const template = palmProjectWorkflowTemplate(base, {
+    const template = servicePathWorkflowTemplate(base, {
       design: true, mainQuotation: false, materialSelection: false, procurement: false,
       manufacturing: false, siteWorks: false, installation: false,
     });
@@ -72,7 +72,7 @@ describe("Palm Deal project stages", () => {
   });
 
   it("skips design and factory for ready-made furniture", () => {
-    const template = palmProjectWorkflowTemplate(base, {
+    const template = servicePathWorkflowTemplate(base, {
       design: false, mainQuotation: true, materialSelection: false, procurement: true,
       manufacturing: false, siteWorks: false, installation: true,
     });

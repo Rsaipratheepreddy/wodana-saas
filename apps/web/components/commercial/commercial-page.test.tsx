@@ -81,7 +81,7 @@ describe("Quotation entry flow", () => {
     expect(screen.queryByRole("button", { name: "Create quotation" })).not.toBeInTheDocument();
   });
   it("requires a Palm service path before creating the first quotation", () => {
-    render(<CommercialPage initial={{ ...state, palmFlowEnabled: true, data: { ...state.data, quotes: [] } }} record={record} section="quotations" search="" quotationPresentation="cards" embedded/>);
+    render(<CommercialPage initial={{ ...state, servicePathEnabled: true, data: { ...state.data, quotes: [] } }} record={record} section="quotations" search="" quotationPresentation="cards" embedded/>);
     expect(screen.getByRole("region", { name: "Enquiry service path" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Create quotation" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Design / moodboards only" })).toBeEnabled();
@@ -93,11 +93,11 @@ describe("Quotation entry flow", () => {
     design.round = "design";
     const palm = {
       ...state,
-      palmFlowEnabled: true,
+      servicePathEnabled: true,
       data: {
         ...state.data,
         quotes: [design],
-        palmFlow: { selectedAt: "now", selectedBy: "sales", scope: { design: true, mainQuotation: true, materialSelection: true, procurement: true, manufacturing: true, siteWorks: true, installation: true } },
+        servicePath: { selectedAt: "now", selectedBy: "sales", scope: { design: true, mainQuotation: true, materialSelection: true, procurement: true, manufacturing: true, siteWorks: true, installation: true } },
         dealFile: { id: "deal", quoteId: "design", reference: "DF-1" },
       },
     } as CommercialState;

@@ -27,7 +27,7 @@ describe("Deal File review notifications", () => {
     query.mockClear();
     await service["notifyDealReview"]({ query } as unknown as PoolClient, "workspace", "case", {
       ...reviewData("pending_approval"),
-      palmFlow: { scope: { design: true } },
+      servicePath: { scope: { design: true } },
     } as CommercialData, "review_deal_finance", "finance-user");
     // Every holder of the approval permission hears it (by permission, never by role name), except the submitter.
     const recipients = query.mock.calls.find(([sql]) => String(sql).includes("SELECT DISTINCT membership.user_id"));

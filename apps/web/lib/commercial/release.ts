@@ -69,7 +69,7 @@ export function releasePaymentIsOperational(payment: Payment) {
 /** The delivery round is distinct from the first paid design round. */
 export function activeDeliveryQuote(data: CommercialData | null | undefined) {
   return data?.quotes.find((quote) => quote.kind === "quotation" && quote.status === "accepted" &&
-    (!data.palmFlow || quote.round === "main"));
+    (!data.servicePath || quote.round === "main"));
 }
 
 function agreementMatchesFinanceContext(data: CommercialData) {
@@ -148,8 +148,8 @@ export function materialApprovalsComplete(
   );
 }
 
-export function palmMaterialListSignedOff(data: CommercialData, quote: Quote) {
-  if (!data.palmFlow?.scope.materialSelection) return materialApprovalsComplete(quote, data.materialApprovals);
+export function materialListSignedOff(data: CommercialData, quote: Quote) {
+  if (!data.servicePath?.scope.materialSelection) return materialApprovalsComplete(quote, data.materialApprovals);
   return quotationApprovalSources(quote).length > 0 && materialApprovalsComplete(quote, data.materialApprovals);
 }
 
@@ -187,11 +187,11 @@ export function commercialReleaseInputsReady(
     !data.ownerReview.financeReviewedById ||
     !data.dealFile.paymentProofUrl ||
     !data.dealFile.commissionLines?.length ||
-    !(data.palmFlow ? palmMaterialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
+    !(data.servicePath ? materialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
   )
     return false;
   return (
-    financeGatePaymentsReady(data, data.palmFlow ? quote.id : undefined) &&
+    financeGatePaymentsReady(data, data.servicePath ? quote.id : undefined) &&
     !data.requests.some(requestBlocksRelease)
   );
 }

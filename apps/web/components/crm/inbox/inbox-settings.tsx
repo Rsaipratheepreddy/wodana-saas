@@ -1,5 +1,6 @@
 "use client";
 
+import { WhatsappPreflight } from "./whatsapp-preflight";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
@@ -92,6 +93,7 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
         {settings.whatsapp.connected ? <SettingsRow label={t("Number health")} hint={[settings.whatsapp.quality ? t("Quality {value}", { value: settings.whatsapp.quality.toLowerCase() }) : null, settings.whatsapp.limit ? t("Limit {value}", { value: settings.whatsapp.limit.replace(/_/g, " ").toLowerCase() }) : null].filter(Boolean).join(" · ") || undefined}>
           <Badge tone={settings.whatsapp.health === "blocked" ? "danger" : settings.whatsapp.health === "limited" ? "warning" : "success"}>{settings.whatsapp.health === "blocked" ? t("Blocked by Meta") : settings.whatsapp.health === "limited" ? t("Limited by Meta") : t("Can send")}</Badge>
         </SettingsRow> : null}
+        <WhatsappPreflight workspaceId={workspaceId} canManage={canManage} />
         <SettingsRow label={t("Signature")} hint={t("Adds “— first name” under each reply.")}>
           <Switch isDisabled={!canManage || !draft} isSelected={Boolean(draft?.signatureEnabled)} onChange={(value) => setDraft((current) => current && { ...current, signatureEnabled: value })}>{t("Sign replies")}</Switch>
         </SettingsRow>

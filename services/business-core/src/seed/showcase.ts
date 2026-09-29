@@ -1619,8 +1619,8 @@ class ShowcaseSeed {
     const commercial = this.get(CommercialService), builder = this.get(QuotationBuilderService);
     const state = async () => (await commercial.state(salesAdmin, this.w, caseId)) as unknown as { data: Any };
     let current = await state();
-    await this.advance("service route (main quotation, materials, procurement, factory, site, installation)", Boolean(current.data.palmFlow), async () => {
-      await commercial.command(salesAdmin, this.w, caseId, { action: "set_palm_flow", revision: current.data.revision,
+    await this.advance("service route (main quotation, materials, procurement, factory, site, installation)", Boolean(current.data.servicePath), async () => {
+      await commercial.command(salesAdmin, this.w, caseId, { action: "set_service_path", revision: current.data.revision,
         scope: { design: false, mainQuotation: true, materialSelection: true, procurement: true, manufacturing: true, siteWorks: true, installation: true } });
       current = await state();
     });

@@ -144,8 +144,12 @@ export class LeadFormsService {
     };
   }
 
-  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; phoneCountryCodes?: Record<string, string>; serviceConsent: boolean; link?: { source?: string; channel?: string; placement?: string } ; selection?: string[]}) {
+  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; phoneCountryCodes?: Record<string, string>; serviceConsent: boolean; link?: { source?: string; channel?: string; placement?: string } ; selection?: string[];
+    website?: string; elapsedMs?: number }) {
     const form = await this.resolve(token);
+    // Junk (S-13): the hidden field was filled, or the form was sent faster than a person can. The sender is told it
+    // was received, so a bot learns nothing, and no enquiry is made.
+    if (looksAutomated(input)) return { received: true };
     return this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
       // Serialize submissions to enforce per-form limits and check publication atomically.
       const current = await client.query(`SELECT published FROM crm_lead_forms WHERE workspace_id=$1 AND id=$2 AND status='published' FOR UPDATE`, [form.workspace_id, form.id]);
@@ -175,6 +179,8 @@ export class LeadFormsService {
         )::int AS contact
         FROM crm_intake_events WHERE workspace_id=$1 AND original_payload->>'formId'=$2 AND received_at > now()-interval '10 minutes'`, [form.workspace_id, form.id, contactFingerprint]);
       if (rate.rows[0].total >= 200 || rate.rows[0].contact >= 5) throw new HttpException("Too many submissions. Please try again later", 429);
+      // A contact the firm marked as spam (or blocked in the inbox) raises nothing new (S-13).
+      if (await blockedContact(client, form.workspace_id, contactFingerprint)) return { received: true };
       const capturedAt = new Date().toISOString();
       const consent = {
         purpose: "service",
@@ -228,6 +234,23 @@ async function linkCustomFields(client: PoolClient, workspaceId: string, draft: 
     if (!definition) throw new BadRequestException(`“${question.title || "A question"}” is linked to an enquiry field that was removed. Choose another field`);
     Object.assign(question, questionShape(definition));
   }
+}
+
+/** Faster than this from opening the form to sending it is a script, not a person. */
+export const MIN_FILL_MS = 3000;
+
+/** The public form's junk checks: its hidden field filled, or sent faster than a person fills it. */
+export function looksAutomated(input: { website?: string; elapsedMs?: number }) {
+  return Boolean(input.website?.trim()) || (typeof input.elapsedMs === "number" && input.elapsedMs < MIN_FILL_MS);
+}
+
+/** Whether a blocked client (marked spam, or blocked from the inbox) has this mobile number (digits) or email. */
+export async function blockedContact(client: Pick<PoolClient, "query">, workspaceId: string, fingerprint: string) {
+  const blocked = await client.query(
+    `SELECT 1 FROM crm_contact_points point JOIN crm_parties party ON party.workspace_id = point.workspace_id AND party.id = point.party_id
+      WHERE point.workspace_id = $1 AND party.blocked_at IS NOT NULL
+        AND (regexp_replace(point.normalized_value, '[^0-9]', '', 'g') = $2 OR lower(point.raw_value) = lower($2)) LIMIT 1`, [workspaceId, fingerprint]);
+  return Boolean(blocked.rowCount);
 }
 
 /** Items a visitor picked (e.g. from the company gallery) are added to the enquiry's summary so Sales sees them. */

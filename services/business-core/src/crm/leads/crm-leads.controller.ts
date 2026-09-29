@@ -19,6 +19,7 @@ import {
   ReopenDuplicateDto,
   UpdateSalesSettingsDto,
   TransitionLeadDto,
+  LeadVersionDto,
   LogContactDto,
   UpdateAssignmentPolicyDto,
   UpdateQueueDto,
@@ -160,6 +161,12 @@ export class CrmLeadsController {
   @Post("leads/:leadId/status")
   transition(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: TransitionLeadDto) {
     return this.leads.transition(actor, workspaceId, leadId, input);
+  }
+
+  /** Junk from a public form (S-13): closed as spam, out of reports, and its contact blocked. */
+  @Post("leads/:leadId/spam")
+  markSpam(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: LeadVersionDto) {
+    return this.leads.markSpam(actor, workspaceId, leadId, input);
   }
 
   @Put("leads/:leadId/qualification")
