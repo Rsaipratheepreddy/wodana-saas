@@ -8,6 +8,7 @@ mkdir -p "$P/logs" "$S" /var/www/certbot
 exec > >(tee -a "$P/logs/$R.log") 2>&1
 echo "== $(date -u +%FT%TZ) deploy $R"
 
+[ "$(df --output=avail -BG / | tail -1 | tr -dc 0-9)" -ge 8 ] || { echo "less than 8 GB free; not building" >&2; exit 1; }
 tar -xzf "$P/src/$R.tgz" -C "$S"
 cd "$S"
 docker image prune -f >/dev/null || true
@@ -35,6 +36,13 @@ systemctl enable --now wodana-certificates.timer wodana-backup.timer
 
 curl -fsS -o /dev/null -w "web %{http_code}\n" -H "Host: admin.wodana.ai" http://127.0.0.1/login
 curl -fsS -o /dev/null -w "core %{http_code}\n" -H "Host: admin.wodana.ai" http://127.0.0.1/api/v1/health/ready
-# Keep the three newest source trees.
+# Keep the disk small: the three newest source trees and packages, and no image another release left behind.
 ls -dt "$P"/src/*/ | tail -n +4 | xargs -r rm -rf
+ls -t "$P"/src/*.tgz 2>/dev/null | tail -n +4 | xargs -r rm -f
+used=$(docker ps -a --format '{{.Image}}' | sort -u)
+for img in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^wodana-(core|core-migrator|web|intelligence):' | grep -v ":$R\$"); do
+  echo "$used" | grep -qx "$img" || docker rmi "$img" >/dev/null 2>&1 || true
+done
+docker image prune -f >/dev/null 2>&1 || true
+df -h / | tail -1
 echo "== $(date -u +%FT%TZ) deployed $R"
