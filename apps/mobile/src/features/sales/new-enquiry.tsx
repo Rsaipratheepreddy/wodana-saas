@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { CloudOff, UserCheck, UserPlus } from 'lucide-react-native';
-import { errorMessage, isOffline } from '../../core/api';
+import { ApiError, errorMessage, isOffline } from '../../core/api';
 import { useT } from '../../core/i18n';
 import { useOnline } from '../../core/query';
 import { useSession } from '../../core/session';
@@ -12,6 +12,7 @@ import { SelectField, TextField, type Option } from '../../ui/fields';
 import { Banner, Failure, ListRow, Loading, Screen, Section } from '../../ui/layout';
 import { Button, Row, Stack, Text } from '../../ui/primitives';
 import { StatusChip } from '../../ui/status';
+import { useTheme } from '../../ui/theme';
 import { useToast } from '../../ui/toast';
 import { useContactMatches, useCreateEnquiry, useLeadOptions, useReferrers, useRoutingConfigured, useSalesOwners } from './api';
 import { contactQuery, enquiryProblem, intakeBody, referralKind, regionOf, RETURNING_SOURCE, sourceAllowed, type EnquiryForm, type Identity, type Owner } from './model';
@@ -29,6 +30,7 @@ const ownerOf = (choice: OwnerChoice | null): Owner | null => (!choice ? null : 
  */
 export function NewEnquiryScreen() {
   const t = useT();
+  const theme = useTheme();
   const router = useRouter();
   const toast = useToast();
   const online = useOnline();
@@ -45,6 +47,8 @@ export function NewEnquiryScreen() {
   const ownerTouched = useRef(false);
   const [areaOther, setAreaOther] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // A save whose answer never came back: only that same save is sent again (same key), so it's never created twice.
+  const [unconfirmed, setUnconfirmed] = useState<Record<string, unknown> | null>(null);
   const set = <K extends keyof EnquiryForm>(field: K) => (value: EnquiryForm[K]) => { setForm((current) => ({ ...current, [field]: value })); setProblem(null); };
 
   // The workspace's country reads a number typed without its code (region pack, never a constant).
@@ -98,18 +102,25 @@ export function NewEnquiryScreen() {
     setProblem(null);
   };
 
-  const save = async () => {
-    const reason = enquiryProblem(form, { matches: matches.length, identity: chosen, regions: regions.length > 0, customerTypes: (data?.customerTypes.length ?? 0) > 0, owner: ownerOf(owner) });
-    if (reason || mobileError) { haptic.warning(); setProblem(reason ?? mobileError ?? null); return; }
+  const send = async (body: Record<string, unknown>) => {
     try {
-      const result = await create.mutateAsync({ requestId, body: intakeBody(form, { identity: chosen, owner: ownerOf(owner)!, me, countryCode: country }) });
+      const result = await create.mutateAsync({ requestId, body });
       toast.success(result.reference ? t('Enquiry {reference} created', { reference: result.reference }) : t('Enquiry created'));
       if (result.leadId) router.replace(`/sales/${result.leadId}`);
       else router.back();
     } catch (error) {
-      setProblem(isOffline(error) ? t('New enquiries need a connection.') : errorMessage(error, t('The enquiry could not be saved.')));
+      // No answer (no connection, the server failed): it may have been created, so the form stays as it was sent.
+      const unknown = isOffline(error) || (error instanceof ApiError && error.status >= 500);
+      setUnconfirmed(unknown ? body : null);
+      setProblem(unknown ? t('We couldn’t confirm the enquiry was saved. Try again: it won’t be created twice.') : errorMessage(error, t('The enquiry could not be saved.')));
       haptic.error();
     }
+  };
+  const save = async () => {
+    if (unconfirmed) { await send(unconfirmed); return; }
+    const reason = enquiryProblem(form, { matches: matches.length, identity: chosen, regions: regions.length > 0, customerTypes: (data?.customerTypes.length ?? 0) > 0, owner: ownerOf(owner) });
+    if (reason || mobileError) { haptic.warning(); setProblem(reason ?? mobileError ?? null); return; }
+    await send(intakeBody(form, { identity: chosen, owner: ownerOf(owner)!, me, countryCode: country }));
   };
 
   if (options.isLoading) return <Screen back title={t('New enquiry')}><Loading shape="form" count={6} /></Screen>;
@@ -118,9 +129,10 @@ export function NewEnquiryScreen() {
   return <Screen back title={t('New enquiry')} keyboard
     footer={<Stack gap={2}>
       {problem ? <Banner tone="danger" title={t(problem)} /> : null}
-      <Button label={t('Create enquiry')} variant="primary" size="lg" full loading={create.isPending} disabled={!online} onPress={() => void save()} />
+      <Button label={unconfirmed ? t('Try again') : t('Create enquiry')} variant="primary" size="lg" full loading={create.isPending} disabled={!online} onPress={() => void save()} />
     </Stack>}>
     {!online ? <Banner tone="neutral" icon={CloudOff} title={t('No connection')} detail={t('New enquiries need a connection.')} /> : null}
+    <View pointerEvents={unconfirmed ? 'none' : 'auto'} style={{ gap: theme.space(4), opacity: unconfirmed ? 0.6 : 1 }}>
     <TextField label={t('Mobile')} value={form.mobile} onChangeText={set('mobile')} keyboardType="phone-pad" textContentType="telephoneNumber" autoComplete="tel"
       autoFocus={!prefillMobile} maxLength={40} error={mobileError}
       hint={found.isFetching ? t('Checking for an existing client…') : undefined} />
@@ -172,5 +184,6 @@ export function NewEnquiryScreen() {
       options={data.customerTypes.map((item) => ({ value: item.id, label: t(item.label) }))} /> : null}
     <SelectField label={t('Owner')} value={owner} options={ownerOptions} onChange={(value) => { ownerTouched.current = true; setOwner(value); setProblem(null); }} />
     <TextField label={t('Project description')} value={form.summary} onChangeText={set('summary')} multiline maxLength={10_000} placeholder={t('What would the customer like to do?')} />
+    </View>
   </Screen>;
 }

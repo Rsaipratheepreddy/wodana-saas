@@ -90,13 +90,13 @@ async def test_an_approval_push_shows_approve_and_names_the_row_to_decide() -> N
         "destination": {"tokenReference": REFERENCE},
         "deepLink": f"/workspace/purchasing/orders?order={order}",
         "eventType": "purchasing.approval_needed",
-        "pushCategory": "approval", "approval": {"kind": "order", "id": order},
+        "pushCategory": "approval", "approval": {"kind": "order", "id": order, "version": 5},
     }))
     assert result.result == "accepted"
     sent = http.requests[0][1]["json"]
     assert isinstance(sent, dict)
     assert sent["categoryId"] == "approval"
-    assert sent["data"]["approval"] == {"kind": "order", "id": order}
+    assert sent["data"]["approval"] == {"kind": "order", "id": order, "version": 5}
 
 
 def test_an_unknown_push_category_is_refused() -> None:
@@ -104,7 +104,7 @@ def test_an_unknown_push_category_is_refused() -> None:
         DeliveryJob.model_validate({
             "id": NOTIFICATION_ID, "workspaceId": WORKSPACE_ID, "attempt": 1, "channel": "push",
             "body": "x", "pushCategory": "delete_everything",
-            "approval": {"kind": "order", "id": NOTIFICATION_ID},
+            "approval": {"kind": "order", "id": NOTIFICATION_ID, "version": 1},
         })
 
 

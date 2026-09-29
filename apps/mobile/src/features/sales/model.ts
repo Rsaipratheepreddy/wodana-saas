@@ -69,7 +69,9 @@ export function contactProblem(input: { outcome: ContactOutcome | null; note: st
   if (!input.outcome) return key('Choose the outcome of this contact.');
   if (rules.noteRequired && !input.note.trim()) return key('Add a note about this contact.');
   if (rules.reasonRequired && !input.reason.trim()) return key('Add the reason the client is not interested.');
-  if (rules.followUpRequired && (!input.nextAt || Date.parse(input.nextAt) <= now)) return key('Book a follow-up date in the future.');
+  if (rules.followUpRequired && !input.nextAt) return key('Book a follow-up date in the future.');
+  // A next try in the past would make the enquiry overdue at once.
+  if (rules.followUp && input.nextAt && Date.parse(input.nextAt) <= now) return key('Book a follow-up date in the future.');
   return null;
 }
 

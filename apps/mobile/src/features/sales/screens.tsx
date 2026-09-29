@@ -221,8 +221,9 @@ function LogContactSheet({ lead, channel: initial, onClose }: { lead: LeadDetail
   const [day, setDay] = useState('');
   const [time, setTime] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
-  const [opened] = useState(() => new Date());
-  useEffect(() => { if (initial) { setChannel(initial); setOutcome(null); setNote(''); setReason(''); setDay(''); setTime(''); setProblem(null); } }, [initial]);
+  // The quick picks count from when the sheet opens (it stays mounted with the enquiry).
+  const [opened, setOpened] = useState(() => new Date());
+  useEffect(() => { if (initial) { setChannel(initial); setOutcome(null); setNote(''); setReason(''); setDay(''); setTime(''); setProblem(null); setOpened(new Date()); } }, [initial]);
   const command = useSalesCommand((api, body: Record<string, unknown>) => api.send(`crm/leads/${lead.id}/contacts`, 'POST', body));
   const rules = contactRules(outcome);
   const picks = quickFollowUps(opened, format.today(), format.timeZone);

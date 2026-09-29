@@ -31,11 +31,12 @@ class DeliveryMedia(BaseModel):
 
 
 class PushApproval(BaseModel):
-    """The "Waiting for you" row a lock-screen Approve decides (Business Core checks it again)."""
+    """The "Waiting for you" row a lock-screen Approve decides, at the version the push names."""
 
     model_config = ConfigDict(extra="ignore")
     kind: str = Field(min_length=1, max_length=40, pattern=r"^[a-z_]+$")
     id: UUID
+    version: int = Field(ge=0)
 
 
 class DeliveryJob(BaseModel):

@@ -16,7 +16,8 @@ export const APPROVAL_CATEGORIES: readonly ApprovalCategory[] = ['approval', 'ap
 const KINDS: ReadonlySet<string> = new Set(['order', 'payment_run', 'petty_cash', 'quote_review', 'site_report']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type PushApproval = { workspaceId: string; kind: string; id: string; title: string; deepLink: string | null };
+/** `version` is the row's version when the push went out; a record changed since is opened, never approved unseen. */
+export type PushApproval = { workspaceId: string; kind: string; id: string; version: number; title: string; deepLink: string | null };
 export type PendingApproval = PushApproval & { at: number; tries: number };
 export const PENDING_TTL_MS = 10 * 60 * 1000;
 export const MAX_TRIES = 3;
@@ -40,8 +41,9 @@ export function pushApproval(content: { title?: string | null; body?: string | n
   const workspaceId = typeof data?.workspaceId === 'string' ? data.workspaceId : '';
   const kind = typeof approval?.kind === 'string' ? approval.kind : '';
   const id = typeof approval?.id === 'string' ? approval.id : '';
-  if (!UUID.test(workspaceId) || !KINDS.has(kind) || !UUID.test(id)) return null;
-  return { workspaceId, kind, id, title: (content.title || content.body || '').slice(0, 200), deepLink: typeof data?.deepLink === 'string' ? data.deepLink : null };
+  const version = typeof approval?.version === 'number' ? approval.version : Number.NaN;
+  if (!UUID.test(workspaceId) || !KINDS.has(kind) || !UUID.test(id) || !Number.isInteger(version) || version < 0) return null;
+  return { workspaceId, kind, id, version, title: (content.title || content.body || '').slice(0, 200), deepLink: typeof data?.deepLink === 'string' ? data.deepLink : null };
 }
 
 export const approvalKey = (item: Pick<PushApproval, 'workspaceId' | 'kind' | 'id'>) => `${item.workspaceId}:${item.kind}:${item.id}`;
@@ -64,7 +66,8 @@ export function parsePending(raw: string | null): PendingApproval[] {
     const value: unknown = JSON.parse(raw);
     return Array.isArray(value) ? value.filter((entry): entry is PendingApproval => {
       const item = record(entry);
-      return !!item && UUID.test(String(item.workspaceId)) && KINDS.has(String(item.kind)) && UUID.test(String(item.id)) && Number.isFinite(item.at) && Number.isFinite(item.tries);
+      return !!item && UUID.test(String(item.workspaceId)) && KINDS.has(String(item.kind)) && UUID.test(String(item.id)) && Number.isInteger(item.version)
+        && Number.isFinite(item.at) && Number.isFinite(item.tries);
     }) : [];
   } catch { return []; }
 }
@@ -72,10 +75,11 @@ export function parsePending(raw: string | null): PendingApproval[] {
 /**
  * What became of a decision: approved; gone (no longer waiting: someone decided it, or it changed); open (the server
  * wants more than a tap — a note, a look, another sign-in); offline (no connection: approvals don't wait, open it
- * later); or retry (the server was busy; tried again within the few minutes a tap is held).
+ * later); elsewhere (another workspace's: decided there); or retry (the server was busy; tried again within the few
+ * minutes a tap is held).
  */
-export type ApprovalOutcome = 'approved' | 'gone' | 'open' | 'offline' | 'retry';
-export function outcomeOf(error: unknown): Exclude<ApprovalOutcome, 'approved'> {
+export type ApprovalOutcome = 'approved' | 'gone' | 'open' | 'offline' | 'elsewhere' | 'retry';
+export function outcomeOf(error: unknown): Exclude<ApprovalOutcome, 'approved' | 'elsewhere'> {
   if (error instanceof ApiError) {
     if (error.status === 404) return 'gone';
     if (error.status >= 500 || error.status === 429) return 'retry';

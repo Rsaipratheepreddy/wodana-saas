@@ -49,6 +49,10 @@ test('a logged contact needs a note unless nobody answered, a reason when not in
   assert.equal(contactProblem({ outcome: 'not_interested', note: 'Too pricey', reason: '', nextAt: null }, now), 'Add the reason the client is not interested.');
   assert.equal(contactProblem({ outcome: 'come_back_later', note: 'Travelling', reason: '', nextAt: '2026-09-29T07:00:00Z' }, now), 'Book a follow-up date in the future.');
   assert.equal(contactProblem({ outcome: 'come_back_later', note: 'Travelling', reason: '', nextAt: '2026-10-02T06:00:00Z' }, now), null);
+  assert.equal(contactProblem({ outcome: 'come_back_later', note: 'Travelling', reason: '', nextAt: null }, now), 'Book a follow-up date in the future.');
+  // Any next try in the past would be overdue at once.
+  assert.equal(contactProblem({ outcome: 'no_answer', note: '', reason: '', nextAt: '2026-09-29T07:59:00Z' }, now), 'Book a follow-up date in the future.');
+  assert.equal(contactProblem({ outcome: 'no_answer', note: '', reason: '', nextAt: '2026-09-29T10:00:00Z' }, now), null);
 });
 
 test('the next try is in two hours, tomorrow morning or in three days, on the workspace clock', () => {

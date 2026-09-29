@@ -221,6 +221,7 @@ class ConnectedProviderAdapter:
                     message["data"]["approval"] = {
                         "kind": job.approval.kind,
                         "id": str(job.approval.id),
+                        "version": job.approval.version,
                     }
                 response = await self.providers.client.http.post(
                     "https://exp.host/--/api/v2/push/send",

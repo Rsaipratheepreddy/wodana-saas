@@ -51,6 +51,7 @@ export function useNotificationOpens() {
     else if (outcome === 'gone') toast.show(t('No longer waiting for you'));
     else if (outcome === 'open') toast.show(t('Open it to decide.'), 'info', { label: t('Open'), onPress: () => router.push(route as Href) });
     else if (outcome === 'offline') toast.show(t('Approvals need a connection.'), 'error', { label: t('Open'), onPress: () => router.push(route as Href) });
+    else if (outcome === 'elsewhere') toast.show(t('This notification is for another workspace.'));
   }, [queryClient, workspaceId, t, toast, router]);
 
   useEffect(() => { void registerApprovalCategories(t).catch(() => undefined); }, [t]);

@@ -46,10 +46,11 @@ export function sendPendingApprovals(report: ApprovalReport): Promise<void> {
     if (state.status !== 'signedIn') return;
     for (const item of [...list]) {
       let outcome: ApprovalOutcome;
-      if (item.workspaceId !== state.workspaceId) outcome = 'open';
+      // Another workspace's approval is decided there, never through this one's link.
+      if (item.workspaceId !== state.workspaceId) outcome = 'elsewhere';
       else {
         try {
-          await authClient.api(`/workspaces/${item.workspaceId}/approvals/decide`, 'POST', { kind: item.kind, id: item.id, decision: 'approve', note: '' });
+          await authClient.api(`/workspaces/${item.workspaceId}/approvals/decide`, 'POST', { kind: item.kind, id: item.id, version: item.version, decision: 'approve', note: '' });
           outcome = 'approved';
         } catch (error) { outcome = outcomeOf(error); }
       }
@@ -88,6 +89,7 @@ export function noticeFor(t: T, outcome: ApprovalOutcome, item: PushApproval): N
   const open = { workspaceId: item.workspaceId, deepLink: item.deepLink ?? '/workspace/approvals' };
   if (outcome === 'open') return { title: t('Open it to decide.'), body: item.title, data: open };
   if (outcome === 'offline') return { title: t('Approvals need a connection.'), body: item.title, data: open };
+  if (outcome === 'elsewhere') return { title: t('This notification is for another workspace.'), body: item.title };
   return null;
 }
 

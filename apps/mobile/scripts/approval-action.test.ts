@@ -5,15 +5,16 @@ import { afterRetry, approvalKey, enqueue, MAX_TRIES, outcomeOf, parsePending, p
 
 const workspaceId = '11111111-1111-4111-8111-111111111111';
 const order = '22222222-2222-4222-8222-222222222222';
-const data = { notificationId: '33333333-3333-4333-8333-333333333333', workspaceId, deepLink: `/workspace/purchasing/orders?order=${order}`, approval: { kind: 'order', id: order } };
+const data = { notificationId: '33333333-3333-4333-8333-333333333333', workspaceId, deepLink: `/workspace/purchasing/orders?order=${order}`, approval: { kind: 'order', id: order, version: 5 } };
 
 test('a push names the row its Approve decides; anything else opens the app', () => {
   assert.deepEqual(pushApproval({ title: 'PO-0042 needs approval', body: 'Al Noor Timber', data }),
-    { workspaceId, kind: 'order', id: order, title: 'PO-0042 needs approval', deepLink: data.deepLink });
+    { workspaceId, kind: 'order', id: order, version: 5, title: 'PO-0042 needs approval', deepLink: data.deepLink });
   // Android can hand the data over as a JSON string.
   assert.equal(pushApproval({ title: 'x', data: { dataString: JSON.stringify(data) } })?.id, order);
-  assert.equal(pushApproval({ title: 'x', data: { ...data, approval: { kind: 'bill', id: order } } }), null, 'a bill needs a note');
-  assert.equal(pushApproval({ title: 'x', data: { ...data, approval: { kind: 'order', id: '../x' } } }), null);
+  assert.equal(pushApproval({ title: 'x', data: { ...data, approval: { kind: 'bill', id: order, version: 1 } } }), null, 'a bill needs a note');
+  assert.equal(pushApproval({ title: 'x', data: { ...data, approval: { kind: 'order', id: '../x', version: 1 } } }), null);
+  assert.equal(pushApproval({ title: 'x', data: { ...data, approval: { kind: 'order', id: order } } }), null, 'no version, no Approve: a changed record is never approved unseen');
   assert.equal(pushApproval({ title: 'x', data: { ...data, workspaceId: 'nope' } }), null);
   assert.equal(pushApproval({ title: 'x', data: { notificationId: data.notificationId, workspaceId } }), null);
   assert.equal(pushApproval({ title: 'x', data: null }), null);

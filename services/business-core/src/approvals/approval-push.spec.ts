@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { CrmNotificationsService } from "../crm/notifications/crm-notifications.service";
-import { approvalPush, LOCK_SCREEN_KINDS } from "./approval-push";
+import { approvalPush, approvalVersion, LOCK_SCREEN_KINDS } from "./approval-push";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const order = "22222222-2222-4222-8222-222222222222";
@@ -27,7 +27,15 @@ describe("approve from the lock screen (X-2)", () => {
     expect([...LOCK_SCREEN_KINDS].sort()).toEqual(["order", "payment_run", "petty_cash", "quote_review", "site_report"]);
   });
 
-  it("puts the category and the row on the claimed push job, and nothing on other channels", async () => {
+  it("reads the version the row shows, and offers nothing for a record that is gone", async () => {
+    const query = vi.fn(async (sql: string, values: unknown[]) => ({ rows: values[1] === order ? [{ version: sql.includes("commercial.revision") ? 7 : 3 }] : [] }));
+    expect(await approvalVersion({ query } as never, workspaceId, "order", order)).toBe(3);
+    expect(await approvalVersion({ query } as never, workspaceId, "quote_review", order)).toBe(7);
+    expect(await approvalVersion({ query } as never, workspaceId, "order", report)).toBeNull();
+    expect(await approvalVersion({ query } as never, workspaceId, "bill", order)).toBeNull();
+  });
+
+  it("puts the category, the row and its version on the claimed push job, and nothing on other channels", async () => {
     const rows = [
       { id: "p1", recipientType: "user", recipientId: "u1", channel: "push", eventType: "purchasing.approval_needed", deepLink: `/workspace/purchasing/orders?order=${order}` },
       { id: "p2", recipientType: "user", recipientId: "u1", channel: "push", eventType: "work.assigned", deepLink: `/workspace/projects/${project}/plan` },
@@ -38,13 +46,14 @@ describe("approve from the lock screen (X-2)", () => {
       if (sql.includes("FROM notification_preferences")) return { rows: [] };
       if (sql.includes("FROM device_endpoints")) return { rows: [{ tokenReference: `redis:push:${workspaceId}:u1:d`, platform: "ios" }] };
       if (sql.includes("FROM users")) return { rows: [{ email: "approver@example.com" }] };
+      if (sql.includes("FROM purchase_orders")) return { rows: [{ version: 5 }] };
       return { rows: [] };
     });
     const database = { tenantTransaction: vi.fn(async (_w: string, _a: string, work: (client: unknown) => unknown) => work({ query })) };
     const service = new CrmNotificationsService(database as never, {} as never, {} as never);
     const { items } = await service.claimInternal({ workspaceId });
     const byId = Object.fromEntries(items.map((item) => [item.id, item]));
-    expect(byId.p1).toMatchObject({ pushCategory: "approval", approval: { kind: "order", id: order } });
+    expect(byId.p1).toMatchObject({ pushCategory: "approval", approval: { kind: "order", id: order, version: 5 } });
     expect(byId.p2).not.toHaveProperty("pushCategory");
     expect(byId.e1).not.toHaveProperty("approval");
   });
