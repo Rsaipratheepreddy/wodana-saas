@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { fillQuickReply, fillTemplate, nextChatId, quickReplyQuery, renderTemplate, snoozePresets, waitingMinutes, waitingParts, windowLeft } from "./inbox";
+import { channelName, fillQuickReply, fillTemplate, nextChatId, quickReplyQuery, renderTemplate, snoozePresets, waitingMinutes, waitingParts, windowLeft } from "./inbox";
 
 describe("team inbox helpers", () => {
+  it("names a chat's channel the way people write it", () => {
+    const t = ((key: string) => `t:${key}`) as Parameters<typeof channelName>[1];
+    expect(channelName("whatsapp", t)).toBe("t:WhatsApp");
+    expect(channelName("email", t)).toBe("t:Email");
+    expect(channelName("web_chat", t)).toBe("t:Web chat");
+    expect(channelName(null, t)).toBe("t:Not set");
+  });
+
   it("fills a template from the chat's records and names each value that is missing", () => {
     const template = { positions: [1, 2, 3], variables: [{ position: 1, source: "contact.first_name" as const }, { position: 2, source: "quote.number" as const }] };
     const filled = fillTemplate(template, { "contact.first_name": "Noura", "quote.number": null });

@@ -1,5 +1,12 @@
-import { tKey, type MessageKey } from "@/lib/i18n/keys";
+import { tKey, translateKnown, type MessageKey, type Translate } from "@/lib/i18n/keys";
 import { zonedToUtc, zonedToday } from "./zoned-time";
+
+/** A chat's channel as people write it: "WhatsApp", not the stored code "whatsapp". */
+export function channelName(channel: unknown, t: Translate): string {
+  if (channel === "whatsapp") return t("WhatsApp");
+  if (channel === "email") return t("Email");
+  return typeof channel === "string" && channel ? translateKnown(t, channel.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase())) : t("Not set");
+}
 
 /** The team inbox's vocabulary, shared with business-core (crm/conversations/inbox/inbox-rules.ts). */
 export type InboxView = "mine" | "unassigned" | "team" | "all";
