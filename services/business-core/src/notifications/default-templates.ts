@@ -296,6 +296,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "crm.template_status", channel: "in_app", subject: "Template {{name}} is {{status}}", body: "{{reason}}", variables: ["name", "status", "reason"] },
   { code: "crm.inbox_mention", channel: "in_app", subject: "{{actor}} mentioned you", body: "{{clientName}}: {{summary}}", variables: ["actor", "clientName", "summary"] },
   { code: "crm.inbox_unassigned", channel: "in_app", subject: "{{clientName}} is waiting", body: "Nobody could take this new chat. Assign it.", variables: ["clientName"] },
+  // A message someone scheduled ("Send later") could not go at its time: they are told why.
+  { code: "crm.inbox_scheduled_failed", channel: "in_app", subject: "Your message to {{clientName}} wasn't sent", body: "{{reason}}", variables: ["clientName", "reason"] },
   // Client portal notices (client-portal/portal-notices.ts): to client contacts, by email.
   { code: "portal.quote_issued", channel: "email", subject: "{{title}} is ready for you", body: "{{company}} sent you {{title}} for {{project}}.\n\nOpen your project page to read it and give your decision.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.payment_due", channel: "email", subject: "Payment reminder · {{title}}", body: "A reminder from {{company}}: {{title}} for {{project}} is due. {{due}}\n\nOpen your project page to see it and pay.", variables: ["company", "project", "title", "due", "note"] },
@@ -335,6 +337,9 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "ai.credits_exhausted", channel: "email", subject: "AI credits are used up", body: "Your workspace has used all of its AI credits.\n\nWoddy and AI suggestions are paused until credits are topped up. Contact support to top up.", variables: ["balance"] },
   // View as (auth/view-as): the person an owner or administrator viewed as, once the view ends (a workspace setting, on by default).
   { code: "workspace.viewed_as", channel: "in_app", subject: "{{viewerName}} viewed as you", body: "Read-only, {{minutes}} min from {{startedAt}}. Security lists every view.", variables: ["viewerName", "minutes", "startedAt"] },
+  // AI apps (mcp): the person who connected a new AI app, in the app and by email, in case it wasn't them.
+  { code: "ai.app_connected", channel: "in_app", subject: "{{appName}} connected to your account", body: "It can {{access}} as you. Revoke it in AI apps if this wasn't you.", variables: ["appName", "access"] },
+  { code: "ai.app_connected", channel: "email", subject: "{{appName}} connected to your account", body: "{{appName}} can now {{access}} as you.\n\nIf this wasn't you, revoke it in Settings → AI apps and change your password.", variables: ["appName", "access"] },
 ];
 
 export async function seedDefaultNotificationTemplates(db: Db, workspaceId: string) {
@@ -528,7 +533,7 @@ export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "quotation.review_requested", "design.review_requested",
   "crm.lead_assigned", "crm.lead_taken_over_to", "crm.conversation_assigned",
   // Team inbox: a client wrote in a chat that is yours (one notice per chat), or someone mentioned you in a note.
-  "crm.inbox_message", "crm.inbox_mention",
+  "crm.inbox_message", "crm.inbox_mention", "crm.inbox_scheduled_failed",
 ]);
 
 /**

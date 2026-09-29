@@ -1,9 +1,9 @@
 import { View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarCheck, CheckCircle2, ClipboardList, CloudOff, CloudUpload, Inbox, ListChecks, LogIn, LogOut, PackageCheck, PhoneCall, Users } from 'lucide-react-native';
+import { CalendarCheck, CheckCircle2, ClipboardCheck, ClipboardList, CloudOff, CloudUpload, Inbox, ListChecks, LogIn, LogOut, PackageCheck, PhoneCall, Users } from 'lucide-react-native';
 import type { HomeOverview } from '../../../../../packages/contracts/src/home';
-import { useApi } from '../../core/api';
+import { errorMessage, useApi } from '../../core/api';
 import { appRouteFor } from '../../core/deep-links';
 import { useFormat } from '../../core/format';
 import { key, useT } from '../../core/i18n';
@@ -13,8 +13,10 @@ import { useSession } from '../../core/session';
 import { Banner, Card, Empty, ListRow, Screen, Section, Shimmer } from '../../ui/layout';
 import { Button, Row, Text } from '../../ui/primitives';
 import { StatusChip } from '../../ui/status';
+import { useTheme } from '../../ui/theme';
 import { useBootstrap, useCrewDays, useCurrentAttendance, useLeaveRequests, usePendingTime, useReviews } from '../hrms/api';
 import { minutesSince, MODE_LABEL } from '../hrms/model';
+import { useWaitingCount } from '../approvals/api';
 import { useInbox } from '../inbox/api';
 import { useOpenWork, useSitesToday } from '../projects/api';
 import { WorkTrailing } from '../projects/plan-screen';
@@ -28,6 +30,7 @@ const OVERDUE = key('Overdue follow-up');
  */
 export function TodayScreen() {
   const t = useT();
+  const theme = useTheme();
   const router = useRouter();
   const format = useFormat();
   const api = useApi();
@@ -46,11 +49,12 @@ export function TodayScreen() {
   const work = useOpenWork('mine');
   const sites = useSitesToday();
   const inbox = useInbox();
+  const waiting = useWaitingCount();
   const deliveries = useDeliveries(session.has('projects') && session.can('stock.receive', 'purchasing.manage'));
   const overview = useQuery({ queryKey: ['home-overview', api.workspaceId], queryFn: () => api.get<HomeOverview>('home-overview') });
   const today = format.today();
 
-  const refresh = () => { void current.refetch(); void work.refetch(); void sites.refetch(); void overview.refetch(); void inbox.refetch(); void deliveries.refetch(); void teamLeave.refetch(); void teamReviews.refetch(); };
+  const refresh = () => { void current.refetch(); void work.refetch(); void sites.refetch(); void overview.refetch(); void inbox.refetch(); void deliveries.refetch(); void teamLeave.refetch(); void teamReviews.refetch(); void waiting.refetch(); };
   const open = current.data && !current.data.endedAt ? current.data : null;
   const segment = open?.segments[open.segments.length - 1];
   const due = (work.data?.items ?? []).filter((item) => item.dueDate && item.dueDate <= today).slice(0, 5);
@@ -64,8 +68,9 @@ export function TodayScreen() {
   // My sites first: today's report with one tap; after 19:00 a missing report turns amber.
   const mySites = sites.data?.sites ?? [];
   const late = (sites.data?.hour ?? 0) >= 19;
-  const nothing = !due.length && !approvals && !followUps.length && !expected.length && !(inbox.unread > 0) && !mySites.length;
+  const nothing = !due.length && !approvals && !waiting.count && !followUps.length && !expected.length && !(inbox.unread > 0) && !mySites.length;
   const loading = work.isLoading || overview.isLoading;
+  const failed = (projects ? work.error : null) ?? overview.error ?? (hrms ? current.error : null);
 
   return <Screen large title={t('Today')} subtitle={format.longDay(today)} onRefresh={refresh} refreshing={current.isRefetching || work.isRefetching}>
     {!online ? <Banner tone="neutral" icon={CloudOff} title={t('No connection')} detail={t('Captures are saved on this phone and sent later.')} /> : null}
@@ -84,6 +89,10 @@ export function TodayScreen() {
       </Row>
     </Card> : null}
 
+    {waiting.count ? <Section>
+      <ListRow first icon={ClipboardCheck} iconTone="warning" title={t('{count} waiting for you', { count: waiting.count })} onPress={() => router.push('/approvals')} />
+    </Section> : null}
+
     {approvals ? <Section>
       <ListRow first icon={Users} iconTone="warning" title={t('{count} to approve', { count: approvals })} detail={t('Leave, attendance, timesheets and crew days')} onPress={() => router.push('/hrms/team')} />
     </Section> : null}
@@ -97,7 +106,7 @@ export function TodayScreen() {
     </Section> : null}
 
     {projects && (due.length || work.isLoading) ? <Section title={t('Due today')} action={<Button size="sm" variant="ghost" label={t('All')} onPress={() => router.push('/projects/tasks')} />}>
-      {work.isLoading ? <ListRow first title="…" /> : due.map((item, index) => <ListRow key={item.id} first={index === 0} icon={ListChecks} title={item.title}
+      {work.isLoading ? <View style={{ padding: theme.space(4), gap: theme.space(2) }}><Shimmer width="60%" height={12} /><Shimmer width="40%" height={9} /></View> : due.map((item, index) => <ListRow key={item.id} first={index === 0} icon={ListChecks} title={item.title}
         detail={`${item.projectReference} · #${item.number}${item.dueDate && item.dueDate < today ? ` · ${t('due {day}', { day: format.day(item.dueDate) })}` : ''}`}
         trailing={<WorkTrailing item={item} />} onPress={() => router.push(`/projects/${item.projectId}/task/${item.id}`)} />)}
     </Section> : null}
@@ -117,6 +126,8 @@ export function TodayScreen() {
       <ListRow first icon={Inbox} title={t('{count} unread in your inbox', { count: inbox.unread })} onPress={() => router.push('/inbox')} />
     </Section> : null}
 
-    {!loading && nothing ? <Empty icon={CheckCircle2} title={t('You’re all caught up')} /> : null}
+    {/* A failed load never reads as "all caught up". */}
+    {failed && online ? <Banner tone="warning" title={t('Something went wrong')} detail={errorMessage(failed, t('Try again'))} action={{ label: t('Try again'), onPress: refresh }} /> : null}
+    {!loading && !failed && nothing ? <Empty icon={CheckCircle2} title={t('You’re all caught up')} /> : null}
   </Screen>;
 }

@@ -1,6 +1,7 @@
 import { ForbiddenException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { CreateActivityDto, CompleteActivityDto } from "../../crm/activities/dto/activities.dto";
-import { UpdateConversationDto } from "../../crm/conversations/dto/conversations.dto";
+import { CreateScheduledMessageDto, UpdateConversationDto } from "../../crm/conversations/dto/conversations.dto";
 import { SetConversationLabelsDto } from "../../crm/conversations/dto/inbox.dto";
 import { CreateIntakeEventDto, UpdateLeadDetailsDto } from "../../crm/intake/dto/intake.dto";
 import { hasResolvedEnquiryType } from "../../crm/leads/lead-options";
@@ -533,6 +534,57 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
     },
   };
 
+  const scheduleMessage: AiTool = {
+    name: "schedule_message",
+    description: "Prepare a message to a client in a chat that is sent later, at a local date and time (the chat given, else the chat open). Free text only while WhatsApp's 24-hour window will still be open then; otherwise name an approved template. The card shows the exact text and time.",
+    kind: "write",
+    confirmation: "confirm",
+    calls: "CrmScheduledMessagesService.create (idempotent by request id; the worker sends it at its time through the normal reply path)",
+    permissions: ["crm.communications.send"],
+    parameters: {
+      type: "object",
+      properties: {
+        conversationId: { type: "string", description: "Left out: the chat open", maxLength: 40 },
+        sendAt: { type: "string", description: "Local date and time to send it", maxLength: 25 },
+        text: { type: "string", description: "The message, in the client's language (instead of a template)", maxLength: 4000 },
+        template: { type: "string", description: "An approved WhatsApp template's name (instead of text)", maxLength: 512 },
+        templateValues: { type: "array", items: { type: "string", maxLength: 1024 }, maxItems: 20, description: "Values for the template's {{1}}…{{n}}; left out, they come from the chat's records" },
+      },
+      required: ["sendAt"],
+    },
+    async propose(context, input) {
+      const conversationId = contextId(context, input.conversationId, "conversation", "conversationId");
+      const sendAt = zonedArg(input.sendAt, context.timeZone, "sendAt", context.now, { future: true });
+      const text = typeof input.text === "string" && input.text.trim() ? input.text.trim() : null;
+      const name = typeof input.template === "string" && input.template.trim() ? input.template.trim().toLowerCase() : null;
+      if (Boolean(text) === Boolean(name)) throw new ToolInputError("Give either text or a template");
+      let templateId: string | null = null;
+      if (name) {
+        const templates = rowsOf(await services.inbox.templates(context.actor, context.workspaceId)).filter((row) => row.approved === true && row.usable !== false);
+        const found = templates.find((row) => String(row.code).toLowerCase() === name);
+        if (!found) throw new ToolQuestion(`No approved template is called "${String(input.template)}". Ask which one to use.`, templates.slice(0, 20).map((row) => ({ type: "template", id: String(row.id), label: String(row.code), detail: clip(row.body, 120) })));
+        templateId = String(found.id);
+      }
+      const values = Array.isArray(input.templateValues) ? input.templateValues.map(String) : undefined;
+      // The same checks the send makes (window, template, values); the card shows exactly what the client will read.
+      const preview = await services.scheduled.preview(context.actor, context.workspaceId, conversationId, { sendAt, bodyText: text, templateId, templateParameters: templateId ? values : undefined });
+      const label = `${preview.partyName ?? "Chat"} · ${preview.channel === "whatsapp" ? "WhatsApp" : preview.channel}`;
+      return {
+        ...titled(phrase("Send a message to {client} later", { client: preview.partyName ?? "the client" })),
+        target: { ...ref("conversation", conversationId, label), version: null },
+        preview: { kind: "text", text: preview.renderedText, fields: [{ label: "To", after: label }, { label: "Send at", after: preview.sendAt, format: "datetime" },
+          ...(preview.templateCode ? [{ label: "Template", after: preview.templateCode }] : [])] },
+        command: { conversationId, clientRequestId: randomUUID(), sendAt: preview.sendAt,
+          ...(preview.templateId ? { templateId: preview.templateId, templateParameters: preview.templateParameters } : { bodyText: text }) },
+      } satisfies Proposal;
+    },
+    async execute(context, proposal) {
+      const { conversationId, ...command } = proposal.command as Row & { conversationId: string };
+      const scheduled = await services.scheduled.create(context.actor, context.workspaceId, conversationId, await commandInput(CreateScheduledMessageDto, command));
+      return { result: { scheduledMessageId: scheduled.id, sendAt: scheduled.sendAt }, record: ref("conversation", conversationId, "Chat") };
+    },
+  };
+
   const labelChats: AiTool = {
     name: "label_chats",
     description: "Prepare adding or removing the workspace's existing labels on chats (the ids given, else the selected chats, else the chat open).",
@@ -683,7 +735,7 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
     },
   };
 
-  return [createEnquiry, updateEnquiry, logActivity, scheduleFollowUp, assignRecords, setChatState, labelChats, convertEnquiry, moveOpportunity];
+  return [createEnquiry, updateEnquiry, logActivity, scheduleFollowUp, assignRecords, setChatState, scheduleMessage, labelChats, convertEnquiry, moveOpportunity];
 }
 
 export const crmToolHelpers = { resolveSalesRecord, memberById, assertMayAssign, contextId, targetKey };

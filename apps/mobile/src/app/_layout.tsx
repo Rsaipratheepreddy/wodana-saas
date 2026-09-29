@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
@@ -15,9 +15,16 @@ import { OrganizationProvider, useOrganization } from '../features/auth/organiza
 import { SessionGate } from '../features/auth/session-gate';
 import { ThemeProvider, useTheme } from '../ui/theme';
 import { ToastProvider } from '../ui/toast';
+import { RootCrash } from '../ui/crash';
 import '../features/outbox-handlers';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
+/** Nothing crashes to a blank screen: the splash goes and the person can try again. */
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  useEffect(() => { void SplashScreen.hideAsync().catch(() => undefined); }, []);
+  return <RootCrash {...props} />;
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(fontAssets);

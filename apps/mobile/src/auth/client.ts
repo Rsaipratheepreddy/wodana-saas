@@ -32,11 +32,19 @@ export type AuthState =
   | { status: 'mfa' }
   | { status: 'signedOut'; message?: string }
   | { status: 'unavailable'; message: string }
-  | { status: 'signedIn'; profile: Profile; workspaceId: string };
+  /** `offline`: opened from this phone's saved sign-in without reaching the server; requests rotate once it's back. */
+  | { status: 'signedIn'; profile: Profile; workspaceId: string; offline?: boolean };
 export type SessionStorage = { read(): Promise<string | null>; write(value: string): Promise<void>; clear(): Promise<void> };
 type SavedSession = { version: 1; scope: string; refreshToken: string; refreshExpiresAt: number; workspaceId: string };
 type Session = SavedSession & { accessToken: string; accessExpiresAt: number };
-type Options = { baseUrl: string; tenantSlug: string; storage: SessionStorage; fetch?: typeof fetch; now?: () => number; credentials?: RequestCredentials; timeoutMs?: number };
+type Options = {
+  baseUrl: string; tenantSlug: string; storage: SessionStorage; fetch?: typeof fetch; now?: () => number; credentials?: RequestCredentials; timeoutMs?: number;
+  /** The last verified profile, kept (sealed) on the phone so a start without a connection still opens the app. */
+  profileCache?: SessionStorage;
+};
+// Coming back to the app refreshes the profile with the live token; it rotates only this close to expiry,
+// because every rotation on a poor connection risks a lost answer (and the server treats a reused token as theft).
+const FOREGROUND_ROTATION_MS = 5 * 60_000;
 
 export class AuthError extends Error {
   constructor(message: string, public code: 'credentials' | 'expired' | 'network' | 'server' | 'storage' | 'cancelled' | 'access' | 'configuration') { super(message); }
@@ -222,13 +230,34 @@ export class AuthClient {
     }
     return value as Profile;
   }
+  /** Signed in with a verified profile, which is remembered for a start without a connection. */
+  private signedIn(profile: Profile, session: Session, epoch: number) {
+    if (epoch !== this.epoch) return;
+    this.publish({ status: 'signedIn', profile, workspaceId: session.workspaceId });
+    const cache = this.options.profileCache;
+    if (cache) void this.writeStorage(async () => {
+      if (epoch === this.epoch) await cache.write(JSON.stringify({ version: 1, scope: session.scope, workspaceId: session.workspaceId, profile }));
+    }).catch(() => {});
+  }
+  /** The last verified profile for this saved sign-in (same API, tenant and workspace), or null. */
+  private async cachedProfile(saved: SavedSession): Promise<Profile | null> {
+    try {
+      const raw = await this.options.profileCache?.read();
+      if (!raw) return null;
+      const value: unknown = JSON.parse(raw);
+      if (!isRecord(value) || value.version !== 1 || value.scope !== saved.scope || value.workspaceId !== saved.workspaceId || !isRecord(value.profile)) return null;
+      const profile = value.profile as Profile;
+      const active = Array.isArray(profile.memberships) && profile.memberships.some((item) => isRecord(item) && item.workspaceId === saved.workspaceId
+        && item.status === 'active' && item.workspaceStatus === 'active' && Array.isArray(item.allowedModules) && item.allowedModules.includes('workspace'));
+      return typeof profile.id === 'string' && profile.status === 'active' && active ? profile : null;
+    } catch { return null; }
+  }
   private async revalidateAccess(session: Session, epoch: number) {
     if (this.accessRevalidation) return this.accessRevalidation;
     const operation = (async () => {
       try {
         const profile = await this.profile(session);
-        if (epoch === this.epoch)
-          this.publish({ status: 'signedIn', profile, workspaceId: session.workspaceId });
+        this.signedIn(profile, session, epoch);
       } catch (error) {
         if (epoch === this.epoch && error instanceof AuthError && ['access', 'expired'].includes(error.code))
           await this.signOut(error.message);
@@ -307,7 +336,7 @@ export class AuthClient {
       if (epoch !== this.epoch) throw cancelled();
       const profile = await this.profile(tokens);
       await this.remember(tokens, epoch);
-      this.publish({ status: 'signedIn', profile, workspaceId: tokens.workspaceId });
+      this.signedIn(profile, tokens, epoch);
       return { kind: 'signedIn' };
     } catch (error) {
       if (tokens) await this.revoke(tokens.refreshToken);
@@ -347,7 +376,7 @@ export class AuthClient {
       const profile = await this.profile(tokens);
       await this.remember(tokens, epoch);
       this.challenge = null;
-      this.publish({ status: 'signedIn', profile, workspaceId: tokens.workspaceId });
+      this.signedIn(profile, tokens, epoch);
     } catch (error) {
       if (tokens) await this.revoke(tokens.refreshToken);
       if (epoch === this.epoch) {
@@ -386,6 +415,15 @@ export class AuthClient {
       if(!foreground)this.publish({ status: 'checking' });
       try {
         await this.storageWork.catch(() => {});
+        // Back in the app with a live session (the newest token is in memory, not storage): refresh who the
+        // person is, rotating only when the access token is about to run out.
+        const live = this.session;
+        if (foreground && live) {
+          const session = live.accessExpiresAt > this.now() + FOREGROUND_ROTATION_MS ? live : await this.rotate(live);
+          const profile = await this.profile(session);
+          this.signedIn(profile, session, epoch);
+          return;
+        }
         const raw = await this.options.storage.read();
         if (epoch !== this.epoch) return;
         if (!raw) { this.publish({ status: 'signedOut' }); return; }
@@ -397,9 +435,20 @@ export class AuthClient {
         }
         if (!saved || saved.version !== 1 || saved.scope !== this.scope || typeof saved.refreshToken !== 'string'
           || !saved.refreshToken || typeof saved.workspaceId !== 'string' || !Number.isFinite(saved.refreshExpiresAt)) throw expired();
-        const session = await this.rotate(saved);
+        let session: Session;
+        try { session = await this.rotate(saved); }
+        catch (error) {
+          // No connection at launch: the saved sign-in opens the app with the last verified profile, so field
+          // captures still work; the first request once the connection is back rotates the token.
+          const cached = error instanceof AuthError && error.code === 'network' && saved.refreshExpiresAt > this.now() ? await this.cachedProfile(saved) : null;
+          if (!cached) throw error;
+          if (epoch !== this.epoch) return;
+          this.session = { ...saved, accessToken: '', accessExpiresAt: 0 };
+          this.publish({ status: 'signedIn', profile: cached, workspaceId: saved.workspaceId, offline: true });
+          return;
+        }
         const profile = await this.profile(session);
-        if (epoch === this.epoch) this.publish({ status: 'signedIn', profile, workspaceId: session.workspaceId });
+        this.signedIn(profile, session, epoch);
       } catch (error) {
         if (epoch !== this.epoch) return;
         if (error instanceof AuthError && ['expired', 'access', 'storage'].includes(error.code)) {
@@ -489,6 +538,7 @@ export class AuthClient {
         const raw = await this.options.storage.read();
         try { saved = raw ? JSON.parse(raw) : null; } catch { /* discard malformed storage */ }
         await this.options.storage.clear();
+        await this.options.profileCache?.clear().catch(() => {});
       });
     } catch {
       this.publish({ status: 'signedOut', message: 'Sign-in was closed, but saved-session cleanup failed. Please try again.' });

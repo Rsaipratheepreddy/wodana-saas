@@ -39,7 +39,7 @@ export function DecisionsSection({ project, format, open }: SectionProps) {
     <button className={`${styles.item} ${styles.itemButton}`} data-tour={row.target.kind === "quote" ? "portal-quote" : row.target.kind === "materials" ? "portal-materials" : undefined}
       data-tour-safe type="button" onClick={() => open(row.target)}>
       <span className={styles.itemText}><span className={styles.itemTitle}>{row.title}</span>{row.meta ? <span className={styles.itemMeta}>{row.meta}</span> : null}</span>
-      <span className={styles.itemEnd}><StateLabel state={row.state} /><ChevronRight aria-hidden="true" size={18} /></span>
+      <span className={styles.itemEnd}><StateLabel state={row.state} canDecide={row.waiting} /><ChevronRight aria-hidden="true" size={18} /></span>
     </button>
   </li>)}</ul>;
   return <div className={styles.section} data-tour="portal-decisions">

@@ -5,6 +5,7 @@ import { Dec } from "../catalog-core/decimal";
 import { projectBalance } from "../project-core/project-milestones";
 import { noticeStageReady } from "../project-core/project-stage-watch";
 import { raiseSnag } from "../project-core/project-work";
+import { thankForHandover } from "../crm/conversations/inbox/client-followups";
 import { startWarranty } from "./warranty";
 
 type Db = Pick<PoolClient, "query">;
@@ -51,6 +52,8 @@ export async function decideHandoverPack(db: Db, workspaceId: string, projectId:
       decided_by_grant_id = $8, version = version + 1 WHERE workspace_id = $1 AND id = $2`,
       [workspaceId, pack.id, input.decidedOn, input.decidedByName, input.method, input.outstanding.join("\n").slice(0, 1000), input.recordedBy, input.grantId]);
     const warrantyStarted = await startWarranty(db, workspaceId, { projectId, packId: pack.id, areaIds: pack.areaIds, startsOn: input.decidedOn });
+    // The client is thanked on WhatsApp (with the firm's review link when it has one), once per project.
+    await thankForHandover(db, workspaceId, projectId, { actorUserId: input.staffId });
     for (const item of input.outstanding)
       await raiseSnag(db, workspaceId, { projectId, title: item, description: `Outstanding at handover (R${pack.revision})${from}`, severity: "minor", source: "client", actorId: input.staffId });
     // Money still due at acceptance stays on the pack (with why, when staff accepted it).

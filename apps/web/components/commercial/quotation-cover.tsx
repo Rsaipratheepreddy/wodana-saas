@@ -164,7 +164,9 @@ export function QuotationCover({
               onChange={(e) => onChange({ validUntil: e.target.value })}
             />
           ) : (
-            <strong>{quote.validUntil}</strong>
+            <strong>{/^\d{4}-\d{2}-\d{2}$/.test(quote.validUntil ?? "")
+              ? new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${quote.validUntil}T00:00:00Z`))
+              : quote.validUntil}</strong>
           )}
         </label>
         {onChange && (

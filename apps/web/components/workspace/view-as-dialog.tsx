@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button, Callout, ControlledModalDialog, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { translateKnown } from "@/lib/i18n/keys";
 import { startViewAs, type ViewAsTarget } from "@/lib/workspace/view-as";
 
 /**
@@ -42,16 +43,16 @@ export function ViewAsDialog({ mfaEnabled, onClose, target, workspaceId }: {
     }).catch(() => ({ ok: false as const, message: t("The view could not be started.") }));
     if (result.ok) { window.location.assign("/workspace"); return; }
     setWorking(false);
-    setFailure(result.message);
+    setFailure(translateKnown(t, result.message));
   };
 
   const title = target?.kind === "role" ? t("Preview as {role}", { role: target.name }) : t("View as {name}", { name: target?.name ?? "" });
   return <ControlledModalDialog
     description={target?.kind === "role" ? t("Read-only for {minutes} minutes.", { minutes: 15 }) : t("Read-only for {minutes} minutes.", { minutes: 30 })}
-    footer={<>
+    footer={<div className="wd-dialog-actions">
       <Button isDisabled={working} onPress={onClose}>{t("Cancel")}</Button>
       {mfaEnabled ? <Button isDisabled={working} isLoading={working} onPress={() => void start()} variant="primary">{t("Start viewing")}</Button> : null}
-    </>}
+    </div>}
     isDismissable={!working}
     isOpen={Boolean(target)}
     onOpenChange={(open) => { if (!open && !working) onClose(); }}

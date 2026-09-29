@@ -18,6 +18,8 @@ export type WoddyCard = {
   title: { key: string; values?: Record<string, string | number> }; summary: string; preview: WoddyPreview;
   target: { type: string; id: string; label: string; href?: string | null } | null; expiresAt: string; version: number; selection: string[] | null;
   record: { type: string; id: string; label: string; href?: string | null } | null; failures: Array<{ id: string; label: string; message: string }>; error: string | null;
+  /** Where it was asked: in Wodana, or by an AI app over MCP (then `clientName` is the app). */
+  surface?: WoddySurface | "mcp"; clientName?: string | null;
 };
 export type WoddyAnswer = {
   runId: string; answer: string; sources: WoddySource[]; cited: string[]; proposals: WoddyCard[];
@@ -45,6 +47,19 @@ export async function askWoddyAgent(workspaceId: string, ask: WoddyAsk, signal?:
   const response = await fetch("/api/workspace/woddy", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, ...ask }), signal });
   const payload = await response.json().catch(() => null) as (WoddyAnswer & { message?: string; paused?: boolean }) | null;
   if (!response.ok || !payload?.runId) throw new WoddyAskError(payload?.message ?? "Woddy could not reply. Please try again.", Boolean(payload?.paused));
+  return payload;
+}
+
+/** A card could not be read: its status says whether it's missing (404) or the person has no access (403). */
+export class WoddyCardError extends Error {
+  constructor(message: string, readonly status: number) { super(message); this.name = "WoddyCardError"; }
+}
+
+/** A card as it is now (an expired one says so). */
+export async function readWoddyCard(workspaceId: string, toolCallId: string): Promise<WoddyCard> {
+  const response = await fetch(`/api/workspace/woddy/tool-calls/${encodeURIComponent(toolCallId)}?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" }).catch(() => null);
+  const payload = response ? await response.json().catch(() => null) as (WoddyCard & { message?: string }) | null : null;
+  if (!response?.ok || !payload?.id) throw new WoddyCardError(payload?.message ?? "The action could not be completed.", response?.status ?? 503);
   return payload;
 }
 

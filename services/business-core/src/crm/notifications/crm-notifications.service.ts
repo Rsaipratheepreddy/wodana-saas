@@ -335,11 +335,33 @@ export class CrmNotificationsService {
           continue;
         }
         const template = row.templateId ? await client.query(`SELECT code,locale FROM notification_templates WHERE workspace_id=$1 AND id=$2`, [input.workspaceId, row.templateId]) : { rows: [] };
-        items.push({ ...row, workspaceId: input.workspaceId, destination, templateCode: template.rows[0]?.code ?? null, locale: template.rows[0]?.locale ?? null });
+        items.push({ ...row, workspaceId: input.workspaceId, destination, templateCode: template.rows[0]?.code ?? null, locale: template.rows[0]?.locale ?? null, ...await this.chatDelivery(client, input.workspaceId, row) });
       }
       return { items };
     });
   }
+  /**
+   * For a chat message on WhatsApp: the number it goes from (the chat's, while that number is connected; else the
+   * worker uses the default) and its file, which the worker uploads to WhatsApp and sends with the caption.
+   */
+  private async chatDelivery(client: PoolClient, workspaceId: string, row: Row): Promise<{ connectionId?: string; media?: Row }> {
+    const messageId = /^message:([0-9a-f-]{36})$/i.exec(String(row.idempotencyKey ?? ""))?.[1];
+    if (row.channel !== "whatsapp" || !messageId) return {};
+    const found = (await client.query<Row>(
+      `SELECT (SELECT number.id FROM integration_connections number WHERE number.workspace_id = conversation.workspace_id AND number.id = conversation.connection_id
+                  AND number.provider = 'whatsapp' AND number.status = 'connected') AS "connectionId",
+              attachment.id AS "attachmentId", attachment.kind, attachment.content_type AS "mimeType", attachment.file_name AS "fileName", message.body_text AS caption
+         FROM crm_messages message
+         JOIN crm_conversations conversation ON conversation.workspace_id = message.workspace_id AND conversation.id = message.conversation_id
+         LEFT JOIN crm_message_attachments attachment ON attachment.workspace_id = message.workspace_id AND attachment.message_id = message.id AND attachment.status = 'stored'
+        WHERE message.workspace_id = $1 AND message.id = $2`, [workspaceId, messageId])).rows[0];
+    if (!found) return {};
+    return {
+      ...(found.connectionId ? { connectionId: String(found.connectionId) } : {}),
+      ...(found.attachmentId ? { media: { attachmentId: found.attachmentId, kind: found.kind, mimeType: found.mimeType, fileName: found.fileName, caption: found.caption ?? null } } : {}),
+    };
+  }
+
   resultInternal(notificationId: string, input: NotificationResultDto) {
     return this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
       const notification = await client.query<Row>(`SELECT * FROM notifications WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, [input.workspaceId, notificationId]);

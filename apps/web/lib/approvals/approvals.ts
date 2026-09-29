@@ -15,6 +15,7 @@ export const APPROVAL_FILTERS: Array<{ id: "all" | ApprovalGroup; label: Message
   { id: "site", label: tKey("Site") },
   { id: "stock", label: tKey("Stock") },
   { id: "finance", label: tKey("Finance") },
+  { id: "ai", label: tKey("AI apps") },
 ];
 
 /** What the row asks for, in a word or two. */
@@ -34,6 +35,7 @@ export const KIND_LABEL: Record<ApprovalKind, MessageKey> = {
   bill: tKey("Held bill"),
   payment_run: tKey("Payment run"),
   reimbursement: tKey("To reimburse"),
+  ai_action: tKey("AI app change"),
 };
 
 /** The button for the in-row approval, in the words of the record. */
@@ -44,6 +46,12 @@ export function approveLabel(kind: ApprovalKind): MessageKey {
 export const OTHER_LABEL: Record<"return" | "reject", MessageKey> = { return: tKey("Return"), reject: tKey("Refuse") };
 
 /** How long it has waited, in the largest whole unit: "3 hours", "2 days". */
+/** What the row is, as people read it: a site report is its day ("28 Sep 2026"), not the stored date. */
+export function approvalTitle(row: Pick<ApprovalRow, "kind" | "title">, locale?: string) {
+  if (row.kind !== "site_report" || !/^\d{4}-\d{2}-\d{2}$/.test(row.title)) return row.title;
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${row.title}T00:00:00Z`));
+}
+
 export function waitingSince(since: string, now: Date, locale?: string) {
   const minutes = Math.max(0, Math.floor((now.getTime() - new Date(since).getTime()) / 60_000));
   const format = (value: number, unit: Intl.RelativeTimeFormatUnit) =>

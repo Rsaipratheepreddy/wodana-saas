@@ -40,7 +40,8 @@ export function ProjectDetails({ detail, run, onDialog, planEnd }: { detail: Pro
         {manage ? <button type="button" className={styles.propertyButton} onClick={() => onDialog("dates")}>{dateRange()}</button> : dateRange()}
         {late ? <small data-late>{t("The plan ends {date}", { date: format.short(planEnd) })}</small> : null}
       </dd></div>
-      {detail.progress !== null ? <div><dt>{t("Progress")}</dt><dd>
+      {/* A closed project's status says where it ended; the plan's share done is for work still going on. */}
+      {detail.progress !== null && !["completed", "cancelled"].includes(project.status) ? <div><dt>{t("Progress")}</dt><dd>
         <Link className={styles.detailLink} href={`/workspace/projects/${project.id}/plan`}>{t("{percent}% done", { percent: detail.progress })}</Link>
         <Progress label={t("Progress")} value={detail.progress} />
       </dd></div> : null}

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { crmScreenFixture } from "@/lib/crm/screens";
@@ -236,5 +236,105 @@ describe("CRM inbox", () => {
     await user.click(within(dialog).getByRole("button", { name: /Channel/ }));
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["WhatsApp", "Email"]);
     expect(screen.queryByText(/portal/i)).not.toBeInTheDocument();
+  });
+
+  it("sends a reply later while WhatsApp's window will still be open, and refuses a time after it closes", async () => {
+    const user = userEvent.setup(), { data, record, posted } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    const input = await screen.findByRole("textbox", { name: "Message" });
+    await user.type(input, "We are on our way");
+    await user.click(screen.getByRole("button", { name: "Send later" }));
+    const dialog = await screen.findByRole("dialog", { name: "Send later" });
+    await user.click(within(dialog).getByRole("button", { name: "Schedule" }));
+    await waitFor(() => expect(posted("/scheduled-messages")).toEqual([{ clientRequestId: expect.any(String), sendAt: expect.any(String), bodyText: "We are on our way" }]));
+    const [scheduled] = posted("/scheduled-messages");
+    expect(Date.parse(scheduled.sendAt) - Date.now()).toBeGreaterThan(50 * 60_000);
+    expect(await screen.findByText("Scheduled")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+  });
+
+  it("refuses to schedule free text after the window closes", async () => {
+    const user = userEvent.setup(), { data, record, posted } = setup({ windowClosesAt: new Date(Date.now() + 30 * 60_000).toISOString() });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Tomorrow then");
+    await user.click(screen.getByRole("button", { name: "Send later" }));
+    const dialog = await screen.findByRole("dialog", { name: "Send later" });
+    await user.click(within(dialog).getByRole("button", { name: "Schedule" }));
+    expect(await within(dialog).findByText(/24-hour window will be closed by then/)).toBeInTheDocument();
+    expect(posted("/scheduled-messages")).toEqual([]);
+  });
+
+  it("shows what is scheduled in the thread, and cancels it with its version", async () => {
+    const sendAt = new Date(Date.now() + 3 * 3_600_000).toISOString();
+    const user = userEvent.setup(), { data, record, posted } = setup({ scheduledMessages: [
+      { id: "s1", status: "scheduled", sendAt, bodyText: "See you at 5", templateId: null, templateCode: null, templateParameters: [], renderedText: "See you at 5\n— Sara", failureReason: null, createdByName: "Sara Khan", version: 2 },
+      { id: "s2", status: "failed", sendAt, bodyText: "Too late", templateId: null, templateCode: null, templateParameters: [], renderedText: "Too late", failureReason: "Reopen this conversation before replying", createdByName: "Sara Khan", version: 3 },
+    ] });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    const section = await screen.findByRole("region", { name: "Scheduled messages" });
+    expect(within(section).getByText(/^Scheduled for /)).toBeInTheDocument();
+    expect(within(section).getByText("Not sent")).toBeInTheDocument();
+    expect(within(section).getByText("Reopen this conversation before replying")).toBeInTheDocument();
+    await user.click(within(section).getAllByRole("button", { name: "Cancel" })[0]);
+    await user.click(await screen.findByRole("button", { name: "Cancel message" }));
+    await waitFor(() => expect(posted("/scheduled-messages/s1/cancel")).toEqual([{ version: 2 }]));
+  });
+
+  it("shows one WhatsApp number's chats when the firm has two or more, and which number each chat is with", async () => {
+    const A = "40000000-0000-4000-8000-000000000001", B = "40000000-0000-4000-8000-000000000002";
+    const user = userEvent.setup(), { data, record, fetcher } = setup({ connectionId: B }, { payloads: { "inbox/summary": { mine: 1, unassigned: 4, team: 6, all: 9, snoozed: 2, unreadForMe: 1, membershipId: ME,
+      numbers: [{ connectionId: A, number: "+1 555 0100", accountName: null, isDefault: true }, { connectionId: B, number: "+1 555 0200", accountName: "Showroom", isDefault: false }] } } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    expect((await screen.findAllByText("+1 555 0200 · Showroom")).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: /Number/ }));
+    await user.click(await screen.findByRole("option", { name: "+1 555 0200 · Showroom" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes(`connectionId=${B}`))).toBe(true));
+  });
+
+  it("shows a client's photo, a voice note with a player and a document from storage; one still coming or lost says so", async () => {
+    const now = new Date().toISOString();
+    const file = (id: string, kind: string, status: string, extra: Record<string, unknown> = {}) => ({ id, kind, mimeType: null, fileName: null, byteSize: 2048, status, failureCode: null, ...extra });
+    const { data, record } = setup({ messages: [
+      { id: "photo", direction: "inbound", status: "delivered", bodyText: "Image received", metadata: { messageType: "image" }, attachment: file("f-photo", "image", "stored"), createdAt: now },
+      { id: "voice", direction: "inbound", status: "delivered", bodyText: "Audio received", metadata: { messageType: "audio" }, attachment: file("f-voice", "audio", "stored", { fileName: "voice.ogg" }), createdAt: now },
+      { id: "plan", direction: "outbound", status: "delivered", bodyText: "The plan", metadata: { messageType: "document" }, attachment: file("f-plan", "document", "stored", { fileName: "Plan.pdf" }), createdAt: now },
+      { id: "coming", direction: "inbound", status: "delivered", bodyText: "Video received", metadata: { messageType: "video" }, attachment: file("f-video", "video", "pending"), createdAt: now },
+      { id: "lost", direction: "inbound", status: "delivered", bodyText: "Document received", metadata: { messageType: "document" }, attachment: file("f-lost", "document", "failed", { failureCode: "media_expired" }), createdAt: now },
+    ] });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    const photo = await screen.findByRole("link", { name: /Open image/ });
+    expect(photo).toHaveAttribute("href", expect.stringContaining(`/api/workspace/crm/attachments/${record.id}/f-photo?workspaceId=`));
+    expect(screen.queryByText("Image received")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("voice.ogg").tagName).toBe("AUDIO");
+    expect(screen.getByRole("link", { name: /Plan\.pdf/ })).toHaveAttribute("download", "Plan.pdf");
+    expect(screen.getByText("The plan")).toBeInTheDocument();
+    expect(screen.getByText("Getting the file…")).toBeInTheDocument();
+    expect(screen.getByText("WhatsApp no longer has this file.")).toBeInTheDocument();
+  });
+
+  it("attaches one file WhatsApp takes, uploads it first and sends it with the caption", async () => {
+    const user = userEvent.setup(), { data, record, fetcher, posted } = setup();
+    const base = fetcher.getMockImplementation()!;
+    const uploads: string[] = [];
+    fetcher.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/workspace/crm/attachments/")) { uploads.push(String(url)); return { ok: true, status: 200, json: async () => ({ id: String(url).split("/")[6].split("?")[0], kind: "document", status: "stored" }) }; }
+      return base(url, init);
+    });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByRole("textbox", { name: "Message" });
+    const picker = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(picker, { target: { files: [new File(["MZ"], "setup.exe", { type: "application/octet-stream" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("WhatsApp can't send this type of file");
+    fireEvent.change(picker, { target: { files: [new File([new Uint8Array(6 * 1024 * 1024)], "big.jpg", { type: "image/jpeg" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Photos can be up to 5 MB on WhatsApp.");
+    fireEvent.change(picker, { target: { files: [new File(["%PDF-1.7"], "Plan.pdf", { type: "application/pdf" })] } });
+    expect(screen.getByText("Plan.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Attach a file" })).toBeDisabled();
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Our plan");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByText("Message queued")).toBeInTheDocument();
+    expect(uploads).toEqual([expect.stringContaining(`/api/workspace/crm/attachments/${record.id}/`)]);
+    const [sent] = posted("/messages");
+    expect(sent).toEqual({ direction: "outbound", purpose: "service", bodyText: "Our plan", attachmentId: uploads[0].split("/")[6].split("?")[0], clientMessageId: expect.any(String) });
+    expect(screen.queryByText("Plan.pdf")).not.toBeInTheDocument();
   });
 });

@@ -43,6 +43,8 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "inbox-settings": [["crm.communications.view", "crm.settings.manage"]],
   "delivery-health": [["workspace.settings.manage", "integrations.manage"]],
   "ai-credits": [["workspace.settings.manage"]],
+  // Everyone who can ask Woddy sees (and revokes) their own AI apps; administrators manage all of them.
+  "ai-apps": [["ai.suggestions.use", "workspace.settings.manage"]],
   // Sales
   "crm-overview": [["crm.leads.view"]],
   leads: [["crm.leads.view"]],

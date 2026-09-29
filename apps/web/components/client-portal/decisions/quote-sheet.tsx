@@ -49,7 +49,7 @@ export function QuoteSheet({ quote, caseId, slug, brand, customer, api, format, 
 
   return <div className={styles.sheet} data-tour="portal-quote-sheet">
     <div className={styles.rowHead}>
-      <StateLabel state={quote.expired && quote.status === "issued" ? "expired" : quote.status} />
+      <StateLabel state={quote.expired && quote.status === "issued" ? "expired" : quote.status} canDecide={quote.canDecide} />
       <a className={styles.muted} href={print} rel="noreferrer" target="_blank">{t("Print or save as PDF")}</a>
     </div>
     <div className={styles.document}><QuotationDocument quote={documentQuote(quote, brand)} customerName={customer} /></div>

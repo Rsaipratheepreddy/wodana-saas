@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { ArrayMaxSize, IsArray, IsIn, IsInt, IsISO8601, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from "class-validator";
 
 export class ListConversationsQueryDto {
   /** Open, Snoozed or Resolved ('closed'). */
@@ -17,6 +17,8 @@ export class ListConversationsQueryDto {
   @IsOptional() @IsUUID() leadId?: string;
   @IsOptional() @IsUUID() ownerMembershipId?: string;
   @IsOptional() @IsString() @MaxLength(40) channel?: string;
+  /** Chats with one WhatsApp number (the number the client last wrote to). */
+  @IsOptional() @IsUUID() connectionId?: string;
   @IsOptional() @IsString() cursor?: string;
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(100) limit = 25;
 }
@@ -60,6 +62,42 @@ export class CreateMessageDto {
   @IsOptional() @IsObject() metadata?: Record<string, unknown>;
   /** People (memberships) @mentioned in an internal note; each is told. */
   @IsOptional() @IsArray() @ArrayMaxSize(10) @IsUUID(undefined, { each: true }) mentions?: string[];
+  /** A file uploaded to this chat first (one per message, as WhatsApp sends it); the text is its caption. */
+  @IsOptional() @IsUUID() attachmentId?: string;
+}
+
+/** "Send later": a template at any time, or free text while WhatsApp's 24-hour window will still be open then. */
+export class CreateScheduledMessageDto {
+  @IsUUID() clientRequestId!: string;
+  @IsISO8601({ strict: true }) sendAt!: string;
+  @IsOptional() @IsString() @IsNotEmpty() @MaxLength(4096) bodyText?: string;
+  @IsOptional() @IsUUID() templateId?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(1024, { each: true }) templateParameters?: string[];
+}
+
+/** Changes a scheduled message before it goes: its time, its text, or its template's values. */
+export class UpdateScheduledMessageDto {
+  @IsInt() @Min(1) version!: number;
+  @IsOptional() @IsISO8601({ strict: true }) sendAt?: string;
+  @IsOptional() @IsString() @IsNotEmpty() @MaxLength(4096) bodyText?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(1024, { each: true }) templateParameters?: string[];
+}
+
+export class ScheduledMessageVersionDto { @IsInt() @Min(1) version!: number; }
+
+export class ProcessDueScheduledMessagesDto {
+  @IsOptional() @IsInt() @Min(1) @Max(100) limit = 50;
+}
+
+/** The worker's claim of client files to fetch from the provider. */
+export class ClaimAttachmentFetchesDto {
+  @IsOptional() @IsInt() @Min(1) @Max(50) limit = 20;
+}
+
+/** A fetch that did not work: retried later when the provider may recover, else the file is marked unavailable. */
+export class AttachmentFetchFailedDto {
+  @IsString() @IsNotEmpty() @MaxLength(120) code!: string;
+  @IsBoolean() retryable!: boolean;
 }
 
 export class MessageReceiptDto {

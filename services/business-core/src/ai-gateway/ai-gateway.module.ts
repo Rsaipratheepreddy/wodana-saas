@@ -6,5 +6,5 @@ import { AiGatewayService } from "./ai-gateway.service";
 import { AiRateLimitService } from "./ai-rate-limit.service";
 
 @Global()
-@Module({ imports: [WorkspacesModule], controllers: [AiGatewayController, AiGenerateController, AiCreditsController], providers: [AiGatewayService, AiRateLimitService, AiCreditsService], exports: [AiGatewayService] })
+@Module({ imports: [WorkspacesModule], controllers: [AiGatewayController, AiGenerateController, AiCreditsController], providers: [AiGatewayService, AiRateLimitService, AiCreditsService], exports: [AiGatewayService, AiRateLimitService] })
 export class AiGatewayModule {}

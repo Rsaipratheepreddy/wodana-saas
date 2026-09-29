@@ -2,17 +2,19 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { recordAudit } from "../../../audit/record-audit";
 import { readProjectAccess } from "../../../client-portal/portal-settings";
-import { normalizeTemplateParameter, renderTemplate, templatePlaceholders, type TemplateVariableSource } from "./inbox-rules";
+import { normalizeTemplateParameter, renderTemplate, TEMPLATE_SOURCE_NAMES, templatePlaceholders, type TemplateVariableSource } from "./inbox-rules";
 import { resolveTemplateSources, type TemplateContext } from "./template-variables";
-import { starterForEvent, type StarterEvent } from "./whatsapp-starter-pack";
+import { starterForEvent, startersForEvent, type StarterEvent } from "./whatsapp-starter-pack";
 
 type Db = Pick<PoolClient, "query">;
 type Config = { get(key: string): unknown };
 
-/** Business events that can message the client, in the order Settings → Inbox lists them. */
+/** Business events that can message the client, in the order Settings → Inbox lists them (the client's journey). */
 export const CLIENT_EVENTS: StarterEvent[] = [
-  "crm.enquiry.created", "portal.quote_issued", "portal.invoice_issued", "receivables.payment_received",
-  "portal.decision_waiting", "portal.update_published", "project.stage_started", "payments.reminder",
+  "crm.enquiry.created", "crm.meeting.booked", "crm.meeting.reminder", "crm.enquiry.quiet",
+  "portal.quote_issued", "commercial.quote_follow_up", "crm.opportunity.won",
+  "portal.invoice_issued", "receivables.payment_received", "portal.decision_waiting", "portal.update_published",
+  "project.stage_started", "payments.reminder", "project.handover_thanks",
 ];
 
 /** Events that also go by email (to the portal contacts) when WhatsApp can't carry them. */
@@ -22,18 +24,13 @@ export type ClientMessageResult =
   | { sent: true; messageId: string; conversationId: string; duplicate: boolean }
   | { sent: false; reason: "no_client" | "off" | "blocked" | "not_connected" | "no_consent" | "no_phone" | "template_not_approved" | "paused" | "value_missing"; field?: string };
 
-const SOURCE_NAMES: Record<TemplateVariableSource, string> = {
-  "contact.first_name": "Client first name", "contact.name": "Client name", "enquiry.reference": "Enquiry reference",
-  "opportunity.reference": "Opportunity reference", "project.name": "Project name", "project.stage": "Project stage", "quote.number": "Quote number",
-  "invoice.number": "Invoice number", "invoice.total": "Invoice amount", "invoice.due_date": "Invoice due date", "payment.amount": "Payment amount",
-  "portal.link": "Client portal link", "staff.first_name": "Your first name", "business.name": "Business name", "today.date": "Today's date",
-};
+const SOURCE_NAMES = TEMPLATE_SOURCE_NAMES;
 
 /** The rule for an event: on, with the starter template, unless the firm changed it. */
 export async function clientMessageRule(db: Db, workspaceId: string, event: StarterEvent) {
   const row = (await db.query<{ enabled: boolean; templateCode: string | null; version: number }>(
     `SELECT enabled, template_code AS "templateCode", version FROM crm_client_message_rules WHERE workspace_id = $1 AND event = $2`, [workspaceId, event])).rows[0];
-  return { enabled: row ? row.enabled : true, templateCode: row?.templateCode ?? starterForEvent(event)?.name ?? null, version: row?.version ?? 0 };
+  return { enabled: row ? row.enabled : true, templateCode: row?.templateCode ?? starterForEvent(event)?.name ?? null, chosen: Boolean(row?.templateCode), version: row?.version ?? 0 };
 }
 
 /** The approved template to send for a code: the client's language, then the workspace's, then any approved one. */
@@ -60,7 +57,7 @@ export async function sendClientEvent(db: Db, input: {
   const rule = await clientMessageRule(db, workspaceId, event);
   if (!rule.enabled || !rule.templateCode) return { sent: false, reason: "off" };
   const party = (await db.query<{ blocked: boolean; locale: string | null; workspaceLocale: string }>(
-    `SELECT party.blocked_at IS NOT NULL AS blocked, party.preferred_locale AS locale, workspace.default_locale AS "workspaceLocale"
+    `SELECT (party.blocked_at IS NOT NULL OR party.spam_at IS NOT NULL) AS blocked, party.preferred_locale AS locale, workspace.default_locale AS "workspaceLocale"
        FROM crm_parties party JOIN workspaces workspace ON workspace.id = party.workspace_id WHERE party.workspace_id = $1 AND party.id = $2`,
     [workspaceId, partyId])).rows[0];
   if (!party) return { sent: false, reason: "no_client" };
@@ -75,8 +72,6 @@ export async function sendClientEvent(db: Db, input: {
   if (!phone.rowCount) return { sent: false, reason: "no_phone" };
   if (input.record?.projectId && (await readProjectAccess(db, workspaceId, input.record.projectId)).paused) return { sent: false, reason: "paused" };
   const languages = [party.locale, party.workspaceLocale, "en"].filter((value): value is string => Boolean(value)).map((value) => value.split(/[_-]/)[0].toLowerCase());
-  const template = await approvedTemplate(db, workspaceId, rule.templateCode, [...new Set(languages)]);
-  if (!template) return { sent: false, reason: "template_not_approved" };
 
   const eventKey = `${event}:${input.recordKey}:${partyId}`.slice(0, 300);
   await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`${workspaceId}:${eventKey}`]);
@@ -84,20 +79,21 @@ export async function sendClientEvent(db: Db, input: {
     `SELECT id, conversation_id AS "conversationId" FROM crm_messages WHERE workspace_id = $1 AND metadata ? 'eventKey' AND metadata->>'eventKey' = $2`, [workspaceId, eventKey])).rows[0];
   if (prior) return { sent: true, messageId: prior.id, conversationId: prior.conversationId, duplicate: true };
 
-  const positions = templatePlaceholders(template.body);
-  const mapping = await db.query<{ position: number; source: TemplateVariableSource }>(
-    `SELECT position, source FROM crm_template_variables WHERE workspace_id = $1 AND channel = 'whatsapp' AND template_code = $2`, [workspaceId, rule.templateCode]);
-  const sources = new Map(mapping.rows.map((row) => [Number(row.position), row.source]));
-  const unmapped = positions.find((position) => !sources.has(position));
-  if (unmapped) return { sent: false, reason: "value_missing", field: `{{${unmapped}}}` };
-  const values = await resolveTemplateSources(db, { workspaceId, partyId, leadId: input.leadId ?? null, staffUserId: null, config: input.config ?? { get: (key: string) => process.env[key] }, record: input.record }, sources.values());
-  const parameters: string[] = [];
-  for (const position of positions) {
-    const source = sources.get(position)!;
-    const value = values[source];
-    if (!value) return { sent: false, reason: "value_missing", field: SOURCE_NAMES[source] };
-    parameters.push(normalizeTemplateParameter(value));
+  // The firm's chosen template, else the starter templates for the event in order: the first that is approved and
+  // whose every value the record has (a visit with its address, else without it).
+  const codes = rule.chosen ? [rule.templateCode] : [...new Set([rule.templateCode, ...startersForEvent(event).map((starter) => starter.name)])];
+  let chosen: { code: string; template: { id: string; body: string }; parameters: string[] } | null = null;
+  let missing: Extract<ClientMessageResult, { sent: false }> | null = null;
+  for (const code of codes) {
+    const template = await approvedTemplate(db, workspaceId, code, [...new Set(languages)]);
+    if (!template) continue;
+    const filled = await fillEventTemplate(db, { ...input, partyId }, code, template.body);
+    if ("field" in filled) { missing ??= { sent: false, reason: "value_missing", field: filled.field }; continue; }
+    chosen = { code, template, parameters: filled.parameters };
+    break;
   }
+  if (!chosen) return missing ?? { sent: false, reason: "template_not_approved" };
+  const { template, parameters } = chosen;
   const body = renderTemplate(template.body, parameters);
 
   const found = (await db.query<{ id: string }>(
@@ -113,7 +109,7 @@ export async function sendClientEvent(db: Db, input: {
   await db.query(
     `INSERT INTO crm_messages (id, workspace_id, conversation_id, direction, status, authorship, sender_type, sender_id, body_text, metadata)
      VALUES ($1, $2, $3, 'outbound', 'queued', 'automation', 'system', NULL, $4, $5)`,
-    [messageId, workspaceId, conversationId, body, { automatic: event, eventKey, template: { id: template.id, code: rule.templateCode, parameters } }]);
+    [messageId, workspaceId, conversationId, body, { automatic: event, eventKey, template: { id: template.id, code: chosen.code, parameters } }]);
   // An automatic message is not a reply: the client's wait keeps running.
   await db.query(`UPDATE crm_conversations SET last_message_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, conversationId]);
   const notificationId = randomUUID();
@@ -122,8 +118,28 @@ export async function sendClientEvent(db: Db, input: {
      VALUES ($1, $2, $3, 'party', $4, 'whatsapp', $5, 'pending', now(), $6, $7, gen_random_uuid(), $8)`,
     [notificationId, workspaceId, template.id, partyId, event, body, `message:${messageId}`, parameters]);
   await recordAudit(db, { workspaceId, actorUserId: input.actorUserId ?? null, source: "internal", action: "notification.delivery_requested.v1", entityType: "notification", entityId: notificationId,
-    after: { messageId, channel: "whatsapp", partyId, event, template: rule.templateCode } });
+    after: { messageId, channel: "whatsapp", partyId, event, template: chosen.code } });
   return { sent: true, messageId, conversationId, duplicate: false };
+}
+
+/** A template's {{n}} values from the event's record, by the firm's mapping; the first missing one is named. */
+async function fillEventTemplate(db: Db, input: { workspaceId: string; partyId: string; leadId?: string | null; record?: TemplateContext["record"]; config?: Config }, code: string, body: string): Promise<{ parameters: string[] } | { field: string }> {
+  const positions = templatePlaceholders(body);
+  const mapping = await db.query<{ position: number; source: TemplateVariableSource }>(
+    `SELECT position, source FROM crm_template_variables WHERE workspace_id = $1 AND channel = 'whatsapp' AND template_code = $2`, [input.workspaceId, code]);
+  const sources = new Map(mapping.rows.map((row) => [Number(row.position), row.source]));
+  const unmapped = positions.find((position) => !sources.has(position));
+  if (unmapped) return { field: `{{${unmapped}}}` };
+  const values = await resolveTemplateSources(db, { workspaceId: input.workspaceId, partyId: input.partyId, leadId: input.leadId ?? null, staffUserId: null,
+    config: input.config ?? { get: (key: string) => process.env[key] }, record: input.record }, sources.values());
+  const parameters: string[] = [];
+  for (const position of positions) {
+    const source = sources.get(position)!;
+    const value = values[source];
+    if (!value) return { field: SOURCE_NAMES[source] };
+    parameters.push(normalizeTemplateParameter(value));
+  }
+  return { parameters };
 }
 
 /** A WhatsApp that couldn't go is recorded with why (and the missing field), so the firm can fix it. */

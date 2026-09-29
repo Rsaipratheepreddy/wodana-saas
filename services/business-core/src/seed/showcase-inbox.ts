@@ -5,6 +5,8 @@ import { renderAutoReply } from "../crm/conversations/inbox/auto-reply-rules";
 import { seedDefaultQuickReplies } from "../crm/conversations/inbox/default-quick-replies";
 import { renderTemplate } from "../crm/conversations/inbox/inbox-rules";
 import { resolveTemplateSources } from "../crm/conversations/inbox/template-variables";
+import { STARTER_PACK, starterByName, type StarterEvent } from "../crm/conversations/inbox/whatsapp-starter-pack";
+import { zonedLocalToUtc } from "../ai-tools/tool-kit";
 
 /**
  * The showcase's team inbox: WhatsApp chats with the seeded clients (their enquiries and projects), a few
@@ -40,7 +42,9 @@ type Line =
   | { at: number; from: StaffRole; text: string; status?: "sent" | "delivered" | "read" }
   | { at: number; from: "note"; by: StaffRole; text: string }
   | { at: number; from: "auto_reply" }
-  | { at: number; from: "reminder"; template: string };
+  | { at: number; from: "reminder"; template: string }
+  /** An automatic client message from the starter pack; a visit is tomorrow at `meetingAt` (local time). */
+  | { at: number; from: "automatic"; event: StarterEvent; template: string; meetingAt?: string; place?: string };
 
 type Chat = {
   key: string; client: string; mobile: string; subject: string; owner: StaffRole;
@@ -54,6 +58,8 @@ const LABELS: Array<{ name: string; color: string }> = [
   { name: "Quote request", color: "viz-2" }, { name: "Site visit", color: "viz-3" }, { name: "Payment", color: "viz-4" }, { name: "Urgent", color: "viz-5" },
 ];
 
+const FOLLOW_UP_EVENTS = new Set<StarterEvent>(["crm.meeting.booked", "crm.meeting.reminder", "crm.enquiry.quiet", "commercial.quote_follow_up", "crm.opportunity.won", "project.handover_thanks"]);
+
 /** WhatsApp templates as Meta would hold them: approved, waiting for review and rejected (with Meta's reason). */
 const TEMPLATES: Array<{ code: string; body: string; category: "utility" | "marketing"; state: "approved" | "pending" | "rejected"; reason?: string; sources?: string[] }> = [
   { code: "quotation_ready", body: "Hi {{1}}, your quotation {{2}} is ready. You can review and approve it in your client portal.", category: "utility", state: "approved", sources: ["contact.first_name", "quote.number"] },
@@ -62,6 +68,11 @@ const TEMPLATES: Array<{ code: string; body: string; category: "utility" | "mark
   { code: "handover_invitation", body: "Hi {{1}}, your home is ready for handover. Reply with a day and time that suits you.", category: "utility", state: "pending", sources: ["contact.first_name"] },
   { code: "seasonal_offer", body: "Hi {{1}}, enjoy 15% off all living room furniture this month only!", category: "marketing", state: "rejected",
     reason: "Promotional content isn't allowed in a utility template. Submit it in the Marketing category.", sources: ["contact.first_name"] },
+  // The automatic client messages (visit confirmation and reminder, quiet enquiry, quotation follow-up, won deal,
+  // handover thanks), approved at Meta as the starter pack submits them.
+  ...STARTER_PACK.filter((starter) => FOLLOW_UP_EVENTS.has(starter.event)).map((starter) => ({
+    code: starter.name, body: starter.bodies.en, category: "utility" as const, state: "approved" as const, sources: starter.sources as string[],
+  })),
 ];
 
 const CHATS: Chat[] = [
@@ -87,6 +98,7 @@ const CHATS: Chat[] = [
     { at: 29, from: "sales", text: "Happy to show you! A showroom visit takes about an hour. Which day and time suit you best?" },
     { at: 27, from: "client", text: "Tuesday at 11 works for me." },
     { at: 26.5, from: "sales", text: "Booked for Tuesday at 11. See you then!" },
+    { at: 26.45, from: "automatic", event: "crm.meeting.booked", template: "wd_visit_confirmed", meetingAt: "11:00", place: "Showroom, Building 7, Design District" },
     { at: 26.4, from: "note", by: "sales", text: "Bring the walnut and oak veneer samples for the dressing room." },
   ] },
   { key: "sofia", client: "Sofia Bennett", mobile: "+971565000005", subject: "Penthouse quotation", owner: "manager", state: "open", unread: true, labels: ["Quote request", "Urgent"], lines: [
@@ -95,6 +107,7 @@ const CHATS: Chat[] = [
     { at: 4.8, from: "note", by: "manager", text: "Asking the estimator for a lighting-only option before we reply." },
   ] },
   { key: "haddad", client: "Omar and Layla Haddad", mobile: "+971553000003", subject: "Villa project", owner: "projectManager", state: "open", unread: true, labels: ["Payment"], lines: [
+    { at: 400, from: "automatic", event: "crm.opportunity.won", template: "wd_deal_won" },
     { at: 75, from: "reminder", template: "payment_reminder_friendly" },
     { at: 73, from: "client", text: "Thanks for the reminder. We paid today; here is the receipt.", file: { kind: "document", name: "payment-receipt.pdf" } },
     { at: 72, from: "finance", text: "Received, thank you! We'll confirm as soon as it clears." },
@@ -109,7 +122,8 @@ const CHATS: Chat[] = [
     { at: 97, from: "salesAdmin", text: "Great, see you on Thursday." },
   ] },
   { key: "nikolai", client: "Nikolai Petrov", mobile: "+971506000016", subject: "Apartment fit-out", owner: "salesAdmin", state: "closed", unread: false, labels: [], lines: [
-    { at: 150, from: "salesAdmin", text: "Hi Nikolai, did you have a chance to review our proposal for the apartment fit-out?" },
+    { at: 222, from: "salesAdmin", text: "Hi Nikolai, our proposal for the apartment fit-out is ready. Happy to go through it whenever suits you." },
+    { at: 150, from: "automatic", event: "crm.enquiry.quiet", template: "wd_enquiry_follow_up" },
     { at: 148, from: "client", text: "Thanks for your time. We decided to go with another studio this time." },
     { at: 147, from: "salesAdmin", text: "Understood, thank you for letting us know. We're here whenever you need us." },
   ] },
@@ -254,6 +268,26 @@ async function seedChat(ctx: InboxSeedContext, chat: Chat, labels: Map<string, s
           VALUES ($1, $2, $3, 'outbound', 'read', 'automation', 'system', $4, $5, $6, $6, $6, $6)`,
           [id, w, conversationId, renderTemplate(template?.body ?? "{{1}}", parameters), { ...seed, automatic: "payments.reminder", eventKey: `payments.reminder:showcase:${chat.key}`,
             ...(template ? { template: { id: template.id, code: line.template, parameters } } : {}) }, at]);
+        messages.push({ id, at, direction: "outbound" });
+      } else if (line.from === "automatic") {
+        // As sendClientEvent writes it: the approved template filled from the client's records, marked Automatic.
+        const template = templates.get(line.template);
+        const starter = starterByName(line.template);
+        if (!template || !starter) continue;
+        const values = await resolveTemplateSources(db, { workspaceId: w, partyId: client.partyId, leadId: client.leadId, staffUserId: null, record: { projectId: client.projectId } },
+          starter.sources.filter((source) => source !== "meeting.time" && source !== "meeting.place"));
+        const region = (await db.query<{ locale: string; timeZone: string }>(`SELECT default_locale AS locale, default_timezone AS "timeZone" FROM workspaces WHERE id = $1`, [w])).rows[0];
+        const timeZone = region?.timeZone || "UTC";
+        const tomorrow = new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(Date.now() + 86_400_000));
+        const visitAt = line.meetingAt ? zonedLocalToUtc(`${tomorrow}T${line.meetingAt}`, timeZone) : null;
+        const meeting = visitAt ? new Intl.DateTimeFormat(region?.locale || "en", { dateStyle: "full", timeStyle: "short", timeZone }).format(visitAt) : null;
+        // A client the showcase gave no enquiry reads "your enquiry <the chat's subject>".
+        const parameters = starter.sources.map((source) => source === "meeting.time" ? meeting ?? ""
+          : source === "meeting.place" ? line.place ?? "" : values[source] ?? (source === "enquiry.reference" || source === "project.name" ? chat.subject : ""));
+        await db.query(`INSERT INTO crm_messages (id, workspace_id, conversation_id, direction, status, authorship, sender_type, body_text, metadata, sent_at, delivered_at, read_at, created_at)
+          VALUES ($1, $2, $3, 'outbound', 'read', 'automation', 'system', $4, $5, $6, $6, $6, $6)`,
+          [id, w, conversationId, renderTemplate(template.body, parameters), { ...seed, automatic: line.event, eventKey: `${line.event}:showcase:${chat.key}:${index}`,
+            template: { id: template.id, code: line.template, parameters } }, at]);
         messages.push({ id, at, direction: "outbound" });
       } else {
         const by = people.get(line.from)!;

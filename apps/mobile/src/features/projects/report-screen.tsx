@@ -103,7 +103,9 @@ export function ReportScreen() {
         scope: `report:${projectId}:${reportDate}`, payload }, photos.map((photo) => ({ key: photo.id, uri: photo.uri, name: photo.name, type: photo.type })));
       void writeProtectedOfflineText(storageKey, '').catch(() => undefined);
       toast.success(submit ? t('Report sent for approval') : t('Draft saved'));
-      router.back();
+      // Opened from a notification or a link, there may be nothing to go back to.
+      if (router.canGoBack()) router.back();
+      else router.replace(`/projects/${projectId}`);
     } catch (error) { toast.error(errorMessage(error, t('Something went wrong'))); }
   };
 
@@ -140,7 +142,9 @@ export function ReportScreen() {
     </Section>
 
     <Section flat title={t('Photos')}>
-      <PhotoGrid photos={[...existingPhotos.map((photo) => ({ key: photo.id, path: sitePhotoPath(projectId, photo.id) })), ...photos.map((photo) => ({ key: photo.id, uri: photo.uri }))]}
+      {/* A photo already sent shows once, from the server, not again from this phone. */}
+      <PhotoGrid photos={[...existingPhotos.map((photo) => ({ key: photo.id, path: sitePhotoPath(projectId, photo.id) })),
+        ...photos.filter((photo) => !existingPhotos.some((sent) => sent.id === photo.id)).map((photo) => ({ key: photo.id, uri: photo.uri }))]}
         onAdd={readOnly ? undefined : (next) => setPhotos((current) => [...current, ...next].slice(0, 10 - existingPhotos.length))}
         onRemove={readOnly ? undefined : (key) => setPhotos((current) => current.filter((photo) => photo.id !== key))}
         onDraw={readOnly ? undefined : (item) => { const photo = photos.find((entry) => entry.id === item.key); if (photo) markup(photo, (drawn) => setPhotos((list) => list.map((entry) => (entry.id === photo.id ? drawn : entry)))); }}

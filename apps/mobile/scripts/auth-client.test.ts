@@ -26,7 +26,7 @@ function harness() {
     if (path === '/me') return response(profile);
     throw new Error(`Unexpected path ${path}`);
   };
-  const create = (tenantSlug = 'iglo-architects') => new AuthClient({ baseUrl: 'https://api.example.com/api/v1', tenantSlug, storage, fetch: fetcher, now: () => clock });
+  const create = (tenantSlug = 'iglo-architects', profileCache?: SessionStorage) => new AuthClient({ baseUrl: 'https://api.example.com/api/v1', tenantSlug, storage, profileCache, fetch: fetcher, now: () => clock });
   return { create, storage, calls, get saved() { return saved; }, set saved(value) { saved = value; }, set clock(value: number) { clock = value; },
     set override(value: typeof override) { override = value; } };
 }
@@ -395,4 +395,60 @@ test('attendance may read offices, sites and work contexts from the projects are
   assert.deepEqual(modulesForPath('projects/abc/execution'), ['projects']);
   assert.deepEqual(modulesForPath('project-core/projects'), ['projects']);
   assert.deepEqual(modulesForPath('crm/notifications'), ['crm']);
+});
+
+const memoryCache = () => { let value: string | null = null; return { cache: { read: async () => value, write: async (next: string) => { value = next; }, clear: async () => { value = null; } } satisfies SessionStorage, get value() { return value; } }; };
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test('coming back to the app refreshes the profile with the live token and rotates only near expiry', async () => {
+  const h = harness(), client = h.create();
+  await client.signIn('member@example.com', 'password');
+  await client.restore();
+  assert.equal(h.calls.filter((call) => call.path === '/auth/refresh').length, 0);
+  assert.equal(h.calls.at(-1)?.path, '/me');
+  h.clock = 1000 + 900_000 - 60_000;
+  await client.restore();
+  assert.equal(h.calls.filter((call) => call.path === '/auth/refresh').length, 1);
+  assert.equal(client.getSnapshot().status, 'signedIn');
+});
+
+test('a start without a connection opens with the last verified profile and verifies it once back online', async () => {
+  const h = harness(), memory = memoryCache();
+  await h.create('iglo-architects', memory.cache).signIn('member@example.com', 'password');
+  await settle();
+  assert.match(memory.value ?? '', /workspace-1/);
+  assert.doesNotMatch(memory.value ?? '', /refresh-1|access-1/);
+  const client = h.create('iglo-architects', memory.cache);
+  h.override = (path) => path === '/auth/refresh' ? Promise.reject(new Error('offline')) : undefined;
+  await client.restore();
+  const offline = client.getSnapshot();
+  assert.equal(offline.status, 'signedIn');
+  assert.equal(offline.status === 'signedIn' && offline.offline, true);
+  // Requests fail as offline (queued captures wait) without signing the person out.
+  await assert.rejects(client.api('/workspaces/workspace-1/hrms/bootstrap'), /Unable to connect/);
+  assert.equal(client.getSnapshot().status, 'signedIn');
+  h.override = undefined;
+  await client.restore();
+  const online = client.getSnapshot();
+  assert.equal(online.status === 'signedIn' && !online.offline, true);
+  assert.equal(JSON.parse(h.saved!).refreshToken, 'refresh-2');
+});
+
+test('without a remembered profile, or after signing out, a start without a connection shows the retry screen', async () => {
+  const other = harness();
+  await other.create().signIn('member@example.com', 'password');
+  const uncached = other.create();
+  other.override = (path) => path === '/auth/refresh' ? Promise.reject(new Error('offline')) : undefined;
+  await uncached.restore();
+  assert.equal(uncached.getSnapshot().status, 'unavailable');
+
+  const h = harness(), memory = memoryCache();
+  const client = h.create('iglo-architects', memory.cache);
+  await client.signIn('member@example.com', 'password');
+  await settle();
+  await client.signOut();
+  assert.equal(memory.value, null);
+  h.override = (path) => path === '/auth/refresh' ? Promise.reject(new Error('offline')) : undefined;
+  await h.create('iglo-architects', memory.cache).restore();
+  assert.equal(h.saved, null);
 });

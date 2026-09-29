@@ -40,6 +40,8 @@ export class IdentityService {
   async resolveActor(actor: RequestActor, client?: PoolClient): Promise<ActorUser> {
     // Viewing as someone reads as them, and leaves no "last sign-in" behind for either person.
     if (actor.viewAs) return { ...actor, userId: actor.viewAs.effectiveUserId };
+    // An AI app's token names its person directly; it is not a sign-in, so no "last sign-in" is recorded.
+    if (actor.mcp) return { ...actor, userId: actor.mcp.userId };
     const query = <Row extends QueryResultRow = QueryResultRow>(
       text: string,
       values: unknown[] = [],

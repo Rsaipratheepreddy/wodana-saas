@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { APPROVAL_FILTERS, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
+import { APPROVAL_FILTERS, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
 import styles from "./waiting-for-you.module.css";
 import { APPROVALS_CHANGED, WAITING_SCOPES } from "./use-waiting-count";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
+import { cardTitle } from "@/components/woddy/woddy-action-card";
 
 type Pending = { row: ApprovalRow; decision: "approve" | "return" | "reject" };
 
@@ -16,6 +17,11 @@ type Pending = { row: ApprovalRow; decision: "approve" | "return" | "reject" };
  * site reports, stock and finance. Decided in the row (with a note where the module asks for one) or
  * opened for the evidence. Only what they may decide counts; their own work shows who else decides.
  */
+const subscribeMinute = (notify: () => void) => { const timer = window.setInterval(notify, 60_000); return () => window.clearInterval(timer); };
+const currentMinute = () => Math.floor(Date.now() / 60_000) * 60_000;
+// The server's clock is not the browser's: "Waiting for" is filled in once the page runs, so the two always match.
+const noClockOnServer = () => null;
+
 export function WaitingForYouList({ workspaceId, initial, initialError }: { workspaceId: string; initial: WaitingForYou | null; initialError?: string }) {
   const t = useT();
   const router = useRouter();
@@ -28,6 +34,7 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
+  const now = useSyncExternalStore(subscribeMinute, currentMinute, noClockOnServer);
 
   const reload = async () => {
     setLoadError("");
@@ -40,7 +47,7 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     try {
       setState(await api.decide(row, decision, note));
       window.dispatchEvent(new Event(APPROVALS_CHANGED));
-      setDone(decision === "approve" ? t("{name} approved.", { name: row.title }) : t("{name} sent back.", { name: row.title }));
+      setDone(decision === "approve" ? t("{name} approved.", { name: approvalTitle(row, locale) }) : t("{name} sent back.", { name: approvalTitle(row, locale) }));
       setPending(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("The decision could not be saved.")); }
     finally { setBusy(null); }
@@ -53,15 +60,18 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     if (!row.currency) return row.amount;
     try { return new Intl.NumberFormat(locale, { style: "currency", currency: row.currency }).format(Number(row.amount)); } catch { return `${row.currency} ${row.amount}`; }
   };
+  // A row whose title is a sentence (an AI app's change) reads in the person's language.
+  const title = (row: ApprovalRow) => row.phrase?.key ? cardTitle(t, { title: row.phrase, summary: row.title }) : approvalTitle(row, locale);
   const columns: DataGridColumn<ApprovalRow>[] = [
-    { id: "what", header: t("Waiting"), size: 300, accessorFn: (row) => row.title, meta: { primary: true, renderCell: (row) => <span className={styles.what}>
+    { id: "what", header: t("Waiting"), size: 300, accessorFn: (row) => title(row), meta: { primary: true, renderCell: (row) => <span className={styles.what}>
       <span className={styles.kind}>{t(KIND_LABEL[row.kind])}</span>
-      <span>{row.title}</span>
+      <span>{title(row)}</span>
     </span> } },
     { id: "about", header: t("About"), size: 200, accessorFn: (row) => row.subject ?? "", meta: { mobileHidden: true } },
     { id: "project", header: t("Project"), size: 180, accessorFn: (row) => row.project ? [row.project.reference, row.project.name].filter(Boolean).join(" · ") : "", meta: { mobileHidden: true } },
     { id: "amount", header: t("Amount"), size: 140, accessorFn: (row) => money(row), meta: { align: "end" } },
-    { id: "since", header: t("Waiting for"), size: 120, accessorFn: (row) => waitingSince(row.since, new Date(), locale) },
+    { id: "since", header: t("Waiting for"), size: 120, accessorFn: (row) => row.since,
+      meta: { renderCell: (row) => (now === null ? "" : waitingSince(row.since, new Date(now), locale)) } },
     { id: "decide", header: t("Decide"), size: 240, accessorFn: () => "", enableSorting: false, meta: { renderCell: (row) => <span className={styles.actions} onClick={(event) => event.stopPropagation()}>
       {!row.canDecide ? <span className={styles.muted}>{t("Someone else decides")}</span>
         : row.decide ? <>
@@ -88,10 +98,11 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
 /** A return, a refusal or an approval that needs its reason: one note, then the decision. */
 function DecisionNote({ pending, busy, onClose, onSave }: { pending: Pending; busy: boolean; onClose: () => void; onSave: (note: string) => void }) {
   const t = useT();
+  const { locale } = useDesignSystem();
   const [note, setNote] = useState("");
   const approve = pending.decision === "approve";
   const label = approve ? t("Approve") : t(OTHER_LABEL[pending.decision as "return" | "reject"]);
-  return <ControlledModalDialog isOpen size="md" title={`${label} · ${pending.row.title}`} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
+  return <ControlledModalDialog isOpen size="md" title={`${label} · ${approvalTitle(pending.row, locale)}`} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
     footer={<div className="wd-dialog-actions">
       <Button onPress={onClose}>{t("Cancel")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={() => onSave(note.trim())}>{label}</Button>

@@ -69,7 +69,16 @@ integration("showcase inbox seed", () => {
       const kinds = await client.query<{ kind: string; count: number }>(
         `SELECT CASE WHEN metadata->>'automatic' IS NOT NULL THEN metadata->>'automatic' WHEN metadata ? 'fileName' THEN 'file' ELSE direction::text END AS kind, count(*)::int AS count
            FROM crm_messages GROUP BY 1 ORDER BY 1`);
-      expect(Object.fromEntries(kinds.rows.map((row) => [row.kind, row.count]))).toEqual({ auto_reply: 1, file: 2, inbound: 13, internal: 3, outbound: 12, "payments.reminder": 1 });
+      expect(Object.fromEntries(kinds.rows.map((row) => [row.kind, row.count]))).toEqual({ auto_reply: 1, file: 2, inbound: 13, internal: 3, outbound: 12, "payments.reminder": 1,
+        "crm.enquiry.quiet": 1, "crm.meeting.booked": 1, "crm.opportunity.won": 1 });
+      // The automatic client messages read as the client got them, from the approved starter templates.
+      const automatic = await client.query<{ code: string; body: string }>(`SELECT metadata->'template'->>'code' AS code, body_text AS body FROM crm_messages
+        WHERE metadata->>'automatic' IN ('crm.enquiry.quiet', 'crm.meeting.booked', 'crm.opportunity.won') ORDER BY 1`);
+      expect(automatic.rows).toEqual([
+        { code: "wd_deal_won", body: "Hello Omar, thank you for choosing Demo Interiors! Our team will contact you shortly to plan the next steps of your project." },
+        { code: "wd_enquiry_follow_up", body: expect.stringMatching(/^Hello Nikolai, we are following up on your enquiry .+\. Is there anything Demo Interiors can help you with\?/) },
+        { code: "wd_visit_confirmed", body: expect.stringMatching(/^Hello Aisha, your appointment with Demo Interiors is confirmed for .+ 11:00 AM at Showroom, Building 7, Design District\./) },
+      ]);
       const greeting = (await client.query<{ body: string }>(`SELECT body_text AS body FROM crm_messages WHERE metadata->>'automatic' = 'auto_reply'`)).rows[0];
       expect(greeting.body).toBe("Hi Hessa, thanks for contacting Demo Interiors. We have received your message and will reply shortly.");
       expect((await client.query(`SELECT 1 FROM crm_auto_replies`)).rowCount).toBe(1);
@@ -80,6 +89,8 @@ integration("showcase inbox seed", () => {
       const templates = await client.query<{ code: string; state: string; reason: string | null }>(`SELECT code, provider_status AS state, provider_reason AS reason FROM notification_templates WHERE channel = 'whatsapp' ORDER BY code`);
       expect(templates.rows.map((row) => [row.code, row.state])).toEqual([
         ["handover_invitation", "pending"], ["payment_reminder_friendly", "approved"], ["quotation_ready", "approved"], ["seasonal_offer", "rejected"], ["site_visit_confirmed", "approved"],
+        ...["wd_deal_won", "wd_enquiry_follow_up", "wd_handover_review", "wd_handover_thanks", "wd_quote_follow_up", "wd_visit_confirmed", "wd_visit_confirmed_time", "wd_visit_reminder", "wd_visit_reminder_time"]
+          .map((code) => [code, "approved"]),
       ]);
       expect(templates.rows.find((row) => row.code === "seasonal_offer")?.reason).toMatch(/Marketing category/);
       expect((await client.query(`SELECT shortcut FROM crm_quick_replies ORDER BY shortcut`)).rows.map((row) => row.shortcut)).toEqual(["floorplan", "handover", "payment", "quotation", "sitevisit", "thanks"]);

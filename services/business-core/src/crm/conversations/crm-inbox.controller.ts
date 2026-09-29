@@ -6,7 +6,7 @@ import { InternalServiceGuard } from "../../auth/internal-service.guard";
 import { Public } from "../../auth/public.decorator";
 import { CrmInboxService } from "./crm-inbox.service";
 import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
-import { SendPaymentReminderDto, SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, UpdatePaymentReminderScheduleDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
+import { SendPaymentReminderDto, SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, UpdateFollowUpTimingDto, UpdatePaymentReminderScheduleDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
 import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
 import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessageDto, CreateQuickReplyDto, RemoveAutoRepliesDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateAutoRepliesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto } from "./dto/inbox.dto";
 
@@ -24,6 +24,7 @@ export class CrmInboxController {
   @Put("conversations/:conversationId/block") block(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() input: BlockConversationDto) { return this.inbox.blockConversation(actor, workspaceId, conversationId, input); }
   @Put("conversations/:conversationId/messages/:messageId/hidden") hide(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Param("messageId", ParseUUIDPipe) messageId: string, @Body() input: HideMessageDto) { return this.inbox.hideMessage(actor, workspaceId, conversationId, messageId, input); }
   @Get("inbox/client-messages") clientMessages(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.whatsappTemplates.clientMessages(actor, workspaceId); }
+  @Put("inbox/follow-ups") setFollowUps(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: UpdateFollowUpTimingDto) { return this.whatsappTemplates.setFollowUpTiming(actor, workspaceId, input); }
   @Put("inbox/client-messages/:event") setClientMessage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("event") event: string, @Body() input: UpdateClientMessageDto) { return this.whatsappTemplates.setClientMessage(actor, workspaceId, event, input); }
   @Get("inbox/summary") summary(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Query("stage") stage?: string) { return this.inbox.summary(actor, workspaceId, typeof stage === "string" ? stage.slice(0, 1000) : undefined); }
   @Get("inbox/stages") stages(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.stages(actor, workspaceId); }
@@ -52,6 +53,7 @@ export class InternalCrmInboxController {
   constructor(private readonly inbox: CrmInboxService, private readonly templates: CrmWhatsAppTemplatesService, private readonly reminders: CrmPaymentRemindersService) {}
   @Post("workspaces/:workspaceId/conversations/wake") wake(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: WakeSnoozedDto) { return this.inbox.wakeSnoozedInternal(workspaceId, input.limit); }
   @Post("workspaces/:workspaceId/payment-reminders/run") runReminders(@Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.reminders.scheduleInternal(workspaceId); }
+  @Post("workspaces/:workspaceId/client-follow-ups/run") followUps(@Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.templates.followUpsInternal(workspaceId); }
   @Post("workspaces/:workspaceId/whatsapp-templates/due") templateWork(@Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.templates.dueWorkInternal(workspaceId); }
   @Post("workspaces/:workspaceId/whatsapp-templates/sync") templateSync(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: WhatsAppTemplateSyncDto) { return this.templates.syncInternal(workspaceId, input); }
   @Post("workspaces/:workspaceId/whatsapp-templates/:templateId/submitted") templateSubmitted(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("templateId", ParseUUIDPipe) templateId: string, @Body() input: TemplateSubmittedDto) { return this.templates.submittedInternal(workspaceId, templateId, input); }

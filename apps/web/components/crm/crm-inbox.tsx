@@ -44,6 +44,8 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
   const [stageOptions, setStageOptions] = useState<Array<{ id: string; label: string }>>([]);
   const stageParam = [...stages].sort().join(",");
   const [channelFilter, setChannelFilter] = useState("all");
+  // With two or more WhatsApp numbers: one number's chats (the number the client last wrote to).
+  const [numberFilter, setNumberFilter] = useState("");
   const [items, setItems] = useState<RecordData[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
   const requestPending = useRef(false), controller = useRef<AbortController | null>(null), cursorRef = useRef(cursor);
   const threadActions = useRef<{ resolve: () => void } | null>(null);
   useEffect(() => { cursorRef.current = cursor; }, [cursor]);
-  const query = new URLSearchParams({ limit: "100", status: state, ...(stageParam ? { stage: stageParam } : {}), ...(view === "team" && ownerFilter ? { ownerMembershipId: ownerFilter } : view !== "all" ? { view } : {}), ...(labelId ? { labelId } : {}), ...(channelFilter !== "all" ? { channel: channelFilter } : {}), ...(search.trim() ? { search: search.trim() } : {}) }).toString();
+  const query = new URLSearchParams({ limit: "100", status: state, ...(stageParam ? { stage: stageParam } : {}), ...(view === "team" && ownerFilter ? { ownerMembershipId: ownerFilter } : view !== "all" ? { view } : {}), ...(labelId ? { labelId } : {}), ...(channelFilter !== "all" ? { channel: channelFilter } : {}), ...(numberFilter ? { connectionId: numberFilter } : {}), ...(search.trim() ? { search: search.trim() } : {}) }).toString();
   const loadSummary = useCallback(async () => {
     const [next, people] = await Promise.all([
       crmRequest<InboxSummary>(workspaceId, `inbox/summary${stageParam ? `?stage=${encodeURIComponent(stageParam)}` : ""}`, "GET", undefined, timeout()).catch(() => null),
@@ -131,7 +133,9 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
   const togglePick = (id: string, value: boolean) => setPicked((current) => { const next = new Set(current); if (value) next.add(id); else next.delete(id); return next; });
   const activeLabels = lookups.labels.filter((item) => item.status !== "archived");
   const presets = snoozePresets({ now: new Date(now), timeZone, dayStart: lookups.settings?.workday.start, workingDays: lookups.settings?.workday.days });
-  const filtered = Boolean(stageParam) || Boolean(search.trim()) || state !== "open" || view !== "all" || Boolean(labelId) || channelFilter !== "all";
+  const filtered = Boolean(stageParam) || Boolean(search.trim()) || state !== "open" || view !== "all" || Boolean(labelId) || channelFilter !== "all" || Boolean(numberFilter);
+  const numbers = summary?.numbers ?? [];
+  const numberName = (number: (typeof numbers)[number]) => [number.number, number.accountName].filter(Boolean).join(" · ") || t("WhatsApp number");
   const noConversations = loaded && !items.length && !busy && !filtered;
   const emptyState = <EmptyState icon={<MessagingMark size={36} />} title={noConversations ? t("No conversations yet") : t("Choose a conversation")}
     action={<Button size="compact" variant="primary" className={styles.brandButton} onPress={() => setCreating(true)}><Plus aria-hidden="true" size={16} />{t("New conversation")}</Button>} />;
@@ -161,6 +165,8 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
         <div className={styles.filters}>
           <SegmentedControl label={t("Chat state")} value={state} onChange={(value) => setState(value as ChatState)} options={[{ id: "open", label: t("Open") }, { id: "snoozed", label: t("Snoozed"), count: summary?.snoozed || undefined }, { id: "closed", label: t("Resolved") }]} />
           {activeLabels.length ? <SelectField accent="neutral" aria-label={t("Label")} label={null} items={[{ id: "", label: t("All labels") }, ...activeLabels.map((item) => ({ id: item.id, label: item.name }))]} selectedKey={labelId} onSelectionChange={(key) => setLabelId(key ? String(key) : "")} /> : null}
+          {numbers.length > 1 ? <SelectField accent="neutral" aria-label={t("Number")} label={null} items={[{ id: "", label: t("All numbers") }, ...numbers.map((number) => ({ id: number.connectionId, label: numberName(number) }))]}
+            selectedKey={numberFilter} onSelectionChange={(key) => setNumberFilter(key ? String(key) : "")} /> : null}
         </div>
         {stageOptions.length ? <div className={styles.stageFilter}><MultiSelectField label={t("Stage")} items={stageOptions} selectedKeys={stages} onSelectionChange={(keys) => setStages(new Set([...keys].map(String)))} /></div> : null}
         <div className={styles.channels} aria-label={t("Conversation channels")}>{["all", "whatsapp"].map((channel) => <button key={channel} type="button" aria-pressed={channelFilter === channel} onClick={() => setChannelFilter(channel)}>{channel === "whatsapp" ? <span className={styles.channelMark}><ProviderMark provider="whatsapp" /></span> : null}{channel === "all" ? t("All") : "WhatsApp"}</button>)}</div>
@@ -194,6 +200,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
                     {item.status === "snoozed" && item.snoozedUntil ? <span className={styles.metaText}>{t("Until {time}", { time: time(item.snoozedUntil) })}</span> : null}
                     {chipLabels.slice(0, 2).map((chip) => <LabelChip key={chip.id} label={chip} />)}{chipLabels.length > 2 ? <span className={styles.metaText}>+{chipLabels.length - 2}</span> : null}
                     {view !== "mine" ? <span className={styles.metaText}>{item.ownerName ? String(item.ownerName) : t("Unassigned")}</span> : null}
+                    {numbers.length > 1 && !numberFilter && item.connectionId ? (() => { const number = numbers.find((entry) => entry.connectionId === item.connectionId); return number ? <span className={styles.metaText}>{numberName(number)}</span> : null; })() : null}
                   </span>
                 </span>
               </ToggleButton>

@@ -16,8 +16,18 @@ export const LABEL_COLORS = ["viz-1", "viz-2", "viz-3", "viz-4", "viz-5", "viz-6
 export const TEMPLATE_VARIABLE_SOURCES = [
   "contact.first_name", "contact.name", "enquiry.reference", "opportunity.reference", "project.name", "project.stage",
   "quote.number", "invoice.number", "invoice.total", "invoice.due_date", "payment.amount", "portal.link", "staff.first_name", "business.name", "today.date",
+  "meeting.time", "meeting.place", "review.link",
 ] as const;
 export type TemplateVariableSource = (typeof TEMPLATE_VARIABLE_SOURCES)[number];
+
+/** A source's name in a blocked send: "Fill in {{2}} (Enquiry reference)". */
+export const TEMPLATE_SOURCE_NAMES: Record<TemplateVariableSource, string> = {
+  "contact.first_name": "Client first name", "contact.name": "Client name", "enquiry.reference": "Enquiry reference",
+  "opportunity.reference": "Opportunity reference", "project.name": "Project name", "project.stage": "Project stage", "quote.number": "Quote number",
+  "invoice.number": "Invoice number", "invoice.total": "Invoice amount", "invoice.due_date": "Invoice due date", "payment.amount": "Payment amount",
+  "portal.link": "Client portal link", "staff.first_name": "Your first name", "business.name": "Business name", "today.date": "Today's date",
+  "meeting.time": "Appointment date and time", "meeting.place": "Appointment address", "review.link": "Review link",
+};
 
 export const MAX_SNOOZE_DAYS = 90;
 

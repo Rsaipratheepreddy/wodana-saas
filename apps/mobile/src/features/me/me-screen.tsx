@@ -8,7 +8,7 @@ import { errorMessage, useApi } from '../../core/api';
 import { openSettings } from '../../core/media';
 import { ToggleRow } from '../../ui/fields';
 import { useToast } from '../../ui/toast';
-import { unregisterThisPhone, usePushState, useSetPush } from '../shell/push-registration';
+import { releaseThisPhone, usePushState, useSetPush } from '../shell/push-registration';
 import { useFormat } from '../../core/format';
 import { languages, preferenceLocale, useLanguage, useT, type AppLanguage } from '../../core/i18n';
 import { useOutbox } from '../../core/outbox';
@@ -118,7 +118,7 @@ export function MeScreen() {
     <Section>
       <ListRow first icon={Languages} title={t('Language')} detail={language.label} onPress={() => setChoosingLanguage(true)} />
       {workspaces > 1 ? <ListRow icon={ArrowLeftRight} title={t('Switch workspace')} detail={session.membership.workspaceName}
-        onPress={() => { organization.chooseWorkspace(true); void client.signOut(); }} /> : null}
+        onPress={() => { organization.chooseWorkspace(true); void releaseThisPhone(api).then(() => client.signOut()); }} /> : null}
       <ListRow icon={LogOut} title={t('Sign out')} danger onPress={() => setSigningOut(true)} />
     </Section>
     <Text variant="caption" tone="tertiary" style={{ textAlign: 'center' }}>{t('Version {version}', { version: Constants.expoConfig?.version ?? '' })}</Text>
@@ -129,7 +129,7 @@ export function MeScreen() {
       detail={waiting ? t('{count} captures are still waiting to send. They send after you sign in again.', { count: waiting }) : undefined}
       onConfirm={async () => {
         // This phone stops getting the person's pushes; signing out never waits more than a moment on it.
-        await Promise.race([unregisterThisPhone(api).catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 3000))]);
+        await releaseThisPhone(api);
         await client.signOut();
       }} />
   </Screen>;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { Bell, BellRing, Building2, Calculator, CalendarClock, CreditCard, Factory, FileText, FolderKanban, Globe, History, KeyRound, Landmark, Languages, MessagesSquare, Network, Palette, Plug, Send, ShieldCheck, ShoppingCart, Sparkles, UserRound, Users, Warehouse, type LucideIcon } from "lucide-react";
+import { Bell, BellRing, Bot, Building2, Calculator, CalendarClock, CreditCard, Factory, FileText, FolderKanban, Globe, History, KeyRound, Landmark, Languages, MessagesSquare, Network, Palette, Plug, Send, ShieldCheck, ShoppingCart, Sparkles, UserRound, Users, Warehouse, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { SearchInput, SelectField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -14,7 +14,7 @@ const ICONS: Record<string, LucideIcon> = {
   "business-records": Landmark, billing: CreditCard, "audit-log": History, integrations: Plug, "client-portal-settings": Globe, "design-packages": Palette, "reminder-settings": BellRing,
   "attendance-settings": CalendarClock, teams: Network, "project-settings": FolderKanban, "purchasing-settings": ShoppingCart, "inventory-settings": Warehouse,
   "factory-settings": Factory, "accounting-settings": Calculator, "inbox-settings": MessagesSquare, "delivery-health": Send, "notification-settings": Bell,
-  "ai-credits": Sparkles,
+  "ai-credits": Sparkles, "ai-apps": Bot,
 };
 
 /**
@@ -30,7 +30,7 @@ export function SettingsLayout({ module, pathname, children }: { module: Workspa
     profile: t("Profile"), security: t("Sign-in security"), company: t("Company profile"), "workspace-language": t("Workspace language"), members: t("People"), teams: t("Teams"), roles: t("Roles & permissions"),
     "business-records": t("Business records"), billing: t("Billing"), "audit-log": t("Audit history"), integrations: t("Integrations"), "client-portal-settings": t("Client portal"), "design-packages": t("Design packages"), "reminder-settings": t("Reminders"),
     "attendance-settings": t("Attendance & leave"), "inbox-settings": t("Inbox"), "delivery-health": t("Delivery"), "notification-settings": t("Notifications"),
-    "ai-credits": t("AI credits"),
+    "ai-credits": t("AI credits"), "ai-apps": t("AI apps"),
   };
   const [query, setQuery] = useState("");
   const label = (id: string, fallback: string) => labels[id] ?? t(fallback as never);

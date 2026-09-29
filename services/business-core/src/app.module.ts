@@ -34,6 +34,7 @@ import { WorkspaceSearchModule } from "./search/workspace-search.module";
 import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
 import { AiGatewayModule } from "./ai-gateway/ai-gateway.module";
 import { AiToolsModule } from "./ai-tools/ai-tools.module";
+import { McpModule } from "./mcp/mcp.module";
 import { DesignModule } from "./design/design.module";
 import { QuotationModule } from "./quotation/quotation.module";
 import { GalleryModule } from "./gallery/gallery.module";
@@ -92,6 +93,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
     AiSuggestionsModule,
     AiGatewayModule,
     AiToolsModule,
+    McpModule,
     DesignModule,
     QuotationModule,
     GalleryModule,

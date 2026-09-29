@@ -154,9 +154,14 @@ type Scenario = {
     orders: Order[];
     factory: "in_production" | "done";
     siteStartDaysAgo: number | null; reports: number; snags: Snag[];
+    /** One more daily report, from yesterday, submitted and waiting for the project manager's approval. */
+    reportAwaitingApproval?: boolean;
     /** The stage that stays current (its key), or null to go as far as the checks allow. */
     stagesUntil: string | null;
-    handover: boolean;
+    /** true: handed over and accepted; "issued": the pack waits for the client's acceptance in the portal. */
+    handover: boolean | "issued";
+    /** Why the pack goes to the client while stages are still open (said to the client's team, not the client). */
+    handoverOpenReason?: string;
   };
 };
 
@@ -353,12 +358,13 @@ const SCENARIOS: Scenario[] = [
         { key: "study-lamp", label: "study desk lamp", pick: [{ description: "Brass desk lamp", quantity: "1", unit: "nos", unitPrice: "640" }], supplier: 3, state: "pending_approval", expected: 6, promised: 6 },
         { key: "wrong-tiles", label: "tiles ordered twice", pick: [{ description: "Porcelain tile 60x120 matte", quantity: "10", unit: "sqm", unitPrice: "95" }], supplier: 1, state: "cancelled", expected: 4, promised: 4 },
       ],
-      factory: "done", siteStartDaysAgo: 8, reports: 3,
+      factory: "done", siteStartDaysAgo: 8, reports: 3, reportAwaitingApproval: true,
       snags: [
         { key: "snag:1", title: "Chip on the worktop edge by the hob", severity: "major", source: "inspection", room: "Kitchen", close: false },
         { key: "snag:2", title: "Study shelf 3 not level", severity: "minor", source: "client", room: "Study", close: false },
       ],
-      stagesUntil: "installation", handover: false,
+      stagesUntil: "installation", handover: "issued",
+      handoverOpenReason: "The Haddads asked to walk through this week; the worktop chip and the shelf are booked for Thursday.",
     },
   },
   {
@@ -1154,8 +1160,14 @@ class ShowcaseSeed {
     if (s.execution.siteStartDaysAgo !== null) await this.stage(at("site"), () => this.site(ctx, projectId));
     await this.stage(at("progress published to the client"), () => this.progress(ctx, projectId));
     await this.stage(at("stages"), () => this.stages(ctx, projectId));
+    if (s.execution.handover === "issued") {
+      await this.stage(at("handover waiting for the client"), () => this.handover(ctx, projectId, caseId, false));
+      return;
+    }
     if (!after("site") || !s.execution.handover) return;
     await this.stage(at("handover and warranty"), () => this.handover(ctx, projectId, caseId));
+    // The client's acceptance passes the handover stage's checks: it finishes in this run, not the next.
+    await this.stage(at("stages after handover"), () => this.stages(ctx, projectId));
     if (s.execution.claim) await this.stage(at("warranty claim"), () => this.claim(ctx, caseId));
   }
 
@@ -2186,6 +2198,27 @@ class ShowcaseSeed {
       if (report && report.status === "draft") { await this.advance(`site report ${day} submitted`, false, () => site.command(supervisor, this.w, projectId, { action: "submit", reportId, version: report!.version })); current = await state(); report = current.reports.find((row) => row.id === reportId); }
       if (report && report.status === "submitted") await this.advance(`site report ${day} approved`, false, () => site.command(approver, this.w, projectId, { action: "approve", reportId, version: report!.version }));
     }
+    // Yesterday's report, sent in and waiting for the project manager (Approvals shows it).
+    if (s.execution.reportAwaitingApproval) {
+      const reportId = this.id(ctx, "site-report:awaiting-approval");
+      if (!current.reports.some((row) => row.id === reportId)) {
+        const on = dayFrom(-1);
+        await this.step(`daily site report ${on} waiting for approval (${supervisor.email})`, async () => null, async () => {
+          try {
+            await site.command(supervisor, this.w, projectId, { id: reportId, action: "save_report", reportDate: on, weather: "Clear", workforce: [{ trade: "Stone fitters", people: 2 }, { trade: "Painters", people: 2 }],
+              notes: "Worktop fitted and sealed; skirting painted. The chip by the hob is booked for polishing on Thursday.", lines: [] });
+          } catch (error) {
+            if (error instanceof HttpException && error.getStatus() === 409) throw new Skip(`a report for ${on} already exists for ${supervisor.email}`);
+            throw error;
+          }
+          await site.uploadPhoto(supervisor, this.w, projectId, reportId, this.id(ctx, "site-report:awaiting-approval:photo"), tile(`${s.key}-site-awaiting`) as never);
+          current = await state();
+          return current.reports.find((row) => row.id === reportId)!;
+        }).catch((error) => { if (error instanceof Skip) this.skip("site report waiting for approval", error.reason); else throw error; });
+      } else this.kept("daily site report waiting for approval");
+      const waiting = (await state()).reports.find((row) => row.id === reportId);
+      if (waiting?.status === "draft") await this.advance("site report sent for approval", false, () => site.command(supervisor, this.w, projectId, { action: "submit", reportId, version: waiting.version }));
+    }
     // Snags found on site: some fixed and closed with a photo after, some still open.
     const board = async () => ((await work.board(pm, this.w, projectId)) as { items: Array<{ id: string; version: number; status: string }> }).items;
     for (const item of s.execution.snags) {
@@ -2297,9 +2330,10 @@ class ShowcaseSeed {
     await this.advance(`warranty claim · ${s.execution.claim!.description.slice(0, 40)}…`, (known.claims ?? []).some((claim) => claim.description === s.execution.claim!.description), async () => {
       const view = await this.portalView(ctx);
       const project = view.projects.find((row) => row.id === caseId);
-      const items = (project?.warranty as { items: Array<{ id: string; title: string; active: boolean }> } | null | undefined)?.items ?? [];
+      // The portal lists what a claim can name as `lines`: the items under warranty today.
+      const items = (project?.warranty as { lines?: Array<{ id: string; title: string }> } | null | undefined)?.lines ?? [];
       if (!items.length) throw new Skip("nothing is under warranty in the portal");
-      const item = items.find((row) => s.execution.claim!.item.test(row.title) && row.active) ?? items.find((row) => row.active);
+      const item = items.find((row) => s.execution.claim!.item.test(row.title)) ?? items[0];
       const result = (await portal.command(this.slug, view.token, { commandId: randomUUID(), action: "warranty_claim", caseId, description: s.execution.claim!.description, ...(item ? { lineId: item.id } : {}) })) as { ok?: boolean };
       if (!result.ok) throw new Error("the client's warranty claim did not go through");
     });
@@ -2428,7 +2462,7 @@ class ShowcaseSeed {
 
   // ---------------------------------------------------------------- Handover and warranty
 
-  private async handover(ctx: Ctx, projectId: string, caseId: string) {
+  private async handover(ctx: Ctx, projectId: string, caseId: string, accept = true) {
     const { s, rooms } = ctx;
     const handover = this.get(HandoverService), warranty = this.get(WarrantyService);
     const pm = await this.as("projectManager");
@@ -2457,12 +2491,14 @@ class ShowcaseSeed {
         try { await handover.command(pm, this.w, projectId, { action: "issue", packId, version: pack!.version }); } catch (error) {
           if (!(error instanceof HttpException) || error.getStatus() !== 409) throw error;
           // Stages still run: the manager confirms the handover goes ahead with what's open.
-          await handover.command(pm, this.w, projectId, { action: "issue", packId, version: pack!.version, confirmOpen: true, openReason: "Showcase handover; remaining stages are administrative." });
+          await handover.command(pm, this.w, projectId, { action: "issue", packId, version: pack!.version, confirmOpen: true,
+            openReason: s.execution.handoverOpenReason ?? "Remaining stages are administrative." });
         }
       });
       current = await state();
       pack = current.packs.find((row) => row.id === packId)!;
     }
+    if (pack.status === "issued" && !accept) { this.kept("handover pack waiting for the client's acceptance in the portal"); return; }
     if (pack.status === "issued") {
       await this.advance("handover accepted by the client in the portal", false, async () => {
         const view = await this.portalView(ctx);

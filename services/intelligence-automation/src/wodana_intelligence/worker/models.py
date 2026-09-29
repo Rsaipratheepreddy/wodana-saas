@@ -19,6 +19,17 @@ class DomainEventV1(BaseModel):
     data: dict[str, Any]
 
 
+class DeliveryMedia(BaseModel):
+    """A chat message's file: read from Business Core, uploaded to WhatsApp, sent captioned."""
+
+    model_config = ConfigDict(extra="ignore")
+    attachment_id: UUID = Field(alias="attachmentId")
+    kind: Literal["image", "document", "audio", "video"]
+    mime_type: str = Field(alias="mimeType", min_length=3, max_length=160)
+    file_name: Optional[str] = Field(default=None, alias="fileName", max_length=240)
+    caption: Optional[str] = Field(default=None, max_length=4096)
+
+
 class DeliveryJob(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: UUID
@@ -34,6 +45,9 @@ class DeliveryJob(BaseModel):
     )
     locale: Optional[str] = None
     deep_link: Optional[str] = Field(default=None, alias="deepLink")
+    # A chat reply goes from the number the client wrote to (none: the workspace's default number).
+    connection_id: Optional[UUID] = Field(default=None, alias="connectionId")
+    media: Optional[DeliveryMedia] = None
 
 
 class DeliveryResult(BaseModel):

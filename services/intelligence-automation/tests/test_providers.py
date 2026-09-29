@@ -232,6 +232,65 @@ async def test_ambiguous_timeout_never_sends_whatsapp_twice() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_chat_file_is_uploaded_to_the_chats_number_then_sent_by_media_id_once() -> None:
+    requests: list[httpx.Request] = []
+    fail_upload = [True]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/789/media"):
+            if fail_upload[0]:
+                fail_upload[0] = False
+                return httpx.Response(503, json={"error": {"message": "busy"}})
+            return httpx.Response(200, json={"id": "media-42"})
+        return httpx.Response(200, json={"messages": [{"id": "wamid.file"}]})
+
+    instance, core, redis = service(handler, "whatsapp")
+    await connect_fake(instance, core, redis, "whatsapp")
+    operation = OperationRequest(
+        action="message.send",
+        idempotency_key=uuid4(),
+        payload={"to": "+15550001111", "mediaType": "image", "caption": "Kitchen, as built",
+                 "optInConfirmed": True},
+    )
+    upload = (b"\xff\xd8\xff photo", "image/jpeg", "kitchen.jpg")
+    # A failed upload reached nobody: the same send can be tried again from the start.
+    with pytest.raises(IntegrationFlowError):
+        await instance.send_whatsapp_notification(WORKSPACE, operation, CONNECTION, upload)
+    result = await instance.send_whatsapp_notification(WORKSPACE, operation, CONNECTION, upload)
+    assert result == {"id": "wamid.file", "status": "accepted"}
+    assert [request.url.path.rsplit("/", 2)[-2:] for request in requests] == [
+        ["789", "media"], ["789", "media"], ["789", "messages"]
+    ]
+    assert b'name="messaging_product"' in requests[1].content
+    assert json.loads(requests[2].content) == {
+        "messaging_product": "whatsapp", "recipient_type": "individual", "to": "15550001111",
+        "type": "image", "image": {"id": "media-42", "caption": "Kitchen, as built"},
+    }
+    # A retry of a send that went through returns it; nothing is uploaded or sent again.
+    assert await instance.send_whatsapp_notification(
+        WORKSPACE, operation, CONNECTION, upload
+    ) == result
+    assert len(requests) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_chat_file_to_someone_off_the_allowlist_is_never_uploaded() -> None:
+    instance, core, redis = service(lambda _: pytest.fail("No provider call"), "whatsapp")
+    instance.settings.delivery_allowlist = "+15559990000"
+    await connect_fake(instance, core, redis, "whatsapp")
+    operation = OperationRequest(
+        action="message.send", idempotency_key=uuid4(),
+        payload={"to": "+15550001111", "mediaType": "document", "filename": "plan.pdf",
+                 "optInConfirmed": True},
+    )
+    with pytest.raises(IntegrationFlowError, match="DELIVERY_ALLOWLIST"):
+        await instance.send_whatsapp_notification(
+            WORKSPACE, operation, CONNECTION, (b"%PDF-", "application/pdf", "plan.pdf")
+        )
+
+
+@pytest.mark.asyncio
 async def test_oauth_state_one_time_and_no_browser_secrets() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if "tokens" in request.url.path:

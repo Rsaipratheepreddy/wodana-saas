@@ -1,0 +1,5 @@
+/* Settings → AI apps. */
+.connector { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
+.url { padding: var(--wd-space-0-5) var(--wd-space-1-5); border-radius: var(--wd-radius-xs); background: var(--wd-color-surface-muted); color: var(--wd-color-text); font-family: var(--wd-font-mono); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.muted { color: var(--wd-color-text-secondary); }
+.dialogText { margin: 0; color: var(--wd-color-text-secondary); }

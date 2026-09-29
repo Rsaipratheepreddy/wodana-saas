@@ -28,8 +28,15 @@ type Item =
 /** Team: what waits for my decision (leave, attendance, timesheets, crew days) and who is in today. */
 export function TeamScreen() {
   const t = useT();
+  const queryClient = useQueryClient();
+  const { workspaceId } = useSession();
   const [view, setView] = useState<'approve' | 'today'>('approve');
-  return <Screen title={t('Team')} back below={<SegmentedControl value={view} onChange={setView} options={[{ value: 'approve', label: t('To approve') }, { value: 'today', label: t('Today') }]} />}>
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = () => {
+    setRefreshing(true);
+    void queryClient.invalidateQueries({ queryKey: hrmsKeys.all(workspaceId) }).finally(() => setRefreshing(false));
+  };
+  return <Screen title={t('Team')} back onRefresh={refresh} refreshing={refreshing} below={<SegmentedControl value={view} onChange={setView} options={[{ value: 'approve', label: t('To approve') }, { value: 'today', label: t('Today') }]} />}>
     {view === 'approve' ? <ToApprove /> : <TeamToday />}
   </Screen>;
 }

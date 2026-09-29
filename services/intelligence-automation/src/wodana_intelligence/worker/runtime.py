@@ -363,6 +363,48 @@ class CrmWorker:
                     logger.warning("WhatsApp number health check failed for %s", workspace_id)
             await self.business_core.whatsapp_templates_synced(workspace_id, templates, True, health)
 
+    async def fetch_chat_files(self, workspace_id: str) -> int:
+        """Clients' files (photos, documents, voice notes, videos) fetched into private storage.
+
+        A failure the provider may recover from (rate limit, outage) is tried again later; anything
+        else marks the file unavailable. The message itself was stored when it arrived.
+        """
+        download = getattr(self.adapter, "download_whatsapp_media", None)
+        claim = getattr(self.business_core, "claim_attachment_fetches", None)
+        if download is None or claim is None:
+            return 0
+        fetched = 0
+        for item in await claim(workspace_id):
+            attachment_id = str(item["id"])
+            try:
+                body, mime_type = await download(
+                    workspace_id, item.get("connectionId"), str(item["providerMediaId"])
+                )
+            except Exception as error:
+                status = int(getattr(error, "status_code", 502) or 502)
+                code = str(getattr(error, "code", "media_download_failed"))
+                retryable = status == 429 or status >= 500 or code in {
+                    "provider_unavailable", "refresh_in_progress", "routing_unavailable"
+                }
+                await self.business_core.attachment_fetch_failed(
+                    workspace_id, attachment_id, code, retryable
+                )
+                continue
+            try:
+                await self.business_core.store_attachment(
+                    workspace_id,
+                    attachment_id,
+                    body,
+                    str(item.get("mimeType") or mime_type),
+                    str(item.get("fileName") or f"{item.get('kind') or 'file'}"),
+                )
+            except Exception:
+                # Its lease runs out and a later pass fetches it again.
+                logger.warning("A chat file could not be stored; it is fetched again later")
+                continue
+            fetched += 1
+        return fetched
+
     async def drain_notifications(self, workspace_id: str) -> int:
         jobs = await self.business_core.claim_notification_jobs(workspace_id)
         delivered = 0
@@ -467,6 +509,15 @@ class CrmWorker:
         await self.business_core.wake_snoozed_conversations(workspace_id)
         await self.business_core.run_payment_reminders(workspace_id)
         await self.whatsapp_templates(workspace_id)
+        await self.fetch_chat_files(workspace_id)
+        # Scheduled chat messages and due client follow-ups become queued messages, sent by the
+        # drain just below.
+        send_scheduled = getattr(self.business_core, "send_due_scheduled_messages", None)
+        if send_scheduled is not None:
+            await send_scheduled(workspace_id)
+        follow_ups = getattr(self.business_core, "run_client_follow_ups", None)
+        if follow_ups is not None:
+            await follow_ups(workspace_id)
         await self.drain_notifications(workspace_id)
         await self.business_core.dispatch_staff_emails(workspace_id)
         waits = await self.business_core.claim_automation_waits(workspace_id)
