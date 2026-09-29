@@ -16,6 +16,7 @@ import {
 import { X } from "lucide-react";
 import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provider";
 import { Button, IconButton } from "./actions";
+import { submitOnModEnter } from "./form-context";
 
 export function TooltipBubble({ children, content }: { children: ReactNode; content: ReactNode }) {
   const { direction } = useDesignSystem();
@@ -98,7 +99,8 @@ export function ControlledModalDialog({ children, className, description, footer
   }, [isOpen]);
   const requestClose = useCallback(() => { if (isDirty) setConfirming(true); else onOpenChange(false); }, [isDirty, onOpenChange]);
   const dialog = useRef<HTMLElement>(null);
-  const keyDown = useEffectEvent((event: globalThis.KeyboardEvent) => onKeyDown?.(event));
+  // ⌘/Ctrl+Enter submits the form in the dialog unless the dialog handles keys itself.
+  const keyDown = useEffectEvent((event: globalThis.KeyboardEvent) => onKeyDown ? onKeyDown(event) : submitOnModEnter(event, dialog.current?.querySelector("form") ?? null));
   useEffect(() => {
     const element = dialog.current;
     if (!isOpen || !element) return;

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, Checkbox, ControlledModalDialog, DateField, ErrorState, InlineNotice, InspectorSheet, MenuButton, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Button, Checkbox, DateField, ErrorState, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MenuButton, MoneyField, Skeleton, TextAreaField, TextInput, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { Bill, RunState } from "@/lib/payables/types";
@@ -146,9 +146,8 @@ export function RunSheet({ api, runId, bills, canManage, onChanged, onCreated, o
               <span className={styles.nameCell}><span>{`${bill.supplierName} · ${bill.number}`}</span>
                 <small>{[bill.dueDate ? t("Due {date}", { date: format.day(bill.dueDate) }) : "", t("{amount} to pay", { amount: money(bill.payable, bill.currency) })].filter(Boolean).join(" · ")}</small></span>
             </Checkbox>
-            {picks[bill.id] !== undefined ? <TextInput aria-label={t("Amount for {invoice}", { invoice: bill.number })} label={null} inputMode="decimal" prefix={bill.currency}
-              value={picks[bill.id]} isInvalid={over(bill)} errorMessage={t("At most {amount}", { amount: money(bill.payable, bill.currency) })}
-              onChange={(value) => setPicks({ ...picks, [bill.id]: numeric(value) })} /> : <span />}
+            {picks[bill.id] !== undefined ? <MoneyField label={<VisuallyHidden>{t("Amount for {invoice}", { invoice: bill.number })}</VisuallyHidden>} currency={bill.currency}
+              value={picks[bill.id]} max={plain(bill.payable)} onChange={(value) => setPicks({ ...picks, [bill.id]: value })} /> : <span />}
           </div>)}</div>
           {pickedTotals.length ? <dl className={styles.totals}>{pickedTotals.map((total) => <div key={total.currency}><dt>{t("Total")}</dt><dd><strong>{money(total.amount, total.currency)}</strong></dd></div>)}</dl> : null}
         </section> : <p className={styles.muted}>{t("No approved invoices to pay.")}</p>}
@@ -171,33 +170,27 @@ export function RunSheet({ api, runId, bills, canManage, onChanged, onCreated, o
       </> : null}
     </div>}
 
-    {dialog === "return" || dialog === "cancel" ? <ControlledModalDialog isOpen size="md" title={dialog === "return" ? t("Send back run") : t("Cancel run")}
-      onOpenChange={(open) => { if (!open) setDialog(null); }}
-      footer={<div className="wd-dialog-actions"><Button onPress={() => setDialog(null)}>{t("Back")}</Button>
-        <Button variant={dialog === "return" ? "primary" : "danger"} isLoading={busy === dialog} isDisabled={!text.trim()}
-          onPress={async () => { if (run && await command(dialog, dialog === "return" ? { version: run.version, note: text.trim() } : { version: run.version, reason: text.trim() })) setDialog(null); }}>
-          {dialog === "return" ? t("Send back") : t("Cancel run")}</Button></div>}>
-      <div className={styles.dialogBody}>
-        {notice ? <InlineNotice tone="error" message={notice} /> : null}
-        <TextAreaField label={dialog === "return" ? t("What to change") : t("Why it's cancelled")} isRequired value={text} onChange={setText} />
-      </div>
-    </ControlledModalDialog> : null}
-    {dialog === "paid" && state && run ? <ControlledModalDialog isOpen size="md" title={t("Mark paid")} onOpenChange={(open) => { if (!open) setDialog(null); }}
-      footer={<div className="wd-dialog-actions"><Button onPress={() => setDialog(null)}>{t("Back")}</Button>
-        <Button variant="primary" isLoading={busy === "paid"} isDisabled={!paidOn || state.payments.some((payment) => !references[payment.key]?.trim())}
-          onPress={async () => {
-            if (await command("paid", { version: run.version, paidOn, references: state.payments.map((payment) => ({ vendorId: payment.vendorId, legalEntityId: payment.legalEntityId,
-              currency: payment.currency, reference: references[payment.key].trim() })) })) setDialog(null);
-          }}>{t("Mark paid")}</Button></div>}>
-      <div className={styles.dialogBody}>
-        {notice ? <InlineNotice tone="error" message={notice} /> : null}
+    {dialog === "return" || dialog === "cancel" ? <FormDialog size="md" title={dialog === "return" ? t("Send back run") : t("Cancel run")} onClose={() => setDialog(null)} cancelLabel={t("Back")}
+      error={notice || undefined} isSubmitting={busy === dialog} isDirty={Boolean(text.trim())} isSubmitDisabled={!text.trim()}
+      submitLabel={dialog === "return" ? t("Send back") : t("Cancel run")} submitVariant={dialog === "return" ? "primary" : "danger"}
+      onSubmit={async () => { if (!run || !(await command(dialog, dialog === "return" ? { version: run.version, note: text.trim() } : { version: run.version, reason: text.trim() }))) throw new FormNotSaved(); setDialog(null); }}>
+      <TextAreaField label={dialog === "return" ? t("What to change") : t("Why it's cancelled")} isRequired value={text} onChange={setText} />
+    </FormDialog> : null}
+    {dialog === "paid" && state && run ? <FormDialog size="md" title={t("Mark paid")} onClose={() => setDialog(null)} cancelLabel={t("Back")}
+      error={notice || undefined} isSubmitting={busy === "paid"} submitLabel={t("Mark paid")}
+      isSubmitDisabled={!paidOn || state.payments.some((payment) => !references[payment.key]?.trim())}
+      onSubmit={async () => {
+        const done = await command("paid", { version: run.version, paidOn, references: state.payments.map((payment) => ({ vendorId: payment.vendorId, legalEntityId: payment.legalEntityId,
+          currency: payment.currency, reference: references[payment.key].trim() })) });
+        if (!done) throw new FormNotSaved();
+        setDialog(null);
+      }}>
         <DateField label={t("Paid on")} isRequired value={paidOn ? parseDate(paidOn) : null} onChange={(value) => setPaidOn(value ? value.toString() : null)} />
         <div className={styles.allocations}>{state.payments.map((payment) => <div key={payment.key} className={styles.allocation}>
           <span className={styles.nameCell}><span>{payment.supplierName}</span><small>{money(payment.amount, payment.currency)}</small></span>
-          <TextInput aria-label={t("Reference for {supplier}", { supplier: payment.supplierName })} label={null} isRequired value={references[payment.key] ?? ""}
+          <TextInput label={<VisuallyHidden>{t("Reference for {supplier}", { supplier: payment.supplierName })}</VisuallyHidden>} isRequired maxLength={240} value={references[payment.key] ?? ""}
             onChange={(value) => setReferences({ ...references, [payment.key]: value })} />
         </div>)}</div>
-      </div>
-    </ControlledModalDialog> : null}
+    </FormDialog> : null}
   </InspectorSheet>;
 }

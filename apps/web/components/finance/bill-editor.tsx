@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
-import { Button, ControlledModalDialog, DateField, IconButton, InlineNotice, SelectField, TextInput } from "@/design-system";
+import { Button, DateField, FormDialog, IconButton, MoneyField, SelectField, TextInput, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { BillState, PayablesState, SupplierState } from "@/lib/payables/types";
@@ -79,32 +79,30 @@ export function BillEditor({ api, vendors, companies, existing, onClose, onSaved
   const ready = Boolean(vendorId && legalEntityId && /^[A-Z]{3}$/.test(currency) && number.trim() && invoiceDate && lines.length && priced.every(Boolean)
     && lines.every((line) => line.orderLineId || line.description.trim()));
 
-  const save = async (submit: boolean) => {
-    setBusy(submit ? "submit" : "save"); setError("");
-    try {
-      let state = await api.billCommand("save", { id, version: existing?.bill.version, vendorId, legalEntityId, currency, number: number.trim(), invoiceDate, dueDate,
-        statedTotal: statedTotal || null, lines: lines.map((line) => ({ orderLineId: line.orderLineId, projectId: line.orderLineId ? null : line.projectId, description: line.description,
-          quantity: line.quantity, unitPrice: line.unitPrice, taxRate: line.taxRate || "0" })) });
-      if (submit) state = await api.billCommand("submit", { id, version: state.bill.version });
-      onSaved(state.bill.id);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(null); }
+  const persist = async (submit: boolean) => {
+    let state = await api.billCommand("save", { id, version: existing?.bill.version, vendorId, legalEntityId, currency, number: number.trim(), invoiceDate, dueDate,
+      statedTotal: statedTotal || null, lines: lines.map((line) => ({ orderLineId: line.orderLineId, projectId: line.orderLineId ? null : line.projectId, description: line.description,
+        quantity: line.quantity, unitPrice: line.unitPrice, taxRate: line.taxRate || "0" })) });
+    if (submit) state = await api.billCommand("submit", { id, version: state.bill.version });
+    onSaved(state.bill.id);
+  };
+  const saveDraft = async () => {
+    setBusy("save"); setError("");
+    try { await persist(false); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(null); }
   };
 
-  return <ControlledModalDialog isOpen size="lg" title={existing ? t("Edit invoice") : t("Enter invoice")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button><span className={styles.spacer} />
-      <Button isLoading={busy === "save"} isDisabled={!ready || Boolean(busy)} onPress={() => void save(false)}>{t("Save draft")}</Button>
-      <Button variant="primary" isLoading={busy === "submit"} isDisabled={!ready || Boolean(busy)} onPress={() => void save(true)}>{t("Submit")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="lg" title={existing ? t("Edit invoice") : t("Enter invoice")} onClose={onClose} error={error || undefined} isDirty={Boolean(number.trim() || lines.length)}
+    isSubmitting={busy === "save"} isSubmitDisabled={!ready} submitLabel={t("Submit")} onSubmit={() => { setError(""); return persist(true); }}
+    secondaryAction={<Button isLoading={busy === "save"} isDisabled={!ready || Boolean(busy)} onPress={() => void saveDraft()}>{t("Save draft")}</Button>}>
       <div className={styles.pair}>
         <SelectField label={t("Supplier")} isRequired placeholder={t("Choose")} selectedKey={vendorId || null} isDisabled={fromOrders}
           onSelectionChange={(key) => { setVendorId(key ? String(key) : ""); setSupplier(null); }} items={vendors.map((vendor) => ({ id: vendor.id, label: vendor.name }))} />
-        <TextInput label={t("Invoice number")} isRequired value={number} onChange={setNumber} />
+        <TextInput label={t("Invoice number")} isRequired maxLength={80} value={number} onChange={setNumber} />
       </div>
       <div className={styles.trio}>
         <DateField label={t("Invoice date")} isRequired value={invoiceDate ? parseDate(invoiceDate) : null} onChange={(value) => setInvoiceDate(value ? value.toString() : null)} />
         <DateField label={t("Due date")} description={t("Empty: from the credit days")} value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
-        <TextInput label={t("Total on the invoice")} inputMode="decimal" prefix={currency || undefined} value={statedTotal} onChange={(value) => setStatedTotal(numeric(value))} />
+        <MoneyField label={t("Total on the invoice")} currency={currency || undefined} value={statedTotal} onChange={setStatedTotal} />
       </div>
       {!fromOrders ? <div className={styles.pair}>
         <SelectField label={t("Company")} isRequired placeholder={t("Choose")} selectedKey={legalEntityId || null}
@@ -125,8 +123,8 @@ export function BillEditor({ api, vendors, companies, existing, onClose, onSaved
           </span>
           <span role="cell"><TextInput aria-label={t("Quantity for {item}", { item: line.description })} label={null} inputMode="decimal" suffix={line.unit || undefined}
             value={line.quantity} onChange={(value) => setLine(line.key, { quantity: numeric(value) })} /></span>
-          <span role="cell"><TextInput aria-label={t("Price for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.unitPrice}
-            onChange={(value) => setLine(line.key, { unitPrice: numeric(value) })} /></span>
+          <span role="cell"><MoneyField label={<VisuallyHidden>{t("Price for {item}", { item: line.description })}</VisuallyHidden>} currency={currency || undefined} value={line.unitPrice}
+            onChange={(unitPrice) => setLine(line.key, { unitPrice })} /></span>
           <span role="cell"><TextInput aria-label={t("Tax for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.taxRate}
             onChange={(value) => setLine(line.key, { taxRate: numeric(value) })} /></span>
           <span role="cell" className={styles.money}>{priced[index] ? money(priced[index]!.total) : "—"}</span>
@@ -141,6 +139,5 @@ export function BillEditor({ api, vendors, companies, existing, onClose, onSaved
         <div><dt>{t("Total")}</dt><dd><strong>{money(totals.total)}</strong></dd></div>
         {statedTotal && addExact(statedTotal) !== addExact(totals.total) ? <div><dt /><dd className={styles.lateText}>{t("The invoice says {amount}", { amount: money(statedTotal) })}</dd></div> : null}
       </dl> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

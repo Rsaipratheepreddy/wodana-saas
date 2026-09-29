@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, Skeleton, TextAreaField, TextInput,
+import { Button, DataGrid, FormDialog, FormRow, MoreDetails, DateField, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, Skeleton, TextAreaField, TextInput,
   type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ReceivablesApi } from "@/lib/receivables/client";
@@ -114,7 +114,6 @@ function IssueDialog({ api, milestone, onClose, onIssued }: { api: ReceivablesAp
   const [taxNumber, setTaxNumber] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     let live = true;
     api.preview(milestone.caseId, milestone.paymentId).then((next) => { if (live) setPreview(next); })
@@ -122,15 +121,10 @@ function IssueDialog({ api, milestone, onClose, onIssued }: { api: ReceivablesAp
     return () => { live = false; };
   }, [api, milestone, t]);
   const money = (value: string) => format.money(value, preview?.currency ?? milestone.currency ?? "");
-  return <ControlledModalDialog isOpen size="lg" title={t("Issue invoice")} description={`${milestone.clientName} · ${milestone.title}`} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!preview || !issueDate || !dueDate || dueDate < issueDate} onPress={async () => {
-        setBusy(true); setError("");
-        try { onIssued((await api.issue({ id, caseId: milestone.caseId, paymentId: milestone.paymentId, issueDate, dueDate, customerTaxNumber: taxNumber.trim(), note: note.trim() })).invoice.id); }
-        catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
-      }}>{t("Issue invoice")}</Button></div>}>
-    {!preview && !error ? <Skeleton lines={6} shape="facts" /> : <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="lg" title={t("Issue invoice")} description={`${milestone.clientName} · ${milestone.title}`} onClose={onClose} error={error || undefined}
+    isDirty={Boolean(taxNumber.trim() || note.trim())} isSubmitDisabled={!preview || !issueDate || !dueDate || dueDate < issueDate} submitLabel={t("Issue invoice")}
+    onSubmit={async () => { setError(""); onIssued((await api.issue({ id, caseId: milestone.caseId, paymentId: milestone.paymentId, issueDate, dueDate, customerTaxNumber: taxNumber.trim(), note: note.trim() })).invoice.id); }}>
+    {!preview && !error ? <Skeleton lines={6} shape="facts" /> : <>
       {preview ? <>
         <dl className={styles.facts}>
           <div><dt>{t("From")}</dt><dd>{[preview.company.name, preview.company.taxNumber].filter(Boolean).join(" · ")}</dd></div>
@@ -146,14 +140,16 @@ function IssueDialog({ api, milestone, onClose, onIssued }: { api: ReceivablesAp
           <div><dt>{t("Total")}</dt><dd><strong>{money(preview.total)}</strong></dd></div>
         </dl>
       </> : null}
-      <div className={styles.trio}>
+      <FormRow>
         <DateField label={t("Invoice date")} isRequired value={issueDate ? parseDate(issueDate) : null} onChange={(value) => setIssueDate(value ? value.toString() : null)} />
-        <DateField label={t("Due date")} isRequired value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
-        <TextInput label={t("Client tax number")} value={taxNumber} onChange={setTaxNumber} />
-      </div>
-      <TextAreaField label={t("Note on the invoice")} value={note} onChange={setNote} />
-    </div>}
-  </ControlledModalDialog>;
+        <DateField label={t("Due date")} isRequired minValue={issueDate ? parseDate(issueDate) : undefined} value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
+      </FormRow>
+      <TextInput label={t("Client tax number")} maxLength={60} value={taxNumber} onChange={setTaxNumber} />
+      <MoreDetails filled={note.trim() ? 1 : 0}>
+        <TextAreaField label={t("Note on the invoice")} value={note} onChange={setNote} />
+      </MoreDetails>
+    </>}
+  </FormDialog>;
 }
 
 /** One invoice: who it's from and to, its lines by tax rate, what's paid, and its credit note if it was credited. */
@@ -164,8 +160,6 @@ function InvoiceSheet({ api, invoiceId, onChanged, onClose }: { api: Receivables
   const [error, setError] = useState("");
   const [crediting, setCrediting] = useState(false);
   const [reason, setReason] = useState("");
-  const [notice, setNotice] = useState("");
-  const [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
     try { setState(await api.invoice(invoiceId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The invoice didn't load.")); }
   }, [api, invoiceId, t]);
@@ -173,7 +167,7 @@ function InvoiceSheet({ api, invoiceId, onChanged, onClose }: { api: Receivables
   const invoice = state?.invoice;
   const money = (value: string) => (invoice ? format.money(value, invoice.currency) : value);
   return <InspectorSheet isOpen size="lg" title={invoice ? `${invoice.number} · ${invoice.customerName}` : t("Client invoice")} onOpenChange={(value) => { if (!value) onClose(); }}
-    footer={state?.canCredit ? <div className="wd-dialog-actions"><Button variant="quiet" onPress={() => { setReason(""); setNotice(""); setCrediting(true); }}>{t("Credit invoice")}</Button></div> : null}>
+    footer={state?.canCredit ? <div className="wd-dialog-actions"><Button variant="quiet" onPress={() => { setReason(""); setCrediting(true); }}>{t("Credit invoice")}</Button></div> : null}>
     {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !invoice ? <Skeleton lines={8} shape="facts" /> : <div className={styles.sheet}>
       <div className={styles.headRow}><InvoiceStatus invoice={invoice} /><span className={styles.muted}>{`${invoice.projectReference} · ${invoice.milestoneTitle}`}</span></div>
       {invoice.status === "credited" ? <InlineNotice tone="info" message={t("Credited by {note} on {date}: {reason}", { note: invoice.creditNoteNumber ?? "", date: format.day(invoice.creditedOn),
@@ -199,17 +193,10 @@ function InvoiceSheet({ api, invoiceId, onChanged, onClose }: { api: Receivables
         </dl>
       </section>
     </div>}
-    {crediting && invoice ? <ControlledModalDialog isOpen size="md" title={t("Credit invoice")} onOpenChange={(open) => { if (!open) setCrediting(false); }}
-      footer={<div className="wd-dialog-actions"><Button onPress={() => setCrediting(false)}>{t("Back")}</Button>
-        <Button variant="danger" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => {
-          setBusy(true); setNotice("");
-          try { setState(await api.credit(invoice.id, invoice.version, reason.trim())); onChanged(); setCrediting(false); }
-          catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); } finally { setBusy(false); }
-        }}>{t("Credit invoice")}</Button></div>}>
-      <div className={styles.dialogBody}>
-        {notice ? <InlineNotice tone="error" message={notice} /> : null}
-        <TextAreaField label={t("Why it's credited")} description={t("The whole invoice is credited; the milestone can then be invoiced again.")} isRequired value={reason} onChange={setReason} />
-      </div>
-    </ControlledModalDialog> : null}
+    {crediting && invoice ? <FormDialog size="md" title={t("Credit invoice")} onClose={() => setCrediting(false)} cancelLabel={t("Back")}
+      isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()} submitLabel={t("Credit invoice")} submitVariant="danger"
+      onSubmit={async () => { setState(await api.credit(invoice.id, invoice.version, reason.trim())); onChanged(); setCrediting(false); }}>
+      <TextAreaField label={t("Why it's credited")} description={t("The whole invoice is credited; the milestone can then be invoiced again.")} isRequired value={reason} onChange={setReason} />
+    </FormDialog> : null}
   </InspectorSheet>;
 }
