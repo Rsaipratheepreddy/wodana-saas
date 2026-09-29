@@ -204,12 +204,15 @@ const orders: Source = async (db, ctx) => {
   }));
 };
 
+/** A work order as the Factory names it (WO-0003). */
+const workOrderNumber = (number: number) => `WO-${String(number).padStart(4, "0")}`;
+
 /** Factory output reported and material swaps asked for, waiting for someone who approves factory work. */
 const factory: Source = async (db, ctx) => {
   if (!(await ctx.can("factory.approve"))) return [];
   const reports = (await db.query<{ id: string; orderId: string; number: number; title: string; good: string; unit: string; since: Date; reportedBy: string; version: number;
     projectId: string | null; projectReference: string | null; projectName: string | null }>(
-    `SELECT report.id, work_order.id AS "orderId", work_order.number, work_order.title, report.good::text AS good, work_order.unit, report.reported_at AS since, report.reported_by AS "reportedBy", work_order.version,
+    `SELECT report.id, work_order.id AS "orderId", work_order.number, work_order.title, trim_scale(report.good)::text AS good, work_order.unit, report.reported_at AS since, report.reported_by AS "reportedBy", work_order.version,
             project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName"
        FROM work_order_reports report
        JOIN work_orders work_order ON work_order.workspace_id = report.workspace_id AND work_order.id = report.work_order_id
@@ -225,12 +228,12 @@ const factory: Source = async (db, ctx) => {
       WHERE material.workspace_id = $1 AND material.status = 'pending' ORDER BY material.requested_at LIMIT 100`, [ctx.workspaceId])).rows;
   return [
     ...reports.map((report) => row({
-      kind: "output", group: "factory", id: report.id, parentId: report.orderId, title: `WO-${report.number} · ${report.title}`, subject: `${report.good} ${report.unit}`,
+      kind: "output", group: "factory", id: report.id, parentId: report.orderId, title: `${workOrderNumber(report.number)} · ${report.title}`, subject: `${report.good} ${report.unit}`,
       project: project(report), amount: null, currency: null, since: report.since, own: report.reportedBy === ctx.userId, version: report.version,
       href: `/workspace/factory/orders?order=${report.orderId}`, decide: { approve: "approve", other: "reject", approveNeedsNote: false },
     })),
     ...swaps.map((swap) => row({
-      kind: "material_swap", group: "factory", id: swap.id, parentId: swap.orderId, title: `WO-${swap.number} · ${swap.title}`, project: project(swap),
+      kind: "material_swap", group: "factory", id: swap.id, parentId: swap.orderId, title: `${workOrderNumber(swap.number)} · ${swap.title}`, project: project(swap),
       amount: null, currency: null, since: swap.since, own: swap.requestedBy === ctx.userId,
       href: `/workspace/factory/orders?order=${swap.orderId}`, decide: null,
     })),

@@ -113,6 +113,18 @@ integration("waiting for you, across modules", () => {
     });
   });
 
+  it("names factory output the way the Factory does: WO-0003 and 1 nos", async () => {
+    await world(async (client, ids) => {
+      const order = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO work_orders(id,workspace_id,number,project_id,boq_line_id,title,quantity,unit,created_by) VALUES($1,$2,3,$3,$4,'Wardrobe',1,'nos',$5)", [order, ids.workspaceId, ids.projectId, randomUUID(), ids.approver]);
+      await client.query("INSERT INTO work_order_reports(id,workspace_id,work_order_id,good,reported_by) VALUES($1,$2,$3,1,$4)", [randomUUID(), ids.workspaceId, order, ids.site]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      const factory = await waitingFor(client, context(ids, ids.approver, ["factory.approve"]));
+      expect(factory.rows.find((row) => row.kind === "output")).toMatchObject({ title: "WO-0003 · Wardrobe", subject: "1 nos" });
+    });
+  });
+
   it("names the case a payment belongs to while the deal is still in Planning", async () => {
     await world(async (client, ids) => {
       const caseId = randomUUID(), opportunityId = randomUUID();
