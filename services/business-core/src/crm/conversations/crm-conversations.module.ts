@@ -9,5 +9,5 @@ import { CrmInboxService } from "./crm-inbox.service";
 import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
 import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
 
-@Module({ imports: [WorkspacesModule, CrmNotificationsModule, CrmMessageReceiptModule], controllers: [CrmInboxController, InternalCrmInboxController, CrmConversationsController, InternalCrmConversationsController], providers: [CrmConversationsService, CrmInboxService, CrmWhatsAppTemplatesService, CrmPaymentRemindersService] })
+@Module({ imports: [WorkspacesModule, CrmNotificationsModule, CrmMessageReceiptModule], controllers: [CrmInboxController, InternalCrmInboxController, CrmConversationsController, InternalCrmConversationsController], providers: [CrmConversationsService, CrmInboxService, CrmWhatsAppTemplatesService, CrmPaymentRemindersService], exports: [CrmConversationsService, CrmInboxService] })
 export class CrmConversationsModule {}

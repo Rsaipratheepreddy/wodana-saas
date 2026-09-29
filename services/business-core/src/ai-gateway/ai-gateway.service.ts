@@ -8,8 +8,9 @@ import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { AiCreditRefusal, chargeUsage, checkCredits, creditLimits } from "./ai-credits";
 import {
-  aiConfigured, aiModelFor, aiProviderName, bedrockRegion, classifyBedrockError, readConverse, readGemini, stripCodeFences, TextOnlyModelError, toConverse,
-  type AiProviderName, type AiUsage, type ConverseInput, type ModelRequest, type ProviderAnswer,
+  aiConfigured, aiModelFor, aiProviderName, bedrockRegion, classifyBedrockError, readConverse, readConverseTurn, readGemini, readGeminiTurn, stripCodeFences,
+  TextOnlyModelError, toConverse, withoutThinking,
+  type AiProviderName, type AiUsage, type ConverseInput, type ModelRequest, type ProviderAnswer, type ProviderTurn, type ToolCall,
 } from "./ai-provider";
 import { AI_FEATURE_LIMITS, AiRateLimitService } from "./ai-rate-limit.service";
 
@@ -32,6 +33,15 @@ export type AiGenerateInput = {
   timeoutMs?: number;
 };
 export type AiGenerateResult = { text: string; finishReason: string | null; model: string; provider: AiProviderName };
+/** One turn of a Woddy run: tools declared in the request, the calls the model asked for read back. */
+export type AiTurnInput = {
+  feature: string;
+  request: ModelRequest;
+  /** The per-minute limit counts a run once: its first turn takes it. */
+  takeLimit: boolean;
+  timeoutMs?: number;
+};
+export type AiTurnResult = { text: string; calls: ToolCall[]; parts: unknown[]; finishReason: string | null; usage: AiUsage; model: string; provider: AiProviderName };
 type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 /** The Bedrock client's one method the gateway uses (tests pass a stub). */
 export type BedrockSender = { send: (command: ConverseCommand, options?: { abortSignal?: AbortSignal }) => Promise<unknown> };
@@ -155,6 +165,36 @@ export class AiGatewayService {
       const text = json ? stripCodeFences(answer.text) : answer.text;
       status = text && answer.finishReason === "STOP" ? "ok" : "invalid_output";
       return { text, finishReason: answer.finishReason, model, provider };
+    } catch (error) {
+      if (isTimeout(error)) status = "timeout";
+      throw this.providerError(error);
+    } finally {
+      await this.settle(actor, workspaceId, { callId, feature: input.feature, provider, model, usage, status, started, userId });
+    }
+  }
+
+  /**
+   * One model turn of a Woddy run (W-1). Every turn passes the same doors as any call: the workspace's AI
+   * switch, the person's ai.suggestions.use, credits and today's caps (so a run stops the moment credits run
+   * out), and each turn is logged and charged. The run's first turn counts toward the per-minute limit.
+   * Tools are declared by the agent loop; this method never runs them.
+   */
+  async turn(actor: RequestActor, workspaceId: string, input: AiTurnInput): Promise<AiTurnResult> {
+    if (!(input.feature in AI_FEATURE_LIMITS)) throw new BadRequestException("Unknown AI feature");
+    const { userId, provider, model } = await this.gate(actor, workspaceId);
+    if (input.takeLimit) await this.limits.take(workspaceId, input.feature);
+    const callId = randomUUID();
+    const started = Date.now();
+    let status: UsageStatus = "failed";
+    let usage = ZERO;
+    try {
+      const deadline = started + Math.min(Math.max(input.timeoutMs ?? 30_000, 5_000), 60_000);
+      let answer: ProviderTurn;
+      if (provider === "gemini") answer = readGeminiTurn(await this.callGemini(providerUrl(model), JSON.stringify(forGemini(input.request, model)), deadline, false));
+      else answer = readConverseTurn(await this.callBedrock(toConverse(input.request, model), deadline, false));
+      usage = answer.usage;
+      status = answer.finishReason === "STOP" || answer.finishReason === "TOOL_CALL" ? "ok" : "invalid_output";
+      return { text: withoutThinking(answer.text), calls: answer.calls, parts: answer.parts, finishReason: answer.finishReason, usage, model, provider };
     } catch (error) {
       if (isTimeout(error)) status = "timeout";
       throw this.providerError(error);

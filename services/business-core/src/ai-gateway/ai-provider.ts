@@ -10,11 +10,33 @@
 export type AiProviderName = "bedrock" | "gemini";
 export type AiUsage = { input_tokens: number; output_tokens: number };
 export type ProviderAnswer = { text: string; finishReason: string | null; usage: AiUsage };
+// Agent turns (W-1): tools are declared once in Gemini's shape and translated for Converse (toolConfig,
+// toolUse, toolResult); a turn's calls and the model's own content are read back by readConverseTurn and
+// readGeminiTurn.
 
-type Part = { text?: unknown; thought?: unknown; inlineData?: { mimeType?: unknown; data?: unknown } };
+type Part = {
+  text?: unknown; thought?: unknown; inlineData?: { mimeType?: unknown; data?: unknown };
+  functionCall?: { id?: unknown; name?: unknown; args?: unknown }; functionResponse?: { id?: unknown; name?: unknown; response?: unknown };
+};
 type Content = { role?: unknown; parts?: unknown };
-/** The request every assistant builds: systemInstruction, contents and generationConfig. */
-export type ModelRequest = { systemInstruction?: unknown; contents: unknown[]; generationConfig?: Record<string, unknown> };
+/**
+ * A tool the model may call (W-1), in Gemini's function-declaration shape; Converse gets it as a toolSpec.
+ * `parameters` is a JSON schema kept to the subset both providers read: type, description, properties,
+ * required, items, enum, minItems and maxItems.
+ */
+export type ToolDeclaration = { name: string; description: string; parameters: Record<string, unknown> };
+/** A tool call the model asked for. `id` is the provider's own (Converse always sends one; Gemini may). */
+export type ToolCall = { id?: string; name: string; args: Record<string, unknown> };
+/**
+ * The request every assistant builds: systemInstruction, contents and generationConfig. An agent turn adds
+ * `tools`; its contents then carry `functionCall` parts (the model's) and `functionResponse` parts (the results).
+ */
+export type ModelRequest = {
+  systemInstruction?: unknown; contents: unknown[]; generationConfig?: Record<string, unknown>;
+  tools?: Array<{ functionDeclarations: ToolDeclaration[] }>;
+};
+/** One agent turn read back: the text, the calls, and the model's own content to send back next turn. */
+export type ProviderTurn = ProviderAnswer & { calls: ToolCall[]; parts: unknown[] };
 
 type Env = Record<string, string | undefined>;
 
@@ -75,12 +97,15 @@ const DOCUMENT_FORMATS: Record<string, string> = {
 type ConverseBlock =
   | { text: string }
   | { image: { format: string; source: { bytes: Uint8Array } } }
-  | { document: { format: string; name: string; source: { bytes: Uint8Array } } };
+  | { document: { format: string; name: string; source: { bytes: Uint8Array } } }
+  | { toolUse: { toolUseId: string; name: string; input: Record<string, unknown> } }
+  | { toolResult: { toolUseId: string; content: Array<{ text: string }>; status?: "success" | "error" } };
 export type ConverseInput = {
   modelId: string;
   system?: Array<{ text: string }>;
   messages: Array<{ role: "user" | "assistant"; content: ConverseBlock[] }>;
   inferenceConfig?: { maxTokens?: number; temperature?: number };
+  toolConfig?: { tools: Array<{ toolSpec: { name: string; description: string; inputSchema: { json: Record<string, unknown> } } }>; toolChoice: { auto: Record<string, never> } };
 };
 
 const textOf = (value: unknown) => (typeof value === "string" ? value : "");
@@ -106,6 +131,17 @@ export function toConverse(request: ModelRequest, model: string, env: Env = proc
     const blocks: ConverseBlock[] = [];
     for (const part of partsOf(content?.parts)) {
       if (part.thought) continue;
+      if (part.functionCall && typeof part.functionCall === "object") {
+        const call = part.functionCall;
+        blocks.push({ toolUse: { toolUseId: textOf(call.id) || `call_${textOf(call.name)}`, name: textOf(call.name), input: objectOf(call.args) } });
+        continue;
+      }
+      if (part.functionResponse && typeof part.functionResponse === "object") {
+        const result = part.functionResponse;
+        const response = objectOf(result.response);
+        blocks.push({ toolResult: { toolUseId: textOf(result.id) || `call_${textOf(result.name)}`, content: [{ text: JSON.stringify(response) }], ...(response.error ? { status: "error" as const } : {}) } });
+        continue;
+      }
       const text = textOf(part.text);
       if (text.trim()) { blocks.push({ text }); continue; }
       const mimeType = textOf(part.inlineData?.mimeType).toLowerCase();
@@ -127,11 +163,17 @@ export function toConverse(request: ModelRequest, model: string, env: Env = proc
   const cap = outputCap(model, env);
   const inferenceConfig: NonNullable<ConverseInput["inferenceConfig"]> = { maxTokens: cap ? Math.min(requested, cap) : requested };
   if (typeof config.temperature === "number") inferenceConfig.temperature = config.temperature;
-  return { modelId: model, ...(system.length ? { system: [{ text: system.join("\n\n") }] } : {}), messages, inferenceConfig };
+  const declarations = (request.tools ?? []).flatMap((tool) => tool.functionDeclarations ?? []);
+  const toolConfig: ConverseInput["toolConfig"] = declarations.length
+    ? { tools: declarations.map((tool) => ({ toolSpec: { name: tool.name, description: tool.description, inputSchema: { json: tool.parameters } } })), toolChoice: { auto: {} } }
+    : undefined;
+  return { modelId: model, ...(system.length ? { system: [{ text: system.join("\n\n") }] } : {}), messages, inferenceConfig, ...(toolConfig ? { toolConfig } : {}) };
 }
 
+const objectOf = (value: unknown): Record<string, unknown> => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {});
+
 const STOP_REASONS: Record<string, string> = {
-  end_turn: "STOP", stop_sequence: "STOP", max_tokens: "MAX_TOKENS", model_context_window_exceeded: "MAX_TOKENS",
+  end_turn: "STOP", stop_sequence: "STOP", tool_use: "TOOL_CALL", max_tokens: "MAX_TOKENS", model_context_window_exceeded: "MAX_TOKENS",
   content_filtered: "SAFETY", guardrail_intervened: "SAFETY", malformed_model_output: "MALFORMED",
 };
 
@@ -156,6 +198,49 @@ export function readGemini(value: unknown, separator: string): ProviderAnswer {
     finishReason: candidate?.finishReason ?? null,
     usage: { input_tokens: tokens(body?.usageMetadata?.promptTokenCount), output_tokens: tokens(body?.usageMetadata?.candidatesTokenCount) },
   };
+}
+
+/**
+ * An agent turn from Converse: the answer plus its tool calls, and the assistant's content in the shared
+ * shape (text and `functionCall` parts) so the next turn sends it back as it was.
+ */
+export function readConverseTurn(value: unknown): ProviderTurn {
+  const answer = readConverse(value, "\n");
+  const blocks = (value as { output?: { message?: { content?: unknown[] } } } | null)?.output?.message?.content ?? [];
+  const calls: ToolCall[] = [];
+  const parts: unknown[] = [];
+  for (const block of blocks) {
+    const item = objectOf(block);
+    if (typeof item.text === "string" && item.text.trim()) parts.push({ text: item.text });
+    const use = objectOf(item.toolUse);
+    if (typeof use.name === "string" && use.name) {
+      const call: ToolCall = { id: textOf(use.toolUseId) || undefined, name: use.name, args: objectOf(use.input) };
+      calls.push(call);
+      parts.push({ functionCall: { ...(call.id ? { id: call.id } : {}), name: call.name, args: call.args } });
+    }
+  }
+  return { ...answer, finishReason: calls.length ? "TOOL_CALL" : answer.finishReason, calls, parts };
+}
+
+/**
+ * An agent turn from Gemini: the answer plus its function calls. The model's parts go back unchanged
+ * (Gemini 3 signs its function calls, and the signature must be returned with them).
+ */
+export function readGeminiTurn(value: unknown): ProviderTurn {
+  const answer = readGemini(value, "\n");
+  const body = value as { candidates?: Array<{ content?: { parts?: unknown[] } }> } | null;
+  const parts = (body?.candidates?.[0]?.content?.parts ?? []).filter((part) => part && typeof part === "object");
+  const calls: ToolCall[] = [];
+  for (const part of parts as Part[]) {
+    const call = part.functionCall;
+    if (call && typeof call.name === "string" && call.name) calls.push({ id: textOf(call.id) || undefined, name: call.name, args: objectOf(call.args) });
+  }
+  return { ...answer, finishReason: calls.length ? "TOOL_CALL" : answer.finishReason, calls, parts };
+}
+
+/** Nova can think aloud in <thinking> tags before it answers; the person sees the answer only. */
+export function withoutThinking(text: string) {
+  return text.replace(/<thinking>[\s\S]*?(<\/thinking>|$)/gi, "").trim();
 }
 
 function tokens(value: unknown) {

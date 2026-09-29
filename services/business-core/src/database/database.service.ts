@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
+import { currentCommandOrigin } from "./command-origin";
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
@@ -60,6 +61,9 @@ export class DatabaseService implements OnModuleDestroy {
     return this.transaction(async (client) => {
       await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [workspaceId]);
       await client.query("SELECT set_config('app.current_actor_id', $1, true)", [actorUserId]);
+      // A command confirmed through Woddy: its audit rows record where it came from (0162).
+      const origin = currentCommandOrigin();
+      if (origin) await client.query("SELECT set_config('app.command_via', $1, true), set_config('app.ai_run_id', $2, true)", [origin.via, origin.runId]);
       return work(client);
     });
   }

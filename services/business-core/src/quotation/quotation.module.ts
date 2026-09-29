@@ -6,5 +6,5 @@ import { QuotationCollabService } from "./quotation-collab.service";
 import { QuotationBuilderService } from "./quotation-builder.service";
 import { QuotationController } from "./quotation.controller";
 
-@Module({ imports: [WorkspacesModule], controllers: [QuotationController], providers: [QuotationBuilderService, QuotationAiService, QuotationCollabService, BrandAssetStorageService], exports: [QuotationBuilderService] })
+@Module({ imports: [WorkspacesModule], controllers: [QuotationController], providers: [QuotationBuilderService, QuotationAiService, QuotationCollabService, BrandAssetStorageService], exports: [QuotationBuilderService, QuotationCollabService] })
 export class QuotationModule {}

@@ -7,5 +7,6 @@ import { WorkspaceSearchService } from "./workspace-search.service";
   imports: [WorkspacesModule],
   controllers: [WorkspaceSearchController],
   providers: [WorkspaceSearchService],
+  exports: [WorkspaceSearchService],
 })
 export class WorkspaceSearchModule {}

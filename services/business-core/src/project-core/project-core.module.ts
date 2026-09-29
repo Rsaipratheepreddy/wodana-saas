@@ -8,5 +8,5 @@ import { ProjectMoneyService } from "./project-money.service";
 import { ProjectOverviewService } from "./project-overview.service";
 import { ProjectWorkService } from "./project-work.service";
 
-@Module({ imports: [WorkspacesModule], controllers: [ProjectCoreController], providers: [ProjectCoreService, ProjectWorkService, ProjectMoneyService, ProjectOverviewService, LabourRatesService, BrandAssetStorageService] })
+@Module({ imports: [WorkspacesModule], controllers: [ProjectCoreController], providers: [ProjectCoreService, ProjectWorkService, ProjectMoneyService, ProjectOverviewService, LabourRatesService, BrandAssetStorageService], exports: [ProjectWorkService] })
 export class ProjectCoreModule {}
