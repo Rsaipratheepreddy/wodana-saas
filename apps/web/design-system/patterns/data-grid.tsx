@@ -240,7 +240,8 @@ export function DataGrid<T>({
 }: DataGridProps<T>) {
   const t = useT();
   const { locale } = useDesignSystem();
-  const emptyDescription = emptyDescriptionProp ?? t("Create a record or adjust the current filters.");
+  // Without a toolbar there are no filters to adjust, so an empty grid says only its title unless told more.
+  const emptyDescription = emptyDescriptionProp ?? (showToolbar ? t("Create a record or adjust the current filters.") : undefined);
   const emptyTitle = emptyTitleProp ?? t("No records found");
   const searchLabel = searchLabelProp ?? t("Search records");
   const [sorting, setSorting] = useState<SortingState>([]);

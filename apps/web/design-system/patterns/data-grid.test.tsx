@@ -14,6 +14,14 @@ describe("DataGrid", () => {
     expect(screen.getByRole("status", { name: "Loading Customer organizations" })).toBeInTheDocument();
     expect(screen.queryByText("No records found")).not.toBeInTheDocument();
   });
+  it("doesn't tell people to adjust filters on a grid that has none", () => {
+    const { unmount } = render(<DesignSystemProvider><DataGrid ariaLabel="Viewed as you" columns={columns} data={[]} getRowId={(row) => row.id} showToolbar={false} emptyTitle="Nobody has viewed as you" /></DesignSystemProvider>);
+    expect(screen.getByText("Nobody has viewed as you")).toBeInTheDocument();
+    expect(screen.queryByText("Create a record or adjust the current filters.")).not.toBeInTheDocument();
+    unmount();
+    render(<DesignSystemProvider><DataGrid ariaLabel="Customers" columns={columns} data={[]} getRowId={(row) => row.id} /></DesignSystemProvider>);
+    expect(screen.getByText("Create a record or adjust the current filters.")).toBeInTheDocument();
+  });
   it("exports filtered rows across pages and selected rows through the direct Export button", async () => {
     const user = userEvent.setup(), onExport = vi.fn();
     const data = [{id:'1',name:'Palm A',stage:'New'}, {id:'2',name:'Palm B',stage:'New'}, {id:'3',name:'Villa',stage:'New'}];
