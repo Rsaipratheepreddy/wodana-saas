@@ -59,7 +59,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test scripts/*.test.mjs scripts/*.test.ts",
     "sync:design": "node scripts/sync-design.mjs",
-    "sync:i18n": "node scripts/sync-i18n.mjs"
+    "sync:i18n": "node scripts/sync-i18n.mjs",
+    "store:images": "node scripts/store-images.mjs"
   },
   "private": true
 }
