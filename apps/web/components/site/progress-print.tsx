@@ -10,6 +10,7 @@ import type { CardPhoto, ClientView, ProgressPrintData } from "@/lib/site/types"
 import ops from "../operations/print.module.css";
 import { useProjectFormat } from "../project-core/format";
 import styles from "./progress-print.module.css";
+import { useDocumentTitle } from "@/lib/document-title";
 
 const PER_ROW = 3;
 
@@ -36,6 +37,7 @@ export function ProgressPrint({ kind, data, photoUrl, formatDay }: {
 }) {
   const t = useT();
   const day = formatDay(data.date);
+  useDocumentTitle([kind === "week" ? t("Week ending {date}", { date: day }) : t("Progress on {date}", { date: day }), data.project.reference || data.project.name, data.brand.name]);
   const summary = data.summary || (data.noWork ? t("No work on site this day.") : "");
   const phase = (photo: CardPhoto) => (photo.phase === "before" ? t("Before") : photo.phase === "after" ? t("After") : null);
   const rooms = photoRooms(data.photos);

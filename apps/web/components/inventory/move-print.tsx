@@ -9,6 +9,7 @@ import { ReceiveQr } from "../operations/receive-qr";
 import styles from "../operations/print.module.css";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
+import { useDocumentTitle } from "@/lib/document-title";
 
 /**
  * A stock move on its own page, to print and send with the goods (D-46): where from and to, what's on it and for which
@@ -24,6 +25,7 @@ export function MovePrint({ workspaceId, moveId }: { workspaceId: string; moveId
     try { setState(await api.transfer(moveId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The move didn't load.")); }
   }, [api, moveId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  useDocumentTitle(state ? [t("Move {number}", { number: state.transfer.number }), `${state.transfer.fromName} → ${state.transfer.toName}`] : null);
   if (error && !state) return <main className={styles.page}><ErrorState description={error} onRetry={() => void load()} /></main>;
   if (!state) return <main className={styles.page}><Skeleton lines={8} shape="rows" /></main>;
   const { transfer, lines } = state;
