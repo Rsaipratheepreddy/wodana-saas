@@ -8,7 +8,6 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import { PortalError, portalApi, staffPortalApi, type PortalApi, type StaffPortalApi } from "@/lib/client-portal/client";
 import type { PortalSite, PortalView } from "@/lib/client-portal/types";
-import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
 import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 import styles from "./client-view.module.css";
 import { PortalFrame } from "./portal-frame";
@@ -32,7 +31,6 @@ function previewApi(slug: string, t: Translate, view: () => Promise<PortalView>,
  */
 export function ClientView({ workspaceId, caseId }: { workspaceId: string; caseId: string }) {
   const t = useT();
-  const { theme } = useWorkspaceTheme();
   const staff = useMemo(() => staffPortalApi(workspaceId, t), [workspaceId, t]);
   const [state, setState] = useState<State>({ kind: "loading" });
   const [container, setContainer] = useState<HTMLElement | null>(null);
@@ -58,7 +56,7 @@ export function ClientView({ workspaceId, caseId }: { workspaceId: string; caseI
   </div>;
   const brand = workspacePrimaryColorStyle({ primaryColor: state.site.brand.primaryColor, secondaryColor: state.site.brand.secondaryColor, headingFont: state.site.brand.headingFont,
     bodyFont: state.site.brand.bodyFont });
-  return <DesignSystemProvider theme={theme === "dark" ? "dark" : "light"} locale={state.site.region.locale} currency={state.site.region.currency} timeZone={state.site.region.timeZone} portalContainer={container}
+  return <DesignSystemProvider locale={state.site.region.locale} currency={state.site.region.currency} timeZone={state.site.region.timeZone} portalContainer={container}
     style={brand} data-portal-root>
     <div className={styles.bar} data-tour="client-view-bar">
       <Eye aria-hidden="true" size={16} />

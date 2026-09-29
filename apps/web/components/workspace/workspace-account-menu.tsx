@@ -8,7 +8,6 @@ import { Button as AriaButton, Dialog, DialogTrigger, Popover } from "react-aria
 import { Avatar, ControlledModalDialog, DesignSystemProvider, useDesignSystem } from "@/design-system";
 import { LanguageSelect } from "@/components/i18n/language-select";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
 import type { WorkspaceUser } from "./workspace-navigation";
 import { useWorkspaceSetupSteps, WorkspaceSetupChecklist, type ReadinessData } from "./workspace-readiness";
 import styles from "./workspace.module.css";
@@ -25,7 +24,6 @@ export function WorkspaceAccountMenu({ user, setup }: { user: WorkspaceUser; set
   const [setupOpen, setSetupOpen] = useState(false);
   const t = useT();
   const { direction: _direction, ...inherited } = useDesignSystem();
-  const { theme } = useWorkspaceTheme();
   const { completed, total } = useWorkspaceSetupSteps(readiness, setup?.modules ?? []);
   // Progress shows once it is known; nothing to do once every step is done.
   const pending = Boolean(setup && readiness) && completed < total;
@@ -106,7 +104,7 @@ export function WorkspaceAccountMenu({ user, setup }: { user: WorkspaceUser; set
           </Dialog>
         </Popover>
       </DialogTrigger>
-      {setup ? <DesignSystemProvider {...inherited} className={styles.setupDialogHost} theme={inherited.theme === "high-contrast" ? inherited.theme : theme === "dark" ? "dark" : "light"}>
+      {setup ? <DesignSystemProvider {...inherited} className={styles.setupDialogHost}>
         <ControlledModalDialog isOpen={setupOpen} onOpenChange={setSetupOpen} title={t("Set up your workspace")} description={t("{completed} of {total} complete", { completed, total })} size="lg">
           <WorkspaceSetupChecklist modules={setup.modules} readiness={readiness} onNavigate={() => setSetupOpen(false)} />
         </ControlledModalDialog>

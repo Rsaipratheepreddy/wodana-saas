@@ -7,7 +7,6 @@ import type { HomeFocusItem, HomeMetrics, HomeSummary } from "@wodana/contracts"
 import { CalendarPlus, ClipboardPlus, Factory, FileText, HardHat, PackageCheck, Plus, Receipt, ShoppingCart, Wallet, type LucideIcon } from "lucide-react";
 import { Button, DesignSystemProvider, MenuButton, PageHeader, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
 import { projectApi } from "@/lib/project-core/client";
 import type { WorkBoard } from "@/lib/project-core/types";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -37,11 +36,8 @@ type Props = {
 export function WorkspaceHome(props: Props) {
   // Direction is left to the provider, which follows the chosen UI language (right-to-left for Arabic).
   const { direction: _direction, ...inherited } = useDesignSystem();
-  // The shell's light/dark choice lives on the document; the nested provider must carry it, or its
-  // actions and charts resolve light-theme colours on a dark page.
-  const { theme } = useWorkspaceTheme();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
-  return <DesignSystemProvider {...inherited} theme={inherited.theme === "high-contrast" ? inherited.theme : theme === "dark" ? "dark" : "light"} portalContainer={portal}><div ref={setPortal}><HomeContent key={`${props.workspaceId}:${props.userId}`} {...props} /></div></DesignSystemProvider>;
+  return <DesignSystemProvider {...inherited} portalContainer={portal}><div ref={setPortal}><HomeContent key={`${props.workspaceId}:${props.userId}`} {...props} /></div></DesignSystemProvider>;
 }
 
 /** One JSON source of Home: a failure never blanks the rest; `refresh` re-reads it quietly after an action. */
