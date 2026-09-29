@@ -86,7 +86,6 @@ export function QuoteRow({ line, draft, serial, column, columns, customColumns =
         {line.kind === "client_supplied" || line.kind === "relocate" ? <Badge tone="info">{t(LINE_KIND_LABEL[line.kind] as never)}</Badge> : null}
         {line.optional ? <Badge tone="warning">{t("Optional")}</Badge> : null}
         {line.description ? <span className={styles.description}>{line.description}</span> : null}
-        {line.catalogSnapshot?.priceReason ? <span className={styles.warn}>{t(line.catalogSnapshot.priceReason as never)}</span> : null}
       </span>
     </span>
     {column ? <span role="gridcell" className={styles.pickCell}>
@@ -272,13 +271,13 @@ export function readNumber(text: string, locale: string) {
 const onlyNumber = (value: string) => value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
 
 /** Enter moves to the same cell in the next row (like a spreadsheet). */
-function moveDown(event: KeyboardEvent<HTMLInputElement>) {
+function moveDown(event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
   const cell = event.currentTarget.closest('[role="gridcell"]');
   const row = cell?.closest('[role="row"]');
   if (!cell || !row) { event.currentTarget.blur(); return; }
   const index = [...row.children].indexOf(cell);
   const rows = [...(row.closest('[role="grid"]')?.querySelectorAll('[role="row"]') ?? [])];
-  const next = rows[rows.indexOf(row) + 1]?.children[index]?.querySelector<HTMLInputElement>("input:not([disabled])");
+  const next = rows[rows.indexOf(row) + 1]?.children[index]?.querySelector<HTMLInputElement | HTMLTextAreaElement>("input:not([disabled]), textarea:not([disabled])");
   event.currentTarget.blur();
   next?.focus();
 }
@@ -293,10 +292,18 @@ function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCata
   const [open, setOpen] = useState(false);
   const [hits, setHits] = useState<CatalogHit[]>([]);
   const [active, setActive] = useState(0);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const cancelled = useRef(false);
   const closeList = useCallback(() => setOpen(false), []);
   const shown = focused ? text : line.title;
+  // The name wraps onto as many lines as it needs (never cut off); where the browser can't size a text area to
+  // its content, it's sized here.
+  useLayoutEffect(() => {
+    const element = input.current;
+    if (!element || (typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content"))) return;
+    element.style.blockSize = "auto";
+    if (element.scrollHeight) element.style.blockSize = `${element.scrollHeight}px`;
+  }, [shown]);
   useEffect(() => {
     if (!open || !text.trim()) return;
     const controller = new AbortController();
@@ -317,11 +324,11 @@ function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCata
     requestAnimationFrame(() => input.current?.blur());
   };
   return <div className={styles.itemInput}>
-    <input ref={input} autoFocus={draft} aria-label={t("Item")} data-tour={draft ? "quote-line-input" : undefined} role="combobox" aria-expanded={open && options.length > 0} aria-controls={listId} aria-autocomplete="list"
+    <textarea ref={input} rows={1} autoFocus={draft} aria-label={t("Item")} data-tour={draft ? "quote-line-input" : undefined} role="combobox" aria-expanded={open && options.length > 0} aria-controls={listId} aria-autocomplete="list"
       aria-activedescendant={open && options[active] ? `${listId}-${active}` : undefined}
       className={styles.cell} data-title placeholder={t("Type to find an item…")} disabled={!canEdit} value={shown} title={line.title || undefined}
       onFocus={(event) => { setText(line.title); setFocused(true); event.currentTarget.select(); }}
-      onChange={(event) => { setText(event.target.value); setOpen(true); }}
+      onChange={(event) => { setText(event.target.value.replace(/\s*[\r\n]+\s*/g, " ")); setOpen(true); }}
       onPaste={(event) => {
         // Rows copied from a spreadsheet become lines, one per row.
         const pasted = event.clipboardData.getData("text/plain");

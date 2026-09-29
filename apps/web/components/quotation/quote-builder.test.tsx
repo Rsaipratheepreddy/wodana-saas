@@ -52,6 +52,27 @@ describe("quotation builder", () => {
     expect(within(grid).getByRole("combobox", { name: "Area" })).toHaveValue("Kitchen");
   });
 
+  it("wraps a long item name and description instead of widening the item column, the same width in every area", () => {
+    const long = "Fitted media wall in crown-cut oak veneer with concealed cabling, push-to-open doors and a floating shelf";
+    mount(state([line({ title: long, description: "Palm Living Core Collection · Living. Sizes: 240, 280, 320. Workbook: Living row 14" })]));
+    const grid = screen.getByRole("grid", { name: "Quote lines" });
+    // One template for every row (so headers line up across areas), and a narrowest width from the columns' own widths, not the text.
+    expect(grid.style.getPropertyValue("--cols")).toMatch(/^20px 44px (96px )?minmax\(280px, 1fr\) /);
+    expect(grid.style.getPropertyValue("--grid-min")).toMatch(/^\d+px$/);
+    const name = within(grid).getByRole("combobox", { name: "Item" });
+    expect(name.tagName).toBe("TEXTAREA");
+    expect(name).toHaveValue(long);
+  });
+
+  it("says once per area how many picked items have no live price, instead of a red line on each", () => {
+    const unpriced = { priceReason: "No active price book in AED" };
+    mount(state([line({ id: "a", catalogSnapshot: unpriced, rate: "0" }), line({ id: "b", catalogSnapshot: unpriced, rate: "0" }), line({ id: "c", catalogSnapshot: unpriced, rate: "320" })]));
+    const grid = screen.getByRole("grid", { name: "Quote lines" });
+    expect(within(grid).getByText(/2 items have no active price in AED\./)).toBeInTheDocument();
+    expect(within(grid).getByRole("link", { name: "Set a price book" })).toHaveAttribute("href", "/workspace/catalogs");
+    expect(within(grid).queryByText("No active price book in AED")).not.toBeInTheDocument();
+  });
+
   it("saves a cell with the line's version and moves down on Enter", async () => {
     const fetcher = mount(state([line({})]));
     const quantity = screen.getByRole("textbox", { name: "Quantity" });

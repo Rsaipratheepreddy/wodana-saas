@@ -55,7 +55,7 @@
 /* Always show the sideways scrollbar (macOS hides it otherwise), so wider sheets are clearly scrollable. */
 .gridScroll::-webkit-scrollbar { block-size: var(--wd-space-2); }
 .gridScroll::-webkit-scrollbar-thumb { border-radius: var(--wd-radius-pill); background: var(--wd-color-border-strong); }
-.grid { display: flex; flex-direction: column; inline-size: 100%; min-inline-size: max-content; }
+.grid { display: flex; flex-direction: column; inline-size: 100%; min-inline-size: var(--grid-min, max-content); }
 .columns, .row { display: grid; grid-template-columns: var(--cols); align-items: stretch; }
 .columns > span, .row > [role="gridcell"] { position: relative; display: flex; align-items: center; min-inline-size: 0; border-block-end: 1px solid var(--wd-color-table-border); border-inline-end: 1px solid var(--wd-color-table-border); }
 .columns > span:nth-child(2), .row > [role="gridcell"]:nth-child(2) { border-inline-start: 1px solid var(--wd-color-table-border); }
@@ -148,7 +148,11 @@
 .itemInput .cell { min-block-size: var(--wd-control-sm); }
 .itemMeta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); padding-inline: var(--wd-space-2-5); }
 .itemMeta:empty { display: none; }
-.description { overflow: hidden; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-overflow: ellipsis; white-space: nowrap; max-inline-size: 100%; }
+.description { max-inline-size: 100%; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
+/* The item's name wraps onto as many lines as it needs; the row grows with it. */
+.cell[data-title] { display: block; block-size: auto; padding-block: var(--wd-space-2); overflow: hidden; resize: none; field-sizing: content; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
+.priceNotice { position: sticky; inset-inline-start: 0; inline-size: var(--visible, 100%); padding: var(--wd-space-1-5) var(--wd-space-5); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.priceNotice a { color: var(--wd-color-link); }
 .warn { color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
 .pickCell, .unitCell { min-inline-size: 0; }
 .row > .numberCell { justify-content: flex-end; }
