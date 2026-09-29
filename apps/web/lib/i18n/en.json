@@ -11073,5 +11073,17 @@
   "Extend validity": "Extend validity",
   "Extend": "Extend",
   "Default payment plan": "Default payment plan",
-  "A new quote starts with these milestones; change them on the quote.": "A new quote starts with these milestones; change them on the quote."
+  "A new quote starts with these milestones; change them on the quote.": "A new quote starts with these milestones; change them on the quote.",
+  "Could not load the share options.": "Could not load the share options.",
+  "Copy didn't work here. Select the link and copy it.": "Copy didn't work here. Select the link and copy it.",
+  "Sent again · WhatsApp": "Sent again · WhatsApp",
+  "Sent again · email to {names}": "Sent again · email to {names}",
+  "Nothing went out: the client has no WhatsApp template or email set up. Share the link instead.": "Nothing went out: the client has no WhatsApp template or email set up. Share the link instead.",
+  "Could not send it again.": "Could not send it again.",
+  "Share the quote": "Share the quote",
+  "Portal link": "Portal link",
+  "The client portal is off, so there is no link to share.": "The client portal is off, so there is no link to share.",
+  "WhatsApp {name}": "WhatsApp {name}",
+  "No client contact has a mobile number yet.": "No client contact has a mobile number yet.",
+  "Send again": "Send again"
 }

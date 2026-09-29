@@ -21,6 +21,8 @@ function allowed(path: string[], method: string) {
   if (path.length === 6 && path[4] === "ai" && ["draft", "edit"].includes(path[5])) return method === "POST";
   if (path.length === 5 && path[4] === "comments") return ["GET", "POST"].includes(method);
   if (path.length === 5 && path[4] === "pulse") return method === "POST";
+  if (path.length === 5 && path[4] === "share") return method === "GET";
+  if (path.length === 5 && path[4] === "resend") return method === "POST";
   if (path.length === 5 && path[4] === "templates") return method === "POST";
   if (path.length === 7 && path[4] === "comments" && UUID.test(path[5]) && ["replies", "status"].includes(path[6])) return method === "POST";
   return false;

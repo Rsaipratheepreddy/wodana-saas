@@ -10,6 +10,7 @@ import { StartProjectDialog } from "@/components/project-core/start-project-dial
 import { AssetUpload } from "@/components/pre-project/case-controls";
 import type { CaseAsset } from "@/lib/pre-project/content";
 import { SendQuoteDialog, deliveryMessage } from "./send-quote-dialog";
+import { ShareQuote } from "./share-quote";
 import { projectApi } from "@/lib/project-core/client";
 import Link from "next/link";
 import { money, plain } from "@/lib/quotation/format";
@@ -79,6 +80,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
     actions = status === "expired" ? <>{newRevision}{extend}</> : <>
       {newRevision}
       {extend}
+      <ShareQuote api={api} onNotice={onNotice} />
       {flow.canRecordDecision ? <Button size="compact" variant="primary" onPress={() => setDeciding(true)}>{t("Record client decision")}</Button> : <span className={styles.waiting}>{t("Waiting for the client")}</span>}
     </>;
   } else if (["changes_requested", "declined", "withdrawn", "superseded"].includes(status)) {

@@ -31,6 +31,9 @@ async function request<T>(url: string, method = "GET", body?: unknown, signal?: 
  * What sending a quote delivered: it is always in the client's portal; `channel` is how they were told
  * (WhatsApp, email, or not at all), `emailed` who got the email, `reason` why nothing went out.
  */
+/** Sharing a sent quote (Q-9): its portal link, the client contacts WhatsApp can reach, and the message. */
+export type QuoteShare = { portalUrl: string | null; contacts: Array<{ id: string; name: string; phone: string; decides: boolean }>; message: string; canResend: boolean };
+
 export type IssueDelivery = { portal: true; channel: "whatsapp" | "email" | null; emailed: string[]; reason: string | null; decider: string; deciderHasEmail: boolean };
 
 /** The builder's calls for one quote. */
@@ -43,6 +46,8 @@ export function quoteApi(workspaceId: string, caseId: string, quoteId: string) {
     tax: (taxRate: string) => request<BuilderState>(quotationPath(workspaceId, `${base}/tax`), "PUT", { taxRate }),
     boq: () => request<{ lines: BoqPick[] }>(quotationPath(workspaceId, `${base}/boq`)),
     search: (q: string, signal?: AbortSignal, limit = 12) => request<{ items: CatalogHit[] }>(quotationPath(workspaceId, `${base}/catalog`, { q, limit: String(limit) }), "GET", undefined, signal),
+    share: () => request<QuoteShare>(quotationPath(workspaceId, `${base}/share`)),
+    resend: () => request<{ channel: "whatsapp" | "email" | null; emailed: string[]; reason: string | null }>(quotationPath(workspaceId, `${base}/resend`), "POST", {}),
     paymentTerms: (terms: PaymentMilestone[]) => request<BuilderState>(quotationPath(workspaceId, `${base}/payment-terms`), "PUT", { terms }),
     /** A step on the quote's journey (submit, approve, issue, revise, record_decision…), through the commercial case. */
     step: (action: string, revision: number, extra: Record<string, unknown> = {}) =>
