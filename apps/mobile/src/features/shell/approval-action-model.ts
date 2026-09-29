@@ -3,9 +3,10 @@ import { ApiError, AuthError } from '../../auth/client';
 /**
  * Approve from the lock screen (X-2), without native code (node tests import it). The server sends an approval
  * notice that needs no note with a category (its buttons: Approve and Open) and the "Waiting for you" row to decide.
- * Approve saves the decision on the phone first, then runs `approvals/decide` as the person; anything the server
- * won't do from a tap (a note needed, decided elsewhere) opens the app instead. A decision the phone couldn't send
- * waits and is sent the next time the app runs.
+ * Approve runs `approvals/decide` as the person; anything the server won't do from a tap (a note needed, decided
+ * elsewhere) opens the app instead. Approvals never wait for a connection (plan §6.29): without one, the person is
+ * asked to open it. The tap is held on the phone for a few minutes only, so a send the phone paused part-way is
+ * finished when the app next runs; an older one asks the person to decide again.
  */
 export const APPROVE_ACTION = 'approve';
 export const OPEN_ACTION = 'open';
@@ -17,8 +18,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type PushApproval = { workspaceId: string; kind: string; id: string; title: string; deepLink: string | null };
 export type PendingApproval = PushApproval & { at: number; tries: number };
-export const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
-export const MAX_TRIES = 5;
+export const PENDING_TTL_MS = 10 * 60 * 1000;
+export const MAX_TRIES = 3;
 
 const record = (value: unknown): Record<string, unknown> | null => (value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null);
 
@@ -50,8 +51,11 @@ export function enqueue(list: PendingApproval[], item: PushApproval, now: number
   return [...list.filter((entry) => approvalKey(entry) !== approvalKey(item)), { ...item, at: now, tries: 0 }].slice(-20);
 }
 
-/** Saved decisions still worth sending: a day old at most. */
-export const stillDue = (list: PendingApproval[], now: number) => list.filter((entry) => now - entry.at < PENDING_TTL_MS);
+/** Held taps still worth sending (a few minutes old), and older ones the person must decide again. */
+export const partitionDue = (list: PendingApproval[], now: number) => ({
+  due: list.filter((entry) => now - entry.at < PENDING_TTL_MS),
+  stale: list.filter((entry) => now - entry.at >= PENDING_TTL_MS),
+});
 
 /** Read back what the phone saved, dropping anything malformed. */
 export function parsePending(raw: string | null): PendingApproval[] {
@@ -67,17 +71,18 @@ export function parsePending(raw: string | null): PendingApproval[] {
 
 /**
  * What became of a decision: approved; gone (no longer waiting: someone decided it, or it changed); open (the server
- * wants more than a tap — a note, a look, another sign-in); or retry (the connection or the server, try later).
+ * wants more than a tap — a note, a look, another sign-in); offline (no connection: approvals don't wait, open it
+ * later); or retry (the server was busy; tried again within the few minutes a tap is held).
  */
-export type ApprovalOutcome = 'approved' | 'gone' | 'open' | 'retry';
+export type ApprovalOutcome = 'approved' | 'gone' | 'open' | 'offline' | 'retry';
 export function outcomeOf(error: unknown): Exclude<ApprovalOutcome, 'approved'> {
   if (error instanceof ApiError) {
     if (error.status === 404) return 'gone';
     if (error.status >= 500 || error.status === 429) return 'retry';
     return 'open';
   }
-  if (error instanceof AuthError) return error.code === 'network' || error.code === 'server' ? 'retry' : 'open';
-  return 'retry';
+  if (error instanceof AuthError) return error.code === 'network' ? 'offline' : error.code === 'server' ? 'retry' : 'open';
+  return 'open';
 }
 
 /** After the last try, a decision the phone couldn't send asks the person to open it. */

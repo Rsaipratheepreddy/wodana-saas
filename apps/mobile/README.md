@@ -29,8 +29,9 @@ off (Me → Notifications on this phone). Signing out unregisters the phone.
 
 Approve from the lock screen: an approval notice that needs no note (an order, a payment run, petty cash, a quote
 review, a daily report) shows Approve and Open. On iOS, Approve asks for Face ID or the passcode and decides it in
-the background; Android opens the app (unlocked) and decides it at once. The decision is saved on the phone first and
-sent through `approvals/decide`; anything that needs more than a tap opens the app instead.
+the background; Android opens the app (unlocked) and decides it at once. It goes through `approvals/decide`; anything
+that needs more than a tap opens the app instead. Approvals never wait for a connection: without one the phone says so
+(the tap is held a few minutes only, so a send the phone paused part-way finishes when the app next runs).
 
 ## Check
 

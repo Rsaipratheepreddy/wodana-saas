@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { authClient } from '../../auth/provider';
 import type { T } from '../../core/i18n';
-import { afterRetry, APPROVE_ACTION, approvalKey, enqueue, OPEN_ACTION, outcomeOf, parsePending, pushApproval, stillDue, type ApprovalOutcome, type PendingApproval, type PushApproval } from './approval-action-model';
+import { afterRetry, APPROVE_ACTION, approvalKey, enqueue, OPEN_ACTION, outcomeOf, parsePending, partitionDue, pushApproval, type ApprovalOutcome, type PendingApproval, type PushApproval } from './approval-action-model';
 
 const native = Platform.OS === 'ios' || Platform.OS === 'android';
 const STORE = 'wodana.approvals.pending.v1';
@@ -30,13 +30,17 @@ export type ApprovalReport = (outcome: ApprovalOutcome, item: PushApproval) => v
 let running: Promise<void> = Promise.resolve();
 
 /**
- * Sends the decisions saved on the phone, as the signed-in person, in the workspace each one came from; reports
- * each outcome. A connection problem keeps the decision for the next time the app runs (a day at most).
+ * Sends the taps held on the phone, as the signed-in person, in the workspace each one came from, and reports each
+ * outcome. Approvals don't wait for a connection: without one the person is asked to open it; a tap older than a few
+ * minutes (the app was paused before it finished) asks them to decide again.
  */
 export function sendPendingApprovals(report: ApprovalReport): Promise<void> {
   running = running.then(async () => {
-    let list = stillDue(await load(), Date.now());
-    if (!list.length) { await save(list); return; }
+    const held = partitionDue(await load(), Date.now());
+    for (const item of held.stale) report('open', item);
+    let list = held.due;
+    if (!list.length || held.stale.length) await save(list);
+    if (!list.length) return;
     let state = authClient.getSnapshot();
     if (state.status !== 'signedIn' || state.offline) { await authClient.restore().catch(() => undefined); state = authClient.getSnapshot(); }
     if (state.status !== 'signedIn') return;
@@ -51,7 +55,7 @@ export function sendPendingApprovals(report: ApprovalReport): Promise<void> {
       }
       list = list.filter((entry) => approvalKey(entry) !== approvalKey(item));
       if (outcome === 'retry') {
-        // Kept for the next time the app runs; after the last try the person is asked to open it.
+        // The server was busy: tried again in a moment (the app coming back, a new tap); after the last try, open it.
         const next = afterRetry(item);
         if (next === 'open') report('open', item);
         else list.push(next);
@@ -65,8 +69,8 @@ export function sendPendingApprovals(report: ApprovalReport): Promise<void> {
 }
 
 /**
- * A tapped Approve: the decision is saved on the phone first (so it survives the app being closed), the notice is
- * cleared, then it's sent. False when this notice can't be approved from a tap; the caller opens it instead.
+ * A tapped Approve: the tap is held on the phone first (so a send the phone pauses part-way is finished when the app
+ * next runs), the notice is cleared, then it's sent. False when this notice can't be approved from a tap; the caller opens it instead.
  */
 export async function approveFromNotice(response: Notifications.NotificationResponse, report: ApprovalReport) {
   const item = pushApproval(response.notification.request.content);
@@ -81,7 +85,9 @@ export async function approveFromNotice(response: Notifications.NotificationResp
 export function noticeFor(t: T, outcome: ApprovalOutcome, item: PushApproval): Notifications.NotificationContentInput | null {
   if (outcome === 'approved') return { title: t('Approved'), body: item.title };
   if (outcome === 'gone') return { title: t('No longer waiting for you'), body: item.title };
-  if (outcome === 'open') return { title: t('Open it to decide.'), body: item.title, data: { workspaceId: item.workspaceId, deepLink: item.deepLink ?? '/workspace/approvals' } };
+  const open = { workspaceId: item.workspaceId, deepLink: item.deepLink ?? '/workspace/approvals' };
+  if (outcome === 'open') return { title: t('Open it to decide.'), body: item.title, data: open };
+  if (outcome === 'offline') return { title: t('Approvals need a connection.'), body: item.title, data: open };
   return null;
 }
 
