@@ -5,13 +5,17 @@ import { CurrentActor } from "../../auth/current-actor.decorator";
 import { InternalServiceGuard } from "../../auth/internal-service.guard";
 import { Public } from "../../auth/public.decorator";
 import { CrmConversationsService } from "./crm-conversations.service";
-import { ListMessagesQueryDto } from "./dto/conversations.dto";
+import { CrmScheduledMessagesService } from "./crm-scheduled-messages.service";
+import { CreateScheduledMessageDto, ListMessagesQueryDto, ProcessDueScheduledMessagesDto, ScheduledMessageVersionDto, UpdateScheduledMessageDto } from "./dto/conversations.dto";
 import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSequenceDto, ListConversationsQueryDto, MessageReceiptDto, ProcessDueSequencesDto, ProviderInboundMessageDto, ProviderMessageReceiptDto, SequenceVersionDto, StopSequenceEnrollmentDto, UpdateSequenceDto, UpdateConversationDto } from "./dto/conversations.dto";
 
 @ApiTags("crm-conversations") @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/crm")
 export class CrmConversationsController {
-  constructor(private readonly conversations: CrmConversationsService) {}
+  constructor(private readonly conversations: CrmConversationsService, private readonly scheduled: CrmScheduledMessagesService) {}
+  @Post("conversations/:conversationId/scheduled-messages") schedule(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() input: CreateScheduledMessageDto) { return this.scheduled.create(actor, workspaceId, conversationId, input); }
+  @Patch("conversations/:conversationId/scheduled-messages/:scheduledId") reschedule(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Param("scheduledId", ParseUUIDPipe) scheduledId: string, @Body() input: UpdateScheduledMessageDto) { return this.scheduled.update(actor, workspaceId, conversationId, scheduledId, input); }
+  @Post("conversations/:conversationId/scheduled-messages/:scheduledId/cancel") cancelScheduled(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Param("scheduledId", ParseUUIDPipe) scheduledId: string, @Body() input: ScheduledMessageVersionDto) { return this.scheduled.cancel(actor, workspaceId, conversationId, scheduledId, input); }
   @Get("conversations") list(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query() query: ListConversationsQueryDto) { return this.conversations.list(actor, workspaceId, query); }
   @Post("conversations") create(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreateConversationDto) { return this.conversations.createConversation(actor, workspaceId, input); }
   @Get("conversations/:conversationId") get(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("conversationId", ParseUUIDPipe) conversationId: string) { return this.conversations.get(actor, workspaceId, conversationId); }
@@ -33,7 +37,8 @@ export class CrmConversationsController {
 @ApiExcludeController() @Public() @UseGuards(InternalServiceGuard)
 @Controller("internal/crm")
 export class InternalCrmConversationsController {
-  constructor(private readonly conversations: CrmConversationsService) {}
+  constructor(private readonly conversations: CrmConversationsService, private readonly scheduled: CrmScheduledMessagesService) {}
+  @Post("workspaces/:workspaceId/scheduled-messages/run") sendScheduled(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: ProcessDueScheduledMessagesDto) { return this.scheduled.processDueInternal(workspaceId, input.limit); }
   @Post("workspaces/:workspaceId/conversations/:conversationId/inbound-messages") inbound(@Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() input: CreateMessageDto) { return this.conversations.addInboundInternal(workspaceId, conversationId, input); }
   @Post("messages/:messageId/receipt") receipt(@Param("messageId", ParseUUIDPipe) messageId: string, @Body() input: MessageReceiptDto) { return this.conversations.recordReceipt(messageId, input); }
   @Post("provider-messages") providerMessage(@Body() input: ProviderInboundMessageDto) { return this.conversations.ingestProviderMessage(input); }

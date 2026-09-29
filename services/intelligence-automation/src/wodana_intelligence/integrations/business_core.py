@@ -328,9 +328,70 @@ class BusinessCoreClient:
             json=payload,
         )
 
+    async def send_due_scheduled_messages(self, workspace_id: str) -> dict[str, Any]:
+        """Chat messages someone scheduled ("Send later") whose time has come go out now."""
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/scheduled-messages/run",
+            json={"limit": 50},
+        )
+
+    async def claim_attachment_fetches(self, workspace_id: str) -> list[dict[str, Any]]:
+        """Clients' files waiting to be fetched from the provider (each leased for ten minutes)."""
+        payload = await self._internal_request(
+            "POST", f"/internal/crm/workspaces/{workspace_id}/attachments/due", json={"limit": 20}
+        )
+        items = payload.get("items", [])
+        return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+    async def store_attachment(
+        self, workspace_id: str, attachment_id: str, body: bytes, mime_type: str, file_name: str
+    ) -> dict[str, Any]:
+        """A fetched client file, handed to Business Core to keep in private storage."""
+        response = await self._raw_request(
+            "PUT",
+            f"/internal/crm/workspaces/{workspace_id}/attachments/{attachment_id}/content",
+            files={"file": (file_name, body, mime_type)},
+        )
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
+    async def attachment_fetch_failed(
+        self, workspace_id: str, attachment_id: str, code: str, retryable: bool
+    ) -> dict[str, Any]:
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/attachments/{attachment_id}/failed",
+            json={"code": code[:120], "retryable": retryable},
+        )
+
+    async def attachment_content(self, workspace_id: str, attachment_id: str) -> tuple[bytes, str]:
+        """Our file for a chat message, to upload to the provider when the message is sent."""
+        response = await self._raw_request(
+            "GET", f"/internal/crm/workspaces/{workspace_id}/attachments/{attachment_id}/content"
+        )
+        mime_type = response.headers.get("content-type", "application/octet-stream").split(";")[0]
+        return response.content, mime_type
+
     async def close(self) -> None:
         if self._owns_client:
             await self._client.aclose()
+
+    async def _raw_request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """An internal call whose body is a file, either way (not JSON)."""
+        try:
+            response = await self._client.request(
+                method,
+                f"{self._base_url}{path}",
+                headers={"x-wodana-internal-token": self._internal_token},
+                timeout=60.0,
+                **kwargs,
+            )
+        except httpx.HTTPError as error:
+            raise BusinessCoreError("Business Core is unavailable") from error
+        if response.is_error:
+            raise BusinessCoreError("Business Core refused the file", response.status_code)
+        return response
 
     async def _internal_request(
         self,

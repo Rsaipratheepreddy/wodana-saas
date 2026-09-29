@@ -17,8 +17,19 @@ import { inboxLink, noticeChat, readChatNotices, unassignedAudience, userOfMembe
 import { inboundSummary, normalizeTemplateParameter, renderTemplate, stageFilterSql, templateParametersProblem, templatePlaceholders, withSignature, type TemplateVariableSource } from "./inbox/inbox-rules";
 import { resolveTemplateSources } from "./inbox/template-variables";
 import { sendAutoReply } from "./inbox/auto-replies";
+import { kindOf, safeFileName, sendableProblem, WHATSAPP_MEDIA, type SendableKind } from "./inbox/attachment-rules";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A message's file (one per message), without the storage key; a hidden message hides its file too. */
+export const MESSAGE_ATTACHMENT_SQL = `CASE WHEN message.hidden_at IS NULL THEN (SELECT jsonb_build_object('id', attachment.id, 'kind', attachment.kind,
+    'mimeType', attachment.content_type, 'fileName', attachment.file_name, 'byteSize', attachment.byte_size, 'status', attachment.status,
+    'failureCode', attachment.failure_code)
+   FROM crm_message_attachments attachment WHERE attachment.workspace_id = message.workspace_id AND attachment.message_id = message.id) END`;
+/** The chat's number when it is still connected, else the workspace's default connected WhatsApp number. */
+const CHAT_NUMBER_SQL = `SELECT id AS "connectionId", configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName", configuration->'health' AS health
+   FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
+  ORDER BY (id = $2::uuid) DESC NULLS LAST, COALESCE((configuration->>'isDefault')::boolean, false) DESC, updated_at DESC, id LIMIT 1`;
 /** Open chats by who has waited longest for our reply; chats nobody waits on follow, most recent first. */
 const WAITING_KEY = `(CASE WHEN conversation.waiting_since IS NOT NULL THEN extract(epoch FROM conversation.waiting_since)
   ELSE 100000000000 - extract(epoch FROM COALESCE(conversation.last_message_at, conversation.created_at)) END)`;
@@ -59,7 +70,7 @@ export class CrmConversationsService {
       if (query.cursor && (!cursor || (sort === "waiting" && !/^-?\d+(\.\d+)?$/.test(cursor.value)))) throw new BadRequestException("Invalid page cursor");
       const values: unknown[] = [workspaceId];
       const clauses = ["conversation.workspace_id = $1"];
-      for (const [column, value] of [["party_id", query.partyId], ["lead_id", query.leadId], ["owner_membership_id", query.ownerMembershipId], ["channel", query.channel]] as const) {
+      for (const [column, value] of [["party_id", query.partyId], ["lead_id", query.leadId], ["owner_membership_id", query.ownerMembershipId], ["channel", query.channel], ["connection_id", query.connectionId]] as const) {
         if (value) { values.push(value); clauses.push(`conversation.${column} = $${values.length}`); }
       }
       if (query.status) { values.push(query.status); clauses.push(`conversation.status = $${values.length}`); }
@@ -87,13 +98,14 @@ export class CrmConversationsService {
                 conversation.waiting_since AS "waitingSince", conversation.snoozed_until AS "snoozedUntil",
                 conversation.unread_count AS "unreadCount", conversation.version, ${CONVERSATION_LABELS_SQL} AS labels,
                 message.id AS "lastMessageId", message.direction AS "lastMessageDirection",
-                message.body_text AS "lastMessageText", message.status AS "lastMessageStatus", ${WAITING_KEY}::text AS "sortKey"
+                COALESCE(message.body_text, message.metadata->>'fileName') AS "lastMessageText", message.metadata->>'messageType' AS "lastMessageKind",
+                message.status AS "lastMessageStatus", conversation.connection_id AS "connectionId", ${WAITING_KEY}::text AS "sortKey"
          FROM crm_conversations conversation
          LEFT JOIN crm_parties party ON party.id = conversation.party_id AND party.workspace_id = conversation.workspace_id
          LEFT JOIN workspace_memberships owner_membership ON owner_membership.workspace_id = conversation.workspace_id AND owner_membership.id = conversation.owner_membership_id
          LEFT JOIN users owner_user ON owner_user.id = owner_membership.user_id
          LEFT JOIN LATERAL (
-           SELECT id, direction, body_text, status FROM crm_messages
+           SELECT id, direction, body_text, status, metadata FROM crm_messages
            WHERE workspace_id = conversation.workspace_id AND conversation_id = conversation.id AND (conversation.channel <> 'whatsapp' OR direction <> 'internal')
            ORDER BY created_at DESC LIMIT 1
          ) message ON true
@@ -122,12 +134,21 @@ export class CrmConversationsService {
                 CASE WHEN message.hidden_at IS NULL THEN message.body_html END AS "bodyHtml", message.sent_at AS "sentAt", message.delivered_at AS "deliveredAt",
                 message.read_at AS "readAt", message.failure_code AS "failureCode",
                 CASE WHEN message.hidden_at IS NULL THEN message.metadata ELSE jsonb_strip_nulls(jsonb_build_object('automatic', message.metadata->'automatic')) END AS metadata, message.version,
-                message.hidden_at AS "hiddenAt", ${MEMBER_NAME("hider")} AS "hiddenByName",
+                message.hidden_at AS "hiddenAt", ${MEMBER_NAME("hider")} AS "hiddenByName", ${MESSAGE_ATTACHMENT_SQL} AS attachment,
                 message.created_at AS "createdAt", message.updated_at AS "updatedAt"
          FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id LEFT JOIN users hider ON hider.id = message.hidden_by
          WHERE message.workspace_id = $1 AND message.conversation_id = $2
          ORDER BY message.created_at DESC, message.id DESC LIMIT 101`, [workspaceId, conversationId],
       );
+      // "Send later": what is still to go, and what could not go (until someone cancels it), in send order.
+      const scheduled = await client.query(
+        `SELECT scheduled.id, scheduled.status, scheduled.send_at AS "sendAt", scheduled.body_text AS "bodyText", scheduled.template_id AS "templateId",
+                scheduled.template_code AS "templateCode", scheduled.template_parameters AS "templateParameters", scheduled.rendered_text AS "renderedText",
+                scheduled.failure_reason AS "failureReason", scheduled.created_by AS "createdBy", ${MEMBER_NAME("author")} AS "createdByName",
+                scheduled.version, scheduled.created_at AS "createdAt"
+           FROM crm_scheduled_messages scheduled LEFT JOIN users author ON author.id = scheduled.created_by
+          WHERE scheduled.workspace_id = $1 AND scheduled.conversation_id = $2 AND scheduled.status IN ('scheduled', 'failed')
+          ORDER BY scheduled.send_at, scheduled.id LIMIT 50`, [workspaceId, conversationId]);
       const facts = await client.query<{ partyName: string | null; ownerName: string | null; leadReference: string | null; businessName: string; signatureEnabled: boolean | null; blockedAt: Date | null; spamAt: Date | null }>(
         `SELECT (SELECT display_name FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "partyName",
                 (SELECT ${MEMBER_NAME("account")} FROM workspace_memberships membership JOIN users account ON account.id = membership.user_id
@@ -143,11 +164,9 @@ export class CrmConversationsService {
       );
       const canSend = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.communications.send");
       const canManage = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.settings.manage");
-      // The number every seat replies from: the workspace's default connected WhatsApp number.
-      const connection = await client.query<{ number: string | null; accountName: string | null; health: Record<string, unknown> | null }>(
-        `SELECT configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName", configuration->'health' AS health
-           FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
-          ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, updated_at DESC, id LIMIT 1`, [workspaceId]);
+      // The number replies go from: the one the client last wrote to, else the workspace's default number.
+      const connection = await client.query<{ connectionId: string; number: string | null; accountName: string | null; health: Record<string, unknown> | null }>(
+        CHAT_NUMBER_SQL, [workspaceId, conversation.connection_id ?? null]);
       const page = messages.rows.slice(0, 100);
       const oldest = page.at(-1);
       const hasOlder = messages.rows.length > 100;
@@ -171,7 +190,8 @@ export class CrmConversationsService {
         ...mapConversation(conversation), canSend, whatsappConnected: Boolean(connection.rowCount),
         partyName: fact?.partyName ?? null, ownerName: fact?.ownerName ?? null, leadReference: fact?.leadReference ?? null,
         labels: labels.rows[0]?.labels ?? [], events: history.rows,
-        replyingAs: { businessName: fact?.businessName ?? null, number: connection.rows[0]?.number ?? null, accountName: connection.rows[0]?.accountName ?? null },
+        replyingAs: { businessName: fact?.businessName ?? null, number: connection.rows[0]?.number ?? null, accountName: connection.rows[0]?.accountName ?? null, connectionId: connection.rows[0]?.connectionId ?? null },
+        scheduledMessages: scheduled.rows,
         numberHealth: (connection.rows[0]?.health?.state as string | undefined) ?? null,
         signatureEnabled: fact?.signatureEnabled === true, canManage,
         blockedAt: fact?.blockedAt ?? null, spamAt: fact?.spamAt ?? null,
@@ -189,7 +209,7 @@ export class CrmConversationsService {
       if (query.cursor && (!cursor || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(cursor.id) || !Number.isFinite(Date.parse(cursor.value)))) throw new BadRequestException("Invalid message cursor");
       // Internal notes are part of the team's thread (never sent to the client).
       const result = await client.query(`SELECT message.id,message.direction,message.status,message.authorship,message.sender_type AS "senderType",message.sender_id AS "senderId",
-          coalesce(nullif(btrim(sender.display_name), ''), sender.primary_email) AS "senderName",CASE WHEN message.hidden_at IS NULL THEN message.body_text END AS "bodyText",CASE WHEN message.hidden_at IS NULL THEN message.metadata ELSE jsonb_strip_nulls(jsonb_build_object('automatic', message.metadata->'automatic')) END AS metadata,message.hidden_at AS "hiddenAt",coalesce(nullif(btrim(hider.display_name), ''), hider.primary_email) AS "hiddenByName",message.created_at AS "createdAt",message.failure_code AS "failureCode"
+          coalesce(nullif(btrim(sender.display_name), ''), sender.primary_email) AS "senderName",CASE WHEN message.hidden_at IS NULL THEN message.body_text END AS "bodyText",CASE WHEN message.hidden_at IS NULL THEN message.metadata ELSE jsonb_strip_nulls(jsonb_build_object('automatic', message.metadata->'automatic')) END AS metadata,message.hidden_at AS "hiddenAt",coalesce(nullif(btrim(hider.display_name), ''), hider.primary_email) AS "hiddenByName",${MESSAGE_ATTACHMENT_SQL} AS attachment,message.created_at AS "createdAt",message.failure_code AS "failureCode"
         FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id LEFT JOIN users hider ON hider.id = message.hidden_by
         WHERE message.workspace_id=$1 AND message.conversation_id=$2 AND ($3::timestamptz IS NULL OR (message.created_at,message.id)<($3::timestamptz,$4::uuid))
         ORDER BY message.created_at DESC,message.id DESC LIMIT $5`, [workspaceId, conversationId, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1]);
@@ -217,12 +237,14 @@ export class CrmConversationsService {
         if (!phone.rowCount) throw new UnprocessableEntityException("Add a phone number to this contact before opening WhatsApp");
       }
       if (input.ownerMembershipId) await this.requireMembership(client, workspaceId, input.ownerMembershipId);
+      // A WhatsApp chat we start goes from the default number until the client writes to another one.
+      const number = input.channel === "whatsapp" ? (await client.query<{ connectionId: string }>(CHAT_NUMBER_SQL, [workspaceId, null])).rows[0]?.connectionId ?? null : null;
       const result = await client.query(
         `INSERT INTO crm_conversations
-          (workspace_id, party_id, lead_id, channel, subject, owner_membership_id)
-         VALUES ($1, $2, $3, $4, $5, $6)
+          (workspace_id, party_id, lead_id, channel, subject, owner_membership_id, connection_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,
-        [workspaceId, input.partyId ?? null, input.leadId ?? null, input.channel, input.subject ?? null, input.ownerMembershipId ?? null],
+        [workspaceId, input.partyId ?? null, input.leadId ?? null, input.channel, input.subject ?? null, input.ownerMembershipId ?? null, number],
       );
       const conversation = mapConversation(result.rows[0] as Record<string, unknown>);
       const conversationId = String(conversation.id);
@@ -328,10 +350,14 @@ export class CrmConversationsService {
           await client.query(`UPDATE crm_conversations SET provider_thread_id=$3 WHERE workspace_id=$1 AND id=$2`, [input.workspaceId, conversationId, input.providerThreadId]);
         }
       }
+      // The number the client wrote to: replies to this chat go from it from now on.
+      const number = input.channel === "whatsapp" ? await this.writtenNumber(client, input.workspaceId, input.metadata) : null;
       if (!conversationId) {
         conversationId = randomUUID();
-        await client.query(`INSERT INTO crm_conversations (id,workspace_id,party_id,channel,provider_thread_id,subject) VALUES($1,$2,$3,$4,$5,$6)`, [conversationId, input.workspaceId, partyId, input.channel, input.providerThreadId, input.subject?.trim() || (input.channel === "whatsapp" ? "WhatsApp conversation" : "Email conversation")]);
+        await client.query(`INSERT INTO crm_conversations (id,workspace_id,party_id,channel,provider_thread_id,subject,connection_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, [conversationId, input.workspaceId, partyId, input.channel, input.providerThreadId, input.subject?.trim() || (input.channel === "whatsapp" ? "WhatsApp conversation" : "Email conversation"), number]);
         await client.query(`INSERT INTO crm_conversation_participants (workspace_id,conversation_id,participant_type,participant_id) VALUES($1,$2,'party',$3) ON CONFLICT DO NOTHING`, [input.workspaceId, conversationId, partyId]);
+      } else if (number) {
+        await client.query(`UPDATE crm_conversations SET connection_id = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND connection_id IS DISTINCT FROM $3`, [input.workspaceId, conversationId, number]);
       }
       const message = await this.insertMessage(client, input.workspaceId, conversationId, { direction: "inbound", bodyText: input.bodyText, bodyHtml: input.bodyHtml, providerMessageId: input.providerMessageId, metadata: input.metadata }, null, "integration");
       return { conversationId, partyId, message };
@@ -367,10 +393,11 @@ export class CrmConversationsService {
         await client.query(`INSERT INTO crm_conversation_participants (workspace_id, conversation_id, participant_type, participant_id) VALUES ($1, $2, 'party', $3) ON CONFLICT DO NOTHING`, [input.workspaceId, conversationId, partyId]);
       }
       const messageId = randomUUID();
-      await client.query(
+      const echoed = await client.query(
         `INSERT INTO crm_messages (id, workspace_id, conversation_id, direction, status, authorship, sender_type, provider_message_id, body_text, metadata, sent_at)
          VALUES ($1, $2, $3, 'outbound', 'sent', 'provider', 'provider', $4, $5, $6, now()) ON CONFLICT (workspace_id, provider_message_id) DO NOTHING`,
         [messageId, input.workspaceId, conversationId, input.providerMessageId, input.bodyText ?? null, { ...input.metadata, sentFromPhone: true }]);
+      if (echoed.rowCount) await this.queueProviderMedia(client, input.workspaceId, conversationId, messageId, "outbound", input.metadata);
       await client.query(`UPDATE crm_conversations SET last_message_at = now(), waiting_since = NULL, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [input.workspaceId, conversationId]);
       await this.events.record(client, { workspaceId: input.workspaceId, actorUserId: null, source: "integration", action: "crm.message.sent_from_phone.v1", entityType: "crm_message", entityId: messageId, after: { conversationId, partyId } });
       return { conversationId, messageId, duplicate: false };
@@ -674,10 +701,41 @@ export class CrmConversationsService {
     }
   }
 
+  /** A reply written inside a transaction the caller holds (a scheduled message at its time), through the same rules as a typed one. */
+  insertMessageWithClient(client: PoolClient, workspaceId: string, conversationId: string, input: CreateMessageDto, actorUserId: string, source: "user") {
+    return this.insertMessage(client, workspaceId, conversationId, input, actorUserId, source);
+  }
+
+  /**
+   * An approved template of the chat's channel with its values (given, else filled from the chat's records) and the
+   * exact text the client reads. A missing value or a template that isn't approved blocks the send.
+   */
+  async resolveTemplate(client: PoolClient, workspaceId: string, conversation: Record<string, unknown>, templateId: string, given: string[] | undefined, actorUserId: string | null) {
+    const found = await client.query<Record<string, unknown>>(`SELECT id, code, body_template, subject_template, status FROM notification_templates WHERE id = $1 AND workspace_id = $2 AND channel = $3 ORDER BY version_number DESC LIMIT 1`, [templateId, workspaceId, conversation.channel]);
+    if (!found.rowCount || found.rows[0].status !== "approved") throw new UnprocessableEntityException("Template is not approved for this channel");
+    const template = found.rows[0];
+    const positions = templatePlaceholders(String(template.body_template));
+    let parameters: string[] = [];
+    if (positions.length) {
+      parameters = given?.map(normalizeTemplateParameter) ?? await this.fillTemplate(client, workspaceId, conversation, String(template.code), positions, actorUserId);
+      const problem = templateParametersProblem(positions, parameters);
+      if (problem) throw new UnprocessableEntityException(problem);
+    } else if (given?.length) throw new UnprocessableEntityException("This template has no variables");
+    return { template, parameters, text: renderTemplate(String(template.body_template), parameters) };
+  }
+
+  /** The chat's reply signature, as a typed reply gets it: the writer's first name when the workspace signs replies. */
+  async signed(client: PoolClient, workspaceId: string, text: string, actorUserId: string) {
+    const signature = await client.query<{ enabled: boolean | null; name: string | null }>(
+      `SELECT (SELECT signature_enabled FROM crm_inbox_settings WHERE workspace_id = $1) AS enabled, (SELECT display_name FROM users WHERE id = $2) AS name`,
+      [workspaceId, actorUserId]);
+    return withSignature(text, signature.rows[0]?.name, signature.rows[0]?.enabled === true);
+  }
+
   private async insertMessage(client: PoolClient, workspaceId: string, conversationId: string, input: CreateMessageDto, actorUserId: string | null, source: "user" | "integration") {
-    if (!input.bodyText?.trim() && !input.bodyHtml?.trim() && !input.templateId) throw new UnprocessableEntityException("Message content or template is required");
+    if (!input.bodyText?.trim() && !input.bodyHtml?.trim() && !input.templateId && !input.attachmentId) throw new UnprocessableEntityException("Message content or template is required");
     const conversation = await this.requireConversation(client, workspaceId, conversationId, true);
-    const requestHash = input.clientMessageId ? stableHash({ direction: input.direction, bodyText: input.bodyText?.trim() ?? null, bodyHtml: input.bodyHtml?.trim() ?? null, templateId: input.templateId ?? null, purpose: input.purpose ?? "service", ...(input.templateParameters ? { templateParameters: input.templateParameters } : {}) }) : null;
+    const requestHash = input.clientMessageId ? stableHash({ direction: input.direction, bodyText: input.bodyText?.trim() ?? null, bodyHtml: input.bodyHtml?.trim() ?? null, templateId: input.templateId ?? null, purpose: input.purpose ?? "service", ...(input.templateParameters ? { templateParameters: input.templateParameters } : {}), ...(input.attachmentId ? { attachmentId: input.attachmentId } : {}) }) : null;
     if (input.clientMessageId) {
       const prior = await client.query(`SELECT id, status, metadata, sender_id FROM crm_messages WHERE workspace_id=$1 AND conversation_id=$2 AND metadata->>'clientMessageId'=$3 LIMIT 1`, [workspaceId, conversationId, input.clientMessageId]);
       if (prior.rowCount) {
@@ -687,42 +745,45 @@ export class CrmConversationsService {
     }
     // A snoozed chat can still be answered; a resolved one is reopened first.
     if (input.direction === "outbound" && conversation.status === "closed") throw new ConflictException("Reopen this conversation before replying");
-    let bodyText = input.bodyText?.trim() ?? null;
-    let bodyHtml = input.bodyHtml?.trim() ?? null;
+    let bodyText = input.bodyText?.trim() || null;
+    let bodyHtml = input.bodyHtml?.trim() || null;
     let template: Record<string, unknown> | null = null;
     let templateParameters: string[] = [];
+    // A file goes with one of our messages (a reply or a note), never a template, and only once.
+    let attachment: Record<string, unknown> | null = null;
+    if (input.attachmentId) {
+      if (input.direction === "inbound") throw new UnprocessableEntityException("Client files arrive through the provider");
+      if (input.templateId) throw new UnprocessableEntityException("A template is sent on its own, without a file");
+      attachment = await this.claimUpload(client, workspaceId, conversationId, input.attachmentId, actorUserId);
+    }
     if (input.direction === "outbound" && conversation.channel !== "internal") {
       if (!conversation.party_id) throw new UnprocessableEntityException("Outbound customer messages require a party");
       await this.assertConsent(client, workspaceId, String(conversation.party_id), String(conversation.channel), input.purpose ?? "service");
       if (input.templateId) {
-        const found = await client.query<Record<string, unknown>>(`SELECT id, code, body_template, subject_template, status FROM notification_templates WHERE id = $1 AND workspace_id = $2 AND channel = $3 ORDER BY version_number DESC LIMIT 1`, [input.templateId, workspaceId, conversation.channel]);
-        if (!found.rowCount || found.rows[0].status !== "approved") throw new UnprocessableEntityException("Template is not approved for this channel");
-        template = found.rows[0];
-        const positions = templatePlaceholders(String(template.body_template));
-        if (positions.length) {
-          templateParameters = input.templateParameters?.map(normalizeTemplateParameter)
-            ?? await this.fillTemplate(client, workspaceId, conversation, String(template.code), positions, actorUserId);
-          const problem = templateParametersProblem(positions, templateParameters);
-          if (problem) throw new UnprocessableEntityException(problem);
-        } else if (input.templateParameters?.length) throw new UnprocessableEntityException("This template has no variables");
+        const resolved = await this.resolveTemplate(client, workspaceId, conversation, input.templateId, input.templateParameters, actorUserId);
+        template = resolved.template;
+        templateParameters = resolved.parameters;
         // What the client receives is the template with its values, never free text beside it.
-        bodyText = renderTemplate(String(template.body_template), templateParameters);
+        bodyText = resolved.text;
         bodyHtml = null;
       }
       if (conversation.channel === "whatsapp") {
-        const health = await client.query<{ state: string | null }>(`SELECT configuration->'health'->>'state' AS state FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
-          ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, updated_at DESC LIMIT 1`, [workspaceId]);
-        if (health.rows[0]?.state === "blocked") throw new UnprocessableEntityException("Meta has stopped sending from this WhatsApp number. Check it in Integrations.");
+        const health = await client.query<{ health: Record<string, unknown> | null }>(CHAT_NUMBER_SQL, [workspaceId, conversation.connection_id ?? null]);
+        if (health.rows[0]?.health?.state === "blocked") throw new UnprocessableEntityException("Meta has stopped sending from this WhatsApp number. Check it in Integrations.");
       }
       if (conversation.channel === "whatsapp" && !input.templateId) {
         const lastInbound = conversation.last_inbound_at ? new Date(String(conversation.last_inbound_at)) : null;
         if (!lastInbound || Date.now() - lastInbound.getTime() > 24 * 60 * 60 * 1000) throw new UnprocessableEntityException("WhatsApp requires an approved template outside the 24-hour customer-service window");
       }
-      if (!input.templateId && source === "user" && actorUserId && bodyText) {
-        const signature = await client.query<{ enabled: boolean | null; name: string | null }>(
-          `SELECT (SELECT signature_enabled FROM crm_inbox_settings WHERE workspace_id = $1) AS enabled, (SELECT display_name FROM users WHERE id = $2) AS name`,
-          [workspaceId, actorUserId]);
-        bodyText = withSignature(bodyText, signature.rows[0]?.name, signature.rows[0]?.enabled === true);
+      if (!input.templateId && source === "user" && actorUserId && bodyText) bodyText = await this.signed(client, workspaceId, bodyText, actorUserId);
+      if (conversation.channel === "whatsapp" && attachment) {
+        // WhatsApp's own limits: its types and sizes per kind, audio without a caption, captions up to 1,024 characters.
+        const kind = attachment.kind as SendableKind;
+        const rule = WHATSAPP_MEDIA[kind];
+        const problem = rule ? sendableProblem(kind, Number(attachment.byte_size)) : "WhatsApp can't send this file";
+        if (problem || !rule.types.includes(String(attachment.content_type))) throw new UnprocessableEntityException(problem ?? "WhatsApp can't send this type of file");
+        if (bodyText && !rule.caption) throw new UnprocessableEntityException("WhatsApp sends audio without a caption. Send the text as its own message.");
+        if (bodyText && bodyText.length > 1024) throw new UnprocessableEntityException("A caption can be up to 1,024 characters");
       }
     }
     const messageId = randomUUID();
@@ -751,6 +812,7 @@ export class CrmConversationsService {
             ...(input.clientMessageId ? { clientMessageId: input.clientMessageId, requestHash } : {}),
             ...(template ? { template: { id: template.id, code: template.code, parameters: templateParameters } } : {}),
             ...(input.direction === "internal" && input.mentions?.length ? { mentions: [...new Set(input.mentions)] } : {}),
+            ...(attachment ? { messageType: attachment.kind, attachmentId: attachment.id, fileName: attachment.file_name, mimeType: attachment.content_type } : {}),
           },
         ],
       );
@@ -759,6 +821,9 @@ export class CrmConversationsService {
       if (prior.rows[0]?.conversationId !== conversationId || prior.rows[0]?.direction !== input.direction) throw new ConflictException("Provider message already belongs to another conversation or direction");
       return { ...prior.rows[0], idempotentReplay: true };
     }
+    if (attachment) await client.query(`UPDATE crm_message_attachments SET message_id = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, attachment.id, messageId]);
+    // A client's file is fetched into our storage later; a failure there never loses the message.
+    if (input.direction === "inbound") await this.queueProviderMedia(client, workspaceId, conversationId, messageId, "inbound", input.metadata);
     // A client message reopens and un-snoozes the chat and starts (or keeps) its wait; our reply ends the wait.
     const touched = await client.query<Record<string, unknown>>(
       `UPDATE crm_conversations SET last_message_at = now(),
@@ -774,15 +839,17 @@ export class CrmConversationsService {
     if (input.direction === "inbound") {
       await client.query(`UPDATE crm_sequence_enrollments SET status = 'exited', exit_reason = 'customer_replied', exited_at = now(), next_run_at = NULL, version = version + 1 WHERE workspace_id = $1 AND party_id = $2 AND status = 'active'`, [workspaceId, conversation.party_id]);
     }
-    const response = { id: messageId, conversationId, direction: input.direction, status: queued ? "queued" : input.direction === "inbound" ? "delivered" : "sent", bodyText, bodyHtml };
+    const response = { id: messageId, conversationId, direction: input.direction, status: queued ? "queued" : input.direction === "inbound" ? "delivered" : "sent", bodyText, bodyHtml,
+      ...(attachment ? { attachmentId: attachment.id } : {}) };
     if (queued) {
       const notificationId = randomUUID();
+      // A file's notification carries its caption (or its name); the worker sends the file itself.
       await client.query(
         `INSERT INTO notifications
           (id, workspace_id, template_id, recipient_type, recipient_id, channel,
            status, subject, body, idempotency_key, correlation_id, template_parameters)
          VALUES ($1, $2, $3, 'party', $4, $5, 'pending', $6, $7, $8, $9, $10)`,
-        [notificationId, workspaceId, template?.id ?? null, conversation.party_id, conversation.channel, template?.subject_template ?? conversation.subject, bodyText ?? bodyHtml, `message:${messageId}`, randomUUID(), templateParameters],
+        [notificationId, workspaceId, template?.id ?? null, conversation.party_id, conversation.channel, template?.subject_template ?? conversation.subject, bodyText ?? bodyHtml ?? String(attachment?.file_name ?? "File"), `message:${messageId}`, randomUUID(), templateParameters],
       );
       await this.events.record(client, { workspaceId, actorUserId, source, action: "notification.delivery_requested.v1", entityType: "notification", entityId: notificationId, after: { messageId, channel: conversation.channel, partyId: conversation.party_id } });
     }
@@ -904,6 +971,49 @@ export class CrmConversationsService {
     const result = await client.query<{ status: string; expires_at: Date | null }>(`SELECT status, expires_at FROM crm_consents WHERE workspace_id = $1 AND party_id = $2 AND channel = $3 AND purpose = $4 ORDER BY captured_at DESC LIMIT 1`, [workspaceId, partyId, channel, purpose]);
     const consent = result.rows[0];
     if (!consent || consent.status !== "granted" || (consent.expires_at && consent.expires_at <= new Date())) throw new UnprocessableEntityException(`Active ${channel} consent is required for ${purpose} communication`);
+  }
+
+  /** A file this person uploaded to this chat and hasn't sent yet. */
+  private async claimUpload(client: PoolClient, workspaceId: string, conversationId: string, attachmentId: string, actorUserId: string | null) {
+    const found = await client.query<Record<string, unknown>>(`SELECT * FROM crm_message_attachments WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, attachmentId]);
+    const row = found.rows[0];
+    if (!row || row.conversation_id !== conversationId || row.direction !== "outbound" || row.status !== "stored" || (actorUserId && row.uploaded_by && row.uploaded_by !== actorUserId)) {
+      throw new UnprocessableEntityException("Attach the file again: it isn't ready for this chat");
+    }
+    if (row.message_id) throw new ConflictException("This file was already sent");
+    return row;
+  }
+
+  /**
+   * A provider's file on a message (a client's photo, or one the owner sent from the phone) waits to be fetched into
+   * our storage. In a savepoint: a file that can't be queued never loses its message.
+   */
+  private async queueProviderMedia(client: PoolClient, workspaceId: string, conversationId: string, messageId: string, direction: "inbound" | "outbound", metadata?: Record<string, unknown>) {
+    const kind = kindOf(metadata?.messageType);
+    const mediaId = typeof metadata?.mediaId === "string" ? metadata.mediaId.trim() : "";
+    if (!kind || !/^[\w.-]{1,120}$/.test(mediaId)) return;
+    await client.query("SAVEPOINT crm_media_fetch");
+    try {
+      const connectionId = await this.writtenNumber(client, workspaceId, metadata, false);
+      const mimeType = typeof metadata?.mimeType === "string" ? metadata.mimeType.trim().slice(0, 160) || null : null;
+      const fileName = typeof metadata?.fileName === "string" && metadata.fileName.trim() ? safeFileName(metadata.fileName) : null;
+      await client.query(
+        `INSERT INTO crm_message_attachments (workspace_id, conversation_id, message_id, direction, kind, content_type, file_name, provider_media_id, connection_id, status, next_attempt_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', now()) ON CONFLICT DO NOTHING`,
+        [workspaceId, conversationId, messageId, direction, kind, mimeType, fileName, mediaId, connectionId]);
+      await client.query("RELEASE SAVEPOINT crm_media_fetch");
+    } catch (error) {
+      await client.query("ROLLBACK TO SAVEPOINT crm_media_fetch");
+      this.logger.warn(`File on message ${messageId} was not queued: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /** The workspace's WhatsApp number a provider message names (connected, unless any known number will do). */
+  private async writtenNumber(client: PoolClient, workspaceId: string, metadata: Record<string, unknown> | undefined, connectedOnly = true) {
+    const id = metadata?.connectionId;
+    if (typeof id !== "string" || !UUID_PATTERN.test(id)) return null;
+    const found = await client.query<{ id: string }>(`SELECT id FROM integration_connections WHERE workspace_id = $1 AND id = $2 AND provider = 'whatsapp'${connectedOnly ? " AND status = 'connected'" : ""}`, [workspaceId, id]);
+    return found.rows[0]?.id ?? null;
   }
 
   private async requireConversation(client: PoolClient, workspaceId: string, conversationId: string, lock: boolean) {

@@ -55,7 +55,13 @@ export class CrmInboxService {
            FROM crm_conversations conversation WHERE workspace_id = $1${stageSql ? ` AND ${stageSql}` : ""}`,
         values,
       );
-      return { ...result.rows[0], membershipId: me };
+      // The connected WhatsApp numbers: with two or more, the inbox can show one number's chats.
+      const numbers = await client.query<{ connectionId: string; number: string | null; accountName: string | null; isDefault: boolean }>(
+        `SELECT id AS "connectionId", configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName",
+                COALESCE((configuration->>'isDefault')::boolean, false) AS "isDefault"
+           FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
+          ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, created_at, id`, [workspaceId]);
+      return { ...result.rows[0], membershipId: me, numbers: numbers.rows };
     });
   }
 

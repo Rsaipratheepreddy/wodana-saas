@@ -778,6 +778,20 @@
       "when": 1801230000000,
       "tag": "0163_woddy_for_staff",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1801250000000,
+      "tag": "0166_inbox_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1801250000001,
+      "tag": "0167_scheduled_messages",
+      "breakpoints": true
     }
   ]
 }

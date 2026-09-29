@@ -352,7 +352,9 @@ export class CrmAutomationsService {
     });
   }
   async dueWorkspacesInternal() {
-    const result = await this.database.query<{ workspace_id: string }>(`SELECT * FROM list_crm_workspaces_with_due_work()`);
+    // The team inbox keeps its own due work (client files to fetch, scheduled messages) in a sibling function.
+    const result = await this.database.query<{ workspace_id: string }>(
+      `SELECT workspace_id FROM list_crm_workspaces_with_due_work() UNION SELECT workspace_id FROM list_crm_workspaces_with_due_inbox_work()`);
     return { workspaceIds: result.rows.map((row) => row.workspace_id) };
   }
   private async executeAction(client: PoolClient, run: Row, nodeType: string, configuration: Record<string, unknown>, stepKey: string, attempt: number): Promise<Row> {

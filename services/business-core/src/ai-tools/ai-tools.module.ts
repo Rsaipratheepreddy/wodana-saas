@@ -4,6 +4,7 @@ import { CrmActivitiesService } from "../crm/activities/crm-activities.service";
 import { CrmConversationsModule } from "../crm/conversations/crm-conversations.module";
 import { CrmConversationsService } from "../crm/conversations/crm-conversations.service";
 import { CrmInboxService } from "../crm/conversations/crm-inbox.service";
+import { CrmScheduledMessagesService } from "../crm/conversations/crm-scheduled-messages.service";
 import { CrmIntakeModule } from "../crm/intake/crm-intake.module";
 import { CrmIntakeService } from "../crm/intake/crm-intake.service";
 import { CrmLeadsModule } from "../crm/leads/crm-leads.module";
@@ -32,10 +33,10 @@ import { AiToolRegistry } from "./ai-tools.registry";
   providers: [
     {
       provide: AiToolRegistry,
-      inject: [WorkspaceAccessService, WorkspaceSearchService, CrmLeadsService, CrmIntakeService, CrmOpportunitiesService, CrmActivitiesService, CrmPartiesService, CrmConversationsService, CrmInboxService, ProjectWorkService, QuotationCollabService],
+      inject: [WorkspaceAccessService, WorkspaceSearchService, CrmLeadsService, CrmIntakeService, CrmOpportunitiesService, CrmActivitiesService, CrmPartiesService, CrmConversationsService, CrmInboxService, CrmScheduledMessagesService, ProjectWorkService, QuotationCollabService],
       useFactory: (access: WorkspaceAccessService, search: WorkspaceSearchService, leads: CrmLeadsService, intake: CrmIntakeService, opportunities: CrmOpportunitiesService, activities: CrmActivitiesService,
-        parties: CrmPartiesService, conversations: CrmConversationsService, inbox: CrmInboxService, work: ProjectWorkService, quoteComments: QuotationCollabService) =>
-        AiToolRegistry.catalogue({ access, search, leads, intake, opportunities, activities, parties, conversations, inbox, work, quoteComments }),
+        parties: CrmPartiesService, conversations: CrmConversationsService, inbox: CrmInboxService, scheduled: CrmScheduledMessagesService, work: ProjectWorkService, quoteComments: QuotationCollabService) =>
+        AiToolRegistry.catalogue({ access, search, leads, intake, opportunities, activities, parties, conversations, inbox, scheduled, work, quoteComments }),
     },
     AiToolCallsService,
     AiAgentService,

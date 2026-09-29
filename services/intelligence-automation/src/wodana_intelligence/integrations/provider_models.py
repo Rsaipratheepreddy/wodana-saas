@@ -83,6 +83,11 @@ class WhatsAppMessageRequest(ApiModel):
     language: Optional[str] = Field(default=None, pattern=r"^[a-z]{2,3}(?:_[A-Z]{2})?$")
     body_parameters: list[str] = Field(default_factory=list, max_length=20)
     url_parameter: Optional[str] = Field(default=None, max_length=2000)
+    # A file: its WhatsApp media type, the id WhatsApp gave it on upload, its caption or name.
+    media_type: Optional[Literal["image", "document", "audio", "video"]] = None
+    media_id: Optional[str] = Field(default=None, pattern=r"^[\w.-]{1,120}$")
+    caption: Optional[str] = Field(default=None, min_length=1, max_length=1024)
+    filename: Optional[str] = Field(default=None, min_length=1, max_length=240)
     opt_in_confirmed: bool
 
     @field_validator("opt_in_confirmed")
@@ -94,12 +99,16 @@ class WhatsAppMessageRequest(ApiModel):
 
     @model_validator(mode="after")
     def text_or_template(self) -> "WhatsAppMessageRequest":
-        if bool(self.text) == bool(self.template_name):
-            raise ValueError("Choose either WhatsApp text or an approved template")
+        if sum(bool(kind) for kind in (self.text, self.template_name, self.media_type)) != 1:
+            raise ValueError("Choose either WhatsApp text, an approved template or a file")
         if self.template_name and not self.language:
             raise ValueError("Template language is required")
-        if self.text and (self.body_parameters or self.url_parameter):
+        if not self.template_name and (self.body_parameters or self.url_parameter):
             raise ValueError("Template parameters cannot be used with a text message")
+        if not self.media_type and (self.media_id or self.caption or self.filename):
+            raise ValueError("A caption or file name needs a file")
+        if self.media_type == "audio" and self.caption:
+            raise ValueError("WhatsApp sends audio without a caption")
         return self
 
 

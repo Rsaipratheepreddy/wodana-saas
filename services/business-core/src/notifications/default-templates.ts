@@ -296,6 +296,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "crm.template_status", channel: "in_app", subject: "Template {{name}} is {{status}}", body: "{{reason}}", variables: ["name", "status", "reason"] },
   { code: "crm.inbox_mention", channel: "in_app", subject: "{{actor}} mentioned you", body: "{{clientName}}: {{summary}}", variables: ["actor", "clientName", "summary"] },
   { code: "crm.inbox_unassigned", channel: "in_app", subject: "{{clientName}} is waiting", body: "Nobody could take this new chat. Assign it.", variables: ["clientName"] },
+  // A message someone scheduled ("Send later") could not go at its time: they are told why.
+  { code: "crm.inbox_scheduled_failed", channel: "in_app", subject: "Your message to {{clientName}} wasn't sent", body: "{{reason}}", variables: ["clientName", "reason"] },
   // Client portal notices (client-portal/portal-notices.ts): to client contacts, by email.
   { code: "portal.quote_issued", channel: "email", subject: "{{title}} is ready for you", body: "{{company}} sent you {{title}} for {{project}}.\n\nOpen your project page to read it and give your decision.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.payment_due", channel: "email", subject: "Payment reminder · {{title}}", body: "A reminder from {{company}}: {{title}} for {{project}} is due. {{due}}\n\nOpen your project page to see it and pay.", variables: ["company", "project", "title", "due", "note"] },
@@ -528,7 +530,7 @@ export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "quotation.review_requested", "design.review_requested",
   "crm.lead_assigned", "crm.lead_taken_over_to", "crm.conversation_assigned",
   // Team inbox: a client wrote in a chat that is yours (one notice per chat), or someone mentioned you in a note.
-  "crm.inbox_message", "crm.inbox_mention",
+  "crm.inbox_message", "crm.inbox_mention", "crm.inbox_scheduled_failed",
 ]);
 
 /**

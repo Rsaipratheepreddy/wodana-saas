@@ -513,12 +513,26 @@ class ProviderService:
         _runtime, credential = await self.runtime_internal(workspace, "whatsapp")
         return await self.client.create_template(credential, template)
 
+    async def whatsapp_media_internal(
+        self, workspace: str, connection: str | None, media_id: str, max_bytes: int
+    ) -> tuple[bytes, str]:
+        """The worker's fetch of a client's file, on the number it arrived at."""
+        _runtime, credential = await self.runtime_internal(workspace, "whatsapp", connection)
+        return await self.client.download_media(credential, media_id, max_bytes)
+
     async def send_whatsapp_notification(
-        self, workspace: str, request: OperationRequest
+        self,
+        workspace: str,
+        request: OperationRequest,
+        connection: str | None = None,
+        upload: tuple[bytes, str, str] | None = None,
     ) -> dict[str, Any]:
+        """Sends from the chat's number (else the default one); a file is uploaded first."""
         payload = WhatsAppMessageRequest.model_validate(request.payload)
         guard_delivery(self.settings, phone=payload.to)
-        runtime, credential = await self.runtime_internal(workspace, "whatsapp")
+        if payload.media_type and not upload and not payload.media_id:
+            raise IntegrationFlowError("media_missing", "The file to send is missing", 422)
+        runtime, credential = await self.runtime_internal(workspace, "whatsapp", connection)
         key = f"wodana:provider-operation:{workspace}:{runtime['id']}:{request.idempotency_key}"
         digest = hashlib.sha256(
             request.model_dump_json(exclude={"idempotency_key"}).encode()
@@ -543,6 +557,16 @@ class ProviderService:
             key, self.seal({"hash": digest, "state": "processing"}), nx=True
         ):
             raise IntegrationFlowError("operation_in_progress", "Message is processing", 409)
+        if upload and not payload.media_id:
+            body, mime_type, filename = upload
+            try:
+                payload.media_id = await self.client.upload_media(
+                    credential, body, mime_type, filename
+                )
+            except Exception:
+                # Nothing reached the client yet: the send may be tried again from the start.
+                await self.redis.delete(key)
+                raise
         result = await self.client.send_template(credential, payload)
         await self.redis.set(key, self.seal({"hash": digest, "result": result}))
         await self.core.record_activity(
@@ -625,22 +649,7 @@ class ProviderService:
         _, credential = await self.runtime(workspace, connection, headers)
         if credential.provider != "whatsapp":
             raise IntegrationFlowError("invalid_provider", "Select a WhatsApp connection")
-        metadata = await self.client.api(credential, "GET", f"/{media_id}")
-        url = str(metadata.get("url", ""))
-        if not url.startswith("https://"):
-            raise IntegrationFlowError("media_unavailable", "WhatsApp media is unavailable", 404)
-        response = await self.client.http.get(
-            url, headers={"Authorization": f"Bearer {credential.access_token}"}
-        )
-        if response.is_error:
-            raise IntegrationFlowError(
-                "media_download_failed",
-                "WhatsApp media could not be downloaded",
-                response.status_code,
-            )
-        if len(response.content) > 20 * 1024 * 1024:
-            raise IntegrationFlowError("media_too_large", "WhatsApp media exceeds 20 MB", 413)
-        return response.content, str(metadata.get("mime_type") or "application/octet-stream")
+        return await self.client.download_media(credential, media_id, 20 * 1024 * 1024)
 
     async def execute(
         self, workspace: str, connection: str, request: OperationRequest, headers: Mapping[str, str]
