@@ -1,19 +1,21 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
 import { calendarDayKey, eventsForDay, timeEventLanes, type CalendarEvent, type TimeEventFold } from '@/lib/crm/calendar';
-import { ControlledModalDialog, useDesignSystem } from '@/design-system';
+import { ControlledModalDialog, useDesignSystem, useWorkspaceZoneLabel } from '@/design-system';
 import { useT } from '@/lib/i18n/i18n-provider';
 import styles from './crm-calendar.module.css';
 const HOUR_HEIGHT = 96;
-export function CalendarTimeGrid({ days, events, onSelect, onSchedule }: { days: Date[]; events: CalendarEvent[]; onSelect: (event: CalendarEvent) => void; onSchedule: (date: Date) => void }) {
+/** Days and events are wall-clock dates in the workspace's zone (see `atWallClock`); `today` is its date key. */
+export function CalendarTimeGrid({ days, today, events, onSelect, onSchedule }: { days: Date[]; today: string; events: CalendarEvent[]; onSelect: (event: CalendarEvent) => void; onSchedule: (date: Date) => void }) {
   const t = useT();
   const { locale } = useDesignSystem();
+  // The hours are the workspace's; its zone is named only when the viewer is elsewhere.
+  const zoneLabel = useWorkspaceZoneLabel();
   const time = (date: Date) => date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
   const scroll = useRef<HTMLDivElement>(null);
   const period = calendarDayKey(days[0]);
   useEffect(() => { if (scroll.current) scroll.current.scrollTop = 7 * HOUR_HEIGHT; }, [period]);
   const [fold, setFold] = useState<{ day: Date; fold: TimeEventFold } | null>(null);
-  const today = calendarDayKey(new Date());
   const single = days.length === 1;
   // A week column fits two readable lanes; a day column fits four. Anything past that folds into a "+N" chip.
   const maxLanes = single ? 4 : 2;
@@ -24,7 +26,7 @@ export function CalendarTimeGrid({ days, events, onSelect, onSchedule }: { days:
   const clockAt = (day: Date, minute: number) => time(new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(minute / 60), minute % 60));
   return <div className={styles.timeScroll} ref={scroll} role="group" aria-label={t(single ? 'Day calendar' : 'Week calendar')}>
     <div className={styles.timeCanvas} data-single={single || undefined}>
-      <div className={styles.timeHead} style={columns}><span className={styles.timezone}>{t('Local time')}</span>{days.map(day => <button key={day.toISOString()} type="button" className={styles.dayHeading} onClick={() => onSchedule(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10))} aria-label={t('Schedule on {date}', { date: day.toLocaleDateString(locale) })}><span>{day.toLocaleDateString(locale, { weekday: 'short' })}</span><strong data-today={calendarDayKey(day) === today || undefined}>{day.getDate()}</strong></button>)}</div>
+      <div className={styles.timeHead} style={columns}><span className={styles.timezone}>{zoneLabel ?? t('Local time')}</span>{days.map(day => <button key={day.toISOString()} type="button" className={styles.dayHeading} onClick={() => onSchedule(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10))} aria-label={t('Schedule on {date}', { date: day.toLocaleDateString(locale) })}><span>{day.toLocaleDateString(locale, { weekday: 'short' })}</span><strong data-today={calendarDayKey(day) === today || undefined}>{day.getDate()}</strong></button>)}</div>
       {events.some(event => event.allDay) && <div className={styles.allDayRow} style={columns}><small>{t('All day')}</small>{days.map(day => <div key={day.toISOString()}>{eventsForDay(events, day).filter(event => event.allDay).map(event => eventButton(event))}</div>)}</div>}
       <div className={styles.hourGrid} style={columns}><div className={styles.hours}>{Array.from({ length: 24 }, (_, hour) => <span key={hour}>{String(hour).padStart(2, '0')}:00</span>)}</div>{days.map(day => {
         const { lanes, folds } = timeEventLanes(events, day, maxLanes);

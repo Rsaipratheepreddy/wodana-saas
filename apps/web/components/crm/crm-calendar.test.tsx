@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { crmRequest } from "@/lib/crm/client";
+import { WorkspaceRegionProvider } from "@/design-system";
+import { zonedToUtc, zonedToday } from "@/lib/crm/zoned-time";
 import { CrmCalendar } from "./crm-calendar";
 
 vi.mock("@/lib/crm/client", async (original) => ({ ...await original<object>(), crmRequest: vi.fn() }));
@@ -85,6 +87,16 @@ describe("CRM calendar", () => {
     expect(screen.getAllByText("Access denied").length).toBeGreaterThan(0);
   });
 
+  it("draws a meeting at the workspace's hour, not the browser's (CAL-2)", async () => {
+    const dubaiTen = zonedToUtc(zonedToday("Asia/Dubai"), "10:00", "Asia/Dubai")!;
+    const record = { id: "dubai", title: "Dubai meeting", type: "meeting", status: "pending", dueAt: dubaiTen, version: 1 };
+    vi.mocked(crmRequest).mockImplementation(async () => ({ data: [record], nextCursor: null }));
+    render(<WorkspaceRegionProvider timeZone="Asia/Dubai"><CrmCalendar workspaceId={workspaceId} /></WorkspaceRegionProvider>);
+    expect(await screen.findByRole("button", { name: /^10:00 AM · CRM Dubai meeting/ })).toBeInTheDocument();
+    // The week is fetched from midnight in Dubai (20:00 UTC), not the browser's midnight.
+    expect(String(vi.mocked(crmRequest).mock.calls.find(([, path]) => String(path).startsWith("activities?"))?.[1])).toContain(encodeURIComponent("T20:00:00.000Z"));
+  });
+
   it("opens notes and reschedules a follow-up even without a meeting appointment", async () => {
     const record = { id: "pending", title: "Call Maya", type: "call", status: "pending", dueAt: new Date().toISOString(), description: "Discuss the quote", version: 2 };
     vi.mocked(crmRequest).mockImplementation(async (_workspace, path, method, body) => {
@@ -92,7 +104,7 @@ describe("CRM calendar", () => {
       if (path === "activities/pending") return record;
       return { data: [record], nextCursor: null };
     });
-    const user = userEvent.setup(); render(<CrmCalendar workspaceId={workspaceId} />);
+    const user = userEvent.setup(); render(<WorkspaceRegionProvider timeZone="Asia/Dubai"><CrmCalendar workspaceId={workspaceId} /></WorkspaceRegionProvider>);
     await user.click(await screen.findByRole("button", { name: /CRM Call Maya/ }));
     const notes = await screen.findByRole("textbox", { name: "Notes" });
     expect(notes).toHaveValue("Discuss the quote");
@@ -106,6 +118,6 @@ describe("CRM calendar", () => {
     await user.click(screen.getByRole("spinbutton", { name: /am\/pm, Reminder time/i })); await user.keyboard("a");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText("Saved. Your reminder is updated in Today and Calendar.");
-    expect(vi.mocked(crmRequest)).toHaveBeenCalledWith(workspaceId, "activities/pending", "PATCH", expect.objectContaining({ version: 2, description: "Discuss the quote. Call tomorrow.", dueAt: new Date("2026-09-09T11:00").toISOString() }));
+    expect(vi.mocked(crmRequest)).toHaveBeenCalledWith(workspaceId, "activities/pending", "PATCH", expect.objectContaining({ version: 2, description: "Discuss the quote. Call tomorrow.", dueAt: "2026-09-09T07:00:00.000Z" }));
   });
 });

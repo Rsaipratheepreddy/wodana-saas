@@ -42,7 +42,7 @@ export function CrmRecordWorkbench({ id, row, workspaceId, onChanged }: { id: Cr
 
 function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: string; row: RecordData; onChanged: () => Promise<void> }) {
   const t = useT();
-  const { locale } = useDesignSystem();
+  const { locale, timeZone } = useDesignSystem();
   useWoddyRecord("opportunity", row.id, String(row.title ?? t("Opportunity")));
   const router = useRouter();
   const [openingCase, setOpeningCase] = useState(false);
@@ -150,7 +150,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       <dl className={styles.opportunitySummary}>
         <div><dt>{t("Stage")}</dt><dd>{String(live.stageName ?? t("Not set"))}</dd></div>
         <div><dt>{t("Sales owner")}</dt><dd>{String(live.ownerName ?? t("Unassigned"))}</dd></div>
-        <div><dt>{t("Next follow-up")}</dt><dd>{dateText(live.nextActionAt ?? live.next_action_at)}</dd></div>
+        <div><dt>{t("Next follow-up")}</dt><dd>{dateText(live.nextActionAt ?? live.next_action_at, { locale, timeZone })}</dd></div>
         <div><dt>{t("Expected close")}</dt><dd>{dateText(live.expectedCloseAt ?? live.expected_close_at)}</dd></div>
       </dl>
       {outcomeMismatch ? <p className={styles.opportunityWarning} role="status">{t("This record is in the {stage} stage but its status is {status}. Review and confirm the outcome.", { stage: String(currentStage?.name), status: label(status) })}</p> : null}

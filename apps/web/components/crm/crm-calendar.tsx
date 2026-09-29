@@ -6,9 +6,10 @@ import Image from "next/image";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
 import { Badge, Button, Callout, ControlledModalDialog, DesignSystemProvider, IconButton, InspectorSheet, isNoAccessError, NoAccessState, SearchInput, SelectField, useDesignSystem, useWorkspaceZoneLabel, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { crmRequest, rows, dateText, label, type RecordData } from "@/lib/crm/client";
+import { crmRequest, rows, label, type RecordData } from "@/lib/crm/client";
 import { calendarDayKey, calendarRange, localDateTime, moveCalendar, type CalendarMode, type CalendarEvent } from "@/lib/crm/calendar";
 import { connectedGoogleForMember, crmCalendarEvents, googleCalendarEvents, projectCalendarEvents, type CalendarConnection, type CalendarMember } from "@/lib/crm/calendar-sources";
+import { atWallClock, fromWallClock, zonedDateTimeToIso } from "@/lib/crm/zoned-time";
 import { ActionDialog, FactList, ResourceState, options, useCrmResource, type ActionSpec } from "./crm-workbench";
 import { CalendarTimeGrid } from "./calendar-time-grid";
 import styles from "./crm-calendar.module.css";
@@ -22,15 +23,18 @@ export function CrmCalendar(props: { workspaceId: string; currentUserId?: string
   const t = useT();
   const settings = useDesignSystem();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
-  // The calendar uses the viewer's locale, timezone and current local day, not the server's.
+  // The calendar draws the workspace's days and hours (its region's time zone) in the viewer's language; it
+  // renders after hydration because "today" and "now" are only known in the browser.
   const ready = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   return <DesignSystemProvider {...settings} className={`${styles.provider} ${workspaceColors.theme}`} portalContainer={portal} ref={setPortal}>{props.canView === false ? <NoAccessState area={t("Calendar")} /> : ready ? <LocalCrmCalendar {...props} /> : <p role="status">{t("Loading your local calendar…")}</p>}</DesignSystemProvider>;
 }
 
 function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { workspaceId: string; currentUserId?: string; revision?: number }) {
   const t = useT();
-  const { locale } = useDesignSystem();
-  const [anchor, setAnchor] = useState(() => new Date());
+  const { locale, timeZone } = useDesignSystem();
+  // Days, hours and "today" are the workspace's wall clock (CAL-2): a Dubai meeting stays at 10:00 in India.
+  const wallNow = () => atWallClock(new Date(), timeZone);
+  const [anchor, setAnchor] = useState(wallNow);
   const [mode, setMode] = useState<CalendarMode>("week");
   const [search, setSearch] = useState("");
   const [refresh, setRefresh] = useState(0);
@@ -52,7 +56,7 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
   const [createOn, setCreateOn] = useState<Date | null>(null);
   const [googleCreateOn, setGoogleCreateOn] = useState<Date | null>(null);
   const range = useMemo(() => calendarRange(anchor, mode), [anchor, mode]);
-  const from = range.start.toISOString(), to = range.end.toISOString();
+  const from = fromWallClock(range.start, timeZone).toISOString(), to = fromWallClock(range.end, timeZone).toISOString();
   const currentMember = members.find(member => member.userId === currentUserId);
   const scopedMember = scope === "personal" ? currentMember : scope === "member" ? members.find(member => member.id === memberId) : undefined;
   const ownerId = scope === "organization" ? "" : scopedMember?.id ?? "";
@@ -62,7 +66,6 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
   const connectionIds = selectedConnections.map(connection => connection.id);
   const connectionIdKey = connectionIds.join(",");
   const googleKey = `${key}/${connectionIdKey}`;
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/workspace/integration-connections?workspaceId=${workspaceId}`, { signal: controller.signal }).then(async (response) => { const payload = await response.json(); if (!response.ok) throw Object.assign(new Error(payload.message ?? t("Connections unavailable")), { status: response.status }); return rows(payload) as CalendarConnection[]; }).then((items) => { if (!controller.signal.aborted) setConnections(items.filter((item) => item.provider === "google_workspace")); }).catch((error: Error) => { if (controller.signal.aborted) return; if (isNoAccessError(error)) setConnectionsDenied(true); else setConnectionError(error.message); });
@@ -86,12 +89,12 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
           if (!cursor) break;
         }
         if (cursor) throw new Error(t("More than 3,000 activities in this range. Choose Week or Day to see the full schedule."));
-        const events = crmCalendarEvents(items);
+        const events = crmCalendarEvents(items, timeZone);
         if (!controller.signal.aborted) setCrm({ key, events });
       } catch (error) { if (!controller.signal.aborted) setCrm({ key, events: [], error: (error as Error).message }); }
     })();
     return () => controller.abort();
-  }, [workspaceId, from, to, key, ownerId, scope, t]);
+  }, [workspaceId, from, to, key, ownerId, scope, timeZone, t]);
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
@@ -123,19 +126,24 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
         // Google accepts at most 31 days per request. Split a six-week month grid safely.
         const items: Parameters<typeof googleCalendarEvents>[0] = [];
         for (let cursor = Date.parse(from); cursor < Date.parse(to); cursor += 30 * 86400000) {
-          const response = await fetch("/api/workspace/crm/google-calendar", { method: "POST", signal: controller.signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, connectionIds, timeMin: new Date(cursor).toISOString(), timeMax: new Date(Math.min(cursor + 30 * 86400000, Date.parse(to))).toISOString(), timeZone: timezone }) });
+          const response = await fetch("/api/workspace/crm/google-calendar", { method: "POST", signal: controller.signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, connectionIds, timeMin: new Date(cursor).toISOString(), timeMax: new Date(Math.min(cursor + 30 * 86400000, Date.parse(to))).toISOString(), timeZone }) });
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.message ?? t("Google events could not be loaded."));
           items.push(...payload.events ?? []);
         }
-        if (!controller.signal.aborted) setGoogle({ key: googleKey, events: googleCalendarEvents(items, safeGoogleLink) });
+        if (!controller.signal.aborted) setGoogle({ key: googleKey, events: googleCalendarEvents(items, safeGoogleLink, timeZone) });
       } catch (error) { if (!controller.signal.aborted) setGoogle({ key: googleKey, events: [], error: (error as Error).message }); }
     })();
     return () => controller.abort();
-  }, [workspaceId, connectionIdKey, from, to, timezone, googleKey, t]);
+  }, [workspaceId, connectionIdKey, from, to, timeZone, googleKey, t]);
   const events = [...(crm?.key === key ? crm.events : []), ...(project?.key === key ? project.events : []), ...(connectionIds.length && google?.key === googleKey ? google.events : [])].filter((event) => event.title.toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.start.getTime() - b.start.getTime());
-  const today = calendarDayKey(new Date());
-  const newEventDate = () => calendarDayKey(anchor) === today ? new Date(Math.ceil((Date.now() + 60000) / 1800000) * 1800000) : new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), 10);
+  const today = calendarDayKey(wallNow());
+  const newEventDate = () => {
+    if (calendarDayKey(anchor) !== today) return new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), 10);
+    const next = atWallClock(Date.now() + 60000, timeZone);
+    next.setMinutes(Math.ceil(next.getMinutes() / 30) * 30, 0, 0);
+    return next;
+  };
   const periodTitle = anchor.toLocaleDateString(locale, { month: "long", year: "numeric" });
   const periodSubtitle = mode === "month" ? `${new Date(anchor.getFullYear(), anchor.getMonth(), 1).toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}` : `${range.days[0].toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${range.days.at(-1)?.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}`;
   return <div className={styles.calendarLayout}><div className={styles.calendar}>
@@ -160,8 +168,8 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
     {connectionIds.length ? google?.key !== googleKey ? <p role="status">{t("Loading Google Calendar…")}</p> : google.error ? <Callout title={t("Google Calendar unavailable")} tone="warning">{google.error}</Callout> : null : null}
     <section className={styles.calendarFrame} aria-label={t("Calendar schedule")}><div className={styles.periodBar}>
       <div className={styles.periodIdentity}><span className={styles.dateBadge}><small>{anchor.toLocaleDateString(locale, { month: "short" })}</small><strong>{anchor.getDate()}</strong></span><span><h2>{periodTitle}</h2><small>{periodSubtitle}</small></span></div>
-      <div className={styles.periodControls}><div className={styles.periodStepper}><IconButton aria-label={t("Previous calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, -1))}><ChevronLeft size={16} /></IconButton><Button size="compact" onPress={() => setAnchor(new Date())}>{t("Today")}</Button><IconButton aria-label={t("Next calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, 1))}><ChevronRight size={16} /></IconButton></div><SelectField label={<span className="wd-visually-hidden">{t("Calendar view")}</span>} aria-label={t("Calendar view")} items={[{ id: "day", label: t("Day view") }, { id: "week", label: t("Week view") }, { id: "month", label: t("Month view") }]} selectedKey={mode} onSelectionChange={value => setMode(String(value) as CalendarMode)} /><IconButton aria-label={t("Refresh calendar")} onPress={() => { setRefresh(n => n + 1); setConnectionError(""); }}><RefreshCw size={16} /></IconButton></div>
-    </div><div className={styles.scheduleMain}>{mode !== "month" ? <CalendarTimeGrid days={range.days} events={events} onSelect={setSelected} onSchedule={setCreateOn} /> : <div className={styles.scroll}><div className={styles.grid} data-mode="month" role="group" aria-label={t("Month calendar")}>
+      <div className={styles.periodControls}><div className={styles.periodStepper}><IconButton aria-label={t("Previous calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, -1))}><ChevronLeft size={16} /></IconButton><Button size="compact" onPress={() => setAnchor(wallNow())}>{t("Today")}</Button><IconButton aria-label={t("Next calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, 1))}><ChevronRight size={16} /></IconButton></div><SelectField label={<span className="wd-visually-hidden">{t("Calendar view")}</span>} aria-label={t("Calendar view")} items={[{ id: "day", label: t("Day view") }, { id: "week", label: t("Week view") }, { id: "month", label: t("Month view") }]} selectedKey={mode} onSelectionChange={value => setMode(String(value) as CalendarMode)} /><IconButton aria-label={t("Refresh calendar")} onPress={() => { setRefresh(n => n + 1); setConnectionError(""); }}><RefreshCw size={16} /></IconButton></div>
+    </div><div className={styles.scheduleMain}>{mode !== "month" ? <CalendarTimeGrid days={range.days} today={today} events={events} onSelect={setSelected} onSchedule={setCreateOn} /> : <div className={styles.scroll}><div className={styles.grid} data-mode="month" role="group" aria-label={t("Month calendar")}>
       {range.days.slice(0, 7).map(day => <div className={styles.weekday} key={day.toISOString()}>{day.toLocaleDateString(locale, { weekday: "short" })}</div>)}
       {range.days.map(day => { const nextDay = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1); const dayEvents = events.filter(event => event.start < nextDay && (event.end && event.end > event.start ? event.end > day : event.start >= day)); return <section key={day.toISOString()} className={styles.day} data-outside={day.getMonth() !== anchor.getMonth() || undefined} aria-label={day.toLocaleDateString(locale, { dateStyle: "full" })}><button className={styles.date} aria-current={calendarDayKey(day) === today ? "date" : undefined} data-today={calendarDayKey(day) === today || undefined} type="button" aria-label={t("Schedule on {date}", { date: day.toLocaleDateString(locale) })} onClick={() => setCreateOn(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10))}>{day.getDate()}</button>{dayEvents.slice(0, 3).map(event => <button type="button" className={styles.event} data-kind={event.kind} data-provider={event.provider} key={event.id} aria-label={`${event.provider} ${event.title}`} onClick={() => setSelected(event)}><span className={styles.eventTitle}>{event.title}</span></button>)}{dayEvents.length > 3 ? <button type="button" className={styles.more} onClick={() => { setAnchor(day); setMode("day"); }}>{t("+{count} more", { count: dayEvents.length - 3 })}</button> : null}</section>; })}
     </div></div>}</div></section>
@@ -177,13 +185,17 @@ function ScheduleMeeting({ workspaceId, date, onClose, onSaved }: { workspaceId:
   const customers = useCrmResource<unknown>(workspaceId, "parties?limit=100");
   // The people who can own CRM work (the same list and rule the server checks), readable by Sales.
   const members = useCrmResource<unknown>(workspaceId, "sales-owners");
-  const [start] = useState(date);
+  const { timeZone } = useDesignSystem();
+  // The slot picked on the grid is the workspace's wall clock; the meeting is saved at that moment in its zone.
+  const [start] = useState(() => fromWallClock(date, timeZone));
   const blockedReason = customers.loading || members.loading ? t("Loading customers and sales owners…") : customers.failure || members.failure ? t("Required records could not load: {error}. Close this form and retry.", { error: customers.failure || members.failure }) : !rows(customers.data).length ? t("Create a customer or enquiry before scheduling a CRM meeting.") : !rows(members.data).length ? t("No active sales owners are available.") : undefined;
-  return <ActionDialog workspaceId={workspaceId} onClose={onClose} onSaved={onSaved} action={{ title: t("Schedule CRM meeting"), blockedReason, description: t("Saves a meeting and its calendar appointment together. No Google event or customer invitation is sent."), path: "activities", initial: { type: "meeting", startsAt: start.toISOString(), endsAt: new Date(start.getTime() + 3600000).toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }, fields: [{ key: "title", label: t("Meeting title"), required: true }, { key: "partyId", label: t("Customer"), options: options(rows(customers.data), "displayName"), required: true }, { key: "ownerMembershipId", label: t("Sales owner"), options: options(rows(members.data), "displayName"), required: true }, { key: "startsAt", label: t("Starts (local time)"), type: "datetime-local", required: true }, { key: "endsAt", label: t("Ends (local time)"), type: "datetime-local", required: true }, { key: "location", label: t("Location or meeting link") }, { key: "description", label: t("Agenda"), type: "textarea" }], transform: ({ startsAt, endsAt, timezone, location, ...values }) => { if (customers.failure || members.failure) throw new Error(customers.failure || members.failure); if (Date.parse(String(endsAt)) <= Date.parse(String(startsAt))) throw new Error(t("End time must be after start time.")); return { ...values, dueAt: startsAt, appointment: { startsAt, endsAt, timezone, location: { text: location ?? "" } } }; } }} />;
+  return <ActionDialog workspaceId={workspaceId} onClose={onClose} onSaved={onSaved} action={{ title: t("Schedule CRM meeting"), blockedReason, description: t("Saves a meeting and its calendar appointment together. No Google event or customer invitation is sent."), path: "activities", initial: { type: "meeting", startsAt: start.toISOString(), endsAt: new Date(start.getTime() + 3600000).toISOString(), timezone: timeZone }, fields: [{ key: "title", label: t("Meeting title"), required: true }, { key: "partyId", label: t("Customer"), options: options(rows(customers.data), "displayName"), required: true }, { key: "ownerMembershipId", label: t("Sales owner"), options: options(rows(members.data), "displayName"), required: true }, { key: "startsAt", label: t("Starts"), type: "datetime-local", required: true }, { key: "endsAt", label: t("Ends"), type: "datetime-local", required: true }, { key: "location", label: t("Location or meeting link") }, { key: "description", label: t("Agenda"), type: "textarea" }], transform: ({ startsAt, endsAt, timezone, location, ...values }) => { if (customers.failure || members.failure) throw new Error(customers.failure || members.failure); if (Date.parse(String(endsAt)) <= Date.parse(String(startsAt))) throw new Error(t("End time must be after start time.")); return { ...values, dueAt: startsAt, appointment: { startsAt, endsAt, timezone, location: { text: location ?? "" } } }; } }} />;
 }
 
 function GoogleEventDialog({ workspaceId, connections, date, onClose, onSaved }: { workspaceId: string; connections: CalendarConnection[]; date: Date; onClose: () => void; onSaved: () => void }) {
   const t = useT();
+  // The fields read the workspace's wall clock, like the grid the slot was picked on.
+  const { timeZone } = useDesignSystem();
   const [calendars, setCalendars] = useState<Array<{ connectionId: string; calendarId: string; label: string }>>([]);
   const [calendarIndex, setCalendarIndex] = useState("0");
   const [title, setTitle] = useState("");
@@ -215,13 +227,13 @@ function GoogleEventDialog({ workspaceId, connections, date, onClose, onSaved }:
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const selectedCalendar = calendars[Number(calendarIndex)];
-    const from = new Date(start), to = new Date(end);
+    const from = new Date(zonedDateTimeToIso(start, timeZone) ?? NaN), to = new Date(zonedDateTimeToIso(end, timeZone) ?? NaN);
     if (!selectedCalendar) { setError(t("Choose a writable Google calendar in Integrations.")); return; }
     if (!title.trim() || !Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || to <= from) { setError(t("Enter a title and an end time after the start.")); return; }
     const attendeeEmails = attendees.split(/[\s,;]+/).map(email => email.trim()).filter(Boolean);
     setSaving(true); setError("");
     try {
-      const response = await fetch(`/api/workspace/integration-connections/${selectedCalendar.connectionId}/tools`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, action: "calendar.create", idempotencyKey, payload: { calendarId: selectedCalendar.calendarId, summary: title.trim(), description: description.trim() || undefined, location: location.trim() || undefined, start: from.toISOString(), end: to.toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, attendeeEmails, sendUpdates: attendeeEmails.length ? "all" : "none" } }) });
+      const response = await fetch(`/api/workspace/integration-connections/${selectedCalendar.connectionId}/tools`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, action: "calendar.create", idempotencyKey, payload: { calendarId: selectedCalendar.calendarId, summary: title.trim(), description: description.trim() || undefined, location: location.trim() || undefined, start: from.toISOString(), end: to.toISOString(), timeZone, attendeeEmails, sendUpdates: attendeeEmails.length ? "all" : "none" } }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? t("Google event could not be created."));
       onSaved();
@@ -245,10 +257,18 @@ function GoogleEventDialog({ workspaceId, connections, date, onClose, onSaved }:
 
 function CalendarDetails({ workspaceId, event, onChanged }: { workspaceId: string; event: CalendarEvent; onChanged: () => void }) {
   const t = useT();
-  const { locale } = useDesignSystem();
+  const { locale, timeZone } = useDesignSystem();
+  const zoneLabel = useWorkspaceZoneLabel();
   const resource = useCrmResource<RecordData>(workspaceId, event.provider === "crm" ? `activities/${event.id}` : null);
   const [action, setAction] = useState<ActionSpec | null>(null);
   const record = resource.data;
   const appointment = record?.appointment as RecordData | null;
-  return <div className={styles.details}><Badge tone="neutral">{event.provider === "google" ? t("Google Calendar · Live") : event.provider === "project" ? t("Project work") : t("CRM activity")}</Badge><ResourceState {...resource} retry={resource.refresh} /><FactList facts={[[t("Starts"), event.allDay ? t("All day · {date}", { date: event.start.toLocaleDateString(locale) }) : dateText(appointment?.startsAt ?? event.start.toISOString(), { locale }, t("Not scheduled"))], [t("Ends"), event.allDay ? t("All day") : appointment?.endsAt || event.end ? dateText(appointment?.endsAt ?? event.end?.toISOString(), { locale }, t("Not scheduled")) : t("No end time")], [t("Status"), label(record?.status ?? event.status, t("Scheduled"))], [t("Owner"), String(record?.ownerName ?? event.ownerName ?? t("Not available"))], ...(event.calendarName ? [[t("Calendar / project"), event.calendarName] as [string, string]] : []), ...(event.location ? [[t("Location"), event.location] as [string, string]] : [])]} />{event.href ? event.provider === "project" ? <Link href={event.href}>{t("Open project work")}</Link> : <a href={event.href} target="_blank" rel="noreferrer">{t("Open in Google Calendar")}</a> : null}{event.description || record?.description ? <p>{String(event.description ?? record?.description)}</p> : null}{event.attendees?.length ? <p>{t("Guests: {guests}", { guests: event.attendees.map(attendee => attendee.displayName || attendee.email).join(", ") })}</p> : null}{record?.partyId ? <Link href={`/workspace/crm/customers?record=${record.partyId}`}>{t("Open customer")}</Link> : null}{record?.leadId ? <Link href={`/workspace/crm/leads?lead=${record.leadId}`}>{t("Open enquiry")}</Link> : null}{record?.opportunityId ? <Link href={`/workspace/crm/opportunities?record=${record.opportunityId}`}>{t("Open opportunity")}</Link> : null}{record?.status === "pending" ? <div className={styles.actions}>{appointment ? <Button size="compact" onPress={() => setAction({ title: t("Reschedule meeting"), path: `activities/${event.id}/appointment`, method: "PATCH", initial: { version: appointment.version, startsAt: appointment.startsAt, endsAt: appointment.endsAt, timezone: appointment.timezone, location: appointment.location }, fields: [{ key: "startsAt", label: t("Starts (local time)"), type: "datetime-local", required: true }, { key: "endsAt", label: t("Ends (local time)"), type: "datetime-local", required: true }] })}>{t("Reschedule")}</Button> : null}<Button size="compact" onPress={() => setAction({ title: t("Complete activity"), path: `activities/${event.id}/complete`, initial: { version: record.version }, fields: [{ key: "outcome", label: t("Outcome"), required: true }] })}>{t("Complete")}</Button></div> : null}{action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={() => { resource.refresh(); onChanged(); }} /> : null}</div>;
+  // The workspace's time, and the viewer's own only when their zone differs.
+  const at = (saved: unknown, wall?: Date) => {
+    const instant = typeof saved === "string" && saved ? new Date(saved) : wall ? fromWallClock(wall, timeZone) : null;
+    if (!instant || !Number.isFinite(instant.getTime())) return t("Not scheduled");
+    const text = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(instant);
+    return zoneLabel ? t("{time} · {local} your time", { time: text, local: new Intl.DateTimeFormat(locale, { timeStyle: "short" }).format(instant) }) : text;
+  };
+  return <div className={styles.details}><Badge tone="neutral">{event.provider === "google" ? t("Google Calendar · Live") : event.provider === "project" ? t("Project work") : t("CRM activity")}</Badge><ResourceState {...resource} retry={resource.refresh} /><FactList facts={[[t("Starts"), event.allDay ? t("All day · {date}", { date: event.start.toLocaleDateString(locale) }) : at(appointment?.startsAt, event.start)], [t("Ends"), event.allDay ? t("All day") : appointment?.endsAt || event.end ? at(appointment?.endsAt, event.end) : t("No end time")], [t("Status"), label(record?.status ?? event.status, t("Scheduled"))], [t("Owner"), String(record?.ownerName ?? event.ownerName ?? t("Not available"))], ...(event.calendarName ? [[t("Calendar / project"), event.calendarName] as [string, string]] : []), ...(event.location ? [[t("Location"), event.location] as [string, string]] : [])]} />{event.href ? event.provider === "project" ? <Link href={event.href}>{t("Open project work")}</Link> : <a href={event.href} target="_blank" rel="noreferrer">{t("Open in Google Calendar")}</a> : null}{event.description || record?.description ? <p>{String(event.description ?? record?.description)}</p> : null}{event.attendees?.length ? <p>{t("Guests: {guests}", { guests: event.attendees.map(attendee => attendee.displayName || attendee.email).join(", ") })}</p> : null}{record?.partyId ? <Link href={`/workspace/crm/customers?record=${record.partyId}`}>{t("Open customer")}</Link> : null}{record?.leadId ? <Link href={`/workspace/crm/leads?lead=${record.leadId}`}>{t("Open enquiry")}</Link> : null}{record?.opportunityId ? <Link href={`/workspace/crm/opportunities?record=${record.opportunityId}`}>{t("Open opportunity")}</Link> : null}{record?.status === "pending" ? <div className={styles.actions}>{appointment ? <Button size="compact" onPress={() => setAction({ title: t("Reschedule meeting"), path: `activities/${event.id}/appointment`, method: "PATCH", initial: { version: appointment.version, startsAt: appointment.startsAt, endsAt: appointment.endsAt, timezone: appointment.timezone, location: appointment.location }, fields: [{ key: "startsAt", label: t("Starts"), type: "datetime-local", required: true }, { key: "endsAt", label: t("Ends"), type: "datetime-local", required: true }] })}>{t("Reschedule")}</Button> : null}<Button size="compact" onPress={() => setAction({ title: t("Complete activity"), path: `activities/${event.id}/complete`, initial: { version: record.version }, fields: [{ key: "outcome", label: t("Outcome"), required: true }] })}>{t("Complete")}</Button></div> : null}{action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={() => { resource.refresh(); onChanged(); }} /> : null}</div>;
 }

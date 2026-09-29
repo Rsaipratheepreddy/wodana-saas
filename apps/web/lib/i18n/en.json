@@ -10846,5 +10846,11 @@
   "Scheduled for {time}": "Scheduled for {time}",
   "Edit scheduled message": "Edit scheduled message",
   "Send later": "Send later",
-  "Send the template later": "Send the template later"
+  "Send the template later": "Send the template later",
+  "{time} · {local} your time": "{time} · {local} your time",
+  "Times in {zone}": "Times in {zone}",
+  "More follow-ups are available": "More follow-ups are available",
+  "Choose a valid date and time for {field}.": "Choose a valid date and time for {field}.",
+  "Choose a valid date and time.": "Choose a valid date and time.",
+  "{zone} · {time} your time": "{zone} · {time} your time"
 }
