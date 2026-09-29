@@ -108,4 +108,19 @@ describe("a client's conversation", () => {
     conversation("2026-09-20T11:00:00.000Z");
     expect(await screen.findByText("Not seen by the client yet")).toBeInTheDocument();
   });
+
+  it("sends the team's files with a reply the client reads (a reply can be just files)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => ({ ok: true, status: 200, json: async () => init?.method === "POST" && init.body instanceof FormData
+      ? { id: "asset-1", name: "handles.pdf", mimeType: "application/pdf" } : { files: {}, clientRead: {} } })));
+    const state = { canEdit: true, workspaceId: "workspace", caseId: "case",
+      data: { quotes: [], requests: [{ id: "r1", number: 4, title: "Kitchen handles", detail: "Options?", status: "open", owner: "", dueDate: "", resolution: "", createdAt: "2026-09-20T08:00:00.000Z", comments: [] }] },
+    } as unknown as CommercialState;
+    const run = vi.fn().mockResolvedValue(true);
+    render(<CommercialRequests state={state} run={run} busy={false} openRequestId="r1" />);
+    const dialog = screen.getByRole("dialog", { name: "Kitchen handles" });
+    await userEvent.upload(within(dialog).getByLabelText("Attach photos or PDFs to the reply"), new File(["%PDF"], "handles.pdf", { type: "application/pdf" }));
+    expect(await within(dialog).findByText("handles.pdf")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add reply" }));
+    await waitFor(() => expect(run).toHaveBeenCalledWith("comment", { requestId: "r1", text: "", visibility: "client", assetIds: ["asset-1"] }));
+  });
 });

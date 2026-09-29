@@ -3002,13 +3002,20 @@ export class CommercialService {
         } else if (action === "comment") {
           const r = data.requests.find((r) => r.id === b.requestId);
           if (!r) throw new NotFoundException("Request not found.");
+          const visibility = b.visibility === "internal" ? "internal" : "client";
+          const commentId = randomUUID();
+          // Files the team attaches to a reply the client reads (as the client can): the team's own uploads on this case.
+          const files = await teamReplyFiles(client, workspaceId, caseId, visibility, b.assetIds);
           r.comments.push({
-            id: randomUUID(),
+            id: commentId,
             at: now,
             author: user.displayName,
-            text: text(b.text, 6000, true),
-            visibility: b.visibility === "internal" ? "internal" : "client",
+            text: text(b.text, 6000, files.length === 0),
+            visibility,
           });
+          for (const assetId of files)
+            await client.query(`INSERT INTO client_portal_attachments (workspace_id, case_id, asset_id, target_kind, target_id, attached_by) VALUES ($1, $2, $3, 'message', $4, $5)`,
+              [workspaceId, caseId, assetId, commentId, user.userId]);
         } else if (action === "attach_agreement_file") {
           if (!data.agreement) throw new ConflictException("Save the agreement before attaching its signed documents.");
           if (b.quoteId !== data.agreement.quoteId) throw new ConflictException("The agreement changed. Reopen it before attaching files.");
@@ -3353,6 +3360,25 @@ export class CommercialService {
     }
   }
 }
+/**
+ * Up to ten of the team's own uploads on this case (photos or PDFs, not the client's and not already attached to a
+ * conversation) for a reply the client reads. An internal note carries no files.
+ */
+export async function teamReplyFiles(client: Pick<PoolClient, "query">, workspaceId: string, caseId: string, visibility: "client" | "internal", value: unknown): Promise<string[]> {
+  if (value === undefined || value === null || (Array.isArray(value) && !value.length)) return [];
+  if (visibility !== "client") throw new BadRequestException("Files go with a reply the client reads, not an internal note.");
+  const ids = Array.isArray(value) ? [...new Set(value)] : [];
+  if (!ids.length || ids.length > 10 || !ids.every((id) => typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))
+    throw new BadRequestException("Attach up to 10 photos or PDFs.");
+  const rows = (await client.query<{ id: string; attached: boolean }>(
+    `SELECT asset.id, EXISTS (SELECT 1 FROM client_portal_attachments attachment WHERE attachment.workspace_id = asset.workspace_id AND attachment.asset_id = asset.id) AS attached
+       FROM pre_project_brief_assets asset
+      WHERE asset.workspace_id = $1 AND asset.case_id = $2 AND asset.id = ANY($3::uuid[]) AND asset.client_grant_id IS NULL`, [workspaceId, caseId, ids])).rows;
+  if (rows.length !== ids.length) throw new BadRequestException("One of the files isn't on this project any more. Upload it again.");
+  if (rows.some((row) => row.attached)) throw new ConflictException("One of the files was already sent. Upload it again to send it here too.");
+  return ids as string[];
+}
+
 function uuid(value: unknown, label: string) {
   const id = text(value, 36, true);
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))

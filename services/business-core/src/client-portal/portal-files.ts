@@ -133,21 +133,24 @@ export async function uploadClientFile(db: Db, store: FileStore | undefined, wor
 
 /**
  * Where a file the client may open lives and which portal sections show it: their own uploads (and those of the
- * people on their project), and the photos of moodboard pins the team shared with them.
+ * people on their project), the photos of moodboard pins the team shared with them, and files the team sent with a reply.
  */
 export async function locateClientAsset(db: Db, workspaceId: string, id: string) {
-  const row = (await db.query<{ caseId: string; objectKey: string; previewKey: string | null; mimeType: string; name: string; client: boolean; pinShared: boolean }>(
+  const row = (await db.query<{ caseId: string; objectKey: string; previewKey: string | null; mimeType: string; name: string; client: boolean; pinShared: boolean; teamReply: boolean }>(
     `SELECT asset.case_id AS "caseId", asset.object_key AS "objectKey", asset.preview_key AS "previewKey", asset.mime_type AS "mimeType", asset.original_name AS name,
             asset.client_grant_id IS NOT NULL AS client,
+            EXISTS (SELECT 1 FROM client_portal_attachments attachment WHERE attachment.workspace_id = asset.workspace_id AND attachment.asset_id = asset.id
+                      AND attachment.attached_by IS NOT NULL AND attachment.target_kind = 'message') AS "teamReply",
             EXISTS (SELECT 1 FROM pre_project_entry_assets link
                       JOIN pre_project_brief_entries entry ON entry.workspace_id = link.workspace_id AND entry.case_id = link.case_id AND entry.id = link.entry_id
                        AND entry.kind = 'inspiration' AND entry.archived_at IS NULL
                       JOIN pre_project_moodboard_shares share ON share.workspace_id = entry.workspace_id AND share.entry_id = entry.id
                      WHERE link.workspace_id = asset.workspace_id AND link.asset_id = asset.id) AS "pinShared"
        FROM pre_project_brief_assets asset WHERE asset.workspace_id = $1 AND asset.id = $2`, [workspaceId, id])).rows[0];
-  if (!row || (!row.client && !row.pinShared)) return null;
-  // A client's own file is theirs wherever they sent it; a team photo only through the moodboard.
-  const sections = row.client ? (["moodboard", "decisions", "payments", "warranty", "messages", "progress"] as const) : (["moodboard"] as const);
+  if (!row || (!row.client && !row.pinShared && !row.teamReply)) return null;
+  // A client's own file is theirs wherever they sent it; a team file through the moodboard, or a reply it came with.
+  const sections = row.client ? (["moodboard", "decisions", "payments", "warranty", "messages", "progress"] as const)
+    : [...(row.pinShared ? (["moodboard"] as const) : []), ...(row.teamReply ? (["messages"] as const) : [])];
   return { caseId: row.caseId, objectKey: row.objectKey, previewKey: row.previewKey, mimeType: row.mimeType, name: row.name, sections: [...sections] };
 }
 

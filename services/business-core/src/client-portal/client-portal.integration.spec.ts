@@ -8,7 +8,7 @@ import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { commercialRepository } from "../commercial/commercial-repository";
 import { freezeHash } from "../commercial/commercial.domain";
-import { CommercialService } from "../commercial/commercial.service";
+import { CommercialService, teamReplyFiles } from "../commercial/commercial.service";
 import type { CommercialData } from "../commercial/commercial.types";
 import { CrmNotificationsService } from "../crm/notifications/crm-notifications.service";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
@@ -500,6 +500,42 @@ integration("client portal (plan §6.22)", () => {
       expect(told).toEqual([expect.stringContaining("We're fixing it."), expect.stringContaining("That's the sample board, not your panel.")]);
       await w.client.query("UPDATE work_items SET status = 'done', completed_at = now() WHERE id = $1", [snagId]);
       expect((await w.portal.view(w.slug, token)).projects[0].progress!.issues.find((item) => item.number === 1)!.status).toBe("fixed");
+    });
+  });
+
+  it("shows the client the files the team sends with a reply, as the client's own files show to the team", async () => {
+    await world(async (w) => {
+      await open(w);
+      const token = await signIn(w, APPROVER);
+      const asked = await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "request", caseId: w.caseId, title: "Kitchen handles", detail: "Can we see the options?" });
+      // The designer uploads a PDF to the case (the case's files, not the client's).
+      const pdf = Buffer.from("%PDF-1.4\n%handles\n"), sheet = randomUUID(), clientOwn = randomUUID();
+      await w.storage.put(`pre-projects/${w.workspaceId}/${w.caseId}/${sheet}/original`, pdf, "application/pdf");
+      await w.client.query(`INSERT INTO pre_project_brief_assets (id, workspace_id, case_id, original_name, mime_type, byte_size, object_key, sha256, created_by)
+        VALUES ($1, $2, $3, 'handles.pdf', 'application/pdf', $4, $5, repeat('b', 64), $6)`, [sheet, w.workspaceId, w.caseId, pdf.length, `pre-projects/${w.workspaceId}/${w.caseId}/${sheet}/original`, w.designer]);
+      // Only with a reply the client reads, only the team's own uploads, only once.
+      await expect(teamReplyFiles(w.client, w.workspaceId, w.caseId, "internal", [sheet])).rejects.toThrow(/not an internal note/);
+      await w.client.query(`INSERT INTO pre_project_brief_assets (id, workspace_id, case_id, original_name, mime_type, byte_size, object_key, sha256, created_by, client_grant_id)
+        SELECT $1, $2, $3, 'mine.pdf', 'application/pdf', 10, 'x', repeat('c', 64), NULL, id FROM client_portal_grants WHERE workspace_id = $2 AND case_id = $3 AND phone = $4`,
+        [clientOwn, w.workspaceId, w.caseId, APPROVER]);
+      await expect(teamReplyFiles(w.client, w.workspaceId, w.caseId, "client", [clientOwn])).rejects.toThrow(/isn't on this project/);
+      expect(await teamReplyFiles(w.client, w.workspaceId, w.caseId, "client", [sheet, sheet])).toEqual([sheet]);
+      // The reply is saved with the file (as the Commercial command does).
+      const loaded = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!;
+      const data = { ...(loaded.content as CommercialData), revision: loaded.revision };
+      const reply = randomUUID();
+      data.requests.find((request) => request.id === asked.requestId)!.comments.push({ id: reply, at: new Date().toISOString(), author: "Dana Designer", text: "Here are the options.", visibility: "client" });
+      data.revision = loaded.revision + 1;
+      await commercialRepository.save(w.client, w.workspaceId, w.caseId, data);
+      await w.client.query(`INSERT INTO client_portal_attachments (workspace_id, case_id, asset_id, target_kind, target_id, attached_by) VALUES ($1, $2, $3, 'message', $4, $5)`,
+        [w.workspaceId, w.caseId, sheet, reply, w.designer]);
+      await expect(teamReplyFiles(w.client, w.workspaceId, w.caseId, "client", [sheet])).rejects.toThrow(/already sent/);
+      // The client sees it on the team's reply and opens it; so does the team.
+      const thread = (await w.portal.view(w.slug, token)).projects[0].messages!.requests.find((request) => request.id === asked.requestId)!;
+      expect(thread.comments.find((item) => item.id === reply)).toMatchObject({ fromClient: false, files: [{ id: sheet, name: "handles.pdf", mimeType: "application/pdf" }] });
+      expect((await w.portal.file(w.slug, token, "asset", sheet, false)).mimeType).toBe("application/pdf");
+      expect((await w.admin.clientFile(actor, w.workspaceId, w.caseId, sheet, false)).name).toBe("handles.pdf");
+      expect((await w.admin.threads(actor, w.workspaceId, w.caseId)).files[reply]).toEqual([expect.objectContaining({ id: sheet })]);
     });
   });
 
