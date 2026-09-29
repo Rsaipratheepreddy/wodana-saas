@@ -102,7 +102,11 @@ export type PortalMoodboard = {
 export type PortalIssue = { id: string; number: number; raisedOn: string; description: string; area: string | null; status: "to_triage" | "accepted" | "declined" | "fixed";
   reason: string; files: PortalFile[] };
 
-export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice"; id: string; title: string; due: string | null };
+/** A delivery to site the client confirms access for, or asks to move (D-29). */
+export type PortalSiteAccess = { id: string; date: string; items: string; status: "waiting" | "confirmed" | "move_asked"; clientReason: string | null; clientDate: string | null;
+  movedFrom: string | null; moveReason: string | null; chargeable: boolean; version: number };
+
+export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice" | "site_access"; id: string; title: string; due: string | null };
 
 export type PortalProject = {
   id: string; title: string; reference: string | null; role: "approver" | "viewer"; status: "planning" | "active" | "on_hold" | "completed" | "cancelled"; paused: boolean;
@@ -121,6 +125,7 @@ export type PortalProject = {
     updates: Array<{ id: string; at: string; text: string }>;
     photoDays: Array<{ on: string; photos: Array<{ id: string }> }>;
     issues: PortalIssue[]; canReportIssue: boolean;
+    siteAccess: PortalSiteAccess[];
   };
   moodboard: PortalMoodboard | null;
   decisions: null | { quotes: PortalQuote[]; designs: PortalDesign[]; requests: PortalQuestion[]; definition: PortalDefinition | null; materials: PortalMaterials | null; handovers: PortalHandover[] };

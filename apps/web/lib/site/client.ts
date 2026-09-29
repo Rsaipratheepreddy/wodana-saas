@@ -33,6 +33,9 @@ export function siteApi(workspaceId: string, projectId: string) {
       return send<HandoverState>(`${at(`handover/${packId}/documents/${documentId}`)}&${new URLSearchParams({ kind, title })}`, { method: "POST", body: form }, "The file could not be uploaded.");
     },
     documentUrl: (documentId: string) => at(`handover/documents/${documentId}`),
+    /** D-29: the client confirmed site access by phone, or the delivery moves to a new day. */
+    arrangeAccess: (requestId: string, input: { action: "confirm" | "reschedule"; version: number; date?: string; reason?: string; chargeable?: boolean }) =>
+      send<{ ok: true; id: string }>(at(`access/${requestId}`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) }, "Could not save."),
     warranty: () => send<WarrantyState>(at("warranty"), {}, "The warranty didn't load."),
     warrantyCommand: (action: string, input: Record<string, unknown> = {}) =>
       send<WarrantyState>(at("warranty"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, action }) }, "Could not save."),

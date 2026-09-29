@@ -183,6 +183,11 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "payment.client_reported", channel: "email", subject: "{{actor}} says they paid {{milestone}}", body: "{{actor}} reported a payment on {{title}} in the client portal.\n\nMilestone: {{milestone}}\nAmount: {{amount}}\nPaid on: {{paidOn}}\nReference: {{reference}}\n{{note}}\n\nCheck it against the bank, then record the receipt or say it wasn't received.", variables: ["title", "clientName", "actor", "milestone", "amount", "paidOn", "reference", "note"] },
   { code: "project.client_issue", channel: "in_app", subject: "{{actor}} reported an issue on {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.client_issue", channel: "email", subject: "{{actor}} reported an issue on {{title}}", body: "{{actor}} reported an issue in the client portal:\n\n{{note}}\n\nTriage it: accept it as a snag with a severity, or decline it with a reason the client reads.", variables: ["title", "clientName", "actor", "note"] },
+  // D-29 (site/site-access.ts): the client's answer about site access reaches the site supervisor and the project manager.
+  { code: "site.access_confirmed", channel: "in_app", subject: "{{actor}} confirmed site access · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "site.access_move_asked", channel: "in_app", subject: "{{actor}} asked to move a delivery · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "site.access_move_asked", channel: "email", subject: "{{actor}} asked to move a delivery · {{title}}", body: "{{actor}} asked in the client portal to move a delivery:\n\n{{note}}\n\nReschedule it with the supplier, or confirm the day with the client.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "site.delivery_moved", channel: "in_app", subject: "Delivery moved · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "warranty.expiring", channel: "in_app", subject: "Warranty ending soon · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.over_budget", channel: "in_app", subject: "Over budget · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.cancelled", channel: "in_app", subject: "{{title}} is cancelled", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
@@ -312,6 +317,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "portal.team_replied", channel: "email", subject: "{{company}} replied on {{project}}", body: "{{note}}\n\nOpen your project page to read it and reply.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.payment_checked", channel: "email", subject: "Your payment on {{project}}", body: "{{note}}\n\nOpen your project page to see your payments.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.issue_triaged", channel: "email", subject: "The issue you reported on {{project}}", body: "{{note}}\n\nOpen your project page to follow it.", variables: ["company", "project", "title", "due", "note"] },
+  // D-29: a delivery to site is coming; the client confirms someone lets the team in, or asks to move it.
+  { code: "portal.site_access", channel: "email", subject: "Confirm site access for {{title}}", body: "{{company}} has a delivery for {{project}} on {{title}}: {{note}}\n\nOpen your project page to confirm someone can let the team in, or ask to move it.", variables: ["company", "project", "title", "due", "note"] },
   // Client portal access (client-portal/portal-invitations.ts): the project's manager hears the client's first sign-in.
   { code: "client_portal.client_signed_in", channel: "in_app", subject: "{{client}} opened the client portal", body: "{{client}} signed in to the portal for {{title}} for the first time.", variables: ["client", "title"] },
   { code: "design.site_visit_booked", channel: "in_app", subject: "Site visit with {{clientName}}", body: "{{when}} · {{place}}. Booked by {{bookedBy}}.", variables: ["clientName", "when", "place", "bookedBy"] },
@@ -527,7 +534,7 @@ export async function wakeDelivery(db: Db, workspaceId: string, notificationId: 
  * the in-app inbox. A push needs the person to have turned push on and a registered phone.
  */
 export const PUSH_NOTICES: ReadonlySet<string> = new Set([
-  "site.report_missing", "site.report_returned", "site.incident", "site.blocked",
+  "site.report_missing", "site.report_returned", "site.incident", "site.blocked", "site.access_move_asked", "site.delivery_moved",
   "work.assigned", "work.overdue", "work.snag_reopened",
   "factory.released", "factory.check_failed", "factory.material_short", "factory.rework",
   "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed", "purchasing.blocking_work",

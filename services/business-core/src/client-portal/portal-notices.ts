@@ -18,17 +18,18 @@ type Db = Pick<PoolClient, "query">;
  * Nothing goes out while the portal is off, the project is paused, or the section it belongs to is hidden.
  * Each email opens the portal where the thing is.
  */
-export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "team_replied" | "payment_checked" | "issue_triaged" | "payment_due";
+export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "team_replied" | "payment_checked" | "issue_triaged" | "payment_due" | "site_access";
 
 //   team_replied       the team answered them on the moodboard   everyone on the project
 //   payment_checked    finance checked a payment they reported   everyone on the project
 //   issue_triaged      the manager took up or declined an issue  everyone on the project
 //   payment_due        a reminder that a payment is due          everyone on the project
+//   site_access        confirm site access for a delivery day    everyone on the project
 const SECTION: Record<ClientEvent, Section> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress",
-  team_replied: "moodboard", payment_checked: "payments", issue_triaged: "progress", payment_due: "payments" };
+  team_replied: "moodboard", payment_checked: "payments", issue_triaged: "progress", payment_due: "payments", site_access: "progress" };
 const TEMPLATE: Record<ClientEvent, string> = {
   quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
-  team_replied: "portal.team_replied", payment_checked: "portal.payment_checked", issue_triaged: "portal.issue_triaged", payment_due: "portal.payment_due",
+  team_replied: "portal.team_replied", payment_checked: "portal.payment_checked", issue_triaged: "portal.issue_triaged", payment_due: "portal.payment_due", site_access: "portal.site_access",
 };
 /** The WhatsApp client message a portal event is (the others go by email only). */
 const WHATSAPP_EVENT: Partial<Record<ClientEvent, StarterEvent>> = {

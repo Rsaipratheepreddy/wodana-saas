@@ -16,6 +16,7 @@ import {
 } from "./orders";
 import { readBills } from "./payables";
 import { closeSettledBlockers, readLineBlockers } from "./purchasing-blockers";
+import { askSiteAccess, closeSiteAccess } from "../site/site-access";
 import { outstanding, readReceipts, settleOrder } from "./receiving";
 import { describeShort, fundsShort, type FundsShort } from "./spending-guard";
 import { readReturns } from "./returns.service";
@@ -427,6 +428,9 @@ export class OrdersService {
       }
       // Work waiting on a line that won't come any more (or came) isn't blocked by it now.
       if (["cancel", "cancel_line", "close"].includes(action)) await closeSettledBlockers(client, workspaceId, { orderId }, user.userId);
+      // A day the supplier gave for a delivery to site asks the client to confirm access (D-29); an order that ends closes those requests.
+      if (action === "confirm" || action === "chase" || action === "cancel_line") await askSiteAccess(client, workspaceId, orderId, user.userId);
+      if (action === "cancel" || action === "close") await closeSiteAccess(client, workspaceId, orderId, user.userId);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `purchase_order.${action}`, entityType: "purchase_order", entityId: orderId, after: audit });
       const detail = await this.detail(client, workspaceId, orderId, user.userId);
       return { ...detail, email, reordered };

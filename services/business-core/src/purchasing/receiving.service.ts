@@ -7,6 +7,7 @@ import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { move, readTransfers, stockFromReceipt } from "../inventory/stock";
 import { closeSettledBlockers } from "./purchasing-blockers";
+import { readSiteAccess } from "../site/site-access";
 import { event as boqEvent } from "../project-core/project-scope";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
@@ -74,7 +75,14 @@ export class ReceivingService {
       const moves = (await readTransfers(client, workspaceId)).filter((move) => move.status === "in_transit" && move.toKind === "site" && move.toProjectId === projectId);
       const has = (code: string) => this.access.hasPermission(client, workspaceId, user.userId, code);
       const canReceive = (await has("purchasing.manage")) || (await has("stock.receive"));
-      return { orders: rows, moves, canReceive, canReceiveMoves: canReceive || (await has("stock.manage")) };
+      // Whether the client confirmed site access for each order's day (D-29), and who may move a delivery.
+      const access = new Map((await readSiteAccess(client, workspaceId, projectId)).map((request) => [request.orderId, request]));
+      const manager = Boolean((await client.query(
+        `SELECT 1 FROM project_assignments assignment JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id
+          WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND assignment.is_manager AND membership.user_id = $3`, [workspaceId, projectId, user.userId])).rowCount);
+      const canArrange = (await has("purchasing.manage")) || (await has("projects.manage")) || manager;
+      const today = (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
+      return { orders: rows.map((order) => ({ ...order, access: access.get(order.id) ?? null })), moves, canReceive, canReceiveMoves: canReceive || (await has("stock.manage")), canArrange, today };
     });
   }
 

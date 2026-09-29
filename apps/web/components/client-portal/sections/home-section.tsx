@@ -14,8 +14,11 @@ export function HomeSection({ project, format, today, open, go }: SectionProps) 
   const t = useT();
   const kinds: Record<PortalStep["kind"], string> = {
     quote: t("Quotation to decide"), design: t("Design to review"), definition: t("Requirements to confirm"), materials: t("Material list to sign off"),
-    handover: t("Handover to accept"), request: t("Question to answer"), invoice: t("Invoice to pay"),
+    handover: t("Handover to accept"), request: t("Question to answer"), invoice: t("Invoice to pay"), site_access: t("Confirm site access"),
   };
+  // A delivery names its day in the title ("Confirm site access for 3 Oct"); the rest say by when.
+  const titleOf = (step: PortalStep) => (step.kind === "site_access" && step.due ? t("Confirm site access for {date}", { date: format.date(step.due) }) : kinds[step.kind]);
+  const dueOf = (step: PortalStep) => (step.due && step.kind !== "site_access" ? ` · ${t("by {date}", { date: format.date(step.due) })}` : "");
   const stages = project.progress?.stages ?? [];
   const act = (step: PortalStep) => (step.kind === "invoice" ? go("payments") : open({ kind: step.kind, id: step.id }));
   const replies = (project.messages?.requests ?? []).filter((request) => request.unread > 0);
@@ -43,8 +46,8 @@ export function HomeSection({ project, format, today, open, go }: SectionProps) 
       {project.next.length || replies.length ? <ul className={styles.list}>
         {project.next.map((step) => <li key={`${step.kind}-${step.id}`}>
           <button className={`${styles.item} ${styles.itemButton}`} type="button" onClick={() => act(step)}>
-            <span className={styles.itemText}><span className={styles.itemTitle}>{kinds[step.kind]}</span>
-              <span className={styles.itemMeta} dir="auto">{step.title}{step.due ? ` · ${t("by {date}", { date: format.date(step.due) })}` : ""}</span></span>
+            <span className={styles.itemText}><span className={styles.itemTitle}>{titleOf(step)}</span>
+              <span className={styles.itemMeta} dir="auto">{step.title}{dueOf(step)}</span></span>
             <span className={styles.itemEnd}><ChevronRight aria-hidden="true" size={18} /></span>
           </button>
         </li>)}

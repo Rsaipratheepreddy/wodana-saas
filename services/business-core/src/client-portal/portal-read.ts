@@ -10,6 +10,7 @@ import { readMessages } from "./portal-messages";
 import { readMoodboard, takesIdeas } from "./portal-moodboard";
 import { readPayments } from "./portal-payments";
 import { portalQuote } from "./portal-quote";
+import { readClientSiteAccess } from "../site/site-access";
 import { effectiveSections, readProjectAccess, type PortalSettings, type Section, type Sections } from "./portal-settings";
 
 type Db = Pick<PoolClient, "query">;
@@ -74,7 +75,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     unread: 0, latestUpdate: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null, messages: null };
   const commercial = await loadCommercial(db, workspaceId, row.caseId);
   const on = (section: Section) => sections[section];
-  const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files) : null;
+  const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files, today) : null;
   const moodboard = on("moodboard") ? await readMoodboard(db, workspaceId, grant, row.caseId, takesIdeas(row), files) : null;
   const decisions = on("decisions") ? await readDecisions(db, workspaceId, grant, row, commercial, today, definitions, files) : null;
   const payments = on("payments") ? await readPayments(db, workspaceId, row, settings, today) : null;
@@ -91,7 +92,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     stage, handoverDate: dates && running ? row.promiseDate : null, handedOverOn: dates && row.projectStatus === "completed" ? row.completedOn : null,
     warrantyUntil: warranty?.rooms.map((room) => room.until).sort().at(-1) ?? null,
     rooms: on("progress") || on("moodboard") ? await readRooms(db, workspaceId, row.caseId) : [],
-    next: nextSteps(decisions, payments),
+    next: nextSteps(decisions, payments, progress),
     unread: messages?.unread ?? 0,
     latestUpdate, progress, moodboard, decisions, payments, documents, warranty, messages,
   };
@@ -135,7 +136,7 @@ async function readStage(db: Db, workspaceId: string, projectId: string, status:
   return { number: Math.min(index + 1, stages.length), total: stages.length, name: settings.progress.stageNames ? stages[Math.min(index, stages.length - 1)].name : null };
 }
 
-async function readProgress(db: Db, workspaceId: string, row: CaseRow, settings: PortalSettings, running: boolean, files: FilePresence) {
+async function readProgress(db: Db, workspaceId: string, row: CaseRow, settings: PortalSettings, running: boolean, files: FilePresence, today: string) {
   const projectId = row.projectId!;
   const stages = (await readStages(db, workspaceId, projectId)).map((stage) => ({
     name: settings.progress.stageNames ? stage.name : null,
@@ -156,7 +157,9 @@ async function readProgress(db: Db, workspaceId: string, row: CaseRow, settings:
   const days = new Map<string, Array<{ id: string }>>();
   for (const photo of photos) days.set(photo.on, [...(days.get(photo.on) ?? []), { id: photo.id }]);
   return { stages, updates, photoDays: [...days].map(([on, list]) => ({ on, photos: list })),
-    issues: await readIssues(db, workspaceId, row.caseId, projectId), canReportIssue: running };
+    issues: await readIssues(db, workspaceId, row.caseId, projectId), canReportIssue: running,
+    // Deliveries to site from today on: the client confirms access for the day, or asks to move it (D-29).
+    siteAccess: row.projectStatus === "active" ? await readClientSiteAccess(db, workspaceId, projectId, today) : [] };
 }
 
 async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: CaseRow, commercial: CommercialData, today: string, definitions: DefinitionSource,
@@ -357,10 +360,11 @@ export { portalRequest } from "./portal-messages";
 
 type Decisions = Awaited<ReturnType<typeof readDecisions>>;
 type Payments = Awaited<ReturnType<typeof readPayments>>;
+type Progress = Awaited<ReturnType<typeof readProgress>>;
 
-/** What's needed from the client now: decisions that wait for them, then what's due to pay. */
-function nextSteps(decisions: Decisions | null, payments: Payments | null) {
-  const steps: Array<{ kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice"; id: string; title: string; due: string | null }> = [];
+/** What's needed from the client now: decisions that wait for them, what's due to pay, then deliveries to confirm site access for. */
+function nextSteps(decisions: Decisions | null, payments: Payments | null, progress: Progress | null) {
+  const steps: Array<{ kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice" | "site_access"; id: string; title: string; due: string | null }> = [];
   if (decisions) {
     for (const quote of decisions.quotes.filter((item) => item.canDecide))
       steps.push({ kind: "quote", id: quote.id, title: `${quote.title} · V${quote.number}`, due: quote.validUntil });
@@ -373,6 +377,8 @@ function nextSteps(decisions: Decisions | null, payments: Payments | null) {
   if (payments)
     for (const milestone of payments.milestones.filter((item) => item.invoice && ["due", "overdue", "part_paid"].includes(item.status)))
       steps.push({ kind: "invoice", id: milestone.invoice!.id, title: milestone.invoice!.number, due: milestone.dueDate });
+  for (const delivery of progress?.siteAccess.filter((item) => item.status === "waiting") ?? [])
+    steps.push({ kind: "site_access", id: delivery.id, title: delivery.items, due: delivery.date });
   return steps;
 }
 

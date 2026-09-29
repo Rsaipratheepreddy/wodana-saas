@@ -24,6 +24,7 @@ import { invoiceDocument, receiptDocument, reportPayment } from "./portal-paymen
 import { isImage, readView, workspaceToday } from "./portal-read";
 import { readPortalSettings, SECTIONS, type PortalSettings, type Section } from "./portal-settings";
 import { findSite, readSite } from "./portal-site";
+import { siteAccess } from "./portal-site-access";
 import type { ReferenceUpload } from "../workspaces/reference-upload";
 
 /** Portal work runs as no staff user: the actor is the client, recorded by their contact. */
@@ -37,7 +38,7 @@ const COMMANDS: Record<string, [Handler, Section]> = {
   request_answer: [answerRequest, "decisions"], materials_decision: [decideMaterials, "decisions"], handover_decision: [decideHandover, "decisions"],
   warranty_claim: [claimWarranty, "warranty"], request: [raiseRequest, "messages"], comment: [comment, "messages"], read_thread: [readThread, "messages"],
   react: [react, "moodboard"], board_comment: [boardComment, "moodboard"], add_inspiration: [addInspiration, "moodboard"], remove_inspiration: [removeInspiration, "moodboard"],
-  report_payment: [reportPayment, "payments"], report_issue: [reportIssue, "progress"],
+  report_payment: [reportPayment, "payments"], report_issue: [reportIssue, "progress"], site_access: [siteAccess, "progress"],
 };
 
 /**

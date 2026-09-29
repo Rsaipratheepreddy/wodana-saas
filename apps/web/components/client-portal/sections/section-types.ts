@@ -4,7 +4,7 @@ import type { PortalFormat } from "../portal-format";
 
 /** What opens in a dialog over the section: a decision, a thread, a board or idea, or a form. */
 export type PortalTarget =
-  | { kind: "quote" | "design" | "definition" | "materials" | "handover" | "request"; id: string }
+  | { kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "site_access"; id: string }
   | { kind: "thread"; id: string }
   | { kind: "new-message" }
   | { kind: "claim"; areaId?: string | null }
