@@ -67,7 +67,12 @@
 .columns > [data-stick="item"], .row > [data-stick="item"] { inset-inline-start: var(--stick-item); }
 /* …and the money stays in view on the other side. */
 .columns > [data-stick="menu"], .row > [data-stick="menu"] { inset-inline-end: 0; background: var(--wd-color-surface); }
-.columns > [data-stick="amount"], .row > [data-stick="amount"] { inset-inline-end: var(--stick-menu); border-inline-start: 1px solid var(--wd-color-table-border); }
+.columns > [data-stick="amount"], .row > [data-stick="amount"] { inset-inline-end: var(--stick-menu); }
+.columns > [data-stick="rate"], .row > [data-stick="rate"] { inset-inline-end: var(--stick-rate); }
+.columns > [data-stick="unit"], .row > [data-stick="unit"] { inset-inline-end: var(--stick-unit); }
+.columns > [data-stick="qty"], .row > [data-stick="qty"] { inset-inline-end: var(--stick-qty); border-inline-start: 1px solid var(--wd-color-table-border); }
+/* With the side panel open there isn't room to freeze both sides: the item scrolls, Qty to Amount stay in view. */
+.builder:not([data-panel="closed"]) :is(.columns, .row) > :is([data-stick="picture"], [data-stick="item"]) { position: relative; inset-inline-start: auto; }
 /* On a narrow screen only # stays frozen, so there's room for the numbers. */
 @media (max-width: 64rem) {
   .columns > [data-stick="picture"], .row > [data-stick="picture"], .columns > [data-stick="item"], .row > [data-stick="item"] { position: relative; inset-inline-start: auto; }

@@ -106,18 +106,18 @@ export function QuoteRow({ line, draft, serial, column, columns, customColumns =
       <CellInput label={custom.name} value={line.values?.[custom.id] ?? ""} disabled={locked} numeric={custom.kind === "number"} allowEmpty
         onCommit={(value) => onChange({ values: { ...(line.values ?? {}), [custom.id]: value } })} />
     </span>)}
-    <span role="gridcell" className={styles.numberCell}>
+    <span role="gridcell" className={styles.numberCell} data-stick="qty">
       {line.formula ? <button type="button" className={styles.formulaChip} onClick={onOpen} title={line.formula} data-error={line.formulaError ? true : undefined}>ƒ {plain(line.quantity, locale)}</button>
         : <CellInput label={t("Quantity")} value={plain(line.quantity, locale, 4)} disabled={!canEdit || draft} numeric onCommit={(value) => onChange({ quantity: value })} />}
     </span>
-    <span role="gridcell" className={styles.unitCell}>
+    <span role="gridcell" className={styles.unitCell} data-stick="unit">
       <CellPicker label={t("Unit")} value={line.unit || null} options={unitOptions} noneLabel="—" isDisabled={locked} onChange={(id) => onChange({ unit: id ?? "" })} />
     </span>
-    <span role="gridcell" className={styles.numberCell}>
+    <span role="gridcell" className={styles.numberCell} data-stick="rate">
       {line.pricingMode === "build_up" ? <button type="button" className={styles.formulaChip} onClick={onOpen} data-error={line.buildUpComplete === false || undefined}><Sigma aria-hidden="true" size={12} />{plain(line.rate, locale, decimals)}</button>
         : <CellInput label={t("Rate")} value={line.kind === "client_supplied" ? "0" : plain(line.rate, locale, 6)} disabled={!canEdit || draft || line.kind === "client_supplied" || fixed} numeric onCommit={(value) => onChange({ rate: value })} />}
     </span>
-    <span role="gridcell" className={styles.amountCell}>{draft ? "" : money(amount, currency, decimals, locale)}</span>
+    <span role="gridcell" className={styles.amountCell} data-stick="amount">{draft ? "" : money(amount, currency, decimals, locale)}</span>
     <span role="gridcell" className={`${styles.menuCell} ${styles.gutter}`} data-stick="menu">
       {!draft && onComments ? <CommentButton threads={comments} label={t("Comments on {name}", { name: line.title })} onOpen={onComments} /> : null}
       {!draft ? <IconMenuButton ariaLabel={t("Line actions for {name}", { name: line.title })} onAction={onMenu} items={[
