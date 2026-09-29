@@ -355,6 +355,10 @@ describe("client portal", () => {
     expect(within(day).getByText("Template the worktop")).toBeInTheDocument();
     expect(within(day).getByText("Handles arrive Thursday")).toBeInTheDocument();
     expect(screen.getByText("This week on Villa 12: 3 days of progress.")).toBeInTheDocument();
+    // Each day and each week opens as a printable page (Download PDF).
+    expect(within(day).getByRole("link", { name: "Download PDF" })).toHaveAttribute("href", "/portal/studio/print/daily/d1");
+    expect(within(screen.getByRole("article", { name: "Progress on Week ending Sep 25, 2026" })).getByRole("link", { name: "Download PDF" }))
+      .toHaveAttribute("href", "/portal/studio/print/week/w1");
     // The photos open full size, one after another.
     await user.click(within(day).getByRole("button", { name: "Open photo 1" }));
     const lightbox = await screen.findByRole("dialog", { name: "Sep 26, 2026" });

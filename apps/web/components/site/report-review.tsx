@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, Star } from "lucide-react";
+import { Download, Sparkles, Star } from "lucide-react";
 import { Badge, Button, Checkbox, ControlledModalDialog, EditableField, EditableFieldList, ErrorState, FactRow, IconButton, InlineNotice, MoreDetails, Skeleton, Switch, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { SiteApi } from "@/lib/site/client";
@@ -71,6 +71,8 @@ export function ReportReview({ api, state, reportId, onState, onClose, onReject 
   const footer = <div className={styles.footer}>
     {canReview && report.status === "submitted" ? <Button variant="quiet" isDisabled={Boolean(busy)} onPress={() => setReturning(true)}>{t("Return to supervisor")}</Button> : null}
     <span className={styles.spacer} />
+    {report.status === "approved" ? <a className="wd-button" data-size="standard" data-variant="secondary" href={api.printUrl(report.id)} target="_blank" rel="noopener">
+      <Download aria-hidden="true" size={15} />{t("Download PDF")}</a> : null}
     <Button onPress={onClose}>{t("Close")}</Button>
     {canReview && report.status === "submitted" ? <>
       <Button isLoading={busy === "approve_hold"} isDisabled={Boolean(busy)} onPress={() => void run("approve_hold", {}, "done")}>{t("Approve without sending")}</Button>

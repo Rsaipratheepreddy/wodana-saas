@@ -1,0 +1,25 @@
+/* A day on site (or a week) on A4: the firm's brand, the facts, the words and the photos by room, three to a row. */
+.sheet { gap: var(--wd-space-5); max-inline-size: var(--wd-content-narrow); }
+.brand { display: flex; align-items: center; min-block-size: var(--wd-space-8); font-size: var(--wd-text-lg); }
+.logo { display: block; block-size: var(--wd-space-12); inline-size: auto; max-inline-size: 12rem; object-fit: contain; }
+.summary { margin: 0; font-size: var(--wd-text-md); line-height: var(--wd-leading-copy); white-space: pre-line; }
+.part { display: grid; gap: var(--wd-space-2); }
+.partTitle { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
+.items { display: grid; gap: var(--wd-space-1); margin: 0; padding-inline-start: var(--wd-space-5); font-size: var(--wd-text-sm); }
+.room { display: grid; gap: var(--wd-space-2); }
+.roomTitle { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); break-inside: avoid; page-break-inside: avoid; }
+.photo { display: grid; gap: var(--wd-space-1); margin: 0; break-inside: avoid; }
+.photo img { display: block; inline-size: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
+.photo figcaption { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+
+@media (max-width: 480px) { .row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+@page { size: A4; margin: 14mm 12mm; }
+
+@media print {
+  .sheet { max-inline-size: none; }
+  .part, .room { break-inside: auto; }
+  .partTitle, .roomTitle { break-after: avoid; page-break-after: avoid; }
+  .photo img { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}

@@ -112,6 +112,8 @@ export type PortalDayCard = {
   id: string; date: string; sentAt: string; summary: string; noWork: boolean; hero: PortalCardPhoto | null; photos: PortalCardPhoto[];
   completed: string[]; advanced: Array<{ title: string; progress: number }>; next: string[]; notes: string[];
   reactions: { like: number; love: number }; mine: { like: boolean; love: boolean };
+  /** Where the project stood that day (the stage's name and the percent when the tenant shows stage names). */
+  stage?: { number: number; total: number; name: string | null } | null; percent?: number | null;
 };
 
 export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice" | "site_access"; id: string; title: string; due: string | null };

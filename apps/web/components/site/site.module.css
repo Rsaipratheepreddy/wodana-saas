@@ -47,5 +47,6 @@
 .entryText { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: var(--wd-text-sm); color: var(--wd-color-text); }
 .entryMeta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-xs); color: var(--wd-color-text-tertiary); }
 .entryMeta img { inline-size: 2.5rem; block-size: 2.5rem; object-fit: cover; border-radius: var(--wd-radius-xs); background: var(--wd-color-surface-muted); }
+.entryActions { display: flex; align-items: center; gap: var(--wd-space-1); }
 .entryReturned { font-size: var(--wd-text-xs); color: var(--wd-color-danger); }
 @media (max-width: 640px) { .entry { grid-template-columns: minmax(0, 1fr) auto; } .entryDate { grid-column: 1 / -1; } }

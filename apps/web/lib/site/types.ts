@@ -63,6 +63,23 @@ export type ClientView = {
   completed: string[]; advanced: Array<{ title: string; progress: number }>; next: string[]; notes: string[];
 };
 
+/**
+ * A progress report on paper: the client's card for a day (or the week's roll-up) and nothing else, built field by
+ * field from the client view so nothing internal can be printed by accident.
+ */
+export type ProgressPrintData = {
+  brand: { name: string; logoUrl: string | null };
+  project: { name: string; reference: string | null };
+  /** The day, or the last day of the week. */
+  date: string;
+  stage: { number: number; total: number; name: string | null } | null;
+  percent: number | null;
+  summary: string; noWork: boolean;
+  /** The lead photo first. */
+  photos: CardPhoto[];
+  completed: string[]; advanced: Array<{ title: string; progress: number }>; next: string[]; notes: string[];
+};
+
 /** Home for the people who run projects: days to review, and sites without today's report after the end of the day. */
 export type SiteAttention = {
   today: string; dueTime: string; pastDue: boolean;
