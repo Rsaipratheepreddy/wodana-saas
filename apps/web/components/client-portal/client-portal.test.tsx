@@ -331,6 +331,41 @@ describe("client portal", () => {
     await waitFor(() => expect(sent(fetcher, "command").at(-1)).toEqual(expect.objectContaining({ action: "site_access", decision: "move", reason: "We travel that week", preferredDate: null })));
   });
 
+  it("shows the team's days as cards under the stage and progress, with photos full size, a reaction and a question", async () => {
+    const card = { id: "d1", date: "2026-09-26", sentAt: "2026-09-26T15:00:00.000Z", summary: "The kitchen carcasses are in and level.", noWork: false,
+      hero: { id: "ph1", area: "Kitchen", phase: "after" as const, pairId: "ph0" }, photos: [{ id: "ph0", area: "Kitchen", phase: "before" as const, pairId: "ph1" }],
+      completed: ["Fit kitchen carcasses"], advanced: [{ title: "Tile the family room", progress: 50 }], next: ["Template the worktop"], notes: ["Handles arrive Thursday"],
+      reactions: { like: 0, love: 1 }, mine: { like: false, love: false } };
+    const daily = project({ progress: { ...project().progress!, percent: 42, cards: [card], weeks: [{ id: "w1", weekEnding: "2026-09-25", digest: "This week on Villa 12: 3 days of progress." }] } });
+    const fetcher = mount((url) => (url.endsWith("/command") ? { body: { ok: true } } : { body: view({}, [daily]) }));
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Progress" }));
+    expect(await screen.findByText("42% complete")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "How far the project is" })).toHaveAttribute("aria-valuenow", "42");
+    const day = screen.getByRole("article", { name: "Progress on Sep 26, 2026" });
+    expect(within(day).getByText("The kitchen carcasses are in and level.")).toBeInTheDocument();
+    expect(within(day).getByText("Fit kitchen carcasses")).toBeInTheDocument();
+    expect(within(day).getByText("Template the worktop")).toBeInTheDocument();
+    expect(within(day).getByText("Handles arrive Thursday")).toBeInTheDocument();
+    expect(screen.getByText("This week on Villa 12: 3 days of progress.")).toBeInTheDocument();
+    // The photos open full size, one after another.
+    await user.click(within(day).getByRole("button", { name: "Open photo 1" }));
+    const lightbox = await screen.findByRole("dialog", { name: "Sep 26, 2026" });
+    expect(within(lightbox).getByRole("img", { name: "Kitchen · After" })).toHaveAttribute("src", "/api/client-portal/studio/files/photo/ph1");
+    await user.click(within(lightbox).getByRole("button", { name: "Next photo" }));
+    expect(within(lightbox).getByRole("img", { name: "Kitchen · Before" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await user.click(within(day).getByRole("button", { name: "Like (0)" }));
+    await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "progress_react", caseId: "c1", reportId: "d1", reaction: "like", on: true })]));
+    await user.click(within(day).getByRole("button", { name: "Ask a question" }));
+    const dialog = await screen.findByRole("dialog", { name: "Ask about Sep 26, 2026" });
+    await user.type(within(dialog).getByRole("textbox", { name: /Your question/ }), "Is the worktop sealed?");
+    await user.click(within(dialog).getByRole("button", { name: "Send question" }));
+    await waitFor(() => expect(sent(fetcher, "command").at(-1)).toEqual(expect.objectContaining({ action: "progress_question", caseId: "c1", reportId: "d1", text: "Is the worktop sealed?" })));
+    expect(await screen.findByText("Thank you. Your project manager will answer under Messages.")).toBeInTheDocument();
+  });
+
   it("reports an issue while the work is on and shows what the team decided", async () => {
     const reported = project({ progress: { ...project().progress!, issues: [{ id: "is1", number: 1, raisedOn: "2026-09-26", description: "Chipped panel", area: "Kitchen",
       status: "declined", reason: "That's the sample, not your panel.", files: [{ id: "f1", name: "chip.jpg", mimeType: "image/jpeg", hasPreview: true }] }] } });

@@ -174,6 +174,15 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "site.blocked", channel: "in_app", subject: "The site is blocked · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.report_missing", channel: "in_app", subject: "No site report today · {{title}}", body: "Add today's report before the end of the day.", variables: ["title", "clientName", "actor", "note"] },
   { code: "site.report_overdue", channel: "in_app", subject: "No site report yesterday · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  // Daily progress (site/): the author hears the approval; the manager hears what went out by itself, material needed
+  // on site, and the client's reactions and questions on a sent day.
+  { code: "site.report_late", channel: "in_app", subject: "No site report today · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "site.report_approved", channel: "in_app", subject: "Your report was approved · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "site.report_sent", channel: "in_app", subject: "{{title}}: the daily progress went to the client", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "site.material_requested", channel: "in_app", subject: "Material needed on site · {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "site.client_reacted", channel: "in_app", subject: "{{actor}} reacted to the daily progress · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "site.client_question", channel: "in_app", subject: "{{actor}} asked about the daily progress · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "site.client_question", channel: "email", subject: "{{actor}} asked about the daily progress · {{title}}", body: "{{actor}} asked about the daily progress on {{title}}:\n\n{{note}}\n\nAnswer in the conversation on the project.", variables: ["title", "clientName", "actor", "note"] },
   { code: "handover.accepted", channel: "in_app", subject: "{{title}}: handover accepted", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "handover.refused", channel: "in_app", subject: "{{title}}: handover refused", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "warranty.claim", channel: "in_app", subject: "Warranty claim on {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
@@ -322,6 +331,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "portal.invoice_issued", channel: "email", subject: "Invoice {{title}} from {{company}}", body: "{{company}} issued invoice {{title}} for {{project}}. {{due}}\n\nOpen your project page to see it and what's left to pay.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.decision_waiting", channel: "email", subject: "{{title}} is waiting for your decision", body: "{{company}} needs your decision on {{title}} for {{project}}. {{due}}\n\nOpen your project page to review it.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.update_published", channel: "email", subject: "New update on {{project}}", body: "{{note}}\n\nOpen your project page to see the progress.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "portal.daily_progress", channel: "email", subject: "{{project}} · {{title}}", body: "{{note}}\n\nOpen your project page to see the photos.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "portal.weekly_rollup", channel: "email", subject: "{{project}} · {{title}}", body: "{{note}}\n\nOpen your project page to see every day of the week.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.team_replied", channel: "email", subject: "{{company}} replied on {{project}}", body: "{{note}}\n\nOpen your project page to read it and reply.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.payment_checked", channel: "email", subject: "Your payment on {{project}}", body: "{{note}}\n\nOpen your project page to see your payments.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.issue_triaged", channel: "email", subject: "The issue you reported on {{project}}", body: "{{note}}\n\nOpen your project page to follow it.", variables: ["company", "project", "title", "due", "note"] },
@@ -543,6 +554,7 @@ export async function wakeDelivery(db: Db, workspaceId: string, notificationId: 
  */
 export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "site.report_missing", "site.report_returned", "site.incident", "site.blocked", "site.access_move_asked", "site.delivery_moved",
+  "site.report_waiting", "site.report_late", "site.material_requested", "site.client_question",
   "work.assigned", "work.overdue", "work.snag_reopened",
   "factory.released", "factory.check_failed", "factory.material_short", "factory.rework",
   "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed", "purchasing.blocking_work",

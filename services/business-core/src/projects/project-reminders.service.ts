@@ -10,6 +10,7 @@ import { processHrmsCheckouts, processHrmsDocuments } from "../hrms/hrms-reminde
 import { processClientUpdateAutoSend, processClientUpdateDrafts } from "../project-core/client-updates";
 import { processMaterialsWaiting, processMilestonesDue, processStagesReady, processWeeklySummaries } from "../project-core/delivery-reminders";
 import { processSiteReports, processWarrantyExpiry } from "../site/site-reminders";
+import { processDailyProgressAutoSend, processWeeklyRollups } from "../site/progress-delivery";
 import { processProjectBudgets } from "../project-core/project-money";
 import { processReceivablesOverdue } from "../receivables/receivables.service";
 import { processWorkDeadlines } from "../project-core/work-reminders";
@@ -35,7 +36,7 @@ export class ProjectRemindersService {
       "SELECT workspace_id FROM list_reminder_workspaces()",
     );
     const totals = { created: 0, decisionReminders: 0, clientDecisions: 0, quotesExpiring: 0, quotesExpired: 0, quietChatsResolved: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
-      workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, payablesDue: 0, retentionReleased: 0, overBudget: 0,
+      workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, dailyProgressSent: 0, weeklyRollups: 0, warrantyEnding: 0, payablesDue: 0, retentionReleased: 0, overBudget: 0,
       receivablesOverdue: 0, checkoutReminders: 0, documentReminders: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
       try {
@@ -60,6 +61,9 @@ export class ProjectRemindersService {
           suppliers: await processSupplierDocuments(client, workspaceId),
           factory: await processFactoryDeadlines(client, workspaceId),
           site: await processSiteReports(client, workspaceId),
+          // Daily progress approved but not sent (or, if the firm chose, never reviewed) goes after D-40's hours; Friday's roll-up.
+          dailyProgress: await processDailyProgressAutoSend(client, workspaceId),
+          rollups: await processWeeklyRollups(client, workspaceId),
           warranty: await processWarrantyExpiry(client, workspaceId),
           // Retention released at handover first, so what falls due includes it.
           retention: await processRetentionReleases(client, workspaceId),
@@ -86,6 +90,8 @@ export class ProjectRemindersService {
         totals.supplierDocuments += (run.suppliers?.held ?? 0) + (run.suppliers?.warned ?? 0);
         totals.factoryShortages += run.factory?.sent ?? 0;
         totals.siteReports += run.site.sent;
+        totals.dailyProgressSent += run.dailyProgress.sent;
+        totals.weeklyRollups += run.rollups.sent;
         totals.warrantyEnding += run.warranty.sent;
         totals.payablesDue += run.payables?.sent ?? 0;
         totals.retentionReleased += run.retention?.released ?? 0;

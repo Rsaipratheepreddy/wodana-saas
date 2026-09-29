@@ -85,7 +85,7 @@ export class ApprovalsService {
       case "payment_run":
         return this.runs.command(actor, workspaceId, { action: approve ? "approve" : "return", id: row.id, version: row.version, note, commandId: randomUUID() });
       case "site_report":
-        return this.site.command(actor, workspaceId, row.parentId!, { action: approve ? "approve" : "return", id: row.id, version: row.version, note });
+        return this.site.command(actor, workspaceId, row.parentId!, { action: approve ? row.decide!.approve : "return", reportId: row.id, version: row.version, note });
       case "petty_cash":
         return this.pettyCash.command(actor, workspaceId, row.parentId!, { action: approve ? "approve" : "reject", claimId: row.id, version: row.version, note, commandId: randomUUID() });
       default:

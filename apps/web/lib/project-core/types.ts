@@ -15,6 +15,12 @@ export type ProjectSettings = {
   autoFinish: boolean;
   /** Hours after which a drafted client update nobody sent goes by itself; null keeps it manual (D-40). */
   clientUpdateAutoSendHours: number | null;
+  /** When the day's site report is due (HH:MM, the workspace's time): reminders start then. */
+  reportDueTime?: string;
+  /** With "Send by itself" on, daily reports nobody reviewed also go (as written) after its hours. */
+  autoSendPendingReports?: boolean;
+  /** The week's sent days go to the client as one digest on the last working day. */
+  weeklyRollup?: boolean;
 };
 export type SettingsState = { settings: ProjectSettings; templates: ProjectRoute[]; workTemplates: WorkTemplate[]; canManage: boolean };
 /** One step of a package's standard work: working days, the role that does it, its stage, and whether it runs with the step before. */

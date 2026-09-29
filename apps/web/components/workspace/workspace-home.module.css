@@ -66,6 +66,9 @@
 .focusRow[data-urgency="today"] .mark { background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
 .focusRow[data-urgency="overdue"] em { color: var(--wd-color-danger); }
 .focusRow > :global(.wd-button) { justify-self: end; }
+/* A daily report to review: its lead photo, and the client's words on two lines. */
+.reportThumb { inline-size: var(--wd-space-10); block-size: var(--wd-space-10); object-fit: cover; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
+.copy small.reportSummary { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 /* Coming up: the day on the leading side, the thing and its time, a quiet chevron. */
 .upcomingRow, .recentRow, .activityRow { display: grid; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-2); margin-inline: calc(var(--wd-space-2) * -1); border-radius: var(--wd-radius-sm); color: var(--wd-color-text); text-decoration: none; }

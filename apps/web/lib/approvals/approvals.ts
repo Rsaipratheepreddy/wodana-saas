@@ -27,7 +27,7 @@ export const KIND_LABEL: Record<ApprovalKind, MessageKey> = {
   order: tKey("Order to approve"),
   output: tKey("Output to approve"),
   material_swap: tKey("Material swap"),
-  site_report: tKey("Site report"),
+  site_report: tKey("Daily progress"),
   petty_cash: tKey("Petty cash"),
   snag: tKey("Snag to close"),
   warranty: tKey("Warranty claim"),
@@ -44,7 +44,8 @@ export const INVOICE_PHRASE = tKey("Issue invoice · {milestone}");
 
 /** The button for the in-row approval, in the words of the record. */
 export function approveLabel(kind: ApprovalKind): MessageKey {
-  return kind === "receipt" ? tKey("Verify") : tKey("Approve");
+  // A daily report approved in the row goes to the client as reviewed.
+  return kind === "receipt" ? tKey("Verify") : kind === "site_report" ? tKey("Approve & send") : tKey("Approve");
 }
 
 export const OTHER_LABEL: Record<"return" | "reject", MessageKey> = { return: tKey("Return"), reject: tKey("Refuse") };

@@ -1,4 +1,4 @@
-import type { HandoverKind, HandoverState, SiteState, WarrantySettings, WarrantyState } from "./types";
+import type { ClientView, HandoverKind, HandoverState, SiteAttention, SiteState, WarrantySettings, WarrantyState } from "./types";
 
 export class SiteRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -18,11 +18,14 @@ export function siteApi(workspaceId: string, projectId: string) {
     state: () => send<SiteState>(at(), {}, "The site didn't load."),
     command: (action: string, input: Record<string, unknown> = {}) =>
       send<SiteState>(at(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, action }) }, "Could not save."),
-    /** A photo for a report its author is writing; replayed safely by its id. */
-    uploadPhoto: (reportId: string, photoId: string, file: File) => {
+    /** A photo for a report its author is writing, with its room, before/after and pair; replayed safely by its id. */
+    uploadPhoto: (reportId: string, photoId: string, file: File, tags: { areaId?: string | null; phase?: string | null; pairId?: string | null } = {}) => {
       const form = new FormData(); form.set("file", file);
-      return send<SiteState>(at(`reports/${reportId}/photos/${photoId}`), { method: "POST", body: form }, "The photo could not be uploaded.");
+      const query = new URLSearchParams(Object.entries({ area: tags.areaId, phase: tags.phase, pair: tags.pairId }).filter((entry): entry is [string, string] => Boolean(entry[1])));
+      return send<SiteState>(`${at(`reports/${reportId}/photos/${photoId}`)}${query.size ? `&${query}` : ""}`, { method: "POST", body: form }, "The photo could not be uploaded.");
     },
+    /** The client's card for a day: as it would go now, or as it went. */
+    clientView: (reportId: string) => send<{ view: ClientView; sent: boolean }>(at(`reports/${reportId}/client-view`), {}, "The client's view didn't load."),
     photoUrl: (photoId: string, preview = true) => `${at(`photos/${photoId}`)}${preview ? "&preview=1" : ""}`,
     handover: () => send<HandoverState>(at("handover"), {}, "The handover didn't load."),
     handoverCommand: (action: string, input: Record<string, unknown> = {}) =>
@@ -42,6 +45,11 @@ export function siteApi(workspaceId: string, projectId: string) {
   };
 }
 export type SiteApi = ReturnType<typeof siteApi>;
+
+/** Home: daily reports waiting for my review, and sites without today's report after the end of the day. */
+export function siteAttention(workspaceId: string) {
+  return send<SiteAttention>(`/api/site/attention?${new URLSearchParams({ workspaceId })}`, {}, "Couldn't load the sites.");
+}
 
 /** Settings → Projects → Warranty: months of warranty for each way of delivering a package. */
 export function warrantySettingsApi(workspaceId: string) {

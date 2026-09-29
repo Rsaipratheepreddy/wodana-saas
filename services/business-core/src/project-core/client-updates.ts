@@ -22,6 +22,9 @@ const plain = (value: string) => Dec.of(value).toString();
  * tap — only then does the client see it (in the portal, and by WhatsApp or email). One draft per project and week.
  */
 export async function processClientUpdateDrafts(db: Db, workspaceId: string) {
+  // With the weekly roll-up on, the week's approved days go to the client as one digest instead of a draft.
+  const rollup = (await db.query<{ enabled: boolean }>(`SELECT weekly_rollup AS enabled FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0]?.enabled;
+  if (rollup) return { drafted: 0 };
   const today = (await db.query<{ today: string }>(
     `SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.today;
   if (!today || new Date(`${today}T00:00:00Z`).getUTCDay() !== weekEnd(await readCalendar(db, workspaceId))) return { drafted: 0 };

@@ -3,7 +3,8 @@ import {
   BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, Logger, Optional, ServiceUnavailableException, UnprocessableEntityException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import type { RequestActor } from "../auth/actor";
+import type { PoolClient } from "pg";
+import type { ActorUser, RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { AiCreditRefusal, chargeUsage, checkCredits, creditLimits } from "./ai-credits";
@@ -23,6 +24,11 @@ export type AiCall<T> = {
   maxTokens?: number;
   /** Checks and normalizes the model's JSON; throw to reject it. */
   validate: (value: unknown) => T;
+  /**
+   * A workspace feature that runs by itself for a member (a daily report's client summary), not a suggestion the
+   * person asked for: the workspace's AI switch, credits and log still apply; the person's AI permission doesn't.
+   */
+  automatic?: boolean;
 };
 /** A model request built by a web assistant (Woddy chat, enquiry review, commercial and quotation assist). */
 export type AiGenerateInput = {
@@ -113,7 +119,7 @@ export class AiGatewayService {
   }
 
   async run<T>(actor: RequestActor, workspaceId: string, call: AiCall<T>): Promise<T> {
-    const { userId, provider, model } = await this.gate(actor, workspaceId);
+    const { userId, provider, model } = await this.gate(actor, workspaceId, call.automatic === true);
     const callId = randomUUID();
     const started = Date.now();
     let status: UsageStatus = "failed";
@@ -136,7 +142,7 @@ export class AiGatewayService {
       if (isTimeout(error)) status = "timeout";
       throw this.providerError(error);
     } finally {
-      await this.settle(actor, workspaceId, { callId, feature: call.feature, provider, model, usage, status, started, userId });
+      await this.settle(actor, workspaceId, { callId, feature: call.feature, provider, model, usage, status, started, userId }, call.automatic === true);
     }
   }
 
@@ -208,9 +214,11 @@ export class AiGatewayService {
    * spend (credits left, today's caps not reached). A refusal is thrown after the check's transaction
    * commits, so an "out of credits" notice it sends is kept.
    */
-  private async gate(actor: RequestActor, workspaceId: string) {
+  private async gate(actor: RequestActor, workspaceId: string, automatic = false) {
     const provider = aiProviderName();
-    const outcome = await this.access.withPermission(actor, workspaceId, "ai.suggestions.use", async (client, user) => {
+    const within = <R>(work: (client: PoolClient, user: ActorUser) => Promise<R>) => automatic
+      ? this.access.asMember(actor, workspaceId, work) : this.access.withPermission(actor, workspaceId, "ai.suggestions.use", work);
+    const outcome = await within(async (client, user) => {
       const setting = await client.query<{ enabled: boolean }>(`SELECT enabled FROM workspace_ai_settings WHERE workspace_id = $1`, [workspaceId]);
       if (!setting.rows[0]?.enabled) throw new AiUnavailableError({ message: "AI assistance is off for this workspace. An admin can turn it on in Settings.", code: "AI_OFF" });
       return { userId: user.userId, refusal: provider ? await checkCredits(client, workspaceId, creditLimits()) : null };
@@ -286,9 +294,12 @@ export class AiGatewayService {
   }
 
   /** Every call is logged; a successful one is charged in the same tenant transaction. Failed calls cost nothing. */
-  private async settle(actor: RequestActor, workspaceId: string, entry: { callId: string; feature: string; provider: AiProviderName; model: string; usage: AiUsage; status: UsageStatus; started: number; userId: string }) {
+  private async settle(actor: RequestActor, workspaceId: string, entry: { callId: string; feature: string; provider: AiProviderName; model: string; usage: AiUsage; status: UsageStatus; started: number; userId: string },
+    automatic = false) {
     try {
-      await this.access.withPermission(actor, workspaceId, "ai.suggestions.use", async (client) => {
+      const within = (work: (client: PoolClient) => Promise<void>) => automatic
+        ? this.access.asMember(actor, workspaceId, work) : this.access.withPermission(actor, workspaceId, "ai.suggestions.use", work);
+      await within(async (client) => {
         await client.query(
           `INSERT INTO ai_usage_events (id, workspace_id, feature, provider, model, input_tokens, output_tokens, status, latency_ms, created_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,

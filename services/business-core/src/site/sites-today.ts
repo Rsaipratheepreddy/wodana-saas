@@ -14,13 +14,15 @@ export type SiteToday = {
 
 /**
  * The phone's "My sites today": each running project I'm on whose site work runs today, with my report for
- * the day, what's due to arrive and the snags given to me. The workspace's clock (and hour: the report is
- * due by 19:00) comes along.
+ * the day, what's due to arrive and the snags given to me. The workspace's clock (the hour, and when the day's
+ * report is due: Settings → Projects, 18:00 by default) comes along.
  */
 export async function readSitesToday(db: Db, workspaceId: string, userId: string) {
-  const clock = (await db.query<{ today: string; hour: number }>(
+  const clock = (await db.query<{ today: string; hour: number; dueTime: string }>(
     `SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today,
-            extract(hour FROM now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::int AS hour FROM workspaces WHERE id = $1`, [workspaceId])).rows[0];
+            extract(hour FROM now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::int AS hour,
+            coalesce((SELECT to_char(report_due_time, 'HH24:MI') FROM workspace_project_settings WHERE workspace_id = workspaces.id), '18:00') AS "dueTime"
+       FROM workspaces WHERE id = $1`, [workspaceId])).rows[0];
   const sites = (await db.query<SiteToday>(
     `SELECT project.id AS "projectId", project.reference, project.name,
             (SELECT jsonb_build_object('id', report.id, 'status', report.status) FROM site_reports report
@@ -37,5 +39,5 @@ export async function readSitesToday(db: Db, workspaceId: string, userId: string
        JOIN project_assignments assignment ON assignment.workspace_id = project.workspace_id AND assignment.project_id = project.id AND assignment.membership_id = membership.id AND assignment.active
       WHERE project.workspace_id = $1 AND project.status = 'active' AND project.site_started_on <= $3::date AND (project.site_finished_on IS NULL OR project.site_finished_on >= $3::date)
       ORDER BY project.reference`, [workspaceId, userId, clock.today])).rows;
-  return { today: clock.today, hour: clock.hour, sites };
+  return { today: clock.today, hour: clock.hour, dueTime: clock.dueTime, sites };
 }

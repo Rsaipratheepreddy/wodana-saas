@@ -74,7 +74,7 @@ describe("client issues on site", () => {
 
   it("keeps the site as it was when the client reported nothing", async () => {
     const fetcher = mount(() => []);
-    await screen.findByRole("radio", { name: "Reports" });
+    await screen.findByRole("radio", { name: "Daily progress" });
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("/issues"))).toBe(true));
     expect(screen.queryByRole("radio", { name: /Client issues/ })).not.toBeInTheDocument();
   });

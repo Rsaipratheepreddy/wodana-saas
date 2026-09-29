@@ -398,6 +398,16 @@ export class ProjectWorkService {
         if (assigneeId) notices.push({ key: `${itemId}:${assigneeId}:${item.version}`, notice: { code: "work.assigned", item, memberships: [assigneeId] } });
       }
     }
+    // How far a task got (0–100), as the site's daily report says it: 100 finishes it, anything above nothing starts it.
+    if (body.progress !== undefined && body.progress !== null && body.progress !== item.progress) {
+      const progress = Number(body.progress);
+      if (!Number.isInteger(progress) || progress < 0 || progress > 100) throw new BadRequestException("Progress is a whole percent from 0 to 100.");
+      if (type !== "task") throw new BadRequestException("Only tasks take progress.");
+      set("progress", progress);
+      await workEvent(client, workspaceId, itemId, "progress", { from: item.progress, to: progress }, userId);
+      if (body.status === undefined && progress === 100 && OPEN(item.status)) body = { ...body, status: "done" };
+      else if (body.status === undefined && progress > 0 && item.status === "todo") body = { ...body, status: "in_progress" };
+    }
     if (body.status !== undefined && body.status !== item.status) {
       const status = oneOf(body.status, WORK_STATUSES, "Status");
       // A subtask reopens only under an open parent.

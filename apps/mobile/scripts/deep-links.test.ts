@@ -9,6 +9,7 @@ test('notification links open the same record in the app', () => {
   const cases: Array<[string, string | null]> = [
     [`/workspace/projects/${id}/site?crewDay=${other}`, `/crew-day/${other}`],
     [`/workspace/projects/${id}/site`, `/projects/${id}/reports`],
+    [`/workspace/projects/${id}/site?report=${other}`, `/projects/${id}/reports?report=${other}`],
     [`/workspace/projects/${id}/plan?item=${other}`, `/projects/${id}/task/${other}`],
     [`/workspace/projects/${id}/snagging?record=${other}`, `/projects/${id}/task/${other}`],
     [`/workspace/projects/${id}/handover?record=${other}`, `/projects/${id}/handover`],

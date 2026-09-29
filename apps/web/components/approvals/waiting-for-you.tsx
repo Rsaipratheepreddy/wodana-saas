@@ -10,6 +10,7 @@ import styles from "./waiting-for-you.module.css";
 import { APPROVALS_CHANGED, WAITING_SCOPES } from "./use-waiting-count";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
 import { cardTitle } from "@/components/woddy/woddy-action-card";
+import { siteApi } from "@/lib/site/client";
 
 type Pending = { row: ApprovalRow; decision: "approve" | "return" | "reject" };
 
@@ -48,7 +49,8 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     try {
       setState(await api.decide(row, decision, note));
       window.dispatchEvent(new Event(APPROVALS_CHANGED));
-      setDone(decision === "approve" ? t("{name} approved.", { name: approvalTitle(row, locale) }) : t("{name} sent back.", { name: approvalTitle(row, locale) }));
+      setDone(decision !== "approve" ? t("{name} sent back.", { name: approvalTitle(row, locale) })
+        : row.kind === "site_report" ? t("{name} approved and sent to the client.", { name: approvalTitle(row, locale) }) : t("{name} approved.", { name: approvalTitle(row, locale) }));
       if (decision === "approve") playFeedback("approve");
       setPending(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("The decision could not be saved.")); }
@@ -65,9 +67,15 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
   // A row whose title is a sentence (an AI app's change) reads in the person's language.
   const title = (row: ApprovalRow) => row.phrase?.key ? cardTitle(t, { title: row.phrase, summary: row.title }) : approvalTitle(row, locale);
   const columns: DataGridColumn<ApprovalRow>[] = [
-    { id: "what", header: t("Waiting"), size: 300, accessorFn: (row) => title(row), meta: { primary: true, renderCell: (row) => <span className={styles.what}>
-      <span className={styles.kind}>{t(KIND_LABEL[row.kind])}</span>
-      <span>{title(row)}</span>
+    { id: "what", header: t("Waiting"), size: 300, accessorFn: (row) => title(row), meta: { primary: true, renderCell: (row) => <span className={styles.what} data-preview={row.preview ? "" : undefined}>
+      {/* A daily report shows its lead photo and the client's words, so it can be approved and sent from here. */}
+      {row.preview?.photoId && row.parentId ? <img className={styles.thumb} src={siteApi(workspaceId, row.parentId).photoUrl(row.preview.photoId)} alt="" loading="lazy" /> : null}
+      <span className={styles.whatText}>
+        <span className={styles.kind}>{t(KIND_LABEL[row.kind])}</span>
+        <span>{title(row)}</span>
+        {row.preview?.text ? <span className={styles.preview} dir="auto">{row.preview.text}</span> : null}
+        {row.preview?.photos ? <span className={styles.muted}>{row.preview.photos === 1 ? t("1 photo") : t("{count} photos", { count: row.preview.photos })}</span> : null}
+      </span>
     </span> } },
     { id: "about", header: t("About"), size: 200, accessorFn: (row) => row.subject ?? "", meta: { mobileHidden: true } },
     { id: "project", header: t("Project"), size: 180, accessorFn: (row) => row.project ? [row.project.reference, row.project.name].filter(Boolean).join(" · ") : "", meta: { mobileHidden: true } },

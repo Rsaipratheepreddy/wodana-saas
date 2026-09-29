@@ -1,3 +1,4 @@
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 
 type Db = Pick<PoolClient, "query">;
@@ -16,6 +17,8 @@ export type WorkItem = {
   startDate: string | null; dueDate: string | null; baselineStart: string | null; baselineDue: string | null; completedAt: string | null; createdBy: string; version: number;
   /** The package's materials must be there when it starts: purchasing counts back from its start. */
   needsMaterials: boolean;
+  /** How far it is, 0–100, as the site last reported it (or set on the plan); null when nobody said. */
+  progress: number | null;
   /** For a snag: how serious, where it came from, the area it's in, and who marked it fixed. */
   severity: "minor" | "major" | "critical" | null; source: "internal" | "inspection" | "delivery" | "client" | "warranty" | null; areaId: string | null; fixedBy: string | null;
   subtasks: number; subtasksDone: number; comments: number;
@@ -29,7 +32,7 @@ const ITEM_SELECT = `SELECT item.id, item.project_id AS "projectId", item.number
   item.boq_line_id AS "boqLineId", item.stage_id AS "stageId", item.sprint_id AS "sprintId", item.title, item.status, item.priority, item.assignee_membership_id AS "assigneeId",
   coalesce(assignee.display_name, assignee.primary_email) AS "assigneeName", item.start_date::text AS "startDate", item.due_date::text AS "dueDate",
   item.baseline_start::text AS "baselineStart", item.baseline_due::text AS "baselineDue", item.completed_at AS "completedAt", item.created_by AS "createdBy", item.version,
-  item.needs_materials AS "needsMaterials", item.severity, item.source, item.area_id AS "areaId", item.fixed_by AS "fixedBy",
+  item.needs_materials AS "needsMaterials", item.progress, item.severity, item.source, item.area_id AS "areaId", item.fixed_by AS "fixedBy",
   (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status <> 'cancelled') AS subtasks,
   (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status = 'done') AS "subtasksDone",
   (SELECT count(*)::int FROM work_item_comments comment WHERE comment.workspace_id = item.workspace_id AND comment.work_item_id = item.id) AS comments,
@@ -189,14 +192,14 @@ export async function readInsights(db: Db, workspaceId: string, membershipId: st
 
 /**
  * How far the work is, in whole percent. A task counts once it's done; until then a task with subtasks
- * counts the share of its subtasks done. A package is the share of its tasks; the project weighs each
+ * counts the share of its subtasks done, and one without counts the progress the site last reported. A package is the share of its tasks; the project weighs each
  * package by its value in the live scope (equally when the scope has no values), and a package with no
  * tasks yet counts as not started. With no packages, the project is the share of all its tasks. Issues
  * and cancelled work don't count. Null when there's nothing to count.
  */
 export async function readProgress(db: Db, workspaceId: string, projectId: string): Promise<{ project: number | null; packages: Record<string, number> }> {
   const tasks = (await db.query<{ packageId: string | null; units: number; count: number }>(
-    `SELECT task.package_id AS "packageId", sum(CASE WHEN task.status = 'done' THEN 1 WHEN sub.total > 0 THEN sub.done::float8 / sub.total ELSE 0 END)::float8 AS units, count(*)::int AS count
+    `SELECT task.package_id AS "packageId", sum(CASE WHEN task.status = 'done' THEN 1 WHEN sub.total > 0 THEN sub.done::float8 / sub.total ELSE coalesce(task.progress, 0)::float8 / 100 END)::float8 AS units, count(*)::int AS count
        FROM work_items task
        LEFT JOIN LATERAL (SELECT count(*) FILTER (WHERE child.status <> 'cancelled') AS total, count(*) FILTER (WHERE child.status = 'done') AS done
                             FROM work_items child WHERE child.workspace_id = task.workspace_id AND child.parent_id = task.id) sub ON true
@@ -215,6 +218,38 @@ export async function readProgress(db: Db, workspaceId: string, projectId: strin
   const total = packages.reduce((sum, item) => sum + item.value, 0);
   const weight = (item: { value: number }) => (total > 0 ? item.value / total : 1 / packages.length);
   return { project: percent(packages.reduce((sum, item) => sum + (share.get(item.id) ?? 0) * weight(item), 0)), packages: byPackage };
+}
+
+/**
+ * How far a task got (0–100), from the day's site report or the plan: 100 finishes it (only once its subtasks are
+ * finished or cancelled), anything above nothing starts it. A task already done stays done; cancelled work and
+ * issues take no progress. Recorded in the item's history. Returns what changed, or null when nothing did.
+ */
+export async function setWorkProgress(db: Db, workspaceId: string, input: { projectId: string; itemId: string; progress: number; userId: string }) {
+  const item = (await db.query<{ number: number; type: WorkType; status: WorkStatus; progress: number | null }>(
+    `SELECT number, type, status, progress FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+    [workspaceId, input.projectId, input.itemId])).rows[0];
+  if (!item) throw new BadRequestException("Choose work from this project's plan.");
+  if (item.type !== "task") throw new BadRequestException(`#${item.number} isn't a task.`);
+  if (item.status === "cancelled") throw new ConflictException(`#${item.number} was cancelled.`);
+  if (item.status === "done") return null;
+  const progress = Math.max(0, Math.min(100, Math.round(input.progress)));
+  const done = progress === 100;
+  if (done) {
+    const open = (await db.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM work_items WHERE workspace_id = $1 AND parent_id = $2 AND status NOT IN ('done', 'cancelled')`, [workspaceId, input.itemId])).rows[0].count;
+    if (open) throw new ConflictException(open === 1 ? `#${item.number}: finish or cancel its open subtask first.` : `#${item.number}: finish or cancel its ${open} open subtasks first.`);
+  }
+  const status: WorkStatus = done ? "done" : progress > 0 && item.status === "todo" ? "in_progress" : item.status;
+  if (progress === item.progress && status === item.status) return null;
+  await db.query(
+    `UPDATE work_items SET progress = $3, status = $4::varchar, started_at = CASE WHEN $4::varchar <> 'todo' THEN coalesce(started_at, now()) ELSE started_at END,
+            completed_at = CASE WHEN $4::varchar = 'done' THEN now() ELSE completed_at END, completed_by = CASE WHEN $4::varchar = 'done' THEN $5::uuid ELSE completed_by END,
+            version = version + 1, updated_at = now()
+      WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.itemId, progress, status, input.userId]);
+  await workEvent(db, workspaceId, input.itemId, "progress", { from: item.progress, to: progress }, input.userId);
+  if (status !== item.status) await workEvent(db, workspaceId, input.itemId, "status", { from: item.status, to: status, via: "site_report" }, input.userId);
+  return { number: item.number, from: item.progress, to: progress, status };
 }
 
 /**
