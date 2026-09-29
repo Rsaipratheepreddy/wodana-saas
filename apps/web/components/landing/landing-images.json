@@ -1,0 +1,458 @@
+{
+  "app-approvals": {
+    "width": 1170,
+    "height": 2532,
+    "dark": [
+      {
+        "w": 360,
+        "avif": "/landing/opt/app-approvals-dark-360.686d504d.avif",
+        "webp": "/landing/opt/app-approvals-dark-360.bb1dfbc1.webp"
+      },
+      {
+        "w": 540,
+        "avif": "/landing/opt/app-approvals-dark-540.bce4cbeb.avif",
+        "webp": "/landing/opt/app-approvals-dark-540.37c60c7c.webp"
+      },
+      {
+        "w": 720,
+        "avif": "/landing/opt/app-approvals-dark-720.89328d7e.avif",
+        "webp": "/landing/opt/app-approvals-dark-720.d46d4d27.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 360,
+        "avif": "/landing/opt/app-approvals-360.893ca147.avif",
+        "webp": "/landing/opt/app-approvals-360.ef095386.webp"
+      },
+      {
+        "w": 540,
+        "avif": "/landing/opt/app-approvals-540.fa84cfaa.avif",
+        "webp": "/landing/opt/app-approvals-540.d242785c.webp"
+      },
+      {
+        "w": 720,
+        "avif": "/landing/opt/app-approvals-720.5f1b3fad.avif",
+        "webp": "/landing/opt/app-approvals-720.9628666d.webp"
+      }
+    ]
+  },
+  "app-daily-report": {
+    "width": 1170,
+    "height": 2532,
+    "dark": [
+      {
+        "w": 360,
+        "avif": "/landing/opt/app-daily-report-dark-360.83708b2a.avif",
+        "webp": "/landing/opt/app-daily-report-dark-360.3f528316.webp"
+      },
+      {
+        "w": 540,
+        "avif": "/landing/opt/app-daily-report-dark-540.70c32e04.avif",
+        "webp": "/landing/opt/app-daily-report-dark-540.dd7c1233.webp"
+      },
+      {
+        "w": 720,
+        "avif": "/landing/opt/app-daily-report-dark-720.e78c7399.avif",
+        "webp": "/landing/opt/app-daily-report-dark-720.70c1e82e.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 360,
+        "avif": "/landing/opt/app-daily-report-360.01f099bc.avif",
+        "webp": "/landing/opt/app-daily-report-360.0d22173e.webp"
+      },
+      {
+        "w": 540,
+        "avif": "/landing/opt/app-daily-report-540.9f11a8ab.avif",
+        "webp": "/landing/opt/app-daily-report-540.989cb360.webp"
+      },
+      {
+        "w": 720,
+        "avif": "/landing/opt/app-daily-report-720.a6ba6f5b.avif",
+        "webp": "/landing/opt/app-daily-report-720.c0a7319f.webp"
+      }
+    ]
+  },
+  "app-inbox": {
+    "width": 1170,
+    "height": 2532,
+    "dark": [
+      {
+        "w": 360,
+        "avif": "/landing/opt/app-inbox-dark-360.e4d62935.avif",
+        "webp": "/landing/opt/app-inbox-dark-360.a1ef334d.webp"
+      },
+      {
+        "w": 540,
+        "avif": "/landing/opt/app-inbox-dark-540.8c249bbb.avif",
+        "webp": "/landing/opt/app-inbox-dark-540.875730ed.webp"
+      },
+      {
+        "w": 720,
+        "avif": "/landing/opt/app-inbox-dark-720.3cc2d6b4.avif",
+        "webp": "/landing/opt/app-inbox-dark-720.856c73de.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 360,
+        "avif": "/landing/opt/app-inbox-360.1e9ec96d.avif",
+        "webp": "/landing/opt/app-inbox-360.371c4e0c.webp"
+      },
+      {
+        "w": 540,
+        "avif": "/landing/opt/app-inbox-540.1bea0d82.avif",
+        "webp": "/landing/opt/app-inbox-540.9b3b8c7f.webp"
+      },
+      {
+        "w": 720,
+        "avif": "/landing/opt/app-inbox-720.f98095a1.avif",
+        "webp": "/landing/opt/app-inbox-720.8dfd4a13.webp"
+      }
+    ]
+  },
+  "app-me": {
+    "width": 1170,
+    "height": 2532,
+    "dark": [
+      {
+        "w": 360,
+        "avif": "/landing/opt/app-me-dark-360.557c654a.avif",
+        "webp": "/landing/opt/app-me-dark-360.d7c2254b.webp"
+      },
+      {
+        "w": 540,
+        "avif": "/landing/opt/app-me-dark-540.c525c416.avif",
+        "webp": "/landing/opt/app-me-dark-540.d1af2318.webp"
+      },
+      {
+        "w": 720,
+        "avif": "/landing/opt/app-me-dark-720.9eeeaad9.avif",
+        "webp": "/landing/opt/app-me-dark-720.0c6937a6.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 360,
+        "avif": "/landing/opt/app-me-360.62eeb2d5.avif",
+        "webp": "/landing/opt/app-me-360.89587580.webp"
+      },
+      {
+        "w": 540,
+        "avif": "/landing/opt/app-me-540.0e66788a.avif",
+        "webp": "/landing/opt/app-me-540.4f7161f7.webp"
+      },
+      {
+        "w": 720,
+        "avif": "/landing/opt/app-me-720.52c457bb.avif",
+        "webp": "/landing/opt/app-me-720.b1545dd1.webp"
+      }
+    ]
+  },
+  "app-today": {
+    "width": 1170,
+    "height": 2532,
+    "dark": [
+      {
+        "w": 360,
+        "avif": "/landing/opt/app-today-dark-360.ca48ea2b.avif",
+        "webp": "/landing/opt/app-today-dark-360.2c134f1e.webp"
+      },
+      {
+        "w": 540,
+        "avif": "/landing/opt/app-today-dark-540.14fc0e5f.avif",
+        "webp": "/landing/opt/app-today-dark-540.460ec76f.webp"
+      },
+      {
+        "w": 720,
+        "avif": "/landing/opt/app-today-dark-720.74db538f.avif",
+        "webp": "/landing/opt/app-today-dark-720.71919377.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 360,
+        "avif": "/landing/opt/app-today-360.505021bd.avif",
+        "webp": "/landing/opt/app-today-360.3110b18c.webp"
+      },
+      {
+        "w": 540,
+        "avif": "/landing/opt/app-today-540.441bc36c.avif",
+        "webp": "/landing/opt/app-today-540.a7baca95.webp"
+      },
+      {
+        "w": 720,
+        "avif": "/landing/opt/app-today-720.9dcde15e.avif",
+        "webp": "/landing/opt/app-today-720.ff1e4b35.webp"
+      }
+    ]
+  },
+  "client-portal": {
+    "width": 2880,
+    "height": 1800,
+    "dark": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/client-portal-dark-720.cdb78294.avif",
+        "webp": "/landing/opt/client-portal-dark-720.be513275.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/client-portal-dark-1080.17929d95.avif",
+        "webp": "/landing/opt/client-portal-dark-1080.787bdf78.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/client-portal-dark-1440.b0ccb027.avif",
+        "webp": "/landing/opt/client-portal-dark-1440.2da2008c.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/client-portal-720.f7d411cc.avif",
+        "webp": "/landing/opt/client-portal-720.d0341b0c.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/client-portal-1080.4f11d76c.avif",
+        "webp": "/landing/opt/client-portal-1080.bfc123c4.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/client-portal-1440.2e6d1e04.avif",
+        "webp": "/landing/opt/client-portal-1440.c3240b5d.webp"
+      }
+    ]
+  },
+  "factory": {
+    "width": 2880,
+    "height": 1800,
+    "dark": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/factory-dark-720.53e91366.avif",
+        "webp": "/landing/opt/factory-dark-720.4cd14dd2.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/factory-dark-1080.50d2d8e3.avif",
+        "webp": "/landing/opt/factory-dark-1080.944f9c99.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/factory-dark-1440.5941b84a.avif",
+        "webp": "/landing/opt/factory-dark-1440.666a383a.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/factory-720.48106342.avif",
+        "webp": "/landing/opt/factory-720.7cc43c39.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/factory-1080.4c2f413a.avif",
+        "webp": "/landing/opt/factory-1080.ca11b3d2.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/factory-1440.c8234f68.avif",
+        "webp": "/landing/opt/factory-1440.51d86bca.webp"
+      }
+    ]
+  },
+  "home": {
+    "width": 2880,
+    "height": 1800,
+    "dark": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/home-dark-720.e5a5eb8b.avif",
+        "webp": "/landing/opt/home-dark-720.dd887746.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/home-dark-1080.151fd0a1.avif",
+        "webp": "/landing/opt/home-dark-1080.77e3711f.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/home-dark-1440.51ef5f7e.avif",
+        "webp": "/landing/opt/home-dark-1440.9eb43bed.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/home-720.4791c476.avif",
+        "webp": "/landing/opt/home-720.05c87af2.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/home-1080.3af86bcd.avif",
+        "webp": "/landing/opt/home-1080.160b1416.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/home-1440.a5e3a52b.avif",
+        "webp": "/landing/opt/home-1440.7341669f.webp"
+      }
+    ]
+  },
+  "pipeline": {
+    "width": 2880,
+    "height": 1800,
+    "dark": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/pipeline-dark-720.0f61e3da.avif",
+        "webp": "/landing/opt/pipeline-dark-720.96b4b303.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/pipeline-dark-1080.e70e1808.avif",
+        "webp": "/landing/opt/pipeline-dark-1080.6deac342.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/pipeline-dark-1440.6639f0ea.avif",
+        "webp": "/landing/opt/pipeline-dark-1440.47b52252.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/pipeline-720.c257bdd0.avif",
+        "webp": "/landing/opt/pipeline-720.d3793f76.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/pipeline-1080.d8da3aa1.avif",
+        "webp": "/landing/opt/pipeline-1080.114fc7d9.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/pipeline-1440.594463db.avif",
+        "webp": "/landing/opt/pipeline-1440.5b3cae3e.webp"
+      }
+    ]
+  },
+  "project-plan": {
+    "width": 2880,
+    "height": 1800,
+    "dark": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/project-plan-dark-720.1500e80a.avif",
+        "webp": "/landing/opt/project-plan-dark-720.6b17ff28.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/project-plan-dark-1080.5c6c0252.avif",
+        "webp": "/landing/opt/project-plan-dark-1080.aee843a2.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/project-plan-dark-1440.e42d4830.avif",
+        "webp": "/landing/opt/project-plan-dark-1440.a2d86f35.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/project-plan-720.67a27b01.avif",
+        "webp": "/landing/opt/project-plan-720.99673e30.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/project-plan-1080.25aee11d.avif",
+        "webp": "/landing/opt/project-plan-1080.cec3835e.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/project-plan-1440.17729eaf.avif",
+        "webp": "/landing/opt/project-plan-1440.cea122f0.webp"
+      }
+    ]
+  },
+  "purchasing": {
+    "width": 2880,
+    "height": 1800,
+    "dark": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/purchasing-dark-720.05191c7f.avif",
+        "webp": "/landing/opt/purchasing-dark-720.ce256adf.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/purchasing-dark-1080.096f315f.avif",
+        "webp": "/landing/opt/purchasing-dark-1080.2430e709.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/purchasing-dark-1440.fa91db33.avif",
+        "webp": "/landing/opt/purchasing-dark-1440.9ae7ddad.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/purchasing-720.a32f9c67.avif",
+        "webp": "/landing/opt/purchasing-720.658fa352.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/purchasing-1080.722469d1.avif",
+        "webp": "/landing/opt/purchasing-1080.f5bed322.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/purchasing-1440.42cabbb6.avif",
+        "webp": "/landing/opt/purchasing-1440.710c3d7d.webp"
+      }
+    ]
+  },
+  "quotation": {
+    "width": 2880,
+    "height": 1800,
+    "dark": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/quotation-dark-720.58dee39b.avif",
+        "webp": "/landing/opt/quotation-dark-720.41fa77cd.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/quotation-dark-1080.1b1b792b.avif",
+        "webp": "/landing/opt/quotation-dark-1080.9d21f350.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/quotation-dark-1440.b645eed1.avif",
+        "webp": "/landing/opt/quotation-dark-1440.18be0b92.webp"
+      }
+    ],
+    "light": [
+      {
+        "w": 720,
+        "avif": "/landing/opt/quotation-720.f7117bb2.avif",
+        "webp": "/landing/opt/quotation-720.d830af21.webp"
+      },
+      {
+        "w": 1080,
+        "avif": "/landing/opt/quotation-1080.1ad0202d.avif",
+        "webp": "/landing/opt/quotation-1080.9abff135.webp"
+      },
+      {
+        "w": 1440,
+        "avif": "/landing/opt/quotation-1440.3f1a2e04.avif",
+        "webp": "/landing/opt/quotation-1440.12ef514e.webp"
+      }
+    ]
+  }
+}

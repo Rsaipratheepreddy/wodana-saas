@@ -18,31 +18,40 @@ import styles from "./landing.module.css";
 
 export { MarketingFrame } from "./marketing-frame";
 
-const DESKTOP_SIZES = "(max-width: 960px) 100vw, 760px";
+/*
+ * `sizes` follow the layout (landing.module.css, feature-tabs.module.css): the page is at most 76rem with gutters, the
+ * tour's window is two thirds of its panel and the phones are clamp()ed. A 1440-wide screen picks the 1080–1440
+ * variants for the large windows; phones pick 360–720.
+ */
+const HERO_SIZES = "(max-width: 76rem) calc(100vw - 2rem), 71rem";
+const TOUR_SIZES = "(max-width: 60rem) calc(100vw - 5rem), 40rem";
+const TOUR_FRONT_SIZES = "23rem";
 
-/** A desktop screenshot in a quiet app window, with an optional second screen layered in front. */
+/** A desktop screenshot in a quiet app window, with an optional second screen layered in front. Loads when the tour asks. */
 function Window({ main, front, t }: { main: Shot; front?: Shot; t: Translate }) {
   if (!shotReady(main)) return null;
   return <div className={styles.stack} data-layered={front && shotReady(front) ? true : undefined}>
-    <div className={styles.window}><Screenshot shot={main} sizes={DESKTOP_SIZES} t={t} /></div>
+    <div className={styles.window}><Screenshot defer shot={main} sizes={TOUR_SIZES} t={t} /></div>
     {front && shotReady(front)
-      ? <div className={`${styles.window} ${styles.windowFront}`}><Screenshot shot={front} sizes="(max-width: 960px) 60vw, 440px" t={t} /></div>
+      ? <div className={`${styles.window} ${styles.windowFront}`}><Screenshot defer shot={front} sizes={TOUR_FRONT_SIZES} t={t} /></div>
       : null}
   </div>;
 }
 
-/** Two phones side by side, for the site tab. */
+/** Two phones side by side, for the site tab. Loads when the tour asks. */
 function PhonePair({ shots, t }: { shots: Shot[]; t: Translate }) {
   const ready = shots.filter(shotReady);
   if (!ready.length) return null;
   return <div className={styles.phonePair}>
-    {ready.map((shot, index) => <Phone key={shot.src} kind={index === 0 ? "iphone" : "android"} shot={shot} sizes="(max-width: 960px) 44vw, 260px" t={t} />)}
+    {ready.map((shot, index) => <Phone defer key={shot.name} kind={index === 0 ? "iphone" : "android"} shot={shot}
+      sizes="(max-width: 60rem) 16vw, 12rem" t={t} />)}
   </div>;
 }
 
 /**
- * The hero's product visual: the app window cycles Home → Sales → Projects (a CSS cross-fade, so no script), with the
- * phone app in front. Only the first screen is fetched eagerly, at high priority; the others load after it.
+ * The hero's product visual: the app window cycles Home → Sales → Projects (a CSS cross-fade), with the phone app in
+ * front. Only the first screen is fetched eagerly, at high priority and preloaded; the other two start after the
+ * page's load event, before the cross-fade reaches them.
  */
 function HeroVisual({ t }: { t: Translate }) {
   if (!shotReady(SHOTS.home)) return null;
@@ -52,12 +61,12 @@ function HeroVisual({ t }: { t: Translate }) {
     <div className={styles.heroWindow}>
       <div aria-hidden="true" className={styles.chrome}><span /><span /><span /></div>
       <div className={styles.heroLayers} data-count={layers.length + 1}>
-        <Screenshot priority shot={SHOTS.home} sizes="(max-width: 1240px) 100vw, 1180px" t={t} />
-        {layers.map((shot, index) => <Screenshot className={styles.heroLayer} decorative key={shot.src} shot={shot}
-          layer={index + 2} sizes="(max-width: 1240px) 100vw, 1180px" t={t} />)}
+        <Screenshot priority shot={SHOTS.home} sizes={HERO_SIZES} t={t} />
+        {layers.map((shot, index) => <Screenshot className={styles.heroLayer} decorative defer key={shot.name} shot={shot}
+          layer={index + 2} sizes={HERO_SIZES} t={t} />)}
       </div>
     </div>
-    {shotReady(SHOTS.appToday) ? <Phone className={styles.heroPhone} shot={SHOTS.appToday} sizes="(max-width: 720px) 34vw, 240px" t={t} /> : null}
+    {shotReady(SHOTS.appToday) ? <Phone className={styles.heroPhone} shot={SHOTS.appToday} sizes="(max-width: 45rem) 27vw, 14rem" t={t} /> : null}
     {layers.length ? <ol aria-hidden="true" className={styles.heroSteps} data-count={steps.length}>
       {steps.map((step) => <li key={step}>{step}</li>)}
     </ol> : null}
@@ -258,7 +267,7 @@ export async function LandingPage({ form }: { form: PublicSalesForm }) {
           </ul>
         </div>
         {phones.length ? <div className={styles.devices} data-count={phones.length}>
-          {phones.map(({ shot, kind }) => <Phone key={shot.src} kind={kind} shot={shot} sizes="(max-width: 720px) 60vw, 300px" t={t} />)}
+          {phones.map(({ shot, kind }) => <Phone key={shot.name} kind={kind} shot={shot} sizes="(max-width: 45rem) 38vw, 16rem" t={t} />)}
         </div> : null}
       </div>
     </section>
