@@ -27,6 +27,11 @@ variable; the build refuses to start without it). On sign-in the app asks to all
 records the answer, registers the phone's Expo token and turns push on unless the person turned it
 off (Me → Notifications on this phone). Signing out unregisters the phone.
 
+Approve from the lock screen: an approval notice that needs no note (an order, a payment run, petty cash, a quote
+review, a daily report) shows Approve and Open. On iOS, Approve asks for Face ID or the passcode and decides it in
+the background; Android opens the app (unlocked) and decides it at once. The decision is saved on the phone first and
+sent through `approvals/decide`; anything that needs more than a tap opens the app instead.
+
 ## Check
 
 ```sh

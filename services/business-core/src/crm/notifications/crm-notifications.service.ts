@@ -16,6 +16,7 @@ import { CrmMessageReceiptService } from "../conversations/crm-message-receipt.s
 import { normalizeTemplateParameter, renderTemplate, templateParametersProblem, templatePlaceholders, type TemplateVariableSource } from "../conversations/inbox/inbox-rules";
 import { resolveTemplateSources } from "../conversations/inbox/template-variables";
 import { DeviceTokenStoreService } from "./device-token-store.service";
+import { approvalPush } from "../../approvals/approval-push";
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
 @Injectable()
@@ -335,7 +336,9 @@ export class CrmNotificationsService {
           continue;
         }
         const template = row.templateId ? await client.query(`SELECT code,locale FROM notification_templates WHERE workspace_id=$1 AND id=$2`, [input.workspaceId, row.templateId]) : { rows: [] };
-        items.push({ ...row, workspaceId: input.workspaceId, destination, templateCode: template.rows[0]?.code ?? null, locale: template.rows[0]?.locale ?? null, ...await this.chatDelivery(client, input.workspaceId, row) });
+        // An approval a phone can decide from its lock screen carries its buttons and the row to decide (X-2).
+        const approval = row.channel === "push" ? approvalPush(String(row.eventType), typeof row.deepLink === "string" ? row.deepLink : null) : null;
+        items.push({ ...row, workspaceId: input.workspaceId, destination, templateCode: template.rows[0]?.code ?? null, locale: template.rows[0]?.locale ?? null, ...(approval ?? {}), ...await this.chatDelivery(client, input.workspaceId, row) });
       }
       return { items };
     });

@@ -185,7 +185,7 @@ cd android && ./gradlew bundleRelease     # android/app/build/outputs/bundle/rel
 2. Allow notifications. Me → Notifications on this phone shows it on.
 3. Check in and out on Me or Today. The phone asks for location once.
 4. On a project, send a daily site report with a photo. Offline, it waits in Me → Waiting to send.
-5. Approve or return an item on Approvals, reached from Today's "N waiting for you".
+5. Approve or return an item on Approvals, reached from Today's "N waiting for you". Submit an order for approval from the web, lock the phone, and tap Approve on its notice: the order is approved.
 6. For someone who answers clients: Inbox → Chats shows their chats; open one and add an internal note.
 7. Send yourself a test notice from the web: Settings → Connections → Delivery → Send me a test. Tap it; the app opens its screen.
 

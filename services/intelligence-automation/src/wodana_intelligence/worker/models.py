@@ -30,6 +30,14 @@ class DeliveryMedia(BaseModel):
     caption: Optional[str] = Field(default=None, max_length=4096)
 
 
+class PushApproval(BaseModel):
+    """The "Waiting for you" row a lock-screen Approve decides (Business Core checks it again)."""
+
+    model_config = ConfigDict(extra="ignore")
+    kind: str = Field(min_length=1, max_length=40, pattern=r"^[a-z_]+$")
+    id: UUID
+
+
 class DeliveryJob(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: UUID
@@ -48,6 +56,11 @@ class DeliveryJob(BaseModel):
     # A chat reply goes from the number the client wrote to (none: the workspace's default number).
     connection_id: Optional[UUID] = Field(default=None, alias="connectionId")
     media: Optional[DeliveryMedia] = None
+    # An approval a phone can decide from its lock screen (X-2): its buttons and the row to decide.
+    push_category: Optional[Literal["approval", "approval_send"]] = Field(
+        default=None, alias="pushCategory"
+    )
+    approval: Optional[PushApproval] = None
 
 
 class DeliveryResult(BaseModel):
