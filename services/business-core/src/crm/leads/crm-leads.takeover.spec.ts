@@ -8,9 +8,11 @@ const dueLead = {
   business_unit_id: null, preferred_locale: null, party_owner_membership_id: null,
 };
 
-function processor({ responded = false, engaged = false }: { responded?: boolean; engaged?: boolean } = {}) {
+function processor({ responded = false, engaged = false, attempts = 0, cap = 2 }: { responded?: boolean; engaged?: boolean; attempts?: number; cap?: number } = {}) {
   const query = vi.fn(async (sql: string) => {
     if (sql.includes("SELECT lead.id FROM crm_leads lead")) return { rows: [{ id: "lead" }], rowCount: 1 };
+    if (sql.includes("FROM workspace_sales_settings")) return { rows: [{ takeoverCap: cap, unownedEscalationMinutes: 15, clientReviewMinutes: 30, duplicateWindowDays: 90, salesAdminMembershipId: null, version: 1 }], rowCount: 1 };
+    if (sql.includes("AS attempts FROM crm_assignment_history")) return { rows: [{ attempts }], rowCount: 1 };
     if (sql.includes("FROM crm_assignment_history history") && sql.includes('AS "assignedAt"')) {
       return { rows: [{ assignedAt, userId: "owner-user" }], rowCount: 1 };
     }
@@ -40,7 +42,7 @@ describe("unanswered lead ownership handoff", () => {
   it("reassigns only after checking the current owner's evidence since this assignment", async () => {
     const { service, query } = processor();
     expect(await service.processDueTakeoversInternal("workspace", 10)).toEqual({
-      reassigned: [{ leadId: "lead", ownerMembershipId: "alternate", queueId: "queue" }], engaged: [],
+      reassigned: [{ leadId: "lead", ownerMembershipId: "alternate", queueId: "queue" }], engaged: [], kept: [], escalated: [],
     });
     expect(service["selectAssignment"]).toHaveBeenCalledWith(expect.anything(), "workspace", dueLead, true,
       { queueId: "queue", excludedOwnerId: "owner" });
@@ -54,7 +56,7 @@ describe("unanswered lead ownership handoff", () => {
 
   it("keeps the owner when their note was logged after assignment without claiming an SLA response", async () => {
     const { service, query, events } = processor({ engaged: true });
-    expect(await service.processDueTakeoversInternal("workspace", 10)).toEqual({ reassigned: [], engaged: ["lead"] });
+    expect(await service.processDueTakeoversInternal("workspace", 10)).toEqual({ reassigned: [], engaged: ["lead"], kept: [], escalated: [] });
     expect(service["applyAssignment"]).not.toHaveBeenCalled();
     expect(query.mock.calls.some(([sql]) => sql.includes("SET ownership_due_at=NULL"))).toBe(true);
     expect(events.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "crm.lead.takeover_cancelled.v1" }));
@@ -63,21 +65,39 @@ describe("unanswered lead ownership handoff", () => {
 
   it("keeps the owner when a verified first response was recorded", async () => {
     const { service, query } = processor({ responded: true });
-    expect(await service.processDueTakeoversInternal("workspace", 10)).toEqual({ reassigned: [], engaged: ["lead"] });
+    expect(await service.processDueTakeoversInternal("workspace", 10)).toEqual({ reassigned: [], engaged: ["lead"], kept: [], escalated: [] });
     expect(query.mock.calls.some(([sql]) => sql.includes("FROM audit_events event"))).toBe(false);
   });
 
-  it("excludes the previous owner and returns the lead to its queue when no alternate is eligible", async () => {
-    const { service } = processor();
+  it("keeps the owner, turns it urgent and tells the owner and the admin when nobody else can take it (S-1)", async () => {
+    const { service, query, events } = processor();
     service["selectAssignment"] = vi.fn().mockResolvedValue({
       ownerMembershipId: null, queueId: "queue", ruleId: null,
       explanation: { reason: "no_eligible_alternate" },
     });
-    service["applyAssignment"] = vi.fn().mockResolvedValue({ assignment: { ownerMembershipId: null, queueId: "queue" } });
-    expect(await service.processDueTakeoversInternal("workspace", 10)).toEqual({
-      reassigned: [{ leadId: "lead", ownerMembershipId: null, queueId: "queue" }], engaged: [],
-    });
-    expect(service["applyAssignment"]).toHaveBeenCalledWith(expect.anything(), "workspace", dueLead,
-      expect.objectContaining({ ownerMembershipId: null, queueId: "queue" }), null, "automatic", expect.any(String), false);
+    expect(await service.processDueTakeoversInternal("workspace", 10)).toEqual({ reassigned: [], engaged: [], kept: ["lead"], escalated: [] });
+    expect(service["applyAssignment"]).not.toHaveBeenCalled();
+    const kept = query.mock.calls.find(([sql]) => sql.includes("SET ownership_due_at=$3, priority='urgent'"));
+    expect(kept?.[1]?.slice(0, 2)).toEqual(["workspace", "lead"]);
+    // First of two allowed attempts: not yet escalated.
+    expect(kept?.[1]?.[3]).toBe(false);
+    const history = query.mock.calls.find(([sql]) => sql.includes("INSERT INTO crm_assignment_history"));
+    expect(history?.[1]?.[2]).toBe("owner");
+    expect(history?.[1]?.[3]).toBe("queue");
+    expect(history?.[1]?.[4]).toMatchObject({ reason: "no_eligible_alternate", kept: true });
+    expect(events.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "crm.lead.takeover_kept.v1" }));
+    // The owner is never stripped.
+    expect(query.mock.calls.some(([sql]) => /owner_membership_id\s*=\s*NULL/i.test(sql))).toBe(false);
+  });
+
+  it("escalates to a manager instead of rotating once the attempt cap is reached (S-1)", async () => {
+    const { service, query, events } = processor({ attempts: 2, cap: 2 });
+    expect(await service.processDueTakeoversInternal("workspace", 10)).toEqual({ reassigned: [], engaged: [], kept: [], escalated: ["lead"] });
+    expect(service["selectAssignment"]).not.toHaveBeenCalled();
+    expect(service["applyAssignment"]).not.toHaveBeenCalled();
+    expect(query.mock.calls.some(([sql]) => sql.includes("SET ownership_due_at=NULL, priority='urgent', escalated_at=now()"))).toBe(true);
+    expect(events.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      action: "crm.lead.takeover_escalated.v1", after: expect.objectContaining({ attempts: 2 }),
+    }));
   });
 });

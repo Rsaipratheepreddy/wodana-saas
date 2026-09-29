@@ -17,6 +17,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
+import { HiddenDuringViewAs } from "../auth/view-as/view-as.decorators";
 import { WorkspacesModule } from "../workspaces/workspaces.module";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { ProjectsModule } from "../projects/projects.module";
@@ -130,7 +131,8 @@ export class HrmsController {
   @Get("time/utilisation") utilisation(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Query() q: RangeQueryDto) {
     return this.timeService.utilisation(a, w, q.from, q.to);
   }
-  @Get("documents") documents(
+  // HR documents stay private while an owner views as someone.
+  @HiddenDuringViewAs() @Get("documents") documents(
     @CurrentActor() a: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) w: string,
     @Query() q: DocumentQueryDto,
@@ -157,6 +159,7 @@ export class HrmsController {
     return this.documentsService.uploadFile(a, w, id, file);
   }
   @Get("documents/:id/file")
+  @HiddenDuringViewAs()
   @Header("Cache-Control", "private, no-store")
   async documentFileContent(
     @CurrentActor() a: RequestActor,

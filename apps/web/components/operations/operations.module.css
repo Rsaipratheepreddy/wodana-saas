@@ -1,0 +1,46 @@
+/* The pieces Purchasing, Inventory and Factory share: the project a list is narrowed to, the next step on a
+   record, dates against today, and the one action per row. Tokens only; logical properties only. */
+.filterChip { display: inline-flex; align-items: center; gap: var(--wd-space-1); min-block-size: var(--wd-control-sm); padding-inline: var(--wd-space-2-5) var(--wd-space-1);
+  border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); color: var(--wd-color-text); font-size: var(--wd-text-xs); }
+.filterChip > span { white-space: nowrap; }
+.filterChip strong { font-weight: var(--wd-weight-semibold); }
+
+.cell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; white-space: normal; }
+.cell > span, .cell > a { color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.cell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.cell small[data-tone="danger"] { color: var(--wd-color-danger); }
+.cell small[data-tone="warning"] { color: var(--wd-color-warning); }
+.cell small[data-tone="success"] { color: var(--wd-color-success); }
+.cell small[data-tone="info"] { color: var(--wd-color-info); }
+.number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.projects { display: flex; flex-wrap: wrap; gap: var(--wd-space-1) var(--wd-space-2); min-inline-size: 0; }
+.projectLink { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; text-decoration: underline; text-decoration-color: var(--wd-color-structural-divider);
+  text-underline-offset: 0.2em; white-space: nowrap; }
+.projectLink:hover { text-decoration-color: currentColor; }
+.projectLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
+
+.nextCell { display: flex; justify-content: flex-end; }
+
+/* The one next step on an opened record: what happens next, whose it is, and the action when it's yours. */
+.nextStep { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); padding: var(--wd-space-2-5) var(--wd-space-3);
+  border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
+.nextStep[data-tone="danger"] { background: var(--wd-danger-soft); }
+.nextStep[data-tone="warning"] { background: var(--wd-warning-soft); }
+.nextStep > div { display: grid; gap: var(--wd-space-0-5); flex: 1 1 14rem; min-inline-size: 0; }
+.nextStep strong { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); overflow-wrap: anywhere; }
+.nextStep small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.nextStep > span { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+
+/* The record's head: its state and the facts that say what it is, then the stage it's at. */
+.recordHead { display: grid; gap: var(--wd-space-2); }
+.recordFacts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.recordFacts > * { overflow-wrap: anywhere; }
+
+.list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.list > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.list > li > .cell { flex: 1 1 14rem; }
+.section { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
+.sectionHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.sectionHead h3 { margin: 0; flex: 1; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
+.empty { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, DataGrid, InlineNotice, SelectField, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, DataGrid, InlineNotice, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { loadDesignSettings, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type DesignPackage, type DesignSettings, type PricingMethod } from "@/lib/design/packages";
 import styles from "./design-packages-settings.module.css";
@@ -17,10 +17,10 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
   const [failure, setFailure] = useState("");
   const [notice, setNotice] = useState("");
   const [minimum, setMinimum] = useState("");
-  const [savingMinimum, setSavingMinimum] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [editing, setEditing] = useState<Partial<DesignPackage> | null>(null);
   const [timings, setTimings] = useState({ inspirationDays: "", siteVisitHours: "" });
-  const [savingTimings, setSavingTimings] = useState(false);
   const load = useCallback(() => loadDesignSettings(workspaceId).then((next) => { setSettings(next); setMinimum(next.minimumDeposit?.amount ? String(Number(next.minimumDeposit.amount)) : ""); setTimings({ inspirationDays: String(next.timings?.inspirationDays ?? 7), siteVisitHours: String(next.timings?.siteVisitHours ?? 72) }); }).catch((error: Error) => setFailure(error.message)), [workspaceId]);
   useEffect(() => { void load(); }, [load]);
 
@@ -32,6 +32,22 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
   };
 
   if (!settings && !failure) return <Skeleton lines={4} shape="form" />;
+  // The deposit and the timings are saved together from the one save bar.
+  const savedMinimum = settings?.minimumDeposit?.amount ? String(Number(settings.minimumDeposit.amount)) : "";
+  const savedTimings = { inspirationDays: String(settings?.timings?.inspirationDays ?? 7), siteVisitHours: String(settings?.timings?.siteVisitHours ?? 72) };
+  const minimumChanged = minimum !== savedMinimum;
+  const timingsChanged = timings.inspirationDays !== savedTimings.inspirationDays || timings.siteVisitHours !== savedTimings.siteVisitHours;
+  const saveChanges = async () => {
+    setSaving(true); setFailure(""); setNotice("");
+    try {
+      let version = settings?.version ?? 0;
+      if (minimumChanged) version = (await saveMinimumDeposit(workspaceId, minimum ? { amount: Number(minimum).toFixed(2), currency: settings?.minimumDeposit?.currency ?? currency } : null, version)).version;
+      if (timingsChanged) await saveDesignTimings(workspaceId, { inspirationDays: Number(timings.inspirationDays), siteVisitHours: Number(timings.siteVisitHours) }, version);
+      await load();
+      setJustSaved(true);
+    } catch (error) { setFailure(error instanceof Error ? error.message : t("Design settings could not be saved.")); }
+    setSaving(false);
+  };
   const columns: DataGridColumn<DesignPackage>[] = [
     { accessorKey: "name", header: t("Package"), size: 240, cell: ({ row: { original: pkg } }) => <span className={styles.name}><strong>{pkg.name}</strong>{pkg.inclusions ? <small>{pkg.inclusions}</small> : null}</span> },
     { id: "price", header: t("Price"), size: 170, accessorFn: price },
@@ -44,18 +60,14 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
     </span> } as DataGridColumn<DesignPackage>] : []),
   ];
 
-  return <div className={styles.page}>
+  return <SettingsPage title={t("Design packages")}>
     {failure ? <InlineNotice message={failure} tone="error" /> : null}
     {notice ? <InlineNotice message={notice} tone="success" /> : null}
     <SettingsSection id="design-deposit" title={t("Design deposit")}>
       <SettingsRow hint={t("Design work starts only after this much is received and verified.")} label={t("Minimum deposit")}>
         <span className={styles.minimum}>
-          <TextInput aria-label={t("Minimum deposit")} isDisabled={!canManage} label={null} onChange={(value) => setMinimum(amount(value))} placeholder={t("No minimum")} suffix={settings?.minimumDeposit?.currency ?? currency} value={minimum} />
-          {canManage ? <Button isDisabled={minimum === (settings?.minimumDeposit?.amount ? String(Number(settings.minimumDeposit.amount)) : "")} isLoading={savingMinimum} size="compact" variant="primary" onPress={async () => {
-            setSavingMinimum(true);
-            await run(() => saveMinimumDeposit(workspaceId, minimum ? { amount: Number(minimum).toFixed(2), currency: settings?.minimumDeposit?.currency ?? currency } : null, settings?.version ?? 0), t("Minimum deposit saved."));
-            setSavingMinimum(false);
-          }}>{t("Save")}</Button> : null}
+          <TextInput aria-label={t("Minimum deposit")} isDisabled={!canManage} label={null} onChange={(value) => { setJustSaved(false); setMinimum(amount(value)); }} placeholder={t("No minimum")} suffix={settings?.minimumDeposit?.currency ?? currency} value={minimum} />
+
         </span>
       </SettingsRow>
     </SettingsSection>
@@ -66,19 +78,17 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
       <SettingsRow hint={t("From the end of inspiration to a completed site visit.")} label={t("Site visit")}>
         <span className={styles.minimum}>
           <TextInput aria-label={t("Site visit hours")} isDisabled={!canManage} label={null} onChange={(value) => setTimings((current) => ({ ...current, siteVisitHours: value.replace(/\D/g, "").slice(0, 3) }))} suffix={t("hours")} value={timings.siteVisitHours} />
-          {canManage ? <Button isDisabled={timings.inspirationDays === String(settings?.timings?.inspirationDays ?? 7) && timings.siteVisitHours === String(settings?.timings?.siteVisitHours ?? 72)} isLoading={savingTimings} size="compact" variant="primary" onPress={async () => {
-            setSavingTimings(true);
-            await run(() => saveDesignTimings(workspaceId, { inspirationDays: Number(timings.inspirationDays), siteVisitHours: Number(timings.siteVisitHours) }, settings?.version ?? 0), t("Timings saved."));
-            setSavingTimings(false);
-          }}>{t("Save")}</Button> : null}
+
         </span>
       </SettingsRow>
     </SettingsSection>
+    {canManage ? <SaveBar isDirty={minimumChanged || timingsChanged} isSaving={saving} saved={justSaved} isDisabled={!timings.inspirationDays || !timings.siteVisitHours}
+      onDiscard={() => { setMinimum(savedMinimum); setTimings(savedTimings); setFailure(""); }} onSave={() => void saveChanges()} /> : null}
     <SettingsSection actions={canManage ? <Button size="compact" variant="primary" onPress={() => setEditing({ pricingMethod: "per_area", areaUnit: "sqft", currency, includedRevisions: 2 })}><Plus aria-hidden="true" size={14} />{t("Add package")}</Button> : null} id="design-packages" title={t("Packages")}>
       <div data-sales-grid><DataGrid ariaLabel={t("Design packages")} columns={columns} data={settings?.packages ?? []} emptyDescription={t("Add the design packages you offer and how each is priced.")} emptyTitle={t("No design packages yet")} getRowId={(pkg) => pkg.id} rowNumbers={false} selectable={false} showToolbar={false} /></div>
     </SettingsSection>
     {editing ? <PackageDialog initial={editing} onClose={() => setEditing(null)} onSave={async (value) => { await saveDesignPackage(workspaceId, value); setEditing(null); setNotice(t("Package saved.")); await load(); }} /> : null}
-  </div>;
+  </SettingsPage>;
 }
 
 function PackageDialog({ initial, onClose, onSave }: { initial: Partial<DesignPackage>; onClose: () => void; onSave: (value: Partial<DesignPackage>) => Promise<void> }) {

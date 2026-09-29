@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, NoResultsState, SegmentedControl, Skeleton, TextInput, type DataGridColumn } from "@/design-system";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, MenuButton, NoResultsState, Skeleton, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { CostEntry, CostSource, PackageMoney, ProjectMoney as Money } from "@/lib/project-core/types";
@@ -19,7 +19,7 @@ const plain = (value: string) => (value.includes(".") ? value.replace(/\.?0+$/, 
  * committed, the margin, and each package's budget against its costs — or every cost, entry by entry,
  * or the studio's approved hours on it.
  */
-export function ProjectMoney({ workspaceId, projectId }: { workspaceId: string; projectId: string }) {
+export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId: string; projectId: string; /** The Money tab's views, shown first in the toolbar. */ switcher?: ReactNode }) {
   const t = useT();
   const format = useProjectFormat();
   const api = useMemo(() => projectApi(workspaceId), [workspaceId]);
@@ -64,8 +64,9 @@ export function ProjectMoney({ workspaceId, projectId }: { workspaceId: string; 
   const income = state.income;
   const entries = state.entries.filter((entry) => !needle || `${entry.description} ${entry.reference ?? ""} ${entry.packageName ?? ""}`.toLocaleLowerCase().includes(needle));
   const packages = state.packages.filter((row) => !needle || packageName(row.name).toLocaleLowerCase().includes(needle));
-  const toolbar = <SegmentedControl label={t("Show")} value={view} onChange={(value) => { setView(value as View); setSearch(""); }}
-    options={[{ id: "packages", label: t("By package") }, { id: "entries", label: t("Every cost") }, { id: "hours", label: t("Hours") }]} />;
+  const views: Record<View, string> = { packages: t("By package"), entries: t("Every cost"), hours: t("Hours") };
+  const toolbar = <>{switcher}<MenuButton size="compact" label={views[view]} onAction={(value) => { setView(value as View); setSearch(""); }}
+    items={(["packages", "entries", "hours"] as const).map((id) => ({ id, label: views[id] }))} /></>;
   return <div className={styles.money}>
     <dl className={styles.facts}>
       <div><dt>{t("Received")}</dt><dd>{money(income.received, income.currency)}<small>{t("{invoiced} invoiced of {requested} requested", { invoiced: money(income.invoiced, income.currency), requested: money(income.requested, income.currency) })}</small></dd></div>
@@ -78,14 +79,14 @@ export function ProjectMoney({ workspaceId, projectId }: { workspaceId: string; 
       {state.available !== null ? <div><dt>{t("Cash in hand")}</dt><dd className={Number(state.available) < 0 ? styles.over : undefined}>{money(state.available)}
         <small>{t("Received less spent and committed")}</small></dd></div> : null}
     </dl>
-    {state.margin === null ? <InlineNotice tone="info" message={t("The project is in {project} and costs are in {costs}, so there's no margin here.", { project: income.currency, costs: state.currency })} /> : null}
+    {state.margin === null && !state.marginHidden ? <InlineNotice tone="info" message={t("The project is in {project} and costs are in {costs}, so there's no margin here.", { project: income.currency, costs: state.currency })} /> : null}
     {state.uncosted ? <InlineNotice tone="info" message={t("{count} costs have no price or exchange rate yet and aren't counted.", { count: state.uncosted })} /> : null}
     {view === "hours" ? <ProjectHours workspaceId={workspaceId} projectId={projectId} switcher={toolbar} />
       : view === "packages"
-      ? <DataGrid<PackageMoney> appearance="flush" ariaLabel={t("Budget by package")} columns={packageColumns} data={packages} getRowId={(row) => row.id ?? "none"} rowNumbers={false} wrapText
+      ? <DataGrid<PackageMoney> ariaLabel={t("Budget by package")} columns={packageColumns} data={packages} getRowId={(row) => row.id ?? "none"} rowNumbers={false} wrapText
           onSearchChange={setSearch} searchValue={search} searchLabel={t("Search packages")} toolbarLeading={toolbar}
           emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No packages yet")} />} />
-      : <DataGrid<CostEntry> appearance="flush" ariaLabel={t("Every cost")} columns={entryColumns} data={entries} getRowId={(row) => row.key} rowNumbers={false} wrapText
+      : <DataGrid<CostEntry> ariaLabel={t("Every cost")} columns={entryColumns} data={entries} getRowId={(row) => row.key} rowNumbers={false} wrapText
           onSearchChange={setSearch} searchValue={search} searchLabel={t("Search costs")} toolbarLeading={toolbar}
           emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No costs yet")} />} />}
     {editing ? <BudgetDialog row={editing} currency={state.currency} name={packageName(editing.name)} onClose={() => setEditing(null)}

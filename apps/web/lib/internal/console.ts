@@ -1,3 +1,4 @@
+import type { CreditOverview, CreditState } from "@/lib/workspace/ai-credits";
 import type { TenantBillingOverview, TenantModuleCode, TenantOperationsOverview } from "./types";
 
 export type LifecycleState = "draft" | "trial" | "active" | "grace" | "suspended" | "archived";
@@ -172,6 +173,42 @@ export type SlugAvailability = { slug: string; available: boolean; suggestion: s
 
 export type { TenantBillingOverview, TenantModuleCode, TenantOperationsOverview };
 
+/** AI credits across organizations (credits are decimal strings; 1 credit = US$0.001 of model use). */
+export type AiCreditsOrganization = {
+  workspaceId: string;
+  accountId: string | null;
+  key: string;
+  name: string;
+  slug: string;
+  aiEnabled: boolean;
+  hasAccount: boolean;
+  balance: string;
+  state: CreditState;
+  usedThisMonth: string;
+  usedToday: string;
+  lastTopUp: { credits: string | null; at: string } | null;
+};
+export type AiCreditsList = {
+  organizations: AiCreditsOrganization[];
+  platform: { usedToday: string; dailyLimit: string; reached: boolean; workspaceDailyLimit: string; welcomeCredits: string; provider: string | null; model: string | null };
+};
+export type AiModelRate = {
+  model: string;
+  provider: string;
+  label: string;
+  listInput: string;
+  listOutput: string;
+  margin: string;
+  inputPerMillion: string;
+  outputPerMillion: string;
+  priceConfirmed: boolean;
+  active: boolean;
+  version: number;
+  updatedAt: string;
+};
+export type AiModelRates = { rates: AiModelRate[]; inUse: { provider: string; model: string } | null };
+export type { CreditOverview };
+
 export class ConsoleRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
@@ -235,6 +272,18 @@ export const consoleApi = {
   exportUrl: (key: string, exportId: string) => `${tenant(key)}/operations/exports/${exportId}`,
 
   billing: (key: string) => request<TenantBillingOverview>(`${tenant(key)}/operations/billing`),
+
+  aiCredits: () => request<AiCreditsList>("/api/internal/ai-credits"),
+  aiRates: () => request<AiModelRates>("/api/internal/ai-credits/rates"),
+  setAiRate: (model: string, body: { expectedVersion: number; listInput: string; listOutput: string; margin: string; priceConfirmed: boolean; active: boolean }) =>
+    patch<AiModelRate>(`/api/internal/ai-credits/rates/${encodeURIComponent(model)}`, body),
+  organizationAiCredits: (key: string) => request<CreditOverview>(`${organization(key)}/ai-credits`),
+  topUpAiCredits: (key: string, body: { credits: string; reference: string; note?: string }, idempotencyKey: string) =>
+    post<CreditOverview>(`${organization(key)}/ai-credits/top-ups`, body, idempotencyKey),
+  adjustAiCredits: (key: string, body: { kind: "adjustment" | "refund"; credits: string; reference: string; note?: string }, idempotencyKey: string) =>
+    post<CreditOverview>(`${organization(key)}/ai-credits/adjustments`, body, idempotencyKey),
+  setAiCreditThreshold: (key: string, body: { expectedVersion: number; threshold: string | null }) =>
+    patch<CreditOverview>(`${organization(key)}/ai-credits/threshold`, body),
   sendOwnerInvitation: (key: string, idempotencyKey: string) =>
     request<{ deliveryStatus: string; invitationToken: string | null; status: string; expiresAt: string }>(
       `${tenant(key)}/owner-invitation/send`, { method: "POST", idempotencyKey }),

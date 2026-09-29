@@ -29,7 +29,10 @@ describe("MembersPage", () => {
     expect(screen.getByRole("region", { name: "People" })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "Workspace members" })).toBeInTheDocument();
     expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("link", { name: "admin@igloarchitects.com" })).toBeInTheDocument();
-    expect(within(screen.getByRole("table", { name: "Pending invitations" })).getByRole("link", { name: "maya@igloarchitects.com" })).toBeInTheDocument();
+    // Invitations and members are one framed table: the invitation sits in its own group above the members.
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("link", { name: "maya@igloarchitects.com" })).toBeInTheDocument();
+    expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("button", { name: "Collapse Invited" })).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Iglo Administrator" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select maya@igloarchitects.com" })).toBeInTheDocument();
@@ -68,7 +71,7 @@ describe("MembersPage", () => {
     const ready = await screen.findByRole("dialog", { name: "Invitation ready" });
     expect(within(ready).getByDisplayValue(/\/login\?invitation=/)).toBeInTheDocument();
     await interaction.click(within(ready).getByRole("button", { name: "Done" }));
-    expect(within(screen.getByRole("table", { name: "Pending invitations" })).getByRole("link", { name: "maya@igloarchitects.com" })).toBeInTheDocument();
+    expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("link", { name: "maya@igloarchitects.com" })).toBeInTheDocument();
   });
 
   it("creates a standard member invitation from the inline composer", async () => {
@@ -264,5 +267,40 @@ describe("MembersPage", () => {
       status: "active",
       roleCodes: [],
     });
+  });
+
+  it("offers View as for active teammates, never oneself or an owner to an administrator, and confirms with a code", async () => {
+    const interaction = userEvent.setup();
+    const data = structuredClone(membersPageFixture);
+    const teammate = { ...data.members[0], id: "00000000-0000-4000-8000-000000000010", userId: "00000000-0000-4000-8000-000000000011", email: "sara@example.com", displayName: "Sara Sales", roles: ["member"] };
+    const owner = { ...data.members[0], id: "00000000-0000-4000-8000-000000000012", userId: "00000000-0000-4000-8000-000000000013", email: "olivia@example.com", displayName: "Olivia Owner", roles: ["owner"] };
+    data.members.push(teammate, owner);
+    data.viewAs = { canViewAs: true, mfaEnabled: true, settings: { notifySubject: true, version: 0 }, viewerIsOwner: false };
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign, pathname: "/workspace/settings/members", search: "" });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ sessionId: "s" }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MembersPage initialData={data} />);
+    // The workspace setting: people are told afterwards (on by default).
+    expect(screen.getByRole("switch", { name: "Tell people after someone viewed as them" })).toBeChecked();
+
+    await interaction.click(screen.getByRole("button", { name: "Actions for Olivia Owner" }));
+    expect(screen.queryByRole("menuitem", { name: "View as" })).not.toBeInTheDocument();
+    await interaction.keyboard("{Escape}");
+    await interaction.click(screen.getByRole("button", { name: "Actions for Iglo Administrator" }));
+    expect(screen.queryByRole("menuitem", { name: "View as" })).not.toBeInTheDocument();
+    await interaction.keyboard("{Escape}");
+
+    await interaction.click(screen.getByRole("button", { name: "Actions for Sara Sales" }));
+    await interaction.click(await screen.findByRole("menuitem", { name: "View as" }));
+    const dialog = await screen.findByRole("dialog", { name: "View as Sara Sales" });
+    expect(dialog).toHaveTextContent("Read-only for 30 minutes.");
+    await interaction.type(within(dialog).getByRole("textbox", { name: /Authenticator or recovery code/ }), "123456");
+    await interaction.click(within(dialog).getByRole("button", { name: "Start viewing" }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/workspace"));
+    expect(fetchMock.mock.calls.map((call) => (call as unknown as [string])[0])).toEqual(["/api/auth/mfa/step-up", "/api/workspace/view-as"]);
+    const started = JSON.parse(String((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body));
+    expect(started).toMatchObject({ workspaceId: data.workspaceId, kind: "person", membershipId: teammate.id, returnPath: "/workspace/settings/members" });
+    expect(started.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

@@ -35,8 +35,13 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
   if (error && !data) return <ErrorState description={error} onRetry={() => void load()} />;
   if (!data) return <Skeleton lines={5} shape="rows" />;
   const latest = data.revisions[0];
+  // How long the list has been with the client, in days.
+  const waitingText = (sentAt: string, number: number) => {
+    const days = Math.max(0, Math.floor((Date.parse(format.today()) - Date.parse(sentAt.slice(0, 10))) / 86_400_000));
+    return days ? t("R{number} with the client for {count} days", { number, count: days }) : t("R{number} is with the client since {date}", { number, date: format.when(sentAt) });
+  };
   const status = data.state === "draft" ? t("Not sent to the client yet")
-    : data.state === "sent" ? t("R{number} is with the client since {date}", { number: latest.number, date: format.when(latest.sentAt) })
+    : data.state === "sent" ? waitingText(latest.sentAt, latest.number)
     : data.state === "signed_off" ? t("Signed off R{number} by {name} on {date}", { number: latest.number, name: latest.decidedBy ?? "", date: format.when(latest.decidedAt) })
     : data.state === "changes_requested" ? t("The client asked for changes to R{number}", { number: latest.number })
     : t("Changed since R{number} was signed off", { number: latest.number });
@@ -59,7 +64,11 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
           <Button size="compact" onPress={() => void run("suggest_materials")}><Sparkles aria-hidden="true" size={14} />{t("Suggest from the scope")}</Button>
           <Button size="compact" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("Add material")}</Button>
           {data.items.length && data.state !== "signed_off" ? <Button size="compact" variant="primary" onPress={() => void run("send_materials")}><Send aria-hidden="true" size={14} />{t("Send to the client")}</Button> : null}
-        </> : <Button size="compact" variant="primary" onPress={() => setDeciding(true)}>{t("Record the client's decision")}</Button>}
+        </> : <>
+          {/* With the client for a while: a nudge to their decision-makers (at most once a day). */}
+          <Button size="compact" onPress={() => void run("remind_materials")}>{t("Remind")}</Button>
+          <Button size="compact" variant="primary" onPress={() => setDeciding(true)}>{t("Record the client's decision")}</Button>
+        </>}
       </div> : null}
     </div>
     {data.items.length

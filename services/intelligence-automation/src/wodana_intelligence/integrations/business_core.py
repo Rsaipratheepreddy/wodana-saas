@@ -235,6 +235,52 @@ class BusinessCoreClient:
             json={"limit": 50},
         )
 
+    async def wake_snoozed_conversations(self, workspace_id: str) -> dict[str, Any]:
+        """Snoozed chats whose time has come are open again and their owner is told."""
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/conversations/wake",
+            json={"limit": 50},
+        )
+
+    async def run_payment_reminders(self, workspace_id: str) -> dict[str, Any]:
+        """Today's scheduled payment reminders to clients (checked hourly, in working hours)."""
+        return await self._internal_request(
+            "POST", f"/internal/crm/workspaces/{workspace_id}/payment-reminders/run", json={}
+        )
+
+    async def whatsapp_template_work(self, workspace_id: str) -> dict[str, Any]:
+        """Starter templates to submit to Meta, and whether the daily status sync is due."""
+        return await self._internal_request(
+            "POST", f"/internal/crm/workspaces/{workspace_id}/whatsapp-templates/due", json={}
+        )
+
+    async def whatsapp_templates_synced(
+        self,
+        workspace_id: str,
+        templates: list[dict[str, Any]],
+        full: bool,
+        health: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/whatsapp-templates/sync",
+            json={"full": full, "templates": templates, **({"health": health} if health else {})},
+        )
+
+    async def ingest_provider_echo(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """A message the owner sent from the WhatsApp Business app on the same number (coexistence)."""
+        return await self._internal_request("POST", "/internal/crm/provider-echoes", json=payload)
+
+    async def whatsapp_template_submitted(
+        self, workspace_id: str, template_id: str, result: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/workspaces/{workspace_id}/whatsapp-templates/{template_id}/submitted",
+            json=result,
+        )
+
     async def enqueue_notification(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._internal_request(
             "POST", "/internal/crm/notifications/enqueue", json=payload

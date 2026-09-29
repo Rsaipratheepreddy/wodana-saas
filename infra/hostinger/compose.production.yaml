@@ -127,7 +127,8 @@ services:
       MFA_ENCRYPTION_KEY_VERSION: ${MFA_ENCRYPTION_KEY_VERSION:-1}
       MFA_TOTP_ISSUER: ${MFA_TOTP_ISSUER:-Wodana}
       MFA_STEP_UP_MINUTES: ${MFA_STEP_UP_MINUTES:-10}
-      # Optional: the AI gateway stays off without a key (each workspace also turns AI on in Settings).
+      # Optional: the AI gateway (every AI feature, the web assistants included) stays off without a key;
+      # each workspace also turns AI on in Settings.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
       OIDC_ISSUER: ${OIDC_ISSUER:-}
@@ -192,6 +193,8 @@ services:
         reservations: { cpus: "0.25", memory: 384M }
     networks: [app, data]
 
+  # Required: it delivers every email, WhatsApp and push and runs the SLA, takeover and reminder timers.
+  # Business Core's /health/ready fails in production when its heartbeat is stale.
   intelligence-worker:
     build:
       context: ../../services/intelligence-automation
@@ -202,6 +205,13 @@ services:
       <<: *intelligence-environment
       WORKER_CONSUMER_GROUP: ${WORKER_CONSUMER_GROUP:-wodana-intelligence}
       WORKER_CONSUMER_NAME: ${WORKER_CONSUMER_NAME:-worker-1}
+      WODANA_RELEASE_ID: ${WODANA_RELEASE_ID:?Set WODANA_RELEASE_ID}
+    healthcheck:
+      test: ["CMD", "python", "-m", "wodana_intelligence.worker.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
     depends_on:
       business-core: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -227,9 +237,8 @@ services:
       NEXT_PUBLIC_BUSINESS_API_URL: https://api.${BASE_DOMAIN}/api/v1
       NEXT_PUBLIC_INTELLIGENCE_API_URL: https://api.${BASE_DOMAIN}/api/v1
       LOGIN_TENANT_SLUG: ${LOGIN_TENANT_SLUG:-}
-      # Optional: the web assistants (Woddy, quotation and commercial assist) stay off without a key.
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      # The web assistants (Woddy, quotation and commercial assist) reach the model only through Business
+      # Core's AI gateway, which holds the key: the web has none.
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s

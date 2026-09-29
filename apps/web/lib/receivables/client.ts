@@ -21,6 +21,9 @@ export function receivablesApi(workspaceId: string) {
     /** Issues the invoice for a milestone (replayed safely by its id). */
     issue: (input: { id: string; caseId: string; paymentId: string; issueDate?: string | null; dueDate?: string | null; customerTaxNumber?: string; note?: string }) =>
       request<InvoiceState>(at("state"), "POST", { ...input, action: "issue", commandId: crypto.randomUUID() }),
+    /** Reminds the client to pay what's still owed on a payment (WhatsApp, else email; once a day). */
+    remind: (caseId: string, paymentId: string) => request<{ sent: boolean; already: boolean; channel: "whatsapp" | "email"; sentOn: string }>(
+      `/api/workspace/crm/data/inbox/payment-reminders?${new URLSearchParams({ workspaceId })}`, "POST", { caseId, paymentId }),
     /** Credits an invoice in full with why. */
     credit: (id: string, version: number, reason: string) => request<InvoiceState>(at("state"), "POST", { id, version, reason, action: "credit", commandId: crypto.randomUUID() }),
   };

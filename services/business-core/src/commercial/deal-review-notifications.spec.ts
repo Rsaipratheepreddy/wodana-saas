@@ -21,7 +21,7 @@ describe("Deal File review notifications", () => {
       sql.includes("SELECT enabled FROM notification_preferences") ? { rows: [] } : { rows: [] });
     const service = Object.create(CommercialService.prototype) as CommercialService;
     await service["notifyDealReview"]({ query } as unknown as PoolClient, "workspace", "case", reviewData("pending_finance"), "submit_owner_review", "sales-user");
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("permission.code=$2"), ["workspace", "commercial.finance.verify", "sales-user", false]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("permission.code=$2"), ["workspace", "commercial.finance.verify", "sales-user", null]);
     expect(query).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO notifications"), expect.arrayContaining(["commercial.deal.pending_finance", "Deal File needs Finance review", "/workspace/pre-projects/cases/case/approvals"]));
 
     query.mockClear();
@@ -29,8 +29,11 @@ describe("Deal File review notifications", () => {
       ...reviewData("pending_approval"),
       palmFlow: { scope: { design: true } },
     } as CommercialData, "review_deal_finance", "finance-user");
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("owner_role.code IN ('owner','administrator')"), ["workspace", "commercial.deal.approve", "finance-user", true]);
-    expect(query).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO notifications"), expect.arrayContaining(["commercial.deal.pending_approval", "Deal File needs Owner approval"]));
+    // Every holder of the approval permission hears it (by permission, never by role name), except the submitter.
+    const recipients = query.mock.calls.find(([sql]) => String(sql).includes("SELECT DISTINCT membership.user_id"));
+    expect(recipients?.[1]).toEqual(["workspace", "commercial.deal.approve", "finance-user", "sales-user"]);
+    expect(String(recipients?.[0])).not.toMatch(/role\.code|owner_role/);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO notifications"), expect.arrayContaining(["commercial.deal.pending_approval", "Deal File needs approval"]));
   });
 
   it("notifies the submitting Account Manager of the Owner decision", async () => {

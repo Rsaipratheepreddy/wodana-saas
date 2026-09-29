@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
+import { Badge,
   Button, ControlledModalDialog, InlineNotice, InspectorSheet, MultiSelectField, PhoneField, SegmentedControl, SelectField, TagsField, TextAreaField, TextInput, useDesignSystem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -9,7 +9,7 @@ import { joinPhone, phoneCountry, splitPhone } from "@/lib/phone";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { Approval, Deal, PaymentTerms, Supplier, SupplierState } from "@/lib/purchasing/types";
 import { SupplierControls } from "./supplier-controls";
-import { percentText, useSupplierLabels } from "./supplier-labels";
+import { APPROVAL_TONE, percentText, useSupplierLabels } from "./supplier-labels";
 import styles from "./purchasing.module.css";
 
 const TERMS: PaymentTerms[] = ["upfront", "split", "on_delivery", "credit", "statement"];
@@ -72,7 +72,7 @@ export function SupplierSheet({ api, state, supplier, onState, onClose }: {
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {supplier?.status === "archived" ? <InlineNotice tone="info" message={t("Archived: {reason}", { reason: supplier.archivedReason ?? "" })} /> : null}
       {supplier ? <div className={styles.approvalRow}>
-        <span className={styles.approval} data-approval={supplier.approval}>{labels.approval[supplier.approval]}</span>
+        <Badge tone={APPROVAL_TONE[supplier.approval]}>{labels.approval[supplier.approval]}</Badge>
         <span className={styles.muted}>{[supplier.preferredFor.length ? t("Preferred for {categories}", { categories: supplier.preferredFor.join(", ") }) : "",
           supplier.approvalByName ? t("by {name}", { name: supplier.approvalByName }) : "", supplier.approvalNote].filter(Boolean).join(" · ")}</span>
         {state.canApprove && supplier.status !== "archived" ? <Button size="compact" onPress={() => setDialog("approval")}>{t("Change approval")}</Button> : null}

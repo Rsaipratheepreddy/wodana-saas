@@ -3,7 +3,7 @@ import { applyRotatedSession, authenticatedBackendFetch } from "@/lib/auth/backe
 import { UUID, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 import { getServerT } from "@/lib/i18n/server";
 
-/** Projects: settings, starting a project from an accepted quotation, one project's stages, team, scope and work, and open work across projects. */
+/** Projects: settings, starting a project from an accepted quotation, one project's overview, stages, team, scope, money and work, and open work across projects. */
 function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
   if (path.length === 1 && path[0] === "routes") return method === "POST";
@@ -15,8 +15,9 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && (path[0] === "projects" || path[0] === "work")) return method === "GET";
   if (path.length === 2 && path[0] === "work" && path[1] === "insights") return method === "GET";
   if (path.length === 2 && path[0] === "projects" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
-  if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials", "close-out", "money"].includes(path[2])) return method === "GET";
+  if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials", "close-out", "money", "overview"].includes(path[2])) return method === "GET";
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "money" && path[3] === "budgets") return method === "PUT";
+  if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "money" && path[3] === "milestones") return method === "GET";
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work") return ["GET", "POST"].includes(method);
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && ["seals", "lines", "work"].includes(path[2]) && UUID.test(path[3])) return method === "GET";
   if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work" && UUID.test(path[3]) && path[4] === "ripple") return method === "GET";

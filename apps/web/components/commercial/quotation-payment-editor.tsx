@@ -11,7 +11,7 @@ export function QuotationPaymentEditor({quote,onChange,readOnly}:{quote:Quote;on
   const t = useT();
  const {locale}=useDesignSystem();
  const [expanded,setExpanded]=useState<string|null>(null);
- const terms=quote.paymentTerms,total=quoteTotals(quote).total,amounts=paymentMilestoneAmounts(total,terms),percent=roundMoney(terms.reduce((sum,term)=>sum+term.percent,0)),allocated=roundMoney(amounts.reduce((sum,value)=>sum+value,0));
+ const terms=quote.paymentTerms,total=quoteTotals(quote).total,amounts=paymentMilestoneAmounts(total,terms,quote.currency),percent=roundMoney(terms.reduce((sum,term)=>sum+term.percent,0)),allocated=roundMoney(amounts.reduce((sum,value)=>sum+value,0));
  const update=(rows:PaymentTerm[])=>{if(!readOnly)onChange({...quote,paymentTerms:rows});};
  const patch=(id:string,changes:Partial<PaymentTerm>)=>update(terms.map(term=>term.id===id?{...term,...changes}:term));
  function move(index:number,direction:number){const next=[...terms],target=index+direction;if(target<0||target>=terms.length)return;[next[index],next[target]]=[next[target],next[index]];update(next);}

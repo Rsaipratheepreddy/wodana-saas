@@ -19,6 +19,12 @@ const androidSplashImage = env('EXPO_PUBLIC_ANDROID_SPLASH_IMAGE', adaptiveIcon)
 const accent = env('EXPO_PUBLIC_APP_ACCENT', '#292d32');
 const bundleId = env('EXPO_PUBLIC_BUNDLE_ID', 'ai.wodana.mobile');
 const scheme = env('EXPO_PUBLIC_APP_SCHEME', 'wodana');
+const appEnvironment = process.env.EXPO_PUBLIC_APP_ENV ?? 'development';
+// Push tokens are issued for the EAS project: a uat or production build without one could never be told
+// about work (site alerts, approvals, work given to someone), so it isn't built.
+if ((appEnvironment === 'uat' || appEnvironment === 'production') && !process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim()) {
+  throw new Error(`Set EXPO_PUBLIC_EAS_PROJECT_ID (expo.dev → the project's Overview) for the ${appEnvironment} build: push notifications need it.`);
+}
 
 const config: ExpoConfig = {
   name,
@@ -47,7 +53,7 @@ const config: ExpoConfig = {
   web: { bundler: 'metro', output: 'single', favicon: icon, name },
   experiments: { typedRoutes: true },
   extra: {
-    appEnvironment: process.env.EXPO_PUBLIC_APP_ENV ?? 'development',
+    appEnvironment,
     ...(process.env.EXPO_PUBLIC_EAS_PROJECT_ID ? { eas: { projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID } } : {}),
   },
   plugins: [

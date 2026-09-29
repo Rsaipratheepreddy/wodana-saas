@@ -4,12 +4,14 @@ import {POST} from './route';
 import {authenticatedBackendFetch} from '@/lib/auth/backend-session';
 vi.mock('@/lib/auth/backend-session',()=>({authenticatedBackendFetch:vi.fn(),applyRotatedSession:vi.fn()}));
 vi.mock('@/lib/auth/server',()=>({businessApiUrl:(path:string)=>`http://core${path}`}));
+// The AI gateway (Business Core) stands in for the provider: `fetch` receives exactly what the gateway would forward.
+vi.mock('@/lib/ai/gateway.server',()=>({generateThroughGateway:async(_workspaceId:string,_feature:string,request:unknown)=>{const response=await fetch('http://core/ai/generate',{method:'POST',body:JSON.stringify(request)});const json=await response.json() as {candidates?:Array<{finishReason?:string;content?:{parts?:Array<{text?:string}>}}>};const candidate=json.candidates?.[0];return {ok:true,text:(candidate?.content?.parts??[]).map(part=>part.text??'').join(''),finishReason:candidate?.finishReason??null,model:'test'};}}));
 const w='11111111-1111-4111-8111-111111111111',c='22222222-2222-4222-8222-222222222222',room='33333333-3333-4333-8333-333333333333',entry='44444444-4444-4444-8444-444444444444';
 const request=(body:unknown={workspaceId:w,caseId:c,notes:''},origin='http://localhost')=>new Request('http://localhost/api/quotation-assist',{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(body)});
 const reply=(data:unknown,status=200)=>({upstream:new Response(JSON.stringify(data),{status}),unauthenticated:status===401});
 const facts={catalogs:[{id:room,kind:'room',name:'Bedroom',code:'BR',version:1,catalogId:'catalog'}],links:[],scope:[],case:{title:'Villa'}};
 const brief={brief:{goals:'Bedroom design'},rooms:[],entries:[{id:entry,kind:'inspiration',note:'Calm finishes',title:'Mood board',assets:[],archivedAt:null}]};
-beforeEach(()=>{vi.resetAllMocks();vi.stubEnv('GEMINI_API_KEY','test-provider-key');vi.stubGlobal('fetch',vi.fn());});
+beforeEach(()=>{vi.resetAllMocks();vi.stubGlobal('fetch',vi.fn());});
 describe('quotation AI boundary',()=>{
  it('uses the current prompt as evidence and bounds existing quotation context without exposing prices',async()=>{
   vi.mocked(authenticatedBackendFetch).mockResolvedValueOnce(reply(facts)).mockResolvedValueOnce(reply({...brief,brief:{goals:''},entries:[]})).mockResolvedValueOnce(reply({items:[]})).mockResolvedValueOnce(reply({items:[]}));

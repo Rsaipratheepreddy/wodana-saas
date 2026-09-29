@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 
 type Db = Pick<PoolClient, "query">;
@@ -46,6 +46,13 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     variables: ["reference", "newOwner"],
   },
   {
+    code: "crm.conversation_assigned",
+    channel: "in_app",
+    subject: "Conversation with {{client}} is yours",
+    body: "{{assignedBy}} assigned it to you. Reply from the inbox.",
+    variables: ["client", "assignedBy"],
+  },
+  {
     code: "crm.lead_taken_over_to",
     channel: "in_app",
     subject: "{{reference}} is now yours",
@@ -56,16 +63,37 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     code: "crm.lead_assigned",
     channel: "in_app",
     subject: "{{reference}} · {{clientName}} is yours",
-    body: "New enquiry from {{source}}. Log your first contact within the response time.",
-    variables: ["reference", "clientName", "source"],
+    body: "New enquiry from {{source}}. Respond by {{deadline}}.",
+    variables: ["reference", "clientName", "source", "deadline"],
   },
   {
     code: "crm.lead_assigned",
     channel: "email",
     subject: "New enquiry {{reference}}: {{clientName}}",
-    body: "You have a new enquiry.\n\nReference: {{reference}}\nClient: {{clientName}}\nSource: {{source}}\n\nOpen it and log your first contact within the response time.",
-    variables: ["reference", "clientName", "source"],
+    body: "You have a new enquiry.\n\nReference: {{reference}}\nClient: {{clientName}}\nSource: {{source}}\nRespond by: {{deadline}}\n\nOpen it and log your first contact.",
+    variables: ["reference", "clientName", "source", "deadline"],
   },
+  // Sales timers (S-1, S-2, S-3, S-7, S-26, S-27): who is told when an enquiry is at risk.
+  { code: "crm.sla_warning", channel: "in_app", subject: "{{reference}} · respond by {{deadline}}", body: "{{minutes}} min left to contact {{clientName}}.", variables: ["reference", "clientName", "deadline", "minutes"] },
+  { code: "crm.sla_warning", channel: "push", subject: "{{reference}} · respond by {{deadline}}", body: "{{minutes}} min left to contact {{clientName}}.", variables: ["reference", "clientName", "deadline", "minutes"] },
+  { code: "crm.sla_breached", channel: "in_app", subject: "{{reference}} missed its response time", body: "{{clientName}} was due a first contact by {{deadline}}. Owner: {{ownerName}}.", variables: ["reference", "clientName", "deadline", "ownerName"] },
+  { code: "crm.sla_breached", channel: "push", subject: "{{reference}} missed its response time", body: "{{clientName}} was due a first contact by {{deadline}}. Owner: {{ownerName}}.", variables: ["reference", "clientName", "deadline", "ownerName"] },
+  { code: "crm.lead_kept", channel: "in_app", subject: "{{reference}} is still yours", body: "No one else is available, so {{clientName}} stays with you. Contact the client now.", variables: ["reference", "clientName"] },
+  { code: "crm.lead_kept", channel: "push", subject: "{{reference}} is still yours", body: "No one else is available, so {{clientName}} stays with you. Contact the client now.", variables: ["reference", "clientName"] },
+  { code: "crm.lead_kept_admin", channel: "in_app", subject: "{{reference}} has no one to take over", body: "{{ownerName}} has not contacted {{clientName}} and no one else is available. It stays with {{ownerName}}.", variables: ["reference", "clientName", "ownerName"] },
+  { code: "crm.lead_escalated", channel: "in_app", subject: "{{reference}} needs a manager", body: "{{clientName}} went {{attempts}} response windows without a first contact. Owner now: {{ownerName}}.", variables: ["reference", "clientName", "attempts", "ownerName"] },
+  { code: "crm.lead_escalated", channel: "email", subject: "{{reference}} needs a manager", body: "{{clientName}} went {{attempts}} response windows without a first contact.\n\nOwner now: {{ownerName}}\n\nOpen the enquiry to assign it or call the client.", variables: ["reference", "clientName", "attempts", "ownerName"] },
+  { code: "crm.lead_unowned", channel: "in_app", subject: "{{reference}} has no owner", body: "{{clientName}} has waited {{minutes}} min without an owner. Assign it now.", variables: ["reference", "clientName", "minutes"] },
+  { code: "crm.lead_unowned", channel: "push", subject: "{{reference}} has no owner", body: "{{clientName}} has waited {{minutes}} min without an owner. Assign it now.", variables: ["reference", "clientName", "minutes"] },
+  { code: "crm.lead_unowned", channel: "email", subject: "{{reference}} has no owner", body: "{{clientName}} has waited {{minutes}} min without an owner.\n\nOpen the enquiry and assign it now.", variables: ["reference", "clientName", "minutes"] },
+  { code: "crm.client_review_waiting", channel: "in_app", subject: "Confirm the client for {{reference}}", body: "{{clientName}} may be an existing client. Confirm or keep them as new.", variables: ["reference", "clientName"] },
+  { code: "crm.sales_digest", channel: "in_app", subject: "Sales today: {{breached}} overdue, {{unowned}} without an owner", body: "{{waiting}} enquiries are waiting for a first contact.", variables: ["breached", "unowned", "waiting"] },
+  { code: "crm.sales_digest", channel: "email", subject: "Sales today: {{breached}} overdue, {{unowned}} without an owner", body: "Overdue first contact: {{breached}}\nWithout an owner: {{unowned}}\nWaiting for a first contact: {{waiting}}\n\nOpen Enquiries to act on them.", variables: ["breached", "unowned", "waiting"] },
+  { code: "crm.enquiries_waiting", channel: "in_app", subject: "{{count}} enquiries waiting for you", body: "The first is due {{deadline}}.", variables: ["count", "deadline"] },
+  { code: "crm.enquiries_waiting", channel: "push", subject: "{{count}} enquiries waiting for you", body: "The first is due {{deadline}}.", variables: ["count", "deadline"] },
+  { code: "crm.lead_woken", channel: "in_app", subject: "Come back to {{clientName}} today", body: "{{reference}} was paused until {{deadline}}. It is back in your list.", variables: ["reference", "clientName", "deadline"] },
+  { code: "crm.lead_woken", channel: "push", subject: "Come back to {{clientName}} today", body: "{{reference}} was paused until {{deadline}}. It is back in your list.", variables: ["reference", "clientName", "deadline"] },
+  { code: "crm.lead_reassigned_from", channel: "in_app", subject: "{{reference}} moved to {{newOwner}}", body: "{{clientName}} is now with {{newOwner}}.", variables: ["reference", "clientName", "newOwner"] },
   {
     code: "crm.intro_booked",
     channel: "in_app",
@@ -105,6 +133,12 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "quotation.review_requested", channel: "in_app", subject: "Review quote {{title}} · {{clientName}}", body: "{{actor}} sent it for review.", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.review_requested", channel: "email", subject: "Please review quote {{title}} ({{clientName}})", body: "{{actor}} sent quote {{title}} for {{clientName}} for your review.", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.returned", channel: "in_app", subject: "Changes needed: {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "quotation.qs_approved", channel: "in_app", subject: "{{title}} is ready to send", body: "{{actor}} approved the estimate for {{clientName}}.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "quotation.qs_approved", channel: "email", subject: "{{title}} is ready to send · {{clientName}}", body: "{{actor}} approved the estimate for {{title}} ({{clientName}}).\n\nOpen the quote to send it to the client.", variables: ["title", "clientName", "actor", "note"] },
+  // Client payments on a planning case (commercial/commercial-notices.ts): Finance verifies, the reporter hears back.
+  { code: "commercial.receipt_reported", channel: "in_app", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}}.", variables: ["title", "clientName", "actor", "amount", "note"] },
+  { code: "commercial.receipt_reported", channel: "email", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}} ({{clientName}}).\n\nOpen it to check the receipt and verify it.", variables: ["title", "clientName", "actor", "amount", "note"] },
+  { code: "commercial.receipt_verified", channel: "in_app", subject: "Payment verified · {{clientName}}", body: "{{actor}} verified {{amount}} for {{title}}.", variables: ["title", "clientName", "actor", "amount", "note"] },
   { code: "quotation.client_accepted", channel: "in_app", subject: "{{clientName}} accepted {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.client_accepted", channel: "email", subject: "{{clientName}} accepted {{title}}", body: "{{clientName}} accepted {{title}}.\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.client_changes", channel: "in_app", subject: "{{clientName}} wants changes to {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
@@ -136,6 +170,17 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "warranty.claim", channel: "email", subject: "Warranty claim on {{title}}", body: "{{actor}} recorded a warranty claim for {{clientName}}:\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "request.client_raised", channel: "in_app", subject: "{{actor}} sent a request on {{title}}", body: "{{request}}: {{note}}", variables: ["title", "clientName", "actor", "request", "note"] },
   { code: "request.client_replied", channel: "in_app", subject: "{{actor}} replied on {{title}}", body: "{{request}}: {{note}}", variables: ["title", "clientName", "actor", "request", "note"] },
+  // What the client does in the portal (client-portal/portal-*.ts): the people working the case hear it.
+  { code: "request.client_raised", channel: "email", subject: "{{actor}} sent a message on {{title}}", body: "{{actor}} wrote in the client portal: {{request}}\n\n{{note}}", variables: ["title", "clientName", "actor", "request", "note"] },
+  { code: "request.client_replied", channel: "email", subject: "{{actor}} replied on {{title}}", body: "{{actor}} replied in the client portal on {{request}}:\n\n{{note}}", variables: ["title", "clientName", "actor", "request", "note"] },
+  { code: "moodboard.client_reacted", channel: "in_app", subject: "{{actor}} {{reaction}} {{item}}", body: "{{title}}", variables: ["title", "clientName", "actor", "item", "reaction", "note"] },
+  { code: "moodboard.client_commented", channel: "in_app", subject: "{{actor}} commented on {{item}}", body: "{{note}}", variables: ["title", "clientName", "actor", "item", "reaction", "note"] },
+  { code: "moodboard.client_commented", channel: "email", subject: "{{actor}} commented on {{item}}", body: "{{actor}} commented on {{item}} ({{title}}):\n\n{{note}}", variables: ["title", "clientName", "actor", "item", "reaction", "note"] },
+  { code: "moodboard.client_added", channel: "in_app", subject: "{{actor}} added an inspiration", body: "{{item}} on {{title}}. {{note}}", variables: ["title", "clientName", "actor", "item", "reaction", "note"] },
+  { code: "payment.client_reported", channel: "in_app", subject: "{{actor}} says they paid {{milestone}}", body: "{{title}}: {{amount}} on {{paidOn}}. Reference {{reference}}.", variables: ["title", "clientName", "actor", "milestone", "amount", "paidOn", "reference", "note"] },
+  { code: "payment.client_reported", channel: "email", subject: "{{actor}} says they paid {{milestone}}", body: "{{actor}} reported a payment on {{title}} in the client portal.\n\nMilestone: {{milestone}}\nAmount: {{amount}}\nPaid on: {{paidOn}}\nReference: {{reference}}\n{{note}}\n\nCheck it against the bank, then record the receipt or say it wasn't received.", variables: ["title", "clientName", "actor", "milestone", "amount", "paidOn", "reference", "note"] },
+  { code: "project.client_issue", channel: "in_app", subject: "{{actor}} reported an issue on {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.client_issue", channel: "email", subject: "{{actor}} reported an issue on {{title}}", body: "{{actor}} reported an issue in the client portal:\n\n{{note}}\n\nTriage it: accept it as a snag with a severity, or decline it with a reason the client reads.", variables: ["title", "clientName", "actor", "note"] },
   { code: "warranty.expiring", channel: "in_app", subject: "Warranty ending soon · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.over_budget", channel: "in_app", subject: "Over budget · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.cancelled", channel: "in_app", subject: "{{title}} is cancelled", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
@@ -145,6 +190,14 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.materials_signed_off", channel: "in_app", subject: "{{title}}: material list signed off", body: "{{clientName}} signed off {{revision}}.", variables: ["title", "clientName", "actor", "revision"] },
   { code: "project.materials_changes", channel: "in_app", subject: "{{title}}: changes to the material list", body: "{{clientName}} asked for changes to {{revision}}: {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
   { code: "project.variation_applied", channel: "in_app", subject: "{{title}}: {{variation}} applied", body: "{{actor}} applied {{variation}} ({{amount}}).", variables: ["title", "clientName", "actor", "variation", "amount"] },
+  // Delivery reminders (the daily run): the week in numbers, a stage whose checks all pass, a material list
+  // left with the client, a milestone to invoice and the drafted client update.
+  { code: "project.weekly_summary", channel: "in_app", subject: "This week on {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.weekly_summary", channel: "email", subject: "This week on {{title}}", body: "{{note}}\n\nOpen the project to see what needs you.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.stage_ready", channel: "in_app", subject: "{{stage}} can be finished · {{title}}", body: "Everything it needs is done.", variables: ["title", "clientName", "actor", "stage", "note"] },
+  { code: "project.materials_waiting", channel: "in_app", subject: "Material list waiting on the client · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.milestone_due", channel: "in_app", subject: "To invoice · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.client_update_ready", channel: "in_app", subject: "Client update to approve · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "work.assigned", channel: "in_app", subject: "{{task}} is yours", body: "{{actor}} gave you {{task}} on {{title}}.", variables: ["title", "clientName", "actor", "task", "due"] },
   { code: "work.assigned", channel: "email", subject: "{{task}} is yours · {{title}}", body: "{{actor}} gave you {{task}} on {{title}} for {{clientName}}. {{due}}", variables: ["title", "clientName", "actor", "task", "due"] },
   { code: "work.commented", channel: "in_app", subject: "{{actor}} on {{task}}", body: "{{note}}", variables: ["title", "clientName", "actor", "task", "note"] },
@@ -224,14 +277,35 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "stock.transfer_short", channel: "in_app", subject: "Move {{transfer}} arrived short", body: "{{actor}}: {{note}}", variables: ["transfer", "from", "to", "actor", "note"] },
   { code: "stock.adjustment_needs_approval", channel: "in_app", subject: "A stock correction needs your approval", body: "{{actor}} counted {{note}} at {{to}}.", variables: ["transfer", "from", "to", "actor", "note"] },
   { code: "stock.adjusted", channel: "in_app", subject: "Stock corrected at {{to}}", body: "{{actor}}: {{note}}", variables: ["transfer", "from", "to", "actor", "note"] },
+  { code: "stock.transfer_rejected", channel: "in_app", subject: "Move {{transfer}}: goods refused at {{to}}", body: "{{actor}}: {{note}}. They're on their way back.", variables: ["transfer", "from", "to", "actor", "note"] },
+  { code: "stock.low", channel: "in_app", subject: "Stock is low: {{item}}", body: "{{note}}", variables: ["item", "place", "note"] },
+  { code: "stock.low", channel: "email", subject: "Stock is low: {{item}}", body: "{{note}}", variables: ["item", "place", "note"] },
+  { code: "purchasing.shipment_late", channel: "in_app", subject: "{{order}} arrives later", body: "{{supplier}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "purchasing.blocking_work", channel: "in_app", subject: "{{order}} is holding up work", body: "{{supplier}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "purchasing.over_ordered", channel: "in_app", subject: "{{variation}} leaves orders past what {{project}} needs", body: "{{note}}", variables: ["variation", "project", "note"] },
+  { code: "purchasing.hold_override", channel: "in_app", subject: "{{order}} goes ahead while its project is on hold", body: "{{actor}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "factory.rework", channel: "in_app", subject: "{{order}} goes back into production", body: "{{note}}", variables: ["order", "item", "project", "actor", "note"] },
+  { code: "factory.drawing_stale", channel: "in_app", subject: "{{order}}: its drawing has a newer revision", body: "{{note}}", variables: ["order", "item", "project", "actor", "note"] },
   { code: "project.off_track", channel: "in_app", subject: "{{title}} is off track", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.signed_off", channel: "in_app", subject: "Design signed off · {{clientName}}", body: "The design is approved. It's ready to quote.", variables: ["clientName"] },
   { code: "design.signed_off", channel: "email", subject: "Design signed off: {{clientName}}", body: "The design for {{clientName}} is signed off and ready to quote.\n\nOpen the case to start the quotation.", variables: ["clientName"] },
+  // Team inbox (crm/conversations/inbox/inbox-notices.ts): one notice per chat until it is read.
+  { code: "crm.inbox_message", channel: "in_app", subject: "{{clientName}} wrote", body: "{{summary}}", variables: ["clientName", "summary"] },
+  { code: "crm.inbox_woke", channel: "in_app", subject: "Chat with {{clientName}} is back", body: "You snoozed it until now.", variables: ["clientName"] },
+  { code: "crm.number_health", channel: "in_app", subject: "Your WhatsApp number is {{status}}", body: "{{reason}}", variables: ["status", "reason"] },
+  { code: "crm.template_status", channel: "in_app", subject: "Template {{name}} is {{status}}", body: "{{reason}}", variables: ["name", "status", "reason"] },
+  { code: "crm.inbox_mention", channel: "in_app", subject: "{{actor}} mentioned you", body: "{{clientName}}: {{summary}}", variables: ["actor", "clientName", "summary"] },
+  { code: "crm.inbox_unassigned", channel: "in_app", subject: "{{clientName}} is waiting", body: "Nobody could take this new chat. Assign it.", variables: ["clientName"] },
   // Client portal notices (client-portal/portal-notices.ts): to client contacts, by email.
   { code: "portal.quote_issued", channel: "email", subject: "{{title}} is ready for you", body: "{{company}} sent you {{title}} for {{project}}.\n\nOpen your project page to read it and give your decision.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "portal.payment_due", channel: "email", subject: "Payment reminder · {{title}}", body: "A reminder from {{company}}: {{title}} for {{project}} is due. {{due}}\n\nOpen your project page to see it and pay.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "receivables.payment_overdue", channel: "in_app", subject: "{{client}} hasn't paid {{title}}", body: "A week past due. Reminders sent: {{count}}.", variables: ["client", "title", "count"] },
   { code: "portal.invoice_issued", channel: "email", subject: "Invoice {{title}} from {{company}}", body: "{{company}} issued invoice {{title}} for {{project}}. {{due}}\n\nOpen your project page to see it and what's left to pay.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.decision_waiting", channel: "email", subject: "{{title}} is waiting for your decision", body: "{{company}} needs your decision on {{title}} for {{project}}. {{due}}\n\nOpen your project page to review it.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.update_published", channel: "email", subject: "New update on {{project}}", body: "{{note}}\n\nOpen your project page to see the progress.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "portal.team_replied", channel: "email", subject: "{{company}} replied on {{project}}", body: "{{note}}\n\nOpen your project page to read it and reply.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "portal.payment_checked", channel: "email", subject: "Your payment on {{project}}", body: "{{note}}\n\nOpen your project page to see your payments.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "portal.issue_triaged", channel: "email", subject: "The issue you reported on {{project}}", body: "{{note}}\n\nOpen your project page to follow it.", variables: ["company", "project", "title", "due", "note"] },
   // Client portal access (client-portal/portal-invitations.ts): the project's manager hears the client's first sign-in.
   { code: "client_portal.client_signed_in", channel: "in_app", subject: "{{client}} opened the client portal", body: "{{client}} signed in to the portal for {{title}} for the first time.", variables: ["client", "title"] },
   { code: "design.site_visit_booked", channel: "in_app", subject: "Site visit with {{clientName}}", body: "{{when}} · {{place}}. Booked by {{bookedBy}}.", variables: ["clientName", "when", "place", "bookedBy"] },
@@ -254,6 +328,13 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "account.domain_ownership_lost", channel: "email", subject: "{{domain}} is not connected", body: "We could no longer find the DNS record that proves {{organization}} owns {{domain}}.\n\nSign in at {{address}} in the meantime, and restore the record to reconnect the domain.", variables: ["organization", "date", "domain", "address"] },
   { code: "account.domain_live", channel: "in_app", subject: "{{domain}} is live", body: "Sign in at {{domain}}.", variables: ["organization", "date", "domain", "address"] },
   { code: "account.domain_live", channel: "email", subject: "{{domain}} is live", body: "{{organization}} now signs in at {{domain}}.", variables: ["organization", "date", "domain", "address"] },
+  // AI credits (ai-gateway/ai-credits.ts): owners and administrators, once when credits run low and once when they run out.
+  { code: "ai.credits_low", channel: "in_app", subject: "AI credits are running low", body: "{{balance}} credits left. Contact support to top up.", variables: ["balance"] },
+  { code: "ai.credits_low", channel: "email", subject: "AI credits are running low", body: "Your workspace has {{balance}} AI credits left.\n\nContact support to top up before they run out. Woddy and AI suggestions pause when credits are used up.", variables: ["balance"] },
+  { code: "ai.credits_exhausted", channel: "in_app", subject: "AI credits are used up", body: "Woddy and AI suggestions are paused. Contact support to top up.", variables: ["balance"] },
+  { code: "ai.credits_exhausted", channel: "email", subject: "AI credits are used up", body: "Your workspace has used all of its AI credits.\n\nWoddy and AI suggestions are paused until credits are topped up. Contact support to top up.", variables: ["balance"] },
+  // View as (auth/view-as): the person an owner or administrator viewed as, once the view ends (a workspace setting, on by default).
+  { code: "workspace.viewed_as", channel: "in_app", subject: "{{viewerName}} viewed as you", body: "Read-only, {{minutes}} min from {{startedAt}}. Security lists every view.", variables: ["viewerName", "minutes", "startedAt"] },
 ];
 
 export async function seedDefaultNotificationTemplates(db: Db, workspaceId: string) {
@@ -268,7 +349,7 @@ export async function seedDefaultNotificationTemplates(db: Db, workspaceId: stri
   }
 }
 
-const render = (template: string, variables: Record<string, string>) =>
+export const renderNoticeText = (template: string, variables: Record<string, string>) =>
   template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
 
 /**
@@ -301,17 +382,79 @@ export async function notifyUserInApp(db: Db, input: {
   );
   if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
   const row = template.rows[0];
+  const subject = row.subject ? renderNoticeText(row.subject, input.variables) : null;
+  const body = renderNoticeText(row.body, input.variables);
   const inserted = await db.query(
     `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
        subject, body, deep_link, idempotency_key, correlation_id, delivered_at)
      VALUES ($1, $2, 'user', $3, 'in_app', $4, 'delivered', $5, $6, $7, $8, gen_random_uuid(), now())
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING`,
-    [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
-      input.deepLink ?? null, input.idempotencyKey],
+    [input.workspaceId, row.id, input.recipientUserId, input.eventType, subject, body, input.deepLink ?? null, input.idempotencyKey],
   );
   // A key already used means this notice was already sent: nothing new is queued.
-  return inserted.rowCount ? { queued: true as const } : { queued: false as const, reason: "already_sent" };
+  if (!inserted.rowCount) return { queued: false as const, reason: "already_sent" };
+  // The same notice on the phone, for the events people act on away from a desk.
+  if (PUSH_NOTICES.has(input.code)) {
+    // Keys are at most 160 characters; a long one is hashed rather than cut.
+    const pushKey = input.idempotencyKey.length <= 155 ? `${input.idempotencyKey}:push` : `push:${createHash("sha256").update(input.idempotencyKey).digest("hex")}`;
+    await queueUserPush(db, { workspaceId: input.workspaceId, recipientUserId: input.recipientUserId, eventType: input.eventType, subject, body, deepLink: input.deepLink, templateId: row.id, idempotencyKey: pushKey });
+  }
+  return { queued: true as const };
+}
+
+/**
+ * Queues a push to one user's phone from the workspace's approved push template, inside the caller's
+ * tenant transaction. Only when the person turned push on and has a registered device; the in-app
+ * notice is always the record. The worker delivers it (and falls back to the inbox on failure).
+ */
+export async function queueUserPushFromTemplate(db: Db, input: {
+  workspaceId: string;
+  recipientUserId: string;
+  code: string;
+  eventType: string;
+  variables: Record<string, string>;
+  deepLink?: string;
+  idempotencyKey: string;
+}) {
+  const reachable = await db.query(
+    `SELECT 1 FROM notification_preferences preference
+      WHERE preference.workspace_id=$1 AND preference.recipient_type='user' AND preference.recipient_id=$2
+        AND preference.channel='push' AND preference.event_type='*' AND preference.enabled
+        AND EXISTS (SELECT 1 FROM device_endpoints endpoint WHERE endpoint.workspace_id=$1 AND endpoint.user_id=$2 AND endpoint.status='active')
+        AND NOT EXISTS (SELECT 1 FROM notification_preferences muted WHERE muted.workspace_id=$1 AND muted.recipient_type='user'
+          AND muted.recipient_id=$2 AND muted.channel='push' AND muted.event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*') AND NOT muted.enabled)
+      LIMIT 1`,
+    [input.workspaceId, input.recipientUserId, input.eventType],
+  );
+  if (!reachable.rowCount) return { queued: false as const, reason: "push_off" };
+  const template = await db.query<{ id: string; subject: string | null; body: string }>(
+    `SELECT id, subject_template AS subject, body_template AS body FROM notification_templates
+     WHERE workspace_id=$1 AND code=$2 AND channel='push' AND status='approved' AND locale='en'
+     ORDER BY version_number DESC LIMIT 1`,
+    [input.workspaceId, input.code],
+  );
+  if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
+  const row = template.rows[0];
+  const inserted = await db.query(
+    `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
+       scheduled_for, subject, body, deep_link, idempotency_key, correlation_id)
+     VALUES ($1, $2, 'user', $3, 'push', $4, 'pending', now(), $5, $6, $7, $8, gen_random_uuid())
+     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
+     RETURNING id, correlation_id AS "correlationId"`,
+    [input.workspaceId, row.id, input.recipientUserId, input.eventType,
+      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
+      input.deepLink ?? null, input.idempotencyKey],
+  );
+  const notification = inserted.rows[0] as { id: string; correlationId: string } | undefined;
+  if (!notification) return { queued: false as const, reason: "already_sent" };
+  // Wake the worker now instead of waiting for its next poll.
+  const eventId = randomUUID();
+  await db.query(
+    `INSERT INTO outbox_events (id, workspace_id, aggregate_type, aggregate_id, event_type, payload)
+     VALUES ($4, $1, 'notification', $2, 'notification.delivery_requested.v1', $3::jsonb)`,
+    [input.workspaceId, notification.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: notification.id, actorUserId: null, occurredAt: new Date().toISOString(), correlationId: notification.correlationId, causationId: null, data: { channel: "push" } }), eventId],
+  );
+  return { queued: true as const };
 }
 
 /**
@@ -351,16 +494,109 @@ export async function queueUserEmail(db: Db, input: {
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
      RETURNING id, correlation_id AS "correlationId"`,
     [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
+      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
       input.deepLink ?? null, input.idempotencyKey],
   );
   const notification = inserted.rows[0];
-  // Wake the worker now instead of waiting for its next poll.
+  if (notification) await wakeDelivery(db, input.workspaceId, notification.id, notification.correlationId, "email");
+  return { queued: true as const };
+}
+
+/** Wakes the delivery worker for one queued notice now, instead of waiting for its next poll. */
+export async function wakeDelivery(db: Db, workspaceId: string, notificationId: string, correlationId: string, channel: string) {
   const eventId = randomUUID();
-  if (notification) await db.query(
+  await db.query(
     `INSERT INTO outbox_events (id, workspace_id, aggregate_type, aggregate_id, event_type, payload)
      VALUES ($4, $1, 'notification', $2, 'notification.delivery_requested.v1', $3::jsonb)`,
-    [input.workspaceId, notification.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: notification.id, actorUserId: null, occurredAt: new Date().toISOString(), correlationId: notification.correlationId, causationId: null, data: { channel: "email" } }), eventId],
+    [workspaceId, notificationId, JSON.stringify({ schemaVersion: 1, eventId, workspaceId, aggregateType: "notification", aggregateId: notificationId, actorUserId: null, occurredAt: new Date().toISOString(), correlationId, causationId: null, data: { channel } }), eventId],
   );
+}
+
+/**
+ * Notices that also go to the person's phone as a push: work waiting for someone away from a desk
+ * (site, factory, purchasing, stock), approvals, and a new enquiry of one's own. Everything else stays in
+ * the in-app inbox. A push needs the person to have turned push on and a registered phone.
+ */
+export const PUSH_NOTICES: ReadonlySet<string> = new Set([
+  "site.report_missing", "site.report_returned", "site.incident", "site.blocked",
+  "work.assigned", "work.overdue", "work.snag_reopened",
+  "factory.released", "factory.check_failed", "factory.material_short", "factory.rework",
+  "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed", "purchasing.blocking_work",
+  "stock.transfer_sent", "stock.transfer_short", "stock.transfer_rejected",
+  "purchasing.approval_needed", "stock.adjustment_needs_approval", "payables.run_submitted", "petty_cash.submitted",
+  "hrms.leave_requested", "hrms.leave_approved", "hrms.leave_rejected", "hrms.timesheet_submitted", "hrms.crew_day_submitted", "hrms.attendance_to_review",
+  "quotation.review_requested", "design.review_requested",
+  "crm.lead_assigned", "crm.lead_taken_over_to", "crm.conversation_assigned",
+  // Team inbox: a client wrote in a chat that is yours (one notice per chat), or someone mentioned you in a note.
+  "crm.inbox_message", "crm.inbox_mention",
+]);
+
+/**
+ * When quiet hours ({ start: "22:00", end: "07:00", timezone }) are on now, the moment they end; otherwise null.
+ * A window may cross midnight. Without a time zone the hours are UTC.
+ */
+export function quietUntil(quietHours: Record<string, unknown> | null | undefined, now = new Date()): Date | null {
+  const pattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
+  const start = typeof quietHours?.start === "string" ? pattern.exec(quietHours.start) : null;
+  const end = typeof quietHours?.end === "string" ? pattern.exec(quietHours.end) : null;
+  if (!start || !end) return null;
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-GB", { timeZone: typeof quietHours?.timezone === "string" ? quietHours.timezone : "UTC", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  } catch { return null; }
+  const minuteOf = (hour: string, minute: string) => Number(hour) * 60 + Number(minute);
+  const current = minuteOf(parts.find((part) => part.type === "hour")?.value ?? "0", parts.find((part) => part.type === "minute")?.value ?? "0");
+  const from = minuteOf(start[1], start[2]);
+  const to = minuteOf(end[1], end[2]);
+  if (from === to) return null;
+  const inside = from < to ? current >= from && current < to : current >= from || current < to;
+  if (!inside) return null;
+  const wait = (to - current + 1440) % 1440;
+  return new Date(Math.floor(now.getTime() / 60_000) * 60_000 + wait * 60_000);
+}
+
+/**
+ * Queues a push to one person's phone, inside the caller's tenant transaction, when they turned push on
+ * (the app does it on sign-in) and have a registered phone; a preference for this event (or its module)
+ * can switch it off. Idempotent per key. The worker sends it through Expo and falls back to the inbox.
+ */
+export async function queueUserPush(db: Db, input: {
+  workspaceId: string;
+  recipientUserId: string;
+  eventType: string;
+  subject: string | null;
+  body: string;
+  deepLink?: string | null;
+  templateId?: string | null;
+  idempotencyKey: string;
+}) {
+  // The phone's switch ("*") must be on; the event's or its module's setting can still turn this one off.
+  const preferences = await db.query<{ eventType: string; enabled: boolean; quietHours: Record<string, unknown> | null }>(
+    `SELECT event_type AS "eventType", enabled, quiet_hours AS "quietHours" FROM notification_preferences
+     WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='push'
+       AND event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*', '*')`,
+    [input.workspaceId, input.recipientUserId, input.eventType],
+  );
+  const master = preferences.rows.find((row) => row.eventType === "*");
+  const specific = preferences.rows.find((row) => row.eventType === input.eventType) ?? preferences.rows.find((row) => row.eventType !== "*");
+  if (master?.enabled !== true || specific?.enabled === false) return { queued: false as const, reason: "push_off" };
+  // The person's quiet hours (on the phone's switch) hold a push until they end; the in-app notice is already there.
+  const scheduledFor = quietUntil(master.quietHours) ?? new Date();
+  const device = await db.query(
+    `SELECT 1 FROM device_endpoints WHERE workspace_id=$1 AND user_id=$2 AND status='active' LIMIT 1`,
+    [input.workspaceId, input.recipientUserId],
+  );
+  if (!device.rowCount) return { queued: false as const, reason: "no_device" };
+  const inserted = await db.query<{ id: string; correlationId: string }>(
+    `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
+       scheduled_for, subject, body, deep_link, idempotency_key, correlation_id)
+     VALUES ($1, $2, 'user', $3, 'push', $4, 'pending', $9, $5, $6, $7, $8, gen_random_uuid())
+     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
+     RETURNING id, correlation_id AS "correlationId"`,
+    [input.workspaceId, input.templateId ?? null, input.recipientUserId, input.eventType, input.subject, input.body, input.deepLink ?? null, input.idempotencyKey, scheduledFor],
+  );
+  const notification = inserted.rows[0];
+  if (!notification) return { queued: false as const, reason: "already_sent" };
+  await wakeDelivery(db, input.workspaceId, notification.id, notification.correlationId, "push");
   return { queued: true as const };
 }

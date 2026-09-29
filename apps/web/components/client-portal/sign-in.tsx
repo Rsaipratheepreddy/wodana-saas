@@ -26,6 +26,7 @@ export function SignIn({ site, api, invite = null, onSignedIn }: { site: PortalS
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [waiting, setWaiting] = useState(false);
   const [resendAt, setResendAt] = useState(0);
   const wait = useCountdown(resendAt);
   const phone = joinPhone(country, national);
@@ -34,7 +35,7 @@ export function SignIn({ site, api, invite = null, onSignedIn }: { site: PortalS
 
   const send = async (via: Channel) => {
     if (!phone) return setError(t("Enter your mobile number."));
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setWaiting(false);
     try {
       const next = await api.challenge({ phone, channel: via });
       setChannel(via); setChallenge(next); setCode("");
@@ -42,6 +43,8 @@ export function SignIn({ site, api, invite = null, onSignedIn }: { site: PortalS
     } catch (cause) {
       const failure = cause as PortalError;
       if (failure.retryAfter) setResendAt(secondsFromNow(failure.retryAfter));
+      // "A code is on its way" is information, not a failure.
+      setWaiting(failure.status === 429);
       setError(failure.message);
     } finally { setBusy(false); }
   };
@@ -65,7 +68,7 @@ export function SignIn({ site, api, invite = null, onSignedIn }: { site: PortalS
     </div>
     <Form className={styles.form} onSubmit={(event) => { event.preventDefault(); void send(channel); }}>
       {invite?.status === "expired" ? <InlineNotice tone="info" message={t("This invite link has expired. Sign in with your mobile number, or ask your project team for a new one.")} /> : null}
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+      {error ? <InlineNotice tone={waiting ? "info" : "error"} message={error} /> : null}
       <PhoneField label={t("Mobile number")} value={national} onChange={setNational} countryCode={country} onCountryChange={setCountry} locale={site.region.locale} isRequired />
       <div className={styles.formActions}>
         <Button type="submit" variant="primary" size="large" isLoading={busy}>{channel === "whatsapp" ? t("Send code by WhatsApp") : t("Send code by email")}</Button>

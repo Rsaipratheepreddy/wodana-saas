@@ -31,6 +31,26 @@ describe("quote review notices", () => {
     expect(db.queries.find((query) => query.sql.includes("permission.code"))!.params).toEqual(["ws", "commercial.estimate"]);
   });
 
+  it("tells the Account Manager and the line editors, by app and email, that an approved quote is ready to send", async () => {
+    for (const action of ["qs_approve", "approve"]) {
+      const db = fakeDb();
+      const base = db.query;
+      db.query = async (sql: string, params: unknown[] = []) => {
+        if (sql.includes("FROM notification_templates")) { db.queries.push({ sql, params }); return { rows: [{ id: "t", subject: "{{title}} is ready to send", body: "b" }], rowCount: 1 }; }
+        if (sql.includes("FROM commercial_quote_lines")) { db.queries.push({ sql, params }); return { rows: [{ userId: "omar" }, { userId: "designer" }], rowCount: 2 }; }
+        if (sql.includes("INSERT INTO notifications")) { db.queries.push({ sql, params }); return { rows: [{ id: "n", correlationId: "c" }], rowCount: 1 }; }
+        return base(sql, params);
+      };
+      await noticeQuoteStep(db, { ...input, action, actorUserId: "omar" });
+      const inserted = db.queries.filter((query) => query.sql.includes("INSERT INTO notifications"));
+      // The Account Manager and the designer who built lines, in the app and by email; the QS who approved is not told.
+      expect(inserted.map((query) => `${query.params[2]}:${query.params[3]}`).sort()).toEqual([
+        "designer:quotation.qs_approved", "designer:quotation.qs_approved", "owner:quotation.qs_approved", "owner:quotation.qs_approved",
+      ]);
+      expect(db.queries.some((query) => query.sql.includes("permission.code"))).toBe(false);
+    }
+  });
+
   it("goes to approvers when no review permission is named", async () => {
     const db = fakeDb();
     await noticeQuoteStep(db, input);

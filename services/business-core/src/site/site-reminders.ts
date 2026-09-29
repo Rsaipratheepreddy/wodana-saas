@@ -17,6 +17,14 @@ export async function processSiteReports(db: Db, workspaceId: string) {
   if (!now) return { sent: 0 };
   const math = workdays(await readCalendar(db, workspaceId));
   const yesterday = new Date(Date.parse(`${now.today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  // Site work starts by itself with the first delivery to the project's site (or its first report).
+  await db.query(
+    `UPDATE delivery_projects project SET site_started_on = first.day
+       FROM (SELECT location.project_id AS "projectId", min(movement.moved_on) AS day
+               FROM stock_movements movement JOIN stock_locations location ON location.workspace_id = movement.workspace_id AND location.id = movement.location_id AND location.kind = 'site'
+              WHERE movement.workspace_id = $1 AND movement.quantity > 0 AND location.project_id IS NOT NULL GROUP BY location.project_id) first
+      WHERE project.workspace_id = $1 AND project.id = first."projectId" AND project.status = 'active' AND project.site_started_on IS NULL AND first.day <= $2::date`,
+    [workspaceId, now.today]);
   const projects = (await db.query<{ id: string; title: string; clientName: string; started: string; finished: string | null }>(
     `SELECT project.id, project.reference || ' · ' || project.name AS title, coalesce(party.display_name, opportunity.title) AS "clientName",
             project.site_started_on::text AS started, project.site_finished_on::text AS finished
@@ -76,7 +84,7 @@ export async function processWarrantyExpiry(db: Db, workspaceId: string) {
     for (const userId of people) {
       const result = await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: "warranty.expiring", eventType: "warranty.expiring",
         variables: { title: group.title, clientName: "", actor: "", note: `${group.items} item${group.items === 1 ? "'s" : "s'"} warranty ends on ${group.endsOn}.` },
-        deepLink: `/workspace/projects/${group.projectId}/warranty`, idempotencyKey: `warranty.expiring:${group.projectId}:${group.endsOn}:${userId}` });
+        deepLink: `/workspace/projects/${group.projectId}/handover?view=warranty`, idempotencyKey: `warranty.expiring:${group.projectId}:${group.endsOn}:${userId}` });
       if (result.queued) sent += 1;
     }
   }

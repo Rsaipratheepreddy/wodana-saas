@@ -6,12 +6,20 @@ import { Button, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorSt
   type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ReceivablesApi } from "@/lib/receivables/client";
-import type { ClientInvoice, InvoicePreview, InvoiceState, MilestoneToInvoice, ReceivablesState } from "@/lib/receivables/types";
+import type { ClientInvoice, InvoicePreview, InvoiceState, MilestoneToInvoice, PaymentReminder, ReceivablesState } from "@/lib/receivables/types";
 import { useProjectFormat } from "../project-core/format";
 import { plain } from "./finance-labels";
 import styles from "./finance.module.css";
 
 type View = "to_invoice" | "invoices";
+
+/** When the client was last reminded to pay, and how. */
+function LastReminder({ reminder }: { reminder?: PaymentReminder | null }) {
+  const t = useT();
+  const format = useProjectFormat();
+  if (!reminder) return <span className={styles.nameCell}><small>—</small></span>;
+  return <span className={styles.nameCell}><span>{format.day(reminder.on)}</span><small>{reminder.channel === "whatsapp" ? "WhatsApp" : t("Email")}</small></span>;
+}
 
 /** Where a client invoice stands: credited, paid, overdue, part paid or to be paid. */
 function InvoiceStatus({ invoice }: { invoice: ClientInvoice }) {
@@ -32,6 +40,17 @@ export function ClientInvoices({ api, openId, onOpen }: { api: ReceivablesApi; o
   const [view, setView] = useState<View>("to_invoice");
   const [search, setSearch] = useState("");
   const [issuing, setIssuing] = useState<MilestoneToInvoice | null>(null);
+  const [reminding, setReminding] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const remind = useCallback(async (caseId: string, paymentId: string) => {
+    setReminding(`${caseId}|${paymentId}`); setError(""); setNotice("");
+    try {
+      const result = await api.remind(caseId, paymentId);
+      setNotice(result.already ? t("Already reminded today.") : result.channel === "whatsapp" ? t("Reminder sent on WhatsApp.") : t("Reminder sent by email."));
+      setState(await api.state());
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("The reminder couldn't be sent.")); }
+    finally { setReminding(null); }
+  }, [api, t]);
   const load = useCallback(async () => {
     try { setState(await api.state()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Client invoices didn't load.")); }
   }, [api, t]);
@@ -45,9 +64,12 @@ export function ClientInvoices({ api, openId, onOpen }: { api: ReceivablesApi; o
     { id: "amount", header: t("Amount"), accessorFn: (row) => Number(row.amount), size: 170, meta: { renderCell: (row) => <span className={styles.nameCell}>
       <span className={styles.money}>{format.money(row.amount, row.currency ?? "")}</span>
       {Number(row.paid) > 0 ? <small>{t("{amount} paid", { amount: format.money(row.paid, row.currency ?? "") })}</small> : null}</span> } },
-    { id: "action", header: "", accessorFn: () => "", size: 140, meta: { renderCell: (row) => state?.canManage
-      ? <Button size="compact" onPress={() => setIssuing(row)}>{t("Issue invoice")}</Button> : null } },
-  ], [t, format, state?.canManage]);
+    { id: "reminded", header: t("Reminded"), accessorFn: (row) => row.lastReminder?.on ?? "", size: 130, meta: { mobileHidden: true, renderCell: (row) => <LastReminder reminder={row.lastReminder} /> } },
+    { id: "action", header: "", accessorFn: () => "", size: 250, meta: { renderCell: (row) => state?.canManage ? <span className={styles.rowActions}>
+      <Button size="compact" onPress={() => setIssuing(row)}>{t("Issue invoice")}</Button>
+      {row.dueDate && Number(row.amount) > Number(row.paid) ? <Button size="compact" variant="quiet" isLoading={reminding === `${row.caseId}|${row.paymentId}`} onPress={() => void remind(row.caseId, row.paymentId)}>{t("Send reminder")}</Button> : null}
+    </span> : null } },
+  ], [t, format, state?.canManage, reminding, remind]);
   const invoiceColumns = useMemo<DataGridColumn<ClientInvoice>[]>(() => [
     { id: "invoice", header: t("Invoice"), accessorFn: (row) => row.number, size: 300, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{`${row.number} · ${row.customerName}`}</span><small>{`${row.projectReference} · ${row.milestoneTitle}`}</small></span> } },
@@ -57,18 +79,23 @@ export function ClientInvoices({ api, openId, onOpen }: { api: ReceivablesApi; o
       <span className={styles.money}>{format.money(row.total, row.currency)}</span>
       {row.status === "issued" && Number(row.paid) > 0 && Number(row.balance) > 0 ? <small>{t("{amount} left", { amount: format.money(row.balance, row.currency) })}</small> : null}</span> } },
     { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 150, meta: { renderCell: (row) => <InvoiceStatus invoice={row} /> } },
-  ], [t, format]);
+    { id: "reminded", header: t("Reminded"), accessorFn: (row) => row.lastReminder?.on ?? "", size: 130, meta: { mobileHidden: true, renderCell: (row) => <LastReminder reminder={row.lastReminder} /> } },
+    { id: "action", header: "", accessorFn: () => "", size: 150, meta: { renderCell: (row) => state?.canManage && row.status === "issued" && Number(row.balance) > 0
+      ? <Button size="compact" variant="quiet" isLoading={reminding === `${row.caseId}|${row.paymentId}`} onPress={() => void remind(row.caseId, row.paymentId)}>{t("Send reminder")}</Button> : null } },
+  ], [t, format, state?.canManage, reminding, remind]);
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   const toolbar = <SegmentedControl label={t("Show")} value={view} onChange={(value) => { setView(value as View); setSearch(""); }}
     options={[{ id: "to_invoice", label: t("To invoice") }, { id: "invoices", label: t("Invoices") }]} />;
   const milestones = (state?.toInvoice ?? []).filter((row) => !needle || `${row.title} ${row.clientName} ${row.projectReference} ${row.projectName}`.toLocaleLowerCase().includes(needle));
   const invoices = (state?.invoices ?? []).filter((row) => !needle || `${row.number} ${row.customerName} ${row.projectReference} ${row.milestoneTitle}`.toLocaleLowerCase().includes(needle));
   return <>
+    {notice ? <InlineNotice tone="success" message={notice} /> : null}
+    {error && state ? <InlineNotice tone="error" message={error} /> : null}
     {view === "to_invoice"
-      ? <DataGrid<MilestoneToInvoice> appearance="flush" ariaLabel={t("Milestones to invoice")} columns={milestoneColumns} data={milestones} getRowId={(row) => `${row.caseId}|${row.paymentId}`}
+      ? <DataGrid<MilestoneToInvoice> ariaLabel={t("Milestones to invoice")} columns={milestoneColumns} data={milestones} getRowId={(row) => `${row.caseId}|${row.paymentId}`}
           isLoading={!state} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search milestones")} rowNumbers={false} wrapText toolbarLeading={toolbar}
           emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("Every milestone is invoiced")} />} />
-      : <DataGrid<ClientInvoice> appearance="flush" ariaLabel={t("Client invoices")} columns={invoiceColumns} data={invoices} getRowId={(row) => row.id} isLoading={!state}
+      : <DataGrid<ClientInvoice> ariaLabel={t("Client invoices")} columns={invoiceColumns} data={invoices} getRowId={(row) => row.id} isLoading={!state}
           onRowAction={(row) => onOpen(row.id)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search invoices")} rowNumbers={false} wrapText toolbarLeading={toolbar}
           emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No client invoices yet")} />} />}
     {issuing ? <IssueDialog api={api} milestone={issuing} onClose={() => setIssuing(null)} onIssued={(id) => { setIssuing(null); setView("invoices"); void load(); onOpen(id); }} /> : null}

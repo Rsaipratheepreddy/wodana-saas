@@ -33,7 +33,7 @@ export function SuppliersOwed({ api, state, error, openId, onReload, onOpen, onO
   ], [t, format]);
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   return <>
-    <DataGrid<SupplierBalance> appearance="flush" ariaLabel={t("Owed to suppliers")} columns={columns} data={rows} getRowId={(row) => `${row.vendorId}|${row.legalEntityId}|${row.currency}`}
+    <DataGrid<SupplierBalance> ariaLabel={t("Owed to suppliers")} columns={columns} data={rows} getRowId={(row) => `${row.vendorId}|${row.legalEntityId}|${row.currency}`}
       isLoading={!state} onRowAction={(row) => onOpen(row.vendorId)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search suppliers")} rowNumbers={false} wrapText
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("Nothing owed to suppliers")} />} />
     {openId ? <OwedSheet api={api} vendorId={openId} onChanged={onReload} onClose={() => onOpen(null)} onOpenBill={onOpenBill} onOpenPayment={onOpenPayment} /> : null}

@@ -1,3 +1,4 @@
+import { fromMinor, percentOf, toMinor } from "@/lib/money-exact";
 import type { Quote, QuoteLine } from "./types";
 import { tKey, translatorFor, type Translate } from "@/lib/i18n/keys";
 export const statusLabel: Record<string, string> = {
@@ -41,12 +42,16 @@ export function quoteCurrencyChoices(workspaceCurrency: string) {
   return Array.from(new Set([workspaceCurrency, "AED", "INR", "USD", "EUR", "GBP", "SAR", "QAR"].filter(Boolean)));
 }
 export const roundMoney = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-export function paymentMilestoneAmounts(total: number, terms: { percent: number }[]) {
+/**
+ * Each milestone's amount, exact in the currency's minor units like the server's split: when the shares make
+ * 100%, the last one takes what's left so they add up to the total.
+ */
+export function paymentMilestoneAmounts(total: number, terms: { percent: number }[], currency?: string | null) {
   const complete = Math.abs(terms.reduce((s, t) => s + t.percent, 0) - 100) < .001;
   let allocated = 0;
   return terms.map((term, i) => {
-    const amount = complete && i === terms.length - 1 ? roundMoney(total - allocated) : roundMoney(total * term.percent / 100);
-    allocated = roundMoney(allocated + amount);
+    const amount = complete && i === terms.length - 1 ? fromMinor(toMinor(total, currency) - allocated, currency) : percentOf(total, term.percent, currency);
+    allocated += toMinor(amount, currency);
     return amount;
   });
 }

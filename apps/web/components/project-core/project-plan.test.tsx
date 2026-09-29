@@ -189,6 +189,34 @@ describe("project plan", () => {
     expect(posts(fetcher)[0].id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
+  it("moves through the list with j and k, searches with / and adds a task with n", async () => {
+    mount(() => board());
+    plan();
+    const table = await screen.findByRole("table", { name: "Plan" }).catch(() => screen.findByRole("grid", { name: "Plan" }));
+    const rows = within(table).getAllByRole("row").filter((row) => row.hasAttribute("data-actionable"));
+    fireEvent.keyDown(document.body, { key: "j" });
+    expect(document.activeElement).toBe(rows[0]);
+    fireEvent.keyDown(rows[0], { key: "j" });
+    expect(document.activeElement).toBe(rows[1]);
+    fireEvent.keyDown(rows[1], { key: "k" });
+    expect(document.activeElement).toBe(rows[0]);
+    fireEvent.keyDown(rows[0], { key: "/" });
+    expect(document.activeElement?.tagName).toBe("INPUT");
+    // Typing in the search never triggers a shortcut.
+    fireEvent.keyDown(document.activeElement!, { key: "n" });
+    expect(screen.queryByRole("dialog", { name: "New task" })).toBeNull();
+    fireEvent.keyDown(document.body, { key: "n" });
+    expect(await screen.findByRole("dialog", { name: "New task" })).toBeInTheDocument();
+  });
+
+  it("opens on the snags when another page links to ?type=snag", async () => {
+    mount(() => board([drawings, item({ id: "i9", number: 9, title: "Chipped skirting", type: "snag" })]));
+    nav.set("type=snag");
+    plan();
+    expect(await screen.findByText("Chipped skirting")).toBeInTheDocument();
+    expect(screen.queryByText("Kitchen shop drawings")).toBeNull();
+  });
+
   it("asks before a date change pushes later work, and moves it only when told to", async () => {
     const dated = { ...drawings, startDate: "2099-10-01", dueDate: "2099-10-10" };
     const fetcher = mount((url, body) => {

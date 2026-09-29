@@ -496,6 +496,23 @@ class ProviderService:
             )
         return await self.credential_runtime(workspace, str(runtime["id"]), runtime)
 
+    async def whatsapp_templates_internal(self, workspace: str) -> list[dict[str, Any]]:
+        """The worker's daily template sync: every template on the connected account."""
+        _runtime, credential = await self.runtime_internal(workspace, "whatsapp")
+        return await self.client.all_templates(credential)
+
+    async def whatsapp_health_internal(self, workspace: str) -> dict[str, Any]:
+        """The worker's daily check of the connected number's quality, limit and status."""
+        _runtime, credential = await self.runtime_internal(workspace, "whatsapp")
+        return await self.client.phone_number_health(credential)
+
+    async def submit_whatsapp_template_internal(
+        self, workspace: str, template: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Submits a starter template to Meta on the workspace's own account."""
+        _runtime, credential = await self.runtime_internal(workspace, "whatsapp")
+        return await self.client.create_template(credential, template)
+
     async def send_whatsapp_notification(
         self, workspace: str, request: OperationRequest
     ) -> dict[str, Any]:

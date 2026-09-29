@@ -82,3 +82,11 @@ def test_production_integration_settings_reject_insecure_defaults(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         production_settings(**override).validate_integration_settings()
+
+
+@pytest.mark.parametrize("mode", ["unconfigured", "test"])
+def test_a_production_worker_must_deliver_live(mode: str) -> None:
+    with pytest.raises(ValueError, match="NOTIFICATION_ADAPTER_MODE=live"):
+        production_settings(notification_adapter_mode=mode).validate_worker_settings()
+    production_settings(notification_adapter_mode="live").validate_worker_settings()
+    Settings(environment="uat", notification_adapter_mode="test").validate_worker_settings()

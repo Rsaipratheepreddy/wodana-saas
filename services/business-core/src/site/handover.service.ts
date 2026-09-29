@@ -5,7 +5,9 @@ import { recordAudit } from "../audit/record-audit";
 import { caseOf, tellClients } from "../client-portal/portal-notices";
 import { canonicalHash } from "../crm/shared/crm-types";
 import { notifyUserInApp } from "../notifications/default-templates";
+import { Dec } from "../catalog-core/decimal";
 import { membershipOf, readProject } from "../project-core/project-core.store";
+import { projectBalance } from "../project-core/project-milestones";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
@@ -20,6 +22,7 @@ const METHODS = ["signed_document", "in_person", "email", "portal"] as const;
 type Pack = {
   id: string; revision: number; title: string; areaIds: string[]; status: "draft" | "issued" | "accepted" | "refused"; replacesId: string | null; contentHash: string | null;
   issuedAt: string | null; issuedByName: string | null; decidedOn: string | null; decidedByName: string | null; decisionMethod: string | null; decisionNote: string; version: number;
+  balanceDue: string | null; balanceCurrency: string | null; balanceReason: string | null;
   documents: Array<{ id: string; kind: string; title: string; name: string; size: number; sha256: string }>;
 };
 
@@ -69,6 +72,8 @@ export class HandoverService {
         } else if (pack.status !== "issued") throw new ConflictException("Only an issued pack is accepted or refused.");
         // A handover while stages or snags are still open is real, but it's confirmed on purpose, with why, and the audit trail keeps what was open.
         let confirmedOpen: { stages: string[]; snags: string[]; reason: string } | null = null;
+        // A pack without documents has nothing to issue: say that before anything else.
+        if (action === "issue" && !pack.documents.length) throw new ConflictException("Add the documents the client receives first.");
         if (action === "issue" || action === "accept") {
           const open = await openWork(client, workspaceId, projectId);
           const message = openWorkMessage(action, open);
@@ -103,11 +108,21 @@ export class HandoverService {
           const method = oneOf(body.method, METHODS, "How");
           if (action === "accept") {
             const outstanding = Array.isArray(body.outstanding) ? body.outstanding.map((item) => text(item, 300)).filter(Boolean) : [];
+            // Accepting while the client still owes money is real, but on purpose: someone who manages projects, with why.
+            const owed = await projectBalance(client, workspaceId, await this.money(client, workspaceId, projectId));
+            let balance: { reason: string; acceptedBy: string } | null = null;
+            if (Dec.of(owed.due).cmp(0) > 0) {
+              const reason = text(body.balanceReason, 500);
+              if (!(await this.access.hasPermission(client, workspaceId, user.userId, "projects.manage")))
+                throw new ForbiddenException(`${owed.currency} ${owed.due} is still due. Someone who manages projects accepts a handover with a balance.`);
+              if (!reason) throw new ConflictException(`${owed.currency} ${owed.due} is still due. Say why the handover is accepted before it's paid.`);
+              balance = { reason, acceptedBy: user.userId };
+            }
             const decided = await decideHandoverPack(client, workspaceId, projectId, pack, { decision: "accept", decidedOn, decidedByName, method, outstanding, reason: "",
-              recordedBy: user.userId, grantId: null, staffId: user.userId });
+              recordedBy: user.userId, grantId: null, staffId: user.userId, balance });
             await this.tell(client, workspaceId, projectId, "handover.accepted", user.userId,
               `${decidedByName} accepted R${pack.revision}${outstanding.length ? ` with ${outstanding.length} item${outstanding.length === 1 ? "" : "s"} outstanding` : ""}.`, `accepted:${pack.id}`);
-            audit = { packId: pack.id, outstanding: outstanding.length, warrantyStarted: decided.warrantyStarted };
+            audit = { packId: pack.id, outstanding: outstanding.length, warrantyStarted: decided.warrantyStarted, ...(balance ? { balanceDue: `${owed.currency} ${owed.due}`, balanceReason: balance.reason } : {}) };
           } else {
             const reason = text(body.reason, 1000);
             if (!reason) throw new BadRequestException("Say why the client refused it.");
@@ -175,21 +190,30 @@ export class HandoverService {
     const who = await this.who(client, workspaceId, projectId, userId);
     const areas = await this.areas(client, workspaceId, projectId);
     const packs = await this.packs(client, workspaceId, projectId);
+    // What the client still owes, and what isn't invoiced yet: shown when the pack is issued and accepted.
+    const balance = await projectBalance(client, workspaceId, await this.money(client, workspaceId, projectId));
     return { packs, areas, covered: handedOver(packs, areas.map((area) => area.id)), canManage: who.manager && ["active", "on_hold"].includes(who.status),
-      open: await openWork(client, workspaceId, projectId) };
+      canAcceptBalance: await this.access.hasPermission(client, workspaceId, userId, "projects.manage"),
+      open: await openWork(client, workspaceId, projectId),
+      balance: { currency: balance.currency, due: balance.due, toInvoice: balance.toInvoice.map(({ id, title, amount, dueDate }) => ({ id, title, amount, dueDate })) } };
   }
 
   private async packs(client: Db, workspaceId: string, projectId: string, id: string | null = null): Promise<Pack[]> {
     const rows = (await client.query<Omit<Pack, "documents">>(
       `SELECT pack.id, pack.revision, pack.title, pack.area_ids AS "areaIds", pack.status, pack.replaces_id AS "replacesId", pack.content_hash AS "contentHash", pack.issued_at AS "issuedAt",
               issuer.display_name AS "issuedByName", pack.decided_on::text AS "decidedOn", pack.decided_by_name AS "decidedByName", pack.decision_method AS "decisionMethod",
-              pack.decision_note AS "decisionNote", pack.version
+              pack.decision_note AS "decisionNote", pack.version, pack.balance_due::text AS "balanceDue", pack.balance_currency AS "balanceCurrency", pack.balance_reason AS "balanceReason"
          FROM handover_packs pack LEFT JOIN users issuer ON issuer.id = pack.issued_by
         WHERE pack.workspace_id = $1 AND pack.project_id = $2 AND ($3::uuid IS NULL OR pack.id = $3) ORDER BY pack.revision DESC`, [workspaceId, projectId, id])).rows;
     const documents = (await client.query<{ packId: string; id: string; kind: string; title: string; name: string; size: number; sha256: string }>(
       `SELECT pack_id AS "packId", id, kind, title, original_name AS name, byte_size AS size, sha256 FROM handover_documents WHERE workspace_id = $1 AND pack_id = ANY($2::uuid[]) ORDER BY created_at`,
       [workspaceId, rows.map((row) => row.id)])).rows;
     return rows.map((row) => ({ ...row, documents: documents.filter((document) => document.packId === row.id).map(({ packId: _packId, ...document }) => document) }));
+  }
+
+  private async money(client: Db, workspaceId: string, projectId: string) {
+    return (await client.query<{ id: string; caseId: string; currency: string }>(`SELECT id, case_id AS "caseId", currency FROM delivery_projects WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, projectId])).rows[0];
   }
 
   private async areas(client: Db, workspaceId: string, projectId: string) {

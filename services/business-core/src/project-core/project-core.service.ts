@@ -7,11 +7,9 @@ import { tellClients } from "../client-portal/portal-notices";
 import { Dec } from "../catalog-core/decimal";
 import { acceptedQuoteValue } from "../commercial/commercial.domain";
 import { commercialRepository } from "../commercial/commercial-repository";
-import type { CommercialData, Quote } from "../commercial/commercial.types";
+import type { CommercialData } from "../commercial/commercial.types";
 import { financeGatePaymentsReady } from "../commercial/release-integrity";
 import { canonicalHash } from "../crm/shared/crm-types";
-import { caseDesigner } from "../crm/opportunities/dedicated-designer";
-import { ensureJobForSource } from "../jobs/job-identity.store";
 import { acceptedScope } from "../quotation/quotation-builder.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { HARD_CHECKS, LEAD_ROLE, parseRoles, parseStages } from "./project-checks";
@@ -20,12 +18,20 @@ import {
   readTemplates, setRole, writeTemplate, type ProjectRow, type StageRow, type TeamMember,
 } from "./project-core.store";
 import { tellScopeChanges } from "../factory/factory-changes";
+import { tellOverOrdered } from "../purchasing/purchasing-changes";
 import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeout";
 import { readProgress } from "./project-work";
 import { noticeProject, type ProjectNotice } from "./project-notices";
 import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, suggestMaterials } from "./project-materials";
-import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, seedBoq, SUPPLY, type Supply } from "./project-scope";
+import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, SUPPLY, type Supply } from "./project-scope";
 import { ensureWorkTemplates, parseTemplateTasks } from "./work-templates";
+import { readReadyCases, readStartState, startProject } from "./project-start";
+import { moneyAccess } from "./project-access";
+import { readAttention } from "./project-attention";
+import { decideClientUpdate } from "./client-updates";
+import { holdLength, shiftForHold } from "./project-hold";
+import { noticeStageReady } from "./project-stage-watch";
+import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
 
 type Db = PoolClient;
 const SETTINGS = ["workspace.settings.manage"];
@@ -137,160 +143,17 @@ export class ProjectCoreService {
   // ---------- start ----------
   /** What starting a project from this case needs, and whether it can start now. */
   startState(actor: RequestActor, workspaceId: string, caseId: string) {
-    return this.access.asMember(actor, workspaceId, async (client, user) => {
-      if (!(await this.any(client, workspaceId, user.userId, ["pre_projects.view", "projects.manage"]))) throw new ForbiddenException("You can't see this planning record.");
-      const existing = (await client.query<{ id: string; reference: string }>(
-        `SELECT id, reference FROM delivery_projects WHERE workspace_id = $1 AND case_id = $2 AND started_at IS NOT NULL`, [workspaceId, caseId])).rows[0] ?? null;
-      const settings = await ensureSettings(client, workspaceId);
-      const data = await commercial(client, workspaceId, caseId);
-      const quote = data ? startQuote(data) : undefined;
-      const checks = data && quote ? startChecks(data, quote, settings) : [];
-      const facts = (await client.query<{ name: string; ownerMembershipId: string | null; status: string }>(
-        `SELECT opportunity.title AS name, opportunity.owner_membership_id AS "ownerMembershipId", pre_case.status
-           FROM pre_project_cases pre_case JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
-          WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0];
-      if (!facts) throw new NotFoundException("Planning record not found.");
-      const canStart = !existing && Boolean(quote) && facts.status === "active" && checks.every((check) => check.ok)
-        && await this.any(client, workspaceId, user.userId, ["projects.manage"]);
-      return {
-        project: existing,
-        quote: quote ? { id: quote.id, number: quote.number, title: quote.title, currency: quote.currency, total: String(acceptedQuoteValue(quote)),
-          acceptedAt: quote.clientDecision?.decidedAt ?? null, acceptedBy: quote.clientDecision?.decidedBy ?? null } : null,
-        checks,
-        caseStatus: facts.status,
-        templates: existing ? [] : (await ensureTemplates(client, workspaceId, user.userId)).map(({ id, name, isDefault }) => ({ id, name, isDefault })),
-        members: existing ? [] : await activeMembers(client, workspaceId),
-        suggested: { name: facts.name, lead: null as string | null },
-        canStart,
-        canManage: await this.any(client, workspaceId, user.userId, ["projects.manage"]),
-      };
-    });
+    return this.access.asMember(actor, workspaceId, (client, user) => readStartState(client, this.access, workspaceId, caseId, user));
   }
 
   /** Accepted quotations whose project hasn't started yet, for the Projects page's "Start project". */
   ready(actor: RequestActor, workspaceId: string) {
-    return this.access.asMember(actor, workspaceId, async (client, user) => {
-      if (!(await this.any(client, workspaceId, user.userId, ["projects.manage"]))) return { cases: [] };
-      return { cases: (await client.query<{ caseId: string; name: string; clientName: string; quoteNumber: number; total: string; currency: string }>(
-        `SELECT pre_case.id AS "caseId", opportunity.title AS name, coalesce(party.display_name, opportunity.title) AS "clientName",
-                quote.number AS "quoteNumber", quote.total::text AS total, quote.currency
-           FROM pre_project_cases pre_case
-           JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
-           LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
-           JOIN commercial_quotes quote ON quote.workspace_id = pre_case.workspace_id AND quote.case_id = pre_case.id
-            AND quote.kind = 'quotation' AND quote.status = 'accepted' AND quote.round IS DISTINCT FROM 'design'
-          WHERE pre_case.workspace_id = $1 AND pre_case.status = 'active'
-            AND NOT EXISTS (SELECT 1 FROM delivery_projects project WHERE project.workspace_id = pre_case.workspace_id AND project.case_id = pre_case.id AND project.started_at IS NOT NULL)
-          ORDER BY lower(opportunity.title)`, [workspaceId])).rows };
-    });
+    return this.access.asMember(actor, workspaceId, (client, user) => readReadyCases(client, this.access, workspaceId, user));
   }
 
-  /** Starts the project from the accepted quotation: seals the scope, names the team, copies the stages. Starting twice returns the same project. */
+  /** Starts the project from the accepted quotation; starting twice returns the same project. */
   start(actor: RequestActor, workspaceId: string, caseId: string, body: Record<string, unknown>) {
-    return this.access.withPermission(actor, workspaceId, "projects.manage", async (client, user) => {
-      const facts = (await client.query<{ status: string; name: string; ownerMembershipId: string | null; opportunityId: string }>(
-        `SELECT pre_case.status, opportunity.title AS name, opportunity.owner_membership_id AS "ownerMembershipId", opportunity.id AS "opportunityId"
-           FROM pre_project_cases pre_case JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
-          WHERE pre_case.workspace_id = $1 AND pre_case.id = $2 FOR UPDATE OF pre_case`, [workspaceId, caseId])).rows[0];
-      if (!facts) throw new NotFoundException("Planning record not found.");
-      const existing = (await client.query<{ id: string; startedAt: string | null }>(`SELECT id, started_at AS "startedAt" FROM delivery_projects WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
-      if (existing?.startedAt) return { projectId: existing.id, existing: true };
-      if (facts.status !== "active") throw new ConflictException("This planning record is on hold or closed. Reopen it before starting the project.");
-      const settings = await ensureSettings(client, workspaceId);
-      const loaded = await commercialRepository.load(client, workspaceId, caseId, { forUpdate: true });
-      const data = loaded ? ({ ...(loaded.content as CommercialData), revision: loaded.revision }) : null;
-      const quote = data ? startQuote(data) : undefined;
-      if (!data || !quote || quote.id !== body.quoteId) throw new ConflictException("Start the project from the accepted quotation.");
-      const missing = startChecks(data, quote, settings).filter((check) => !check.ok);
-      if (missing.length) throw new ConflictException(`Before the project can start: ${missing.map((check) => START_LABELS[check.key]).join(", ")}.`);
-      const templates = await ensureTemplates(client, workspaceId, user.userId);
-      const template = templates.find((item) => item.id === body.templateId) ?? (body.templateId ? undefined : templates.find((item) => item.isDefault));
-      if (!template) throw new BadRequestException("Choose the project's route.");
-      const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 240) : facts.name;
-      const lead = typeof body.leadMembershipId === "string" ? body.leadMembershipId : "";
-      if (!(await activeMembers(client, workspaceId)).some((member) => member.membershipId === lead)) throw new BadRequestException("Choose the project manager.");
-      const startDate = optionalDate(body.startDate, "Start date");
-      const promiseDate = optionalDate(body.promiseDate, "Handover date");
-      if (startDate && promiseDate && promiseDate < startDate) throw new BadRequestException("The handover date can't be before the start date.");
-
-      // The sealed scope: priced by the same engine as the quote, and it must match what the client accepted.
-      const scope = await acceptedScope(client, workspaceId, caseId, quote.id);
-      const accepted = Dec.of(String(acceptedQuoteValue(quote)));
-      // The legacy acceptance total is kept to two decimals: allow that rounding, nothing more.
-      const tolerance = Dec.of(Math.min(2, scope.quote.decimals) === 0 ? "1" : Math.min(2, scope.quote.decimals) === 1 ? "0.1" : "0.01");
-      if (Dec.of(scope.pricing.total).sub(accepted).abs().cmp(tolerance) > 0)
-        throw new ConflictException("The quotation's lines no longer add up to the total the client accepted. Issue a new revision and record the client's decision again.");
-      const revision = (await client.query<{ position: number }>(
-        `SELECT count(*)::int AS position FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2 AND kind = 'quotation'
-            AND coalesce(family_id, id) = coalesce($3, $4) AND number <= $5`, [workspaceId, caseId, quote.familyId ?? null, quote.id, quote.number])).rows[0].position;
-      const decision = quote.clientDecision!;
-      const snapshot = {
-        ...scope,
-        revisionLabel: `R${revision}`,
-        acceptance: { decidedBy: decision.decidedBy, decidedAt: decision.decidedAt, method: decision.method ?? "portal", recordedBy: decision.recordedBy ?? null,
-          note: decision.note ?? "", quoteHash: decision.quoteHash, acceptedTotal: String(decision.acceptedTotal ?? quote.total) },
-        agreement: data.agreement?.quoteId === quote.id ? { reference: data.agreement.reference, status: data.agreement.status, executedAt: data.agreement.executedAt ?? null } : null,
-      };
-      const contentHash = canonicalHash(snapshot);
-
-      const counter = (await client.query<{ value: string }>(
-        `INSERT INTO project_reference_counters (workspace_id, last_value) VALUES ($1, 1)
-         ON CONFLICT (workspace_id) DO UPDATE SET last_value = project_reference_counters.last_value + 1 RETURNING last_value::text AS value`, [workspaceId])).rows[0].value;
-      const reference = `${settings.referencePrefix}-${counter.padStart(4, "0")}`;
-      const projectId = (await client.query<{ id: string }>(
-        `INSERT INTO delivery_projects (workspace_id, case_id, name, created_by, reference, quote_id, template_id, template_name, start_date, promise_date, currency, started_at, started_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), $4)
-         ON CONFLICT (workspace_id, case_id) DO UPDATE SET name = EXCLUDED.name, reference = EXCLUDED.reference, quote_id = EXCLUDED.quote_id, template_id = EXCLUDED.template_id,
-           template_name = EXCLUDED.template_name, start_date = EXCLUDED.start_date, promise_date = EXCLUDED.promise_date, currency = EXCLUDED.currency,
-           status = 'active', started_at = now(), started_by = EXCLUDED.started_by, version = delivery_projects.version + 1, updated_at = now()
-         RETURNING id`,
-        [workspaceId, caseId, name, user.userId, reference, quote.id, template.id, template.name, startDate, promiseDate, scope.quote.currency])).rows[0].id;
-      const sealId = randomUUID();
-      await client.query(
-        `INSERT INTO project_scope_seals (id, workspace_id, project_id, kind, quote_id, quote_number, revision_label, quote_hash, snapshot, content_hash, currency, total,
-           accepted_at, accepted_by_name, acceptance_method, recorded_by_name, agreement_reference, sealed_by)
-         VALUES ($1, $2, $3, 'baseline', $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-        [sealId, workspaceId, projectId, quote.id, quote.number, snapshot.revisionLabel, decision.quoteHash, JSON.stringify(snapshot), contentHash,
-          scope.quote.currency, scope.pricing.total, decision.decidedAt, decision.decidedBy, decision.method ?? "portal", decision.recordedBy ?? null,
-          snapshot.agreement?.reference ?? null, user.userId]);
-      // The live BOQ starts as the sealed scope, grouped into suggested packages.
-      await seedBoq(client, workspaceId, projectId, { id: sealId, revisionLabel: snapshot.revisionLabel }, scope.lines, user.userId);
-      await proposePackages(client, workspaceId, projectId, user.userId);
-      for (const [position, stage] of template.stages.entries())
-        await client.query(
-          `INSERT INTO project_stages (id, workspace_id, project_id, position, key, name, owner_role, checks, status, started_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, CASE WHEN $4 = 0 THEN now() END)`,
-          [randomUUID(), workspaceId, projectId, position, stage.key, stage.name, stage.ownerRole, JSON.stringify(stage.checks), position === 0 ? "current" : "upcoming"]);
-
-      // Everyone working on the planning record keeps access, and its site locations become the project's.
-      await client.query(
-        `INSERT INTO project_assignments (workspace_id, project_id, membership_id, is_manager, active)
-         SELECT workspace_id, $3, membership_id, false, active FROM project_assignments WHERE workspace_id = $1 AND case_id = $2
-         ON CONFLICT (workspace_id, project_id, membership_id) WHERE project_id IS NOT NULL DO NOTHING`, [workspaceId, caseId, projectId]);
-      await client.query(`UPDATE work_locations SET project_id = $3, case_id = NULL, version = version + 1 WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId, projectId]);
-      // The team: the lead chosen now, the account manager and designer carried over from Sales.
-      const roleKeys = new Set(settings.roles.map((role) => role.key));
-      const named: Array<{ membershipId: string; role: string }> = [{ membershipId: lead, role: LEAD_ROLE }];
-      if (facts.ownerMembershipId && roleKeys.has("account_manager")) named.push({ membershipId: facts.ownerMembershipId, role: "account_manager" });
-      const designer = await caseDesigner(client, workspaceId, caseId);
-      if (designer && roleKeys.has("designer")) named.push({ membershipId: designer, role: "designer" });
-      for (const member of named) await setRole(client, workspaceId, projectId, member.role, member.membershipId);
-
-      await client.query(
-        `UPDATE pre_project_cases SET status = 'released', phase = 'release', released_at = now(), released_by = $3, version = version + 1, updated_at = now()
-          WHERE workspace_id = $1 AND id = $2`, [workspaceId, caseId, user.userId]);
-      await client.query(
-        `INSERT INTO crm_project_links (workspace_id, opportunity_id, project_id, mode, promoted_at) VALUES ($1, $2, $3, 'delivery', now())
-         ON CONFLICT (workspace_id, opportunity_id) DO UPDATE SET project_id = EXCLUDED.project_id, mode = 'delivery', promoted_at = coalesce(crm_project_links.promoted_at, now())`,
-        [workspaceId, facts.opportunityId, projectId]);
-      await ensureJobForSource(client, workspaceId, { type: "project", id: projectId }, user.userId);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.started", entityType: "project", entityId: projectId,
-        after: { reference, caseId, quoteId: quote.id, contentHash, template: template.name } });
-      const labels = new Map(settings.roles.map((role) => [role.key, role.label]));
-      await noticeProject(client, { workspaceId, projectId, key: "start", actorUserId: user.userId,
-        notice: { code: "project.started", memberships: named.map((member) => ({ membershipId: member.membershipId, role: labels.get(member.role) ?? member.role })) } });
-      return { projectId, existing: false };
-    });
+    return this.access.withPermission(actor, workspaceId, "projects.manage", (client, user) => startProject(client, this.access, workspaceId, caseId, body, user));
   }
 
   // ---------- read ----------
@@ -303,6 +166,7 @@ export class ProjectCoreService {
       const teams = await readTeam(client, workspaceId, ids);
       const stages = await readStages(client, workspaceId, ids);
       const settings = await ensureSettings(client, workspaceId);
+      const attention = await readAttention(client, workspaceId, ids);
       const rows = [];
       for (const project of projects) {
         const mine = stages.filter((stage) => stage.projectId === project.id);
@@ -314,6 +178,8 @@ export class ProjectCoreService {
           stage: current ? { name: current.name, position: current.position + 1, count: mine.length } : null,
           lead: team.find((member) => member.lead)?.name ?? null,
           next: evaluated ? nextStep(evaluated, settings.roles) : null,
+          // Which project needs a look: its late and held-up work.
+          attention: attention.get(project.id) ?? { late: 0, blocked: 0 },
         });
       }
       return { projects: rows, canStart: all };
@@ -457,6 +323,11 @@ export class ProjectCoreService {
         // Told once per update, however often it's shared again.
         if (share) await tellClients(client, { workspaceId, caseId: project.caseId, event: "update_published", recordId: update.id, title: project.name, note: update.note });
         audit = { updateId: update.id, shared: share };
+      } else if (action === "approve_client_update" || action === "discard_client_update") {
+        // The week's drafted client update: the project manager approves it (with edited words) or discards it.
+        needManager(); open();
+        audit = await decideClientUpdate(client, { workspaceId, projectId, caseId: project.caseId, title: project.name, updateId: body.updateId, note: body.note,
+          approve: action === "approve_client_update", userId: user.userId });
       } else if (action === "hold") {
         needManager(); running();
         const reason = typeof body.reason === "string" ? body.reason.trim() : "";
@@ -469,8 +340,11 @@ export class ProjectCoreService {
       } else if (action === "resume") {
         needManager();
         if (project.status !== "on_hold") throw new ConflictException("The project isn't on hold.");
+        // Optionally, open work and the handover date move later by the working days lost on hold.
+        const shifted = body.shiftDates === true ? await shiftForHold(client, workspaceId, projectId, user.userId) : null;
         await client.query(`UPDATE delivery_projects SET status = 'active', hold_reason = NULL, hold_review_on = NULL, held_at = NULL, held_by = NULL WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId]);
         notices.push({ key: `resume:${project.version}`, notice: { code: "project.resumed", note: "", memberships: teamIds() } });
+        audit = shifted ? { shiftedWorkingDays: shifted.workingDays, moved: shifted.moved, promiseDate: shifted.promiseDate } : {};
       } else if (action === "cancel") {
         // Cancelling ends the contract: only someone who manages projects, with why, once nothing is left half-way.
         if (!all) throw new ForbiddenException("Only people who manage projects can cancel one.");
@@ -507,7 +381,7 @@ export class ProjectCoreService {
         else if (action === "save_package") audit = { packageId: await savePackage(client, workspaceId, projectId, body) };
         else if (action === "delete_package") { await deletePackage(client, workspaceId, projectId, String(body.packageId ?? "")); audit = { packageId: body.packageId }; }
         else audit = { moved: await assignLines(client, workspaceId, projectId, body.lineIds, body.packageId ?? null, user.userId), packageId: body.packageId ?? null };
-      } else if (["suggest_materials", "save_material", "delete_material", "send_materials", "record_materials_decision"].includes(action)) {
+      } else if (["suggest_materials", "save_material", "delete_material", "send_materials", "record_materials_decision", "remind_materials"].includes(action)) {
         // The team prepares the material list; the project manager sees every step in the audit.
         if (!["active", "on_hold"].includes(project.status)) throw new ConflictException("The project is closed.");
         if (action === "suggest_materials") audit = { added: await suggestMaterials(client, workspaceId, projectId) };
@@ -518,6 +392,17 @@ export class ProjectCoreService {
           // The client's decision-makers hear the list is waiting for them in the portal.
           await tellClients(client, { workspaceId, caseId: project.caseId, event: "decision_waiting", recordId: `materials:${projectId}:${revision}`, title: `Material list R${revision}` });
           audit = { revision };
+        }
+        else if (action === "remind_materials") {
+          // A nudge to the client's decision-makers about the list waiting with them; at most once a day.
+          const waiting = (await client.query<{ number: number }>(
+            `SELECT number FROM project_material_revisions WHERE workspace_id = $1 AND project_id = $2 AND status = 'sent' ORDER BY number DESC LIMIT 1`, [workspaceId, projectId])).rows[0];
+          if (!waiting) throw new ConflictException("No material list is waiting on the client.");
+          const sent = await tellClients(client, { workspaceId, caseId: project.caseId, event: "decision_waiting", recordId: `materials:${projectId}:${waiting.number}:manual:${await this.today(client, workspaceId)}`,
+            title: `Material list R${waiting.number}` });
+          if (!sent.queued) throw new ConflictException(sent.reason === "no_contact" ? "The client has no portal contact to remind."
+            : sent.reason === null ? "The client was already reminded today." : "The client portal isn't open for this project.");
+          audit = { revision: waiting.number, reminded: true };
         }
         else {
           const result = await recordMaterialDecision(client, workspaceId, projectId, body, user.userId);
@@ -558,6 +443,8 @@ export class ProjectCoreService {
         await applyVariation(client, workspaceId, projectId, { id: sealId, label }, scope.lines, user.userId);
         // Work orders the variation removed or reduced stop; the factory hears which.
         await tellScopeChanges(client, workspaceId, projectId, user.userId, sealId);
+        // Orders it leaves past what the project needs: the people who buy hear which (D-41).
+        await tellOverOrdered(client, workspaceId, projectId, user.userId, { id: sealId, label });
         notices.push({ key: `variation:${quote.id}`, notice: { code: "project.variation_applied", variation: label, amount: `${scope.quote.currency} ${scope.pricing.total}`, memberships: teamIds() } });
         audit = { quoteId: quote.id, label, total: scope.pricing.total };
       } else if (["confirm_check", "unconfirm_check", "complete_stage", "skip_stage", "reopen_stage"].includes(action)) {
@@ -621,6 +508,8 @@ export class ProjectCoreService {
       await client.query(`UPDATE delivery_projects SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `project.${action}`, entityType: "project", entityId: projectId, after: audit });
       for (const item of notices) await noticeProject(client, { workspaceId, projectId, key: item.key, actorUserId: user.userId, notice: item.notice });
+      // A check read from records may pass now (a role named, a material list signed off): the stage owner hears it can finish.
+      await noticeStageReady(client, workspaceId, projectId, user.userId);
       return this.detail(client, workspaceId, projectId, user);
     });
   }
@@ -631,6 +520,11 @@ export class ProjectCoreService {
     const next = stages.find((stage) => stage.position > finished.position && stage.status === "upcoming");
     if (next) {
       await client.query(`UPDATE project_stages SET status = 'current', started_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.id]);
+      // The client hears on WhatsApp that the next stage started (when the firm has it on and the portal isn't paused).
+      const owner = await partyOfCase(client, workspaceId, project.caseId);
+      const toldClient = await sendClientEvent(client, { workspaceId, event: "project.stage_started", partyId: owner.partyId, leadId: owner.leadId, recordKey: `${project.id}:${next.id}`,
+        record: { projectId: project.id, stageName: next.name }, actorUserId: userId });
+      if (!toldClient.sent) await recordClientMessageSkipped(client, workspaceId, "project.stage_started", `${project.id}:${next.id}`, toldClient, false);
       const told = team.filter((member) => member.lead || (next.ownerRole && member.roles.includes(next.ownerRole))).map((member) => member.membershipId);
       notices.push({ key: `stage:${next.key}:${project.version}`, notice: { code: "project.stage_done", stage: next.name, previous: finished.name, memberships: told } });
     } else if (!stages.some((stage) => stage.id !== finished.id && (stage.status === "current" || stage.status === "upcoming"))) {
@@ -652,19 +546,29 @@ export class ProjectCoreService {
     const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
     const stages = await evaluateStages(client, workspaceId, project, await readStages(client, workspaceId, [projectId]), team);
     const manager = all || team.some((member) => member.membershipId === membershipId && member.lead);
-    const updates = (await client.query<{ id: string; health: string; note: string; byName: string; at: string; sharedAt: string | null }>(
-      `SELECT update.id, update.health, update.note, person.display_name AS "byName", update.created_at AS at, update.shared_at AS "sharedAt"
+    // Status updates and the weekly client updates (a draft only for the people who manage the project).
+    const updates = (await client.query<{ id: string; health: string; note: string; byName: string; at: string; sharedAt: string | null; kind: string; draft: boolean; photoIds: string[] }>(
+      `SELECT update.id, update.health, update.note, person.display_name AS "byName", update.created_at AS at, update.shared_at AS "sharedAt", update.kind,
+              (update.kind = 'client_update' AND update.approved_at IS NULL) AS draft,
+              ARRAY(SELECT chosen.photo_id FROM project_update_photos chosen WHERE chosen.workspace_id = update.workspace_id AND chosen.update_id = update.id ORDER BY chosen.position) AS "photoIds"
          FROM project_status_updates update JOIN users person ON person.id = update.created_by
-        WHERE update.workspace_id = $1 AND update.project_id = $2 ORDER BY update.created_at DESC LIMIT 20`, [workspaceId, projectId])).rows;
+        WHERE update.workspace_id = $1 AND update.project_id = $2 ORDER BY update.created_at DESC LIMIT 20`, [workspaceId, projectId])).rows
+      .filter((update) => !update.draft || manager);
     const seal = (await client.query<{ revisionLabel: string; quoteNumber: number; acceptedAt: string; acceptedBy: string; method: string | null; contentHash: string; sealedAt: string }>(
       `SELECT revision_label AS "revisionLabel", quote_number AS "quoteNumber", accepted_at AS "acceptedAt", accepted_by_name AS "acceptedBy",
               acceptance_method AS method, content_hash AS "contentHash", sealed_at AS "sealedAt"
          FROM project_scope_seals WHERE workspace_id = $1 AND project_id = $2 AND kind = 'baseline'`, [workspaceId, projectId])).rows[0];
     const current = stages.find((stage) => stage.status === "current");
+    const money = await moneyAccess(client, this.access, workspaceId, user.userId, { all, onTeam: team.some((member) => member.membershipId === membershipId) });
+    const site = (await client.query<{ startedOn: string | null; finishedOn: string | null }>(
+      `SELECT site_started_on::text AS "startedOn", site_finished_on::text AS "finishedOn" FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId])).rows[0];
     return {
       project: { ...summary(project), caseId: project.caseId, opportunityId: project.opportunityId, opportunityReference: project.opportunityReference,
         holdReason: project.holdReason, holdReviewOn: project.holdReviewOn, startDate: project.startDate, templateName: project.templateName, version: project.version,
-        closedAt: project.cancelledAt ?? project.completedAt, closedByName: project.closedByName, cancelReason: project.cancelReason },
+        closedAt: project.cancelledAt ?? project.completedAt, closedByName: project.closedByName, cancelReason: project.cancelReason, heldAt: project.heldAt,
+        siteStartedOn: site?.startedOn ?? null, siteFinishedOn: site?.finishedOn ?? null,
+        handoverAccepted: Boolean((await client.query(`SELECT 1 FROM handover_packs WHERE workspace_id = $1 AND project_id = $2 AND status = 'accepted' LIMIT 1`, [workspaceId, projectId])).rowCount) },
+      hold: project.status === "on_hold" ? await holdLength(client, workspaceId, projectId) : null,
       seal,
       roles: settings.roles,
       team: settings.roles.map((role) => ({ role: role.key, label: role.label, member: team.find((member) => member.roles.includes(role.key)) ?? null }))
@@ -677,7 +581,9 @@ export class ProjectCoreService {
       canManage: manager,
       canClose: all,
       // The Money tab is for people who see costs.
-      canSeeMoney: await this.access.hasPermission(client, workspaceId, user.userId, "commercial.costs.view"),
+      // Who sees what of the money: costs (with margin only for commercial costs), and the client side.
+      money,
+      canSeeMoney: money.costs,
       progress: (await readProgress(client, workspaceId, projectId)).project,
     };
   }
@@ -711,32 +617,6 @@ export class ProjectCoreService {
 }
 
 // ---------- pure helpers ----------
-const START_LABELS: Record<string, string> = {
-  accepted: "the client accepts the quotation",
-  agreement: "the agreement is signed",
-  payment: "the payment due before the start is verified",
-  approval: "the deal is approved",
-};
-
-async function commercial(client: Db, workspaceId: string, caseId: string) {
-  const row = await commercialRepository.load(client, workspaceId, caseId);
-  return row ? ({ ...(row.content as CommercialData), revision: row.revision }) : null;
-}
-
-/** The accepted quotation that starts the project. A design-fee quotation never does. */
-function startQuote(data: CommercialData): Quote | undefined {
-  return data.quotes.find((quote) => quote.kind === "quotation" && quote.status === "accepted" && quote.round !== "design");
-}
-
-function startChecks(data: CommercialData, quote: Quote, settings: { requireAgreement: boolean; requirePayment: boolean; requireApproval: boolean }) {
-  return [
-    { key: "accepted", ok: quote.clientDecision?.decision === "accept", required: true },
-    { key: "agreement", ok: data.agreement?.quoteId === quote.id && data.agreement.status === "executed", required: settings.requireAgreement },
-    { key: "payment", ok: financeGatePaymentsReady(data, "release", quote.id), required: settings.requirePayment },
-    { key: "approval", ok: data.dealFile?.quoteId === quote.id && data.ownerReview?.status === "approved", required: settings.requireApproval },
-  ].filter((check) => check.required);
-}
-
 function summary(project: ProjectRow) {
   return { id: project.id, reference: project.reference, name: project.name, clientName: project.clientName, status: project.status,
     priority: project.priority, health: project.health, promiseDate: project.promiseDate, currency: project.currency, total: project.total, startedAt: project.startedAt };

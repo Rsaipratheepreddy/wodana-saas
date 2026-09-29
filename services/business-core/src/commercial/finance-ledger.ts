@@ -1,5 +1,7 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { Dec } from "../catalog-core/decimal";
+import { currencyDecimals } from "../common/currency";
 import type {
   ClientCredit,
   CommercialData,
@@ -10,8 +12,13 @@ import type {
   Payment,
 } from "./commercial.types";
 
-const round = (value: number) =>
-  Math.round((value + Number.EPSILON) * 100) / 100;
+/** Money, exactly (decimal, never float math), in the currency's minor units; two places without a currency. */
+const money = (value: number, currencyCode?: string) =>
+  Dec.of(value).round(currencyCode ? currencyDecimals(currencyCode) : 2);
+const round = (value: number, currencyCode?: string) => money(value, currencyCode).toNumber();
+/** The exact sum of allocations, as money in the currency. */
+const allocatedSum = (allocations: FinanceAllocation[], currencyCode?: string) =>
+  allocations.reduce((sum, allocation) => sum.add(allocation.amount), Dec.ZERO).round(currencyCode ? currencyDecimals(currencyCode) : 2);
 
 export type LegalEntityFinanceSource = {
   legalEntityId?: string | null;
@@ -134,7 +141,7 @@ export function upsertProviderInvoiceDocument(
     legalEntityId: context.legalEntityId,
     currency: context.currency,
     number: input.number || input.providerDocumentId,
-    total: round(input.total),
+    total: round(input.total, context.currency),
     status: input.status,
     paymentId: payment.id,
     provider: input.provider,
@@ -151,14 +158,14 @@ export function upsertProviderInvoiceDocument(
 function activeAllocatedAmount(
   allocations: FinanceAllocation[],
   paymentId: string,
+  currencyCode?: string,
 ) {
-  return round(
-    allocations
-      .filter(
-        (allocation) =>
-          allocation.paymentId === paymentId && !allocation.reversedAt,
-      )
-      .reduce((sum, allocation) => sum + allocation.amount, 0),
+  return allocatedSum(
+    allocations.filter(
+      (allocation) =>
+        allocation.paymentId === paymentId && !allocation.reversedAt,
+    ),
+    currencyCode,
   );
 }
 
@@ -175,8 +182,8 @@ function allocate(
       allocation.receiptId === receipt.id && !allocation.reversedAt,
   );
   if (existing) return existing;
-  const allocated = activeAllocatedAmount(allocations, payment.id);
-  if (round(allocated + receipt.amount) > round(payment.amount))
+  const allocated = activeAllocatedAmount(allocations, payment.id, payment.currency);
+  if (allocated.add(money(receipt.amount, payment.currency)).cmp(money(payment.amount, payment.currency)) > 0)
     throw new ConflictException(
       "Receipt allocations cannot exceed the payment milestone amount.",
     );
@@ -226,7 +233,7 @@ export function recordProviderSettlement(
       paymentId: payment.id,
       legalEntityId: context.legalEntityId,
       currency: context.currency,
-      amount: round(payment.amount),
+      amount: round(payment.amount, context.currency),
       source: "provider",
       status: "provider_confirmed",
       reference: input.reference || input.providerDocumentId,
@@ -259,6 +266,7 @@ export function reportManualReceipt(
   input: { reference: string; evidence: string },
   actor: string,
   at: string,
+  actorUserId?: string,
 ) {
   const context = data.financeContext;
   if (!context)
@@ -282,13 +290,14 @@ export function reportManualReceipt(
     paymentId: payment.id,
     legalEntityId: context.legalEntityId,
     currency: context.currency,
-    amount: round(payment.amount),
+    amount: round(payment.amount, context.currency),
     source: "manual",
     status: "reported",
     reference: input.reference,
     evidence: input.evidence,
     reportedAt: at,
     reportedBy: actor,
+    ...(actorUserId ? { reportedById: actorUserId } : {}),
   };
   receipts.push(receipt);
   allocate(data, receipt, payment, actor, at);
@@ -298,11 +307,17 @@ export function reportManualReceipt(
   return receipt;
 }
 
+/** Whether this person reported the receipt: by their id when it was recorded, else (older receipts) by name. */
+export function receiptReportedBy(receipt: Pick<FinanceReceipt, "reportedBy" | "reportedById">, name: string, userId?: string) {
+  return receipt.reportedById && userId ? receipt.reportedById === userId : receipt.reportedBy === name;
+}
+
 export function verifyReceipt(
   data: CommercialData,
   payment: Payment,
   actor: string,
   at: string,
+  actorUserId?: string,
 ) {
   const { receipts } = arrays(data);
   const receipt = receipts.find(
@@ -314,13 +329,13 @@ export function verifyReceipt(
     throw new NotFoundException(
       "Record a manual receipt or refresh a settled provider invoice before finance verification.",
     );
-  if (receipt.source === "manual" && receipt.reportedBy === actor)
+  if (receipt.source === "manual" && receiptReportedBy(receipt, actor, actorUserId))
     throw new ConflictException(
       "Another finance-authorized person must verify a manually reported receipt.",
     );
   const allocations = data.allocations ?? [];
   if (
-    activeAllocatedAmount(allocations, payment.id) !== round(payment.amount) ||
+    activeAllocatedAmount(allocations, payment.id, payment.currency).cmp(money(payment.amount, payment.currency)) !== 0 ||
     !allocations.some(
       (allocation) =>
         allocation.receiptId === receipt.id && !allocation.reversedAt,
@@ -332,6 +347,7 @@ export function verifyReceipt(
   receipt.status = "finance_verified";
   receipt.verifiedAt = at;
   receipt.verifiedBy = actor;
+  if (actorUserId) receipt.verifiedById = actorUserId;
   payment.status = "verified";
   payment.verifiedAt = at;
   payment.verifiedBy = actor;
@@ -401,7 +417,7 @@ export function recordCreditNote(
     legalEntityId: context.legalEntityId,
     currency: context.currency,
     number: input.reference,
-    total: round(credit.amount),
+    total: round(credit.amount, context.currency),
     status: "verified",
     creditId: credit.id,
     evidence: input.evidence,
@@ -442,16 +458,15 @@ export function paymentHasFinanceVerifiedReceipt(
   );
   if (!receipt) return false;
   return (
-    round(
-      (data.allocations ?? [])
-        .filter(
-          (allocation) =>
-            allocation.paymentId === payment.id &&
-            allocation.receiptId === receipt.id &&
-            !allocation.reversedAt,
-        )
-        .reduce((sum, allocation) => sum + allocation.amount, 0),
-    ) === round(payment.amount)
+    allocatedSum(
+      (data.allocations ?? []).filter(
+        (allocation) =>
+          allocation.paymentId === payment.id &&
+          allocation.receiptId === receipt.id &&
+          !allocation.reversedAt,
+      ),
+      payment.currency,
+    ).cmp(money(payment.amount, payment.currency)) === 0
   );
 }
 

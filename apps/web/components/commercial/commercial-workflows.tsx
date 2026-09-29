@@ -3,7 +3,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { ClientCredits } from "./client-credits";
 import { PaymentInvoice } from "./payment-invoice";
 import { AgreementFiles } from "./agreement-files";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import Link from "next/link";
 import Image from "next/image";
@@ -33,6 +33,9 @@ import type { CommercialState, ChangeRequest, ControlledChangeKind, MaterialAppr
 import { availableContractLines, changeKinds } from "@/lib/commercial/change-cases";
 import { decisionPolicySummary } from "@/lib/commercial/decision-requests";
 import { ControlledChangeCase } from "./controlled-change-case";
+import { ClientReportCell, ClientReportDialog, useClientPaymentReports } from "./client-payment-reports";
+import { ClientFiles } from "@/components/client-activity/client-files";
+import { SeenByClient, useClientThreads } from "@/components/client-activity/client-threads";
 import s from "./commercial.module.css";
 import tableStyles from "../workspace/workspace.module.css";
 type Props = {
@@ -60,6 +63,13 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
     [edit, setEdit] = useState<ChangeRequest | null>(opened ?? null);
   const request = state.data.requests.find((r) => r.id === selected);
   const accepted = state.data.quotes.some((quote) => quote.kind === "quotation" && quote.status === "accepted");
+  // The client's files on each conversation, and whether they've read the team's replies; opening a thread tells them it was seen.
+  const threads = useClientThreads(state.workspaceId, state.caseId);
+  const { markRead } = threads;
+  const conversation = request && !request.decisionRequest ? request.id : null;
+  useEffect(() => { if (conversation) markRead(conversation); }, [conversation, markRead]);
+  const fromClient = (comment: ChangeRequest["comments"][number]) => Boolean((comment as { fromClient?: boolean }).fromClient);
+  const lastReplyAt = request?.comments.filter((comment) => comment.visibility === "client" && !fromClient(comment)).map((comment) => comment.at).sort().at(-1) ?? null;
   const contractLines = availableContractLines(state.data);
   const decisionTargets = [
     ...state.data.quotes.filter((quote) => Boolean(quote.issuedAt) && Boolean(quote.approverId) && !["superseded", "withdrawn"].includes(quote.status)).map((quote) => ({ id: `quotation:${quote.id}:${quote.number}`, label: `Quotation V${quote.number}` })),
@@ -213,6 +223,7 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
               </p>
             )}
             <p style={{ whiteSpace: "pre-wrap" }}>{request.detail}</p>
+            <ClientFiles files={threads.files(request.id)} url={threads.fileUrl} />
             <span className={s.status}>{statusLabel[request.status]}</span>
             {request.decisionRequest ? <div className={s.notice}><strong>{request.decisionRequest.target.label}</strong><p>{t("Due")}{" "}{request.dueDate} {t("· Choices:")}{" "}{request.decisionRequest.allowedChoices.map((choice) => choice.label).join(" / ")}</p><p>{decisionPolicySummary(request.decisionRequest)}</p>{request.decisionRequest.decision ? <p>{t("Client response:")}{" "}{request.decisionRequest.decision.choiceLabel}{request.decisionRequest.decision.note ? ` · ${request.decisionRequest.decision.note}` : ""}</p> : <p>{t("Awaiting the designated client approver.")}</p>}</div> : null}
             {request.control && <ControlledChangeCase request={request} state={state} run={run} busy={busy} />}
@@ -301,10 +312,12 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
                       : "Client conversation"}
                   </small>
                   <p>{c.text}</p>
+                  <ClientFiles files={threads.files(c.id)} url={threads.fileUrl} />
                   <small>{new Date(c.at).toLocaleString()}</small>
                 </li>
               ))}
             </ul>
+            {conversation ? <SeenByClient readAt={threads.clientRead(conversation)} lastReplyAt={lastReplyAt} /> : null}
             {state.canEdit && (
               <>
                 <label>
@@ -343,7 +356,8 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
     </>
   );
 }
-export function AgreementPayments({ state, run, busy, error, initialView = "agreement" }: Props & { initialView?: "agreement" | "payments" }) {
+/** `openPaymentId` (from a notice's link) opens the client's payment report on that milestone once it's loaded. */
+export function AgreementPayments({ state, run, busy, error, initialView = "agreement", openPaymentId }: Props & { initialView?: "agreement" | "payments"; openPaymentId?: string }) {
   const t = useT();
   const { currency: workspaceCurrency } = useDesignSystem();
   const accepted = state.data.palmFlow
@@ -382,6 +396,15 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
   // Agreement and Payments are separate routes; follow the route's view.
   const [viewFor, setViewFor] = useState(initialView);
   if (viewFor !== initialView) { setViewFor(initialView); setTab(initialView); }
+  // What the client reported paying in the portal, per milestone (newest first).
+  const client = useClientPaymentReports(state.workspaceId, state.caseId, tab === "payments");
+  const reportsFor = (paymentId: string) => client.reports.filter((report) => report.paymentId === paymentId);
+  const [reportFor, setReportFor] = useState<string | null>(null);
+  const [afterReceipt, setAfterReceipt] = useState<string | null>(null);
+  const [linked, setLinked] = useState(openPaymentId ?? null);
+  if (linked && client.reports.some((report) => report.paymentId === linked)) { setLinked(null); setReportFor(linked); }
+  const reportPayment = reportFor ? state.data.payments.find((item) => item.id === reportFor) : undefined;
+  const receiptOf = (paymentId: string) => state.data.receipts?.find((receipt) => receipt.paymentId === paymentId && receipt.status !== "rejected");
   const receiptPayment = state.data.payments.find((item) => item.id === verify),
     activeReceipt = receiptPayment
       ? state.data.receipts?.find(
@@ -514,6 +537,8 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
                         run={run}
                       />
                     </>;}},
+	...(client.reports.length ? [{id:"clientReport",header:t("Client report"),size:190,accessorFn:(p:typeof state.data.payments[number])=>reportsFor(p.id)[0]?.status ?? "",cell:({row:{original:p}}:{row:{original:typeof state.data.payments[number]}})=>
+	  <ClientReportCell reports={reportsFor(p.id)} onOpen={() => setReportFor(p.id)} />}] : []),
 	{id:"action",header:"Action",size:180,enableSorting:false,enableColumnFilter:false,cell:({row:{original:p}})=>{const receipt=state.data.receipts?.find((item)=>item.paymentId===p.id&&item.status!=="rejected");return <>
                       <div className={s.actions}>
                         {state.canEdit && p.status === "pending" && (
@@ -562,6 +587,12 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
       {tab === "payments" && (
         <ClientCredits state={state} run={run} busy={busy} />
       )}
+      {reportPayment && reportsFor(reportPayment.id).length ? <ClientReportDialog milestone={reportPayment.title} reports={reportsFor(reportPayment.id)} client={client}
+        currency={state.data.quotes.find((q) => q.id === reportPayment.sourceQuoteId)?.currency ?? accepted?.currency ?? state.currency ?? workspaceCurrency}
+        milestoneAmount={reportPayment.amount} hasReceipt={Boolean(receiptOf(reportPayment.id))}
+        canRecordReceipt={state.canEdit && reportPayment.status !== "verified" && !reportPayment.invoice}
+        onRecordReceipt={(report) => { setReportFor(null); setAfterReceipt(reportPayment.id); setVerify(reportPayment.id); setReference(report.reference || reportPayment.reference); setReceiptEvidence(""); }}
+        onClose={() => setReportFor(null)} /> : null}
       <ControlledModalDialog
         isOpen={paymentOpen}
         onOpenChange={setPaymentOpen}
@@ -606,7 +637,7 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
       </ControlledModalDialog>
       <ControlledModalDialog
         isOpen={Boolean(verify)}
-        onOpenChange={(open) => !open && setVerify("")}
+        onOpenChange={(open) => { if (!open) { setVerify(""); setAfterReceipt(null); } }}
         title={receiptPayment?.status === "proof_submitted" ? "Finance verification" : "Record payment receipt"}
       >
         {error && (
@@ -654,8 +685,11 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
                   reference,
                   evidence: receiptEvidence,
                 })
-              )
+              ) {
                 setVerify("");
+                // Recorded from the client's report: back to it, to mark it recorded.
+                if (afterReceipt) { setReportFor(afterReceipt); setAfterReceipt(null); }
+              }
             }}
           >
             {receiptPayment?.status === "proof_submitted"

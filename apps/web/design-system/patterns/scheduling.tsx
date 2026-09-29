@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CalendarDays, Clock3 } from "lucide-react";
+import { Checkbox } from "../components/forms";
 import { Badge } from "../components/status";
 import { formatDate } from "../foundations/formatters";
 import { useDesignSystem } from "../foundations/provider";
@@ -9,7 +10,7 @@ import { useDesignSystem } from "../foundations/provider";
 export type CalendarSource = { id: string; label: string; color: string; visible?: boolean };
 export type CalendarEvent = { id: string; title: string; start: string; end: string; calendarId: string; resource?: string; status?: string };
 
-export function CalendarOverlay({ calendars, onToggle }: { calendars: CalendarSource[]; onToggle?: (id: string, visible: boolean) => void }) { return <div className="wd-calendar-sources">{calendars.map((calendar) => <label key={calendar.id}><input checked={calendar.visible !== false} onChange={(event) => onToggle?.(calendar.id, event.target.checked)} type="checkbox" /><span style={{ background: calendar.color }} />{calendar.label}</label>)}</div>; }
+export function CalendarOverlay({ calendars, onToggle }: { calendars: CalendarSource[]; onToggle?: (id: string, visible: boolean) => void }) { return <div className="wd-calendar-sources">{calendars.map((calendar) => <Checkbox key={calendar.id} isSelected={calendar.visible !== false} onChange={(visible) => onToggle?.(calendar.id, visible)}><span className="wd-calendar-source"><span style={{ background: calendar.color }} />{calendar.label}</span></Checkbox>)}</div>; }
 
 export function Agenda({ events, locale: localeProp, timeZone: timeZoneProp }: { events: CalendarEvent[]; locale?: string; timeZone?: string }) { const region = useDesignSystem(); const locale = localeProp ?? region.locale; const timeZone = timeZoneProp ?? region.timeZone; const groups = useMemo(() => Object.groupBy(events, (event) => formatDate(event.start, { locale, timeZone }, { dateStyle: "full" })), [events, locale, timeZone]); return <div className="wd-agenda">{Object.entries(groups).map(([day, entries]) => <section key={day}><header>{day}</header>{entries?.map((event) => <article key={event.id}><Clock3 size={14} /><time>{formatDate(event.start, { locale, timeZone }, { hour: "2-digit", minute: "2-digit" })}</time><span><strong>{event.title}</strong>{event.resource ? <small>{event.resource}</small> : null}</span>{event.status ? <Badge>{event.status}</Badge> : null}</article>)}</section>)}</div>; }
 

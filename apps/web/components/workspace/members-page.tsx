@@ -1,9 +1,12 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
+import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { Copy, Download } from "lucide-react";
-import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, SettingsRow, SettingsSection, Switch, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import type { ViewAsSettings, ViewAsTarget } from "@/lib/workspace/view-as";
+import { ViewAsDialog } from "./view-as-dialog";
 import type { Translate } from "@/lib/i18n/keys";
 import {
   readableRole,
@@ -107,6 +110,34 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const [editFailure, setEditFailure] = useState("");
   const [isSavingMember, setIsSavingMember] = useState(false);
   const [memberReviewOpen, setMemberReviewOpen] = useState(false);
+
+  // View as: an owner or administrator reads the workspace as an active team member (never an owner, unless
+  // an owner; never themselves). The server checks the same rules.
+  const viewAs = initialData.viewAs;
+  const [viewAsTarget, setViewAsTarget] = useState<ViewAsTarget | null>(null);
+  const [viewAsSettings, setViewAsSettings] = useState(viewAs?.settings ?? null);
+  const [isSavingViewAsSetting, setIsSavingViewAsSetting] = useState(false);
+  const canViewAsMember = (member: WorkspaceMember) => Boolean(viewAs?.canViewAs) && member.status === "active"
+    && member.userId !== initialData.currentUserId
+    && (viewAs?.viewerIsOwner || ![...member.roles, ...(member.inheritedRoles ?? [])].includes("owner"));
+  const saveViewAsNotice = async (notifySubject: boolean) => {
+    if (!viewAsSettings) return;
+    setIsSavingViewAsSetting(true);
+    setActionFailure("");
+    try {
+      const response = await fetch("/api/workspace/view-as/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: initialData.workspaceId, notifySubject, version: viewAsSettings.version }),
+      });
+      if (!response.ok) throw new Error(await responseMessage(response, t("This setting could not be saved. Refresh and try again.")));
+      setViewAsSettings(await response.json() as ViewAsSettings);
+    } catch (error) {
+      setActionFailure(error instanceof Error ? error.message : t("This setting could not be saved. Refresh and try again."));
+    } finally {
+      setIsSavingViewAsSetting(false);
+    }
+  };
 
   const [cancellingInvitation, setCancellingInvitation] = useState<WorkspaceInvitation | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -472,11 +503,11 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     }
   };
 
-  /** Invitations and members share the columns; only the words differ (invited on / created at, access / role). */
-  const columnsFor = (kind: "invitation" | "member"): GroupedTableColumn<DirectoryRow>[] => [
+  /** Invitations and members share one table and one set of columns. */
+  const columns: GroupedTableColumn<DirectoryRow>[] = [
     {
       id: "person",
-      label: kind === "invitation" ? t("Invited") : t("Member"),
+      label: t("Person"),
       mobileWidth: "14rem",
       render: (item) => {
         const name = item.kind === "member"
@@ -489,14 +520,14 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     },
     {
       id: "date",
-      label: kind === "invitation" ? t("Invited on") : t("Created at"),
+      label: t("Added"),
       mobileHidden: true,
       width: "8rem",
       render: (item) => dateLabel(item.kind === "member" ? item.member.joinedAt : item.invitation.createdAt, t, { locale, timeZone }),
     },
     {
       id: "role",
-      label: kind === "invitation" ? t("Access") : t("Role"),
+      label: t("Role"),
       mobileWidth: "9rem",
       width: "13rem",
       render: (item) => {
@@ -518,7 +549,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     },
     {
       id: "status",
-      label: kind === "invitation" ? t("Invitation") : t("Status"),
+      label: t("Status"),
       mobileWidth: "6rem",
       width: "6.5rem",
       render: (item) => {
@@ -535,8 +566,13 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       width: "3rem",
       render: (item) => {
         if (item.kind === "member") {
-          if (!canEdit || !canChangeAssignment([...item.member.roles, ...(item.member.inheritedRoles ?? [])], item.member.teams ?? [])) return null;
-          return <IconMenuButton ariaLabel={t("Actions for {name}", { name: item.member.displayName })} items={[{ id: "edit", label: t("Edit access") }]} onAction={() => openMemberEditor(item.member)} />;
+          const memberActions = [
+            ...(canEdit && canChangeAssignment([...item.member.roles, ...(item.member.inheritedRoles ?? [])], item.member.teams ?? []) ? [{ id: "edit", label: t("Edit access") }] : []),
+            ...(canViewAsMember(item.member) ? [{ id: "view-as", label: t("View as") }] : []),
+          ];
+          if (!memberActions.length) return null;
+          return <IconMenuButton ariaLabel={t("Actions for {name}", { name: item.member.displayName })} items={memberActions}
+            onAction={(action) => action === "view-as" ? setViewAsTarget({ kind: "person", membershipId: item.member.id, name: item.member.displayName }) : openMemberEditor(item.member)} />;
         }
         if (!canChangeAssignment(item.invitation.roles, item.invitation.teams ?? [])) return null;
         const actions = [
@@ -549,8 +585,9 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   ];
 
   const selectedRows = rows.filter((row) => selectedIds.has(row.id));
-  // Pending invitations are their own short list above the members; guests get a group row only when there are any.
-  const memberSections: GroupedTableSection<DirectoryRow>[] = [
+  // One table: pending invitations first, then guests and members; a group row appears only when there is more than one group.
+  const directorySections: GroupedTableSection<DirectoryRow>[] = [
+    { id: "invited", label: t("Invited"), emptyMessage: "", rows: invitedRows },
     { id: "guests", label: t("Guest"), emptyMessage: t("No guests have access."), rows: guestRows },
     { id: "members", label: t("Member"), emptyMessage: t("No members have joined yet."), rows: memberRows },
   ].filter((section) => section.rows.length || section.id === "members");
@@ -602,38 +639,29 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           <Button onPress={() => exportRows(selectedRows)} size="compact"><Download aria-hidden="true" size={14} />{t("Export selected")}</Button>
         </div> : null}
 
-        {invitedRows.length ? <section aria-label={t("Pending invitations")} className={styles.tableSection}>
-          <h3 className={styles.sectionTitle}>{t("Pending invitations")}</h3>
-          <div className={styles.tableRegion}>
-            <GroupedTable appearance="plain"
-              ariaLabel={t("Pending invitations")}
-              columns={columnsFor("invitation")}
-              getRowId={(row) => row.id}
-              getRowLabel={(row) => row.kind === "member" ? row.member.displayName : row.invitation.email}
-              groupRows={false}
-              onSelectionChange={setSelectedIds}
-              sections={[{ id: "invited", label: t("Pending invitations"), emptyMessage: "", rows: invitedRows }]}
-              selectedIds={selectedIds}
-            />
-          </div>
-        </section> : null}
         <section aria-label={t("Members")} className={styles.tableSection}>
-          {invitedRows.length ? <h3 className={styles.sectionTitle}>{t("Members")}</h3> : null}
           <div className={styles.tableRegion}>
-            <GroupedTable appearance="plain"
+            <GroupedTable
               ariaLabel={t("Workspace members")}
-              columns={columnsFor("member")}
+              columns={columns}
               getRowId={(row) => row.id}
               getRowLabel={(row) => row.kind === "member" ? row.member.displayName : row.invitation.email}
-              groupRows={memberSections.length > 1}
+              groupRows={directorySections.length > 1}
               onSelectionChange={setSelectedIds}
-              sections={memberSections}
+              sections={directorySections}
               selectedIds={selectedIds}
             />
           </div>
         </section>
         {!canInvite && !canEdit && !canCancelInvitations ? <p className={styles.permissionNote}>{t("Your access is read-only. Ask a workspace administrator to change people or invitations.")}</p> : null}
+        {viewAs?.canViewAs && viewAsSettings ? <SettingsSection id="view-as" title={t("View as")}>
+          <SettingsRow label={t("Tell people after someone viewed as them")}>
+            <Switch aria-label={t("Tell people after someone viewed as them")} isDisabled={isSavingViewAsSetting} isSelected={viewAsSettings.notifySubject} onChange={(value) => void saveViewAsNotice(value)} />
+          </SettingsRow>
+        </SettingsSection> : null}
       </SettingsPage>
+
+      <ViewAsDialog mfaEnabled={Boolean(viewAs?.mfaEnabled)} onClose={() => setViewAsTarget(null)} target={viewAsTarget} workspaceId={initialData.workspaceId} />
 
       <ControlledModalDialog
         description={invitationResult
@@ -664,7 +692,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           {bulkInvitationResult.failedEmails.length ? <Callout title={bulkInvitationResult.failedEmails.length === 1 ? t("1 invitation failed") : t("{count} invitations failed", { count: bulkInvitationResult.failedEmails.length })} tone="danger">
             {bulkInvitationResult.failedEmails.length > 5 ? t("{emails} and {count} more", { emails: bulkInvitationResult.failedEmails.slice(0, 5).join(", "), count: bulkInvitationResult.failedEmails.length - 5 }) : bulkInvitationResult.failedEmails.join(", ")}
           </Callout> : null}
-        </div> : <Form className={styles.form} data-wd-density="compact" id="invite-member-form" noValidate onSubmit={createInvitation}>
+        </div> : <Form className={styles.form} id="invite-member-form" noValidate onSubmit={createInvitation}>
           <ValidationSummary errors={inviteErrors} />
           {inviteFailure ? <Callout title={t("Could not create invitation")} tone="danger">{inviteFailure}</Callout> : null}
           <TextInput isRequired label={t("Full name")} onChange={setInviteName} placeholder={t("e.g. Maya Thomas")} value={inviteName} />
@@ -682,7 +710,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         onOpenChange={(open) => { if (!open && !isSavingMember) { setMemberReviewOpen(false); setEditingMember(null); } }}
         title={t("Edit member access")}
       >
-        {editingMember ? <Form className={styles.form} data-wd-density="compact" id="edit-member-form" noValidate onSubmit={reviewMember}>
+        {editingMember ? <Form className={styles.form} id="edit-member-form" noValidate onSubmit={reviewMember}>
           {editFailure ? <Callout title={t("Could not save member")} tone="danger">{editFailure}</Callout> : null}
           <div className={styles.memberPreview}><Avatar name={editingMember.displayName} preset={editingMember.avatarPreset ?? "auto"} roles={[...editingMember.roles, ...(editingMember.inheritedRoles ?? [])]} seed={editingMember.userId} size="lg" src={editingMember.photoUrl} /><span><strong>{editingMember.displayName}</strong><small>{editingMember.email}</small></span></div>
           <RoleChoices onChange={setEditRoles} roles={assignableRoles} selected={editRoles} />
@@ -707,7 +735,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             <div><dt>{t("Team access")}</dt><dd><strong>{editingMember.teams?.map((team) => team.name).join(", ") || t("No assigned teams")}</strong></dd></div>
           </dl>
           {editStatus === "suspended" && editingMember.status !== "suspended" ? <Callout title={t("This releases a licensed seat")} tone="warning">{t("The member will lose workspace access immediately. Their records remain available, and reactivation will require a free seat.")}</Callout> : null}
-          {editingMember.inheritedRoles?.length ? <p className={styles.reviewNote}>{t("Team-inherited roles remain managed from Teams.")}</p> : null}
+          {editingMember.inheritedRoles?.length ? <p className={styles.reviewNote}>{t("Team-inherited roles remain managed from Teams.")} <Link href="/workspace/teams">{t("Open Teams")}</Link></p> : null}
         </div> : null}
         confirmLabel={t("Apply access changes")}
         confirmVariant="primary"

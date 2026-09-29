@@ -1,0 +1,10 @@
+/* Settings → Delivery: one row per channel, and the owner's Home banner. */
+.channel { display: grid; justify-items: end; gap: var(--wd-space-1); min-inline-size: 0; text-align: end; }
+.facts { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.failure { color: var(--wd-color-danger); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+
+.banner { margin-block-end: var(--wd-space-4); }
+
+@media (max-width: 640px) {
+  .channel { justify-items: start; text-align: start; }
+}

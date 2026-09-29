@@ -6,6 +6,8 @@ import { useSession } from '../../core/session';
 export type InboxNotification = {
   id: string; eventType: string; status: string; subject: string | null; body: string;
   deepLink: string | null; deliveredAt: string | null; readAt: string | null; createdAt: string; version: number;
+  /** The same notice on the web, for the ones the app has no screen for. */
+  webUrl?: string | null;
 };
 
 export const inboxKey = (ws: string) => ['inbox', ws] as const;

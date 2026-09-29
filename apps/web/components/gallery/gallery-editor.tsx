@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Copy, ExternalLink, ImagePlus, Plus, Trash2 } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, EmptyState, IconButton, InlineNotice, PageHeader, PillTabs, SearchInput, SelectField, Skeleton, Switch, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { Badge, Button, Checkbox, ControlledModalDialog, EmptyState, IconButton, InlineNotice, PageHeader, PillTabs, SearchInput, SelectField, Skeleton, Switch, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { DEFAULT_DISPLAY, type GalleryEditorData, type GalleryItem, type GalleryKind, type GallerySectionKey, type GallerySettings } from "@/lib/gallery/types";
 import { catalogImageUrl } from "@/lib/quotation/client";
@@ -312,11 +312,12 @@ function CatalogImport({ workspaceId, onClose, onDone, onError }: { workspaceId:
     <div className={styles.form}>
       <SearchInput label={t("Search the catalog")} value={search} onChange={setSearch} />
       {rows === null ? <Skeleton lines={4} shape="rows" /> : rows.length ? <ul className={styles.catalog}>{rows.map((row) => <li key={row.id}>
-        <label>
-          <input type="checkbox" checked={picked.includes(row.id)} onChange={(event) => setPicked((current) => event.target.checked ? [...current, row.id] : current.filter((id) => id !== row.id))} />
-          <span className={styles.thumb}>{row.imageId ? <img src={catalogImageUrl(workspaceId, row.imageId)} alt="" /> : null}</span>
-          <span><strong>{row.name}</strong><small>{[row.category, row.unit].filter(Boolean).join(" · ")}</small></span>
-        </label>
+        <Checkbox isSelected={picked.includes(row.id)} onChange={(selected) => setPicked((current) => selected ? [...current, row.id] : current.filter((id) => id !== row.id))}>
+          <span className={styles.pick}>
+            <span className={styles.thumb}>{row.imageId ? <img src={catalogImageUrl(workspaceId, row.imageId)} alt="" /> : null}</span>
+            <span><strong>{row.name}</strong><small>{[row.category, row.unit].filter(Boolean).join(" · ")}</small></span>
+          </span>
+        </Checkbox>
       </li>)}</ul> : <p className={styles.muted}>{t("No catalog items left to add.")}</p>}
     </div>
   </ControlledModalDialog>;

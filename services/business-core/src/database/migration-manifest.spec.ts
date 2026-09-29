@@ -40,6 +40,13 @@ describe("database migration manifest", () => {
     expect(indexes).toEqual([...indexes].sort((left, right) => left - right));
   });
 
+  it("keeps journal timestamps increasing, so the migrator never skips a newer entry", () => {
+    // drizzle applies an entry only when its `when` is later than the last one applied to the database.
+    const stamps = (journal.entries as Array<{ tag: string; when: number }>).map(({ tag, when }) => ({ tag, when }));
+    const backwards = stamps.filter((entry, index) => index > 0 && entry.when <= stamps[index - 1].when).map(({ tag }) => tag);
+    expect(backwards).toEqual([]);
+  });
+
   it("never switches tenant isolation off in a migration", () => {
     const offenders = migrationFiles.filter((tag) =>
       /DISABLE\s+ROW\s+LEVEL\s+SECURITY|NO\s+FORCE\s+ROW\s+LEVEL\s+SECURITY/i.test(

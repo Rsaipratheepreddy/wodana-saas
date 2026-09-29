@@ -5,25 +5,17 @@ import { createClient } from "redis";
 import { Public } from "../auth/public.decorator";
 import { DatabaseService } from "../database/database.service";
 import { LivenessResponseDto, ReadinessResponseDto } from "../common/system-response.dto";
+import { readWorkerBeat, WORKER_HEARTBEAT_KEY, WORKER_STARTUP_GRACE_SECONDS, type WorkerBeat } from "./worker-heartbeat";
 
-/** Written by the Python worker every loop (wodana_intelligence/worker/runtime.py, CrmWorker.heartbeat_key). */
-export const WORKER_HEARTBEAT_KEY = "wodana:worker:heartbeat";
-/** The worker loops every few seconds; two minutes without a beat means it has stopped. */
-export const WORKER_STALE_SECONDS = 120;
-
-/** "ok", "stale (Ns)" or "not-reporting" (no beat within its one-day expiry: never started, or long gone). */
-export function workerHeartbeat(raw: string | null, now = Date.now()) {
-  if (!raw) return "not-reporting";
-  let at = Number.NaN;
-  try { at = Date.parse(String((JSON.parse(raw) as { at?: unknown }).at)); } catch { /* unreadable counts as stale */ }
-  const age = Number.isFinite(at) ? Math.max(0, Math.round((now - at) / 1000)) : Number.POSITIVE_INFINITY;
-  return age <= WORKER_STALE_SECONDS ? "ok" : `stale (${Number.isFinite(age) ? `${age}s` : "unreadable"})`;
-}
+export { WORKER_HEARTBEAT_KEY, WORKER_STALE_SECONDS, workerHeartbeat } from "./worker-heartbeat";
 
 @ApiTags("health")
 @Controller("health")
 @Public()
 export class HealthController {
+  /** Seconds since this process started (replaced in tests). */
+  uptimeSeconds: () => number = () => process.uptime();
+
   constructor(
     private readonly database: DatabaseService,
     private readonly config: ConfigService,
@@ -76,6 +68,7 @@ export class HealthController {
     }
 
     const redisUrl = this.config.get<string>("REDIS_URL");
+    let beat: WorkerBeat | null = null;
     if (redisUrl) {
       const redis = createClient({ url: redisUrl, socket: { connectTimeout: 2_000, reconnectStrategy: false } });
       redis.on("error", () => undefined);
@@ -83,7 +76,7 @@ export class HealthController {
         await redis.connect();
         await redis.ping();
         checks.redis = "ok";
-        checks.worker = workerHeartbeat(await redis.get(WORKER_HEARTBEAT_KEY).catch(() => null));
+        beat = readWorkerBeat(await redis.get(WORKER_HEARTBEAT_KEY).catch(() => null));
         await redis.quit();
       } catch {
         checks.redis = "unavailable";
@@ -94,11 +87,23 @@ export class HealthController {
       checks.redis = "not-configured";
       if (this.config.get<string>("NODE_ENV") === "production") criticalFailures.push("redis");
     }
-    // The Python worker delivers email, WhatsApp and push and runs every timer. It never makes the API
-    // unready, but a stale or silent worker is reported as degraded (in production, silence counts too).
+    // The Python worker delivers email, WhatsApp and push and runs every timer, SLA and reminder. In
+    // production nothing reaches anyone without it, so a stale or silent worker makes the service not
+    // ready (a deploy that leaves no live worker fails its readiness step). A freshly started core waits
+    // out a short grace first, so the worker that starts after it can report. Elsewhere it's degraded only.
     const production = this.config.get<string>("NODE_ENV") === "production";
-    checks.worker ??= "not-configured";
-    if (checks.worker.startsWith("stale") || (production && checks.worker === "not-reporting")) degraded.push("worker");
+    checks.worker = beat?.label ?? "not-configured";
+    if (beat?.release) checks.workerRelease = beat.release;
+    if (beat?.adapter) checks.workerDelivery = beat.adapter;
+    const workerSilent = beat?.status !== "ok";
+    if (production && workerSilent) {
+      if (this.uptimeSeconds() < WORKER_STARTUP_GRACE_SECONDS) degraded.push("worker");
+      else criticalFailures.push("worker");
+    } else if (workerSilent && checks.worker.startsWith("stale")) {
+      degraded.push("worker");
+    }
+    // A production worker that doesn't deliver live sends nothing (the worker refuses to start that way).
+    if (production && beat?.status === "ok" && beat.adapter && beat.adapter !== "live") criticalFailures.push("workerDelivery");
 
     const intelligenceUrl = this.config.get<string>("INTELLIGENCE_API_URL");
     if (intelligenceUrl) {

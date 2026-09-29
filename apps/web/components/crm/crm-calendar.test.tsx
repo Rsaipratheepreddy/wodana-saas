@@ -18,6 +18,8 @@ beforeEach(() => {
     if (method === "POST") return { id: "created-meeting" };
     if (path.startsWith("parties")) return { data: [{ id: partyId, displayName: "Calendar customer" }] };
     if (path === "members") return [{ id: managerId, userId, displayName: "Iglo Manager", email: "manager@example.com", status: "active" }];
+    // Sales owners (the people who can own a meeting) come from their own list.
+    if (path === "sales-owners") return { items: [{ id: managerId, displayName: "Iglo Manager", email: "manager@example.com", status: "active" }], currentMembershipId: managerId };
     return { data: [
       { id: "pending", title: "Design consultation", dueAt: new Date().toISOString(), ownerMembershipId: managerId, status: "pending" },
       { id: "cancelled", title: "Cancelled consultation", dueAt: new Date().toISOString(), status: "cancelled" },

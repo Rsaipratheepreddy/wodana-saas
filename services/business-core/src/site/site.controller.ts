@@ -81,6 +81,17 @@ export class SiteController {
   }
 }
 
+/** The phone's Today: the sites I'm on that run today, with my report for the day. */
+@ApiTags("site")
+@ApiBearerAuth()
+@Controller("workspaces/:workspaceId/site")
+export class SitesTodayController {
+  constructor(private readonly site: SiteService) {}
+
+  @Get("today")
+  today(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.site.sitesToday(actor, workspaceId); }
+}
+
 /** Settings → Projects → Warranty: months of warranty for each way of delivering a package. */
 @ApiTags("site")
 @ApiBearerAuth()

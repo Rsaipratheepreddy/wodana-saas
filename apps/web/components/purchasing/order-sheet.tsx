@@ -1,16 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { parseDate } from "@internationalized/date";
 import { Ban, Plus, Replace, X } from "lucide-react";
 import {
-  ActivityFeed, Button, ControlledModalDialog, DateField, ErrorState, IconButton, InlineNotice, InspectorSheet, SelectField, Skeleton, TextAreaField, TextInput, type ActivityItem,
+  Badge, Button, DateField, ErrorState, IconButton, InlineNotice, InspectorSheet, SelectField, Skeleton, StageTracker, Tabs, TextAreaField, TextInput, type WorkflowStage,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { addExact, currencyDecimals, orderTotals, priceLine, subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
-import type { DeliverTo, OrderLine, OrderState, PaymentTerms, PurchasingSettings } from "@/lib/purchasing/types";
+import type { DeliverTo, OrderLine, OrderState, PaymentTerms, PurchasingSettings, Shipment } from "@/lib/purchasing/types";
+import { Cell, NextStep, ProjectLinks, Section, operationsStyles as ops, projectHref } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
+import {
+  CancelLineDialog, ChaseDialog, ConfirmDialog, OfferAlternateDialog, ReasonDialog, RefuseAlternateDialog, SendDialog, ShipmentDialog,
+} from "./order-dialogs";
+import { OrderHistory } from "./order-history";
 import { OrderStatusLabel, quantityText, useOrderLabels } from "./order-labels";
 import { ReceiptResult } from "./receipt-sheet";
 import { ReceiveDialog } from "./receive-dialog";
@@ -18,18 +24,21 @@ import { percentText, useSupplierLabels } from "./supplier-labels";
 import styles from "./purchasing.module.css";
 
 type LineDraft = Pick<OrderLine, "id" | "source" | "materialItemId" | "boqLineId" | "projectId" | "projectReference" | "description" | "specification" | "unit"> & {
-  quantity: string; unitPrice: string; discountPercent: string; taxRate: string;
+  quantity: string; unitPrice: string; discountPercent: string; taxRate: string; stockItemId?: string | null;
 };
 type Form = {
   expectedDate: string | null; deliverTo: DeliverTo; deliveryAddress: string; paymentTerms: PaymentTerms; advancePercent: string; creditDays: string; termsNote: string; retentionPercent: string;
   notes: string; lines: LineDraft[];
 };
-type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | "continue" | "funds" | null;
+/** What the list asked the order to do when it opened it. */
+export type OrderIntent = "send" | "confirm" | "chase" | "receive" | "close";
+type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | "continue" | "funds" | { shipment: Shipment | null } | null;
 /** Still to come on a line: ordered less cancelled, credited, accepted and waiting for inspection. */
 const stillToCome = (line: OrderLine) => subtractExact(line.quantity, addExact(line.cancelled, line.credited, line.accepted, line.pending));
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const TERMS: PaymentTerms[] = ["upfront", "split", "on_delivery", "credit", "statement"];
 const DELIVERY: DeliverTo[] = ["site", "factory", "warehouse", "pickup", "other"];
+const FOLLOWING = ["approved", "sent", "confirmed", "partly_received"];
 
 const formOf = (state: OrderState): Form => ({
   expectedDate: state.order.expectedDate, deliverTo: state.order.deliverTo, deliveryAddress: state.order.deliveryAddress, paymentTerms: state.order.paymentTerms,
@@ -37,16 +46,16 @@ const formOf = (state: OrderState): Form => ({
   retentionPercent: Number(state.order.retentionPercent) ? percentText(state.order.retentionPercent) : "", notes: state.order.notes,
   lines: state.lines.map((line) => ({ id: line.id, source: line.source, materialItemId: line.materialItemId, boqLineId: line.boqLineId, projectId: line.projectId, projectReference: line.projectReference,
     description: line.description, specification: line.specification, unit: line.unit, quantity: quantityText(line.quantity), unitPrice: quantityText(line.unitPrice),
-    discountPercent: quantityText(line.discountPercent), taxRate: quantityText(line.taxRate) })),
+    discountPercent: quantityText(line.discountPercent), taxRate: quantityText(line.taxRate), stockItemId: line.stockItemId ?? null })),
 });
 
 /**
- * One purchase order: its lines and terms (editable while it's a draft), and the step it's at — approval
- * by someone other than the buyer, sending to the supplier, the supplier's confirmation, deliveries
- * against it and closing it — with its history.
+ * One purchase order as a record: where it is (raised, approved, sent, confirmed, received, closed), its one
+ * next step, and its parts — the lines and terms (editable while it's a draft), deliveries and shipments, the
+ * supplier's invoices and the history. The step it's at is the primary action.
  */
-export function OrderSheet({ api, orderId, settings, onChanged, onClose, onReceipt, onOpenOrder }: {
-  api: PurchasingApi; orderId: string; settings: PurchasingSettings | null; onChanged: () => void; onClose: () => void; onReceipt: (receiptId: string) => void;
+export function OrderSheet({ api, orderId, intent = null, settings, onChanged, onClose, onReceipt, onOpenOrder }: {
+  api: PurchasingApi; orderId: string; intent?: OrderIntent | null; settings: PurchasingSettings | null; onChanged: () => void; onClose: () => void; onReceipt: (receiptId: string) => void;
   onOpenOrder?: (orderId: string) => void;
 }) {
   const t = useT();
@@ -58,16 +67,28 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<{ tone: "error" | "info" | "success"; text: string } | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [tab, setTab] = useState("order");
   const [overReason, setOverReason] = useState("");
+  const [holdReason, setHoldReason] = useState("");
   const [cancelling, setCancelling] = useState<OrderLine | null>(null);
   const [offering, setOffering] = useState<OrderLine | null>(null);
   const [refusing, setRefusing] = useState<OrderLine | null>(null);
   const [busy, setBusy] = useState(false);
+  const [asked, setAsked] = useState<OrderIntent | null>(intent);
   const accept = useCallback((next: OrderState) => { setState(next); setForm(formOf(next)); }, []);
   const load = useCallback(async () => {
     try { accept(await api.order(orderId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The order didn't load.")); }
   }, [api, orderId, accept, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  // Opened from a list's next step: that step's dialog opens once the order is here, when it's still the step.
+  useEffect(() => {
+    if (!state || !asked) return;
+    const status = state.order.status;
+    const fits = asked === "send" ? status === "approved" && state.canBuy : asked === "confirm" || asked === "chase" ? ["sent", "confirmed", "partly_received"].includes(status) && state.canBuy
+      : asked === "receive" ? ["sent", "confirmed", "partly_received"].includes(status) && state.canReceive : status === "received" && state.canBuy;
+    if (fits) queueMicrotask(() => setDialog(asked));
+    queueMicrotask(() => setAsked(null));
+  }, [state, asked]);
 
   const run = async (action: string, input: Record<string, unknown> = {}, version = state?.order.version) => {
     if (!state || version === undefined) return null;
@@ -91,13 +112,16 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
   const priced = useMemo(() => (form?.lines ?? []).map((line) => priceLine(line, decimals)), [form, decimals]);
   const totals = orderTotals(priced, decimals);
   const dirty = Boolean(state && form && JSON.stringify(form) !== JSON.stringify(formOf(state)));
+  const held = state?.holdProjects ?? [];
+  const holdInput = held.length ? { holdReason: holdReason.trim() } : {};
   const saveInput = () => form ? { expectedDate: form.expectedDate, deliverTo: form.deliverTo, deliveryAddress: form.deliveryAddress, paymentTerms: form.paymentTerms,
     advancePercent: form.advancePercent || null, creditDays: form.creditDays ? Number(form.creditDays) : null, termsNote: form.termsNote, retentionPercent: form.retentionPercent, notes: form.notes,
     lines: form.lines.map((line) => ({ id: line.id, source: line.source, materialItemId: line.materialItemId, boqLineId: line.boqLineId, projectId: line.projectId, description: line.description,
-      specification: line.specification, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, discountPercent: line.discountPercent, taxRate: line.taxRate })) } : {};
+      specification: line.specification, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, discountPercent: line.discountPercent, taxRate: line.taxRate,
+      ...(line.stockItemId ? { stockItemId: line.stockItemId } : {}) })) } : {};
   const submit = async () => {
     const saved = dirty ? await run("save", saveInput()) : state;
-    if (saved) await run("submit", overReason.trim() ? { overReason: overReason.trim() } : {}, saved.order.version);
+    if (saved) await run("submit", { ...(overReason.trim() ? { overReason: overReason.trim() } : {}), ...holdInput }, saved.order.version);
   };
   const setLine = (id: string, patch: Partial<LineDraft>) => form && setForm({ ...form, lines: form.lines.map((line) => (line.id === id ? { ...line, ...patch } : line)) });
   const money = (value: string) => (order ? format.money(value, order.currency) : value);
@@ -105,7 +129,10 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
   const short = (state?.lines ?? []).some((line) => Number(line.accepted) + Number(line.credited) < Number(line.quantity));
   const over = order && ["draft", "pending_approval"].includes(order.status) ? state?.overOrdered ?? [] : [];
   const following = Boolean(order && ["sent", "confirmed", "partly_received"].includes(order.status) && state?.canBuy);
-  const late = (state?.lines ?? []).some((line) => stillToCome(line) !== "0" && line.due && line.due < format.today());
+  const lateLines = (state?.lines ?? []).filter((line) => stillToCome(line) !== "0" && line.due && line.due < format.today());
+  const late = lateLines.length > 0;
+  const toCome = (state?.lines ?? []).filter((line) => stillToCome(line) !== "0");
+  const holdBlocks = held.length > 0 && !holdReason.trim();
   /** What the supplier said about a line and what became of it, once it's out of draft. */
   const lineFacts = (line: OrderLine) => [
     line.promisedDate ? t("Promised {date}", { date: format.day(line.promisedDate) }) : "",
@@ -131,50 +158,219 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
       Number(line.credited) ? t("{quantity} credited", { quantity: quantityText(line.credited) }) : ""].filter(Boolean).join(" · ");
   };
 
+  // Where the order is: raised, approved, sent, confirmed, received, closed.
+  const stages = (): WorkflowStage[] => {
+    const steps = [t("Raised"), t("Approved"), t("Sent"), t("Confirmed"), t("Received"), t("Closed")];
+    const at = !order ? 0 : { draft: 0, pending_approval: 1, approved: 2, sent: 3, confirmed: 4, partly_received: 4, received: 5, closed: 6, cancelled: 0 }[order.status];
+    return steps.map((label, index) => ({ id: String(index), label, state: index < at ? "complete" : index === at ? "current" : "upcoming" }));
+  };
+  // The one next step, in words: what happens next and whose it is.
+  const nextStep = (): { title: string; detail?: string | null; tone?: "danger" | "warning" } | null => {
+    if (!order || !state) return null;
+    const first = toCome.map((line) => line.due).filter((value): value is string => Boolean(value)).sort()[0] ?? null;
+    const shipment = (state.shipments ?? []).find((item) => !["arrived", "cancelled"].includes(item.status));
+    switch (order.status) {
+      case "draft": return state.canBuy ? { title: settings?.approvalThreshold === null ? t("Place the order") : t("Send it for approval"), detail: t("Check the lines and terms first.") }
+        : { title: t("A draft by {name}", { name: order.createdByName }) };
+      case "pending_approval": return state.canApproveThis ? { title: t("Approve it or send it back"), detail: t("Raised by {name}", { name: order.createdByName }), tone: "warning" }
+        : { title: t("Waiting for someone who approves orders."), tone: "warning" };
+      case "approved": return state.canBuy ? { title: t("Send it to {supplier}", { supplier: order.supplierName }) } : { title: t("Approved; waiting to be sent") };
+      case "sent": return { title: t("Waiting for {supplier} to confirm", { supplier: order.supplierName }), detail: order.sentAt ? t("Sent {date}", { date: format.when(order.sentAt) }) : null,
+        tone: late ? "danger" : undefined };
+      case "confirmed": case "partly_received": {
+        const until = format.until(first);
+        const count = toCome.length === 1 ? t("1 line to come") : t("{count} lines to come", { count: toCome.length });
+        if (late) return { title: t("{count} late: chase {supplier}", { count, supplier: order.supplierName }), detail: until?.text ?? null, tone: "danger" };
+        if (shipment) return { title: t("{status} with {carrier}", { status: labels.shipment[shipment.status], carrier: shipment.carrier || t("the carrier") }),
+          detail: shipment.eta ? t("Expected {date}", { date: format.day(shipment.eta) }) : null, tone: shipment.status === "delayed" ? "danger" : undefined };
+        return { title: count, detail: first ? t("Due {date} · {until}", { date: format.day(first), until: until?.text ?? "" }) : null };
+      }
+      case "received": return state.canBuy ? { title: t("Everything arrived: close it"), detail: null } : { title: t("Everything arrived") };
+      default: return null;
+    }
+  };
+
   const footer = !order || !state ? null
     : order.status === "draft" && state.canBuy ? <div className="wd-dialog-actions">
       <Button variant="quiet" onPress={() => setDialog("cancel")}>{t("Cancel order")}</Button><span className={styles.spacer} />
       <Button isDisabled={!dirty} isLoading={busy} onPress={() => void run("save", saveInput())}>{t("Save")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={over.length > 0 && !overReason.trim() && !order.overReason} onPress={() => void submit()}>
+      <Button variant="primary" isLoading={busy} isDisabled={(over.length > 0 && !overReason.trim() && !order.overReason) || holdBlocks} onPress={() => void submit()}>
         {settings?.approvalThreshold === null ? t("Place order") : t("Send for approval")}</Button></div>
     : order.status === "pending_approval" && state.canApproveThis ? <div className="wd-dialog-actions"><span className={styles.spacer} />
       <Button onPress={() => setDialog("return")}>{t("Send back")}</Button>
-      <Button variant="primary" isLoading={busy} onPress={() => void run("approve")}>{t("Approve")}</Button></div>
+      <Button variant="primary" isLoading={busy} isDisabled={holdBlocks} onPress={() => void run("approve", holdInput)}>{t("Approve")}</Button></div>
     // While it waits for someone else to approve, the buyer can still call it off (no approver has to act first).
     : order.status === "pending_approval" && state.canBuy ? <div className="wd-dialog-actions">
       <Button variant="quiet" onPress={() => setDialog("cancel")}>{t("Cancel order")}</Button><span className={styles.spacer} /></div>
     : ["approved", "sent", "confirmed"].includes(order.status) && (state.canBuy || state.canReceive) ? <div className="wd-dialog-actions">
       {state.canBuy ? <><Button variant="quiet" onPress={() => setDialog("cancel")}>{t("Cancel order")}</Button>
         <Button variant="quiet" onPress={() => setDialog("change")}>{t("Change")}</Button></> : null}<span className={styles.spacer} />
-      {!state.canBuy ? null : order.status === "approved" ? <><Button isLoading={busy} onPress={() => void run("send", { to: null })}>{t("Mark as sent")}</Button>
-        <Button variant="primary" onPress={() => setDialog("send")}>{t("Send to supplier")}</Button></>
+      {!state.canBuy ? null : order.status === "approved" ? <><Button isLoading={busy} isDisabled={holdBlocks} onPress={() => void run("send", { to: null, ...holdInput })}>{t("Mark as sent")}</Button>
+        <Button variant="primary" isDisabled={holdBlocks} onPress={() => setDialog("send")}>{t("Send to supplier")}</Button></>
         : <>{late ? <Button onPress={() => setDialog("chase")}>{t("Chase")}</Button> : null}
           <Button onPress={() => setDialog("confirm")}>{order.status === "sent" ? t("Record confirmation") : t("Update confirmation")}</Button></>}
       {order.status !== "approved" && state.canReceive ? <Button variant="primary" onPress={() => setDialog("receive")}>{t("Receive")}</Button> : null}
     </div>
     : ["partly_received", "received"].includes(order.status) && (state.canBuy || state.canReceive) ? <div className="wd-dialog-actions">
-      {state.canBuy ? <Button variant="quiet" onPress={() => setDialog("close")}>{t("Close order")}</Button> : null}<span className={styles.spacer} />
+      {state.canBuy ? <Button variant={order.status === "received" ? "primary" : "quiet"} onPress={() => setDialog("close")}>{t("Close order")}</Button> : null}<span className={styles.spacer} />
       {following && late ? <Button onPress={() => setDialog("chase")}>{t("Chase")}</Button> : null}
       {following ? <Button onPress={() => setDialog("confirm")}>{t("Update confirmation")}</Button> : null}
       {order.status === "partly_received" && state.canReceive ? <Button variant="primary" onPress={() => setDialog("receive")}>{t("Receive")}</Button> : null}
     </div> : null;
 
+  const step = nextStep();
+  const shipments = state?.shipments ?? [];
+  const canTrack = Boolean(order && state?.canBuy && FOLLOWING.includes(order.status));
+  const deliveriesCount = (state?.receipts.length ?? 0) + (state?.returns.length ?? 0) + shipments.length;
+  const linesPanel = !state || !order || !form ? null : <div className={styles.sheet}>
+    {draft ? <section className={styles.part} aria-label={t("Delivery and terms")}>
+      <div className={styles.pair}>
+        <DateField label={t("Needed by")} value={form.expectedDate ? parseDate(form.expectedDate) : null} onChange={(value) => setForm({ ...form, expectedDate: value ? value.toString() : null })} />
+        <SelectField label={t("Deliver to")} selectedKey={form.deliverTo} onSelectionChange={(key) => setForm({ ...form, deliverTo: key as DeliverTo })} items={DELIVERY.map((id) => ({ id, label: labels.deliverTo[id] }))} />
+      </div>
+      <TextInput label={t("Delivery address")} value={form.deliveryAddress} onChange={(deliveryAddress) => setForm({ ...form, deliveryAddress })} />
+      <div className={styles.pair}>
+        <SelectField label={t("Payment terms")} selectedKey={form.paymentTerms} onSelectionChange={(key) => setForm({ ...form, paymentTerms: key as PaymentTerms })}
+          items={TERMS.map((id) => ({ id, label: supplierLabels.terms[id] }))} />
+        {form.paymentTerms === "split" ? <TextInput label={t("Advance")} inputMode="decimal" suffix="%" value={form.advancePercent} onChange={(value) => setForm({ ...form, advancePercent: numeric(value) })} />
+          : form.paymentTerms === "credit" ? <TextInput label={t("Days")} inputMode="numeric" value={form.creditDays} onChange={(value) => setForm({ ...form, creditDays: value.replace(/\D/g, "").slice(0, 3) })} /> : <span />}
+      </div>
+      <div className={styles.pair}>
+        <TextInput label={t("Retention")} description={t("Held from each invoice until handover")} inputMode="decimal" suffix="%" value={form.retentionPercent}
+          onChange={(value) => setForm({ ...form, retentionPercent: numeric(value) })} />
+        <span />
+      </div>
+    </section> : <dl className={styles.facts}>
+      <div><dt>{t("Supplier")}</dt><dd>{[order.supplierName, state.supplier?.contactName, state.supplier?.phone].filter(Boolean).join(" · ")}</dd></div>
+      <div><dt>{t("Needed by")}</dt><dd>{format.day(order.expectedDate) || "—"}</dd></div>
+      <div><dt>{t("Deliver to")}</dt><dd>{[labels.deliverTo[order.deliverTo], order.deliveryAddress].filter(Boolean).join(" · ")}</dd></div>
+      <div><dt>{t("Payment")}</dt><dd>{supplierLabels.termsText(order)}</dd></div>
+      {order.promisedDate || order.supplierReference ? <div><dt>{t("Promised")}</dt><dd>{[format.day(order.promisedDate), order.supplierReference].filter(Boolean).join(" · ")}</dd></div> : null}
+    </dl>}
+
+    <section className={styles.part} aria-label={t("Lines")}>
+      <div className={styles.orderLines} role="table" aria-label={t("Lines")}>
+        <div role="row" className={styles.orderLineHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Quantity")}</span><span role="columnheader">{t("Price")}</span>
+          <span role="columnheader">{t("Discount %")}</span><span role="columnheader">{t("Tax %")}</span><span role="columnheader">{t("Total")}</span><span /></div>
+        {form.lines.map((line, index) => <div role="row" key={line.id} className={styles.orderLine}>
+          <span role="cell" className={styles.nameCell}>
+            {draft && line.source === "free" && !line.stockItemId ? <TextInput aria-label={t("What")} label={null} value={line.description} onChange={(description) => setLine(line.id, { description })} /> : <span>{line.description}</span>}
+            <small>{[line.projectReference, line.specification, line.stockItemId ? t("Restock") : ""].filter(Boolean).join(" · ")}</small>
+            {!draft && arrived(state.lines[index]) ? <small className={styles.arrived}>{arrived(state.lines[index])}</small> : null}
+            {!draft && state.lines[index] && lineFacts(state.lines[index]) ? <small>{lineFacts(state.lines[index])}</small> : null}
+            {state.neededBy[line.id] ? <small className={arrivesLate(line.id) ? styles.lateText : undefined}>{arrivesLate(line.id)
+              ? t("Arrives after it's needed on {date}", { date: format.day(state.neededBy[line.id]) }) : t("Needed {date}", { date: format.day(state.neededBy[line.id]) })}</small> : null}
+            {contractOf(line.id) ? <small className={contractOf(line.id)!.above ? styles.lateText : undefined}>{contractOf(line.id)!.above
+              ? t("Above the {reference} price of {price}", { reference: contractOf(line.id)!.reference, price: money(contractOf(line.id)!.unitPrice) })
+              : t("{reference} price", { reference: contractOf(line.id)!.reference })}</small> : null}
+            {!draft && state.lines[index]?.alternateStatus === "offered" ? <span className={styles.alternate} role="note">
+              <small>{t("The supplier offers {item} at {price}: {note}", { item: [state.lines[index].alternateDescription, state.lines[index].alternateSpecification].filter(Boolean).join(", "),
+                price: money(state.lines[index].alternateUnitPrice ?? state.lines[index].unitPrice), note: state.lines[index].alternateNote })}</small>
+              {canDecide(state.lines[index]) ? <span className={styles.filters}>
+                <Button size="compact" onPress={() => void run("decide_alternate", { lineId: line.id, decision: "accept" })}>{t("Take it")}</Button>
+                <Button size="compact" variant="quiet" onPress={() => setRefusing(state.lines[index])}>{t("Refuse")}</Button>
+              </span> : <small className={styles.muted}>{t("Waiting for someone who approves orders.")}</small>}
+            </span> : null}
+            {draft ? (state.packs ?? []).filter((pack) => pack.lineId === line.id).map((pack) => <small key={pack.lineId} className={styles.packHint}>
+              {pack.packSize && pack.minimum ? t("Sold in packs of {pack}, at least {minimum}", { pack: pack.packSize, minimum: pack.minimum })
+                : pack.packSize ? t("Sold in packs of {pack}", { pack: pack.packSize }) : t("At least {minimum}", { minimum: pack.minimum ?? "" })}
+              {line.quantity !== pack.suggested ? <Button size="compact" variant="quiet" onPress={() => setLine(line.id, { quantity: pack.suggested })}>{t("Order {quantity}", { quantity: pack.suggested })}</Button> : null}
+            </small>) : null}
+          </span>
+          {draft ? <>
+            <span role="cell"><TextInput aria-label={t("Quantity for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.quantity} suffix={line.unit || undefined} onChange={(value) => setLine(line.id, { quantity: numeric(value) })} /></span>
+            <span role="cell"><TextInput aria-label={t("Price for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.unitPrice} onChange={(value) => setLine(line.id, { unitPrice: numeric(value) })} /></span>
+            <span role="cell"><TextInput aria-label={t("Discount for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.discountPercent} onChange={(value) => setLine(line.id, { discountPercent: numeric(value) })} /></span>
+            <span role="cell"><TextInput aria-label={t("Tax for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.taxRate} onChange={(value) => setLine(line.id, { taxRate: numeric(value) })} /></span>
+          </> : <>
+            <span role="cell" className={styles.money}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span>
+            <span role="cell" className={styles.money}>{money(line.unitPrice)}</span>
+            <span role="cell" className={styles.money}>{Number(line.discountPercent) ? `${line.discountPercent}%` : "—"}</span>
+            <span role="cell" className={styles.money}>{Number(line.taxRate) ? `${line.taxRate}%` : "—"}</span>
+          </>}
+          <span role="cell" className={styles.money}>{priced[index] ? money(priced[index]!.total) : "—"}</span>
+          <span role="cell">{draft && form.lines.length > 1 ? <IconButton aria-label={t("Remove {item}", { item: line.description })} size="compact" variant="quiet"
+            onPress={() => setForm({ ...form, lines: form.lines.filter((item) => item.id !== line.id) })}><X aria-hidden="true" size={14} /></IconButton>
+            : following && state.lines[index] && stillToCome(state.lines[index]) !== "0" ? <span className={styles.lineActions}>
+              {state.lines[index].alternateStatus !== "offered" ? <IconButton aria-label={t("The supplier offers an alternative for {item}", { item: line.description })} size="compact" variant="quiet"
+                onPress={() => setOffering(state.lines[index])}><Replace aria-hidden="true" size={14} /></IconButton> : null}
+              <IconButton aria-label={t("Cancel the rest of {item}", { item: line.description })} size="compact" variant="quiet"
+                onPress={() => setCancelling(state.lines[index])}><Ban aria-hidden="true" size={14} /></IconButton></span> : null}</span>
+        </div>)}
+      </div>
+      {draft ? <Button size="compact" variant="quiet" onPress={() => setForm({ ...form, lines: [...form.lines, { id: crypto.randomUUID(), source: "free", materialItemId: null, boqLineId: null, projectId: null,
+        projectReference: null, description: "", specification: "", unit: "", quantity: "1", unitPrice: "", discountPercent: form.lines[0]?.discountPercent ?? "0", taxRate: form.lines[0]?.taxRate ?? "0" }] })}>
+        <Plus aria-hidden="true" size={14} />{t("Add line")}</Button> : null}
+      <dl className={styles.totals}>
+        <div><dt>{t("Net")}</dt><dd>{money(totals.net)}</dd></div>
+        <div><dt>{t("Tax")}</dt><dd>{money(totals.tax)}</dd></div>
+        <div><dt>{t("Total")}</dt><dd><strong>{money(totals.total)}</strong></dd></div>
+      </dl>
+    </section>
+    {draft ? <TextAreaField label={t("Notes for the supplier")} value={form.notes} onChange={(notes) => setForm({ ...form, notes })} /> : order.notes ? <p className={styles.dialogText}>{order.notes}</p> : null}
+  </div>;
+
+  const deliveriesPanel = !state || !order ? null : <div className={styles.sheet}>
+    <Section title={t("Shipments")} action={canTrack ? <Button size="compact" onPress={() => setDialog({ shipment: null })}><Plus aria-hidden="true" size={14} />{t("Add shipment")}</Button> : null}>
+      {shipments.length ? <ul className={ops.list}>{shipments.map((shipment) => <li key={shipment.id}>
+        <Cell title={[shipment.carrier, shipment.trackingRef].filter(Boolean).join(" · ") || t("Shipment")}
+          meta={[shipment.shippedOn ? t("Shipped {date}", { date: format.day(shipment.shippedOn) }) : "", shipment.eta ? t("Expected {date}", { date: format.day(shipment.eta) }) : "", shipment.note]
+            .filter(Boolean).join(" · ") || null} tone={shipment.status === "delayed" ? "danger" : undefined} />
+        <Badge tone={shipment.status === "delayed" ? "danger" : shipment.status === "arrived" ? "success" : shipment.status === "cancelled" ? "neutral" : "info"}>{labels.shipment[shipment.status]}</Badge>
+        {shipment.trackingUrl ? <a className={ops.projectLink} href={shipment.trackingUrl} target="_blank" rel="noreferrer noopener">{t("Track")}</a> : null}
+        {canTrack ? <Button size="compact" variant="quiet" onPress={() => setDialog({ shipment })}>{t("Update")}</Button> : null}
+      </li>)}</ul> : <p className={ops.empty}>{t("No shipment followed yet.")}</p>}
+    </Section>
+    <Section title={t("Deliveries")}>
+      {state.receipts.length ? <ul className={ops.list}>{state.receipts.map((receipt) => <li key={receipt.id}>
+        <Button size="compact" variant="quiet" onPress={() => onReceipt(receipt.id)}>{t("Delivery {number}", { number: receipt.number })}</Button>
+        <span className={styles.muted}>{[format.day(receipt.receivedOn), receipt.locationName].join(" · ")}</span>
+        <ReceiptResult receipt={receipt} />
+      </li>)}</ul> : <p className={ops.empty}>{t("Nothing has arrived yet.")}</p>}
+    </Section>
+    {state.returns.length ? <Section title={t("Returns")}>
+      <ul className={ops.list}>{state.returns.map((back) => <li key={back.id}>
+        <Cell title={t("Return {number}", { number: back.number })} meta={[back.outcome === "credit" ? t("For a credit") : t("To be replaced"), back.note].filter(Boolean).join(" · ")} />
+        <Badge tone={back.status === "open" ? "warning" : back.status === "sent" ? "success" : "neutral"}>{back.status === "open" ? t("Waiting for pickup") : back.status === "sent" ? t("Collected") : t("Cancelled")}</Badge>
+      </li>)}</ul>
+    </Section> : null}
+  </div>;
+
+  const billsPanel = !state?.bills || !order ? null : <div className={styles.sheet}>
+    {state.bills.length ? <ul className={ops.list}>{state.bills.map((bill) => <li key={bill.id}>
+      <Cell title={<Link className={ops.projectLink} href={`/workspace/finance/bills?bill=${bill.id}`}>{bill.number}</Link>}
+        meta={[format.day(bill.invoiceDate), bill.status === "held" && bill.holdReasons ? bill.holdReasons : ""].filter(Boolean).join(" · ")} tone={bill.status === "held" ? "danger" : undefined} />
+      <Badge tone={bill.status === "approved" ? "success" : bill.status === "held" ? "warning" : "neutral"}>{bill.status === "approved" ? t("Matched") : bill.status === "held" ? t("Held")
+        : bill.status === "draft" ? t("Draft") : t("Cancelled")}</Badge>
+      <span className={styles.money}>{format.money(bill.total, bill.currency)}</span>
+    </li>)}</ul> : <p className={ops.empty}>{t("No invoice from the supplier yet.")}</p>}
+  </div>;
+
   return <InspectorSheet isOpen size="lg" title={order ? order.number : t("Order")} onOpenChange={(open) => { if (!open) onClose(); }} footer={footer}>
     {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !order || !form ? <Skeleton lines={8} shape="facts" /> : <div className={styles.sheet} data-tour="order-detail">
-      <div className={styles.approvalRow}>
-        <OrderStatusLabel status={order.status} />
-        <span className={styles.muted}>{[order.supplierName, order.companyName, order.revision ? t("Change {number}", { number: order.revision }) : ""].filter(Boolean).join(" · ")}</span>
+      <div className={ops.recordHead}>
+        <div className={ops.recordFacts}>
+          <OrderStatusLabel status={order.status} />
+          <span>{[order.supplierName, order.companyName, order.revision ? t("Change {number}", { number: order.revision }) : ""].filter(Boolean).join(" · ")}</span>
+          <ProjectLinks projects={order.projects} />
+        </div>
+        {order.status !== "cancelled" ? <StageTracker ariaLabel={t("Where the order is")} stages={stages()} /> : null}
+        {step ? <NextStep title={step.title} detail={step.detail} tone={step.tone} /> : null}
       </div>
       {notice ? <InlineNotice tone={notice.tone} message={notice.text} /> : null}
       {order.status === "cancelled" ? <InlineNotice tone="info" message={t("Cancelled: {reason}", { reason: order.cancelReason ?? "" })} /> : null}
       {order.status === "closed" && order.closeReason ? <InlineNotice tone="info" message={t("Closed: {reason}", { reason: order.closeReason })} /> : null}
-      {order.status === "pending_approval" && !state.canApproveThis ? <InlineNotice tone="info" message={t("Waiting for someone who approves orders.")} /> : null}
       {state.supplierHold && !order.continuedAt ? <div className={styles.alternate} role="note">
         <InlineNotice tone="error" message={t("{supplier} is on hold: {note}. This order waits until someone who approves orders says it continues; or cancel it, or order the rest elsewhere.",
           { supplier: order.supplierName, note: state.supplierHold.note })} />
         {state.canApprove ? <div><Button size="compact" onPress={() => setDialog("continue")}>{t("Continue this order")}</Button></div> : null}
       </div> : null}
       {order.continuedAt ? <InlineNotice tone="info" message={t("Continued while the supplier is on hold, by {name}: {note}", { name: order.continuedByName ?? "", note: order.continuedNote ?? "" })} /> : null}
+      {held.length ? <div className={styles.alternate} role="note">
+        <InlineNotice tone="error" message={t("{projects} is on hold. Say why this order goes ahead anyway.", { projects: held.map((project) => project.reference).join(", ") })} />
+        {state.canBuy || state.canApproveThis ? <TextInput label={t("Why it goes ahead")} isRequired value={holdReason} onChange={setHoldReason} /> : null}
+      </div> : null}
+      {order.holdOverrideAt ? <InlineNotice tone="info" message={t("Goes ahead while its project is on hold, by {name}: {reason}", { name: order.holdOverrideByName ?? "", reason: order.holdOverrideReason ?? "" })} /> : null}
       {state.fundsShort.length ? <div className={styles.alternate} role="note">
         <InlineNotice tone={state.spendingGuard === "strict" && !order.fundsOverrideAt ? "error" : "info"} message={t("Beyond the money in hand: {projects}", { projects: state.fundsShort.map((item) => item.needed
           ? t("{project} has {available}, this order needs {needed}", { project: item.reference, available: format.money(item.available, item.currency), needed: format.money(item.needed, item.currency) })
@@ -187,112 +383,30 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
       {over.length ? <InlineNotice tone="info" message={t("More than the project needs: {lines}", { lines: over.map((line) => `${line.description} +${quantityText(line.over)} ${line.unit}`.trim()).join(", ") })} /> : null}
       {over.length && draft ? <TextInput label={t("Why order more than needed")} isRequired value={overReason || order.overReason || ""} onChange={setOverReason} /> : null}
       {order.overReason && !draft ? <InlineNotice tone="info" message={t("Ordered more than needed: {reason}", { reason: order.overReason })} /> : null}
+      {(state.blockers ?? []).length ? <ul className={ops.list} aria-label={t("Work held up")}>{state.blockers!.map((blocker) => <li key={blocker.workItemId}>
+        <Cell title={<Link className={ops.projectLink} href={`${projectHref(blocker.projectId, "plan")}?item=${blocker.workItemId}`}>{`${blocker.projectReference} #${blocker.number} · ${blocker.title}`}</Link>}
+          meta={blocker.blocks === 1 ? t("Holding up 1 task") : t("Holding up {count} tasks", { count: blocker.blocks })} tone="danger" />
+      </li>)}</ul> : null}
 
-      {draft ? <section className={styles.part} aria-label={t("Delivery and terms")}>
-        <div className={styles.pair}>
-          <DateField label={t("Needed by")} value={form.expectedDate ? parseDate(form.expectedDate) : null} onChange={(value) => setForm({ ...form, expectedDate: value ? value.toString() : null })} />
-          <SelectField label={t("Deliver to")} selectedKey={form.deliverTo} onSelectionChange={(key) => setForm({ ...form, deliverTo: key as DeliverTo })} items={DELIVERY.map((id) => ({ id, label: labels.deliverTo[id] }))} />
-        </div>
-        <TextInput label={t("Delivery address")} value={form.deliveryAddress} onChange={(deliveryAddress) => setForm({ ...form, deliveryAddress })} />
-        <div className={styles.pair}>
-          <SelectField label={t("Payment terms")} selectedKey={form.paymentTerms} onSelectionChange={(key) => setForm({ ...form, paymentTerms: key as PaymentTerms })}
-            items={TERMS.map((id) => ({ id, label: supplierLabels.terms[id] }))} />
-          {form.paymentTerms === "split" ? <TextInput label={t("Advance")} inputMode="decimal" suffix="%" value={form.advancePercent} onChange={(value) => setForm({ ...form, advancePercent: numeric(value) })} />
-            : form.paymentTerms === "credit" ? <TextInput label={t("Days")} inputMode="numeric" value={form.creditDays} onChange={(value) => setForm({ ...form, creditDays: value.replace(/\D/g, "").slice(0, 3) })} /> : <span />}
-        </div>
-        <div className={styles.pair}>
-          <TextInput label={t("Retention")} description={t("Held from each invoice until handover")} inputMode="decimal" suffix="%" value={form.retentionPercent}
-            onChange={(value) => setForm({ ...form, retentionPercent: numeric(value) })} />
-          <span />
-        </div>
-      </section> : <dl className={styles.facts}>
-        <div><dt>{t("Supplier")}</dt><dd>{[order.supplierName, state.supplier?.contactName, state.supplier?.phone].filter(Boolean).join(" · ")}</dd></div>
-        <div><dt>{t("Needed by")}</dt><dd>{format.day(order.expectedDate) || "—"}</dd></div>
-        <div><dt>{t("Deliver to")}</dt><dd>{[labels.deliverTo[order.deliverTo], order.deliveryAddress].filter(Boolean).join(" · ")}</dd></div>
-        <div><dt>{t("Payment")}</dt><dd>{supplierLabels.termsText(order)}</dd></div>
-        {order.promisedDate || order.supplierReference ? <div><dt>{t("Promised")}</dt><dd>{[format.day(order.promisedDate), order.supplierReference].filter(Boolean).join(" · ")}</dd></div> : null}
-      </dl>}
-
-      <section className={styles.part} aria-label={t("Lines")}>
-        <div className={styles.orderLines} role="table" aria-label={t("Lines")}>
-          <div role="row" className={styles.orderLineHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Quantity")}</span><span role="columnheader">{t("Price")}</span>
-            <span role="columnheader">{t("Discount %")}</span><span role="columnheader">{t("Tax %")}</span><span role="columnheader">{t("Total")}</span><span /></div>
-          {form.lines.map((line, index) => <div role="row" key={line.id} className={styles.orderLine}>
-            <span role="cell" className={styles.nameCell}>
-              {draft && line.source === "free" ? <TextInput aria-label={t("What")} label={null} value={line.description} onChange={(description) => setLine(line.id, { description })} /> : <span>{line.description}</span>}
-              <small>{[line.projectReference, line.specification].filter(Boolean).join(" · ")}</small>
-              {!draft && arrived(state.lines[index]) ? <small className={styles.arrived}>{arrived(state.lines[index])}</small> : null}
-              {!draft && state.lines[index] && lineFacts(state.lines[index]) ? <small>{lineFacts(state.lines[index])}</small> : null}
-              {state.neededBy[line.id] ? <small className={arrivesLate(line.id) ? styles.lateText : undefined}>{arrivesLate(line.id)
-                ? t("Arrives after it's needed on {date}", { date: format.day(state.neededBy[line.id]) }) : t("Needed {date}", { date: format.day(state.neededBy[line.id]) })}</small> : null}
-              {contractOf(line.id) ? <small className={contractOf(line.id)!.above ? styles.lateText : undefined}>{contractOf(line.id)!.above
-                ? t("Above the {reference} price of {price}", { reference: contractOf(line.id)!.reference, price: money(contractOf(line.id)!.unitPrice) })
-                : t("{reference} price", { reference: contractOf(line.id)!.reference })}</small> : null}
-              {!draft && state.lines[index]?.alternateStatus === "offered" ? <span className={styles.alternate} role="note">
-                <small>{t("The supplier offers {item} at {price}: {note}", { item: [state.lines[index].alternateDescription, state.lines[index].alternateSpecification].filter(Boolean).join(", "),
-                  price: money(state.lines[index].alternateUnitPrice ?? state.lines[index].unitPrice), note: state.lines[index].alternateNote })}</small>
-                {canDecide(state.lines[index]) ? <span className={styles.filters}>
-                  <Button size="compact" onPress={() => void run("decide_alternate", { lineId: line.id, decision: "accept" })}>{t("Take it")}</Button>
-                  <Button size="compact" variant="quiet" onPress={() => setRefusing(state.lines[index])}>{t("Refuse")}</Button>
-                </span> : <small className={styles.muted}>{t("Waiting for someone who approves orders.")}</small>}
-              </span> : null}
-              {draft ? (state.packs ?? []).filter((pack) => pack.lineId === line.id).map((pack) => <small key={pack.lineId} className={styles.packHint}>
-                {pack.packSize && pack.minimum ? t("Sold in packs of {pack}, at least {minimum}", { pack: pack.packSize, minimum: pack.minimum })
-                  : pack.packSize ? t("Sold in packs of {pack}", { pack: pack.packSize }) : t("At least {minimum}", { minimum: pack.minimum ?? "" })}
-                {line.quantity !== pack.suggested ? <Button size="compact" variant="quiet" onPress={() => setLine(line.id, { quantity: pack.suggested })}>{t("Order {quantity}", { quantity: pack.suggested })}</Button> : null}
-              </small>) : null}
-            </span>
-            {draft ? <>
-              <span role="cell"><TextInput aria-label={t("Quantity for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.quantity} suffix={line.unit || undefined} onChange={(value) => setLine(line.id, { quantity: numeric(value) })} /></span>
-              <span role="cell"><TextInput aria-label={t("Price for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.unitPrice} onChange={(value) => setLine(line.id, { unitPrice: numeric(value) })} /></span>
-              <span role="cell"><TextInput aria-label={t("Discount for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.discountPercent} onChange={(value) => setLine(line.id, { discountPercent: numeric(value) })} /></span>
-              <span role="cell"><TextInput aria-label={t("Tax for {item}", { item: line.description })} label={null} inputMode="decimal" value={line.taxRate} onChange={(value) => setLine(line.id, { taxRate: numeric(value) })} /></span>
-            </> : <>
-              <span role="cell" className={styles.money}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span>
-              <span role="cell" className={styles.money}>{money(line.unitPrice)}</span>
-              <span role="cell" className={styles.money}>{Number(line.discountPercent) ? `${line.discountPercent}%` : "—"}</span>
-              <span role="cell" className={styles.money}>{Number(line.taxRate) ? `${line.taxRate}%` : "—"}</span>
-            </>}
-            <span role="cell" className={styles.money}>{priced[index] ? money(priced[index]!.total) : "—"}</span>
-            <span role="cell">{draft && form.lines.length > 1 ? <IconButton aria-label={t("Remove {item}", { item: line.description })} size="compact" variant="quiet"
-              onPress={() => setForm({ ...form, lines: form.lines.filter((item) => item.id !== line.id) })}><X aria-hidden="true" size={14} /></IconButton>
-              : following && state.lines[index] && stillToCome(state.lines[index]) !== "0" ? <span className={styles.lineActions}>
-                {state.lines[index].alternateStatus !== "offered" ? <IconButton aria-label={t("The supplier offers an alternative for {item}", { item: line.description })} size="compact" variant="quiet"
-                  onPress={() => setOffering(state.lines[index])}><Replace aria-hidden="true" size={14} /></IconButton> : null}
-                <IconButton aria-label={t("Cancel the rest of {item}", { item: line.description })} size="compact" variant="quiet"
-                  onPress={() => setCancelling(state.lines[index])}><Ban aria-hidden="true" size={14} /></IconButton></span> : null}</span>
-          </div>)}
-        </div>
-        {draft ? <Button size="compact" variant="quiet" onPress={() => setForm({ ...form, lines: [...form.lines, { id: crypto.randomUUID(), source: "free", materialItemId: null, boqLineId: null, projectId: null,
-          projectReference: null, description: "", specification: "", unit: "", quantity: "1", unitPrice: "", discountPercent: form.lines[0]?.discountPercent ?? "0", taxRate: form.lines[0]?.taxRate ?? "0" }] })}>
-          <Plus aria-hidden="true" size={14} />{t("Add line")}</Button> : null}
-        <dl className={styles.totals}>
-          <div><dt>{t("Net")}</dt><dd>{money(totals.net)}</dd></div>
-          <div><dt>{t("Tax")}</dt><dd>{money(totals.tax)}</dd></div>
-          <div><dt>{t("Total")}</dt><dd><strong>{money(totals.total)}</strong></dd></div>
-        </dl>
-      </section>
-      {draft ? <TextAreaField label={t("Notes for the supplier")} value={form.notes} onChange={(notes) => setForm({ ...form, notes })} /> : order.notes ? <p className={styles.dialogText}>{order.notes}</p> : null}
-      {state.receipts.length ? <section className={styles.part} aria-label={t("Deliveries")}>
-        <h3 className={styles.subhead}>{t("Deliveries")}</h3>
-        <ul className={styles.receipts}>{state.receipts.map((receipt) => <li key={receipt.id}>
-          <Button size="compact" variant="quiet" onPress={() => onReceipt(receipt.id)}>{t("Delivery {number}", { number: receipt.number })}</Button>
-          <span className={styles.muted}>{[format.day(receipt.receivedOn), receipt.locationName].join(" · ")}</span>
-          <ReceiptResult receipt={receipt} />
-        </li>)}</ul>
-      </section> : null}
-      <History state={state} />
+      <Tabs selectedKey={tab} onSelectionChange={setTab} items={[
+        { id: "order", label: t("Lines"), panel: linesPanel },
+        { id: "deliveries", label: t("Deliveries"), count: deliveriesCount || undefined, panel: deliveriesPanel },
+        ...(billsPanel ? [{ id: "bills", label: t("Invoices"), count: state.bills?.length || undefined, panel: billsPanel }] : []),
+        { id: "history", label: t("History"), panel: <OrderHistory state={state} /> },
+      ]} />
     </div>}
     {dialog === "cancel" || dialog === "change" || dialog === "return" || dialog === "close" ? <ReasonDialog kind={dialog} optional={dialog === "close" && !short} onClose={() => setDialog(null)}
       onSave={async (reason) => { if (await run(dialog === "return" ? "return" : dialog, dialog === "return" ? { note: reason } : { reason })) setDialog(null); }} /> : null}
     {dialog === "receive" ? <ReceiveDialog api={api} orderId={orderId} onClose={() => setDialog(null)} onReceived={(receipt) => { setDialog(null); onChanged(); onReceipt(receipt.receipt.id); }} /> : null}
     {dialog === "send" && state ? <SendDialog email={state.supplier?.email ?? ""} onClose={() => setDialog(null)}
-      onSave={async (to, message) => { if (await run("send", { to, message })) setDialog(null); }} /> : null}
+      onSave={async (to, message) => { if (await run("send", { to, message, ...holdInput })) setDialog(null); }} /> : null}
     {dialog === "confirm" && order && state ? <ConfirmDialog promised={order.promisedDate} reference={order.supplierReference} lines={state.lines} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("confirm", input)) setDialog(null); }} /> : null}
     {dialog === "continue" ? <ReasonDialog kind="continue" onClose={() => setDialog(null)} onSave={async (note) => { if (await run("continue_on_hold", { note })) setDialog(null); }} /> : null}
     {dialog === "funds" ? <ReasonDialog kind="funds" onClose={() => setDialog(null)} onSave={async (reason) => { if (await run("override_funds", { reason })) setDialog(null); }} /> : null}
     {dialog === "chase" ? <ChaseDialog onClose={() => setDialog(null)} onSave={async (note, promisedDate) => { if (await run("chase", { note, promisedDate })) setDialog(null); }} /> : null}
+    {dialog && typeof dialog === "object" ? <ShipmentDialog shipment={dialog.shipment} onClose={() => setDialog(null)}
+      onSave={async (input) => { if (await run("track", input)) { setDialog(null); setTab("deliveries"); } }} /> : null}
     {offering ? <OfferAlternateDialog line={offering} onClose={() => setOffering(null)}
       onSave={async (input) => { if (await run("offer_alternate", { lineId: offering.id, ...input })) setOffering(null); }} /> : null}
     {refusing ? <RefuseAlternateDialog onClose={() => setRefusing(null)}
@@ -303,186 +417,4 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
         if (next) { setCancelling(null); if (next.reordered) onOpenOrder?.(next.reordered); }
       }} /> : null}
   </InspectorSheet>;
-}
-
-function History({ state }: { state: OrderState }) {
-  const t = useT();
-  const format = useProjectFormat();
-  const text = (kind: string, detail: Record<string, unknown>) => {
-    const value = (key: string) => (typeof detail[key] === "string" ? detail[key] as string : "");
-    switch (kind) {
-      case "created": return t("raised it");
-      case "submitted": return t("sent it for approval");
-      case "approved": return detail.policy === "under_threshold" ? t("placed it (no approval needed at this amount)") : t("approved it");
-      case "returned": return t("sent it back: {note}", { note: value("note") });
-      case "sent": return value("to") ? t("sent it to {email}", { email: value("to") }) : t("marked it as sent");
-      case "emailed": return t("emailed it to {email}", { email: value("to") });
-      case "email_not_sent": return t("couldn't email it to {email}", { email: value("to") });
-      case "confirmed": return value("promisedDate") ? t("recorded the supplier's confirmation, promised for {date}", { date: format.day(value("promisedDate")) }) : t("recorded the supplier's confirmation");
-      case "changing": return t("reopened it to change: {reason}", { reason: value("reason") });
-      case "cancelled": return t("cancelled it: {reason}", { reason: value("reason") });
-      case "chased": return value("promisedDate") ? t("chased it: {note} (new date {date})", { note: value("note"), date: format.day(value("promisedDate")) }) : t("chased it: {note}", { note: value("note") });
-      case "alternate_offered": return t("recorded the supplier's alternative: {item} instead of {original}", { item: value("alternative"), original: value("item") });
-      case "alternate_accepted": return t("took the supplier's alternative: {item}", { item: value("alternative") });
-      case "alternate_rejected": return t("refused the supplier's alternative: {note}", { note: value("note") });
-      case "continued_on_hold": return t("let it continue while the supplier is on hold: {note}", { note: value("note") });
-      case "line_cancelled": return t("cancelled {quantity} of {item}: {reason}", { quantity: `${quantityText(value("quantity"))} ${value("unit")}`.trim(), item: value("description"), reason: value("reason") });
-      case "received": return t("received delivery {number} at {place}", { number: String(detail.receipt ?? ""), place: value("location") });
-      case "inspected": return t("inspected delivery {number}", { number: String(detail.receipt ?? "") });
-      case "closed": return value("reason") ? t("closed it: {reason}", { reason: value("reason") }) : t("closed it");
-      case "receipt_reversed": return t("reversed delivery {number}: {reason}", { number: String(detail.receipt ?? ""), reason: value("reason") });
-      case "return_raised": return detail.outcome === "credit" ? t("raised return {number} for a credit", { number: String(detail.return ?? "") })
-        : t("raised return {number} to be replaced", { number: String(detail.return ?? "") });
-      case "return_emailed": return t("emailed the return note to {email}", { email: value("to") });
-      case "return_email_not_sent": return t("couldn't email the return note to {email}", { email: value("to") });
-      case "return_sent": return t("recorded the supplier collecting return {number}", { number: String(detail.return ?? "") });
-      case "return_cancelled": return t("cancelled return {number}: {reason}", { number: String(detail.return ?? ""), reason: value("reason") });
-      default: return t("changed it");
-    }
-  };
-  const items: ActivityItem[] = [...state.events].reverse().map((entry) => ({ id: entry.id, actor: entry.byName ?? t("Someone"), action: text(entry.kind, entry.detail), occurredAt: format.when(entry.at), kind: "change" }));
-  return <section className={styles.part} aria-label={t("History")}><h3 className={styles.subhead}>{t("History")}</h3><ActivityFeed items={items} /></section>;
-}
-
-function ReasonDialog({ kind, optional = false, onClose, onSave }: { kind: "cancel" | "change" | "return" | "close" | "continue" | "funds"; optional?: boolean; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
-  const t = useT();
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  const title = kind === "cancel" ? t("Cancel order") : kind === "change" ? t("Change the order") : kind === "close" ? t("Close order") : kind === "continue" ? t("Continue this order") : kind === "funds" ? t("Let it go ahead") : t("Send back");
-  const label = kind === "cancel" ? t("Why it's cancelled") : kind === "change" ? t("What's changing") : kind === "close" ? t("Why the rest won't come")
-    : kind === "continue" ? t("Why it continues while the supplier is on hold") : kind === "funds" ? t("Why it goes ahead beyond the money in hand") : t("What needs to change");
-  return <ControlledModalDialog isOpen size="md" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!optional && !reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{title}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {kind === "change" ? <p className={styles.dialogText}>{t("The order goes back to draft and through approval again. What was approved is kept.")}</p> : null}
-      <TextAreaField label={optional ? t("Note") : label} isRequired={!optional} value={reason} onChange={setReason} />
-    </div>
-  </ControlledModalDialog>;
-}
-
-function SendDialog({ email, onClose, onSave }: { email: string; onClose: () => void; onSave: (to: string, message: string) => Promise<void> }) {
-  const t = useT();
-  const [to, setTo] = useState(email);
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Send to supplier")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim())} onPress={async () => { setBusy(true); await onSave(to.trim(), message.trim()); setBusy(false); }}>{t("Send")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <TextInput label={t("Email")} inputType="email" isRequired value={to} onChange={setTo} />
-      <TextAreaField label={t("Message")} value={message} onChange={setMessage} />
-    </div>
-  </ControlledModalDialog>;
-}
-
-/** The supplier's confirmation: their reference, and for each line by when and how much (when it differs from what was ordered). */
-function ConfirmDialog({ promised, reference, lines, onClose, onSave }: {
-  promised: string | null; reference: string; lines: OrderLine[]; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>;
-}) {
-  const t = useT();
-  const open = lines.filter((line) => Number(line.cancelled) < Number(line.quantity));
-  const [ref, setRef] = useState(reference);
-  const [rows, setRows] = useState(() => Object.fromEntries(open.map((line) => [line.id, { date: line.promisedDate ?? promised, quantity: line.confirmedQuantity ? quantityText(line.confirmedQuantity) : "" }])));
-  const [busy, setBusy] = useState(false);
-  const tooMuch = open.find((line) => rows[line.id].quantity !== "" && Number(rows[line.id].quantity) > Number(subtractExact(line.quantity, line.cancelled)));
-  return <ControlledModalDialog isOpen size="lg" title={t("Supplier's confirmation")} onOpenChange={(value) => { if (!value) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={Boolean(tooMuch)} onPress={async () => { setBusy(true); await onSave({ supplierReference: ref.trim(),
-        lines: open.map((line) => ({ lineId: line.id, promisedDate: rows[line.id].date, confirmedQuantity: rows[line.id].quantity || null })) }); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <TextInput label={t("Their reference")} value={ref} onChange={setRef} />
-      <div className={styles.receiveLines} role="table" aria-label={t("Lines")} data-columns="3">
-        <div role="row" className={styles.receiveHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("They confirm")}</span><span role="columnheader">{t("Promised")}</span></div>
-        {open.map((line) => <div role="row" key={line.id} className={styles.receiveLine}>
-          <span role="cell" className={styles.nameCell}><span>{line.description}</span><small>{t("Ordered {quantity}", { quantity: `${quantityText(subtractExact(line.quantity, line.cancelled))} ${line.unit}`.trim() })}</small></span>
-          <span role="cell"><TextInput aria-label={t("Confirmed of {item}", { item: line.description })} label={null} inputMode="decimal" placeholder={t("All")} suffix={line.unit || undefined}
-            value={rows[line.id].quantity} onChange={(value) => setRows({ ...rows, [line.id]: { ...rows[line.id], quantity: numeric(value) } })} /></span>
-          <span role="cell"><DateField aria-label={t("Promised date for {item}", { item: line.description })} label={null} value={rows[line.id].date ? parseDate(rows[line.id].date!) : null}
-            onChange={(value) => setRows({ ...rows, [line.id]: { ...rows[line.id], date: value ? value.toString() : null } })} /></span>
-        </div>)}
-      </div>
-      {tooMuch ? <InlineNotice tone="error" message={t("The supplier can't confirm more of {item} than was ordered.", { item: tooMuch.description })} /> : null}
-    </div>
-  </ControlledModalDialog>;
-}
-
-/** A late order chased: what the supplier said and, if they gave one, their new date. */
-function ChaseDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string, promisedDate: string | null) => Promise<void> }) {
-  const t = useT();
-  const [note, setNote] = useState("");
-  const [date, setDate] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Chase")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim(), date); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <TextAreaField label={t("What the supplier said")} isRequired value={note} onChange={setNote} />
-      <DateField label={t("New date")} value={date ? parseDate(date) : null} onChange={(value) => setDate(value ? value.toString() : null)} />
-    </div>
-  </ControlledModalDialog>;
-}
-
-/** What the supplier offers instead of a line: what, which finish or size, at what price, and why. */
-function OfferAlternateDialog({ line, onClose, onSave }: { line: OrderLine; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
-  const t = useT();
-  const [description, setDescription] = useState(line.description);
-  const [specification, setSpecification] = useState(line.specification);
-  const [price, setPrice] = useState(quantityText(line.unitPrice));
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("The supplier offers an alternative")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!description.trim() || !note.trim()} onPress={async () => { setBusy(true);
-        await onSave({ description: description.trim(), specification: specification.trim(), unitPrice: price || null, note: note.trim() }); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <p className={styles.dialogText}>{t("Instead of {item}", { item: [line.description, line.specification].filter(Boolean).join(", ") })}</p>
-      <TextInput label={t("What they offer")} isRequired value={description} onChange={setDescription} />
-      <div className={styles.pair}>
-        <TextInput label={t("Finish or size")} value={specification} onChange={setSpecification} />
-        <TextInput label={t("Price each")} inputMode="decimal" value={price} onChange={(value) => setPrice(numeric(value))} />
-      </div>
-      <TextAreaField label={t("Why they offer it")} isRequired value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
-}
-
-function RefuseAlternateDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
-  const t = useT();
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Refuse the alternative")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim()); setBusy(false); }}>{t("Refuse")}</Button></div>}>
-    <TextAreaField label={t("Why it's refused")} isRequired value={note} onChange={setNote} />
-  </ControlledModalDialog>;
-}
-
-/** The rest of a line won't come: how much, why, and optionally which other supplier gets it (as a new draft order). */
-function CancelLineDialog({ api, line, left, vendorId, onClose, onSave }: {
-  api: PurchasingApi; line: OrderLine; left: string; vendorId: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>;
-}) {
-  const t = useT();
-  const [quantity, setQuantity] = useState(quantityText(left));
-  const [reason, setReason] = useState("");
-  const [reorder, setReorder] = useState<string | null>(null);
-  const [suppliers, setSuppliers] = useState<Array<{ id: string; label: string }>>([]);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    api.suppliers().then((state) => setSuppliers(state.suppliers.filter((item) => item.status !== "archived" && item.id !== vendorId)
-      .sort((a, b) => a.name.localeCompare(b.name)).map((item) => ({ id: item.id, label: item.name })))).catch(() => undefined);
-  }, [api, vendorId]);
-  const tooMuch = Number(quantity) > Number(left);
-  return <ControlledModalDialog isOpen size="md" title={t("Cancel the rest of {item}", { item: line.description })} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim() || !(Number(quantity) > 0) || tooMuch}
-        onPress={async () => { setBusy(true); await onSave({ quantity, reason: reason.trim(), reorderVendorId: reorder }); setBusy(false); }}>{t("Cancel the rest")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={line.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
-      {tooMuch ? <InlineNotice tone="error" message={t("At most {quantity} is still to come.", { quantity: `${quantityText(left)} ${line.unit}`.trim() })} /> : null}
-      <TextAreaField label={t("Why it won't come")} isRequired value={reason} onChange={setReason} />
-      <SelectField label={t("Order it from")} selectedKey={reorder ?? "none"} onSelectionChange={(key) => setReorder(key === null || key === "none" ? null : String(key))}
-        items={[{ id: "none", label: t("Don't reorder") }, ...suppliers]} />
-    </div>
-  </ControlledModalDialog>;
 }

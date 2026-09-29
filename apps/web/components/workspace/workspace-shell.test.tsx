@@ -149,13 +149,31 @@ describe("WorkspaceShell theme", () => {
     expect(container.querySelector('header a[title="Settings"]')).not.toHaveAttribute("data-active");
     expect(document.title).toBe("Finance · Example Studio");
   });
-  it("keeps People under Settings with the Settings menu, and lights the gear only there", () => {
+  it("puts the people directory in People, with People's tabs and no Settings menu", () => {
     const { container } = render(<WorkspaceShell {...shellProps}><p>People</p></WorkspaceShell>);
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("Settings");
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("People");
-    expect(screen.getByRole("navigation", { name: "Settings" })).toBeInTheDocument();
-    expect(container.querySelector('header a[title="Settings"]')).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(/^People$/);
+    expect(screen.queryByRole("navigation", { name: "Settings" })).not.toBeInTheDocument();
+    expect(container.querySelector('header a[title="Settings"]')).not.toHaveAttribute("data-active");
+    const tabs = screen.getByRole("navigation", { name: "People" });
+    expect(within(tabs).getByRole("link", { name: "Directory" })).toHaveAttribute("aria-current", "page");
+    expect(within(tabs).getByRole("link", { name: "Teams" })).toHaveAttribute("href", "/workspace/teams");
+    expect(within(tabs).getByRole("link", { name: "Roles" })).toHaveAttribute("href", "/workspace/roles");
+    expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", { name: "People" })).toHaveAttribute("href", "/workspace/members");
     expect(document.title).toBe("People · Example Studio");
+  });
+  it("lights the People tab of the area a HR page belongs to", () => {
+    route.pathname = "/workspace/hrms/leave";
+    render(<WorkspaceShell {...shellProps}><p>Leave</p></WorkspaceShell>);
+    expect(within(screen.getByRole("navigation", { name: "People" })).getByRole("link", { name: "Attendance & leave" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("People");
+  });
+  it("keeps Settings pages in the Settings menu and links Team and access into People", () => {
+    route.pathname = "/workspace/company";
+    const { container } = render(<WorkspaceShell {...shellProps}><p>Company</p></WorkspaceShell>);
+    const menu = screen.getByRole("navigation", { name: "Settings" });
+    expect(within(menu).getByRole("link", { name: "People" })).toHaveAttribute("href", "/workspace/members");
+    expect(within(menu).getByRole("link", { name: "Teams" })).toHaveAttribute("href", "/workspace/teams");
+    expect(container.querySelector('header a[title="Settings"]')).toHaveAttribute("data-active", "true");
   });
   it("shows Clients on its own, not under Sales", () => {
     route.pathname = "/workspace/crm/customers";

@@ -127,6 +127,11 @@ export class PurchasingController {
   @Get("deliveries")
   deliveries(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.receiving.deliveries(actor, workspaceId); }
 
+  @Get("arrivals")
+  arrivals(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query("projectId", ParseUUIDPipe) projectId: string) {
+    return this.receiving.arrivals(actor, workspaceId, projectId);
+  }
+
   @Get("orders/:orderId/receiving")
   receivingForm(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("orderId", ParseUUIDPipe) orderId: string) {
     return this.receiving.receiving(actor, workspaceId, orderId);

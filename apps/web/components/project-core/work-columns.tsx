@@ -25,7 +25,7 @@ export function useWorkColumns<T extends WorkRow>(board: WorkBoard): GroupedTabl
     { id: "due", label: t("Due"), width: "12%", mobileHidden: true, render: (row) => {
       if (!row.dueDate) return <span className={styles.muted}>—</span>;
       const due = isOpen(row.status) ? format.until(row.dueDate) : null;
-      return <span className={styles.muted} data-late={due?.late || undefined}>{format.day(row.dueDate)}</span>;
+      return <span className={styles.muted} data-late={due?.late || undefined}>{format.short(row.dueDate)}</span>;
     } },
     { id: "status", label: t("Status"), width: "16%", render: (row) => <StatusLabel status={row.status} /> },
   ];

@@ -4,7 +4,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import Link from "next/link";
 import { useId, useMemo, useState, type FormEvent } from "react";
 import { ChevronDown, ChevronRight, Lock, Plus } from "lucide-react";
-import { Avatar, AvatarGroup, Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, IconMenuButton, SearchInput, SegmentedControl, SelectField, SettingsPage, Switch, TextAreaField, TextInput } from "@/design-system";
+import { Avatar, AvatarGroup, Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, IconMenuButton, SaveBar, SearchInput, SegmentedControl, SelectField, SettingsPage, Switch, TextAreaField, TextInput } from "@/design-system";
 import type { WorkspaceRole } from "@/lib/workspace/members";
 import {
   isSensitivePermission,
@@ -18,12 +18,16 @@ import {
   type WorkspacePermissionDefinition,
 } from "@/lib/workspace/roles-permissions";
 import styles from "./roles-permissions-page.module.css";
+import type { ViewAsTarget } from "@/lib/workspace/view-as";
+import { ViewAsDialog } from "./view-as-dialog";
 
 const SYSTEM_ROLE_ORDER: Record<string, number> = { owner: 0, administrator: 1, member: 2, viewer: 3 };
 const PEOPLE_HREF = "/workspace/members";
 const AVATAR_STACK = 3;
 
 type AccessFilter = "all" | "granted" | "denied";
+/** Approvals someone other than the person who raised the work gives. */
+const APPROVALS = ["commercial.estimate", "commercial.finance.verify", "commercial.deal.approve", "purchasing.approve", "vendors.approve", "factory.approve", "stock.adjust", "payables.approve"] as const;
 type RoleDialogItem = { mode: "new" } | { mode: "edit"; role: WorkspaceRole } | { mode: "duplicate"; role: WorkspaceRole } | null;
 
 function responseMessage(response: Response, fallback: string) {
@@ -62,6 +66,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   const t = useT();
   const baseId = useId();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<ViewAsTarget | null>(null);
   const initialRoles = useMemo(() => sortRoles(initialData.roles), [initialData.roles]);
   const sections = useMemo(() => permissionSections(initialData.permissions, t), [initialData.permissions, t]);
   const membersByRole = useMemo(() => {
@@ -236,18 +241,38 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
     </AvatarGroup>;
   };
 
+  // Preview a role before inviting someone to it: read-only, 15 minutes, audited. Only an owner previews Owner.
+  const canPreview = Boolean(initialData.viewAs?.canViewAs) && (initialData.viewAs?.viewerIsOwner || selectedRole.code !== "owner");
   const roleActions = [
     ...(isEditable ? [{ id: "edit", label: t("Edit details") }] : []),
     ...(initialData.canCreate ? [{ id: "duplicate", label: t("Duplicate") }] : []),
+    ...(canPreview ? [{ id: "preview", label: t("Preview as {role}", { role: selectedRole.name }) }] : []),
     ...(canDelete ? [{ id: "delete", label: t("Delete"), tone: "danger" as const }] : []),
   ];
   const onRoleAction = (action: string) => {
+    if (action === "preview") setPreviewTarget({ kind: "role", roleId: selectedRole.id, name: selectedRole.name });
     if (action === "edit") setDialog({ mode: "edit", role: selectedRole });
     if (action === "duplicate") setDialog({ mode: "duplicate", role: selectedRole });
     if (action === "delete") { if (assignedCount > 0) setBlockedRole(selectedRole); else setDeletingRole(selectedRole); }
   };
 
   const headingId = `${baseId}-role`;
+  // Nobody approves their own order, output, count or bill: an approval only one person holds stalls when
+  // they raised it (or are away), so the page says so.
+  const approvalText: Record<(typeof APPROVALS)[number], [one: string, none: string]> = {
+    "commercial.estimate": [t("Only one person can approve QS estimates."), t("Nobody can approve QS estimates.")],
+    "commercial.finance.verify": [t("Only one person can verify client payments."), t("Nobody can verify client payments.")],
+    "commercial.deal.approve": [t("Only one person can approve deals."), t("Nobody can approve deals.")],
+    "vendors.approve": [t("Only one person can approve suppliers."), t("Nobody can approve suppliers.")],
+    "purchasing.approve": [t("Only one person can approve orders."), t("Nobody can approve orders.")],
+    "factory.approve": [t("Only one person can approve factory output."), t("Nobody can approve factory output.")],
+    "stock.adjust": [t("Only one person can approve stock corrections."), t("Nobody can approve stock corrections.")],
+    "payables.approve": [t("Only one person can approve supplier bills."), t("Nobody can approve supplier bills.")],
+  };
+  const approvalGaps = APPROVALS.flatMap((code) => {
+    const holders = new Set((initialData.members ?? []).filter((member) => member.roles.some((roleCode) => roles.find((role) => role.code === roleCode)?.permissions.includes(code))).map((member) => member.id));
+    return holders.size > 1 ? [] : [approvalText[code][holders.size ? 0 : 1]];
+  });
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
@@ -259,6 +284,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
       >
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
         {failure ? <Callout title={t("Role action failed")} tone="danger">{failure}</Callout> : null}
+        {approvalGaps.length ? <Callout title={t("Approvals need a second person")} tone="warning">{approvalGaps.join(" ")}</Callout> : null}
 
         <div className={styles.layout}>
           <nav aria-label={t("Roles")} className={styles.rolesPane}>
@@ -370,12 +396,11 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
           </section>
         </div>
 
-        {isEditable && changeCount > 0 ? <div aria-label={t("Unsaved changes")} className={styles.saveBar} role="region">
-          <span>{changeCount === 1 ? t("1 change") : t("{count} changes", { count: changeCount })}</span>
-          <Button isDisabled={saving} onPress={resetChanges} size="compact">{t("Discard")}</Button>
-          <Button isLoading={saving} onPress={() => void saveChanges()} size="compact" variant="primary">{t("Save")}</Button>
-        </div> : null}
+        {isEditable ? <SaveBar isDirty={changeCount > 0} isSaving={saving} message={changeCount === 1 ? t("1 change") : t("{count} changes", { count: changeCount })}
+          onDiscard={resetChanges} onSave={() => void saveChanges()} /> : null}
       </SettingsPage>
+
+      <ViewAsDialog mfaEnabled={Boolean(initialData.viewAs?.mfaEnabled)} onClose={() => setPreviewTarget(null)} target={previewTarget} workspaceId={initialData.workspaceId} />
 
       <RoleDialog
         initialData={initialData}

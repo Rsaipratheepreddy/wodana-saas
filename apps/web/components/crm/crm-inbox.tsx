@@ -1,158 +1,216 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { ArrowLeft, Check, CheckCheck, Clock3, FileText, ImageIcon, Info, MessageCircle, Plus, RefreshCw, Send, Video } from "lucide-react";
+import { CheckSquare, MessageCircle, Plus, RefreshCw, Settings2 } from "lucide-react";
 import { MessagingMark } from "@/components/brand/messaging-mark";
 import { ProviderMark } from "@/components/brand/provider-mark";
-import { Avatar, Button, Callout, ControlledModalDialog, EmptyState, IconButton, InspectorSheet, SearchInput, SegmentedControl, SelectField, TextInput, ToggleButton, Skeleton, useDesignSystem } from "@/design-system";
+import { Avatar, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, IconButton, ListTabs, MenuButton, MultiSelectField, SearchInput, SegmentedControl, SelectField, Skeleton, TextInput, ToggleButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { crmRequest, label, rows, type RecordData } from "@/lib/crm/client";
+import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
+import { ENQUIRY_STAGE_LABELS, nextChatId, snoozePresets, type ChatState, type InboxLabel, type InboxOwner, type InboxSummary, type InboxView } from "@/lib/crm/inbox";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
+import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CrmProductShell, useCrmTime } from "./crm-product-shell";
-import { submitChatOnEnter } from "./chat-composer";
+import { ConversationThread, DeliveryState, inboxDate } from "./inbox/chat-thread";
+import { useWoddySelection } from "./woddy-chat";
+import { LabelChip, useInboxLookups, useNow, WaitChip } from "./inbox/inbox-parts";
 import styles from "./crm-inbox.module.css";
 
 type ChatPage = { data: RecordData[]; nextCursor: string | null };
+const LIST_SCOPES = ["conversations"] as const;
 const timeout = () => AbortSignal.timeout(20_000);
+const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+
+/**
+ * The team inbox: views (Mine, Unassigned, Team, All) with counts, Open · Snoozed · Resolved, labels, the
+ * longest-waiting client first, bulk actions and keyboard moves (j/k to move, e to resolve).
+ */
 export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScreenPageData; initialRecordId?: string }) {
   const t = useT();
   const time = useCrmTime();
+  const now = useNow();
   const { locale, timeZone } = useDesignSystem();
+  const workspaceId = initialData.workspaceId;
+  const lookups = useInboxLookups(workspaceId);
+  const [summary, setSummary] = useState<InboxSummary | null>(null);
+  const [view, setView] = useState<InboxView>("mine");
+  const viewChosen = useRef(false);
+  const [state, setState] = useState<ChatState>("open");
+  const [labelId, setLabelId] = useState("");
+  const [team, setTeam] = useState<InboxOwner[]>([]);
+  const [ownerFilter, setOwnerFilter] = useState("");
+  const [stages, setStages] = useState<Set<string>>(new Set());
+  const [stageOptions, setStageOptions] = useState<Array<{ id: string; label: string }>>([]);
+  const stageParam = [...stages].sort().join(",");
   const [channelFilter, setChannelFilter] = useState("all");
-  const [items, setItems] = useState(initialData.items);
-  const [cursor, setCursor] = useState(initialData.nextCursor);
+  const [items, setItems] = useState<RecordData[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(initialRecordId ?? null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  // Chats picked in the list are what "these chats" means to Woddy.
+  useWoddySelection("conversation", [...picked]);
+  const [selecting, setSelecting] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
   const [creating, setCreating] = useState(false);
-  const [busy, setBusy] = useState(false), [failure, setFailure] = useState("");
+  const [busy, setBusy] = useState(false), [failure, setFailure] = useState(""), [bulkBusy, setBulkBusy] = useState(false);
   const requestPending = useRef(false), controller = useRef<AbortController | null>(null), cursorRef = useRef(cursor);
+  const threadActions = useRef<{ resolve: () => void } | null>(null);
   useEffect(() => { cursorRef.current = cursor; }, [cursor]);
-  const query = new URLSearchParams({ limit: "100", ...(channelFilter !== "all" ? { channel: channelFilter } : {}), ...(search.trim() ? { search: search.trim() } : {}), ...(filter === "unread" ? { unread: "true" } : filter === "closed" ? { status: "closed" } : {}) }).toString();
+  const query = new URLSearchParams({ limit: "100", status: state, ...(stageParam ? { stage: stageParam } : {}), ...(view === "team" && ownerFilter ? { ownerMembershipId: ownerFilter } : view !== "all" ? { view } : {}), ...(labelId ? { labelId } : {}), ...(channelFilter !== "all" ? { channel: channelFilter } : {}), ...(search.trim() ? { search: search.trim() } : {}) }).toString();
+  const loadSummary = useCallback(async () => {
+    const [next, people] = await Promise.all([
+      crmRequest<InboxSummary>(workspaceId, `inbox/summary${stageParam ? `?stage=${encodeURIComponent(stageParam)}` : ""}`, "GET", undefined, timeout()).catch(() => null),
+      view === "team" ? crmRequest<InboxOwner[]>(workspaceId, "inbox/owners", "GET", undefined, timeout()).catch(() => null) : Promise.resolve(null),
+    ]);
+    if (Array.isArray(people)) setTeam(people);
+    if (!next) return;
+    setSummary(next);
+    // Sales starts on Mine; with nothing of their own and chats waiting for someone, Unassigned.
+    if (!viewChosen.current) { viewChosen.current = true; if (!next.mine && next.unassigned) setView("unassigned"); }
+  }, [workspaceId, view, stageParam]);
   const reload = useCallback(async (more = false, background = false) => {
     if (background && requestPending.current) return;
     requestPending.current = true;
     controller.current?.abort(); const request = new AbortController(); controller.current = request;
     if (!background) setBusy(true);
     try {
-      const result = await crmRequest<ChatPage>(initialData.workspaceId, `conversations?${query}${more && cursorRef.current ? `&cursor=${encodeURIComponent(cursorRef.current)}` : ""}`, "GET", undefined, AbortSignal.any([request.signal, timeout()]));
+      const [result] = await Promise.all([
+        crmRequest<ChatPage>(workspaceId, `conversations?${query}${more && cursorRef.current ? `&cursor=${encodeURIComponent(cursorRef.current)}` : ""}`, "GET", undefined, AbortSignal.any([request.signal, timeout()])),
+        more ? Promise.resolve() : loadSummary(),
+      ]);
       if (request.signal.aborted) return;
       setItems((old) => more ? [...old, ...result.data.filter((row) => !old.some((item) => item.id === row.id))] : result.data);
-      setCursor(result.nextCursor); setFailure("");
+      setCursor(result.nextCursor); setFailure(""); setLoaded(true);
     } catch (error) { if (!request.signal.aborted) setFailure(error instanceof Error ? error.message : t("Chats could not be loaded.")); }
     finally { if (controller.current === request) requestPending.current = false; if (!request.signal.aborted) setBusy(false); }
-  }, [initialData.workspaceId, query, t]);
+  }, [workspaceId, query, loadSummary, t]);
+  // A new message or reply re-reads the list at once; polling is the fallback (a minute while live).
+  const live = useLiveInvalidate(initialData.canView ? workspaceId : "", LIST_SCOPES, () => { if (!cursorRef.current) void reload(false, true); });
   useEffect(() => {
     if (!initialData.canView) return;
-    const timer = setTimeout(() => void reload(), 250);
-    const poll = setInterval(() => { if (document.visibilityState === "visible" && !cursorRef.current) void reload(false, true); }, 8_000);
+    const timer = setTimeout(() => void reload(), 0);
+    const poll = setInterval(() => { if (document.visibilityState === "visible" && !cursorRef.current) void reload(false, true); }, pollEvery(live, 8_000));
     return () => { clearTimeout(timer); clearInterval(poll); controller.current?.abort(); };
-  }, [reload, initialData.canView]);
-  // One empty state: the list says nothing of its own until there are conversations to filter.
-  const filtered = Boolean(search.trim()) || filter !== "all" || channelFilter !== "all";
-  const noConversations = !items.length && !busy && !filtered;
+  }, [reload, initialData.canView, live]);
+  useEffect(() => { setPicked(new Set()); }, [query]);
+  // What a chat can be filtered by: its enquiry, opportunity or project stage, or no record at all.
+  useEffect(() => {
+    void crmRequest<{ enquiry: Array<{ id: string; status: string }>; opportunity: Array<{ id: string; name: string; pipeline: string }>; project: Array<{ id: string; name: string }> }>(workspaceId, "inbox/stages").then((options) => setStageOptions([
+      ...options.enquiry.map((item) => ({ id: item.id, label: t("Enquiry · {stage}", { stage: t(ENQUIRY_STAGE_LABELS[item.status] ?? "Open") }) })),
+      ...options.opportunity.map((item) => ({ id: item.id, label: t("Sales · {stage}", { stage: item.name }) })),
+      ...options.project.map((item) => ({ id: item.id, label: t("Project · {stage}", { stage: item.name }) })),
+      { id: "none", label: t("No record") },
+    ])).catch(() => setStageOptions([]));
+  }, [workspaceId, t]);
+
+  const chooseView = (next: InboxView) => { viewChosen.current = true; setView(next); setOwnerFilter(""); };
+  const ids = items.map((item) => item.id);
+  // After Resolve or Snooze the next chat in the list opens; the last one stays open to show its new state.
+  const idsKey = ids.join(",");
+  const openNext = useCallback(() => setSelected((current) => current ? nextChatId(idsKey.split(","), current) ?? current : null), [idsKey]);
+  const registerActions = useCallback((actions: { resolve: () => void } | null) => { threadActions.current = actions; }, []);
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (typing(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
+    const index = selected ? ids.indexOf(selected) : -1;
+    if (event.key === "j" || event.key === "k") {
+      const next = ids[event.key === "j" ? Math.min(ids.length - 1, index + 1) : Math.max(0, index - 1)];
+      if (next) { event.preventDefault(); setSelected(next); document.getElementById(`chat-${next}`)?.focus(); }
+    } else if (event.key === "e" && threadActions.current) { event.preventDefault(); threadActions.current.resolve(); }
+  };
+
+  const bulk = async (body: Record<string, unknown>) => {
+    if (!picked.size) return;
+    setBulkBusy(true); setFailure("");
+    try { await crmRequest(workspaceId, "inbox/bulk", "POST", { conversationIds: [...picked], ...body }, timeout()); setPicked(new Set()); await reload(); }
+    catch (error) { setFailure(error instanceof Error ? error.message : t("The chats could not be updated.")); }
+    finally { setBulkBusy(false); }
+  };
+  const togglePick = (id: string, value: boolean) => setPicked((current) => { const next = new Set(current); if (value) next.add(id); else next.delete(id); return next; });
+  const activeLabels = lookups.labels.filter((item) => item.status !== "archived");
+  const presets = snoozePresets({ now: new Date(now), timeZone, dayStart: lookups.settings?.workday.start, workingDays: lookups.settings?.workday.days });
+  const filtered = Boolean(stageParam) || Boolean(search.trim()) || state !== "open" || view !== "all" || Boolean(labelId) || channelFilter !== "all";
+  const noConversations = loaded && !items.length && !busy && !filtered;
   const emptyState = <EmptyState icon={<MessagingMark size={36} />} title={noConversations ? t("No conversations yet") : t("Choose a conversation")}
     action={<Button size="compact" variant="primary" className={styles.brandButton} onPress={() => setCreating(true)}><Plus aria-hidden="true" size={16} />{t("New conversation")}</Button>} />;
+  const viewItems = [
+    { id: "mine" as const, label: t("Mine"), count: summary?.mine },
+    { id: "unassigned" as const, label: t("Unassigned"), count: summary?.unassigned },
+    ...(summary?.team === null ? [] : [{ id: "team" as const, label: t("Team"), count: summary?.team ?? undefined }]),
+    { id: "all" as const, label: t("All"), count: summary?.all },
+  ];
+
   return <CrmProductShell title={t("Inbox")} description={t("Customer conversations")} canView={initialData.canView} compact useWorkspaceColors>
-    <div className={styles.inbox} data-selected={Boolean(selected)}>
+    <div className={styles.inbox} data-selected={Boolean(selected)} onKeyDown={onKeyDown}>
       <section aria-label={t("Customer conversations")} className={styles.threadList}>
-        <header className={styles.listHeading}><h1>{t("Inbox")}</h1><div className={styles.actions}><IconButton aria-label={t("Refresh inbox")} size="compact" isLoading={busy} onPress={() => void reload()}><RefreshCw size={16} /></IconButton><IconButton aria-label={t("New conversation")} className={styles.brandButton} variant="primary" size="compact" onPress={() => setCreating(true)}><Plus size={19} /></IconButton></div></header>
+        <header className={styles.listHeading}><h1>{t("Inbox")}</h1><div className={styles.actions}>
+          <IconButton aria-label={selecting ? t("Stop selecting") : t("Select chats")} size="compact" onPress={() => { setSelecting((value) => !value); setPicked(new Set()); }}><CheckSquare size={16} /></IconButton>
+          <IconButton aria-label={t("Refresh inbox")} size="compact" isLoading={busy} onPress={() => void reload()}><RefreshCw size={16} /></IconButton>
+          {lookups.settings?.canManage ? <Link aria-label={t("Inbox settings")} className={styles.iconLink} href="/workspace/settings/inbox"><Settings2 aria-hidden="true" size={16} /></Link> : null}
+          <IconButton aria-label={t("New conversation")} className={styles.brandButton} variant="primary" size="compact" onPress={() => setCreating(true)}><Plus size={19} /></IconButton>
+        </div></header>
+        <div className={styles.views}><ListTabs label={t("Inbox views")} items={viewItems} value={view} onChange={chooseView} /></div>
+        {view === "team" && team.length ? <div className={styles.teamLoad} role="group" aria-label={t("Open chats per person")}>
+          {team.map((person) => <button key={person.id} type="button" aria-pressed={ownerFilter === person.id} onClick={() => setOwnerFilter((current) => current === person.id ? "" : person.id)}>
+            <Avatar name={person.displayName} size="sm" /><span>{person.displayName}</span><span className="wd-count-chip">{person.openChats}</span>{person.away ? <small>{t("Away")}</small> : null}
+          </button>)}
+        </div> : null}
         <div className={styles.searchArea}><SearchInput label={t("Search inbox")} placeholder={t("Search conversations")} value={search} maxLength={200} onChange={setSearch} /></div>
-        <div className={styles.channels} aria-label={t("Conversation channels")}>{["all", "whatsapp"].map(channel => <button key={channel} aria-pressed={channelFilter === channel} onClick={() => setChannelFilter(channel)}>{channel === "whatsapp" ? <span className={styles.channelMark}><ProviderMark provider="whatsapp" /></span> : null}{channel === "all" ? t("All") : "WhatsApp"}</button>)}</div>
-        <div className={styles.filters}><SegmentedControl label={t("Inbox filters")} options={[{ id: "all", label: t("All") }, { id: "unread", label: t("Unread") }, { id: "closed", label: t("Resolved") }]} value={filter} onChange={setFilter} /></div>
+        <div className={styles.filters}>
+          <SegmentedControl label={t("Chat state")} value={state} onChange={(value) => setState(value as ChatState)} options={[{ id: "open", label: t("Open") }, { id: "snoozed", label: t("Snoozed"), count: summary?.snoozed || undefined }, { id: "closed", label: t("Resolved") }]} />
+          {activeLabels.length ? <SelectField accent="neutral" aria-label={t("Label")} label={null} items={[{ id: "", label: t("All labels") }, ...activeLabels.map((item) => ({ id: item.id, label: item.name }))]} selectedKey={labelId} onSelectionChange={(key) => setLabelId(key ? String(key) : "")} /> : null}
+        </div>
+        {stageOptions.length ? <div className={styles.stageFilter}><MultiSelectField label={t("Stage")} items={stageOptions} selectedKeys={stages} onSelectionChange={(keys) => setStages(new Set([...keys].map(String)))} /></div> : null}
+        <div className={styles.channels} aria-label={t("Conversation channels")}>{["all", "whatsapp"].map((channel) => <button key={channel} type="button" aria-pressed={channelFilter === channel} onClick={() => setChannelFilter(channel)}>{channel === "whatsapp" ? <span className={styles.channelMark}><ProviderMark provider="whatsapp" /></span> : null}{channel === "all" ? t("All") : "WhatsApp"}</button>)}</div>
+        {picked.size ? <div className={`wd-bulk-bar ${styles.bulkBar}`} role="toolbar" aria-label={t("Bulk actions")}>
+          <strong>{t("{count} selected", { count: picked.size })}</strong>
+          <div>
+            <MenuButton size="compact" label={t("Assign")} items={[...(summary?.membershipId ? [{ id: summary.membershipId, label: t("Assign to me") }] : []), ...lookups.owners.filter((owner) => owner.id !== summary?.membershipId).map((owner) => ({ id: owner.id, label: owner.away ? t("{name} · away", { name: owner.displayName }) : owner.displayName })), { id: "unassign", label: t("Unassign") }]}
+              onAction={(key) => void bulk({ action: "assign", ownerMembershipId: key === "unassign" ? null : key })} />
+            {activeLabels.length ? <MenuButton size="compact" label={t("Label")} items={activeLabels.flatMap((item: InboxLabel) => [{ id: `add:${item.id}`, label: item.name }, { id: `remove:${item.id}`, label: t("Remove {label}", { label: item.name }) }])}
+              onAction={(key) => { const [action, id] = key.split(":"); void bulk({ action: action === "add" ? "label" : "unlabel", labelId: id }); }} /> : null}
+            {state !== "closed" ? <MenuButton size="compact" label={t("Snooze")} items={presets.map((preset) => ({ id: preset.id, label: t(preset.label) }))} onAction={(key) => { const preset = presets.find((item) => item.id === key); if (preset) void bulk({ action: "snooze", snoozedUntil: preset.until }); }} /> : null}
+            <Button size="compact" variant="primary" isLoading={bulkBusy} onPress={() => void bulk({ action: state === "closed" ? "reopen" : "resolve" })}>{state === "closed" ? t("Reopen") : t("Resolve")}</Button>
+          </div>
+          <Button size="compact" variant="quiet" onPress={() => setPicked(new Set())}>{t("Clear")}</Button>
+        </div> : null}
         {failure ? <p className={styles.error} role="alert">{failure} <Button size="compact" variant="quiet" onPress={() => void reload()}>{t("Retry")}</Button></p> : null}
-        <div aria-busy={busy} className={styles.threadItems}>{items.map((item) => <ToggleButton key={item.id} className={styles.threadItem} isSelected={selected === item.id} onPress={() => setSelected(item.id)} variant="quiet">
-          <Avatar name={String(item.partyName ?? t("Customer"))} size="md" />
-          <span className={styles.threadCopy}><span className={styles.threadTop}><strong>{String(item.partyName ?? t("Customer"))}</strong><time dateTime={String(item.lastMessageAt ?? "")} title={item.lastMessageAt ? time(item.lastMessageAt) : t("New conversation")}>{inboxDate(item.lastMessageAt, locale, timeZone, t("New"))}</time></span><span className={styles.threadBottom}><span className={styles.preview}>{item.lastMessageDirection === "outbound" ? <DeliveryState status={String(item.lastMessageStatus)} compact /> : null}{String(item.lastMessageText ?? item.subject ?? t("No messages yet"))}</span>{Number(item.unreadCount) > 0 ? <span className={styles.unread} aria-label={t("{count} unread messages", { count: Number(item.unreadCount) })}>{String(item.unreadCount)}</span> : <small>{label(item.channel)}</small>}</span></span>
-        </ToggleButton>)}{!items.length && !busy && filtered ? <div className={styles.empty}><p>{t("No matching conversations.")}</p></div> : null}{noConversations ? <div className={styles.listEmpty}>{emptyState}</div> : null}</div>
+        <div aria-busy={busy} className={styles.threadItems}>
+          {!loaded && busy ? <Skeleton lines={6} /> : null}
+          {items.map((item) => {
+            const name = String(item.partyName ?? t("Customer"));
+            const chipLabels = (item.labels ?? []) as InboxLabel[];
+            return <div className={styles.threadRow} key={item.id} data-picked={picked.has(item.id) || undefined}>
+              {selecting || picked.size ? <Checkbox aria-label={t("Select {name}", { name })} isSelected={picked.has(item.id)} onChange={(value) => togglePick(item.id, value)} /> : null}
+              <ToggleButton id={`chat-${item.id}`} className={styles.threadItem} isSelected={selected === item.id} onPress={() => setSelected(item.id)} variant="quiet">
+                <Avatar name={name} size="md" />
+                <span className={styles.threadCopy}>
+                  <span className={styles.threadTop}><strong>{name}</strong><time dateTime={String(item.lastMessageAt ?? "")} title={item.lastMessageAt ? time(item.lastMessageAt) : t("New conversation")}>{inboxDate(item.lastMessageAt, locale, timeZone, t("New"))}</time></span>
+                  <span className={styles.threadBottom}><span className={styles.preview}>{item.lastMessageDirection === "outbound" ? <DeliveryState status={String(item.lastMessageStatus)} compact /> : null}{String(item.lastMessageText ?? item.subject ?? t("No messages yet"))}</span>{Number(item.unreadCount) > 0 ? <span className={styles.unread} aria-label={t("{count} unread messages", { count: Number(item.unreadCount) })}>{String(item.unreadCount)}</span> : null}</span>
+                  <span className={styles.threadMeta}>
+                    {item.status === "open" && item.waitingSince ? <WaitChip since={item.waitingSince} now={now} /> : null}
+                    {item.status === "snoozed" && item.snoozedUntil ? <span className={styles.metaText}>{t("Until {time}", { time: time(item.snoozedUntil) })}</span> : null}
+                    {chipLabels.slice(0, 2).map((chip) => <LabelChip key={chip.id} label={chip} />)}{chipLabels.length > 2 ? <span className={styles.metaText}>+{chipLabels.length - 2}</span> : null}
+                    {view !== "mine" ? <span className={styles.metaText}>{item.ownerName ? String(item.ownerName) : t("Unassigned")}</span> : null}
+                  </span>
+                </span>
+              </ToggleButton>
+            </div>;
+          })}
+          {!items.length && loaded && !busy && filtered ? <div className={styles.empty}><p>{state === "open" && view === "mine" && !search.trim() ? t("Nothing waiting for you.") : t("No matching conversations.")}</p></div> : null}
+          {noConversations ? <div className={styles.listEmpty}>{emptyState}</div> : null}
+        </div>
         {cursor ? <Button size="compact" isLoading={busy} onPress={() => void reload(true)}>{t("Load more chats")}</Button> : null}
       </section>
-      {selected ? <ConversationThread key={`${initialData.workspaceId}/${selected}`} workspaceId={initialData.workspaceId} id={selected} draft={drafts[selected] ?? ""} onDraftChange={(value) => setDrafts((old) => ({ ...old, [selected]: value }))} onBack={() => setSelected(null)} onChanged={() => reload(false, true)} /> : <section className={styles.empty} aria-label={t("Conversation messages")}>{emptyState}</section>}
+      {selected ? <ConversationThread key={`${workspaceId}/${selected}`} workspaceId={workspaceId} id={selected} draft={drafts[selected] ?? ""}
+        onDraftChange={(value) => setDrafts((old) => ({ ...old, [selected]: value }))} onBack={() => setSelected(null)} onChanged={() => reload(false, true)} onDone={openNext}
+        registerActions={registerActions} lookups={{ ...lookups, membershipId: summary?.membershipId ?? null }} />
+        : <section className={styles.empty} aria-label={t("Conversation messages")}>{emptyState}</section>}
     </div>
-    {creating ? <NewChat workspaceId={initialData.workspaceId} onClose={() => setCreating(false)} onOpened={(id) => { setCreating(false); setSelected(id); void reload(); }} /> : null}
+    {creating ? <NewChat workspaceId={workspaceId} onClose={() => setCreating(false)} onOpened={(id) => { setCreating(false); setSelected(id); void reload(); }} /> : null}
   </CrmProductShell>;
-}
-
-function ConversationThread({ workspaceId, id, draft, onDraftChange, onBack, onChanged }: { workspaceId: string; id: string; draft: string; onDraftChange: (value: string) => void; onBack: () => void; onChanged: () => Promise<void> }) {
-  const t = useT();
-  const { thread, failure: loadFailure, refresh } = useLiveConversation(workspaceId, id);
-  const [busy, setBusy] = useState(false), [failure, setFailure] = useState("");
-  const [notice, setNotice] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const saving = useRef(false), attempt = useRef<{ text: string; id: string } | null>(null), input = useRef<HTMLTextAreaElement>(null);
-  const readVersion = useRef<string | null>(null);
-  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 15_000); return () => clearInterval(timer); }, []);
-  useEffect(() => {
-    if (!thread || !Number(thread.unreadCount) || document.visibilityState !== "visible") return;
-    const key = `${thread.version}/${thread.unreadCount}`;
-    if (readVersion.current === key) return;
-    readVersion.current = key;
-    void crmRequest(workspaceId, `conversations/${id}/read`, "POST", {}, timeout()).then(() => { void refresh(); void onChanged(); }).catch(() => { readVersion.current = null; });
-  }, [thread, workspaceId, id, refresh, onChanged]);
-  useLayoutEffect(() => { if (input.current) { input.current.style.height = "auto"; input.current.style.height = `${Math.min(input.current.scrollHeight, 112)}px`; } }, [draft, thread?.id]);
-  const inboundAt = Date.parse(String(thread?.lastInboundAt ?? ""));
-  const windowOpen = Number.isFinite(inboundAt) && now - inboundAt >= -300000 && now - inboundAt < 86400000;
-  const isWhatsApp = thread?.channel === "whatsapp";
-  const blocked = !thread?.canSend ? t("You can view this conversation. Ask an administrator for permission to reply.") : thread?.status !== "open" ? t("This conversation is resolved. Reopen it to reply.") : isWhatsApp && !thread.whatsappConnected ? t("Connect WhatsApp in Integrations to reply.") : isWhatsApp && !windowOpen ? t("Waiting for a message from this contact. WhatsApp allows replies within 24 hours of their last message.") : "";
-  if (!thread) return <section className={styles.empty}><IconButton aria-label={t("Back to chats")} onPress={onBack}><ArrowLeft size={18} /></IconButton>{loadFailure ? <><p role="alert">{loadFailure}</p><Button onPress={() => void refresh()}>{t("Retry")}</Button></> : <p role="status">{t("Loading chat…")}</p>}</section>;
-  return <div className={styles.conversation}><section aria-label={t("Chat messages")} className={styles.thread}>
-    <header className={styles.threadHeading}><IconButton aria-label={t("Back to inbox")} className={styles.mobileBack} size="compact" onPress={onBack}><ArrowLeft size={18} /></IconButton><Avatar name={String(thread.partyName ?? t("Customer"))} size="md" /><div className={styles.headingIdentity}><h2>{String(thread.partyName ?? t("Customer"))}</h2><span>{thread.leadId ? <Link href={`/workspace/crm/leads?lead=${thread.leadId}`}>{t("View enquiry")}</Link> : label(thread.channel)}</span></div><div className={styles.actions}><IconButton aria-label={t("Contact details")} className={styles.detailsToggle} size="compact" onPress={() => setDetailsOpen(true)}><Info size={16}/></IconButton><IconButton aria-label={t("Refresh conversation")} size="compact" onPress={() => void refresh()}><RefreshCw size={16} /></IconButton>{thread.canSend ? <Button size="compact" isDisabled={busy} onPress={async () => { if (saving.current) return; saving.current = true; setBusy(true); setFailure(""); try { await crmRequest(workspaceId, `conversations/${id}`, "PATCH", { version: thread.version, status: thread.status === "closed" ? "open" : "closed" }, timeout()); await refresh(); await onChanged(); } catch (error) { setFailure((error as Error).message); } finally { saving.current = false; setBusy(false); } }}>{thread.status === "closed" ? t("Reopen") : t("Resolve")}</Button> : null}</div></header>
-    {loadFailure ? <p className={styles.error} role="alert">{loadFailure} <Button size="compact" variant="quiet" onPress={() => void refresh()}>{t("Retry")}</Button></p> : null}
-    <MessageHistory workspaceId={workspaceId} thread={thread} />
-    <form className={styles.composer} aria-busy={busy} onSubmit={async (event) => {
-      event.preventDefault(); if (saving.current || blocked || !draft.trim()) return;
-      const text = draft.trim(); if (attempt.current?.text !== text) attempt.current = { text, id: crypto.randomUUID() };
-      saving.current = true; setBusy(true); setFailure(""); setNotice("");
-      try {
-        await crmRequest(workspaceId, `conversations/${id}/messages`, "POST", { direction: thread.channel === "internal" ? "internal" : "outbound", ...(thread.channel === "internal" ? {} : { purpose: "service" }), bodyText: text, clientMessageId: attempt.current.id }, timeout());
-        onDraftChange(""); attempt.current = null; setNotice(t("Message queued"));
-        await refresh(); await onChanged();
-      } catch (error) { setFailure(error instanceof Error ? error.message : t("Message could not be sent. Your draft is saved.")); }
-      finally { saving.current = false; setBusy(false); input.current?.focus(); }
-    }}>
-      {blocked ? <p className={styles.composerNotice}>{blocked}</p> : null}
-      <div className={styles.composerInput}><label className="wd-visually-hidden" htmlFor={`message-${id}`}>{t("Message")}</label><textarea ref={input} rows={1} id={`message-${id}`} placeholder={t("Type a message")} value={draft} onChange={(e) => { onDraftChange(e.target.value); setNotice(""); }} onKeyDown={submitChatOnEnter} maxLength={4096} readOnly={busy || !thread.canSend} aria-describedby={`message-help-${id}`} /><Button className={styles.sendButton} aria-label={t("Send message")} variant="primary" type="submit" isDisabled={!draft.trim() || Boolean(blocked)} isLoading={busy}><Send size={19} /></Button></div>
-      <div className={styles.composerFooter} id={`message-help-${id}`}><span role="status">{notice}</span><small>{t("Enter to send · Shift+Enter for a new line")}</small></div>
-      {failure ? <p className={styles.error} role="alert">{failure}</p> : null}
-    </form>
-  </section>
-    {detailsOpen ? <InspectorSheet isOpen title={t("Contact details")} onOpenChange={setDetailsOpen} size="sm"><ChatContactDetails thread={thread}/></InspectorSheet> : null}
-  </div>;
-}
-
-function ChatContactDetails({ thread }: { thread: RecordData }) {
-  const t = useT();
-  const time = useCrmTime();
-  const name = String(thread.partyName ?? t("Customer"));
-  return <div className={styles.contactDetails}>
-    <header><Avatar name={name} size="lg"/><h2>{name}</h2><span>{label(thread.channel)}</span></header>
-    <dl>
-      <div><dt>{t("Status")}</dt><dd><span className={styles.contactStatus} data-closed={thread.status === "closed"}>{thread.status === "closed" ? t("Resolved") : t("Open")}</span></dd></div>
-      <div><dt>{t("Sales owner")}</dt><dd>{String(thread.ownerName ?? t("Unassigned"))}</dd></div>
-      {thread.lastMessageAt ? <div><dt>{t("Last message")}</dt><dd>{time(thread.lastMessageAt)}</dd></div> : null}
-    </dl>
-    {thread.leadId ? <Link href={`/workspace/crm/leads?lead=${thread.leadId}`}>{t("View enquiry")} <span aria-hidden="true">↗</span></Link> : null}
-  </div>;
-}
-
-function useLiveConversation(workspaceId: string, id: string) {
-  const t = useT();
-  const [thread, setThread] = useState<RecordData | null>(null), [failure, setFailure] = useState("");
-  const controller = useRef<AbortController | null>(null), pending = useRef(false);
-  const refresh = useCallback(async (background = false) => {
-    if (background && pending.current) return;
-    pending.current = true;
-    controller.current?.abort(); const request = new AbortController(); controller.current = request;
-    try { const data = await crmRequest(workspaceId, `conversations/${id}`, "GET", undefined, AbortSignal.any([request.signal, timeout()])); if (!request.signal.aborted) { setThread(data); setFailure(""); } }
-    catch (error) { if (!request.signal.aborted) setFailure(error instanceof Error ? error.message : t("Chat could not be refreshed.")); }
-    finally { if (controller.current === request) pending.current = false; }
-  }, [workspaceId, id, t]);
-  useEffect(() => { const initial = setTimeout(() => void refresh(), 0); const timer = setInterval(() => { if (document.visibilityState === "visible") void refresh(true); }, 5_000); return () => { clearTimeout(initial); clearInterval(timer); controller.current?.abort(); }; }, [refresh]);
-  return { thread, failure, refresh };
 }
 
 function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onClose: () => void; onOpened: (id: string) => void }) {
@@ -168,7 +226,7 @@ function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onCl
         .then((data) => { if (!controller.signal.aborted) { setContacts(rows(data).filter((contact) => contact.status === "active")); setFailure(""); } })
         .catch((error) => { if (!controller.signal.aborted) setFailure(error.message); })
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    }, 250);return () => { clearTimeout(timer); controller.abort(); };
+    }, 250); return () => { clearTimeout(timer); controller.abort(); };
   }, [workspaceId, search]);
   return <ControlledModalDialog title={t("New conversation")} description={t("Choose the customer and channel. An enquiry is not required.")} isOpen isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
     <div className={styles.newChat}>
@@ -181,45 +239,3 @@ function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onCl
   </ControlledModalDialog>;
 }
 
-function MessageHistory({ workspaceId, thread }: { workspaceId: string; thread: RecordData }) {
-  const t = useT();
-  const { locale, timeZone } = useDesignSystem();
-  const dateOf = (value: unknown) => inboxDate(value, locale, timeZone, t("New"));
-  const scroller = useRef<HTMLDivElement>(null), olderAnchor = useRef<{ height: number; top: number } | null>(null), stayAtBottom = useRef(true);
-  const [olderMessages, setOlderMessages] = useState<RecordData[]>([]);
-  const [olderCursor, setOlderCursor] = useState<string | null>(null);
-  const cursor = olderCursor ?? String(thread.nextMessagesCursor ?? '');
-  const [busy, setBusy] = useState(false), [failure, setFailure] = useState("");
-  const messages = useMemo(() => {
-    const incoming = (thread.messages ?? []) as RecordData[];
-    return [...olderMessages.filter(item => !incoming.some(next => next.id === item.id)), ...incoming].sort((a,b) => String(a.createdAt).localeCompare(String(b.createdAt)) || a.id.localeCompare(b.id));
-  }, [olderMessages, thread.messages]);
-  useLayoutEffect(() => { const element = scroller.current; if (!element) return; const anchor = olderAnchor.current; if (anchor) element.scrollTop = anchor.top + element.scrollHeight - anchor.height; else if (stayAtBottom.current) element.scrollTop = element.scrollHeight; olderAnchor.current = null; }, [messages]);
-  const visible = thread.channel === "whatsapp" ? messages.filter((message) => message.direction !== "internal") : messages;
-  return <div className={styles.messages} ref={scroller} tabIndex={0} role="log" aria-label={t("Message history")} onScroll={() => { const el = scroller.current; if (el) stayAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
-    {cursor ? <Button size="compact" isLoading={busy} onPress={async () => { setBusy(true); setFailure(""); try { const result = await crmRequest<ChatPage>(workspaceId, `conversations/${thread.id}/messages?limit=100&cursor=${encodeURIComponent(cursor)}`, "GET", undefined, timeout()); if (scroller.current) olderAnchor.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; setOlderMessages((old) => [...result.data.filter((item) => !old.some((value) => value.id === item.id)), ...old]); setOlderCursor(result.nextCursor ?? ""); } catch (error) { setFailure((error as Error).message); } finally { setBusy(false); } }}>{t("Load earlier messages")}</Button> : null}
-    {failure ? <p role="alert">{failure}</p> : null}
-    {visible.map((message, index) => <Fragment key={message.id}>{dateOf(message.createdAt) !== dateOf(visible[index - 1]?.createdAt) ? <div className={styles.dateDivider}><span>{dateOf(message.createdAt)}</span></div> : null}<article className={styles.message} data-direction={message.direction} aria-label={message.direction === "inbound" ? t("Contact message") : t("Your message")}><span className={styles.messageAvatar}><Avatar name={message.direction === "inbound" ? String(thread.partyName ?? t("Contact")) : t("You")} size="sm" /></span><strong className={styles.messageSender}>{message.direction === "inbound" ? String(thread.partyName ?? t("Contact")) : t("You")}</strong><MessageContent message={message} workspaceId={workspaceId} /><footer><time dateTime={String(message.createdAt)}>{inboxTime(message.createdAt, locale, timeZone)}</time>{message.direction === "outbound" ? <DeliveryState status={String(message.status)} /> : null}</footer>{message.failureCode ? <small className={styles.error}>{String(message.failureCode)}</small> : null}</article></Fragment>)}
-    {!visible.length ? <div className={styles.empty}><MessageCircle size={30} /><p>{t("No messages yet.")}</p></div> : null}
-  </div>;
-}
-function DeliveryState({ status, compact = false }: { status: string; compact?: boolean }) {
-  const t = useT();
-  return <span className={styles.delivery} data-status={status} aria-label={label(status)} title={label(status)}>{status === "read" || status === "delivered" ? <CheckCheck size={15} /> : status === "sent" ? <Check size={15} /> : status === "failed" ? <span>!</span> : <Clock3 size={13} />}{!compact && status === "failed" ? t("Failed") : null}</span>;
-}
-function MessageContent({ message, workspaceId }: { message: RecordData; workspaceId: string }) {
-  const t = useT();
-  const metadata = message.metadata && typeof message.metadata === "object" && !Array.isArray(message.metadata) ? message.metadata as Record<string, unknown> : {};
-  const kind = String(metadata.messageType ?? "");
-  const connectionId = String(metadata.connectionId ?? "");
-  const mediaId = String(metadata.mediaId ?? "");
-  const mediaUrl = connectionId && mediaId ? `/api/workspace/integration-connections/${connectionId}/media/${mediaId}?workspaceId=${workspaceId}` : "";
-  return <>{kind === "image" && mediaUrl ? <a className={styles.mediaPreview} href={mediaUrl} target="_blank" rel="noreferrer"><Image src={mediaUrl} alt={String(message.bodyText ?? t("WhatsApp image"))} width={360} height={260} unoptimized /><span><ImageIcon size={13} /> {t("Open image")}</span></a> : kind && kind !== "text" ? <a className={styles.mediaFile} href={mediaUrl || undefined} target={mediaUrl ? "_blank" : undefined} rel={mediaUrl ? "noreferrer" : undefined} aria-disabled={!mediaUrl}>{kind === "video" ? <Video size={16} /> : <FileText size={16} />}<span>{String(metadata.fileName ?? t("{kind} attachment", { kind: label(kind) }))}</span></a> : null}<p>{String(message.bodyText ?? t("This message has no plain-text preview."))}</p></>;
-}
-
-function inboxDate(value: unknown, locale: string, timeZone: string, empty: string) {
-  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(value)) : empty;
-}
-function inboxTime(value: unknown, locale: string, timeZone: string) {
-  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat(locale, { timeZone, hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "";
-}

@@ -1,4 +1,5 @@
 import { readableOnWhite } from "./readable-colour";
+import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DatabaseService } from "../database/database.service";
@@ -6,13 +7,19 @@ import { deliveryAllowlist, NOT_ALLOWLISTED } from "../notifications/delivery-al
 import { renderBrandedEmail, WODANA_BRAND, type EmailBrand } from "./branded-email";
 
 export type EmailDeliveryStatus = "sent" | "not_configured" | "failed";
+export type EmailProvider = "mailgun" | "ses";
+
+/** Sends one prepared message through Amazon SES; replaced in tests. */
+export type SesSender = (input: { region: string; from: string; to: string; subject: string; text: string; html: string; configurationSet?: string }) => Promise<string | null>;
 
 export interface EmailDeliveryResult {
   status: EmailDeliveryStatus;
-  provider: "mailgun" | null;
+  provider: EmailProvider | null;
   messageId: string | null;
   /** Why nothing was sent although email is set up (the DELIVERY_ALLOWLIST guard). */
   suppressedReason?: typeof NOT_ALLOWLISTED;
+  /** Why a send failed, without recipient data (e.g. MAILGUN_HTTP_401, MAILGUN_TIMEOUT, SES_MessageRejected). */
+  errorCode?: string;
 }
 
 interface TransactionalMessage {
@@ -39,6 +46,34 @@ interface WorkspaceInvitationMessage {
 
 const DEFAULT_MAILGUN_BASE_URL = "https://api.mailgun.net";
 
+const sesClients = new Map<string, SESv2Client>();
+
+/** Credentials come from the default AWS chain (the server's instance role in production). */
+const sendThroughSes: SesSender = async ({ region, from, to, subject, text, html, configurationSet }) => {
+  let client = sesClients.get(region);
+  if (!client) {
+    client = new SESv2Client({ region });
+    sesClients.set(region, client);
+  }
+  const result = await client.send(new SendEmailCommand({
+    FromEmailAddress: from,
+    Destination: { ToAddresses: [to] },
+    Content: {
+      Simple: {
+        Subject: { Data: subject, Charset: "UTF-8" },
+        Body: { Text: { Data: text, Charset: "UTF-8" }, Html: { Data: html, Charset: "UTF-8" } },
+      },
+    },
+    ...(configurationSet ? { ConfigurationSetName: configurationSet } : {}),
+  }), { abortSignal: AbortSignal.timeout(30_000) });
+  return result.MessageId ?? null;
+};
+
+/** `Name <address>` with the name quoted only when RFC 5322 needs it. */
+function fromHeader(displayName: string, address: string) {
+  return /[(),.:;@[\]\\]/.test(displayName) ? `"${displayName}" <${address}>` : `${displayName} <${address}>`;
+}
+
 function readableRole(code: string): string {
   return code
     .replaceAll("_", " ")
@@ -52,13 +87,33 @@ type BrandRow = { displayName: string; loginSlug: string; logoUrl: string | null
 export class TransactionalEmailService {
   private readonly logger = new Logger(TransactionalEmailService.name);
 
+  private readonly sesSender: SesSender;
+
   constructor(
     private readonly config: ConfigService,
     @Optional() private readonly database?: DatabaseService,
-  ) {}
+    @Optional() sesSender?: SesSender,
+  ) {
+    this.sesSender = sesSender ?? sendThroughSes;
+  }
 
   private origin() {
     return this.config.get<string>("WEB_ORIGIN", "http://localhost:3000").split(",")[0].trim();
+  }
+
+  /** Whether the platform mailer (team and client-portal emails) has its sending credentials. */
+  configured() {
+    return this.provider() !== null;
+  }
+
+  /** EMAIL_PROVIDER picks the mailer; without it Mailgun is used when its keys are set, otherwise SES when SES_FROM is. */
+  provider(): EmailProvider | null {
+    const mailgun = Boolean(this.config.get<string>("MAILGUN_API_KEY", "").trim() && this.config.get<string>("MAILGUN_DOMAIN", "").trim());
+    const ses = Boolean(this.config.get<string>("SES_FROM", "").trim());
+    const chosen = this.config.get<string>("EMAIL_PROVIDER", "").trim().toLowerCase();
+    if (chosen === "ses") return ses ? "ses" : null;
+    if (chosen === "mailgun") return mailgun ? "mailgun" : null;
+    return mailgun ? "mailgun" : ses ? "ses" : null;
   }
 
   /**
@@ -233,11 +288,13 @@ export class TransactionalEmailService {
       this.logger.warn(`Transactional email suppressed (${NOT_ALLOWLISTED}) for a recipient at ${message.to.split("@").pop() ?? "unknown"}`);
       return { status: "not_configured", provider: null, messageId: null, suppressedReason: NOT_ALLOWLISTED };
     }
-    const apiKey = this.config.get<string>("MAILGUN_API_KEY", "").trim();
-    const domain = this.config.get<string>("MAILGUN_DOMAIN", "").trim();
-    if (!apiKey || !domain) {
+    const provider = this.provider();
+    if (provider === "ses") return this.sendWithSes(message);
+    if (provider !== "mailgun") {
       return { status: "not_configured", provider: null, messageId: null };
     }
+    const apiKey = this.config.get<string>("MAILGUN_API_KEY", "").trim();
+    const domain = this.config.get<string>("MAILGUN_DOMAIN", "").trim();
 
     const baseUrl = this.config
       .get<string>("MAILGUN_BASE_URL", DEFAULT_MAILGUN_BASE_URL)
@@ -245,8 +302,7 @@ export class TransactionalEmailService {
     const configured = this.config.get<string>("MAILGUN_FROM", "").trim();
     const address = configured.match(/<([^>]+)>/)?.[1] ?? (configured || `postmaster@${domain}`);
     const displayName = (message.fromName ?? configured.replace(/\s*<[^>]+>\s*$/, "") ?? "").replace(/["<>\r\n]/g, "").trim() || "Wodana";
-    // Quote the display name only when it contains characters that need it (RFC 5322).
-    const from = /[(),.:;@[\]\\]/.test(displayName) ? `"${displayName}" <${address}>` : `${displayName} <${address}>`;
+    const from = fromHeader(displayName, address);
     const form = new FormData();
     form.set("from", from);
     form.set("to", message.to);
@@ -265,7 +321,7 @@ export class TransactionalEmailService {
       });
       if (!response.ok) {
         this.logger.error(`Mailgun rejected a transactional email with HTTP ${response.status}`);
-        return { status: "failed", provider: "mailgun", messageId: null };
+        return { status: "failed", provider: "mailgun", messageId: null, errorCode: `MAILGUN_HTTP_${response.status}` };
       }
 
       const payload = await response.json().catch(() => ({})) as { id?: unknown };
@@ -277,7 +333,33 @@ export class TransactionalEmailService {
     } catch (error) {
       const reason = error instanceof Error ? error.name : "UnknownError";
       this.logger.error(`Mailgun transactional email delivery failed (${reason})`);
-      return { status: "failed", provider: "mailgun", messageId: null };
+      return { status: "failed", provider: "mailgun", messageId: null, errorCode: reason === "TimeoutError" ? "MAILGUN_TIMEOUT" : "MAILGUN_UNREACHABLE" };
+    }
+  }
+  /** Amazon SES: the address is SES_FROM's (a verified domain); the display name is the tenant's. */
+  private async sendWithSes(message: TransactionalMessage): Promise<EmailDeliveryResult> {
+    const configured = this.config.get<string>("SES_FROM", "").trim();
+    const address = configured.match(/<([^>]+)>/)?.[1] ?? configured;
+    const displayName = (message.fromName ?? configured.replace(/\s*<[^>]+>\s*$/, "")).replace(/["<>\r\n]/g, "").trim() || "Wodana";
+    const region = this.config.get<string>("SES_REGION", "").trim() || this.config.get<string>("AWS_REGION", "").trim() || "us-east-1";
+    const configurationSet = this.config.get<string>("SES_CONFIGURATION_SET", "").trim() || undefined;
+    try {
+      const messageId = await this.sesSender({
+        region,
+        from: fromHeader(displayName, address),
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
+        configurationSet,
+      });
+      this.logger.log(`Transactional email accepted by SES${messageId ? ` (${messageId})` : ""}`);
+      return { status: "sent", provider: "ses", messageId };
+    } catch (error) {
+      const name = error instanceof Error ? error.name : "UnknownError";
+      this.logger.error(`SES transactional email delivery failed (${name})`);
+      const errorCode = name === "TimeoutError" || name === "AbortError" ? "SES_TIMEOUT" : `SES_${name.replace(/[^A-Za-z0-9]/g, "")}`;
+      return { status: "failed", provider: "ses", messageId: null, errorCode };
     }
   }
 }

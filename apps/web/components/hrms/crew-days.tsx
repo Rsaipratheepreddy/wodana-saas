@@ -97,7 +97,7 @@ export function ProjectCrewDays({ workspaceId, projectId, openId, switcher, me, 
     ? <EmptyState title={t("No crews yet")} action={<Link className="wd-button" data-variant="primary" href={hrmsHref("crews")}>{t("New crew")}</Link>} />
     : <EmptyState title={t("No crew days yet")} />;
   return <>
-    <DataGrid<CrewDay> appearance="flush" ariaLabel={t("Crew days")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!data} onRowAction={(row) => setOpen(row.id)}
+    <DataGrid<CrewDay> ariaLabel={t("Crew days")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!data} onRowAction={(row) => setOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search crew days")} rowNumbers={false} selectable={false} wrapText toolbarLeading={switcher} toolbarActions={mark}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : empty} />
     {data && viewer && open ? <CrewDayPanel api={api} data={data} viewer={viewer} projectId={projectId} markable={markable} open={open} showPlace={false}

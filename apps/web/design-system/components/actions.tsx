@@ -14,6 +14,7 @@ import {
 import { ChevronDown, Ellipsis, LoaderCircle } from "lucide-react";
 import { emitHapticFeedback } from "../foundations/haptics";
 import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provider";
+import { useReadOnlyReason } from "../foundations/read-only";
 
 type ButtonVariant = "primary" | "secondary" | "quiet" | "danger" | "gradient";
 type ButtonSize = "compact" | "standard" | "large";
@@ -24,25 +25,42 @@ export type ButtonProps = AriaButtonProps & {
   isLoading?: boolean;
   /** Only for deliberate selection actions; success feedback belongs after the action succeeds. */
   haptic?: "selection";
+  /**
+   * Whether pressing it changes something. Primary, danger and submit buttons write unless marked "read"; any
+   * other button writes only when marked "write". A writing button shows disabled, with the reason as its
+   * tooltip, while the page is read-only (for example while viewing as someone).
+   */
+  intent?: "read" | "write";
 };
 
+/** True when a button changes something, so it is turned off while the page is read-only. */
+export function buttonWrites({ intent, type, variant = "secondary" }: Pick<ButtonProps, "intent" | "type" | "variant">) {
+  if (intent) return intent === "write";
+  return type === "submit" || variant === "primary" || variant === "danger" || variant === "gradient";
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { children, className, haptic, isDisabled, isLoading = false, onPress, size = "standard", variant = "secondary", ...props },
+  { children, className, haptic, intent, isDisabled, isLoading = false, onPress, size = "standard", variant = "secondary", ...props },
   ref,
 ) {
-  return (
+  const readOnlyReason = useReadOnlyReason();
+  const locked = Boolean(readOnlyReason) && buttonWrites({ intent, type: props.type, variant });
+  const button = (
     <AriaButton
       {...props}
       className={(state) => ["wd-button", typeof className === "function" ? className(state) : className].filter(Boolean).join(" ")}
+      data-read-only={locked || undefined}
       data-size={size}
       data-variant={variant}
-      isDisabled={isDisabled || isLoading}
+      isDisabled={isDisabled || isLoading || locked}
       onPress={(event) => { if (haptic) emitHapticFeedback(haptic); onPress?.(event); }}
       ref={ref}
     >
       {(values) => <>{isLoading ? <LoaderCircle aria-hidden="true" className="wd-spin" size={16} /> : null}{typeof children === "function" ? children(values) : children}</>}
     </AriaButton>
   );
+  // The wrapper adds no box of its own; it carries the reason as the disabled button's tooltip.
+  return locked ? <span className="wd-read-only-action" title={readOnlyReason ?? undefined}>{button}</span> : button;
 });
 
 export const IconButton = forwardRef<HTMLButtonElement, Omit<ButtonProps, "size"> & { size?: ButtonSize }>(function IconButton(
@@ -63,11 +81,13 @@ export function ToggleButton({ isSelected, ...props }: ButtonProps & { isSelecte
 export type ActionItem = { id: string; label: string; isDisabled?: boolean; tone?: "default" | "danger" };
 
 function ActionMenuItem({ item, onAction }: { item: ActionItem; onAction?: (id: string) => void }) {
+  // A destructive action is off while the page is read-only; the others open a view or a dialog whose save is.
+  const readOnly = Boolean(useReadOnlyReason()) && item.tone === "danger";
   return (
     <MenuItem
       className="wd-menu-item"
       id={item.id}
-      isDisabled={item.isDisabled}
+      isDisabled={item.isDisabled || readOnly}
       onAction={() => onAction?.(item.id)}
       textValue={item.label}
     >

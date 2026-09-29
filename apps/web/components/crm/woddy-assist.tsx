@@ -3,11 +3,15 @@
 import { useState } from "react";
 import { AiSuggestionReview, Button, Callout, Woddy, woddyPoseFor, type AiDiffItem, type AiEvidenceItem } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
+import { AiPauseNotice } from "@/components/workspace/ai-pause-notice";
 import { useWoddy } from "./woddy-chat";
 import styles from "./crm-workbench.module.css";
 
 type Suggestion = {
   id: string;
+  /** AI credits used up or today's AI limit reached: the checklist came from the record's rules. */
+  paused?: boolean;
+  note?: string;
   title: string;
   suggestionText: string;
   editedText: string | null;
@@ -74,6 +78,7 @@ export function WoddyAssist({ workspaceId, leadId }: { workspaceId: string; lead
       title={result.title}
       uncertainty={result.uncertainty}
     /> : <p>A quick evidence-backed review with proposed changes and visible uncertainty. Nothing is applied automatically.</p>}
+    {result?.paused && result.note ? <AiPauseNotice message={result.note} /> : null}
     {error ? <Callout title="Woddy review unavailable" tone="danger">{error}</Callout> : null}
   </section>;
 }

@@ -148,6 +148,11 @@ export class WorkspacesController {
     return this.workspaces.homeMetrics(actor, workspaceId);
   }
 
+  @Get(":workspaceId/home/summary")
+  homeSummary(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.workspaces.homeSummary(actor, workspaceId);
+  }
+
   @Put(":workspaceId/home-layout")
   updateHomeLayout(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: UpdateHomeLayoutDto) {
     return this.workspaces.updateHomeLayout(actor, workspaceId, input);

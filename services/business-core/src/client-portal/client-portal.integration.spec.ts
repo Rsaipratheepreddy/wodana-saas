@@ -24,6 +24,8 @@ import { ClientPortalService } from "./client-portal.service";
 import type { Delivery } from "./portal-auth";
 import { tellClients } from "./portal-notices";
 import { savePortalSettings } from "./portal-settings";
+import { CrmPaymentRemindersService } from "../crm/conversations/crm-payment-reminders.service";
+import { CrmWhatsAppTemplatesService } from "../crm/conversations/crm-whatsapp-templates.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -114,18 +116,10 @@ projects[].decisions.handovers[].decidedOn projects[].decisions.handovers[].deci
 projects[].decisions.handovers[].documents projects[].decisions.handovers[].documents[] projects[].decisions.handovers[].documents[].id
 projects[].decisions.handovers[].documents[].kind projects[].decisions.handovers[].documents[].title projects[].decisions.handovers[].documents[].mimeType
 projects[].decisions.handovers[].canDecide
-projects[].payments projects[].payments.currency projects[].payments.showAmounts projects[].payments.invoices projects[].payments.invoices[]
-projects[].payments.invoices[].id projects[].payments.invoices[].number projects[].payments.invoices[].milestone projects[].payments.invoices[].issueDate
-projects[].payments.invoices[].dueDate projects[].payments.invoices[].currency projects[].payments.invoices[].total projects[].payments.invoices[].paid
-projects[].payments.invoices[].balance projects[].payments.invoices[].status projects[].payments.invoices[].receipts projects[].payments.invoices[].receipts[]
-projects[].payments.invoices[].receipts[].amount projects[].payments.invoices[].receipts[].receivedOn
-projects[].payments.schedule projects[].payments.schedule[] projects[].payments.schedule[].id projects[].payments.schedule[].title
-projects[].payments.schedule[].amount projects[].payments.schedule[].paid projects[].payments.schedule[].dueDate projects[].payments.schedule[].status
-projects[].payments.schedule[].invoiceNumber projects[].payments.schedule[].payUrl
+projects[].payments projects[].payments.currency projects[].payments.showAmounts
 projects[].documents projects[].documents[] projects[].documents[].id projects[].documents[].kind projects[].documents[].title projects[].documents[].group
 projects[].documents[].date projects[].documents[].mimeType
-projects[].warranty projects[].warranty.items projects[].warranty.items[] projects[].warranty.items[].id projects[].warranty.items[].title
-projects[].warranty.items[].area projects[].warranty.items[].startsOn projects[].warranty.items[].endsOn projects[].warranty.items[].active
+projects[].warranty
 projects[].warranty.claims projects[].warranty.claims[] projects[].warranty.claims[].id projects[].warranty.claims[].number projects[].warranty.claims[].raisedOn
 projects[].warranty.claims[].description projects[].warranty.claims[].status projects[].warranty.claims[].reason projects[].warranty.areas
 projects[].warranty.areas[] projects[].warranty.areas[].id projects[].warranty.areas[].name projects[].warranty.lines projects[].warranty.lines[]
@@ -135,6 +129,7 @@ projects[].messages.requests[].title projects[].messages.requests[].detail proje
 projects[].messages.requests[].resolution projects[].messages.requests[].comments projects[].messages.requests[].comments[]
 projects[].messages.requests[].comments[].id projects[].messages.requests[].comments[].at projects[].messages.requests[].comments[].text
 projects[].messages.requests[].comments[].fromClient
+projects[].handedOverOn projects[].warrantyUntil projects[].rooms projects[].rooms[] projects[].rooms[].id projects[].rooms[].name projects[].unread projects[].sections.moodboard projects[].decisions.designs[].hasPreview projects[].progress.issues projects[].progress.issues[] projects[].progress.issues[].id projects[].progress.issues[].number projects[].progress.issues[].raisedOn projects[].progress.issues[].description projects[].progress.issues[].area projects[].progress.issues[].status projects[].progress.issues[].reason projects[].progress.issues[].files projects[].progress.issues[].files[] projects[].progress.issues[].files[].id projects[].progress.issues[].files[].name projects[].progress.issues[].files[].mimeType projects[].progress.issues[].files[].hasPreview projects[].progress.canReportIssue projects[].moodboard projects[].moodboard.canAdd projects[].moodboard.boards projects[].moodboard.boards[] projects[].moodboard.boards[].id projects[].moodboard.boards[].title projects[].moodboard.boards[].room projects[].moodboard.boards[].number projects[].moodboard.boards[].status projects[].moodboard.boards[].mimeType projects[].moodboard.boards[].sharedAt projects[].moodboard.boards[].hasImage projects[].moodboard.boards[].reaction projects[].moodboard.boards[].comments projects[].moodboard.boards[].comments[] projects[].moodboard.boards[].comments[].id projects[].moodboard.boards[].comments[].text projects[].moodboard.boards[].comments[].at projects[].moodboard.boards[].comments[].fromClient projects[].moodboard.boards[].comments[].mine projects[].moodboard.boards[].comments[].author projects[].moodboard.pins projects[].moodboard.pins[] projects[].moodboard.pins[].id projects[].moodboard.pins[].title projects[].moodboard.pins[].note projects[].moodboard.pins[].link projects[].moodboard.pins[].room projects[].moodboard.pins[].addedAt projects[].moodboard.pins[].feeling projects[].moodboard.pins[].fromClient projects[].moodboard.pins[].mine projects[].moodboard.pins[].author projects[].moodboard.pins[].photos projects[].moodboard.pins[].photos[] projects[].moodboard.pins[].photos[].id projects[].moodboard.pins[].reaction projects[].moodboard.pins[].comments projects[].moodboard.pins[].comments[] projects[].moodboard.pins[].comments[].id projects[].moodboard.pins[].comments[].text projects[].moodboard.pins[].comments[].at projects[].moodboard.pins[].comments[].fromClient projects[].moodboard.pins[].comments[].mine projects[].moodboard.pins[].comments[].author projects[].payments.milestones projects[].payments.milestones[] projects[].payments.milestones[].id projects[].payments.milestones[].title projects[].payments.milestones[].amount projects[].payments.milestones[].paid projects[].payments.milestones[].left projects[].payments.milestones[].dueDate projects[].payments.milestones[].status projects[].payments.milestones[].invoice projects[].payments.milestones[].invoice.id projects[].payments.milestones[].invoice.number projects[].payments.milestones[].invoice.issueDate projects[].payments.milestones[].receipts projects[].payments.milestones[].receipts[] projects[].payments.milestones[].receipts[].id projects[].payments.milestones[].receipts[].amount projects[].payments.milestones[].receipts[].receivedOn projects[].payments.milestones[].payUrl projects[].payments.milestones[].report projects[].payments.milestones[].report.id projects[].payments.milestones[].report.status projects[].payments.milestones[].report.paidOn projects[].payments.milestones[].report.reference projects[].payments.milestones[].report.amount projects[].payments.milestones[].report.at projects[].payments.milestones[].report.reason projects[].payments.milestones[].canReport projects[].payments.milestones[].report.files projects[].payments.milestones[].report.files[] projects[].payments.milestones[].report.files[].id projects[].payments.milestones[].report.files[].name projects[].payments.milestones[].report.files[].mimeType projects[].payments.milestones[].report.files[].hasPreview projects[].warranty.rooms projects[].warranty.rooms[] projects[].warranty.rooms[].id projects[].warranty.rooms[].name projects[].warranty.rooms[].until projects[].warranty.rooms[].active projects[].warranty.rooms[].items projects[].warranty.rooms[].items[] projects[].warranty.rooms[].items[].id projects[].warranty.rooms[].items[].title projects[].warranty.rooms[].items[].until projects[].warranty.rooms[].items[].active projects[].warranty.claims[].files projects[].warranty.claims[].files[] projects[].warranty.claims[].files[].id projects[].warranty.claims[].files[].name projects[].warranty.claims[].files[].mimeType projects[].warranty.claims[].files[].hasPreview projects[].messages.unread projects[].messages.requests[].files projects[].messages.requests[].files[] projects[].messages.requests[].files[].id projects[].messages.requests[].files[].name projects[].messages.requests[].files[].mimeType projects[].messages.requests[].files[].hasPreview projects[].messages.requests[].comments[].files projects[].messages.requests[].comments[].files[] projects[].messages.requests[].comments[].files[].id projects[].messages.requests[].comments[].files[].name projects[].messages.requests[].comments[].files[].mimeType projects[].messages.requests[].comments[].files[].hasPreview projects[].messages.requests[].unread projects[].messages.requests[].seenByTeam projects[].messages.requests[].lastAt
 `.trim().split(/\s+/));
 
 /** Every key path in a value, lists collapsed to []. */
@@ -174,8 +169,13 @@ integration("client portal (plan §6.22)", () => {
       await client.query("INSERT INTO workspaces(id,name,slug,default_currency,default_timezone,default_locale,created_by) VALUES($1,'Studio',$2,'AED','Asia/Dubai','en-AE',$3)", [workspaceId, slug, manager]);
       await client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active'),($4,$2,$5,'active')", [managerMembership, workspaceId, manager, designerMembership, designer]);
       await client.query("INSERT INTO crm_parties(id,workspace_id,type,display_name,normalized_name) VALUES($1,$2,'person','Maya Client','maya client')", [party, workspaceId]);
+      // A real pipeline: the client's acceptance moves the opportunity to its Won stage.
+      const pipeline = randomUUID(), proposalStage = randomUUID();
+      await client.query("INSERT INTO crm_pipelines(id,workspace_id,code,name) VALUES($1,$2,'sales','Sales')", [pipeline, workspaceId]);
+      await client.query(`INSERT INTO crm_pipeline_stages(id,workspace_id,pipeline_id,code,name,position,probability) VALUES
+        ($1,$3,$4,'proposal','Proposal',1,50), ($2,$3,$4,'won','Won',9,100)`, [proposalStage, randomUUID(), workspaceId, pipeline]);
       await client.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,pipeline_id,stage_id,owner_membership_id,title,reference,conversion_origin,conversion_request_hash,qualification_evidence,qualification_evidence_hash,converted_at)
-        VALUES($1,$2,$3,$4,$5,$6,'Villa 12','O-1','lead_qualification',repeat('a',64),'{}',repeat('b',64),now())`, [opportunity, workspaceId, party, randomUUID(), randomUUID(), designerMembership]);
+        VALUES($1,$2,$3,$4,$5,$6,'Villa 12','O-1','lead_qualification',repeat('a',64),'{}',repeat('b',64),now())`, [opportunity, workspaceId, party, pipeline, proposalStage, designerMembership]);
       await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, workspaceId, opportunity, manager]);
       await client.query("INSERT INTO pre_project_rooms(id,workspace_id,case_id,name) VALUES($1,$2,$3,'Kitchen')", [kitchen, workspaceId, caseId]);
       await client.query("INSERT INTO commercial_cases(workspace_id,case_id,revision,content) VALUES($1,$2,1,'{}')", [workspaceId, caseId]);
@@ -222,7 +222,7 @@ integration("client portal (plan §6.22)", () => {
         whatsapp: async ({ phone, code }) => { if (phone.endsWith("2")) throw new Error("not on WhatsApp"); sent.push({ channel: "whatsapp", to: phone, code }); },
         email: async ({ to, code }) => { sent.push({ channel: "email", to, code }); return true; },
       });
-      const admin = new ClientPortalAdminService(access(manager, everything), config, mailer as never, definitions);
+      const admin = new ClientPortalAdminService(access(manager, everything), config, mailer as never, definitions, storage);
       await work({ client, workspaceId, slug, caseId, quoteId, party, manager, designer, managerMembership, designerMembership, kitchen, storage, core: new ProjectCoreService(access(manager, everything)),
         portal, admin, sent, invites, savepoint });
     } finally {
@@ -319,11 +319,17 @@ integration("client portal (plan §6.22)", () => {
       const stranger = await w.portal.challenge(w.slug, { phone: STRANGER }, "", "203.0.113.7");
       expect(Object.keys(stranger).sort()).toEqual(["challengeId", "channel", "expiresIn", "resendAfter"]);
       expect(w.sent).toEqual([]);
-      // WhatsApp for the decision-maker; again within 30 seconds is refused.
+      // WhatsApp for the decision-maker; asking again within 30 seconds (a reload, a second device) returns the code already
+      // on its way, and sends nothing more.
       const first = await w.portal.challenge(w.slug, { phone: "+1 555 010 0001" }, "", "203.0.113.7");
       expect(first).toMatchObject({ channel: "whatsapp", expiresIn: 300, resendAfter: 30 });
       expect(w.sent).toEqual([{ channel: "whatsapp", to: APPROVER, code: expect.stringMatching(/^\d{6}$/) }]);
-      await expect(w.portal.challenge(w.slug, { phone: APPROVER }, "", "203.0.113.7")).rejects.toMatchObject({ status: 429 });
+      const again = await w.portal.challenge(w.slug, { phone: APPROVER }, "", "203.0.113.7");
+      expect(again).toMatchObject({ challengeId: first.challengeId, channel: "whatsapp" });
+      expect(Object.keys(again).sort()).toEqual(["challengeId", "channel", "expiresIn", "resendAfter"]);
+      expect(again.resendAfter).toBeGreaterThan(0);
+      expect(again.resendAfter).toBeLessThanOrEqual(30);
+      expect(w.sent).toHaveLength(1);
       // Five wrong codes and the challenge is spent, even the right one.
       for (let attempt = 0; attempt < 5; attempt += 1)
         await expect(w.portal.login(w.slug, { challengeId: first.challengeId, code: w.sent[0].code === "000000" ? "111111" : "000000" })).rejects.toThrow(/isn't right/);
@@ -352,6 +358,169 @@ integration("client portal (plan §6.22)", () => {
         SELECT gen_random_uuid(), $1, '+1555019' || lpad(n::text, 4, '0'), 'sign_in', repeat('0', 64), now(), now() - interval '5 minutes', $2 FROM generate_series(1, 20) n`,
         [w.workspaceId, (w.portal as unknown as { codes: { requester(value: string): string } }).codes.requester("198.51.100.2")]);
       await expect(w.portal.challenge(w.slug, { phone: "+15550199999" }, "", "198.51.100.2")).rejects.toMatchObject({ status: 429 });
+    });
+  });
+
+  it("works the moodboard with the client: shared pins and boards, likes, comments both ways, and the client's own ideas with photos", async () => {
+    await world(async (w) => {
+      const { approver } = await open(w);
+      const token = await signIn(w, APPROVER);
+      // Two of the team's pins: one shown to the client, one kept to the team.
+      const shared = randomUUID(), kept = randomUUID();
+      for (const [id, title] of [[shared, "Warm oak"], [kept, "INTERNAL-PIN"]])
+        await w.client.query(`INSERT INTO pre_project_brief_entries (workspace_id, case_id, id, kind, title, source, created_by, updated_by) VALUES ($1, $2, $3, 'inspiration', $4, 'team', $5, $5)`,
+          [w.workspaceId, w.caseId, id, title, w.designer]);
+      let board = await w.admin.shareMoodboard(actor, w.workspaceId, w.caseId, { entryIds: [shared], shared: true });
+      expect(board.shared).toEqual([shared]);
+      await w.admin.shareMoodboard(actor, w.workspaceId, w.caseId, { entryIds: [shared], shared: true });
+      expect((await w.client.query("SELECT count(*)::int AS n FROM audit_events WHERE workspace_id = $1 AND action = 'client_portal.moodboard_shared'", [w.workspaceId])).rows[0].n).toBe(1);
+      let view = (await w.portal.view(w.slug, token)).projects[0];
+      expect(view.moodboard!.pins.map((pin) => [pin.title, pin.fromClient, pin.reaction])).toEqual([["Warm oak", false, null]]);
+      expect(JSON.stringify(view)).not.toContain("INTERNAL-PIN");
+      // A like and a comment; the design team hears both (the comment by email too). A pin that isn't shared can't be reached.
+      await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "react", caseId: w.caseId, targetKind: "pin", targetId: shared, reaction: "like" });
+      await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "board_comment", caseId: w.caseId, targetKind: "pin", targetId: shared, text: "Lighter, please" });
+      await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "react", caseId: w.caseId, targetKind: "pin", targetId: kept, reaction: "like" }))
+        .rejects.toThrow(/isn't shared/);
+      expect((await w.client.query(`SELECT event_type, channel FROM notifications WHERE workspace_id = $1 AND recipient_id = $2 AND event_type LIKE 'moodboard.%' ORDER BY event_type, channel`,
+        [w.workspaceId, w.designer])).rows).toEqual([{ event_type: "moodboard.client_commented", channel: "email" }, { event_type: "moodboard.client_commented", channel: "in_app" },
+        { event_type: "moodboard.client_reacted", channel: "in_app" }]);
+      // The client adds their own idea: a photo (checked by content, a retry returns the same file) and an Instagram link.
+      const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#c8a165" } }).png().toBuffer();
+      const upload = randomUUID();
+      const file = { buffer: png, originalname: "sofa.png", mimetype: "image/png", size: png.length };
+      expect(await w.portal.upload(w.slug, token, w.caseId, upload, file)).toEqual({ id: upload, name: "sofa.png", mimeType: "image/png", hasPreview: true });
+      expect(await w.portal.upload(w.slug, token, w.caseId, upload, file)).toEqual({ id: upload, name: "sofa.png", mimeType: "image/png", hasPreview: true });
+      await expect(w.portal.upload(w.slug, token, w.caseId, randomUUID(), { ...file, buffer: Buffer.from("not an image") })).rejects.toThrow(/photo/);
+      const added = await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "add_inspiration", caseId: w.caseId, uploadIds: [upload],
+        link: "https://www.instagram.com/p/abc", note: "This sofa", roomId: w.kitchen });
+      expect((await w.client.query("SELECT source, created_by, client_grant_id AS grant, title, reference_url AS link, room_id AS room FROM pre_project_brief_entries WHERE id = $1",
+        [added.pinId])).rows).toEqual([{ source: "client", created_by: null, grant: approver.id, title: "Instagram", link: "https://www.instagram.com/p/abc", room: w.kitchen }]);
+      await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "add_inspiration", caseId: w.caseId, uploadIds: [upload] })).rejects.toThrow(/already sent/);
+      view = (await w.portal.view(w.slug, token)).projects[0];
+      const mine = view.moodboard!.pins.find((pin) => pin.id === added.pinId)!;
+      expect(mine).toMatchObject({ fromClient: true, mine: true, room: "Kitchen", photos: [{ id: upload }] });
+      expect((await w.portal.file(w.slug, token, "asset", upload, true)).mimeType).toBe("image/webp");
+      expect((await w.admin.clientFile(actor, w.workspaceId, w.caseId, upload, false)).mimeType).toBe("image/png");
+      // The team answers; the client reads it (the team as "your design team") and hears it by email.
+      board = await w.admin.replyMoodboard(actor, w.workspaceId, w.caseId, { id: randomUUID(), targetKind: "pin", targetId: shared, text: "We can do a lighter oak." });
+      expect(board.comments.map((comment) => [comment.text, comment.fromClient])).toEqual([["Lighter, please", true], ["We can do a lighter oak.", false]]);
+      view = (await w.portal.view(w.slug, token)).projects[0];
+      expect(view.moodboard!.pins.find((pin) => pin.id === shared)!.comments.map((comment) => [comment.text, comment.mine, comment.author]))
+        .toEqual([["Lighter, please", true, "Maya"], ["We can do a lighter oak.", false, null]]);
+      expect(JSON.stringify(view)).not.toContain("Omar");
+      expect((await w.client.query("SELECT recipient_type, channel FROM notifications WHERE workspace_id = $1 AND event_type = 'portal.team_replied'", [w.workspaceId])).rows)
+        .toEqual([{ recipient_type: "portal_contact", channel: "email" }]);
+      // The client takes back their own idea, never the team's.
+      await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "remove_inspiration", caseId: w.caseId, pinId: shared })).rejects.toThrow(/only the ideas you added/);
+      await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "remove_inspiration", caseId: w.caseId, pinId: added.pinId });
+      expect((await w.portal.view(w.slug, token)).projects[0].moodboard!.pins.map((pin) => pin.id)).toEqual([shared]);
+      // The team hides the pin: gone for the client.
+      await w.admin.shareMoodboard(actor, w.workspaceId, w.caseId, { entryIds: [shared], shared: false });
+      expect((await w.portal.view(w.slug, token)).projects[0].moodboard!.pins).toEqual([]);
+    });
+  });
+
+  it("takes the client's word that they paid, with proof, until finance records the payment or says it wasn't received", async () => {
+    await world(async (w) => {
+      await open(w);
+      const { projectId } = await started(w);
+      await w.client.query("UPDATE commercial_payments SET due_date = '2026-09-20' WHERE workspace_id = $1 AND case_id = $2 AND id = 'p2'", [w.workspaceId, w.caseId]);
+      const token = await signIn(w, APPROVER);
+      let milestone = (await w.portal.view(w.slug, token)).projects[0].payments!.milestones.find((item) => item.id === "p2")!;
+      expect(milestone).toMatchObject({ status: "upcoming", canReport: true, report: null });
+      const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#ffffff" } }).png().toBuffer();
+      const proof = randomUUID();
+      await w.portal.upload(w.slug, token, w.caseId, proof, { buffer: png, originalname: "transfer.png", mimetype: "image/png", size: png.length });
+      await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "report_payment", caseId: w.caseId, paymentId: "p2", paidOn: "2099-01-01", reference: "TT-1" }))
+        .rejects.toThrow(/future/);
+      await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "report_payment", caseId: w.caseId, paymentId: "p2", paidOn: "2026-09-26" }))
+        .rejects.toThrow(/reference or a photo/);
+      const reported = await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "report_payment", caseId: w.caseId, paymentId: "p2", paidOn: "2026-09-26",
+        amount: "4000.50", reference: "TT-4455", uploadIds: [proof] });
+      await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "report_payment", caseId: w.caseId, paymentId: "p2", paidOn: "2026-09-26", reference: "TT-4456" }))
+        .rejects.toThrow(/already checking/);
+      milestone = (await w.portal.view(w.slug, token)).projects[0].payments!.milestones.find((item) => item.id === "p2")!;
+      expect(milestone).toMatchObject({ status: "checking", canReport: false, report: { status: "submitted", paidOn: "2026-09-26", reference: "TT-4455", amount: "4000.5000",
+        files: [{ id: proof, name: "transfer.png", mimeType: "image/png", hasPreview: true }] } });
+      // Finance and the project's manager hear it, in the app and by email.
+      expect((await w.client.query("SELECT DISTINCT recipient_id::text AS who FROM notifications WHERE workspace_id = $1 AND event_type = 'payment.client_reported' AND channel = 'email'",
+        [w.workspaceId])).rows.map((row) => row.who)).toContain(w.manager);
+      // "Recorded" waits for the receipt; "not received" needs a reason the client reads.
+      let reports = await w.admin.paymentReports(actor, w.workspaceId, w.caseId);
+      expect(reports.reports).toEqual([expect.objectContaining({ id: reported.reportId, status: "submitted", grantName: "Maya", milestone: "Before production", files: [expect.objectContaining({ id: proof })] })]);
+      const report = reports.reports[0];
+      await expect(w.admin.decidePaymentReport(actor, w.workspaceId, report.id, { decision: "recorded", note: "", version: report.version })).rejects.toThrow(/receipt/);
+      await expect(w.admin.decidePaymentReport(actor, w.workspaceId, report.id, { decision: "not_received", note: "", version: report.version })).rejects.toThrow(/why/);
+      reports = await w.admin.decidePaymentReport(actor, w.workspaceId, report.id, { decision: "not_received", note: "Nothing from TT-4455 in our account yet.", version: report.version });
+      expect(reports.reports[0]).toMatchObject({ status: "not_received", reason: "Nothing from TT-4455 in our account yet." });
+      await expect(w.admin.decidePaymentReport(actor, w.workspaceId, report.id, { decision: "recorded", note: "", version: report.version })).rejects.toThrow(/already closed/);
+      milestone = (await w.portal.view(w.slug, token)).projects[0].payments!.milestones.find((item) => item.id === "p2")!;
+      expect(milestone).toMatchObject({ status: "upcoming", canReport: true, report: { status: "not_received", reason: "Nothing from TT-4455 in our account yet." } });
+      expect((await w.client.query("SELECT channel, body FROM notifications WHERE workspace_id = $1 AND event_type = 'portal.payment_checked'", [w.workspaceId])).rows)
+        .toEqual([{ channel: "email", body: expect.stringContaining("Nothing from TT-4455") }]);
+      expect(projectId).toBeTruthy();
+    });
+  });
+
+  it("lets the client report an issue while the work is on, and the manager accepts it as a snag or declines it with a reason", async () => {
+    await world(async (w) => {
+      await open(w);
+      const token = await signIn(w, APPROVER);
+      await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "report_issue", caseId: w.caseId, description: "Chipped panel" })).rejects.toThrow();
+      const { projectId } = await started(w);
+      const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#aa0000" } }).png().toBuffer();
+      const photo = randomUUID();
+      await w.portal.upload(w.slug, token, w.caseId, photo, { buffer: png, originalname: "chip.png", mimetype: "image/png", size: png.length });
+      const first = await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "report_issue", caseId: w.caseId, description: "Chipped panel by the fridge",
+        areaId: w.kitchen, uploadIds: [photo] });
+      const second = await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "report_issue", caseId: w.caseId, description: "A scratch that's really the sample" });
+      expect([first.number, second.number]).toEqual([1, 2]);
+      let view = (await w.portal.view(w.slug, token)).projects[0];
+      expect(view.progress!.canReportIssue).toBe(true);
+      expect(view.progress!.issues.map((issue) => [issue.number, issue.status, issue.area, issue.files.length])).toEqual([[2, "to_triage", null, 0], [1, "to_triage", "Kitchen", 1]]);
+      expect((await w.client.query("SELECT channel FROM notifications WHERE workspace_id = $1 AND event_type = 'project.client_issue' AND recipient_id = $2 ORDER BY channel",
+        [w.workspaceId, w.manager])).rows.map((row) => row.channel)).toEqual(["email", "email", "in_app", "in_app"]);
+      let staff = await w.admin.issues(actor, w.workspaceId, projectId);
+      expect(staff.canTriage).toBe(true);
+      const issue = staff.issues.find((item) => item.id === first.issueId)!;
+      await expect(w.admin.triageIssue(actor, w.workspaceId, projectId, issue.id, { decision: "accept", note: "", version: issue.version })).rejects.toThrow(/how serious/);
+      staff = await w.admin.triageIssue(actor, w.workspaceId, projectId, issue.id, { decision: "accept", severity: "major", note: "", version: issue.version });
+      const snagId = staff.issues.find((item) => item.id === issue.id)!.snagId;
+      expect((await w.client.query("SELECT type, source, severity, area_id AS area, title FROM work_items WHERE id = $1", [snagId])).rows)
+        .toEqual([{ type: "snag", source: "client", severity: "major", area: w.kitchen, title: "Client issue 1: Chipped panel by the fridge" }]);
+      const other = staff.issues.find((item) => item.id === second.issueId)!;
+      await expect(w.admin.triageIssue(actor, w.workspaceId, projectId, other.id, { decision: "decline", note: "", version: other.version })).rejects.toThrow(/why/);
+      await w.admin.triageIssue(actor, w.workspaceId, projectId, other.id, { decision: "decline", note: "That's the sample board, not your panel.", version: other.version });
+      view = (await w.portal.view(w.slug, token)).projects[0];
+      expect(view.progress!.issues.map((issue) => [issue.number, issue.status, issue.reason])).toEqual([[2, "declined", "That's the sample board, not your panel."], [1, "accepted", ""]]);
+      // The client hears both decisions by email; the reason for declining is theirs to read.
+      const told = (await w.client.query<{ body: string }>("SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'portal.issue_triaged' ORDER BY created_at",
+        [w.workspaceId])).rows.map((row) => row.body);
+      expect(told).toEqual([expect.stringContaining("We're fixing it."), expect.stringContaining("That's the sample board, not your panel.")]);
+      await w.client.query("UPDATE work_items SET status = 'done', completed_at = now() WHERE id = $1", [snagId]);
+      expect((await w.portal.view(w.slug, token)).projects[0].progress!.issues.find((item) => item.number === 1)!.status).toBe("fixed");
+    });
+  });
+
+  it("never shows a photo whose file is missing, and serves the original when a preview is gone", async () => {
+    await world(async (w) => {
+      await open(w);
+      const { projectId } = await started(w);
+      const report = randomUUID(), there = randomUUID(), missing = randomUUID();
+      await w.client.query(`INSERT INTO site_reports (id, workspace_id, project_id, report_date, author_id, status, submitted_at, decided_by, decided_at)
+        VALUES ($1, $2, $3, '2026-09-25', $4, 'approved', now(), $5, now())`, [report, w.workspaceId, projectId, w.designer, w.manager]);
+      const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#123456" } }).png().toBuffer();
+      await w.storage.put(`site/${there}/original`, png, "image/png");
+      for (const id of [there, missing])
+        await w.client.query(`INSERT INTO site_report_photos (id, workspace_id, report_id, original_name, mime_type, byte_size, object_key, preview_key, sha256, created_by, shared_at, shared_by)
+          VALUES ($1, $2, $3, 'site.png', 'image/png', 10, $4, $5, repeat('a', 64), $6, now(), $6)`, [id, w.workspaceId, report, `site/${id}/original`, `site/${id}/preview.webp`, w.manager]);
+      const token = await signIn(w, APPROVER);
+      const view = (await w.portal.view(w.slug, token)).projects[0];
+      expect(view.progress!.photoDays).toEqual([{ on: "2026-09-25", photos: [{ id: there }] }]);
+      // No preview stored: the original is served instead of nothing.
+      expect((await w.portal.file(w.slug, token, "photo", there, true)).mimeType).toBe("image/png");
+      await expect(w.portal.file(w.slug, token, "photo", missing, true)).rejects.toThrow(/isn't available/);
     });
   });
 
@@ -443,10 +612,15 @@ integration("client portal (plan §6.22)", () => {
       expect(project.decisions!.materials).toMatchObject({ number: 1, status: "sent", canDecide: true,
         items: [{ name: "Oak veneer", specification: "Crown cut", quantity: "12.0000", unit: "m²", areas: ["Kitchen"], decision: null }] });
       expect(project.decisions!.designs).toEqual([expect.objectContaining({ id: version, title: "Kitchen render", status: "client_review", room: "Kitchen", canDecide: false })]);
-      expect(project.payments!.invoices).toEqual([expect.objectContaining({ id: invoice, milestone: "Advance", total: `${(total / 2).toFixed(2)}00`, paid: `${(total / 2).toFixed(2)}00`,
-        balance: "0.0000", status: "paid", receipts: [{ amount: `${(total / 2).toFixed(2)}00`, receivedOn: "2026-09-27" }] })]);
-      expect(project.payments!.schedule.map((item) => [item.title, item.status, item.invoiceNumber !== null, item.payUrl])).toEqual([
-        ["Advance", "paid", true, null], ["Before production", "upcoming", false, "https://pay.example.com/p2"]]);
+      // One row per payment: the invoice on it, what was received (a receipt the client can print), and the pay link where one is.
+      expect(project.payments!.milestones).toEqual([
+        expect.objectContaining({ id: "p1", title: "Advance", status: "paid", amount: `${(total / 2).toFixed(2)}00`, paid: `${(total / 2).toFixed(2)}00`, left: "0.0000",
+          invoice: expect.objectContaining({ id: invoice }), receipts: [expect.objectContaining({ amount: `${(total / 2).toFixed(2)}00`, receivedOn: "2026-09-27" })], payUrl: null,
+          canReport: false }),
+        expect.objectContaining({ id: "p2", title: "Before production", status: "upcoming", invoice: null, payUrl: "https://pay.example.com/p2", canReport: false })]);
+      const printed = await w.portal.document(w.slug, token, w.caseId, "invoice", invoice);
+      expect(printed).toMatchObject({ kind: "invoice", invoice: { status: "paid", balance: "0.0000" } });
+      expect(JSON.stringify(printed)).not.toMatch(/issuedByName|Omar/);
       expect(project.documents).toEqual([]);
       expect(project.messages!.requests[0].comments.map((comment) => [comment.text, comment.fromClient])).toEqual([["Yes, we'll add it.", false]]);
       expect(project.next.map((step) => step.kind)).toEqual(["materials"]);
@@ -468,7 +642,8 @@ integration("client portal (plan §6.22)", () => {
       expect(plain.handoverDate).toBeNull();
       expect(plain.progress!.stages.every((stage) => stage.name === null && stage.startedOn === null)).toBe(true);
       expect(plain.progress!.photoDays).toEqual([]);
-      expect(plain.payments!.invoices[0]).toMatchObject({ total: null, paid: null, balance: null, status: "paid" });
+      expect(plain.payments!.milestones[0]).toMatchObject({ amount: null, paid: null, left: null, status: "paid" });
+      expect(plain.payments!.milestones[0].receipts[0].amount).toBeNull();
       // A photo not shared can't be opened by guessing its id.
       await expect(w.portal.file(w.slug, token, "photo", hidden, false)).rejects.toThrow(/not found/i);
       await savePortalSettings(w.client, w.workspaceId, w.manager, { version: 2, progress: { photos: true } });
@@ -477,7 +652,7 @@ integration("client portal (plan §6.22)", () => {
       const access = await w.admin.project(actor, w.workspaceId, projectId);
       await w.admin.saveProject(actor, w.workspaceId, projectId, { version: access.access.version, sections: ["progress", "decisions"] });
       const narrow = (await w.portal.view(w.slug, token)).projects[0];
-      expect(narrow.sections).toEqual({ progress: true, decisions: true, payments: false, documents: false, warranty: false, messages: false });
+      expect(narrow.sections).toEqual({ progress: true, moodboard: false, decisions: true, payments: false, documents: false, warranty: false, messages: false });
       expect([narrow.payments, narrow.documents, narrow.messages]).toEqual([null, null, null]);
       await w.admin.saveProject(actor, w.workspaceId, projectId, { version: access.access.version + 1, paused: true });
       const paused = (await w.portal.view(w.slug, token)).projects[0];
@@ -561,12 +736,15 @@ integration("client portal (plan §6.22)", () => {
       // Every command is audited with the client contact.
       const audits = (await w.client.query("SELECT action, source, actor_user_id, after->>'grantId' AS grant FROM audit_events WHERE workspace_id = $1 AND source = 'client_portal' ORDER BY occurred_at",
         [w.workspaceId])).rows;
-      expect(audits).toEqual([{ action: "client_portal.quote_decision", source: "client_portal", actor_user_id: null, grant: approver.id },
+      // Acceptance is the sale: the opportunity is Won and the case moves to Agree, on the client's record.
+      expect(audits).toEqual([{ action: "crm.opportunity.won.v1", source: "client_portal", actor_user_id: null, grant: approver.id },
+        { action: "pre_project.phase_advanced.v1", source: "client_portal", actor_user_id: null, grant: approver.id },
+        { action: "client_portal.quote_decision", source: "client_portal", actor_user_id: null, grant: approver.id },
         { action: "client_portal.request", source: "client_portal", actor_user_id: null, grant: approver.id }]);
       // The account manager hears the client's decision; the case owner hears the request, with a link to its thread.
       expect((await w.client.query("SELECT count(*)::int AS n FROM notifications WHERE workspace_id = $1 AND event_type = 'quotation.client_accepted'", [w.workspaceId])).rows[0].n).toBeGreaterThan(0);
       const requestNotices = (await w.client.query<{ deepLink: string; body: string }>(
-        "SELECT deep_link AS \"deepLink\", body FROM notifications WHERE workspace_id = $1 AND event_type = 'request.client_raised'", [w.workspaceId])).rows;
+        "SELECT deep_link AS \"deepLink\", body FROM notifications WHERE workspace_id = $1 AND event_type = 'request.client_raised' AND channel = 'in_app'", [w.workspaceId])).rows;
       expect(requestNotices.length).toBeGreaterThan(0);
       expect(requestNotices[0].deepLink).toMatch(new RegExp(`^/workspace/pre-projects/cases/${w.caseId}/variations\\?request=[0-9a-f-]{36}$`));
       expect(requestNotices[0].body).toContain("Paint: Which white?");
@@ -653,7 +831,7 @@ integration("client portal (plan §6.22)", () => {
       // The warranty started that day, and the client can claim on it.
       view = (await w.portal.view(w.slug, token)).projects[0];
       expect(view.warranty!.canClaim).toBe(true);
-      expect(view.warranty!.items.length).toBeGreaterThan(0);
+      expect(view.warranty!.rooms.length).toBeGreaterThan(0);
       const claim = await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "warranty_claim", caseId: w.caseId, description: "Drawer won't close", lineId: view.warranty!.lines[0].id });
       expect((await w.client.query("SELECT channel, created_by, client_grant_id IS NOT NULL AS by_client, raised_by_name FROM warranty_claims WHERE id = $1", [claim.claimId])).rows)
         .toEqual([{ channel: "portal", created_by: null, by_client: true, raised_by_name: "Maya" }]);
@@ -826,6 +1004,50 @@ integration("client portal (plan §6.22)", () => {
       expect((await w.client.query("SELECT count(*)::int AS n FROM audit_events WHERE workspace_id = $1 AND action = 'client_portal.demo_code_cleared'", [w.workspaceId])).rows[0].n).toBe(1);
       expect((await w.client.query("SELECT demo_code_hash, demo_code_set_by, demo_code_set_at FROM client_portal_grants WHERE id = $1", [approver.id])).rows[0])
         .toEqual({ demo_code_hash: null, demo_code_set_by: null, demo_code_set_at: null });
+    });
+  });
+
+  it("reminds the client to pay what's still owed: by email, then on WhatsApp once the template is approved, once a day, never after payment", async () => {
+    await world(async (w) => {
+      await open(w);
+      await started(w);
+      const today = (await w.client.query<{ today: string }>(`SELECT (now() AT TIME ZONE default_timezone)::date::text AS today FROM workspaces WHERE id = $1`, [w.workspaceId])).rows[0].today;
+      await w.client.query(`UPDATE commercial_payments SET due_date = $3::date - 3 WHERE workspace_id = $1 AND case_id = $2 AND id = 'p2'`, [w.workspaceId, w.caseId, today]);
+      const run = (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => w.savepoint(async () => fn(w.client, { userId: w.manager }));
+      const database = { tenantTransaction: (_w: string, _a: string, fn: (c: PoolClient) => Promise<unknown>) => w.savepoint(() => fn(w.client)) };
+      const access = { withPermission: run, withAnyPermission: run, hasPermission: async () => true };
+      const reminders = new CrmPaymentRemindersService(database as never, access as never, new ConfigService({ WEB_ORIGIN: "https://app.example.com" }));
+      const inOffice = new Date(`${today}T06:00:00Z`); // 10:00 in the workspace's Gulf time zone
+
+      // No WhatsApp: the reminder goes by email to the portal contact, and only once today.
+      expect(await reminders.remind(actor, w.workspaceId, { caseId: w.caseId, paymentId: "p2" })).toMatchObject({ channel: "email", already: false });
+      const emails = await w.client.query(`SELECT subject FROM notifications WHERE workspace_id = $1 AND event_type = 'portal.payment_due'`, [w.workspaceId]);
+      expect(emails.rows).toEqual([{ subject: "Payment reminder · Before production" }]);
+      expect(await reminders.remind(actor, w.workspaceId, { caseId: w.caseId, paymentId: "p2" })).toMatchObject({ already: true, channel: "email" });
+      expect(await reminders.scheduleInternal(w.workspaceId, inOffice)).toEqual({ sent: 0, reason: null });
+
+      // WhatsApp connected, the client consented, the payment_due starter template approved: the next reminder goes there.
+      await w.client.query(`INSERT INTO integration_connections(workspace_id,provider,display_name,status,external_account_id,configuration) VALUES($1,'whatsapp','WhatsApp','connected','waba','{"phoneNumberId":"pn"}')`, [w.workspaceId]);
+      await w.client.query(`INSERT INTO crm_consents(workspace_id,party_id,purpose,channel,status) VALUES($1,$2,'service','whatsapp','granted')`, [w.workspaceId, w.party]);
+      await w.client.query(`INSERT INTO crm_contact_points(workspace_id,party_id,type,raw_value,normalized_value,is_primary) VALUES($1,$2,'phone','+15550100001','+15550100001',true)`, [w.workspaceId, w.party]);
+      const templates = new CrmWhatsAppTemplatesService(database as never, access as never, { record: async () => undefined } as never);
+      await templates.submitStarterPack(actor, w.workspaceId, { languages: ["en"] });
+      await templates.syncInternal(w.workspaceId, { full: false, templates: [{ id: "meta-due", name: "wd_payment_due", language: "en", status: "APPROVED" }] });
+      await w.client.query(`DELETE FROM crm_payment_reminders WHERE workspace_id = $1`, [w.workspaceId]); // as if today's email went yesterday
+      expect(await reminders.scheduleInternal(w.workspaceId, new Date(`${today}T20:00:00Z`))).toEqual({ sent: 0, reason: "closed" });
+      expect(await reminders.scheduleInternal(w.workspaceId, inOffice)).toEqual({ sent: 1, reason: null });
+      const chat = await w.client.query<{ body: string; automatic: string }>(
+        `SELECT message.body_text AS body, message.metadata->>'automatic' AS automatic FROM crm_messages message
+           JOIN crm_conversations conversation ON conversation.workspace_id = message.workspace_id AND conversation.id = message.conversation_id
+          WHERE message.workspace_id = $1 AND conversation.party_id = $2`, [w.workspaceId, w.party]);
+      expect(chat.rows).toEqual([{ automatic: "payments.reminder", body: expect.stringMatching(/^Hello Maya, this is a reminder that AED\s?3,925\.00 is due on .+\. You can pay here: \S+\/portal\S* Thank you\.$/) }]);
+      expect((await w.client.query(`SELECT channel, offset_days AS "offset" FROM crm_payment_reminders WHERE workspace_id = $1`, [w.workspaceId])).rows).toEqual([{ channel: "whatsapp", offset: 3 }]);
+
+      // Paid: the schedule never reminds again, and Send reminder refuses.
+      await w.client.query(`DELETE FROM crm_payment_reminders WHERE workspace_id = $1`, [w.workspaceId]);
+      await w.client.query(`UPDATE commercial_payments SET status = 'verified' WHERE workspace_id = $1 AND case_id = $2 AND id = 'p2'`, [w.workspaceId, w.caseId]);
+      expect(await reminders.scheduleInternal(w.workspaceId, inOffice)).toEqual({ sent: 0, reason: null });
+      await expect(reminders.remind(actor, w.workspaceId, { caseId: w.caseId, paymentId: "p2" })).rejects.toThrow(/Nothing is owed|paid or waiting/);
     });
   });
 });

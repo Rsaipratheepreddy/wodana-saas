@@ -83,3 +83,41 @@ it("asks before closing with an unsent comment", async () => {
   expect(close).not.toHaveBeenCalled();
   expect(screen.getByText("Discard your comment?")).toBeVisible();
 });
+
+it("shows the client's likes and comments on a board shared in their portal, and answers them", async () => {
+  let board = { shared: [], canEdit: true, boards: [{ id: "v1", designId: "d", title: "Kitchen concept", number: 1, room: "Kitchen" }],
+    reactions: [{ targetKind: "design", targetId: "v1", reaction: "like", by: "Aisha Al Mansoori", at: "2026-09-20T09:00:00.000Z" }],
+    comments: [{ id: "m1", targetKind: "design", targetId: "v1", text: "Can the island be longer?", at: "2026-09-20T10:00:00.000Z", fromClient: true, author: "Aisha Al Mansoori" }] };
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      board = { ...board, comments: [...board.comments, { ...body, at: "2026-09-21T08:00:00.000Z", fromClient: false, author: "Designer" }] };
+    }
+    return { ok: true, status: 200, json: async () => board };
+  });
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    render(view(design));
+    const panel = screen.getByRole("complementary", { name: "Review" });
+    const feedback = await within(panel).findByRole("region", { name: "Client feedback" });
+    expect(feedback).toHaveTextContent("Liked by Aisha Al Mansoori");
+    expect(feedback).toHaveTextContent("Can the island be longer?");
+    const user = userEvent.setup();
+    await user.type(within(feedback).getByRole("textbox", { name: "Reply to the client" }), "Yes, by 40 cm.");
+    await user.click(within(feedback).getByRole("button", { name: "Send" }));
+    expect(await within(feedback).findByText("Yes, by 40 cm.")).toBeVisible();
+    const [url, init] = fetcher.mock.calls.find(([, request]) => request?.method === "POST")!;
+    expect(url).toBe("/api/client-portal-admin/cases/c/moodboard/reply?workspaceId=w");
+    expect(JSON.parse(String(init!.body))).toEqual({ id: expect.any(String), targetKind: "design", targetId: "v1", text: "Yes, by 40 cm." });
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it("says nothing about the client on a drawing they don't see", async () => {
+  const fetcher = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ shared: [], canEdit: true, boards: [], reactions: [], comments: [] }) }));
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    render(view(design));
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: "Client feedback" })).not.toBeInTheDocument();
+  } finally { vi.unstubAllGlobals(); }
+});

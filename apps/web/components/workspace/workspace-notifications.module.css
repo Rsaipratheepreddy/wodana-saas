@@ -34,3 +34,13 @@
 .badge { border:1px solid color-mix(in srgb,var(--wd-danger) 18%,transparent); min-inline-size:1.2rem; block-size:1.2rem; border-radius:var(--wd-radius-xs); }
 .unread { background:var(--wd-danger); }
 .badge { background:var(--wd-color-danger-solid); color:var(--wd-color-on-danger); border:2px solid var(--wd-color-surface); border-radius:999px; }
+/* Module filters scroll sideways when there are many; day groups; the page and settings links. */
+.filters { overflow-x:auto; scrollbar-width:none; }
+.filters button { flex:1 0 auto; }
+.group { display:grid; }
+.groupTitle { margin:var(--wd-space-2) var(--wd-space-3) var(--wd-space-1); color:var(--wd-color-text-tertiary); font-size:var(--wd-text-2xs); font-weight:600; }
+.item { position:relative; }
+.itemAction { position:absolute; inset-block-start:var(--wd-space-2); inset-inline-end:var(--wd-space-6); }
+.footer { display:flex; align-items:center; justify-content:space-between; gap:var(--wd-space-2); padding:var(--wd-space-3) var(--wd-space-5); border-block-start:1px solid var(--wd-color-structural-divider); font-size:var(--wd-text-xs); }
+.footer a { display:inline-flex; align-items:center; gap:var(--wd-space-1); color:var(--wd-color-action-primary); font-weight:600; text-decoration:none; }
+.footer a:hover { text-decoration:underline; }

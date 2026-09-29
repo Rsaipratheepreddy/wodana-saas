@@ -5,6 +5,7 @@ import { OutboxProvider } from '../../core/outbox';
 import { useSession } from '../../core/session';
 import { CaptureProvider } from '../../features/shell/capture-sheet';
 import { useNotificationOpens } from '../../features/shell/notifications';
+import { usePushRegistration } from '../../features/shell/push-registration';
 import { useTheme } from '../../ui/theme';
 
 export default function AppLayout() {
@@ -13,6 +14,7 @@ export default function AppLayout() {
   const queryClient = useQueryClient();
   const previous = useRef(`${userId}:${workspaceId}`);
   useNotificationOpens();
+  usePushRegistration();
   useEffect(() => {
     // Another person or workspace never sees the last one's cached lists.
     const current = `${userId}:${workspaceId}`;

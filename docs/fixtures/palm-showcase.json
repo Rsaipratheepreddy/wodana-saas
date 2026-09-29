@@ -20,7 +20,7 @@
     { "email": "noor.design@palmliving.test", "displayName": "Noor (Interior Designer)", "roleCodes": [], "team": "INTERIOR_DESIGN" },
     { "email": "omar.qs@palmliving.test", "displayName": "Omar (QS)", "roleCodes": ["quantity_surveyor"], "team": "QS" },
     { "email": "khalid.pm@palmliving.test", "displayName": "Khalid (Project Manager)", "roleCodes": ["project_manager"], "team": "PROJECT_MANAGERS" },
-    { "email": "layla.finance@palmliving.test", "displayName": "Layla (Finance)", "roleCodes": ["finance_reviewer"], "team": "FINANCE" },
+    { "email": "layla.finance@palmliving.test", "displayName": "Layla (Finance)", "roleCodes": ["finance"], "team": "FINANCE" },
     { "email": "faisal.buyer@palmliving.test", "displayName": "Faisal (Procurement)", "roleCodes": [], "team": "PROCUREMENT" },
     { "email": "rami.factory@palmliving.test", "displayName": "Rami (Factory)", "roleCodes": [], "team": "PRODUCTION" },
     { "email": "sam.site@palmliving.test", "displayName": "Sam (Site Supervisor)", "roleCodes": ["site_supervisor"], "team": "PRODUCTION" }
@@ -29,7 +29,7 @@
     { "code": "SALES", "name": "Sales", "type": "department", "teams": ["SALES", "SALES_ADMIN", "SHOWROOM", "MARKETING"] },
     { "code": "DESIGN", "name": "Design", "type": "studio", "teams": ["CREATIVE_DIRECTOR", "INTERIOR_DESIGN", "VISUALISER", "TECHNICAL"] },
     { "code": "OPERATIONS", "name": "Operations", "type": "department", "teams": ["OPS_ADMIN", "PROJECT_MANAGERS", "QS", "FINANCE"] },
-    { "code": "PRODUCTION", "name": "Production", "type": "factory", "teams": ["PROCUREMENT", "INVENTORY", "PRODUCTION"] }
+    { "code": "PRODUCTION", "name": "Production", "type": "factory", "teams": ["PROCUREMENT", "PROCUREMENT_LEAD", "INVENTORY", "PRODUCTION", "PRODUCTION_LEAD"] }
   ],
   "tax": {
     "_source": "Onboarding runbook §6: Tax & numbering → Standard VAT 5 %, prices exclude tax. The UAE region pack fixes the model (VAT) and the registration label (TRN); the rate is Palm's confirmed setting.",

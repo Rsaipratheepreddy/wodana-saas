@@ -49,6 +49,7 @@ import {
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Minus, Paperclip, Search, Upload, X } from "lucide-react";
 import type { DateValue } from "@internationalized/date";
 import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provider";
+import { useReadOnlyReason } from "../foundations/read-only";
 import { Tag } from "./status";
 import { Button, IconButton } from "./actions";
 
@@ -104,7 +105,9 @@ export function Checkbox({ children, ...props }: React.ComponentProps<typeof Ari
 }
 
 export function Switch({ children, ...props }: React.ComponentProps<typeof AriaSwitch>) {
-  return <AriaSwitch {...props} className="wd-switch">{(values) => <><span aria-hidden="true" className="wd-switch-track"><span /></span>{typeof children === "function" ? children(values) : children}</>}</AriaSwitch>;
+  // A switch applies at once, so it is a change: it holds its state while the page is read-only.
+  const readOnly = Boolean(useReadOnlyReason());
+  return <AriaSwitch {...props} className="wd-switch" isReadOnly={props.isReadOnly || readOnly}>{(values) => <><span aria-hidden="true" className="wd-switch-track"><span /></span>{typeof children === "function" ? children(values) : children}</>}</AriaSwitch>;
 }
 
 export function RadioSet({ description, errorMessage, items, label, ...props }: RadioGroupProps & FieldChromeProps & { items: Array<{ id: string; label: ReactNode; description?: ReactNode }> }) {
@@ -218,12 +221,14 @@ export function FileUploader({ accept, appearance = "dropzone", label: labelProp
   const label = labelProp ?? t("Upload files");
   const input = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UploadFile[]>([]);
-  const addFiles = (nextFiles: File[]) => { setFiles((current) => [...current, ...nextFiles.map((file) => ({ id: `${file.name}-${file.lastModified}`, file, progress: 100, status: "complete" as const }))]); onFiles?.(nextFiles); };
+  // An upload is a change: off while the page is read-only.
+  const readOnlyReason = useReadOnlyReason();
+  const addFiles = (nextFiles: File[]) => { if (readOnlyReason) return; setFiles((current) => [...current, ...nextFiles.map((file) => ({ id: `${file.name}-${file.lastModified}`, file, progress: 100, status: "complete" as const }))]); onFiles?.(nextFiles); };
   const change = (event: ChangeEvent<HTMLInputElement>) => addFiles(Array.from(event.target.files ?? []));
   return <div className="wd-uploader" data-appearance={appearance}>{appearance === "button"
-    ? <Button onPress={() => input.current?.click()} size="compact" variant="quiet"><Upload aria-hidden="true" size={14} />{label}</Button>
-    : <button className="wd-drop-zone" onClick={() => input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addFiles(Array.from(event.dataTransfer.files)); }} type="button"><Upload aria-hidden="true" size={18} /><strong>{label}</strong><span>{t("Drop files here or choose from your device")}</span></button>}
-    <input accept={accept} aria-label={label} className="wd-visually-hidden" multiple={multiple} onChange={change} ref={input} type="file" />
+    ? <Button intent="write" onPress={() => input.current?.click()} size="compact" variant="quiet"><Upload aria-hidden="true" size={14} />{label}</Button>
+    : <button className="wd-drop-zone" disabled={Boolean(readOnlyReason)} onClick={() => input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addFiles(Array.from(event.dataTransfer.files)); }} title={readOnlyReason ?? undefined} type="button"><Upload aria-hidden="true" size={18} /><strong>{label}</strong><span>{t("Drop files here or choose from your device")}</span></button>}
+    <input accept={accept} aria-label={label} className="wd-visually-hidden" disabled={Boolean(readOnlyReason)} multiple={multiple} onChange={change} ref={input} type="file" />
     {appearance === "dropzone" ? <div className="wd-upload-list">{files.map((item) => <div key={item.id}><Paperclip size={14} /><span>{item.file.name}</span><small>{Math.ceil(item.file.size / 1024)} KB</small><IconButton aria-label={t("Remove {name}", { name: item.file.name })} onPress={() => setFiles((current) => current.filter((file) => file.id !== item.id))}><X size={13} /></IconButton></div>)}</div> : null}</div>;
 }
 
@@ -235,6 +240,10 @@ export function SegmentedControl({ label, onChange, options, value, tour }: { la
 
 export function RepeatableFields<T>({ addLabel, items, onAdd, onRemove, renderItem }: { addLabel?: string; items: T[]; onAdd: () => void; onRemove: (index: number) => void; renderItem: (item: T, index: number) => ReactNode }) { const t = useT(); return <div className="wd-repeatable"><div>{items.map((item, index) => <div className="wd-repeatable-row" key={index}><div>{renderItem(item, index)}</div><IconButton aria-label={t("Remove item {number}", { number: index + 1 })} onPress={() => onRemove(index)}><X size={14} /></IconButton></div>)}</div><Button onPress={onAdd}>{addLabel ?? t("Add item")}</Button></div>; }
 
-export function Form({ children, className, onSubmit, ...props }: FormHTMLAttributes<HTMLFormElement>) { return <form {...props} className={["wd-form", className].filter(Boolean).join(" ")} onSubmit={onSubmit}>{children}</form>; }
+export function Form({ children, className, onSubmit, ...props }: FormHTMLAttributes<HTMLFormElement>) {
+  // A read-only page never submits: Enter in a field does nothing, like the disabled Save beside it.
+  const readOnlyReason = useReadOnlyReason();
+  return <form {...props} data-read-only={readOnlyReason ? "" : undefined} className={["wd-form", className].filter(Boolean).join(" ")} onSubmit={readOnlyReason ? (event) => event.preventDefault() : onSubmit}>{children}</form>;
+}
 export function Fieldset({ children, description, legend }: { children: ReactNode; description?: ReactNode; legend: ReactNode }) { return <fieldset className="wd-fieldset"><legend>{legend}</legend>{description ? <p>{description}</p> : null}{children}</fieldset>; }
 export function ValidationSummary({ errors }: { errors: string[] }) { const t = useT(); if (!errors.length) return null; return <div className="wd-validation-summary" role="alert"><strong>{t("Check the highlighted fields")}</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div>; }

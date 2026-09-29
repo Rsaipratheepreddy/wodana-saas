@@ -23,6 +23,9 @@ describe("Home overview queries", () => {
     for (const call of client.query.mock.calls) expect(call[1].slice(0, 2)).toEqual([workspaceId, membershipId]);
     expect(result.metrics).toEqual({ myFollowUps: 1, planningCases: 1, activeProjects: 1, myProjectTasks: 1 });
     expect(result.sales[0].href).toBe("/workspace/crm/follow-ups?record=follow-up");
-    expect(result.tasks[0].href).toBe("/workspace/tasks?projectId=project&taskId=task");
+    // A task opens in its project's plan; nothing reads the retired project JSON.
+    expect(result.tasks[0].href).toBe("/workspace/projects/project/plan?item=task");
+    expect(result.projects[0].href).toBe("/workspace/projects/project");
+    for (const call of client.query.mock.calls) expect(call[0]).not.toContain("project_execution_view");
   });
 });

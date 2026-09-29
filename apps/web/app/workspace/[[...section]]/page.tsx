@@ -44,11 +44,9 @@ export default async function WorkspaceScreen({
       : membership?.allowedModules ?? (["workspace"] as const);
     const available = visibleWorkspaceModules(workspaceModules, membership?.workspaceSlug ?? "", allowed);
     if (!membership) redirect("/login");
-    const crmEnabled = available.some(module => module.id === "crm");
-    // Workspace setup progress lives in the account menu (see /api/workspace/setup-readiness), not on Home.
-    const crmData = crmEnabled ? await getCrmScreenPageData("crm-overview").catch((error: unknown) => { unstable_rethrow(error); return null; }) : null;
+    // Home reads its own summary; workspace setup progress lives in the account menu (see /api/workspace/setup-readiness).
     return <WorkspaceHome canManage={ownerAccess} workspaceId={membership.workspaceId} userId={profile.id}
-      workspaceName={membership.workspaceName} modules={available.map(module => module.id)} initialData={crmData}
+      workspaceName={membership.workspaceName} modules={available.map(module => module.id)}
       firstName={profile.displayName?.trim().split(/\s+/)[0] || undefined} permissions={membership.allowedPermissions ?? undefined} />;
 
   }

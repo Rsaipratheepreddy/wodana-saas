@@ -96,6 +96,18 @@ export function validateRuntimeConfig(
     }
   }
 
+  const sesFrom = String(config.SES_FROM ?? "");
+  if (/\r|\n/.test(sesFrom)) {
+    throw new Error("SES_FROM cannot contain line breaks");
+  }
+  const emailProvider = String(config.EMAIL_PROVIDER ?? "").trim().toLowerCase();
+  if (emailProvider && !["mailgun", "ses"].includes(emailProvider)) {
+    throw new Error("EMAIL_PROVIDER must be mailgun or ses");
+  }
+  if (emailProvider === "ses" && !sesFrom.trim()) {
+    throw new Error("EMAIL_PROVIDER=ses requires SES_FROM");
+  }
+
   // The delivery guard is for local and UAT only: in production it would silently drop real messages.
   const allowlist = DeliveryAllowlist.parse(String(config.DELIVERY_ALLOWLIST ?? ""));
   if (allowlist.enabled && String(config.ENVIRONMENT ?? "").trim().toLowerCase() === "production") {

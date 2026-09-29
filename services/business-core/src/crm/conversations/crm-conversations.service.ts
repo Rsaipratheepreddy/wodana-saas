@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { randomUUID } from "node:crypto";
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
@@ -7,58 +8,105 @@ import { WorkspaceAccessService } from "../../workspaces/workspace-access.servic
 import { CrmEventsService } from "../shared/crm-events.service";
 import { CrmNotificationsService } from "../notifications/crm-notifications.service";
 import { CrmMessageReceiptService } from "./crm-message-receipt.service";
+import { notifyUserInApp } from "../../notifications/default-templates";
 import { decodeCursor, encodeCursor, normalizeEmail, normalizeLoosePhone, normalizeName, stableHash } from "../shared/crm-types";
 import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSequenceDto, ListConversationsQueryDto, MessageReceiptDto, ProviderInboundMessageDto, ProviderMessageReceiptDto, SequenceVersionDto, StopSequenceEnrollmentDto, UpdateSequenceDto, UpdateConversationDto } from "./dto/conversations.dto";
+import { applyConversationChange, mapConversation, recordChatEvent } from "./inbox/inbox-commands";
+import { INBOX_MEMBERS_SQL, inboxQueue, selectInboxOwner } from "./inbox/inbox-assignment";
+import { inboxLink, noticeChat, readChatNotices, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
+import { inboundSummary, normalizeTemplateParameter, renderTemplate, stageFilterSql, templateParametersProblem, templatePlaceholders, withSignature, type TemplateVariableSource } from "./inbox/inbox-rules";
+import { resolveTemplateSources } from "./inbox/template-variables";
+import { sendAutoReply } from "./inbox/auto-replies";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
+/** Open chats by who has waited longest for our reply; chats nobody waits on follow, most recent first. */
+const WAITING_KEY = `(CASE WHEN conversation.waiting_since IS NOT NULL THEN extract(epoch FROM conversation.waiting_since)
+  ELSE 100000000000 - extract(epoch FROM COALESCE(conversation.last_message_at, conversation.created_at)) END)`;
+/** The people who share a queue (or a team in one) with the given membership. */
+const TEAM_SQL = (parameter: number) => `SELECT teammate.membership_id FROM crm_effective_queue_members teammate
+  WHERE teammate.workspace_id = $1 AND teammate.queue_id IN (
+    SELECT mine.queue_id FROM crm_effective_queue_members mine WHERE mine.workspace_id = $1 AND mine.membership_id = $${parameter})`;
+export const CONVERSATION_LABELS_SQL = `COALESCE((SELECT jsonb_agg(jsonb_build_object('id', label.id, 'name', label.name, 'color', label.color) ORDER BY lower(label.name))
+    FROM crm_conversation_label_links link JOIN crm_conversation_labels label ON label.workspace_id = link.workspace_id AND label.id = link.label_id
+   WHERE link.workspace_id = conversation.workspace_id AND link.conversation_id = conversation.id), '[]'::jsonb)`;
+const MEMBER_NAME = (alias: string) => `coalesce(nullif(btrim(${alias}.display_name), ''), ${alias}.primary_email)`;
+/** A template's variable names, for a blocked send: "Fill in {{2}} (Enquiry reference)". */
+const SOURCE_NAMES: Record<TemplateVariableSource, string> = {
+  "contact.first_name": "Client first name", "contact.name": "Client name", "enquiry.reference": "Enquiry reference",
+  "opportunity.reference": "Opportunity reference", "project.name": "Project name", "quote.number": "Quote number",
+  "invoice.number": "Invoice number", "invoice.total": "Invoice amount", "portal.link": "Client portal link",
+  "staff.first_name": "Your first name", "business.name": "Business name", "today.date": "Today's date",
+  "project.stage": "Project stage", "invoice.due_date": "Invoice due date", "payment.amount": "Payment amount",
+};
 
 @Injectable()
 export class CrmConversationsService {
+  private readonly logger = new Logger(CrmConversationsService.name);
+
   constructor(
     private readonly database: DatabaseService,
     private readonly access: WorkspaceAccessService,
     private readonly events: CrmEventsService,
     private readonly notifications: CrmNotificationsService,
     private readonly receipts: CrmMessageReceiptService = new CrmMessageReceiptService(),
+    @Optional() private readonly config?: ConfigService,
   ) {}
 
   list(actor: RequestActor, workspaceId: string, query: ListConversationsQueryDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
+    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
+      const sort = query.sort ?? (query.status === "open" ? "waiting" : "recent");
       const cursor = decodeCursor(query.cursor);
-      if (query.cursor && !cursor) throw new BadRequestException("Invalid page cursor");
+      if (query.cursor && (!cursor || (sort === "waiting" && !/^-?\d+(\.\d+)?$/.test(cursor.value)))) throw new BadRequestException("Invalid page cursor");
       const values: unknown[] = [workspaceId];
       const clauses = ["conversation.workspace_id = $1"];
       for (const [column, value] of [["party_id", query.partyId], ["lead_id", query.leadId], ["owner_membership_id", query.ownerMembershipId], ["channel", query.channel]] as const) {
         if (value) { values.push(value); clauses.push(`conversation.${column} = $${values.length}`); }
       }
       if (query.status) { values.push(query.status); clauses.push(`conversation.status = $${values.length}`); }
+      if (query.view === "unassigned") clauses.push("conversation.owner_membership_id IS NULL");
+      else if (query.view === "mine" || query.view === "team") {
+        values.push(await this.viewerMembership(client, workspaceId, actorUser.userId));
+        clauses.push(query.view === "mine" ? `conversation.owner_membership_id = $${values.length}` : `conversation.owner_membership_id IN (${TEAM_SQL(values.length)})`);
+      }
+      if (query.labelId) { values.push(query.labelId); clauses.push(`EXISTS (SELECT 1 FROM crm_conversation_label_links link WHERE link.workspace_id = conversation.workspace_id AND link.conversation_id = conversation.id AND link.label_id = $${values.length})`); }
+      if (query.stage) { const stageSql = stageFilterSql(query.stage.split(",").slice(0, 30), (value) => { values.push(value); return `$${values.length}`; }); if (stageSql) clauses.push(stageSql); }
       if (query.unread === "true") clauses.push("conversation.unread_count > 0");
       if (query.search?.trim()) { values.push(`%${query.search.trim().replace(/[\\%_]/g, "\\$&")}%`); clauses.push(`(conversation.subject ILIKE $${values.length} OR party.display_name ILIKE $${values.length} OR EXISTS (SELECT 1 FROM crm_contact_points contact WHERE contact.workspace_id=conversation.workspace_id AND contact.party_id=conversation.party_id AND contact.status='active' AND (contact.raw_value ILIKE $${values.length} OR contact.normalized_value ILIKE $${values.length})))`); }
-      if (cursor) { values.push(cursor.value, cursor.id); clauses.push(`(COALESCE(conversation.last_message_at, '-infinity'::timestamptz), conversation.id) < ($${values.length - 1}::timestamptz, $${values.length}::uuid)`); }
+      if (cursor) {
+        values.push(cursor.value, cursor.id);
+        clauses.push(sort === "waiting"
+          ? `(${WAITING_KEY}, conversation.id) > ($${values.length - 1}::numeric, $${values.length}::uuid)`
+          : `(COALESCE(conversation.last_message_at, '-infinity'::timestamptz), conversation.id) < ($${values.length - 1}::timestamptz, $${values.length}::uuid)`);
+      }
       values.push(query.limit + 1);
       const result = await client.query(
         `SELECT conversation.id, conversation.party_id AS "partyId", party.display_name AS "partyName",
                 conversation.lead_id AS "leadId", conversation.channel, conversation.subject,
-                conversation.status, conversation.owner_membership_id AS "ownerMembershipId",
+                conversation.status, conversation.owner_membership_id AS "ownerMembershipId", ${MEMBER_NAME("owner_user")} AS "ownerName",
                 conversation.last_message_at AS "lastMessageAt", conversation.last_inbound_at AS "lastInboundAt",
-                conversation.unread_count AS "unreadCount", conversation.version,
+                conversation.waiting_since AS "waitingSince", conversation.snoozed_until AS "snoozedUntil",
+                conversation.unread_count AS "unreadCount", conversation.version, ${CONVERSATION_LABELS_SQL} AS labels,
                 message.id AS "lastMessageId", message.direction AS "lastMessageDirection",
-                message.body_text AS "lastMessageText", message.status AS "lastMessageStatus"
+                message.body_text AS "lastMessageText", message.status AS "lastMessageStatus", ${WAITING_KEY}::text AS "sortKey"
          FROM crm_conversations conversation
          LEFT JOIN crm_parties party ON party.id = conversation.party_id AND party.workspace_id = conversation.workspace_id
+         LEFT JOIN workspace_memberships owner_membership ON owner_membership.workspace_id = conversation.workspace_id AND owner_membership.id = conversation.owner_membership_id
+         LEFT JOIN users owner_user ON owner_user.id = owner_membership.user_id
          LEFT JOIN LATERAL (
            SELECT id, direction, body_text, status FROM crm_messages
            WHERE workspace_id = conversation.workspace_id AND conversation_id = conversation.id AND (conversation.channel <> 'whatsapp' OR direction <> 'internal')
            ORDER BY created_at DESC LIMIT 1
          ) message ON true
          WHERE ${clauses.join(" AND ")}
-         ORDER BY conversation.last_message_at DESC NULLS LAST, conversation.id DESC
+         ORDER BY ${sort === "waiting" ? `${WAITING_KEY}, conversation.id` : "conversation.last_message_at DESC NULLS LAST, conversation.id DESC"}
          LIMIT $${values.length}`, values,
       );
       const hasMore = result.rows.length > query.limit;
-      const data = hasMore ? result.rows.slice(0, query.limit) : result.rows;
-      const last = data.at(-1) as { id: string; lastMessageAt: Date | null } | undefined;
-      return { data, nextCursor: hasMore && last ? encodeCursor({ value: last.lastMessageAt ? new Date(last.lastMessageAt).toISOString() : "-infinity", id: last.id }) : null };
+      const rows = hasMore ? result.rows.slice(0, query.limit) : result.rows;
+      const data = rows.map(({ sortKey: _sortKey, ...row }) => row);
+      const last = rows.at(-1) as { id: string; lastMessageAt: Date | null; sortKey: string } | undefined;
+      const nextValue = !last ? null : sort === "waiting" ? last.sortKey : last.lastMessageAt ? new Date(last.lastMessageAt).toISOString() : "-infinity";
+      return { data, nextCursor: hasMore && last && nextValue ? encodeCursor({ value: nextValue, id: last.id }) : null };
     });
   }
 
@@ -66,30 +114,85 @@ export class CrmConversationsService {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
       const conversation = await this.requireConversation(client, workspaceId, conversationId, false);
       const messages = await client.query(
-        `SELECT id, direction, status, authorship, sender_type AS "senderType", sender_id AS "senderId",
-                provider_message_id AS "providerMessageId", body_text AS "bodyText",
-                body_html AS "bodyHtml", sent_at AS "sentAt", delivered_at AS "deliveredAt",
-                read_at AS "readAt", failure_code AS "failureCode", metadata, version,
-                created_at AS "createdAt", updated_at AS "updatedAt"
-         FROM crm_messages WHERE workspace_id = $1 AND conversation_id = $2 AND ($3 <> 'whatsapp' OR direction <> 'internal')
-         ORDER BY created_at DESC, id DESC LIMIT 101`, [workspaceId, conversationId, conversation.channel],
+        `SELECT message.id, message.direction, message.status, message.authorship, message.sender_type AS "senderType", message.sender_id AS "senderId",
+                ${MEMBER_NAME("sender")} AS "senderName",
+                message.provider_message_id AS "providerMessageId",
+                -- A hidden message keeps its content for the audit; Wodana's views show who hid it instead.
+                CASE WHEN message.hidden_at IS NULL THEN message.body_text END AS "bodyText",
+                CASE WHEN message.hidden_at IS NULL THEN message.body_html END AS "bodyHtml", message.sent_at AS "sentAt", message.delivered_at AS "deliveredAt",
+                message.read_at AS "readAt", message.failure_code AS "failureCode",
+                CASE WHEN message.hidden_at IS NULL THEN message.metadata ELSE jsonb_strip_nulls(jsonb_build_object('automatic', message.metadata->'automatic')) END AS metadata, message.version,
+                message.hidden_at AS "hiddenAt", ${MEMBER_NAME("hider")} AS "hiddenByName",
+                message.created_at AS "createdAt", message.updated_at AS "updatedAt"
+         FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id LEFT JOIN users hider ON hider.id = message.hidden_by
+         WHERE message.workspace_id = $1 AND message.conversation_id = $2
+         ORDER BY message.created_at DESC, message.id DESC LIMIT 101`, [workspaceId, conversationId],
       );
-      const party = conversation.party_id ? await client.query(`SELECT display_name FROM crm_parties WHERE workspace_id=$1 AND id=$2`, [workspaceId, conversation.party_id]) : null;
-      const manager = conversation.owner_membership_id ? await client.query(`SELECT u.display_name FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.id=$2`, [workspaceId, conversation.owner_membership_id]) : null;
+      const facts = await client.query<{ partyName: string | null; ownerName: string | null; leadReference: string | null; businessName: string; signatureEnabled: boolean | null; blockedAt: Date | null; spamAt: Date | null }>(
+        `SELECT (SELECT display_name FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "partyName",
+                (SELECT ${MEMBER_NAME("account")} FROM workspace_memberships membership JOIN users account ON account.id = membership.user_id
+                  WHERE membership.workspace_id = $1 AND membership.id = $3) AS "ownerName",
+                (SELECT enquiry.reference FROM crm_leads lead JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
+                  WHERE lead.workspace_id = $1 AND lead.id = $4) AS "leadReference",
+                (SELECT coalesce(nullif(btrim(branding.display_name), ''), workspace.name) FROM workspaces workspace
+                   LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id WHERE workspace.id = $1) AS "businessName",
+                (SELECT signature_enabled FROM crm_inbox_settings WHERE workspace_id = $1) AS "signatureEnabled",
+                (SELECT blocked_at FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "blockedAt",
+                (SELECT spam_at FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "spamAt"`,
+        [workspaceId, conversation.party_id ?? null, conversation.owner_membership_id ?? null, conversation.lead_id ?? null],
+      );
       const canSend = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.communications.send");
-      const connection = await client.query(`SELECT EXISTS (SELECT 1 FROM integration_connections WHERE workspace_id=$1 AND provider='whatsapp' AND status='connected') AS connected`, [workspaceId]);
+      const canManage = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.settings.manage");
+      // The number every seat replies from: the workspace's default connected WhatsApp number.
+      const connection = await client.query<{ number: string | null; accountName: string | null; health: Record<string, unknown> | null }>(
+        `SELECT configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName", configuration->'health' AS health
+           FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
+          ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, updated_at DESC, id LIMIT 1`, [workspaceId]);
       const page = messages.rows.slice(0, 100);
       const oldest = page.at(-1);
-      return { ...this.mapConversation(conversation), canSend, whatsappConnected: connection.rows[0].connected, partyName: party?.rows[0]?.display_name ?? null, ownerName: manager?.rows[0]?.display_name ?? null, messages: page.reverse(), nextMessagesCursor: messages.rows.length > 100 && oldest ? encodeCursor({ value: new Date(oldest.createdAt).toISOString(), id: oldest.id }) : null };
+      const hasOlder = messages.rows.length > 100;
+      const history = await client.query(
+        `SELECT event.id, event.kind, event.method, event.reason, event.snoozed_until AS "snoozedUntil", event.lead_id AS "leadId",
+                event.created_at AS "createdAt", ${MEMBER_NAME("actor")} AS "actorName", ${MEMBER_NAME("owner_user")} AS "ownerName",
+                label.name AS "labelName", label.color AS "labelColor"
+           FROM crm_conversation_events event
+           LEFT JOIN users actor ON actor.id = event.actor_user_id
+           LEFT JOIN workspace_memberships owner_membership ON owner_membership.workspace_id = event.workspace_id AND owner_membership.id = event.owner_membership_id
+           LEFT JOIN users owner_user ON owner_user.id = owner_membership.user_id
+           LEFT JOIN crm_conversation_labels label ON label.workspace_id = event.workspace_id AND label.id = event.label_id
+          WHERE event.workspace_id = $1 AND event.conversation_id = $2 AND ($3::timestamptz IS NULL OR event.created_at >= $3)
+          ORDER BY event.created_at, event.id LIMIT 300`,
+        [workspaceId, conversationId, hasOlder && oldest ? oldest.createdAt : null],
+      );
+      const labels = await client.query<{ labels: unknown[] }>(`SELECT ${CONVERSATION_LABELS_SQL} AS labels FROM crm_conversations conversation WHERE conversation.workspace_id = $1 AND conversation.id = $2`, [workspaceId, conversationId]);
+      const lastInbound = conversation.last_inbound_at ? new Date(conversation.last_inbound_at as string | Date) : null;
+      const fact = facts.rows[0];
+      return {
+        ...mapConversation(conversation), canSend, whatsappConnected: Boolean(connection.rowCount),
+        partyName: fact?.partyName ?? null, ownerName: fact?.ownerName ?? null, leadReference: fact?.leadReference ?? null,
+        labels: labels.rows[0]?.labels ?? [], events: history.rows,
+        replyingAs: { businessName: fact?.businessName ?? null, number: connection.rows[0]?.number ?? null, accountName: connection.rows[0]?.accountName ?? null },
+        numberHealth: (connection.rows[0]?.health?.state as string | undefined) ?? null,
+        signatureEnabled: fact?.signatureEnabled === true, canManage,
+        blockedAt: fact?.blockedAt ?? null, spamAt: fact?.spamAt ?? null,
+        windowClosesAt: lastInbound ? new Date(lastInbound.getTime() + 86_400_000).toISOString() : null,
+        messages: page.reverse(),
+        nextMessagesCursor: hasOlder && oldest ? encodeCursor({ value: new Date(oldest.createdAt).toISOString(), id: oldest.id }) : null,
+      };
     });
   }
 
   messages(actor: RequestActor, workspaceId: string, conversationId: string, query: { cursor?: string; limit: number }) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
-      const conversation = await this.requireConversation(client, workspaceId, conversationId, false);
+      await this.requireConversation(client, workspaceId, conversationId, false);
       const cursor = decodeCursor(query.cursor);
       if (query.cursor && (!cursor || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(cursor.id) || !Number.isFinite(Date.parse(cursor.value)))) throw new BadRequestException("Invalid message cursor");
-      const result = await client.query(`SELECT id,direction,status,authorship,sender_type AS "senderType",sender_id AS "senderId",body_text AS "bodyText",metadata,created_at AS "createdAt",failure_code AS "failureCode" FROM crm_messages WHERE workspace_id=$1 AND conversation_id=$2 AND ($6 <> 'whatsapp' OR direction <> 'internal') AND ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::uuid)) ORDER BY created_at DESC,id DESC LIMIT $5`, [workspaceId, conversationId, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1, conversation.channel]);
+      // Internal notes are part of the team's thread (never sent to the client).
+      const result = await client.query(`SELECT message.id,message.direction,message.status,message.authorship,message.sender_type AS "senderType",message.sender_id AS "senderId",
+          coalesce(nullif(btrim(sender.display_name), ''), sender.primary_email) AS "senderName",CASE WHEN message.hidden_at IS NULL THEN message.body_text END AS "bodyText",CASE WHEN message.hidden_at IS NULL THEN message.metadata ELSE jsonb_strip_nulls(jsonb_build_object('automatic', message.metadata->'automatic')) END AS metadata,message.hidden_at AS "hiddenAt",coalesce(nullif(btrim(hider.display_name), ''), hider.primary_email) AS "hiddenByName",message.created_at AS "createdAt",message.failure_code AS "failureCode"
+        FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id LEFT JOIN users hider ON hider.id = message.hidden_by
+        WHERE message.workspace_id=$1 AND message.conversation_id=$2 AND ($3::timestamptz IS NULL OR (message.created_at,message.id)<($3::timestamptz,$4::uuid))
+        ORDER BY message.created_at DESC,message.id DESC LIMIT $5`, [workspaceId, conversationId, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1]);
       const data = result.rows.slice(0, query.limit), oldest = data.at(-1);
       return { data: data.reverse(), nextCursor: result.rows.length > query.limit && oldest ? encodeCursor({ value: new Date(oldest.createdAt).toISOString(), id: oldest.id }) : null };
     });
@@ -109,7 +212,7 @@ export class CrmConversationsService {
         if (!input.partyId) throw new UnprocessableEntityException("Choose a contact for this WhatsApp chat");
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`whatsapp-chat:${workspaceId}:${input.partyId}`]);
         const existing = await client.query(`SELECT * FROM crm_conversations WHERE workspace_id=$1 AND party_id=$2 AND channel='whatsapp' ORDER BY last_message_at DESC NULLS LAST, id LIMIT 1`, [workspaceId, input.partyId]);
-        if (existing.rowCount) return this.mapConversation(existing.rows[0]);
+        if (existing.rowCount) return mapConversation(existing.rows[0]);
         const phone = await client.query(`SELECT 1 FROM crm_contact_points WHERE workspace_id=$1 AND party_id=$2 AND type='phone' AND status='active' LIMIT 1`, [workspaceId, input.partyId]);
         if (!phone.rowCount) throw new UnprocessableEntityException("Add a phone number to this contact before opening WhatsApp");
       }
@@ -121,7 +224,7 @@ export class CrmConversationsService {
          RETURNING *`,
         [workspaceId, input.partyId ?? null, input.leadId ?? null, input.channel, input.subject ?? null, input.ownerMembershipId ?? null],
       );
-      const conversation = this.mapConversation(result.rows[0] as Record<string, unknown>);
+      const conversation = mapConversation(result.rows[0] as Record<string, unknown>);
       const conversationId = String(conversation.id);
       for (const partyId of new Set([...(input.participantPartyIds ?? []), ...(input.partyId ? [input.partyId] : [])])) {
         await this.requireParty(client, workspaceId, partyId);
@@ -146,11 +249,10 @@ export class CrmConversationsService {
   updateConversation(actor: RequestActor, workspaceId: string, conversationId: string, input: UpdateConversationDto) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.send", async (client, actorUser) => {
       const before = await this.requireConversation(client, workspaceId, conversationId, true);
-      if (Number(before.version) !== input.version) throw new ConflictException("Conversation changed; refresh before trying again");
-      if (input.ownerMembershipId) await this.requireMembership(client, workspaceId, input.ownerMembershipId);
-      const updated = await client.query(`UPDATE crm_conversations SET subject=COALESCE($1,subject), status=COALESCE($2,status), owner_membership_id=CASE WHEN $3::boolean THEN $4::uuid ELSE owner_membership_id END, version=version+1 WHERE workspace_id=$5 AND id=$6 AND version=$7 RETURNING *`, [input.subject?.trim() ?? null, input.status ?? null, input.ownerMembershipId !== undefined, input.ownerMembershipId ?? null, workspaceId, conversationId, input.version]);
-      const after = this.mapConversation(updated.rows[0]);
-      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.conversation.updated.v1", entityType: "crm_conversation", entityId: conversationId, before: this.mapConversation(before), after });
+      const { after } = await applyConversationChange(client, this.events, {
+        workspaceId, before, actorUserId: actorUser.userId, method: "manual", expectedVersion: input.version,
+        change: { status: input.status as "open" | "snoozed" | "closed" | undefined, snoozedUntil: input.snoozedUntil, ownerMembershipId: input.ownerMembershipId, leadId: input.leadId, subject: input.subject },
+      });
       return after;
     });
   }
@@ -162,9 +264,10 @@ export class CrmConversationsService {
   }
 
   markRead(actor: RequestActor, workspaceId: string, conversationId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
+    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
       await this.requireConversation(client, workspaceId, conversationId, true);
-      await client.query(`UPDATE crm_conversations SET unread_count = 0, version = version + 1 WHERE id = $1 AND workspace_id = $2`, [conversationId, workspaceId]);
+      await client.query(`UPDATE crm_conversations SET unread_count = 0, version = version + 1 WHERE id = $1 AND workspace_id = $2 AND unread_count <> 0`, [conversationId, workspaceId]);
+      await readChatNotices(client, workspaceId, conversationId, actorUser.userId);
       return { conversationId, unreadCount: 0 };
     });
   }
@@ -177,6 +280,19 @@ export class CrmConversationsService {
 
   recordProviderReceipt(input: ProviderMessageReceiptDto) {
     return this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
+      // The provider's own receipt is the only thing that marks a notification delivered (WhatsApp accepts first).
+      if (["delivered", "read", "failed"].includes(input.status)) {
+        await client.query(
+          `UPDATE notifications notification
+              SET status = $3::notification_status,
+                  delivered_at = CASE WHEN $3 = 'delivered' THEN COALESCE(notification.delivered_at, now()) ELSE notification.delivered_at END,
+                  version = notification.version + 1, updated_at = now()
+             FROM notification_delivery_attempts attempt
+            WHERE attempt.workspace_id = $1 AND attempt.provider_message_id = $2
+              AND notification.workspace_id = attempt.workspace_id AND notification.id = attempt.notification_id
+              AND notification.status = 'sent'`,
+          [input.workspaceId, input.providerMessageId, input.status === "failed" ? "failed" : "delivered"]);
+      }
       const message = await client.query<{ id: string }>(`SELECT id FROM crm_messages WHERE workspace_id=$1 AND provider_message_id=$2`, [input.workspaceId, input.providerMessageId]);
       if (!message.rowCount) return { ignored: true, reason: "message_not_found" };
       return this.recordReceiptWithClient(client, message.rows[0].id, input);
@@ -219,6 +335,45 @@ export class CrmConversationsService {
       }
       const message = await this.insertMessage(client, input.workspaceId, conversationId, { direction: "inbound", bodyText: input.bodyText, bodyHtml: input.bodyHtml, providerMessageId: input.providerMessageId, metadata: input.metadata }, null, "integration");
       return { conversationId, partyId, message };
+    });
+  }
+
+  /**
+   * Coexistence: a message the owner sent from the WhatsApp Business app on the same number. It lands in the
+   * client's chat once (by Meta's message id) as "Sent from phone", and counts as our reply.
+   */
+  ingestProviderEcho(input: ProviderInboundMessageDto) {
+    return this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
+      if (input.channel !== "whatsapp") throw new UnprocessableEntityException("Only WhatsApp echoes are supported");
+      const normalized = normalizeLoosePhone(input.contact);
+      if (!normalized) throw new UnprocessableEntityException("Provider contact is invalid");
+      const known = await client.query(`SELECT id, conversation_id AS "conversationId" FROM crm_messages WHERE workspace_id = $1 AND provider_message_id = $2`, [input.workspaceId, input.providerMessageId]);
+      if (known.rowCount) return { conversationId: known.rows[0].conversationId, messageId: known.rows[0].id, duplicate: true };
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`provider-contact:${input.workspaceId}:whatsapp:${normalized}`]);
+      let partyId = (await client.query<{ partyId: string }>(`SELECT party_id AS "partyId" FROM crm_contact_points WHERE workspace_id = $1 AND type = 'phone' AND normalized_value = $2 AND status = 'active' ORDER BY is_verified DESC, is_primary DESC, created_at LIMIT 1`, [input.workspaceId, normalized])).rows[0]?.partyId;
+      if (!partyId) {
+        partyId = randomUUID();
+        const displayName = `WhatsApp ${input.contact}`;
+        await client.query(`INSERT INTO crm_parties (id, workspace_id, type, display_name, normalized_name, created_by) VALUES ($1, $2, 'person', $3, $4, NULL)`, [partyId, input.workspaceId, displayName, normalizeName(displayName)]);
+        await client.query(`INSERT INTO crm_person_profiles (party_id, workspace_id) VALUES ($1, $2)`, [partyId, input.workspaceId]);
+        await client.query(`INSERT INTO crm_contact_points (workspace_id, party_id, type, raw_value, normalized_value, is_primary) VALUES ($1, $2, 'phone', $3, $4, true)`, [input.workspaceId, partyId, input.contact, normalized]);
+      }
+      let conversationId = (await client.query<{ id: string }>(
+        `SELECT id FROM crm_conversations WHERE workspace_id = $1 AND channel = 'whatsapp' AND (provider_thread_id = $2 OR party_id = $3)
+          ORDER BY (provider_thread_id = $2) DESC, last_message_at DESC NULLS LAST LIMIT 1 FOR UPDATE`, [input.workspaceId, input.providerThreadId, partyId])).rows[0]?.id;
+      if (!conversationId) {
+        conversationId = randomUUID();
+        await client.query(`INSERT INTO crm_conversations (id, workspace_id, party_id, channel, provider_thread_id, subject) VALUES ($1, $2, $3, 'whatsapp', $4, 'WhatsApp conversation')`, [conversationId, input.workspaceId, partyId, input.providerThreadId]);
+        await client.query(`INSERT INTO crm_conversation_participants (workspace_id, conversation_id, participant_type, participant_id) VALUES ($1, $2, 'party', $3) ON CONFLICT DO NOTHING`, [input.workspaceId, conversationId, partyId]);
+      }
+      const messageId = randomUUID();
+      await client.query(
+        `INSERT INTO crm_messages (id, workspace_id, conversation_id, direction, status, authorship, sender_type, provider_message_id, body_text, metadata, sent_at)
+         VALUES ($1, $2, $3, 'outbound', 'sent', 'provider', 'provider', $4, $5, $6, now()) ON CONFLICT (workspace_id, provider_message_id) DO NOTHING`,
+        [messageId, input.workspaceId, conversationId, input.providerMessageId, input.bodyText ?? null, { ...input.metadata, sentFromPhone: true }]);
+      await client.query(`UPDATE crm_conversations SET last_message_at = now(), waiting_since = NULL, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [input.workspaceId, conversationId]);
+      await this.events.record(client, { workspaceId: input.workspaceId, actorUserId: null, source: "integration", action: "crm.message.sent_from_phone.v1", entityType: "crm_message", entityId: messageId, after: { conversationId, partyId } });
+      return { conversationId, messageId, duplicate: false };
     });
   }
 
@@ -522,7 +677,7 @@ export class CrmConversationsService {
   private async insertMessage(client: PoolClient, workspaceId: string, conversationId: string, input: CreateMessageDto, actorUserId: string | null, source: "user" | "integration") {
     if (!input.bodyText?.trim() && !input.bodyHtml?.trim() && !input.templateId) throw new UnprocessableEntityException("Message content or template is required");
     const conversation = await this.requireConversation(client, workspaceId, conversationId, true);
-    const requestHash = input.clientMessageId ? stableHash({ direction: input.direction, bodyText: input.bodyText?.trim() ?? null, bodyHtml: input.bodyHtml?.trim() ?? null, templateId: input.templateId ?? null, purpose: input.purpose ?? "service" }) : null;
+    const requestHash = input.clientMessageId ? stableHash({ direction: input.direction, bodyText: input.bodyText?.trim() ?? null, bodyHtml: input.bodyHtml?.trim() ?? null, templateId: input.templateId ?? null, purpose: input.purpose ?? "service", ...(input.templateParameters ? { templateParameters: input.templateParameters } : {}) }) : null;
     if (input.clientMessageId) {
       const prior = await client.query(`SELECT id, status, metadata, sender_id FROM crm_messages WHERE workspace_id=$1 AND conversation_id=$2 AND metadata->>'clientMessageId'=$3 LIMIT 1`, [workspaceId, conversationId, input.clientMessageId]);
       if (prior.rowCount) {
@@ -530,22 +685,44 @@ export class CrmConversationsService {
         return { id: prior.rows[0].id, status: prior.rows[0].status, conversationId, idempotentReplay: true };
       }
     }
-    if (input.direction === "outbound" && conversation.status !== "open") throw new ConflictException("Reopen this conversation before replying");
+    // A snoozed chat can still be answered; a resolved one is reopened first.
+    if (input.direction === "outbound" && conversation.status === "closed") throw new ConflictException("Reopen this conversation before replying");
     let bodyText = input.bodyText?.trim() ?? null;
     let bodyHtml = input.bodyHtml?.trim() ?? null;
     let template: Record<string, unknown> | null = null;
+    let templateParameters: string[] = [];
     if (input.direction === "outbound" && conversation.channel !== "internal") {
       if (!conversation.party_id) throw new UnprocessableEntityException("Outbound customer messages require a party");
       await this.assertConsent(client, workspaceId, String(conversation.party_id), String(conversation.channel), input.purpose ?? "service");
       if (input.templateId) {
-        const found = await client.query<Record<string, unknown>>(`SELECT id, body_template, subject_template, status FROM notification_templates WHERE id = $1 AND workspace_id = $2 AND channel = $3 ORDER BY version_number DESC LIMIT 1`, [input.templateId, workspaceId, conversation.channel]);
+        const found = await client.query<Record<string, unknown>>(`SELECT id, code, body_template, subject_template, status FROM notification_templates WHERE id = $1 AND workspace_id = $2 AND channel = $3 ORDER BY version_number DESC LIMIT 1`, [input.templateId, workspaceId, conversation.channel]);
         if (!found.rowCount || found.rows[0].status !== "approved") throw new UnprocessableEntityException("Template is not approved for this channel");
         template = found.rows[0];
-        bodyText ??= String(template.body_template);
+        const positions = templatePlaceholders(String(template.body_template));
+        if (positions.length) {
+          templateParameters = input.templateParameters?.map(normalizeTemplateParameter)
+            ?? await this.fillTemplate(client, workspaceId, conversation, String(template.code), positions, actorUserId);
+          const problem = templateParametersProblem(positions, templateParameters);
+          if (problem) throw new UnprocessableEntityException(problem);
+        } else if (input.templateParameters?.length) throw new UnprocessableEntityException("This template has no variables");
+        // What the client receives is the template with its values, never free text beside it.
+        bodyText = renderTemplate(String(template.body_template), templateParameters);
+        bodyHtml = null;
+      }
+      if (conversation.channel === "whatsapp") {
+        const health = await client.query<{ state: string | null }>(`SELECT configuration->'health'->>'state' AS state FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
+          ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, updated_at DESC LIMIT 1`, [workspaceId]);
+        if (health.rows[0]?.state === "blocked") throw new UnprocessableEntityException("Meta has stopped sending from this WhatsApp number. Check it in Integrations.");
       }
       if (conversation.channel === "whatsapp" && !input.templateId) {
         const lastInbound = conversation.last_inbound_at ? new Date(String(conversation.last_inbound_at)) : null;
         if (!lastInbound || Date.now() - lastInbound.getTime() > 24 * 60 * 60 * 1000) throw new UnprocessableEntityException("WhatsApp requires an approved template outside the 24-hour customer-service window");
+      }
+      if (!input.templateId && source === "user" && actorUserId && bodyText) {
+        const signature = await client.query<{ enabled: boolean | null; name: string | null }>(
+          `SELECT (SELECT signature_enabled FROM crm_inbox_settings WHERE workspace_id = $1) AS enabled, (SELECT display_name FROM users WHERE id = $2) AS name`,
+          [workspaceId, actorUserId]);
+        bodyText = withSignature(bodyText, signature.rows[0]?.name, signature.rows[0]?.enabled === true);
       }
     }
     const messageId = randomUUID();
@@ -569,7 +746,12 @@ export class CrmConversationsService {
           input.providerMessageId ?? null,
           bodyText,
           bodyHtml,
-          { ...input.metadata, ...(input.clientMessageId ? { clientMessageId: input.clientMessageId, requestHash } : {}) },
+          {
+            ...input.metadata,
+            ...(input.clientMessageId ? { clientMessageId: input.clientMessageId, requestHash } : {}),
+            ...(template ? { template: { id: template.id, code: template.code, parameters: templateParameters } } : {}),
+            ...(input.direction === "internal" && input.mentions?.length ? { mentions: [...new Set(input.mentions)] } : {}),
+          },
         ],
       );
     if (!inserted.rowCount) {
@@ -577,12 +759,16 @@ export class CrmConversationsService {
       if (prior.rows[0]?.conversationId !== conversationId || prior.rows[0]?.direction !== input.direction) throw new ConflictException("Provider message already belongs to another conversation or direction");
       return { ...prior.rows[0], idempotentReplay: true };
     }
-    await client.query(
+    // A client message reopens and un-snoozes the chat and starts (or keeps) its wait; our reply ends the wait.
+    const touched = await client.query<Record<string, unknown>>(
       `UPDATE crm_conversations SET last_message_at = now(),
-         status = CASE WHEN $1 = 'inbound' AND status = 'closed' THEN 'open' ELSE status END,
+         status = CASE WHEN $1 = 'inbound' THEN 'open' ELSE status END,
+         snoozed_until = CASE WHEN $1 = 'inbound' THEN NULL ELSE snoozed_until END,
+         resolved_at = CASE WHEN $1 = 'inbound' THEN NULL ELSE resolved_at END,
          last_inbound_at = CASE WHEN $1 = 'inbound' THEN now() ELSE last_inbound_at END,
+         waiting_since = CASE WHEN $1 = 'inbound' THEN COALESCE(waiting_since, now()) WHEN $1 = 'outbound' THEN NULL ELSE waiting_since END,
          unread_count = CASE WHEN $1 = 'inbound' THEN unread_count + 1 ELSE unread_count END,
-         version = version + 1 WHERE id = $2 AND workspace_id = $3`,
+         version = version + 1 WHERE id = $2 AND workspace_id = $3 RETURNING *`,
       [input.direction, conversationId, workspaceId],
     );
     if (input.direction === "inbound") {
@@ -594,9 +780,9 @@ export class CrmConversationsService {
       await client.query(
         `INSERT INTO notifications
           (id, workspace_id, template_id, recipient_type, recipient_id, channel,
-           status, subject, body, idempotency_key, correlation_id)
-         VALUES ($1, $2, $3, 'party', $4, $5, 'pending', $6, $7, $8, $9)`,
-        [notificationId, workspaceId, template?.id ?? null, conversation.party_id, conversation.channel, template?.subject_template ?? conversation.subject, bodyText ?? bodyHtml, `message:${messageId}`, randomUUID()],
+           status, subject, body, idempotency_key, correlation_id, template_parameters)
+         VALUES ($1, $2, $3, 'party', $4, $5, 'pending', $6, $7, $8, $9, $10)`,
+        [notificationId, workspaceId, template?.id ?? null, conversation.party_id, conversation.channel, template?.subject_template ?? conversation.subject, bodyText ?? bodyHtml, `message:${messageId}`, randomUUID(), templateParameters],
       );
       await this.events.record(client, { workspaceId, actorUserId, source, action: "notification.delivery_requested.v1", entityType: "notification", entityId: notificationId, after: { messageId, channel: conversation.channel, partyId: conversation.party_id } });
     }
@@ -609,7 +795,108 @@ export class CrmConversationsService {
       ? String(conversation.lead_id ?? conversation.party_id ?? messageId)
       : messageId;
     await this.events.record(client, { workspaceId, actorUserId, source, action: input.direction === "inbound" ? "crm.customer.replied.v1" : "crm.message.created.v1", entityType: aggregateType, entityId: aggregateId, after: { ...response, partyId: conversation.party_id, leadId: conversation.lead_id } });
+    // A blocked number's messages are kept, but raise no notice and no assignment.
+    const blocked = input.direction === "inbound" && conversation.party_id
+      ? (await client.query(`SELECT 1 FROM crm_parties WHERE workspace_id = $1 AND id = $2 AND blocked_at IS NOT NULL`, [workspaceId, conversation.party_id])).rowCount : 0;
+    if (input.direction === "inbound" && !blocked) await this.routeInbound(client, workspaceId, conversation, touched.rows[0], messageId, bodyText);
+    if (input.direction === "inbound" && !blocked && conversation.channel === "whatsapp") await this.autoReply(client, workspaceId, touched.rows[0] ?? conversation, messageId, input.metadata);
+    if (input.direction === "internal" && input.mentions?.length) await this.noticeMentions(client, workspaceId, conversation, [...new Set(input.mentions)], messageId, bodyText, actorUserId);
     return response;
+  }
+
+  /**
+   * The greeting or away message for a client's WhatsApp message, when one is due. It runs in a savepoint, so a
+   * reply that can't be written never loses the client's message.
+   */
+  private async autoReply(client: PoolClient, workspaceId: string, conversation: Record<string, unknown>, inboundMessageId: string, metadata?: Record<string, unknown>) {
+    await client.query("SAVEPOINT crm_auto_reply");
+    try {
+      await sendAutoReply(client, { workspaceId, conversation, inboundMessageId, metadata });
+      await client.query("RELEASE SAVEPOINT crm_auto_reply");
+    } catch (error) {
+      await client.query("ROLLBACK TO SAVEPOINT crm_auto_reply");
+      this.logger.warn(`Auto reply skipped for message ${inboundMessageId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * After a client message: a resolved or snoozed chat is back (a history line); a chat nobody owns goes to the
+   * person who already looks after the client, else the inbox queue; then one notice per chat tells its owner,
+   * or the queue when nobody could take it.
+   */
+  private async routeInbound(client: PoolClient, workspaceId: string, before: Record<string, unknown>, after: Record<string, unknown>, messageId: string, bodyText: string | null) {
+    const conversationId = String(before.id);
+    if (before.status === "closed" || before.status === "snoozed") {
+      await recordChatEvent(client, { workspaceId, conversationId, kind: "reopened", actorUserId: null, method: "client_replied" });
+    }
+    let owner = (after.owner_membership_id as string | null) ?? null;
+    let queueId: string | null = null;
+    if (!owner) {
+      const selection = await selectInboxOwner(client, workspaceId, { partyId: (before.party_id as string | null) ?? null, leadId: (before.lead_id as string | null) ?? null, channel: String(before.channel) });
+      queueId = selection.queueId;
+      if (selection.ownerMembershipId && selection.method) {
+        const assigned = await client.query(`UPDATE crm_conversations SET owner_membership_id = $3, assigned_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2 AND owner_membership_id IS NULL RETURNING version`, [workspaceId, conversationId, selection.ownerMembershipId]);
+        if (assigned.rowCount) {
+          owner = selection.ownerMembershipId;
+          await recordChatEvent(client, { workspaceId, conversationId, kind: "assigned", actorUserId: null, ownerMembershipId: owner, method: selection.method, reason: selection.reason });
+          await this.events.record(client, { workspaceId, actorUserId: null, source: "automation", action: "crm.conversation.assigned.v1", entityType: "crm_conversation", entityId: conversationId, after: { ownerMembershipId: owner, method: selection.method, reason: selection.reason, queueId: selection.queueId } });
+        }
+      }
+    }
+    const facts = await client.query<{ clientName: string | null; kinds: string[] }>(
+      `SELECT (SELECT display_name FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "clientName",
+              ARRAY(SELECT coalesce(metadata->>'messageType', 'text') FROM crm_messages
+                     WHERE workspace_id = $1 AND conversation_id = $3 AND direction = 'inbound'
+                     ORDER BY created_at DESC LIMIT greatest($4::int, 1)) AS kinds`,
+      [workspaceId, before.party_id ?? null, conversationId, Number(after.unread_count ?? 1)]);
+    const clientName = facts.rows[0]?.clientName ?? "A client";
+    const summary = inboundSummary(Number(after.unread_count ?? 1), bodyText, facts.rows[0]?.kinds ?? []);
+    if (owner) {
+      const user = await userOfMembership(client, workspaceId, owner);
+      if (user) await noticeChat(client, { workspaceId, conversationId, recipientUserId: user.userId, code: "crm.inbox_message", eventType: "crm.inbox.message", variables: { clientName, summary }, idempotencyKey: `crm:inbox:message:${messageId}:${user.userId}` });
+      return;
+    }
+    queueId ??= (await inboxQueue(client, workspaceId, String(before.channel)))?.id ?? null;
+    for (const userId of await unassignedAudience(client, workspaceId, queueId)) {
+      await noticeChat(client, { workspaceId, conversationId, recipientUserId: userId, code: "crm.inbox_unassigned", eventType: "crm.inbox.unassigned", variables: { clientName }, idempotencyKey: `crm:inbox:unassigned:${messageId}:${userId}` });
+    }
+  }
+
+  /** Values for a template's {{n}} from the workspace's mapping and the chat's records; a missing one blocks the send. */
+  private async fillTemplate(client: PoolClient, workspaceId: string, conversation: Record<string, unknown>, code: string, positions: number[], actorUserId: string | null) {
+    const mapping = await client.query<{ position: number; source: TemplateVariableSource }>(
+      `SELECT position, source FROM crm_template_variables WHERE workspace_id = $1 AND channel = 'whatsapp' AND template_code = $2`, [workspaceId, code]);
+    const sources = new Map(mapping.rows.map((row) => [Number(row.position), row.source]));
+    const unmapped = positions.find((position) => !sources.has(position));
+    if (unmapped) throw new UnprocessableEntityException(`Fill in {{${unmapped}}}: choose its field in Settings → Inbox → Templates`);
+    const values = await resolveTemplateSources(client, { workspaceId, partyId: (conversation.party_id as string | null) ?? null, leadId: (conversation.lead_id as string | null) ?? null, staffUserId: actorUserId, config: this.config }, sources.values());
+    return positions.map((position) => {
+      const source = sources.get(position)!;
+      const value = values[source];
+      if (!value) throw new UnprocessableEntityException(`Fill in {{${position}}} (${SOURCE_NAMES[source]}): this chat has no value for it`);
+      return normalizeTemplateParameter(value);
+    });
+  }
+
+  /** Each person @mentioned in a note (who can open the inbox, and is not the writer) is told in-app; the push follows it. */
+  private async noticeMentions(client: PoolClient, workspaceId: string, conversation: Record<string, unknown>, mentions: string[], messageId: string, bodyText: string | null, actorUserId: string | null) {
+    const people = await client.query<{ userId: string }>(`SELECT inbox."userId" FROM (${INBOX_MEMBERS_SQL}) inbox WHERE inbox."membershipId" = ANY($2::uuid[])`, [workspaceId, mentions]);
+    const facts = await client.query<{ actor: string | null; clientName: string | null }>(
+      `SELECT (SELECT ${MEMBER_NAME("account")} FROM users account WHERE account.id = $2) AS actor,
+              (SELECT display_name FROM crm_parties WHERE workspace_id = $1 AND id = $3) AS "clientName"`,
+      [workspaceId, actorUserId, conversation.party_id ?? null]);
+    const variables = { actor: facts.rows[0]?.actor ?? "A teammate", clientName: facts.rows[0]?.clientName ?? "a client", summary: inboundSummary(1, bodyText) };
+    const deepLink = inboxLink(String(conversation.id));
+    for (const { userId } of people.rows) {
+      if (userId === actorUserId) continue;
+      const key = `crm:inbox:mention:${messageId}:${userId}`;
+      await notifyUserInApp(client, { workspaceId, recipientUserId: userId, code: "crm.inbox_mention", eventType: "crm.inbox.mention", variables, deepLink, idempotencyKey: key });
+    }
+  }
+
+  private async viewerMembership(client: PoolClient, workspaceId: string, userId: string) {
+    const result = await client.query<{ id: string }>(`SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'`, [workspaceId, userId]);
+    return result.rows[0]?.id ?? null;
   }
 
   private async assertConsent(client: PoolClient, workspaceId: string, partyId: string, channel: string, purpose: string) {
@@ -625,7 +912,6 @@ export class CrmConversationsService {
     return result.rows[0];
   }
 
-  private mapConversation(row: Record<string, unknown>) { return { id: row.id, partyId: row.party_id, leadId: row.lead_id, channel: row.channel, subject: row.subject, status: row.status, ownerMembershipId: row.owner_membership_id, lastMessageAt: row.last_message_at, lastInboundAt: row.last_inbound_at, unreadCount: row.unread_count, version: Number(row.version) }; }
   private async requireParty(client: PoolClient, workspaceId: string, partyId: string) { const result = await client.query(`SELECT 1 FROM crm_parties WHERE id = $1 AND workspace_id = $2 AND status = 'active'`, [partyId, workspaceId]); if (!result.rowCount) throw new UnprocessableEntityException("Party does not exist or is inactive"); }
   private async requireMembership(client: PoolClient, workspaceId: string, membershipId: string) { const result = await client.query(`SELECT 1 FROM workspace_memberships WHERE id = $1 AND workspace_id = $2 AND status = 'active'`, [membershipId, workspaceId]); if (!result.rowCount) throw new UnprocessableEntityException("Member does not exist or is inactive"); }
 }

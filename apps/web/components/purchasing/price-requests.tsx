@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, NoAccessState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, type DataGridColumn } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, NoAccessState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, type DataGridColumn } from "@/design-system";
 import { parseDate } from "@internationalized/date";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
@@ -34,7 +34,7 @@ export function PriceRequests({ api, openId, onOpen, onOrder, refreshKey }: { ap
   const columns: DataGridColumn<PriceRequestRow>[] = [
     { id: "number", header: t("Price request"), accessorFn: (row) => String(row.number), size: 160, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{t("Price request {number}", { number: row.number })}</span><small>{row.lines === 1 ? t("1 line") : t("{count} lines", { count: row.lines })}</small></span> } },
-    { id: "status", header: t("Status"), accessorFn: (row) => labels[row.status], size: 160, meta: { renderCell: (row) => <span className={styles.orderStatus} data-status={row.status === "open" ? "pending_approval" : row.status === "awarded" ? "confirmed" : "cancelled"}>{labels[row.status]}</span> } },
+    { id: "status", header: t("Status"), accessorFn: (row) => labels[row.status], size: 160, meta: { renderCell: (row) => <Badge tone={row.status === "open" ? "warning" : row.status === "awarded" ? "success" : "neutral"}>{labels[row.status]}</Badge> } },
     { id: "replies", header: t("Replies"), accessorFn: (row) => row.replied, size: 120, meta: { renderCell: (row) => t("{replied} of {count}", { replied: row.replied, count: row.suppliers }) } },
     { id: "projects", header: t("For"), accessorFn: (row) => row.projects.join(", "), size: 160, meta: { mobileHidden: true } },
     { id: "needed", header: t("Needed by"), accessorFn: (row) => row.neededBy ?? "", size: 130, meta: { mobileHidden: true, renderCell: (row) => format.day(row.neededBy) } },
@@ -42,7 +42,7 @@ export function PriceRequests({ api, openId, onOpen, onOrder, refreshKey }: { ap
   ];
   if (error && !state) return denied ? <NoAccessState /> : <ErrorState description={error} onRetry={() => void load()} />;
   return <>
-    <DataGrid<PriceRequestRow> appearance="flush" ariaLabel={t("Price requests")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+    <DataGrid<PriceRequestRow> ariaLabel={t("Price requests")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search price requests")} rowNumbers={false} selectable={false} wrapText
       emptyContent={search.trim() ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No price requests")} description={t("Ask suppliers for prices from what projects need to order.")} />} />
     {openId ? <PriceRequestSheet api={api} requestId={openId} onChanged={() => void load()} onClose={() => onOpen(null)} onOrder={onOrder} /> : null}
@@ -92,7 +92,7 @@ function PriceRequestSheet({ api, requestId, onChanged, onClose, onOrder }: { ap
       }}>{t("Award and create orders")}</Button></div> : null}>
     {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state ? <Skeleton lines={8} shape="rows" /> : <div className={styles.sheet}>
       <div className={styles.approvalRow}>
-        <span className={styles.orderStatus} data-status={state.request.status === "open" ? "pending_approval" : state.request.status === "awarded" ? "confirmed" : "cancelled"}>{labels[state.request.status]}</span>
+        <Badge tone={state.request.status === "open" ? "warning" : state.request.status === "awarded" ? "success" : "neutral"}>{labels[state.request.status]}</Badge>
         <span className={styles.muted}>{[state.request.companyName, state.request.neededBy ? t("Needed by {date}", { date: format.day(state.request.neededBy) }) : ""].filter(Boolean).join(" · ")}</span>
       </div>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
