@@ -24,7 +24,7 @@ describe("pre-project table selector", () => {
     expect(screen.queryByRole("link", { name: "Open Villa interiors" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start Villa interiors" }));
     const dialog = await screen.findByRole("dialog", { name: "Start planning" });
-    expect(await within(dialog).findByLabelText(/Next follow-up/)).toBeInTheDocument();
+    expect((await within(dialog).findAllByLabelText(/Next follow-up date/)).length).toBeGreaterThan(0);
     expect(within(dialog).getByRole("button", { name: "Start planning" })).toBeDisabled();
   });
   it("disables start for a qualified lead when the user only has view access", () => {

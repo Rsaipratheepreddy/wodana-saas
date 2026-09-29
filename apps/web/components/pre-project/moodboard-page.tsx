@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, ExternalLink, Heart, ImagePlus, Link2, Maximize2, StickyNote, ThumbsDown, X } from "lucide-react";
 import { PlatformMark } from "@/components/brand/platform-mark";
-import { Badge, Button, ControlledModalDialog, EmptyState, IconButton, InlineNotice, MenuButton, MultiSelectField, SegmentedControl, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
+import { Badge, Button, EmptyState, FormDialog, IconButton, InlineNotice, MenuButton, MultiSelectField, SegmentedControl, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
 import { ClientFeedback, FeedbackSignals, feedbackFor, useClientBoard, type ClientBoard } from "@/components/client-activity/client-feedback";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type CaseRoom, type ScopeEntry } from "@/lib/pre-project/content";
@@ -303,26 +303,17 @@ function AddPinDialog({ kind, onClose, onAdd }: { kind: "link" | "note"; onClose
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const add = async () => {
-    if (kind === "link" && !/^https?:\/\/\S+$/i.test(url.trim())) { setError(t("Paste a full link starting with https://")); return; }
-    if (kind === "note" && !note.trim()) { setError(t("Write the note first.")); return; }
-    setBusy(true); setError("");
-    try {
-      const platform = kind === "link" ? linkPlatform(url.trim()) : null;
-      await onAdd(kind === "link" ? { referenceUrl: url.trim(), title: (title.trim() || platform!.label).slice(0, 240), note } : { title: note.trim().slice(0, 80), note: note.trim() });
-    } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not add it.")); setBusy(false); }
+    if (kind === "link" && !/^https?:\/\/\S+$/i.test(url.trim())) throw new Error(t("Paste a full link starting with https://"));
+    if (kind === "note" && !note.trim()) throw new Error(t("Write the note first."));
+    const platform = kind === "link" ? linkPlatform(url.trim()) : null;
+    await onAdd(kind === "link" ? { referenceUrl: url.trim(), title: (title.trim() || platform!.label).slice(0, 240), note } : { title: note.trim().slice(0, 80), note: note.trim() });
   };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button><Button isLoading={busy} onPress={() => void add()} variant="primary">{t("Add")}</Button></div>}
-    isOpen onOpenChange={(open) => { if (!open && !busy) onClose(); }} title={kind === "link" ? t("Add a link") : t("Add a note")}>
-    <form className={styles.form} onSubmit={(event) => { event.preventDefault(); void add(); }}>
-      {error ? <InlineNotice message={error} tone="error" /> : null}
-      {kind === "link" ? <>
-        <TextInput autoFocus inputType="url" isRequired label={t("Link")} onChange={setUrl} placeholder="https://www.instagram.com/…" value={url} />
-        <TextInput label={t("Title")} maxLength={240} onChange={setTitle} value={title} />
-        <TextAreaField label={t("Why it's here")} maxLength={3000} onChange={setNote} value={note} />
-      </> : <TextAreaField autoFocus isRequired label={t("Note")} maxLength={3000} onChange={setNote} value={note} />}
-    </form>
-  </ControlledModalDialog>;
+  return <FormDialog title={kind === "link" ? t("Add a link") : t("Add a note")} onClose={onClose} isDirty={Boolean(url.trim() || title.trim() || note.trim())} submitLabel={t("Add")} onSubmit={add}>
+    {kind === "link" ? <>
+      <TextInput inputType="url" isRequired label={t("Link")} onChange={setUrl} placeholder="https://www.instagram.com/…" value={url} />
+      <TextInput label={t("Title")} maxLength={240} onChange={setTitle} value={title} />
+      <TextAreaField label={t("Why it's here")} maxLength={3000} onChange={setNote} value={note} />
+    </> : <TextAreaField isRequired label={t("Note")} maxLength={3000} onChange={setNote} value={note} />}
+  </FormDialog>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from 'react';
-import { Button, Checkbox } from '@/design-system';
+import { Button, Checkbox, TextInput, VisuallyHidden } from '@/design-system';
 import { blankEntry, caseApi, caseRequest, type CaseAsset, type CaseContent, type ScopeEntry } from '@/lib/pre-project/content';
 import { AssetFiles, CaseModal } from './case-controls';
 import styles from './case-content.module.css';
@@ -73,7 +73,7 @@ export function ScopeEditor({ entry, data, onClose, onSave, assetUrl, uploadFile
 
       {error && <p className={styles.error} role="alert">{error}</p>}{message && <p role="status" className={styles.notice}>{message}</p>}
       {<fieldset disabled={!writable || busy} className={styles.captureFields}>
-        <label className={styles.documentHeading}><span>{t(draft.kind === 'requirement' ? 'Client requirement' : 'Title')}</span><input style={{border:0,boxShadow:"none",background:"transparent",fontSize:16,fontWeight:600}} required maxLength={240} value={draft.title} onChange={e => change('title', e.target.value)} placeholder={t(draft.kind === 'requirement' ? 'e.g. Need more wardrobe storage' : 'Give this reference a short title')} /></label>
+        <div className={styles.documentHeading}><TextInput label={<VisuallyHidden>{t(draft.kind === 'requirement' ? 'Client requirement' : 'Title')}</VisuallyHidden>} isRequired maxLength={240} value={draft.title} onChange={value => change('title', value)} placeholder={t(draft.kind === 'requirement' ? 'e.g. Need more wardrobe storage' : 'Give this reference a short title')} /></div>
         <NoteRichEditor compact label={t(draft.kind === "file" ? "Site plan notes" : draft.kind === "inspiration" ? "Inspiration notes" : "Requirement notes")} placeholder={draft.kind === "file" ? t("Add the plan, then note its rooms, measurements or references…") : draft.kind === "inspiration" ? t("Add photos, links and what the client likes about them…") : undefined} key={draft.id} document={draft.document ?? textDocument(draft.note)} assets={draft.assets} writable={Boolean(writable)} disabled={busy} onDraw={writable && !busy && draft.assets.length < 20 ? setMarking : undefined} assetUrl={assetUrl ?? ((asset, preview) => caseApi(data.workspaceId, data.caseId, `assets/${asset.id}${preview ? '?preview=1' : ''}`))} onChange={document => setDraft(current => ({ ...current, document, note: documentText(document.content) }))} onAsset={asset => setDraft(current => ({ ...current, assets: [...current.assets.filter(item => item.id !== asset.id), asset] }))} onBusy={setUploading} onError={setError} onUpload={uploadFile ?? (async (file, id) => { if (file.type.startsWith('video/')) throw new Error(t('Use a video reference link, or upload an image or PDF.')); const body = new FormData(); body.set('file', file); return caseRequest<CaseAsset>(data.workspaceId, data.caseId, `assets/${id}`, 'POST', body); })}/>
 
       </fieldset>}

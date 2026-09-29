@@ -1,21 +1,30 @@
 "use client";
 import { useEffect, useState, type ReactNode } from 'react';
 import { Download, FileText, Trash2, Upload, Pencil } from 'lucide-react';
-import { Button, InspectorSheet, ComboboxField, ConfirmationDialog, ControlledModalDialog } from '@/design-system';
+import { Button, InspectorSheet, ComboboxField, ControlledModalDialog, submitOnModEnter, useDialogClose } from '@/design-system';
 import { caseApi, caseRequest, type CaseAsset, type CatalogChoice } from '@/lib/pre-project/content';
 import {AssetMarkup} from './asset-markup';
 import styles from './case-content.module.css';
 import { useT } from '@/lib/i18n/i18n-provider';
 
+/** The dialog footer's Cancel (or Close on a read-only view): it asks before unsaved changes go. */
+function CaseModalClose({ busy, label }: { busy: boolean; label: string }) {
+ const close = useDialogClose();
+ return <Button isDisabled={busy} onPress={close}>{label}</Button>;
+}
+/**
+ * The planning dialogs' frame: Cancel then the primary action at the end, Cmd/Ctrl+Enter submits the form inside,
+ * and closing with unsaved changes asks first.
+ */
 export function CaseModal({title,description,children,footer,onClose,dirty=false,busy=false,size='lg',layout='modal'}:{title:string;description?:string;children:ReactNode;footer?:ReactNode;onClose:()=>void;dirty?:boolean;busy?:boolean;size?:'md'|'lg'|'xl';layout?:'modal'|'sheet'}) {
  const t=useT();
- const [discard,setDiscard]=useState(false);
  useEffect(()=>{if(!dirty)return;const warn=(event:BeforeUnloadEvent)=>event.preventDefault();window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty]);
- const close=()=>{if(busy)return;if(dirty)setDiscard(true);else onClose();};
- const panelBody=<div className={styles.form}>{children}</div>;
- const actions=<div className={styles.actions}><Button isDisabled={busy} onPress={close}>{t('Close')}</Button>{footer}</div>;
- if(layout==='sheet')return <><InspectorSheet size="lg" isOpen title={title} description={description} onOpenChange={open=>{if(!open)close();}} footer={actions}>{panelBody}</InspectorSheet><ConfirmationDialog isOpen={discard} onOpenChange={setDiscard} title={t('Discard unsaved changes?')} body={t('Your saved information will stay as it is. Unsaved changes in this form will be discarded.')} confirmLabel={t('Discard changes')} onConfirm={onClose}/></>;
- return <><ControlledModalDialog size={size} title={title} description={description} isOpen isDismissable={!busy} onOpenChange={open=>{if(!open)close();}} footer={<div className={styles.actions}><Button isDisabled={busy} onPress={close}>{t('Close')}</Button>{footer}</div>}><div className={styles.form}>{children}</div></ControlledModalDialog><ConfirmationDialog isOpen={discard} onOpenChange={setDiscard} title={t('Discard unsaved changes?')} body={t('Your saved information will stay as it is. Unsaved changes in this form will be discarded.')} confirmLabel={t('Discard changes')} onConfirm={onClose}/></>;
+ const close=(open:boolean)=>{if(!open&&!busy)onClose();};
+ const actions=<div className={styles.actions}><CaseModalClose busy={busy} label={footer?t('Cancel'):t('Close')}/>{footer}</div>;
+ const body=<div className={styles.form}>{children}</div>;
+ if(layout==='sheet')return <InspectorSheet size="lg" isOpen isDirty={dirty&&!busy} title={title} description={description} onOpenChange={close} footer={actions}>{body}</InspectorSheet>;
+ return <ControlledModalDialog size={size} title={title} description={description} isOpen isDirty={dirty&&!busy} isDismissable={!busy} onOpenChange={close} footer={actions}
+  onKeyDown={(event)=>submitOnModEnter(event,(event.currentTarget as HTMLElement|null)?.querySelector('form')??null)}>{body}</ControlledModalDialog>;
 }
 export function CatalogChoiceField({workspaceId,caseId,kind,label,value,onChange,disabled=false,relatedTo}:{relatedTo?:{role:string;recordId:string};workspaceId:string;caseId:string;kind:string;label:string;value:CatalogChoice|null;onChange:(value:CatalogChoice|null)=>void;disabled?:boolean}) {
  const t=useT();

@@ -46,21 +46,21 @@ describe("pre-execution case overview", () => {
 
 
 
-  it("saves operational ownership and risk with the current version", async () => {
-    caseRequest.mockResolvedValue({ ...initial, version: 4, ownerMembershipId: "owner-2", engagementOwnerName: "Designer", priority: "high", riskLevel: "medium" });
+  it("changes ownership and risk in place, each with the current version", async () => {
+    caseRequest
+      .mockResolvedValueOnce({ ...initial, version: 4, ownerMembershipId: "owner-2", engagementOwnerName: "Designer" })
+      .mockResolvedValueOnce({ ...initial, version: 5, ownerMembershipId: "owner-2", engagementOwnerName: "Designer", riskLevel: "medium" });
     const updated = view();
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Edit details" }));
-    await user.click(screen.getByRole("button", { name: /Project owner/ }));
-    await user.click(screen.getByRole("option", { name: "Designer" }));
-    await user.click(screen.getByRole("button", { name: /Priority/ }));
-    await user.click(screen.getByRole("option", { name: "High" }));
-    await user.click(screen.getByRole("button", { name: /Risk/ }));
-    await user.click(screen.getByRole("option", { name: "Medium" }));
-    await user.click(screen.getByRole("button", { name: "Save details" }));
-    await waitFor(() => expect(caseRequest).toHaveBeenCalledWith("workspace-1", "case-1", "profile", "PATCH", expect.objectContaining({ version: 3, ownerMembershipId: "owner-2", priority: "high", riskLevel: "medium", requestId: expect.any(String) })));
+    expect(screen.queryByRole("button", { name: "Edit details" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Edit Owner" }));
+    await user.click(await screen.findByRole("option", { name: "Designer" }));
+    await waitFor(() => expect(caseRequest).toHaveBeenCalledWith("workspace-1", "case-1", "profile", "PATCH", expect.objectContaining({ version: 3, ownerMembershipId: "owner-2", priority: "normal", riskLevel: "low", requestId: expect.any(String) })));
     expect(updated).toHaveBeenCalledWith(expect.objectContaining({ version: 4, canManageLifecycle: true }));
-    expect(screen.getByText("Designer")).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: "Edit Risk" }));
+    await user.click(await screen.findByRole("option", { name: "Medium" }));
+    await waitFor(() => expect(caseRequest).toHaveBeenLastCalledWith("workspace-1", "case-1", "profile", "PATCH", expect.objectContaining({ version: 4, riskLevel: "medium" })));
+    expect(await screen.findByText("Designer")).toBeVisible();
   });
 
   it("requires a reason for hold and resumes against the new version", async () => {

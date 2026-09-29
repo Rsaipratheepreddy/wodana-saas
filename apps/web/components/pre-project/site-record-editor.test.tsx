@@ -20,10 +20,10 @@ function setup(kind:'visit'|'measurement'|'observation',failure=false,readonly=f
 describe('short Site entry steps',()=>{
  it('keeps location separate from the dimensions and preserves estimates on save',async()=>{
   const {user,onSave,onClose}=setup('measurement');
-  expect(screen.queryByRole('spinbutton',{name:'Measured'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('textbox',{name:'Measured'})).not.toBeInTheDocument();
   await user.click(screen.getByRole('button',{name:'Continue'}));
-  expect(screen.getByRole('spinbutton',{name:'Approximate'})).toHaveValue(8);
-  await user.clear(screen.getByRole('spinbutton',{name:'Measured'}));await user.type(screen.getByRole('spinbutton',{name:'Measured'}),'7.8');
+  expect(screen.getByRole('textbox',{name:'Approximate'})).toHaveValue('8');
+  await user.clear(screen.getByRole('textbox',{name:'Measured'}));await user.type(screen.getByRole('textbox',{name:'Measured'}),'7.8');
   await user.click(screen.getByRole('button',{name:'Continue'}));
   await user.type(screen.getByLabelText('Survey notes / what to recheck'),'Checked at three heights.');
   await user.click(screen.getByRole('button',{name:'Save measurements'}));
@@ -31,9 +31,9 @@ describe('short Site entry steps',()=>{
  });
  it('retains edited dimensions after a conflict and across steps',async()=>{
   const {user,onSave,onClose}=setup('measurement',true);
-  await user.click(screen.getByRole('button',{name:'Continue'}));await user.clear(screen.getByRole('spinbutton',{name:'Measured'}));await user.type(screen.getByRole('spinbutton',{name:'Measured'}),'7.6');
+  await user.click(screen.getByRole('button',{name:'Continue'}));await user.clear(screen.getByRole('textbox',{name:'Measured'}));await user.type(screen.getByRole('textbox',{name:'Measured'}),'7.6');
   await user.click(screen.getByRole('button',{name:'Save measurements'}));expect(await screen.findByRole('alert')).toHaveTextContent('Draft preserved');expect(onClose).not.toHaveBeenCalled();
-  await user.click(screen.getByRole('button',{name:'Back'}));await user.click(screen.getByRole('button',{name:'Continue'}));expect(screen.getByRole('spinbutton',{name:'Measured'})).toHaveValue(7.6);expect(onSave).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole('button',{name:'Back'}));await user.click(screen.getByRole('button',{name:'Continue'}));expect(screen.getByRole('textbox',{name:'Measured'})).toHaveValue('7.6');expect(onSave).toHaveBeenCalledTimes(1);
  });
  it('saves a short observation without making an item or photo mandatory',async()=>{
   const {user,onSave}=setup('observation');await user.type(screen.getByLabelText('What did you find?'),'Uneven wall');await user.click(screen.getByRole('button',{name:'Save observation'}));expect(onSave).toHaveBeenCalledWith(expect.objectContaining({kind:'observation',note:'Uneven wall',entryId:null,assets:[]}),0);

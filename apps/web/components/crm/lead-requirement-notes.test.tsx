@@ -49,7 +49,7 @@ describe('Lead requirement cards', () => {
     await user.click(screen.getByRole('button', { name: 'Add note' }));
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Bedroom');
     await user.type(screen.getByRole('textbox', { name: 'Requirement notes' }), 'Quiet palette');
-    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(await screen.findByRole('dialog', { name: 'Discard unsaved changes?' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Keep editing' }));
     await user.click(screen.getByRole('button', { name: 'Save note' }));

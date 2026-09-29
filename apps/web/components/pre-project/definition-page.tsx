@@ -2,13 +2,12 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, DateField, EmptyState, ErrorState, InlineNotice, RecordTable, SelectField, TextInput, TextAreaField, useDesignSystem } from "@/design-system";
+import { Badge, Button, DateField, EmptyState, ErrorState, FormDialog, FormRow, InlineNotice, RecordTable, SelectField, TextInput, TextAreaField, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest, scopeLabels } from "@/lib/pre-project/content";
 import type { DefinitionPageData, DefinitionState } from "@/lib/pre-project/definition";
 import styles from "./definition-page.module.css";
 import { parseDateTime } from "@internationalized/date";
-import { CaseModal } from "./case-controls";
 import { tKey } from "@/lib/i18n/keys";
 
 const HISTORY_LABEL: Record<string, string> = { awaiting_confirmation: tKey("Waiting for the client"), confirmed: tKey("Signed off"), changes_requested: tKey("Asked for changes"), superseded: tKey("Out of date") };
@@ -60,24 +59,19 @@ function ScopeSignOff({ initial }: { initial: Extract<DefinitionPageData, { work
     finally { setBusy(false); }
   }
 
-  async function recordDecision(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!current || busy || !definition.canRecordClientDecision) return;
-    if (!decidedAt || !decisionBy.trim() || !evidence.trim() || (decision === "changes_requested" && !note.trim())) {
-      setError(t("Enter the client's name, when they answered and how. Say what they want changed.")); return;
-    }
-    setBusy(true); setError(""); setNotice("");
-    try {
-      await caseRequest(workspaceId, caseId, `definition-baselines/${current.id}/decisions`, "POST", {
-        requestId: decisionId.current, decision, decisionBy: decisionBy.trim(), channel,
-        evidence: evidence.trim(), note: note.trim(), decidedAt: new Date(decidedAt).toISOString(),
-      });
-      await reload();
-      decisionId.current = crypto.randomUUID();
-      setDecisionOpen(false);
-      setNotice(decision === "confirmed" ? t("Sign-off recorded.") : t("The client's changes are recorded."));
-    } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not save.")); }
-    finally { setBusy(false); }
+  async function recordDecision() {
+    if (!current || !definition.canRecordClientDecision) return;
+    if (!decidedAt || !decisionBy.trim() || !evidence.trim() || (decision === "changes_requested" && !note.trim()))
+      throw new Error(t("Enter the client's name, when they answered and how. Say what they want changed."));
+    setError(""); setNotice("");
+    await caseRequest(workspaceId, caseId, `definition-baselines/${current.id}/decisions`, "POST", {
+      requestId: decisionId.current, decision, decisionBy: decisionBy.trim(), channel,
+      evidence: evidence.trim(), note: note.trim(), decidedAt: new Date(decidedAt).toISOString(),
+    });
+    await reload();
+    decisionId.current = crypto.randomUUID();
+    setDecisionOpen(false);
+    setNotice(decision === "confirmed" ? t("Sign-off recorded.") : t("The client's changes are recorded."));
   }
 
   const canPublish = definition.canPublish && definition.caseStatus === "active" && definition.draft.readyToPublish && !current?.current;
@@ -128,18 +122,17 @@ function ScopeSignOff({ initial }: { initial: Extract<DefinitionPageData, { work
       </li>)}</ol>
     </section> : null}
 
-    {decisionOpen && <CaseModal title={t("Record the client's answer")} busy={busy} dirty={Boolean(decisionBy || evidence || note)} onClose={() => setDecisionOpen(false)} footer={<div className={styles.actions}><Button type="submit" form="definition-decision" variant="primary" isLoading={busy}>{t("Save")}</Button></div>}>
-      <form id="definition-decision" className={styles.form} onSubmit={(event) => void recordDecision(event)}>
-        {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-        <div className={styles.formGrid}>
-          <SelectField label={t("Answer")} isDisabled={busy} selectedKey={decision} onSelectionChange={key => key && setDecision(key as typeof decision)} items={[{id:"confirmed",label:t("Signed off")},{id:"changes_requested",label:t("Wants changes")}]} />
-          <TextInput label={t("Client name")} isRequired isDisabled={busy} maxLength={240} value={decisionBy} onChange={setDecisionBy} />
-          <SelectField label={t("Received by")} isDisabled={busy} selectedKey={channel} onSelectionChange={key => key && setChannel(String(key))} items={[{id:"meeting",label:t("Meeting")},{id:"email",label:t("Email")},{id:"phone",label:t("Phone")},{id:"whatsapp",label:t("WhatsApp")},{id:"signed_document",label:t("Signed document")},{id:"other",label:t("Other")}]} />
-          <DateField label={t("When")} isRequired isDisabled={busy} granularity="second" hourCycle={24} value={decidedAt ? parseDateTime(decidedAt) : null} onChange={value => setDecidedAt(value?.toString() ?? "")} />
-        </div>
-        <TextInput label={t("Evidence")} isRequired isDisabled={busy} maxLength={3000} placeholder={t("Email, meeting note or signed file")} value={evidence} onChange={setEvidence} />
-        <TextAreaField label={t("Remarks")} isRequired={decision === "changes_requested"} isDisabled={busy} maxLength={5000} value={note} onChange={setNote} />
-      </form>
-    </CaseModal>}
+    {decisionOpen && <FormDialog title={t("Record the client's answer")} isDirty={Boolean(decisionBy || evidence || note)} onClose={() => setDecisionOpen(false)} submitLabel={t("Save")} onSubmit={recordDecision}>
+      <FormRow>
+        <SelectField label={t("Answer")} isRequired selectedKey={decision} onSelectionChange={key => key && setDecision(key as typeof decision)} items={[{id:"confirmed",label:t("Signed off")},{id:"changes_requested",label:t("Wants changes")}]} />
+        <TextInput label={t("Client name")} isRequired maxLength={240} value={decisionBy} onChange={setDecisionBy} />
+      </FormRow>
+      <FormRow>
+        <SelectField label={t("Received by")} isRequired selectedKey={channel} onSelectionChange={key => key && setChannel(String(key))} items={[{id:"meeting",label:t("Meeting")},{id:"email",label:t("Email")},{id:"phone",label:t("Phone")},{id:"whatsapp",label:t("WhatsApp")},{id:"signed_document",label:t("Signed document")},{id:"other",label:t("Other")}]} />
+        <DateField label={t("When")} isRequired granularity="second" value={decidedAt ? parseDateTime(decidedAt) : null} onChange={value => setDecidedAt(value?.toString() ?? "")} />
+      </FormRow>
+      <TextInput label={t("Evidence")} isRequired maxLength={3000} placeholder={t("Email, meeting note or signed file")} value={evidence} onChange={setEvidence} />
+      <TextAreaField label={t("Remarks")} isRequired={decision === "changes_requested"} maxLength={5000} value={note} onChange={setNote} />
+    </FormDialog>}
   </div>;
 }

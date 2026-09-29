@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarPlus, Check, CheckCircle2, Play } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, EmptyState, InlineNotice, PersonName, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { parseDate, parseTime } from "@internationalized/date";
+import { Badge, Button, DateField, EmptyState, FormDialog, FormRow, InlineNotice, PersonName, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest } from "@/lib/pre-project/content";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -97,66 +98,40 @@ export function DesignJourney({ workspaceId, caseId, locale }: { workspaceId: st
   </section>;
 }
 
-function useSubmit<T>(submit: (value: T) => Promise<unknown>) {
-  const t = useT();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const run = async (value: T) => {
-    setBusy(true); setError("");
-    try { await submit(value); } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not save.")); setBusy(false); }
-  };
-  return { busy, error, setError, run };
-}
-
 function CloseInspirationDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (note: string) => Promise<unknown> }) {
   const t = useT();
   const [note, setNote] = useState("");
-  const { busy, error, run } = useSubmit(onSubmit);
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button><Button isLoading={busy} onPress={() => void run(note.trim())} variant="primary">{t("Close inspiration")}</Button></div>}
-    isOpen onOpenChange={(open) => { if (!open && !busy) onClose(); }} title={t("Close inspiration")}>
-    <div className={styles.form}>
-      {error ? <InlineNotice message={error} tone="error" /> : null}
-      <TextAreaField label={t("Note")} maxLength={2000} onChange={setNote} value={note} />
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog title={t("Close inspiration")} onClose={onClose} isDirty={Boolean(note.trim())} submitLabel={t("Close inspiration")} onSubmit={() => onSubmit(note.trim())}>
+    <TextAreaField label={t("Note")} maxLength={2000} onChange={setNote} value={note} />
+  </FormDialog>;
 }
 
 function ScheduleVisitDialog({ timezone, onClose, onSubmit }: { timezone: string; onClose: () => void; onSubmit: (value: { startsAt: string; endsAt: string; timezone: string; address: string | null }) => Promise<unknown> }) {
   const t = useT();
-  const [value, setValue] = useState({ date: "", time: "10:00", minutes: "90", address: "" });
-  const { busy, error, setError, run } = useSubmit(onSubmit);
+  const calendar = useWorkingCalendar();
+  const [value, setValue] = useState(() => ({ date: calendar.nextWorkingDayFromToday().toString(), time: "10:00", minutes: "90", address: "" }));
   const set = (key: keyof typeof value) => (next: string) => setValue((current) => ({ ...current, [key]: next }));
-  const book = () => {
+  const book = async () => {
     const startsAt = zonedToUtc(value.date, value.time, timezone);
-    if (!startsAt) { setError(t("Choose the date and time.")); return; }
-    void run({ startsAt, endsAt: new Date(Date.parse(startsAt) + Number(value.minutes) * 60000).toISOString(), timezone, address: value.address.trim() || null });
+    if (!startsAt) throw new Error(t("Choose the date and time."));
+    await onSubmit({ startsAt, endsAt: new Date(Date.parse(startsAt) + Number(value.minutes) * 60000).toISOString(), timezone, address: value.address.trim() || null });
   };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button><Button isLoading={busy} onPress={book} variant="primary">{t("Book")}</Button></div>}
-    isOpen onOpenChange={(open) => { if (!open && !busy) onClose(); }} title={t("Book site visit")}>
-    <form className={styles.form} onSubmit={(event) => { event.preventDefault(); book(); }}>
-      {error ? <InlineNotice message={error} tone="error" /> : null}
-      <div className={styles.row}>
-        <TextInput inputType="date" isRequired label={t("Date")} onChange={set("date")} value={value.date} />
-        <TextInput inputType="time" isRequired label={t("Start")} onChange={set("time")} value={value.time} />
-        <SelectField items={[60, 90, 120, 180].map((minutes) => ({ id: String(minutes), label: t("{count} min", { count: minutes }) }))} label={t("Length")} onSelectionChange={(key) => set("minutes")(String(key))} selectedKey={value.minutes} />
-      </div>
-      <small className={styles.muted}>{t("Times are in {zone}", { zone: timezone })}</small>
-      <TextInput label={t("Address")} maxLength={500} onChange={set("address")} value={value.address} />
-    </form>
-  </ControlledModalDialog>;
+  return <FormDialog title={t("Book site visit")} onClose={onClose} isDirty={Boolean(value.address.trim())} submitLabel={t("Book")} onSubmit={book}>
+    <DateField isRequired label={t("Date")} description={t("Times are in {zone}", { zone: timezone })} value={value.date ? parseDate(value.date) : null} onChange={(date) => set("date")(date?.toString() ?? "")} />
+    <FormRow>
+      <TimeField isRequired label={t("Start")} granularity="minute" value={value.time ? parseTime(value.time) : null} onChange={(time) => set("time")(time?.toString().slice(0, 5) ?? "")} />
+      <SelectField isRequired items={[60, 90, 120, 180].map((minutes) => ({ id: String(minutes), label: t("{count} min", { count: minutes }) }))} label={t("Length")} onSelectionChange={(key) => set("minutes")(String(key))} selectedKey={value.minutes} />
+    </FormRow>
+    <TextInput label={t("Address")} maxLength={500} onChange={set("address")} value={value.address} />
+  </FormDialog>;
 }
 
 function CompleteVisitDialog({ caseId, problem, measurements, onClose, onSubmit }: { caseId: string; problem: string | null; measurements: JourneyView["measurements"]; onClose: () => void; onSubmit: (summary: string) => Promise<unknown> }) {
   const t = useT();
   const [summary, setSummary] = useState("");
-  const { busy, error, setError, run } = useSubmit(onSubmit);
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button><Button isDisabled={Boolean(problem)} isLoading={busy} onPress={() => summary.trim() ? void run(summary.trim()) : setError(t("Summarise what was found on site."))} variant="primary">{t("Complete site visit")}</Button></div>}
-    isOpen onOpenChange={(open) => { if (!open && !busy) onClose(); }} title={t("Complete site visit")}>
-    <div className={styles.form}>
-      {error ? <InlineNotice message={error} tone="error" /> : null}
-      {problem ? <InlineNotice tone="info" message={<>{problem}. <Link href={`/workspace/pre-projects/cases/${caseId}/site`}>{t("Open site records")}</Link></>} /> : null}
-      {measurements.length ? <ul className={styles.measurements}>{measurements.map((item) => <li key={item.title}><span>{item.title}</span><small>{["measured", "verified"].includes(item.status) ? t("Measured") : t("Not measured")} · {t("{count} files", { count: item.files })}</small></li>)}</ul> : null}
-      <TextAreaField isRequired label={t("What was found on site")} maxLength={5000} onChange={setSummary} value={summary} />
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog title={t("Complete site visit")} onClose={onClose} isDirty={Boolean(summary.trim())} isSubmitDisabled={Boolean(problem)} submitLabel={t("Complete site visit")} onSubmit={() => onSubmit(summary.trim())}
+    lead={problem ? <InlineNotice tone="info" message={<>{problem}. <Link href={`/workspace/pre-projects/cases/${caseId}/site`}>{t("Open site records")}</Link></>} /> : null}>
+    {measurements.length ? <ul className={styles.measurements}>{measurements.map((item) => <li key={item.title}><span>{item.title}</span><small>{["measured", "verified"].includes(item.status) ? t("Measured") : t("Not measured")} · {t("{count} files", { count: item.files })}</small></li>)}</ul> : null}
+    <TextAreaField isRequired label={t("What was found on site")} maxLength={5000} onChange={setSummary} value={summary} />
+  </FormDialog>;
 }

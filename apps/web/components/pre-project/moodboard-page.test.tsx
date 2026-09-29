@@ -77,7 +77,7 @@ describe("moodboard", () => {
     renderBoard();
     fireEvent.click(screen.getByRole("button", { name: "Note" }));
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
-    expect(await screen.findByText("Write the note first.")).toBeInTheDocument();
+    expect(await screen.findByText("Check 1 field")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "Note" }), { target: { value: "No open shelving" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(await screen.findByRole("article", { name: "No open shelving" })).toBeInTheDocument();
