@@ -359,6 +359,9 @@
 .preview { display: block; inline-size: 100%; max-block-size: 60vh; object-fit: contain; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
 .document { overflow: auto; max-block-size: 70vh; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
 .choices { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-2); }
+/* A long document's decision (the proposal): its buttons stay in view at the foot of the dialog while the document scrolls. */
+.footChoices { position: sticky; z-index: 1; inset-block-end: calc(var(--wd-space-6) * -1); margin-block-end: calc(var(--wd-space-6) * -1);
+  padding-block: var(--wd-space-3) var(--wd-space-6); background: var(--wd-color-surface); }
 .options { display: grid; gap: var(--wd-space-2); min-inline-size: 0; margin: 0; padding: 0; border: 0; }
 .options > legend { padding: 0; margin-block-end: var(--wd-space-2); }
 .total { display: flex; justify-content: space-between; gap: var(--wd-space-3); font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); }
