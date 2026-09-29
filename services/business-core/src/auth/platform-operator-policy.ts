@@ -23,6 +23,8 @@ export const PLATFORM_OPERATOR_PERMISSIONS = [
   "operators.manage",
   "sales.read",
   "sales.manage",
+  // Wodana's own app credentials for Meta, Intuit, Zoho and Google (Wodana Control → Platform connections).
+  "platform.integrations.manage",
 ] as const;
 
 export type PlatformOperatorPermission = typeof PLATFORM_OPERATOR_PERMISSIONS[number];
