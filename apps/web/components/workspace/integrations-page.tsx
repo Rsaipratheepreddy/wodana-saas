@@ -127,6 +127,8 @@ export function IntegrationsPage({
   const availableProviders = new Set(providerCatalog.filter((item) => item.implementation === "available").map((item) => item.provider));
   const activeConnections = connections.filter((connection) => connection.status !== "revoked" && availableProviders.has(connection.provider));
   const filteredConnections = activeConnections.filter(connection => visibleCatalog.some(provider => provider.provider === connection.provider));
+  // Wodana's own app for the provider isn't set up yet (Wodana Control): nothing to connect to.
+  const platformReady = (provider: IntegrationProvider) => initialData.platformReadiness?.[provider] !== false;
   const connectedCount = activeConnections.filter((connection) => connection.status === "connected").length;
   const attentionCount = activeConnections.filter((connection) => connection.status === "degraded").length;
 
@@ -240,12 +242,12 @@ export function IntegrationsPage({
         renderCell: (connection) => <span className={styles.accountActions}>
           {connection.status === "connected" || connection.status === "degraded"
             ? <Button onPress={() => setToolConnection(connection)} size="compact">{t("Open tools")}</Button>
-            : <Button isDisabled={!initialData.canManage || connection.status === "pending"} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact">{connection.status === "pending" ? t("Connecting") : t("Connect")}</Button>}
+            : <Button isDisabled={!initialData.canManage || connection.status === "pending" || !platformReady(connection.provider)} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact">{connection.status === "pending" ? t("Connecting") : t("Connect")}</Button>}
           <IconMenuButton
             ariaLabel={t("Actions for {name}", { name: connection.displayName })}
             items={[
               { id: "manage", label: t("Manage settings") },
-              ...(connection.status === "degraded" ? [{ id: "reconnect", label: t("Reconnect") }] : []),
+              ...(connection.status === "degraded" ? [{ id: "reconnect", label: t("Reconnect"), isDisabled: !platformReady(connection.provider) }] : []),
               { id: "disconnect", label: t("Disconnect"), isDisabled: !initialData.canManage, tone: "danger" },
             ]}
             onAction={(action) => {
@@ -305,13 +307,15 @@ export function IntegrationsPage({
               {connection?.healthIssues?.length ? <small className={styles.healthIssue}>{connection.healthIssues[0]}</small> : null}
             </div>
             <div className={styles.cardFooter}>
-              {!connection
-                ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="primary">{t("Connect")}</Button>
-                : connection.status === "draft"
-                  ? <Button isDisabled={!initialData.canManage} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact" variant="primary">{t("Connect")}</Button>
-                  : <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact">{t("Manage")}</Button>}
+              {(!connection || connection.status === "draft") && !platformReady(item.provider)
+                ? <small className={styles.unavailable}>{t("Not available yet — Wodana is setting this up")}</small>
+                : !connection
+                  ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="primary">{t("Connect")}</Button>
+                  : connection.status === "draft"
+                    ? <Button isDisabled={!initialData.canManage} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact" variant="primary">{t("Connect")}</Button>
+                    : <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact">{t("Manage")}</Button>}
               {connection?.status === "draft" ? <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact" variant="quiet">{t("Settings")}</Button> : null}
-              {connection && ["connected", "degraded"].includes(connection.status) ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="quiet">{t("Add account")}</Button> : null}
+              {connection && ["connected", "degraded"].includes(connection.status) ? <Button isDisabled={!initialData.canManage || !platformReady(item.provider)} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="quiet">{t("Add account")}</Button> : null}
             </div>
           </Surface>;
         })}</div>

@@ -216,6 +216,13 @@
   padding: var(--wd-space-3) var(--wd-space-5);
 }
 
+/* Wodana's own app for the provider isn't set up yet: said plainly where Connect would be. */
+.cardFooter .unavailable {
+  color: var(--wd-color-text-tertiary);
+  font-size: var(--wd-text-xs);
+  line-height: 1.4;
+}
+
 .plannedGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
