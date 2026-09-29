@@ -211,6 +211,30 @@ describe("AI credits at the gateway", () => {
     await expect(service.generate(actor, "w", { feature: "crm.chat", request })).rejects.toMatchObject({ status: 429, response: { code: "AI_PLATFORM_DAILY_LIMIT" } });
   });
 
+  it("runs a Woddy tool turn through the same doors: tools translated, every turn logged and charged, the limit taken once", async () => {
+    process.env.AI_PROVIDER = "bedrock";
+    const { service, logged } = gateway(true);
+    const woddy = { systemInstruction: { parts: [{ text: "You are Woddy" }] }, contents: [{ role: "user", parts: [{ text: "What is mine?" }] }], generationConfig: { maxOutputTokens: 1500, temperature: 0 } };
+    const send = vi.fn(async () => ({
+      output: { message: { role: "assistant", content: [{ toolUse: { toolUseId: "t1", name: "list_my_work", input: {} } }] } }, stopReason: "tool_use", usage: { inputTokens: 1200, outputTokens: 30 },
+    }));
+    const client = { send, input: () => (send.mock.calls[0] as unknown as [{ input: Record<string, unknown> }])[0].input };
+    service.useBedrock(client);
+    vi.mocked(chargeUsage).mockClear();
+    const tools = [{ functionDeclarations: [{ name: "list_my_work", description: "My work", parameters: { type: "object", properties: {} } }] }];
+    const turn = await service.turn(actor, "w-turn", { feature: "woddy.agent", request: { ...woddy, tools }, takeLimit: true });
+    expect(turn).toMatchObject({ calls: [{ id: "t1", name: "list_my_work", args: {} }], finishReason: "TOOL_CALL", provider: "bedrock" });
+    expect((client.input() as { toolConfig: unknown }).toolConfig).toEqual({ tools: [{ toolSpec: { name: "list_my_work", description: "My work", inputSchema: { json: { type: "object", properties: {} } } } }], toolChoice: { auto: {} } });
+    expect(logged()[0].values.slice(2, 8)).toEqual(["woddy.agent", "bedrock", "apac.amazon.nova-lite-v1:0", 1200, 30, "ok"]);
+    expect(chargeUsage).toHaveBeenCalledTimes(1);
+    // Later turns of the same run don't count toward the per-minute limit; every one is still gated and charged.
+    for (let round = 0; round < 12; round++) await service.turn(actor, "w-turn", { feature: "woddy.agent", request: { ...woddy, tools }, takeLimit: false });
+    expect(chargeUsage).toHaveBeenCalledTimes(13);
+    vi.mocked(checkCredits).mockResolvedValue("exhausted");
+    await expect(service.turn(actor, "w-turn", { feature: "woddy.agent", request: { ...woddy, tools }, takeLimit: false })).rejects.toMatchObject({ status: 402 });
+    await expect(service.turn(actor, "w-turn", { feature: "anything", request: woddy, takeLimit: false })).rejects.toThrow(/Unknown AI feature/);
+  });
+
   it("charges an answer that was cut short or empty nothing", async () => {
     process.env.AI_PROVIDER = "bedrock";
     const { service } = gateway(true);

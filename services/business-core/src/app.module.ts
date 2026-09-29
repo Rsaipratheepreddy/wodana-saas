@@ -33,6 +33,7 @@ import { JobsModule } from "./jobs/jobs.module";
 import { WorkspaceSearchModule } from "./search/workspace-search.module";
 import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
 import { AiGatewayModule } from "./ai-gateway/ai-gateway.module";
+import { AiToolsModule } from "./ai-tools/ai-tools.module";
 import { DesignModule } from "./design/design.module";
 import { QuotationModule } from "./quotation/quotation.module";
 import { GalleryModule } from "./gallery/gallery.module";
@@ -90,6 +91,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
     WorkspaceSearchModule,
     AiSuggestionsModule,
     AiGatewayModule,
+    AiToolsModule,
     DesignModule,
     QuotationModule,
     GalleryModule,

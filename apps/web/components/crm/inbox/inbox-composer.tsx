@@ -7,6 +7,7 @@ import { Badge, Button, ControlledModalDialog, EmptyState, IconButton, SearchInp
 import { crmRequest, type RecordData } from "@/lib/crm/client";
 import { fillQuickReply, fillTemplate, quickReplyQuery, renderTemplate, sendableTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_STATUS, windowLeft, type ChatContext, type InboxOwner, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { woddyInstruction } from "@/lib/woddy/agent";
 import { submitChatOnEnter } from "../chat-composer";
 import styles from "../crm-inbox.module.css";
 import parts from "./inbox-parts.module.css";
@@ -20,9 +21,11 @@ export type ComposerLookups = { quickReplies: QuickReply[]; templates: InboxTemp
  * outside it, "/" quick replies filled from the chat's records, and internal notes with @mentions.
  * A reply someone else sent since you opened the chat asks before sending.
  */
-export function InboxComposer({ workspaceId, thread, lookups, variables, draft, onDraftChange, onSent, now, blocked }: {
+export function InboxComposer({ workspaceId, thread, lookups, variables, draft, onDraftChange, onSent, now, blocked, onAskWoddy, woddyBusy = false }: {
   workspaceId: string; thread: RecordData; lookups: ComposerLookups; variables: ChatContext["variables"];
   draft: string; onDraftChange: (value: string) => void; onSent: () => Promise<void>; now: number; blocked: string;
+  /** "@Woddy …" is an instruction for Woddy, answered privately in the thread; it is never sent to the client. */
+  onAskWoddy?: (instruction: string) => Promise<void> | void; woddyBusy?: boolean;
 }) {
   const t = useT();
   const id = thread.id;
@@ -46,9 +49,10 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
   const windowClosed = isWhatsApp && left <= 0;
   const needsTemplate = mode === "reply" && windowClosed;
   const replyBlocked = mode === "reply" ? blocked : !thread.canSend ? blocked : "";
-  const query = quickReplyQuery(draft);
+  const instruction = onAskWoddy ? woddyInstruction(draft) : null;
+  const query = instruction === null ? quickReplyQuery(draft) : null;
   const replies = useMemo(() => query === null ? [] : lookups.quickReplies.filter((reply) => reply.status === "active" && reply.shortcut.startsWith(query)).slice(0, 8), [query, lookups.quickReplies]);
-  const mentionQuery = mode === "note" ? /(?:^|\s)@([^\s@]*)$/.exec(draft)?.[1]?.toLowerCase() ?? null : null;
+  const mentionQuery = mode === "note" && instruction === null ? /(?:^|\s)@([^\s@]*)$/.exec(draft)?.[1]?.toLowerCase() ?? null : null;
   const people = mentionQuery === null ? [] : lookups.owners.filter((owner) => owner.displayName.toLowerCase().includes(mentionQuery)).slice(0, 6);
   const popup: Array<{ id: string; label: string; detail?: string; pick: () => void }> = query !== null && mode === "reply"
     ? replies.map((reply) => ({ id: reply.id, label: `/${reply.shortcut}`, detail: reply.body, pick: () => { onDraftChange(fillQuickReply(reply.body, variables)); setHighlight(0); input.current?.focus(); } }))
@@ -96,6 +100,11 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
 
   return <form className={styles.composer} data-mode={mode} aria-busy={busy} onSubmit={async (event) => {
     event.preventDefault();
+    // "@Woddy …" goes to Woddy only: nothing is sent to the client, not even as a note.
+    if (instruction !== null) {
+      if (instruction && !woddyBusy) { onDraftChange(""); await onAskWoddy?.(instruction); input.current?.focus(); }
+      return;
+    }
     if (replyBlocked || needsTemplate || !draft.trim() || popup.length) return;
     await send({ bodyText: draft }, () => onDraftChange(""));
   }}>
@@ -122,9 +131,9 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
         role={popup.length ? "combobox" : undefined} aria-expanded={popup.length ? true : undefined} aria-controls={popup.length ? `suggest-${id}` : undefined}
         aria-activedescendant={popup.length ? `suggest-${id}-${Math.min(highlight, popup.length - 1)}` : undefined} aria-autocomplete={popup.length ? "list" : undefined}
         onChange={(event) => { onDraftChange(event.target.value); setNotice(""); setHighlight(0); }} onKeyDown={onKeyDown} aria-describedby={`message-help-${id}`} />
-      <Button className={styles.sendButton} aria-label={mode === "note" ? t("Add note") : t("Send message")} variant="primary" type="submit" isDisabled={!draft.trim() || Boolean(replyBlocked)} isLoading={busy}><Send data-directional="true" size={19} /></Button>
+      <Button className={styles.sendButton} aria-label={instruction !== null ? t("Ask Woddy") : mode === "note" ? t("Add note") : t("Send message")} variant="primary" type="submit" isDisabled={!draft.trim() || (instruction === null ? Boolean(replyBlocked) : woddyBusy || !instruction)} isLoading={busy || (instruction !== null && woddyBusy)}><Send data-directional="true" size={19} /></Button>
     </div> : null}
-    <div className={styles.composerFooter} id={`message-help-${id}`}><span role="status">{notice}</span><small>{mode === "note" ? t("Only your team sees notes") : thread.signatureEnabled ? t("Signed with your first name") : t("Enter to send · Shift+Enter for a new line")}</small></div>
+    <div className={styles.composerFooter} id={`message-help-${id}`}><span role="status">{notice}</span><small>{instruction !== null ? t("Only Woddy reads this line. It is never sent.") : mode === "note" ? t("Only your team sees notes") : thread.signatureEnabled ? t("Signed with your first name") : t("Enter to send · Shift+Enter for a new line")}</small></div>
     {failure ? <p className={styles.error} role="alert">{failure}{isWhatsApp && windowClosed && mode === "reply" ? <> <Button size="compact" variant="quiet" onPress={() => setPicking(true)}>{t("Choose template")}</Button></> : null}</p> : null}
     {picking ? <TemplatePicker templates={lookups.templates} variables={variables} canManage={lookups.canManage} connected={thread.whatsappConnected !== false} onClose={() => setPicking(false)} onSend={async (template, templateParameters) => { setPicking(false); await send({ templateId: template.id, templateParameters }); }} /> : null}
     {confirmationDialog}

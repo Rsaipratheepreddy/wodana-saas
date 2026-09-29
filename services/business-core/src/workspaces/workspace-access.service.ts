@@ -128,6 +128,25 @@ export class WorkspaceAccessService {
     return Boolean(result.rowCount);
   }
 
+  /** Which of these permissions the member holds now, within the organization's modules (one query). */
+  async grantedPermissions(client: PoolClient, workspaceId: string, userId: string, permissions: string[]): Promise<Set<string>> {
+    const permitted = await this.effectivePermissions(client, workspaceId, permissions);
+    if (!permitted.length) return new Set();
+    const result = await client.query<{ code: string }>(
+      `SELECT DISTINCT permission.code
+         FROM workspace_memberships membership
+         JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
+         JOIN role_permissions granted ON granted.role_id = assigned.role_id
+         JOIN permissions permission ON permission.id = granted.permission_id
+        WHERE membership.workspace_id = $1
+          AND membership.user_id = $2
+          AND membership.status = 'active'
+          AND permission.code = ANY($3::text[])`,
+      [workspaceId, userId, permitted],
+    );
+    return new Set(result.rows.map((row) => row.code));
+  }
+
   async effectivePermissions(client: PoolClient, workspaceId: string, permissions: string[]) {
     const configured = await client.query<{ status: string; modules: string[] }>(
       `SELECT status,modules FROM effective_workspace_entitlements WHERE workspace_id=$1`, [workspaceId],

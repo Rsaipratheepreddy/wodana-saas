@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  aiConfigured, aiModelFor, aiProviderName, bedrockRegion, classifyBedrockError, outputCap, readConverse, readGemini, stripCodeFences, TextOnlyModelError, toConverse,
+  aiConfigured, aiModelFor, aiProviderName, bedrockRegion, classifyBedrockError, outputCap, readConverse, readConverseTurn, readGemini, readGeminiTurn, stripCodeFences, TextOnlyModelError, toConverse,
+  withoutThinking,
 } from "./ai-provider";
 
 describe("choosing the provider", () => {
@@ -100,5 +101,59 @@ describe("reading answers", () => {
     expect(classifyBedrockError({ name: "AccessDeniedException" })).toBe("denied");
     expect(classifyBedrockError({ name: "ValidationException" })).toBe("failed");
     expect(classifyBedrockError(new TypeError("fetch failed"))).toBe("failed");
+  });
+});
+
+describe("tool calls in both providers (W-1)", () => {
+  const schema = { type: "object", properties: { text: { type: "string" } }, required: ["text"] };
+  const request = {
+    systemInstruction: { parts: [{ text: "You are Woddy" }] },
+    tools: [{ functionDeclarations: [{ name: "search_records", description: "Find records", parameters: schema }] }],
+    contents: [
+      { role: "user", parts: [{ text: "Find Maya" }] },
+      { role: "model", parts: [{ text: "<thinking>search</thinking>" }, { functionCall: { id: "tooluse_1", name: "search_records", args: { text: "Maya" } } }] },
+      { role: "user", parts: [{ functionResponse: { id: "tooluse_1", name: "search_records", response: { result: "<record-data tool=\"search_records\">\n{}\n</record-data>" } } }] },
+    ],
+    generationConfig: { temperature: 0, maxOutputTokens: 1500 },
+  };
+
+  it("sends Converse the tools as toolSpecs, the calls as toolUse and the results as toolResult", () => {
+    const input = toConverse(request, "apac.amazon.nova-lite-v1:0", {});
+    expect(input.toolConfig).toEqual({ tools: [{ toolSpec: { name: "search_records", description: "Find records", inputSchema: { json: schema } } }], toolChoice: { auto: {} } });
+    expect(input.messages).toEqual([
+      { role: "user", content: [{ text: "Find Maya" }] },
+      { role: "assistant", content: [{ text: "<thinking>search</thinking>" }, { toolUse: { toolUseId: "tooluse_1", name: "search_records", input: { text: "Maya" } } }] },
+      { role: "user", content: [{ toolResult: { toolUseId: "tooluse_1", content: [{ text: JSON.stringify({ result: "<record-data tool=\"search_records\">\n{}\n</record-data>" }) }] } }] },
+    ]);
+    // An error result is marked as one.
+    const failed = toConverse({ ...request, contents: [request.contents[0], request.contents[1], { role: "user", parts: [{ functionResponse: { id: "tooluse_1", name: "search_records", response: { error: "No." } } }] }] }, "apac.amazon.nova-lite-v1:0", {});
+    expect(failed.messages[2].content[0]).toMatchObject({ toolResult: { status: "error" } });
+    // Without tools, nothing about tools is sent.
+    expect(toConverse({ contents: [{ role: "user", parts: [{ text: "x" }] }] }, "apac.amazon.nova-lite-v1:0", {})).not.toHaveProperty("toolConfig");
+  });
+
+  it("reads a Converse tool turn: the calls, the stop reason and the assistant content to send back", () => {
+    const turn = readConverseTurn({
+      output: { message: { role: "assistant", content: [{ text: "<thinking>look it up</thinking>" }, { toolUse: { toolUseId: "tooluse_9", name: "get_record", input: { type: "enquiry", id: "x" } } }] } },
+      stopReason: "tool_use", usage: { inputTokens: 900, outputTokens: 40 },
+    });
+    expect(turn.calls).toEqual([{ id: "tooluse_9", name: "get_record", args: { type: "enquiry", id: "x" } }]);
+    expect(turn.finishReason).toBe("TOOL_CALL");
+    expect(turn.usage).toEqual({ input_tokens: 900, output_tokens: 40 });
+    expect(turn.parts).toEqual([{ text: "<thinking>look it up</thinking>" }, { functionCall: { id: "tooluse_9", name: "get_record", args: { type: "enquiry", id: "x" } } }]);
+    // Sent back next turn, the same content is the same toolUse.
+    expect(toConverse({ contents: [{ role: "user", parts: [{ text: "q" }] }, { role: "model", parts: turn.parts }] }, "apac.amazon.nova-lite-v1:0", {}).messages[1].content[1])
+      .toEqual({ toolUse: { toolUseId: "tooluse_9", name: "get_record", input: { type: "enquiry", id: "x" } } });
+    expect(readConverseTurn({ output: { message: { content: [{ text: "Done." }] } }, stopReason: "end_turn" })).toMatchObject({ text: "Done.", calls: [], finishReason: "STOP" });
+    expect(withoutThinking("<thinking>plan</thinking>Maya is due tomorrow [S1].")).toBe("Maya is due tomorrow [S1].");
+  });
+
+  it("reads a Gemini tool turn and keeps its parts (with the thought signature) to send back unchanged", () => {
+    const parts = [{ functionCall: { name: "list_my_work", args: {} }, thoughtSignature: "c2lnbmF0dXJl" }];
+    const turn = readGeminiTurn({ candidates: [{ finishReason: "STOP", content: { role: "model", parts } }], usageMetadata: { promptTokenCount: 300, candidatesTokenCount: 12 } });
+    expect(turn.calls).toEqual([{ id: undefined, name: "list_my_work", args: {} }]);
+    expect(turn.finishReason).toBe("TOOL_CALL");
+    expect(turn.parts).toEqual(parts);
+    expect(readGeminiTurn({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: "Nothing is due." }] } }] })).toMatchObject({ text: "Nothing is due.", calls: [], finishReason: "STOP" });
   });
 });

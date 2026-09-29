@@ -13,6 +13,7 @@ import type { CrmScreenPageData } from "@/lib/crm/screens";
 import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CrmProductShell, useCrmTime } from "./crm-product-shell";
 import { ConversationThread, DeliveryState, inboxDate } from "./inbox/chat-thread";
+import { useWoddySelection } from "./woddy-chat";
 import { LabelChip, useInboxLookups, useNow, WaitChip } from "./inbox/inbox-parts";
 import styles from "./crm-inbox.module.css";
 
@@ -48,6 +49,8 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
   const [cursor, setCursor] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(initialRecordId ?? null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // Chats picked in the list are what "these chats" means to Woddy.
+  useWoddySelection("conversation", [...picked]);
   const [selecting, setSelecting] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");

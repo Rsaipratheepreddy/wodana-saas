@@ -8,6 +8,8 @@ export const AI_FEATURE_LIMITS: Record<string, number> = {
   "crm.assist": 8,
   "commercial.assist": 10,
   "quotation.plan": 5,
+  // Woddy's tool runs (W-1): one run counts once, however many turns it takes.
+  "woddy.agent": 10,
 };
 const DEFAULT_LIMIT = 10;
 
