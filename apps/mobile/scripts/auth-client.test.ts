@@ -281,7 +281,7 @@ test('a command keeps its own idempotency key across the 401 retry, and it can n
     seen.push({ key: headers.get('idempotency-key'), auth: headers.get('authorization') });
     return headers.get('authorization') === 'Bearer access-1' ? response({}, 401) : response({ leadId: 'lead-1' }, 201);
   };
-  const result = await client.api('/workspaces/workspace-1/crm/intake-events', 'POST', { source: 'company' }, false, { 'idempotency-key': 'lead-app:1', authorization: 'Bearer forged' });
+  const result = await client.api('/workspaces/workspace-1/crm/intake-events', 'POST', { source: 'company' }, false, { headers: { 'idempotency-key': 'lead-app:1', authorization: 'Bearer forged' } });
   assert.deepEqual(result, { leadId: 'lead-1' });
   assert.deepEqual(seen.map((item) => item.key), ['lead-app:1', 'lead-app:1']);
   assert.deepEqual(seen.map((item) => item.auth), ['Bearer access-1', 'Bearer access-2']);

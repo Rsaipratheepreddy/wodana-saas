@@ -186,7 +186,7 @@ export function useCreateEnquiry() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ body, requestId }: { body: Record<string, unknown>; requestId: string }) =>
-      api.send<IntakeResult>('crm/intake-events', 'POST', body, { 'idempotency-key': `lead-app:${requestId}` }),
+      api.send<IntakeResult>('crm/intake-events', 'POST', body, { headers: { 'idempotency-key': `lead-app:${requestId}` } }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: salesKeys.all(api.workspaceId) }),
   });
 }

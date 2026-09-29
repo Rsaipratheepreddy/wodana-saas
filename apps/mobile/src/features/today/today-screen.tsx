@@ -21,6 +21,7 @@ import { useInbox } from '../inbox/api';
 import { useOpenWork, useSitesToday } from '../projects/api';
 import { WorkTrailing } from '../projects/plan-screen';
 import { useDeliveries } from '../purchasing/api';
+import { WoddyButton } from '../woddy/woddy-screen';
 
 const OVERDUE = key('Overdue follow-up');
 
@@ -72,7 +73,7 @@ export function TodayScreen() {
   const loading = work.isLoading || overview.isLoading;
   const failed = (projects ? work.error : null) ?? overview.error ?? (hrms ? current.error : null);
 
-  return <Screen large title={t('Today')} subtitle={format.longDay(today)} onRefresh={refresh} refreshing={current.isRefetching || work.isRefetching}>
+  return <Screen large title={t('Today')} subtitle={format.longDay(today)} action={<WoddyButton />} onRefresh={refresh} refreshing={current.isRefetching || work.isRefetching}>
     {!online ? <Banner tone="neutral" icon={CloudOff} title={t('No connection')} detail={t('Captures are saved on this phone and sent later.')} /> : null}
     {blocked.length ? <Banner tone="warning" title={t('{count} captures need you', { count: blocked.length })} action={{ label: t('Fix'), onPress: () => router.push('/outbox') }} />
       : outbox.items.length ? <Banner tone="info" icon={CloudUpload} title={t('{count} waiting to send', { count: outbox.items.length })} action={{ label: t('View'), onPress: () => router.push('/outbox') }} /> : null}
