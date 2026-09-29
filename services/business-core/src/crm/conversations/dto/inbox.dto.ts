@@ -51,6 +51,11 @@ export class UpdateQuickReplyDto {
   @IsOptional() @IsIn(["active", "archived"]) status?: string;
 }
 
+/** A number for the WhatsApp test code (SP-7). */
+export class WhatsappTestDto {
+  @IsString() @IsNotEmpty() @MaxLength(32) phone!: string;
+}
+
 export class UpdateInboxSettingsDto {
   /** 0 when the workspace has never saved its inbox settings. */
   @IsInt() @Min(0) version!: number;

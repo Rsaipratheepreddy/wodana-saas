@@ -8,7 +8,7 @@ import { CrmInboxService } from "./crm-inbox.service";
 import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
 import { SendPaymentReminderDto, SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, UpdateFollowUpTimingDto, UpdatePaymentReminderScheduleDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
 import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
-import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessageDto, CreateQuickReplyDto, RemoveAutoRepliesDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateAutoRepliesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto } from "./dto/inbox.dto";
+import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessageDto, CreateQuickReplyDto, RemoveAutoRepliesDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateAutoRepliesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto, WhatsappTestDto } from "./dto/inbox.dto";
 
 type Ws = string;
 
@@ -30,6 +30,8 @@ export class CrmInboxController {
   @Get("inbox/stages") stages(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.stages(actor, workspaceId); }
   @Get("inbox/owners") owners(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.owners(actor, workspaceId); }
   @Post("inbox/bulk") bulk(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: BulkConversationsDto) { return this.inbox.bulk(actor, workspaceId, input); }
+  @Get("inbox/whatsapp-check") whatsappCheck(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.whatsappCheck(actor, workspaceId); }
+  @Post("inbox/whatsapp-test") whatsappTest(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: WhatsappTestDto) { return this.inbox.whatsappTest(actor, workspaceId, input); }
   @Get("inbox/settings") settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.settings(actor, workspaceId); }
   @Put("inbox/settings") updateSettings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Body() input: UpdateInboxSettingsDto) { return this.inbox.updateSettings(actor, workspaceId, input); }
   @Get("inbox/auto-replies") autoReplies(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.autoReplies(actor, workspaceId); }

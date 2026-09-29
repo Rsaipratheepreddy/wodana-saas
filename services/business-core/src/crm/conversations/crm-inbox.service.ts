@@ -1,4 +1,9 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
+import { randomInt, randomUUID as randomUUIDForTest } from "node:crypto";
+import { deliverPortalOtp } from "../../commercial/portal-otp-delivery";
+import { recordAudit } from "../../audit/record-audit";
+import { webOrigin } from "../../client-portal/portal-site";
+import { E164, whatsappPreflight } from "./inbox/whatsapp-preflight";
 import { DEFAULT_AUTO_RESOLVE_DAYS } from "./inbox/quiet-chats";
 import { ConfigService } from "@nestjs/config";
 import type { PoolClient } from "pg";
@@ -35,6 +40,32 @@ export class CrmInboxService {
     private readonly events: CrmEventsService,
     @Optional() private readonly config?: ConfigService,
   ) {}
+
+  /** The WhatsApp pre-flight checklist in Settings → Inbox (SP-7). */
+  whatsappCheck(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => ({
+      checks: await whatsappPreflight(client, workspaceId, this.config ? webOrigin(this.config) : ""),
+    }));
+  }
+
+  /**
+   * "Send a test code" (SP-7): the portal's sign-in code template to a number the admin types, through the same
+   * path clients' codes take — so a rejected template, a disconnected number or a number outside the delivery
+   * allowlist shows here, not when a client is waiting. At most one a minute; audited.
+   */
+  whatsappTest(actor: RequestActor, workspaceId: string, input: { phone: string }) {
+    const phone = String(input.phone ?? "").replace(/[\s().-]/g, "");
+    if (!E164.test(phone)) throw new BadRequestException("Enter the number in international format, like +15551234567.");
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
+      const recent = await client.query(`SELECT 1 FROM audit_events WHERE workspace_id = $1 AND action = 'crm.whatsapp.test_sent' AND occurred_at > now() - interval '1 minute' LIMIT 1`, [workspaceId]);
+      if (recent.rowCount) throw new ConflictException("A test was sent a moment ago. Try again in a minute.");
+      if (!this.config) throw new UnprocessableEntityException("WhatsApp delivery isn't configured here.");
+      const code = String(randomInt(100000, 1000000));
+      await deliverPortalOtp(this.config, workspaceId, randomUUIDForTest(), phone, code);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "crm.whatsapp.test_sent", entityType: "workspace", entityId: workspaceId, after: { phone: `…${phone.slice(-4)}` } });
+      return { sent: true };
+    });
+  }
 
   /** Open chats per view (Team is null for someone in no queue) and the Snoozed and Resolved totals. */
   summary(actor: RequestActor, workspaceId: string, stage?: string) {
