@@ -890,6 +890,13 @@
       "when": 1801310000600,
       "tag": "0186_quiet_chats_resolve",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1801310000700,
+      "tag": "0187_approval_reminders",
+      "breakpoints": true
     }
   ]
 }

@@ -11105,5 +11105,8 @@
   "Then they lose access": "Then they lose access",
   "Their phones stop getting notices, they are signed out, and their seat is freed. Their records stay.": "Their phones stop getting notices, they are signed out, and their seat is freed. Their records stay.",
   "Resolve quiet chats after (days)": "Resolve quiet chats after (days)",
-  "When our message had no reply and nothing is pending. A reply reopens the chat. 0 for never.": "When our message had no reply and nothing is pending. A reply reopens the chat. 0 for never."
+  "When our message had no reply and nothing is pending. A reply reopens the chat. 0 for never.": "When our message had no reply and nothing is pending. A reply reopens the chat. 0 for never.",
+  "Remind after": "Remind after",
+  "Tell the owners after": "Tell the owners after",
+  "Email as well": "Email as well"
 }

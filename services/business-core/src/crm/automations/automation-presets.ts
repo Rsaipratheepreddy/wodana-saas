@@ -27,6 +27,16 @@ export const AUTOMATION_PRESETS = [
     availableChannels: ["in_app"],
   },
   {
+    // Approvals that wait get chased (AU-3, approvals/approval-chasers.ts): on unless a workspace turned it off.
+    code: "approval_reminders",
+    definitionCode: null,
+    eventType: "approvals.reminder",
+    name: "Approval reminders",
+    description: "Remind whoever decides an approval that has waited, and tell the owners when it waits much longer.",
+    setupHref: "/workspace/approvals",
+    availableChannels: ["in_app", "email"],
+  },
+  {
     code: "weekly_progress",
     definitionCode: null,
     eventType: "project.weekly_progress",

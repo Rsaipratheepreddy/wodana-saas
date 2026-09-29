@@ -24,6 +24,11 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     body: "{{memberName}} accepted your invitation.",
     variables: ["memberName", "workspaceName"],
   },
+  // Approvals that wait (approvals/approval-chasers.ts): the approver, then the owners.
+  { code: "approvals.reminder", channel: "in_app", subject: "Still waiting for you · {{title}}", body: "It has waited {{hours}} hours.", variables: ["title", "hours", "approvers"] },
+  { code: "approvals.reminder", channel: "email", subject: "Still waiting for you · {{title}}", body: "{{title}} has waited {{hours}} hours for your decision.\n\nOpen it to approve or send it back.", variables: ["title", "hours", "approvers"] },
+  { code: "approvals.escalated", channel: "in_app", subject: "Waiting {{hours}} hours · {{title}}", body: "Still with {{approvers}}.", variables: ["title", "hours", "approvers"] },
+  { code: "approvals.escalated", channel: "email", subject: "Waiting {{hours}} hours · {{title}}", body: "{{title}} has waited {{hours}} hours. It is still with {{approvers}}.\n\nOpen it to decide it or chase them.", variables: ["title", "hours", "approvers"] },
   // Offboarding (workspaces/member-offboarding.ts): the successor hears what they took over.
   { code: "workspace.work_handed_over", channel: "in_app", subject: "{{memberName}}'s work is yours", body: "{{note}}", variables: ["memberName", "note"] },
   {

@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { AUTOMATION_PRESETS, automationPreset, providerCapability } from "./automation-presets";
 
 describe("automation presets", () => {
-  it("exposes only the four business-language tenant rules", () => {
+  it("exposes only the business-language tenant rules", () => {
     expect(AUTOMATION_PRESETS.map((preset) => preset.code)).toEqual([
       "enquiry_ownership",
       "response_escalation",
       "decision_reminders",
+      "approval_reminders",
       "weekly_progress",
     ]);
     expect(automationPreset("technical_graph_node")).toBeNull();
