@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiGatewayService, AiTurnResult } from "../ai-gateway/ai-gateway.service";
 import { CreateScheduledMessageDto, UpdateConversationDto } from "../crm/conversations/dto/conversations.dto";
 import { UpdateLeadDetailsDto } from "../crm/intake/dto/intake.dto";
@@ -184,6 +184,9 @@ describe("tool inputs and data blocks", () => {
 });
 
 describe("the agent loop", () => {
+  // The conversations below happen at 08:00 UTC on 29 September: the clock the cards' expiry is read against.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-09-29T08:00:00Z")); });
+  afterEach(() => { vi.useRealTimers(); });
   it("runs reads at once as the person, returns them as data with sources, and asks when two clients match", async () => {
     const setup = world();
     const { gateway, turn, sent } = scriptedModel([
