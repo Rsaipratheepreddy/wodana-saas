@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agreementHasSignedEvidence, agreementIsOperational, requestBlocksRelease } from "./release-integrity";
+import { agreementHasSignedEvidence, agreementIsOperational, dealPaymentProofReady, quoteHasVerifiedReceipt, requestBlocksRelease } from "./release-integrity";
 
 const message = { status: "open" as const };
 
@@ -24,5 +24,15 @@ describe("the signed agreement on record (M6)", () => {
     expect(agreementHasSignedEvidence({ evidence: "  ", files: [] })).toBe(false);
     expect(agreementHasSignedEvidence(null)).toBe(false);
     expect(agreementIsOperational({ status: "executed", evidence: "", files: [file], quoteId: "q", reference: "A", terms: "" })).toBe(true);
+  });
+});
+
+describe("the Deal File's proof of payment", () => {
+  const data = { payments: [{ id: "p1", sourceQuoteId: "q1", status: "verified" }, { id: "p2", sourceQuoteId: "q2", status: "pending" }] } as never;
+  it("is a link, or a receipt Finance verified in Wodana for that quotation", () => {
+    expect(dealPaymentProofReady(data, "https://bank.example/receipt", "q2")).toBe(true);
+    expect(quoteHasVerifiedReceipt(data, "q1")).toBe(true);
+    expect(dealPaymentProofReady(data, undefined, "q1")).toBe(true);
+    expect(dealPaymentProofReady(data, undefined, "q2")).toBe(false);
   });
 });

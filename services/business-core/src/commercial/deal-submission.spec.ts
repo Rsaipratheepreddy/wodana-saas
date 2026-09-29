@@ -43,4 +43,11 @@ describe("deal submission evidence", () => {
     expect(() => paymentProofLink("http://example.com/receipt")).toThrow("HTTPS");
     expect(() => paymentProofLink("javascript:alert(1)")).toThrow("HTTPS");
   });
+
+  it("needs no proof link once Finance verified the receipt in Wodana, but still checks a link that is given", () => {
+    expect(() => paymentProofLink("")).toThrow("Add a proof-of-payment link");
+    expect(paymentProofLink("", true)).toBeUndefined();
+    expect(paymentProofLink(undefined, true)).toBeUndefined();
+    expect(() => paymentProofLink("http://example.com/receipt", true)).toThrow("HTTPS");
+  });
 });

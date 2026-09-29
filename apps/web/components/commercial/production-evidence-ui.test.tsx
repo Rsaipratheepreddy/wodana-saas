@@ -94,6 +94,29 @@ it("ignores the empty commission row when nothing is typed in it (M5)", async ()
   await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({commissionLines:[]})));
 });
 
+it("shows the owner's return remark, checks the proof link before sending, and needs no link once Finance verified the receipt", async () => {
+  const run = vi.fn().mockResolvedValue(true);
+  const state = (payments: unknown[]) => ({
+    opportunityStatus: "won", canEdit: true, contacts: [],
+    data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], dealFile: null, requests: [], payments, materialApprovals: [], ownerReview: {
+      id: "review", quoteId: "quote", status: "returned", financeNote: "Transfer matched", decisionNote: "Attach the signed BOQ", checklist: {}, commissionLines: [],
+    } },
+  }) as unknown as CommercialState;
+  const { unmount } = render(<ApprovalRelease initialView="owner" state={state([])} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
+  expect(screen.getByText(/Attach the signed BOQ/)).toBeInTheDocument();
+  expect(screen.queryByText(/Transfer matched/)).not.toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"Fixed"}});
+  expect(screen.getByText("Add a proof-of-payment link.")).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox", {name:"Proof-of-payment link"}), {target:{value:"http://example.com/proof"}});
+  expect(screen.getAllByText("Use a secure HTTPS proof-of-payment link.").length).toBeGreaterThan(0);
+  expect(screen.getByRole("button", {name:"Send to Finance"})).toBeDisabled();
+  unmount();
+  render(<ApprovalRelease initialView="owner" state={state([{ id: "p1", sourceQuoteId: "quote", status: "verified" }])} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
+  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"Receipt verified"}});
+  fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
+  await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({paymentProofUrl:""})));
+});
+
 it("requires Finance to acknowledge payment proof before confirming a submitted deal", async () => {
   const run = vi.fn().mockResolvedValue(true);
   const state = {

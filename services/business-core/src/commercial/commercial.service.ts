@@ -63,6 +63,8 @@ import {
   designDepositReady,
   quotationApprovalSources,
   releasePaymentIsOperational,
+  dealPaymentProofReady,
+  quoteHasVerifiedReceipt,
 } from "./release-integrity";
 import {
   BadRequestException,
@@ -2632,7 +2634,7 @@ export class CommercialService {
               payment: checklistInput.payment === true,
             };
           const commissionLines = dealInput(() => normalizeCommissionLines(b.commissionLines, acceptedQuoteValue(accepted), accepted.currency));
-          const paymentProofUrl = dealInput(() => paymentProofLink(b.paymentProofUrl));
+          const paymentProofUrl = dealInput(() => paymentProofLink(b.paymentProofUrl, quoteHasVerifiedReceipt(data, accepted.id)));
           data.ownerReview = {
             id:
               data.ownerReview?.quoteId === accepted.id
@@ -2665,7 +2667,7 @@ export class CommercialService {
           const financeNote = text(b.note ?? "", 3000, decision === "return");
           if (decision === "confirm") {
             if (b.paymentVerified !== true)
-              throw new BadRequestException("Finance must verify the linked proof of payment.");
+              throw new BadRequestException("Finance must verify the proof of payment.");
             const accepted = data.quotes.find(quote => quote.id === review.quoteId && quote.status === "accepted");
             if (!accepted || assertQuoteSnapshot(accepted) !== review.quoteHash)
               throw new ConflictException("The accepted quotation changed. Submit the deal again.");
@@ -2710,8 +2712,11 @@ export class CommercialService {
             );
           if (decision === "approve") {
             const agreement = data.agreement;
-            if (!review.finalCommissionLines?.length || !review.paymentProofUrl || !review.financeReviewedById)
-              throw new ConflictException("Finance verification and payment proof are required before approval.");
+            // Commission is optional: Finance confirms the lines, which may be none.
+            if (!Array.isArray(review.finalCommissionLines) || !review.financeReviewedById)
+              throw new ConflictException("Finance must confirm the Deal File before it is approved.");
+            if (!dealPaymentProofReady(data, review.paymentProofUrl, accepted.id))
+              throw new ConflictException("Add a proof-of-payment link, or have Finance verify the receipt, before approval.");
             if (Object.entries(review.checklist).some(([key, checked]) =>
               !checked && !(data.servicePath && key === "materials")))
               throw new ConflictException(

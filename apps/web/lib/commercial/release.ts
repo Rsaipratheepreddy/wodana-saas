@@ -109,6 +109,28 @@ export function paymentHasFinanceVerifiedReceipt(
   return Math.round(allocated * 100) === Math.round(payment.amount * 100);
 }
 
+/** Finance verified a receipt for this quotation inside Wodana (same rule as business-core), so no outside proof link is needed. */
+export function quoteHasVerifiedReceipt(data: CommercialData, quoteId: string) {
+  return data.payments.some((payment) => payment.sourceQuoteId === quoteId &&
+    (data.financeContext ? paymentHasFinanceVerifiedReceipt(data, payment) : payment.status === "verified"));
+}
+
+/** The Deal File carries proof of payment: a link, or a Finance-verified receipt for its quotation. */
+export function dealPaymentProofReady(data: CommercialData, proofUrl: string | undefined, quoteId: string) {
+  return Boolean(proofUrl) || quoteHasVerifiedReceipt(data, quoteId);
+}
+
+/** Why a proof-of-payment link can't be sent yet ("" when it can): HTTPS only, and optional once a receipt is verified. */
+export function paymentProofProblem(input: string, receiptVerified: boolean): "" | "missing" | "insecure" {
+  const value = input.trim();
+  if (!value) return receiptVerified ? "" : "missing";
+  try {
+    return new URL(value).protocol === "https:" && value.length <= 2048 ? "" : "insecure";
+  } catch {
+    return "insecure";
+  }
+}
+
 type ApprovalSource = { lineId: string; materialRowId: string };
 
 function quotationApprovalSources(quote: Quote): ApprovalSource[] {
@@ -190,7 +212,7 @@ export function commercialReleaseInputsReady(
     data.ownerReview?.status !== "approved" ||
     data.ownerReview.quoteId !== quote.id ||
     !data.ownerReview.financeReviewedById ||
-    !data.dealFile.paymentProofUrl ||
+    !dealPaymentProofReady(data, data.dealFile.paymentProofUrl, quote.id) ||
     !Array.isArray(data.dealFile.commissionLines) ||
     !(data.servicePath ? materialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
   )

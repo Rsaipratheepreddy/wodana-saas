@@ -65,6 +65,16 @@ export function releasePaymentIsOperational(payment: Payment) {
   return paymentIsVerified(payment) && isOperationalEvidence(payment);
 }
 
+/** Finance verified a receipt for this quotation inside Wodana, so the Deal File needs no outside proof link. */
+export function quoteHasVerifiedReceipt(data: CommercialData, quoteId: string) {
+  return data.payments.some((payment) => payment.sourceQuoteId === quoteId && paymentHasFinanceVerifiedReceipt(data, payment));
+}
+
+/** The Deal File carries proof of payment: a link, or a Finance-verified receipt for its quotation. */
+export function dealPaymentProofReady(data: CommercialData, proofUrl: string | undefined, quoteId: string) {
+  return Boolean(proofUrl) || quoteHasVerifiedReceipt(data, quoteId);
+}
+
 export function financeGatePaymentsReady(
   data: CommercialData,
   gate: "release" | "production",
@@ -276,7 +286,7 @@ export function commercialReleaseInputsReady(data: CommercialData | null | undef
     data.ownerReview?.status !== "approved" ||
     data.ownerReview.quoteId !== quote.id ||
     !data.ownerReview.financeReviewedById ||
-    !data.dealFile.paymentProofUrl ||
+    !dealPaymentProofReady(data, data.dealFile.paymentProofUrl, quote.id) ||
     !Array.isArray(data.dealFile.commissionLines) ||
     !(data.servicePath ? materialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
   )

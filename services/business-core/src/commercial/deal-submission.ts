@@ -55,7 +55,12 @@ export function confirmCommissionAmounts(provisional: CommissionLine[], input: u
   return final;
 }
 
-export function paymentProofLink(input: unknown): string {
+/**
+ * The Deal File's proof-of-payment link. It is optional when Finance already verified a receipt for the
+ * accepted quotation inside Wodana (`receiptVerified`); a link that is given must still be HTTPS.
+ */
+export function paymentProofLink(input: unknown, receiptVerified = false): string | undefined {
+  if (receiptVerified && (input === undefined || input === null || (typeof input === "string" && !input.trim()))) return undefined;
   if (typeof input !== "string" || !input.trim() || input.length > 2048) throw new Error("Add a proof-of-payment link.");
   try {
     const url = new URL(input.trim());
