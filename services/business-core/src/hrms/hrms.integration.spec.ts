@@ -42,6 +42,9 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
   });
   afterAll(() => pool.end());
 
+  /** The workspace's date (Asia/Dubai) from the database's clock, the one the services use. */
+  const dubaiToday = async (w: { client: PoolClient }) => (await w.client.query<{ day: string }>("SELECT (now() AT TIME ZONE 'Asia/Dubai')::date::text AS day")).rows[0].day;
+
   async function world(work: (world: World) => Promise<void>) {
     const client = await pool.connect();
     const workspaceId = randomUUID(), owner = randomUUID(), designer = randomUUID(), supervisor = randomUUID();
@@ -217,7 +220,10 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
     await world(async (w) => {
       const boot = await w.as(w.designer).settings.bootstrap(actor, w.workspaceId);
       const session = randomUUID(), event = randomUUID();
-      const started = new Date(Date.now() - 30 * 3_600_000);
+      // Checked in at 09:00 (Dubai) two days ago: well past that day's end whatever the hour now, and the whole
+      // eight hours fall on one workspace day (a time counted back from now can straddle the Dubai midnight).
+      const workday = (await w.client.query<{ day: string }>("SELECT ((now() AT TIME ZONE 'Asia/Dubai')::date - 2)::text AS day")).rows[0].day;
+      const started = new Date(`${workday}T09:00:00+04:00`);
       await w.client.query("INSERT INTO hrms_sessions(id,workspace_id,membership_id,started_at,calendar_snapshot) VALUES($1,$2,$3,$4,$5)", [session, w.workspaceId, w.designerMember, started, boot.employee!.calendar]);
       await w.client.query(`INSERT INTO hrms_attendance_events(id,workspace_id,membership_id,session_id,action_id,request_hash,kind,occurred_at,device_at,evidence,recorded_by)
         VALUES($1,$2,$3,$4,$5,repeat('a',64),'check_in',$6,$6,'{}',$7)`, [event, w.workspaceId, w.designerMember, session, randomUUID(), started, w.designer]);
@@ -234,7 +240,7 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
       expect(await notices(w, "hrms.attendance_to_review")).toEqual([expect.objectContaining({ recipient: w.owner, subject: "Attendance to review: Dana Designer", link: `/workspace/hrms/team?review=${review.id}` })]);
       await w.as(w.owner).attendance.decideReview(actor, w.workspaceId, review.id, { decision: "approve", reason: "Confirmed with the site" });
       expect(await notices(w, "hrms.attendance_approved", w.designer)).toEqual([expect.objectContaining({ body: "Olivia Owner: Confirmed with the site" })]);
-      const history = await w.as(w.owner).attendance.history(actor, w.workspaceId, { from: started.toISOString().slice(0, 10), to: started.toISOString().slice(0, 10), scope: "team" });
+      const history = await w.as(w.owner).attendance.history(actor, w.workspaceId, { from: workday, to: workday, scope: "team" });
       const day = history.days.find((row: { membershipId: string }) => row.membershipId === w.designerMember)!;
       expect(day.workedMinutes).toBe(480);
       expect(typeof day.scheduled).toBe("boolean");
@@ -255,7 +261,7 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
       const owner = w.as(w.owner);
       const types = await owner.leave.types(actor, w.workspaceId);
       const sick = types.find((type: { name: string }) => type.name === "Sick leave").id;
-      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date());
+      const today = await dubaiToday(w);
       const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
       const history = await owner.attendance.history(actor, w.workspaceId, { from: today, to: today, scope: "team" });
       const supervisorDay = history.days.find((row: { membershipId: string }) => row.membershipId === w.supervisorMember)!;
@@ -270,7 +276,7 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
   });
   it("crews without logins: a supervisor marks the day, someone else approves it, and its cost replaces the headcount", async () => {
     await world(async (w) => {
-      const project = randomUUID(), today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date());
+      const project = randomUUID(), today = await dubaiToday(w);
       await w.client.query("SET LOCAL session_replication_role = replica");
       await w.client.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,reference,quote_id,started_at,created_by) VALUES($1,$2,$3,'Villa 12','P-1',$5,now(),$4)", [project, w.workspaceId, randomUUID(), w.owner, randomUUID()]);
       await w.client.query("SET LOCAL session_replication_role = origin");
@@ -325,7 +331,7 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
   it("documents with expiry decide who is cleared for a project's site; crews with someone not cleared need a reason", async () => {
     await world(async (w) => {
       const project = randomUUID();
-      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date());
+      const today = await dubaiToday(w);
       const plus = (days: number) => new Date(Date.parse(`${today}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
       await w.client.query("SET LOCAL session_replication_role = replica");
       await w.client.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,reference,quote_id,started_at,created_by) VALUES($1,$2,$3,'Mall kiosk','P-2',$5,now(),$4)", [project, w.workspaceId, randomUUID(), w.owner, randomUUID()]);
@@ -446,7 +452,7 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
       expect(row).toMatchObject({ employeeCode: "D-1", workedDays: 0, paidLeaveDays: 0, unpaidLeaveDays: 0 });
       expect(row.scheduledDays).toBeGreaterThan(0);
       // Days away count only once they're over.
-      const now = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date());
+      const now = await dubaiToday(w);
       const over = Array.from({ length: 30 }, (_, index) => `2026-09-${String(index + 1).padStart(2, "0")}`)
         .filter((date) => date < now && [1, 2, 3, 4, 5].includes(new Date(`${date}T12:00:00Z`).getUTCDay())).length;
       expect(row.absentDays).toBe(over);
@@ -457,7 +463,7 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
   });
   it("a crew day or a week sent back is edited and submitted again; whoever changes a crew day marks it", async () => {
     await world(async (w) => {
-      const project = randomUUID(), today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date());
+      const project = randomUUID(), today = await dubaiToday(w);
       await w.client.query("SET LOCAL session_replication_role = replica");
       await w.client.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,reference,quote_id,started_at,created_by) VALUES($1,$2,$3,'Villa 9','P-4',$5,now(),$4)", [project, w.workspaceId, randomUUID(), w.owner, randomUUID()]);
       await w.client.query("SET LOCAL session_replication_role = origin");

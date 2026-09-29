@@ -107,6 +107,15 @@ integration("projects core (plan §6.10)", () => {
     }
   }
 
+  /**
+   * The workspace's date (Asia/Dubai) from the database's clock, so a test agrees with the server at any hour: the
+   * test machine's own date or UTC date differs from it for part of every day.
+   */
+  async function workspaceToday(w: World) {
+    return (await w.client.query<{ today: string }>("SELECT (now() AT TIME ZONE 'Asia/Dubai')::date::text AS today")).rows[0].today;
+  }
+  const plusDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
   /** The client accepts (choosing the lights), the agreement is signed and the advance is verified. */
   async function accept(w: World, options: { agreement?: boolean; paid?: boolean; acceptedTotal?: number } = {}) {
     const loaded = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!;
@@ -829,7 +838,7 @@ integration("projects core (plan §6.10)", () => {
       const order = randomUUID();
       const lines = needs.map((need, index) => ({ source: need.source, ...(need.source === "material" ? { materialItemId: need.sourceId } : { boqLineId: need.sourceId }), quantity: index ? "1" : "10", unitPrice: index ? "500" : "350" }));
       let state = await buyer.orders.create(actor, w.workspaceId, { id: order, vendorId: vendor, lines, expectedDate: "2026-10-20" });
-      expect(state.order).toMatchObject({ number: `FAC-PO-${new Date().getFullYear()}-00001`, status: "draft", currency: "AED", subtotal: "4000.0000", discountTotal: "400.0000", taxTotal: "180.0000", total: "3780.0000" });
+      expect(state.order).toMatchObject({ number: `FAC-PO-${(await workspaceToday(w)).slice(0, 4)}-00001`, status: "draft", currency: "AED", subtotal: "4000.0000", discountTotal: "400.0000", taxTotal: "180.0000", total: "3780.0000" });
       expect(state.lines.map((line) => [line.description, line.specification, line.quantity, line.unit, line.discountPercent, line.taxRate, line.net, line.tax, line.total])).toEqual([
         ["Calacatta slab", "CAL-20", "10.0000", "m²", "10.00", "5.0000", "3150.0000", "157.5000", "3307.5000"],
         ["Under-cabinet lights", "", "1.0000", "nos", "10.00", "5.0000", "450.0000", "22.5000", "472.5000"]]);
@@ -1970,7 +1979,9 @@ integration("projects core (plan §6.10)", () => {
       const dates = (title: string) => { const need = needs.find((item) => item.title === title)!; return [need.neededBy, need.leadDays, need.orderBy]; };
       // No supplier lead time known: the workspace's 14 days.
       expect(dates("Oak veneer")).toEqual(["2026-10-05", 14, "2026-09-21"]);
-      expect(dates("Kitchen cabinets")).toEqual(["2026-10-05", 14, "2026-09-21"]);
+      // One line per thing to buy: the cabinets are bought through their material, which names them and carries their date.
+      expect(needs.some((item) => item.title === "Kitchen cabinets")).toBe(false);
+      expect(needs.find((item) => item.title === "Oak veneer")!.scopeLines).toEqual(["Kitchen cabinets"]);
       // Glue isn't tied to any scope line: the project's earliest need.
       expect(dates("Wood glue")).toEqual(["2026-10-05", 14, "2026-09-21"]);
       await w.client.query("UPDATE workspace_purchasing_settings SET order_ahead_days = 3 WHERE workspace_id = $1", [w.workspaceId]);
@@ -2034,8 +2045,8 @@ integration("projects core (plan §6.10)", () => {
       expect(left("Oak veneer")).toEqual(["8", "12.0000"]);
       expect(left("Wood glue")).toEqual(["4", "0.0000"]);
       let board = await lead.board(actor, w.workspaceId, projectId);
-      // The glue is all there; the oak, and the kitchen's bought cabinets and worktop, aren't.
-      expect(board.materials).toEqual({ [fit]: ["Oak veneer", "Kitchen cabinets", "Worktop"] });
+      // The glue is all there; the oak (which the cabinets are bought through) and the kitchen's bought worktop aren't.
+      expect(board.materials).toEqual({ [fit]: ["Oak veneer", "Worktop"] });
 
       // The rest of the oak arrives on an order with the cabinets and worktop: the fitting has what it needs.
       const oak = needs.find((item) => item.title === "Oak veneer")!;
@@ -2213,7 +2224,7 @@ integration("projects core (plan §6.10)", () => {
       await w.client.query("INSERT INTO roles (id, workspace_id, code, name) VALUES ($1, $2, 'buyer', 'Buyer')", [role, w.workspaceId]);
       await w.client.query("INSERT INTO role_permissions (workspace_id, role_id, permission_id) SELECT $1, $2, id FROM permissions WHERE code = 'purchasing.manage'", [w.workspaceId, role]);
       await w.client.query("INSERT INTO member_roles (workspace_id, membership_id, role_id) VALUES ($1, $2, $3)", [w.workspaceId, w.managerMembership, role]);
-      const soon = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+      const soon = plusDays(await workspaceToday(w), 2);
       const next = randomUUID();
       let second = await maker.plan(actor, w.workspaceId, { id: next, lineId: cabinets.id, quantity: "1.5", workcenterId: joinery, plannedStart: soon, plannedEnd: soon });
       second = await maker.command(actor, w.workspaceId, next, { action: "add_material", materialId: randomUUID(), name: "Brass hinges", unit: "nos", quantity: "12", version: second.order.version });
@@ -3156,7 +3167,7 @@ integration("projects core (plan §6.10)", () => {
       const advance = randomUUID();
       await expect(send({ action: "issue", id: advance, caseId: w.caseId, paymentId: "p1", issueDate: "2099-01-01" })).rejects.toThrow(/in the future/);
       let state = await send({ action: "issue", id: advance, caseId: w.caseId, paymentId: "p1", customerTaxNumber: "100200300400003" });
-      const year = new Date().getFullYear();
+      const year = (await workspaceToday(w)).slice(0, 4);
       expect(state.invoice).toMatchObject({ number: `FAC-INV-${year}-00001`, status: "issued", total: `${half.toFixed(2)}00`, paid: `${half.toFixed(2)}00`, balance: "0.0000",
         customerName: "Maya Client", customerTaxNumber: "100200300400003", companyName: "Studio Furniture LLC", milestoneTitle: "Advance", overdue: false });
       expect(state.lines.map((line) => [line.description, line.total])).toEqual([["Advance", `${half.toFixed(2)}00`]]);
