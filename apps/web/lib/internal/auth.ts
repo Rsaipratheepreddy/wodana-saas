@@ -25,7 +25,9 @@ export type OperatorPermission =
   | "support.request"
   | "support.approve"
   | "data.manage"
-  | "operators.manage";
+  | "operators.manage"
+  | "sales.read"
+  | "sales.manage";
 
 export async function getOperatorSession() {
   const token = (await cookies()).get(OPERATOR_COOKIE)?.value;

@@ -14,20 +14,37 @@ import {
   OperatorAiCreditsController,
   OperatorOrganizationsController,
 } from "./operator-console.controller";
+import { OperatorNotificationsController } from "./operator-notifications.controller";
+import { OperatorNotificationsService } from "./operator-notifications.service";
 import { OrganizationSeatsService } from "./organization-seats.service";
+import { SalesContactFormService } from "./sales/sales-contact-form.service";
+import { OperatorSalesContactFormController, OperatorSalesEnquiriesController, PublicSalesController } from "./sales/sales-enquiries.controller";
+import { SalesEnquiriesService } from "./sales/sales-enquiries.service";
 import { SupportSessionsService } from "./support-sessions.service";
 import { TenantLifecycleService } from "./tenant-lifecycle.service";
 
-/** Wodana's control plane (master plan §6.1): accounts, lifecycle, support sessions, notices and the sweep. */
+/** Wodana's control plane (master plan §6.1): accounts, lifecycle, support sessions, notices (tenant and in-app operator), the sweep and sales enquiries. */
 @Module({
   imports: [EmailModule],
-  controllers: [OperatorAccountsController, OperatorOrganizationsController, OperatorAiCreditsController, InternalControlPlaneController],
+  controllers: [
+    OperatorAccountsController,
+    OperatorOrganizationsController,
+    OperatorAiCreditsController,
+    OperatorNotificationsController,
+    InternalControlPlaneController,
+    PublicSalesController,
+    OperatorSalesEnquiriesController,
+    OperatorSalesContactFormController,
+  ],
   providers: [
     AccountDirectoryService,
     AiCreditsConsoleService,
     ControlNoticesService,
     ControlPlaneSweepService,
+    OperatorNotificationsService,
     OrganizationSeatsService,
+    SalesContactFormService,
+    SalesEnquiriesService,
     SupportSessionsService,
     TenantLifecycleService,
     TenantDomainsService,
