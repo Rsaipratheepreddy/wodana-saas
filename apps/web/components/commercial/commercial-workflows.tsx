@@ -10,6 +10,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Check, Circle, Plus, X } from "lucide-react";
 import {
+  Badge,
   Button,
   Checkbox,
   DataGrid,
@@ -421,7 +422,8 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
             {state.data.financeContext ? (
               <p className={s.detail}>
                 {state.data.financeContext.displayName} · {state.data.financeContext.code} · {state.data.financeContext.currency}
-                {state.data.financeContext.taxValidation === "unvalidated" ? ` · ${t("Tax configuration not regionally validated")}` : ""}
+                {/* The tax setup in plain words when the region's rates aren't confirmed yet. */}
+                {state.data.financeContext.taxValidation === "unvalidated" ? <> <Badge tone="warning">{t("Tax rates not confirmed for this region")}</Badge></> : null}
               </p>
             ) : <span />}
             {state.canEdit && (

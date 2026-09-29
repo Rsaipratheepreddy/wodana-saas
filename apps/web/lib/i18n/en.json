@@ -11513,5 +11513,6 @@
   "1 enquiry updated.": "1 enquiry updated.",
   "1 enquiry needs an owner": "1 enquiry needs an owner",
   "1 enquiry assigned": "1 enquiry assigned",
-  "Next working hour · {when}": "Next working hour · {when}"
+  "Next working hour · {when}": "Next working hour · {when}",
+  "Tax rates not confirmed for this region": "Tax rates not confirmed for this region"
 }
