@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactElement, type ReactNode } from 'react';
-import { Animated, Easing, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, View, type ListRenderItemInfo, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Animated, Easing, FlatList, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, View, type ListRenderItemInfo, type StyleProp, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -77,7 +77,7 @@ export function Screen({ children, onRefresh, refreshing = false, scroll = true,
  * A long list on one surface, virtualised: the header, an optional toolbar (search, filters), then rows.
  * Loading, failure and empty states replace the rows.
  */
-export function ListScreen<T>({ items, renderItem, keyExtractor, toolbar, empty, loading, error, onRetry, onRefresh, refreshing = false, onEndReached, footer, groupBy, ...header }: HeaderProps & {
+export function ListScreen<T>({ items, renderItem, keyExtractor, toolbar, empty, loading, error, onRetry, onRefresh, refreshing = false, onEndReached, loadingMore, footer, groupBy, ...header }: HeaderProps & {
   items: T[] | undefined;
   renderItem: (item: T, index: number, first: boolean) => ReactElement;
   keyExtractor: (item: T) => string;
@@ -89,11 +89,14 @@ export function ListScreen<T>({ items, renderItem, keyExtractor, toolbar, empty,
   onRefresh?: () => void;
   refreshing?: boolean;
   onEndReached?: () => void;
+  /** The next page is on its way (shown under the rows). */
+  loadingMore?: boolean;
   footer?: ReactNode;
   /** Splits the list into titled groups (e.g. "Today", "Earlier"); consecutive items with the same group share a surface. */
   groupBy?: (item: T) => string;
 }) {
   const theme = useTheme();
+  const t = useT();
   const insets = useSafeAreaInsets();
   const list = items ?? [];
   const group = (index: number) => (groupBy && list[index] !== undefined ? groupBy(list[index]) : '');
@@ -123,6 +126,7 @@ export function ListScreen<T>({ items, renderItem, keyExtractor, toolbar, empty,
       contentContainerStyle={{ paddingTop: insets.top + theme.space(header.back ? 1 : 4), paddingBottom: theme.space(footer ? 6 : 10) }}
       ListHeaderComponent={<View style={{ paddingHorizontal: theme.space(4), gap: theme.space(3), paddingBottom: theme.space(4) }}><Header {...header} />{toolbar}</View>}
       ListEmptyComponent={state}
+      ListFooterComponent={loadingMore && list.length ? <View accessibilityRole="progressbar" accessibilityLabel={t('Loading')} style={{ paddingVertical: theme.space(4) }}><ActivityIndicator color={theme.colors.textTertiary} /></View> : null}
       onEndReached={onEndReached}
       onEndReachedThreshold={0.4}
       refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={() => { haptic.refresh(); onRefresh(); }} tintColor={theme.colors.textTertiary} colors={[theme.colors.actionPrimary]} progressViewOffset={insets.top} /> : undefined}

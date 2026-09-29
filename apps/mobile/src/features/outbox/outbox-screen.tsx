@@ -23,6 +23,8 @@ export function OutboxScreen() {
   return <>
     <ListScreen title={t('Waiting to send')} back items={items} keyExtractor={(item) => item.id}
       toolbar={!online ? <Banner tone="neutral" icon={CloudOff} title={t('No connection')} detail={t('Everything here sends by itself when you are back online.')} /> : undefined}
+      // Pulling down sends what's waiting now instead of at its next try.
+      onRefresh={online ? () => outbox.flush() : undefined} refreshing={false}
       empty={<Empty icon={CloudUpload} title={t('Everything is sent')} />}
       renderItem={(item, _, first) => <ListRow first={first} icon={item.status === 'blocked' ? TriangleAlert : CloudUpload} iconTone={item.status === 'blocked' ? 'warning' : 'info'}
         title={item.title} onPress={() => setMenu(item)}

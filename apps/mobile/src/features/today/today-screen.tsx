@@ -18,6 +18,7 @@ import { Banner, Card, Empty, ListRow, Screen, Section, Shimmer } from '../../ui
 import { Button, Row, Text } from '../../ui/primitives';
 import { StatusChip } from '../../ui/status';
 import { useTheme } from '../../ui/theme';
+import { useToast } from '../../ui/toast';
 import { useBootstrap, useCrewDays, useCurrentAttendance, useLeaveRequests, usePendingTime, useReviews } from '../hrms/api';
 import { minutesSince, MODE_LABEL } from '../hrms/model';
 import { useWaitingCount } from '../approvals/api';
@@ -52,6 +53,7 @@ export function TodayScreen() {
   const online = useOnline();
   const session = useSession();
   const outbox = useOutbox();
+  const toast = useToast();
   const hrms = session.has('hrms');
   const bootstrap = useBootstrap();
   const current = useCurrentAttendance(hrms);
@@ -92,7 +94,8 @@ export function TodayScreen() {
   const late = (sites.data?.hour ?? 0) >= 19;
   const nothing = !focus.length && !approvals && !waiting.count && !expected.length && !(inbox.unread > 0) && !mySites.length && !upcoming.length;
   const failed = summary.error ?? (hrms ? current.error : null);
-  const go = (link: string | null | undefined, fallback?: string) => { const route = appRouteFor(link) ?? fallback; if (route) router.push(route as Href); };
+  // Something the phone has no screen for is opened on the web.
+  const go = (link: string | null | undefined, fallback?: string) => { const route = appRouteFor(link) ?? fallback; if (route) router.push(route as Href); else toast.show(t('Open this on the web to see it.')); };
   const due = (item: HomeFocusItem) => {
     const label = dueLabel(item, summary.data?.today ?? today, summary.data?.timeZone ?? format.timeZone, { time: (value) => format.time(value), date: (value) => format.day(value) });
     return label ? t(label.key, label.values) : null;

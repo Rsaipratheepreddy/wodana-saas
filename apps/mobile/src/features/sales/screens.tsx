@@ -78,7 +78,7 @@ export function LeadsScreen() {
     </View>}
     loading={leads.isLoading} error={leads.error ? errorMessage(leads.error, t('Enquiries could not be loaded.')) : null} onRetry={() => void leads.refetch()}
     onRefresh={() => void leads.refetch()} refreshing={leads.isRefetching && !leads.isFetchingNextPage}
-    onEndReached={() => { if (leads.hasNextPage && !leads.isFetchingNextPage) void leads.fetchNextPage(); }}
+    onEndReached={() => { if (leads.hasNextPage && !leads.isFetchingNextPage) void leads.fetchNextPage(); }} loadingMore={leads.isFetchingNextPage}
     empty={<Empty icon={view === 'my_day' ? CalendarCheck : Users}
       title={debounced ? t('Nothing matches') : view === 'my_day' ? t('Nothing due today') : view === 'unowned' ? t('Every enquiry has an owner') : t('No enquiries here')}
       action={!debounced && canCreate && (view === 'my_day' || view === 'new') ? { label: t('New enquiry'), onPress: () => router.push('/sales/new') } : undefined} />}
@@ -375,7 +375,7 @@ export function OpportunitiesScreen() {
     </View>}
     loading={list.isLoading} error={list.error ? errorMessage(list.error, t('Opportunities could not be loaded.')) : null} onRetry={() => void list.refetch()}
     onRefresh={() => void list.refetch()} refreshing={list.isRefetching && !list.isFetchingNextPage}
-    onEndReached={() => { if (list.hasNextPage && !list.isFetchingNextPage) void list.fetchNextPage(); }}
+    onEndReached={() => { if (list.hasNextPage && !list.isFetchingNextPage) void list.fetchNextPage(); }} loadingMore={list.isFetchingNextPage}
     empty={<Empty icon={Handshake} title={t('No opportunities here')} />}
     renderItem={(item, _, first) => <ListRow first={first} title={item.title} onPress={() => router.push(`/sales/opportunity/${item.id}`)}
       detail={[item.partyName, item.stageName, item.amount ? format.money(item.amount, item.currencyCode ?? undefined) : null].filter(Boolean).join(' · ')}
@@ -426,7 +426,9 @@ export function PickLeadScreen({ next }: { next: 'log' | 'schedule' }) {
   return <ListScreen title={next === 'log' ? t('Log a call') : t('Follow-up')} back items={rows} keyExtractor={(lead) => lead.id}
     toolbar={<SearchField value={search} onChange={setSearch} placeholder={t('Which enquiry?')} autoFocus />}
     loading={leads.isLoading} error={leads.error ? errorMessage(leads.error, t('Enquiries could not be loaded.')) : null} onRetry={() => void leads.refetch()}
-    empty={<Empty icon={Users} title={t('No enquiries here')} />}
+    onRefresh={() => void leads.refetch()} refreshing={leads.isRefetching && !leads.isFetchingNextPage}
+    onEndReached={() => { if (leads.hasNextPage && !leads.isFetchingNextPage) void leads.fetchNextPage(); }} loadingMore={leads.isFetchingNextPage}
+    empty={<Empty icon={Users} title={debounced ? t('Nothing matches') : t('No enquiries here')} />}
     renderItem={(lead, _, first) => <ListRow first={first} title={leadName(lead)} detail={[lead.reference, lead.source].filter(Boolean).join(' · ')} trailing={<StatusChip status={lead.status} />}
       onPress={() => router.replace({ pathname: '/sales/[id]', params: next === 'log' ? { id: lead.id, log: '1' } : { id: lead.id, schedule: '1' } })} />} />;
 }
