@@ -95,6 +95,37 @@ describe("factory", () => {
     expect(await within(sheet).findByText(/K-01 rev B, approved by Omar/)).toBeInTheDocument();
   });
 
+  it("changes where and when in place with the work order's version", async () => {
+    nav.query = "order=w1";
+    let current = order();
+    const fetcher = mount((url, body) => {
+      if (url.includes("/orders/w1")) {
+        if (body?.action === "update") current = order({ ...body, version: 3 } as Partial<WorkOrderState["order"]>);
+        return current;
+      }
+      return factory();
+    });
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Edit Hours it takes" }));
+    await userEvent.type(within(sheet).getByRole("textbox", { name: "Hours it takes" }), "7.5{Enter}");
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "update", plannedHours: "7.5", version: 2 }));
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Edit Notes" }));
+    await userEvent.type(within(sheet).getByRole("textbox", { name: "Notes" }), "Veneer from the new batch");
+    await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "update", notes: "Veneer from the new batch", version: 3 }));
+  });
+
+  it("shows where and when as plain text once production has started", async () => {
+    nav.query = "order=w1";
+    mount((url) => url.includes("/orders/w1") ? order({ status: "in_production", releasedAt: "2026-09-27T09:00:00Z", notes: "Rush" }) : factory());
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    expect(await within(sheet).findByText("Rush")).toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Edit Notes" })).toBeNull();
+    expect(within(sheet).getByText("Joinery")).toBeInTheDocument();
+  });
+
   it("reports output with why anything was scrapped, and lets someone else approve it", async () => {
     nav.query = "order=w1";
     const producing = { status: "in_production" as const, releasedAt: "2026-09-27T09:00:00Z" };
