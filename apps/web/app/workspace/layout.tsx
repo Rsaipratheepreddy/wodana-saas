@@ -63,6 +63,7 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
     <WorkspaceShell
       banner={viewAs ? <ViewAsBanner viewAs={viewAs} /> : undefined}
       canManageWorkspace={ownerAccess}
+      access={{ permissions: activeMembership?.allowedPermissions ?? null, roles: activeMembership?.roles ?? null }}
       modules={scopeWorkspaceNavigation(
         visibleWorkspaceModules(workspaceModules, activeMembership?.workspaceSlug ?? "", allowedModules),
         activeMembership?.allowedPermissions,

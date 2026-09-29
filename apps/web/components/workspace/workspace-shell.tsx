@@ -26,6 +26,8 @@ import { SettingsLayout } from "./settings-layout";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { WorkspaceAccountMenu } from "./workspace-account-menu";
 import { WorkspaceNotifications } from "./workspace-notifications";
+import { CommandPalette } from "./command-palette";
+import type { AccessContext } from "@/lib/workspace/access";
 import { PreProjectProvider, usePreProject } from "@/components/pre-project/pre-project-context";
 import { caseRoute } from "@/lib/pre-project/types";
 import { preProjectNavigation } from "@/lib/pre-project/navigation";
@@ -48,14 +50,16 @@ export type WorkspaceShellProps = {
   canManageWorkspace?: boolean;
   /** Shown at the top of the content on every page, e.g. the view-as banner. */
   banner?: ReactNode;
+  /** The person's permissions and roles, for what ⌘K offers to create. */
+  access?: AccessContext;
 };
 
-export function WorkspaceShell({ banner, children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace }: WorkspaceShellProps) {
+export function WorkspaceShell({ banner, children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace, access }: WorkspaceShellProps) {
   const identity = workspaces[0] ? { name: workspaces[0].name, logoUrl: workspaces[0].imageUrl ?? null } : null;
-  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={workspacePrimaryColorStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name} workspaceId={workspaces[0]?.id}><WorkspaceShellContent banner={banner} canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces}>{children}</WorkspaceShellContent></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
+  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={workspacePrimaryColorStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name} workspaceId={workspaces[0]?.id}><WorkspaceShellContent banner={banner} canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces} access={access}>{children}</WorkspaceShellContent></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
 }
 
-function WorkspaceShellContent({ banner, children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace }: WorkspaceShellProps) {
+function WorkspaceShellContent({ banner, children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace, access }: WorkspaceShellProps) {
   const t = useT();
   const pathname = usePathname();
   const breadcrumb = useWorkspaceBreadcrumb();
@@ -170,6 +174,7 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
           {route.id === "home" || route.homeTab ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} counts={{ approvals: waiting }} /> : null}
           {route.nav === "team" ? <HomeTabs label="People" nested tabs={people} pathname={pathname} /> : null}
           <div className={styles.globalUtilities}>
+            {workspaceId ? <CommandPalette workspaceId={workspaceId} modules={modules} access={access ?? {}} /> : null}
             <TourPersonaBadge />
             <div className={styles.woddyControl}>
               <WoddyMenu avatarClassName={styles.woddyAvatar} className={styles.woddyButton} labelClassName={styles.woddyLabel} onChat={woddy?.open} />

@@ -15,6 +15,18 @@ afterEach(() => vi.unstubAllGlobals());
 const reply = (answer: string, patch: Record<string, unknown> = {}) => ({ runId: "run-1", answer, sources: [], cited: [], proposals: [], draft: null, stopped: null, ...patch });
 
 describe("Woddy chat", () => {
+  it("asks a question handed over from ⌘K once, opening the chat (NV-2)", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify(reply("Two quotes wait for the client.")), { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    function Asker() { const woddy = useWoddy(); return <button onClick={() => woddy?.ask("Which quotes wait?")}>Hand over</button>; }
+    render(<DesignSystemProvider><WoddyProvider workspaceId="workspace-1"><Asker /></WoddyProvider></DesignSystemProvider>);
+    await userEvent.click(screen.getByRole("button", { name: "Hand over" }));
+    expect(await screen.findByRole("article", { name: "Woddy reply" })).toHaveTextContent("Two quotes wait for the client.");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body))).toMatchObject({ message: "Which quotes wait?" });
+  });
+
+
   it("shows Woddy's avatar while typing and answering, and submits Enter only once", async () => {
     let finish!: (response: Response) => void;
     const fetcher = vi.fn<typeof fetch>(() => new Promise<Response>((resolve) => { finish = resolve; }));

@@ -43,7 +43,8 @@ function columnsFor(now: number, timeZone: string, locale: string, t: Translate)
   ];
 }
 
-export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "timeline", tasksOnly = false }: { tasksOnly?: boolean; initialLayout?: "timeline" | "list" | "kanban"; initialData: CrmScreenPageData; initialRecordId?: string }) {
+/** `initialCreate` opens Add follow-up (or Add task) at once, e.g. from ⌘K. */
+export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "timeline", tasksOnly = false, initialCreate = false }: { tasksOnly?: boolean; initialLayout?: "timeline" | "list" | "kanban"; initialData: CrmScreenPageData; initialRecordId?: string; initialCreate?: boolean }) {
   const t = useT();
   // Due times, "today" and the schedule are the workspace's (its region's zone), wherever the viewer is.
   const { locale, timeZone } = useDesignSystem();
@@ -60,7 +61,7 @@ export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "ti
   const [day, setDay] = useState(() => zonedToday(timeZone, new Date(initialData.referenceTime)));
   const [createTime, setCreateTime] = useState("10:00");
   const [revision, setRevision] = useState(0);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(initialCreate && initialData.canView);
   const [selected, setSelected] = useState(initialRecordId);
   const [busy, setBusy] = useState(false);
   const fetching = useRef(false);
