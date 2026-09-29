@@ -81,14 +81,14 @@ export function financeGatePaymentsReady(
 }
 
 /** Design starts only after the case's minimum design deposit (workspace configuration) is actually received. */
-export function palmDesignDepositReady(data: CommercialData, quote: Quote) {
+export function designDepositReady(data: CommercialData, quote: Quote) {
   if (quote.round !== "design" || !financeGatePaymentsReady(data, "release", quote.id)) return false;
   const paid = data.payments
     .filter(payment => payment.sourceQuoteId === quote.id && payment.requiredForRelease &&
       payment.currency === quote.currency && releasePaymentIsOperational(payment) &&
       paymentHasFinanceVerifiedReceipt(data, payment))
     .reduce((total, payment) => Dec.of(total).add(String(payment.amount)).toString(), "0");
-  return depositMeetsMinimum(paid, data.palmFlow?.designMinimumDeposit, quote.currency);
+  return depositMeetsMinimum(paid, data.servicePath?.designMinimumDeposit, quote.currency);
 }
 
 export function variationReleasePaymentsReady(
@@ -204,8 +204,8 @@ export function ownerReviewInputsReady(data: CommercialData, quote: Quote) {
 }
 
 /** A selected material-list stage needs a real client decision, not an empty vacuous pass. */
-export function palmMaterialListSignedOff(data: CommercialData, quote: Quote) {
-  if (!data.palmFlow?.scope.materialSelection)
+export function materialListSignedOff(data: CommercialData, quote: Quote) {
+  if (!data.servicePath?.scope.materialSelection)
     return true;
   return quotationApprovalSources(quote).length > 0 &&
     materialApprovalsComplete(quote, data.materialApprovals);
@@ -257,7 +257,7 @@ export function requestBlocksRelease(request: Pick<CommercialData["requests"][nu
 }
 
 export function commercialReleaseInputsReady(data: CommercialData | null | undefined) {
-  const quote = data?.palmFlow
+  const quote = data?.servicePath
     ? data.quotes.find(candidate => candidate.kind === "quotation" && candidate.round === "main" && candidate.status === "accepted")
     : data?.quotes.find(candidate => candidate.kind === "quotation" && candidate.status === "accepted");
   if (
@@ -273,11 +273,11 @@ export function commercialReleaseInputsReady(data: CommercialData | null | undef
     !data.ownerReview.financeReviewedById ||
     !data.dealFile.paymentProofUrl ||
     !data.dealFile.commissionLines?.length ||
-    !(data.palmFlow ? palmMaterialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
+    !(data.servicePath ? materialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
   )
     return false;
   return (
-    financeGatePaymentsReady(data, "release", data.palmFlow ? quote.id : undefined) &&
+    financeGatePaymentsReady(data, "release", data.servicePath ? quote.id : undefined) &&
     !data.requests.some(requestBlocksRelease)
   );
 }

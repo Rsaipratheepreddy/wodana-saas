@@ -811,9 +811,9 @@ export function applyExecution(
     const stages = d.workflow?.template.stages ?? [];
     const releaseIndex = stages.findIndex(stage => stage.releaseStart);
     const targetIndex = stages.findIndex(stage => stage.key === b.toStageKey);
-    const beforePalmRelease = d.workflow?.template.code === DEAL_FIRST_WORKFLOW_CODE &&
+    const beforeServicePathRelease = d.workflow?.template.code === DEAL_FIRST_WORKFLOW_CODE &&
       targetIndex >= 0 && (releaseIndex < 0 || targetIndex < releaseIndex);
-    if (!beforePalmRelease) active();
+    if (!beforeServicePathRelease) active();
     recordId = transitionProjectWorkflow(d, b.toStageKey, b.note, {
       id: a.userId ?? a.id,
       name: a.name,

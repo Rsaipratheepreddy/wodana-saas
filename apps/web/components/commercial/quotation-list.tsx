@@ -43,9 +43,9 @@ export function QuotationList({
   );
   const views = [{id:"current",label:t("Current offers")},{id:"all",label:t("Version history")},{id:"draft",label:t("Draft & review")},{id:"issued",label:t("Awaiting client")},{id:"accepted",label:t("Accepted")}];
   const status = (value: string) => translateKnown(t, statusLabel[value] ?? value);
-  const createDisabled = busy || (state.palmFlowEnabled && !state.data.palmFlow);
+  const createDisabled = busy || (state.servicePathEnabled && !state.data.servicePath);
   const canStartMainRound = Boolean(
-    state.data.palmFlow?.scope.design && state.data.palmFlow.scope.mainQuotation &&
+    state.data.servicePath?.scope.design && state.data.servicePath.scope.mainQuotation &&
     state.data.dealFile && !state.data.quotes.some(quote => quote.kind === "quotation" && quote.round === "main"),
   );
   const primaryAction = !quotes.length || canStartMainRound

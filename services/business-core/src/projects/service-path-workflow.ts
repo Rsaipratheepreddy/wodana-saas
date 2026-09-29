@@ -1,8 +1,8 @@
 import { DEAL_FIRST_WORKFLOW_CODE } from "./deal-first-workflow";
-import { palmFlowRoute, type PalmFlowScope, type PalmFlowStage } from "./palm-flow-route";
+import { servicePathRoute, type ServicePathScope, type ServicePathStage } from "./service-path-route";
 import type { ProjectWorkflowStage, ProjectWorkflowTemplate } from "./project-workflow";
 
-const stageLabels: Partial<Record<PalmFlowStage, [string, ProjectWorkflowStage["ownerRole"]]>> = {
+const stageLabels: Partial<Record<ServicePathStage, [string, ProjectWorkflowStage["ownerRole"]]>> = {
   site_visit: ["Site visit & scope", null],
   design_specifications: ["Design & specifications", "senior_designer"],
   main_quote: ["Main quotation", "sales_manager"],
@@ -20,11 +20,11 @@ const stageLabels: Partial<Record<PalmFlowStage, [string, ProjectWorkflowStage["
 };
 
 /** Freeze only applicable stages for this Deal, keeping the workspace template unchanged. */
-export function palmProjectWorkflowTemplate(
+export function servicePathWorkflowTemplate(
   template: ProjectWorkflowTemplate,
-  scope: PalmFlowScope,
+  scope: ServicePathScope,
 ): ProjectWorkflowTemplate {
-  const route = palmFlowRoute(scope);
+  const route = servicePathRoute(scope);
   const stages: ProjectWorkflowStage[] = [
     {
       key: "deal_file", visibleName: "Deal File", description: "One approved Deal and Project Ref.",

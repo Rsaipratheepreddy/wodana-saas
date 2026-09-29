@@ -15,3 +15,13 @@ describe("commercial repository", () => {
     expect(await commercialRepository.load({ query } as never, "workspace", "case")).toBeUndefined();
   });
 });
+
+describe("a case saved before the service path rename (Q-37)", () => {
+  it("reads its former key as servicePath, and leaves a new case as it is", async () => {
+    const { servicePathAlias } = await import("./commercial-repository");
+    const path = { scope: { design: true }, selectedAt: "2026-09-01T00:00:00.000Z", selectedBy: "Sara" };
+    expect(servicePathAlias({ palmFlow: path, requests: [] } as never)).toEqual({ servicePath: path, requests: [] });
+    expect(servicePathAlias({ servicePath: path } as never)).toEqual({ servicePath: path });
+  });
+});
+

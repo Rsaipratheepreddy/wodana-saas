@@ -645,8 +645,8 @@ export type MaterialApproval = {
 };
 export type CommercialData = {
   /** Palm's selected service path. Frozen when its first quotation is created. */
-  palmFlow?: {
-    scope: import("../projects/palm-flow-route").PalmFlowScope;
+  servicePath?: {
+    scope: import("../projects/service-path-route").ServicePathScope;
     selectedAt: string;
     selectedBy: string;
     /** Minimum design deposit from the workspace's design settings, frozen when the path is chosen. */
@@ -731,7 +731,7 @@ export type PortalGrant = {
   testContact: boolean;
 };
 export type CommercialState = {
-  palmFlowEnabled?: boolean;
+  servicePathEnabled?: boolean;
   enquiryType?: string | null;
   workspaceId: string;
   caseId: string;

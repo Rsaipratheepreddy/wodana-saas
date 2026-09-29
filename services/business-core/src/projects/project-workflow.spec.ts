@@ -16,7 +16,7 @@ import {
 } from "./execution.domain";
 import type { Task } from "./execution.types";
 
-const palmWorkflow = () =>
+const servicePathWorkflow = () =>
   parseProjectWorkflowTemplate(
     JSON.parse(
       readFileSync(
@@ -60,7 +60,7 @@ describe("project workflow templates", () => {
   });
 
   it("keeps each post-release Palm stage distinct within the supported limit", () => {
-    const stages = palmWorkflow().stages;
+    const stages = servicePathWorkflow().stages;
     expect(stages.map((stage) => stage.visibleName)).toEqual([
       "New Project",
       "Concept & moodboard",
@@ -100,7 +100,7 @@ describe("project workflow templates", () => {
 
   it("starts a commercially released Palm project at procurement without replaying approved design", () => {
     const template = {
-      ...palmWorkflow(),
+      ...servicePathWorkflow(),
       id: "workflow-palm-1",
       status: "active" as const,
       source: "workspace" as const,
@@ -117,14 +117,14 @@ describe("project workflow templates", () => {
     data.workflow = released;
     expect(() => completeProjectWorkflow(data, "", { id: "user-1", name: "Owner", now: "2026-09-24T09:00:00.000Z" }))
       .toThrow("Move through the remaining project stages");
-    const duplicate = palmWorkflow();
+    const duplicate = servicePathWorkflow();
     duplicate.stages[0].releaseStart = true;
     expect(() => parseProjectWorkflowTemplate(duplicate)).toThrow("one active stage");
   });
 
   it("blocks manufacturing readiness until production packages are actually ready", () => {
     const template = {
-      ...palmWorkflow(),
+      ...servicePathWorkflow(),
       id: "workflow-palm-1",
       status: "active" as const,
       source: "workspace" as const,
@@ -475,7 +475,7 @@ describe("project workflow templates", () => {
 
   it("keeps On Hold outside the Palm stage model and preserves all delivery history", () => {
     const template = {
-      ...palmWorkflow(),
+      ...servicePathWorkflow(),
       id: "workflow-palm-1",
       status: "active" as const,
       source: "workspace" as const,

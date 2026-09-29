@@ -4,7 +4,7 @@ import {
   approvedMaterialEvidence,
   agreementMatchesAcceptedQuote,
   materialApprovalsComplete,
-  palmMaterialListSignedOff,
+  materialListSignedOff,
   sameMaterialEvidence,
 } from "./release-integrity";
 import type { MaterialApproval, Quote } from "./commercial.types";
@@ -121,15 +121,15 @@ describe("commercial production evidence", () => {
     const accepted = quote();
     expect(materialApprovalsComplete(accepted, [])).toBe(false);
     const data = emptyCommercial();
-    data.palmFlow = { scope: {
+    data.servicePath = { scope: {
         design: false, mainQuotation: true, materialSelection: false, procurement: true,
         manufacturing: false, siteWorks: false, installation: true,
       }, selectedAt: "2026-09-25T00:00:00Z", selectedBy: "Sales" };
-    expect(palmMaterialListSignedOff(data, accepted)).toBe(true);
-    data.palmFlow.scope.materialSelection = true;
-    expect(palmMaterialListSignedOff(data, accepted)).toBe(false);
+    expect(materialListSignedOff(data, accepted)).toBe(true);
+    data.servicePath.scope.materialSelection = true;
+    expect(materialListSignedOff(data, accepted)).toBe(false);
     data.materialApprovals = [approval()];
-    expect(palmMaterialListSignedOff(data, accepted)).toBe(true);
+    expect(materialListSignedOff(data, accepted)).toBe(true);
   });
 
   it("binds agreement evidence to the exact accepted revision and selection", () => {

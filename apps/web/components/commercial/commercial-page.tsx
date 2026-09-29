@@ -261,7 +261,7 @@ export function CommercialPage({
         {section !== "quotations" && section !== "contracts" && section !== "payment-plan" && (
           <h1 className={s.visuallyHidden}>{labels[section]}</h1>
         )}
-        {showReadinessFlow && !embedded && (!state.data.palmFlow || state.data.palmFlow.scope.mainQuotation) ? <PreExecutionFlow state={state} section={section} root={root} /> : null}
+        {showReadinessFlow && !embedded && (!state.data.servicePath || state.data.servicePath.scope.mainQuotation) ? <PreExecutionFlow state={state} section={section} root={root} /> : null}
         {error && (
           <p role="alert" className={s.error}>
             {error}
@@ -272,18 +272,18 @@ export function CommercialPage({
             {notice}
           </p>
         )}
-        {quotationList && state.palmFlowEnabled && !state.data.quotes.length && (
+        {quotationList && state.servicePathEnabled && !state.data.quotes.length && (
           <section className={s.flowChooser} aria-label={t("Enquiry service path")}>
             <div>
               <h2>{t("Service path")}</h2>
-              <p>{state.data.palmFlow
+              <p>{state.data.servicePath
                 ? "Confirmed for this enquiry. Create the quotation when its requirements are ready."
                 : "Choose what the client is buying before preparing the first quotation. This keeps inapplicable project stages out of the way."}</p>
             </div>
-            {state.data.palmFlow
-              ? <span className={s.flowSelected}>{SERVICE_PATHS.find(path => JSON.stringify(path.scope) === JSON.stringify(state.data.palmFlow?.scope))?.label ?? "Custom service path"}</span>
+            {state.data.servicePath
+              ? <span className={s.flowSelected}>{SERVICE_PATHS.find(path => JSON.stringify(path.scope) === JSON.stringify(state.data.servicePath?.scope))?.label ?? "Custom service path"}</span>
               : <div className={s.flowChoices}>{SERVICE_PATHS.map(path => (
-                  <Button key={path.label} size="compact" isDisabled={busy || !state.canEdit} onPress={() => void run("set_palm_flow", { scope: path.scope })}>
+                  <Button key={path.label} size="compact" isDisabled={busy || !state.canEdit} onPress={() => void run("set_service_path", { scope: path.scope })}>
                     {path.label}
                   </Button>
                 ))}</div>}
@@ -393,7 +393,7 @@ export function CommercialPage({
                       >
                         {t("Return to draft")}</Button>
                     )}
-                  {state.data.palmFlow && state.canEstimate && draft.status === "internal_review" && draft.kind === "quotation" && (
+                  {state.data.servicePath && state.canEstimate && draft.status === "internal_review" && draft.kind === "quotation" && (
                     <Button
                       size="compact"
                       variant="primary"
@@ -402,7 +402,7 @@ export function CommercialPage({
                     >
                       {t("Approve QS estimate")}</Button>
                   )}
-                  {!state.data.palmFlow && state.canApprove && draft.status === "internal_review" && (
+                  {!state.data.servicePath && state.canApprove && draft.status === "internal_review" && (
                     <Button
                       size="compact"
                       variant="primary"

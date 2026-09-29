@@ -10,6 +10,13 @@ type Db = Pick<PoolClient, "query">;
  * is still the commercial_cases document until it moves to its own tables. commercial_case_save()
  * (migration 0004) is the only write path and commercial_quote_json() (migration 0003) the only read shape.
  */
+/** A case saved before the rename (Q-37) keeps its service path under the former key; it reads as `servicePath`. */
+export function servicePathAlias(content: Partial<CommercialData> & { palmFlow?: CommercialData["servicePath"] }) {
+  if (!content || !("palmFlow" in content)) return content;
+  const { palmFlow, ...rest } = content;
+  return { ...rest, servicePath: rest.servicePath ?? palmFlow };
+}
+
 export const commercialRepository = {
   async load(db: Db, workspaceId: string, caseId: string, options: { forUpdate?: boolean } = {}) {
     if (options.forUpdate) {
@@ -22,7 +29,7 @@ export const commercialRepository = {
     const row = result.rows[0];
     // The column is the case's revision. Quote-builder edits move it without rewriting the document,
     // so the copy inside the document can lag behind; commands must check against the column.
-    return row ? { ...row, content: { ...row.content, revision: row.revision } } : row;
+    return row ? { ...row, content: { ...servicePathAlias(row.content), revision: row.revision } } : row;
   },
 
   /** Writes the case and synchronises quote rows in the caller's transaction (see commercial_case_save). */

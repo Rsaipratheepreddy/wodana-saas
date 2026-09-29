@@ -159,7 +159,7 @@ describe("web commercial finance readiness", () => {
     const main = { ...data.quotes[0], round: "main" as const };
     const design = { ...data.quotes[0], id: "design", round: "design" as const };
     data.quotes = [design, main];
-    data.palmFlow = { selectedAt: "2026-09-18T00:00:00.000Z", selectedBy: "sales", scope: {
+    data.servicePath = { selectedAt: "2026-09-18T00:00:00.000Z", selectedBy: "sales", scope: {
       design: true, mainQuotation: true, materialSelection: false, procurement: true,
       manufacturing: false, siteWorks: false, installation: true,
     } };
@@ -180,7 +180,7 @@ describe("web commercial finance readiness", () => {
   it("does not release a Palm material-list path with no actual client selections", () => {
     const data = fixture();
     data.quotes[0].round = "main";
-    data.palmFlow = { selectedAt: "2026-09-18T00:00:00.000Z", selectedBy: "sales", scope: {
+    data.servicePath = { selectedAt: "2026-09-18T00:00:00.000Z", selectedBy: "sales", scope: {
       design: false, mainQuotation: true, materialSelection: true, procurement: true,
       manufacturing: false, siteWorks: false, installation: true,
     } };
@@ -188,7 +188,7 @@ describe("web commercial finance readiness", () => {
     data.payments[0].status = "verified";
     data.receipts![0].status = "finance_verified";
     expect(commercialReleaseInputsReady(data)).toBe(false);
-    data.palmFlow.scope.materialSelection = false;
+    data.servicePath.scope.materialSelection = false;
     expect(commercialReleaseInputsReady(data)).toBe(true);
   });
 

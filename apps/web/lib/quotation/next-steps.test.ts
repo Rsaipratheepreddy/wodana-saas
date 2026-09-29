@@ -5,7 +5,7 @@ import { declinedSteps, nextSteps } from "./next-steps";
 const quote = { id: "q1", round: "main" };
 const state = (data: Partial<CommercialState["data"]>, can: Partial<CommercialState> = {}): CommercialState => ({
   workspaceId: "w", caseId: "c", title: "Villa", customerName: "Aisha", currency: "AED", contacts: [], portalSlug: null,
-  canEdit: false, canApprove: false, canVerifyFinance: false, canRelease: false, canManagePortal: false, palmFlowEnabled: true,
+  canEdit: false, canApprove: false, canVerifyFinance: false, canRelease: false, canManagePortal: false, servicePathEnabled: true,
   stepHolders: { verifyAgreement: ["Olivia"], verifyPayment: ["Layla"], approveDeal: ["Olivia", "Omar"], startProject: ["Khalid"] },
   data: { payments: [], quotes: [], ...data } as unknown as CommercialState["data"], ...can,
 }) as CommercialState;

@@ -409,7 +409,7 @@ try {
   // The minimum design deposit is workspace configuration (Palm: AED 15,000), not a constant.
   await request(`/workspaces/${workspaceId}/design/settings`, "PUT", { minimumDeposit: { amount: "15000.00", currency: "AED" } });
   const insufficientCase = await createCase("Insufficient design deposit QA");
-  await command(insufficientCase, "set_palm_flow", { scope: { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false } });
+  await command(insufficientCase, "set_service_path", { scope: { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false } });
   const insufficientCreated = await command(insufficientCase, "create");
   await injectAcceptedRound(insufficientCase, insufficientCreated.data.quotes.at(-1).id, "design", 14_999);
   await command(insufficientCase, "decide_owner_review", { decision: "approve" }, 409);
@@ -418,7 +418,7 @@ try {
 
   const designCase = await createCase("Design and furniture QA");
   const designScope = { design: true, mainQuotation: true, materialSelection: true, procurement: true, manufacturing: true, siteWorks: true, installation: true };
-  await command(designCase, "set_palm_flow", { scope: designScope });
+  await command(designCase, "set_service_path", { scope: designScope });
   const designCreated = await command(designCase, "create");
   const designQuoteId = designCreated.data.quotes.at(-1).id;
   const roundActors = await approveDesignRoundThroughApi(designCase, designQuoteId);
@@ -498,7 +498,7 @@ try {
 
   // Design-only work stays in Planning: its design fee never starts a project.
   const designOnlyCase = await createCase("Moodboards-only QA");
-  await command(designOnlyCase, "set_palm_flow", { scope: {
+  await command(designOnlyCase, "set_service_path", { scope: {
     design: true, mainQuotation: false, materialSelection: false, procurement: false,
     manufacturing: false, siteWorks: false, installation: false,
   } });
@@ -510,7 +510,7 @@ try {
 
   // Ready-made furniture: one main round, then the project starts from it.
   const furnitureCase = await createCase("Ready-made furniture QA");
-  await command(furnitureCase, "set_palm_flow", { scope: { design: false, mainQuotation: true, materialSelection: false, procurement: true, manufacturing: false, siteWorks: false, installation: true } });
+  await command(furnitureCase, "set_service_path", { scope: { design: false, mainQuotation: true, materialSelection: false, procurement: true, manufacturing: false, siteWorks: false, installation: true } });
   const furnitureCreated = await command(furnitureCase, "create");
   const furnitureQuoteId = furnitureCreated.data.quotes.at(-1).id;
   const furnitureActors = { ...roundActors, ...await enrollClientApprover(furnitureCase) };

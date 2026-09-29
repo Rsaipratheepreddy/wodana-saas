@@ -3,7 +3,7 @@ import type { CommercialData, Quote } from "./commercial.types";
 import {
   financeGatePaymentsReady,
   ownerReviewInputsReady,
-  palmDesignDepositReady,
+  designDepositReady,
   variationReleasePaymentsReady,
 } from "./release-integrity";
 
@@ -147,7 +147,7 @@ describe("four business gates", () => {
   it("requires the workspace's minimum design deposit in Finance-verified receipts before the first paid Deal", () => {
     const data = fixture();
     // Configured per workspace and frozen into the case (Palm: AED 15,000).
-    data.palmFlow = { scope: { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false }, selectedAt: "2026-09-18T00:00:00.000Z", selectedBy: "owner", designMinimumDeposit: { amount: "15000.00", currency: "AED" } };
+    data.servicePath = { scope: { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false }, selectedAt: "2026-09-18T00:00:00.000Z", selectedBy: "owner", designMinimumDeposit: { amount: "15000.00", currency: "AED" } };
     const design = data.quotes[0];
     design.round = "design";
     design.currency = "AED";
@@ -160,17 +160,17 @@ describe("four business gates", () => {
     Object.assign(payment, { sourceQuoteId: design.id, legalEntityId: "entity", currency: "AED", amount: 14_999, status: "verified", proof: "Bank receipt", reference: "RCT-1" });
     data.receipts = [{ id: "receipt", paymentId: payment.id, legalEntityId: "entity", currency: "AED", amount: 14_999, source: "manual", status: "finance_verified", reference: "RCT-1", evidence: "Bank receipt", reportedAt: "2026-09-18T00:00:00.000Z", reportedBy: "Finance", verifiedAt: "2026-09-18T00:00:00.000Z", verifiedBy: "Finance" }];
     data.allocations = [{ id: "allocation", receiptId: "receipt", paymentId: payment.id, legalEntityId: "entity", currency: "AED", amount: 14_999, createdAt: "2026-09-18T00:00:00.000Z", createdBy: "Finance" }];
-    expect(palmDesignDepositReady(data, design)).toBe(false);
+    expect(designDepositReady(data, design)).toBe(false);
     payment.amount = 15_000;
     data.receipts[0].amount = 15_000;
     data.allocations[0].amount = 15_000;
-    expect(palmDesignDepositReady(data, design)).toBe(true);
+    expect(designDepositReady(data, design)).toBe(true);
     // A minimum set in another currency is never met by this quote's payments.
-    data.palmFlow.designMinimumDeposit = { amount: "15000.00", currency: "USD" };
-    expect(palmDesignDepositReady(data, design)).toBe(false);
+    data.servicePath.designMinimumDeposit = { amount: "15000.00", currency: "USD" };
+    expect(designDepositReady(data, design)).toBe(false);
     // Without a configured minimum, a verified design payment is enough.
-    data.palmFlow.designMinimumDeposit = null;
+    data.servicePath.designMinimumDeposit = null;
     payment.amount = 100; data.receipts[0].amount = 100; data.allocations[0].amount = 100;
-    expect(palmDesignDepositReady(data, design)).toBe(true);
+    expect(designDepositReady(data, design)).toBe(true);
   });
 });

@@ -43,7 +43,7 @@ const CASE_PHASES = {
  * workflow stage is still a planning stage (a deal-first route opens the project at the paid deal). Whether a
  * project's stage is planning comes from its workflow template, never from a list of stage keys.
  */
-export function planningRows(projects: PortfolioRow[], planning: PreProjectListItem[], workflow: WorkflowPhases = {}, palmFlowEnabled = false): PlanningRow[] {
+export function planningRows(projects: PortfolioRow[], planning: PreProjectListItem[], workflow: WorkflowPhases = {}, servicePathEnabled = false): PlanningRow[] {
   const linked = new Set(projects.map((project) => project.caseId));
   const cases = new Map(planning.map((item) => [item.id, item]));
   const caseRows: PlanningRow[] = planning.filter((item) => !linked.has(item.id) && item.status !== "cancelled").map((item) => {
@@ -51,7 +51,7 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
     const ready = Boolean(item.qualifiedLead) || item.status === "qualified";
     return {
       id: `case-${item.id}`, title: item.title, description: item.description?.trim() || undefined, customer: item.customerName, group: ready ? "ready" : "before_deal",
-      stage: ready ? tKey("Ready to start") : palmFlowEnabled ? tKey("Before deal") : phase.stage, next: ready ? tKey("Start planning") : phase.next,
+      stage: ready ? tKey("Ready to start") : servicePathEnabled ? tKey("Before deal") : phase.stage, next: ready ? tKey("Start planning") : phase.next,
       owner: personDisplayName(item.leadManagerName) || null, amount: item.amount, currency: item.currencyCode,
       onHold: item.status === "on_hold" || ["lost", "abandoned"].includes(item.opportunityStatus ?? ""), caseId: item.id, source: item,
       ...(!item.qualifiedLead ? { href: `/workspace/pre-projects/cases/${item.id}/requirements` } : {}),
@@ -66,7 +66,7 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
       group: "in_design" as const, stage: phase ? item.workflow!.currentStageName : tKey("Execution planning"), next: item.nextAction || item.workflow?.currentStageName || tKey("Execution planning"),
       owner: personDisplayName(item.manager) || null, amount: origin?.amount ?? null, currency: origin?.currencyCode ?? null, onHold: item.onHold,
       // A deal-first project is designed inside the project; otherwise its planning case is where the work is.
-      caseId: item.caseId, projectId: item.id, href: palmFlowEnabled || !item.caseId
+      caseId: item.caseId, projectId: item.id, href: servicePathEnabled || !item.caseId
         ? `/workspace/projects/${item.id}/overview?${new URLSearchParams({ projectName: projectDisplayName(item.name) })}` : `/workspace/pre-projects/cases/${item.caseId}/overview`,
     }];
   });
@@ -76,8 +76,8 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
 type Status = "all" | "active" | "hold";
 
 /** Planning (D-31): one list of the cases in planning with their stage, owner, value and next step. */
-export function PlanningList({ projects, planning, workflow = {}, projectError, palmFlowEnabled = false, initialGroup }: {
-  projects: PortfolioRow[]; planning: PreProjectList; workflow?: WorkflowPhases; projectError?: string; palmFlowEnabled?: boolean; initialGroup?: PlanningGroup;
+export function PlanningList({ projects, planning, workflow = {}, projectError, servicePathEnabled = false, initialGroup }: {
+  projects: PortfolioRow[]; planning: PreProjectList; workflow?: WorkflowPhases; projectError?: string; servicePathEnabled?: boolean; initialGroup?: PlanningGroup;
 }) {
   const t = useT();
   const router = useRouter();
@@ -91,7 +91,7 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
   const [starting, setStarting] = useState(false);
   const lock = useRef(false);
 
-  const rows = useMemo(() => planningRows(projects, planning.items, workflow, palmFlowEnabled), [projects, planning.items, workflow, palmFlowEnabled]);
+  const rows = useMemo(() => planningRows(projects, planning.items, workflow, servicePathEnabled), [projects, planning.items, workflow, servicePathEnabled]);
   const visible = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return rows.filter((row) => (group === "all" || row.group === group) && (status === "all" || (status === "hold" ? row.onHold : !row.onHold))
@@ -132,8 +132,8 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
   ], [t, format, busy, planning.canCreate, planning.canStartLead]);
 
   const canStart = planning.canCreate;
-  const groups = [{ id: "all", label: t("All") }, { id: "ready", label: t("Ready to start") }, { id: "before_deal", label: palmFlowEnabled ? t("Before deal") : t("In planning") },
-    { id: "in_design", label: palmFlowEnabled ? t("In design") : t("Project open") }];
+  const groups = [{ id: "all", label: t("All") }, { id: "ready", label: t("Ready to start") }, { id: "before_deal", label: servicePathEnabled ? t("Before deal") : t("In planning") },
+    { id: "in_design", label: servicePathEnabled ? t("In design") : t("Project open") }];
   const problem = error || projectError || planning.error;
 
   return <div className={styles.page} data-tour="planning-list">
@@ -156,7 +156,7 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
       emptyContent={search.trim() || group !== "all" || status !== "all"
         ? <NoResultsState onClear={() => { setSearch(""); setGroup("all"); setStatus("all"); }} />
         : <EmptyState title={t("Nothing in planning yet")}
-            description={palmFlowEnabled ? t("A project appears here after the first paid Deal File is approved.") : t("Qualified opportunities appear here, ready to plan.")}
+            description={servicePathEnabled ? t("A project appears here after the first paid Deal File is approved.") : t("Qualified opportunities appear here, ready to plan.")}
             action={<Button variant="primary" onPress={() => setStarting(true)}>{t("Start planning")}</Button>} />}
       rowNumbers={false}
       selectable={false}

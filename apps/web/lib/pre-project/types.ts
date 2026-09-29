@@ -15,13 +15,13 @@ export type PreProjectCase = {
   qualificationEvidence?: unknown; qualificationEvidenceHash?: string | null;
   /** Set only after a paid Deal File has opened the linked project. */
   projectId?: string | null;
-  palmFlowEnabled?: boolean;
+  servicePathEnabled?: boolean;
 };
 export type PreProjectListItem = Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt"> & {
   status: PreProjectCase["status"] | "qualified"; opportunityId: string | null; qualifiedLead?: boolean; leadVersion?: number;
   ownerMembershipId?: string | null; phase?: PreProjectCase["phase"]; targetDate?: string | null; priority?: PreProjectCase["priority"]; riskLevel?: PreProjectCase["riskLevel"];
   projectId?: string | null;
-  palmFlowEnabled?: boolean;
+  servicePathEnabled?: boolean;
 };
 export type PreProjectList = { items: PreProjectListItem[]; canStartLead?: boolean; total: number; canCreate: boolean; workspaceId: string; error?: string };
 export type PreProjectCandidate = { id: string; title: string; customerName: string; status: string; caseId: string | null };

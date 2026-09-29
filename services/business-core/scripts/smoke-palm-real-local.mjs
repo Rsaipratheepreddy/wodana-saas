@@ -245,7 +245,7 @@ try {
       body: { action, revision: current.data.revision, ...extra },
     });
   };
-  await commercialCommand("set_palm_flow", {
+  await commercialCommand("set_service_path", {
     scope: {
       design: true, mainQuotation: true, materialSelection: true,
       procurement: true, manufacturing: true, siteWorks: true, installation: true,

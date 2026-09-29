@@ -27,7 +27,7 @@ import {
   commercialReleaseInputsReady,
   financeGatePaymentsReady,
   materialApprovalsComplete,
-  palmMaterialListSignedOff,
+  materialListSignedOff,
   requestBlocksRelease,
 } from "@/lib/commercial/release";
 import type { CommercialState, ChangeRequest, ControlledChangeKind, MaterialApproval } from "@/lib/commercial/types";
@@ -379,7 +379,7 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
 export function AgreementPayments({ state, run, busy, error, initialView = "agreement", openPaymentId }: Props & { initialView?: "agreement" | "payments"; openPaymentId?: string }) {
   const t = useT();
   const { currency: workspaceCurrency } = useDesignSystem();
-  const accepted = state.data.palmFlow
+  const accepted = state.data.servicePath
       ? state.data.quotes.find(q => q.status === "accepted" && q.kind === "quotation" && q.round === "main")
         ?? state.data.quotes.find(q => q.status === "accepted" && q.kind === "quotation" && q.round === "design")
       : state.data.quotes.find(q => q.status === "accepted" && q.kind === "quotation"),
@@ -750,7 +750,7 @@ export function ApprovalRelease({
       },
     );
   const d = state.data,
-    accepted = d.palmFlow
+    accepted = d.servicePath
       ? d.quotes.find(q => q.kind === "quotation" && q.round === "main" && q.status === "accepted")
         ?? d.quotes.find(q => q.kind === "quotation" && q.round === "design" && q.status === "accepted")
       : d.quotes.find(q => q.kind === "quotation" && q.status === "accepted");
@@ -774,7 +774,7 @@ export function ApprovalRelease({
       label: "Linked design revisions approved",
       done: Boolean(
         deliveryQuote &&
-          ((d.palmFlow && !d.palmFlow.scope.design) ||
+          ((d.servicePath && !d.servicePath.scope.design) ||
             (state.releaseReadiness &&
             (state.releaseReadiness.designsRequired > 0 &&
               state.releaseReadiness.designsApproved === state.releaseReadiness.designsRequired))),
@@ -792,7 +792,7 @@ export function ApprovalRelease({
     },
     {
       label: "Required payments verified",
-      done: Boolean(deliveryQuote && financeGatePaymentsReady(d, d.palmFlow ? deliveryQuote.id : undefined)),
+      done: Boolean(deliveryQuote && financeGatePaymentsReady(d, d.servicePath ? deliveryQuote.id : undefined)),
       href: "payment-plan",
     },
     {
@@ -811,7 +811,7 @@ export function ApprovalRelease({
     {
       label: "Material selections approved or not applicable",
       done: Boolean(
-        deliveryQuote && (d.palmFlow ? palmMaterialListSignedOff(d, deliveryQuote) : materialApprovalsComplete(deliveryQuote, d.materialApprovals)),
+        deliveryQuote && (d.servicePath ? materialListSignedOff(d, deliveryQuote) : materialApprovalsComplete(deliveryQuote, d.materialApprovals)),
       ),
       href: "execution-release",
       view: "materials",
@@ -868,11 +868,11 @@ export function ApprovalRelease({
               {state.canVerifyFinance&&<div className={s.actions}><button className={s.button} disabled={busy||!decisionNote.trim()} onClick={()=>void run("review_deal_finance",{decision:"return",note:decisionNote})}>{t("Return to Sales")}</button><button className={s.primary} disabled={busy||!paymentVerified||editableFinanceLines.some(line=>!line.recipientName||line.value<=0)} onClick={()=>void run("review_deal_finance",{decision:"confirm",note:decisionNote,paymentVerified,commissionLines:editableFinanceLines})}>{t("Confirm Finance review")}</button></div>}
             </section> : d.ownerReview?.status === "pending_approval" ? <section className={s.ownerForm}>
               <div><h2>{t("3 · Owner approval")}</h2><p className={s.muted}>{t("Finance confirmed the payment and commission. Client material sign-off follows the material meeting, before procurement.")}</p></div>
-              <div className={s.checkGrid}>{Object.entries(d.ownerReview.checklist).filter(([key]) => !d.palmFlow || key !== "materials").map(([key,done])=><span key={key} data-done={done}>{done?"✓":"○"} {key.replaceAll("_"," ")}</span>)}</div>
+              <div className={s.checkGrid}>{Object.entries(d.ownerReview.checklist).filter(([key]) => !d.servicePath || key !== "materials").map(([key,done])=><span key={key} data-done={done}>{done?"✓":"○"} {key.replaceAll("_"," ")}</span>)}</div>
               <div className={s.commissionRows}>{(d.ownerReview.finalCommissionLines??[]).map((line,index)=><span key={`${line.type}-${index}`}>{line.recipientName} · {line.type} · {money(line.amount,accepted.currency)}</span>)}</div>
               <label className={s.decisionField}>{t("Decision remarks")}<textarea value={decisionNote} onChange={e=>setDecisionNote(e.target.value)} placeholder={t("Required when returning or rejecting.")}/></label>
-              {!d.palmFlow&&!materialApprovalsComplete(accepted,d.materialApprovals)&&<p className={s.notice}>{t("Complete every client material decision before creating the Deal File.")}</p>}
-              {state.canApproveDeal&&<div className={s.actions}><button className={s.button} disabled={busy||!decisionNote.trim()} onClick={()=>void run("decide_owner_review",{decision:"reject",note:decisionNote})}>{t("Reject")}</button><button className={s.button} disabled={busy||!decisionNote.trim()} onClick={()=>void run("decide_owner_review",{decision:"return",note:decisionNote})}>{t("Return for correction")}</button><button className={s.primary} disabled={busy||Object.entries(d.ownerReview.checklist).some(([key,value])=>!value&&(!d.palmFlow||key!=="materials"))||(!d.palmFlow&&!materialApprovalsComplete(accepted,d.materialApprovals))} onClick={()=>void run("decide_owner_review",{decision:"approve",note:decisionNote})}>{t("Approve Deal File")}</button></div>}
+              {!d.servicePath&&!materialApprovalsComplete(accepted,d.materialApprovals)&&<p className={s.notice}>{t("Complete every client material decision before creating the Deal File.")}</p>}
+              {state.canApproveDeal&&<div className={s.actions}><button className={s.button} disabled={busy||!decisionNote.trim()} onClick={()=>void run("decide_owner_review",{decision:"reject",note:decisionNote})}>{t("Reject")}</button><button className={s.button} disabled={busy||!decisionNote.trim()} onClick={()=>void run("decide_owner_review",{decision:"return",note:decisionNote})}>{t("Return for correction")}</button><button className={s.primary} disabled={busy||Object.entries(d.ownerReview.checklist).some(([key,value])=>!value&&(!d.servicePath||key!=="materials"))||(!d.servicePath&&!materialApprovalsComplete(accepted,d.materialApprovals))} onClick={()=>void run("decide_owner_review",{decision:"approve",note:decisionNote})}>{t("Approve Deal File")}</button></div>}
             </section> : d.dealFile?.quoteId !== accepted.id && <form className={s.ownerForm} onSubmit={async e=>{e.preventDefault();await run("submit_owner_review",{commissionLines,paymentProofUrl,checklist,note});}}>
               {d.ownerReview&&<p className={s.notice}>{t("Previous decision:")}{" "}{statusLabel[d.ownerReview.status]??d.ownerReview.status}. {d.ownerReview.financeNote??d.ownerReview.decisionNote}</p>}
               <div><h2>{t("1 · Submit Deal File")}</h2><p className={s.muted}>{t("Every deal needs a Won opportunity, accepted quotation, signed agreement, payment proof and provisional split commissions.")}</p></div>
@@ -885,7 +885,7 @@ export function ApprovalRelease({
                 <input aria-label={`Commission value ${index+1}`} required type="number" min="0.01" max={line.basis==="percent"?100:undefined} step="0.01" value={line.value||""} onChange={e=>updateCommission(index,{value:Number(e.target.value)})}/>
                 {commissionLines.length>1&&<button type="button" className={s.button} onClick={()=>setCommissionLines(commissionLines.filter((_,i)=>i!==index))} aria-label={`Remove commission ${index+1}`}>{t("Remove")}</button>}
               </div>)}{commissionLines.length<3&&<button type="button" className={s.button} onClick={()=>setCommissionLines([...commissionLines,newCommissionLine()])}>{t("Add recipient")}</button>}</div>
-              <div className={s.checkGrid}>{Object.keys(checklist).filter(key => !d.palmFlow || key !== "materials").map(key=><label key={key}><input type="checkbox" checked={checklist[key as keyof typeof checklist]} onChange={e=>setChecklist({...checklist,[key]:e.target.checked})}/><span>{key.replaceAll("_"," ")}</span></label>)}</div>
+              <div className={s.checkGrid}>{Object.keys(checklist).filter(key => !d.servicePath || key !== "materials").map(key=><label key={key}><input type="checkbox" checked={checklist[key as keyof typeof checklist]} onChange={e=>setChecklist({...checklist,[key]:e.target.checked})}/><span>{key.replaceAll("_"," ")}</span></label>)}</div>
               <label>{t("Submission note")}<textarea required value={note} onChange={e=>setNote(e.target.value)} placeholder={t("Summarize payment evidence, pricing decision and any conditions.")}/></label>
               {state.canEdit&&<button className={s.primary} disabled={busy||state.opportunityStatus!=="won"||!note.trim()||commissionLines.some(line=>!line.recipientName||line.value<=0)}>{t("Send to Finance")}</button>}
             </form>}
@@ -893,7 +893,7 @@ export function ApprovalRelease({
         </>
       ) : tab === "materials" ? (
         <>
-          <div className={s.header}><div><h2>{t("Client material selections")}</h2><p className={s.muted}>{t("After payment, record the material meeting and send the selected list to the client. Sign-off is required before procurement.")}</p></div>{state.canEdit&&<button className={s.button} disabled={busy||!accepted||(Boolean(d.palmFlow)&&d.dealFile?.quoteId!==accepted.id)} onClick={()=>void run('sync_material_approvals')}>{t("Prepare from quotation")}</button>}</div>
+          <div className={s.header}><div><h2>{t("Client material selections")}</h2><p className={s.muted}>{t("After payment, record the material meeting and send the selected list to the client. Sign-off is required before procurement.")}</p></div>{state.canEdit&&<button className={s.button} disabled={busy||!accepted||(Boolean(d.servicePath)&&d.dealFile?.quoteId!==accepted.id)} onClick={()=>void run('sync_material_approvals')}>{t("Prepare from quotation")}</button>}</div>
           {(d.materialApprovals ?? []).filter(item=>item.quoteId===accepted?.id).map(item=><div className={s.materialRow} key={item.id}>
             {item.photo?<Image src={item.photo} alt="" width={64} height={64} unoptimized/>:<span className={s.materialThumb}>{t("No photo")}</span>}
             <div><strong>{item.name}</strong><span>{item.room} · {item.item}</span><small>{[item.brand,item.code].filter(Boolean).join(' · ')||item.specification}</small>{item.decisionNote&&<small>{t("Client remark:")}{" "}{item.decisionNote}</small>}</div>
@@ -915,11 +915,11 @@ export function ApprovalRelease({
           </ControlledModalDialog>
         </>
       ) : tab === "release" ? (
-        d.palmFlow && !d.palmFlow.scope.mainQuotation ? <EmptyState illustration="done" title={t("Design-only project")} description={t("This path ends with the approved design. Procurement and production don’t apply.")}
+        d.servicePath && !d.servicePath.scope.mainQuotation ? <EmptyState illustration="done" title={t("Design-only project")} description={t("This path ends with the approved design. Procurement and production don’t apply.")}
           action={<Link className="wd-button" data-size="compact" data-variant="primary" href={sectionHref?.("designs") ?? `${root}/designs`}>{t("Open design")}</Link>} /> : <>
           <p className={s.muted}>
-            {d.palmFlow
-              ? d.palmFlow.scope.mainQuotation
+            {d.servicePath
+              ? d.servicePath.scope.mainQuotation
                 ? "Release the approved main scope after the material list is signed off. The same project and Deal File continue into procurement."
                 : "This design-only project ends after Design & Specifications. Delivery release does not apply."
               : "Release the accepted scope after checking technical and site conditions. This opens the connected project with its approved BOQ and payment evidence."}
@@ -961,14 +961,14 @@ export function ApprovalRelease({
                   placeholder={t("Reference the approved drawings, scope and site checks. Record any authorized conditions.")}
                 />
               </label>
-              {state.canRelease && (!d.palmFlow || d.palmFlow.scope.mainQuotation) && (
+              {state.canRelease && (!d.servicePath || d.servicePath.scope.mainQuotation) && (
                 <button
                   className={s.primary}
                   disabled={
                     busy ||
                     state.opportunityStatus !== "won" ||
                     !commercialReleaseInputsReady(d) ||
-                    ((!d.palmFlow || d.palmFlow.scope.design) &&
+                    ((!d.servicePath || d.servicePath.scope.design) &&
                       (!state.releaseReadiness ||
                        state.releaseReadiness.designsRequired === 0 ||
                        state.releaseReadiness.designsApproved !== state.releaseReadiness.designsRequired)) ||
@@ -976,7 +976,7 @@ export function ApprovalRelease({
                   }
                   onClick={() => void run("release", { note })}
                 >
-                  {d.palmFlow ? "Release to procurement" : "Release & open project"}
+                  {d.servicePath ? "Release to procurement" : "Release & open project"}
                 </button>
               )}
             </div>
