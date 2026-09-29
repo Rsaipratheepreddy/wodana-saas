@@ -26,13 +26,16 @@ describe("theme bootstrap", () => {
   });
 
   it("uses the device's theme when none is stored", () => {
-    expect(runAt("/login", { prefersDark: true })).toBe("dark");
-    expect(runAt("/login", {})).toBe("light");
+    expect(runAt("/workspace/crm", { prefersDark: true })).toBe("dark");
+    expect(runAt("/workspace/crm", {})).toBe("light");
     expect(runAt("/workspace", { stored: "sepia", prefersDark: true })).toBe("dark");
   });
 
   it("keeps client and supplier pages light", () => {
     expect(runAt("/portal/palm", { stored: "dark" })).toBe("light");
+    // Sign-in pages carry the tenant's light co-branding (a dark logo on a light card).
+    expect(runAt("/login", { stored: "dark", prefersDark: true })).toBe("light");
+    expect(runAt("/internal/sign-in", { prefersDark: true })).toBe("light");
     expect(runAt("/enquiry/abc", { prefersDark: true })).toBe("light");
     expect(runAt("/quotation/case-1", { stored: "dark" })).toBe("light");
     expect(runAt("/vendor/order", { stored: "dark" })).toBe("light");
