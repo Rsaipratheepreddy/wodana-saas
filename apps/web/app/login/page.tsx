@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { getServerT } from "@/lib/i18n/server";
 import { notFound } from "next/navigation";
 import { businessApiUrl } from "@/lib/auth/server";
+import { safeNextPath } from "@/lib/auth/next-path";
 import { resolveTenantHost, type TenantBranding } from "@/lib/auth/resolve-tenant-host";
 import { LoginScreen } from "./login-screen";
 
@@ -45,7 +46,7 @@ export default async function LoginPage({
   const query = await searchParams;
   const t = await getServerT();
   const tenant = await getTenantBranding(query.tenant);
-  const nextPath = query.next?.startsWith("/workspace") || query.next?.startsWith("/internal") ? query.next : "/workspace";
+  const nextPath = safeNextPath(query.next);
   return (
     <LoginScreen
       invitationToken={query.invitation && query.invitation.length <= 256 ? query.invitation : undefined}

@@ -8,6 +8,7 @@ import { APPROVAL_FILTERS, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, 
 import styles from "./waiting-for-you.module.css";
 import { APPROVALS_CHANGED, WAITING_SCOPES } from "./use-waiting-count";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
+import { cardTitle } from "@/components/woddy/woddy-action-card";
 
 type Pending = { row: ApprovalRow; decision: "approve" | "return" | "reject" };
 
@@ -53,10 +54,12 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     if (!row.currency) return row.amount;
     try { return new Intl.NumberFormat(locale, { style: "currency", currency: row.currency }).format(Number(row.amount)); } catch { return `${row.currency} ${row.amount}`; }
   };
+  // A row whose title is a sentence (an AI app's change) reads in the person's language.
+  const title = (row: ApprovalRow) => row.phrase?.key ? cardTitle(t, { title: row.phrase, summary: row.title }) : row.title;
   const columns: DataGridColumn<ApprovalRow>[] = [
-    { id: "what", header: t("Waiting"), size: 300, accessorFn: (row) => row.title, meta: { primary: true, renderCell: (row) => <span className={styles.what}>
+    { id: "what", header: t("Waiting"), size: 300, accessorFn: (row) => title(row), meta: { primary: true, renderCell: (row) => <span className={styles.what}>
       <span className={styles.kind}>{t(KIND_LABEL[row.kind])}</span>
-      <span>{row.title}</span>
+      <span>{title(row)}</span>
     </span> } },
     { id: "about", header: t("About"), size: 200, accessorFn: (row) => row.subject ?? "", meta: { mobileHidden: true } },
     { id: "project", header: t("Project"), size: 180, accessorFn: (row) => row.project ? [row.project.reference, row.project.name].filter(Boolean).join(" · ") : "", meta: { mobileHidden: true } },

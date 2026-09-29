@@ -1,0 +1,4 @@
+/* A change an AI app prepared, waiting for the person's OK. */
+.page { display: grid; gap: var(--wd-space-4); min-inline-size: 0; padding: var(--wd-space-5); color: var(--wd-color-text); }
+.content { inline-size: 100%; max-inline-size: 40rem; min-inline-size: 0; }
+@media (max-width: 600px) { .page { padding: var(--wd-space-3); } }

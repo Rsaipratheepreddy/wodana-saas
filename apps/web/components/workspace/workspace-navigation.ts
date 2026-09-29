@@ -166,6 +166,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         items: [
           { href: "/workspace/integrations", icon: "integrations", id: "integrations", label: tKey("Integrations") },
           { href: "/workspace/settings/delivery", icon: "settings", id: "delivery-health", label: tKey("Delivery") },
+          { href: "/workspace/settings/ai-apps", icon: "integrations", id: "ai-apps", label: tKey("AI apps") },
         ],
       },
     ],

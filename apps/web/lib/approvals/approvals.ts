@@ -15,6 +15,7 @@ export const APPROVAL_FILTERS: Array<{ id: "all" | ApprovalGroup; label: Message
   { id: "site", label: tKey("Site") },
   { id: "stock", label: tKey("Stock") },
   { id: "finance", label: tKey("Finance") },
+  { id: "ai", label: tKey("AI apps") },
 ];
 
 /** What the row asks for, in a word or two. */
@@ -34,6 +35,7 @@ export const KIND_LABEL: Record<ApprovalKind, MessageKey> = {
   bill: tKey("Held bill"),
   payment_run: tKey("Payment run"),
   reimbursement: tKey("To reimburse"),
+  ai_action: tKey("AI app change"),
 };
 
 /** The button for the in-row approval, in the words of the record. */
