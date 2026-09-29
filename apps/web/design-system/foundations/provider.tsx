@@ -5,6 +5,7 @@ import {
   forwardRef,
   useContext,
   useMemo,
+  useSyncExternalStore,
   type HTMLAttributes,
   type ReactNode,
 } from "react";
@@ -47,13 +48,45 @@ const DEFAULT_SETTINGS: DesignSystemSettings = {
 };
 
 const DesignSystemContext = createContext<DesignSystemSettings>(DEFAULT_SETTINGS);
+/** The theme a provider above chose explicitly; null while every provider above follows the document. */
+const ChosenThemeContext = createContext<DesignSystemTheme | null>(null);
+
+const documentThemeListeners = new Set<() => void>();
+let documentThemeObserver: MutationObserver | null = null;
+
+function documentTheme(): DesignSystemTheme {
+  const theme = document.documentElement.dataset.theme;
+  return theme === "dark" || theme === "high-contrast" ? theme : "light";
+}
+
+function subscribeDocumentTheme(listener: () => void) {
+  documentThemeListeners.add(listener);
+  if (!documentThemeObserver && typeof MutationObserver !== "undefined") {
+    documentThemeObserver = new MutationObserver(() => documentThemeListeners.forEach((notify) => notify()));
+    documentThemeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  }
+  return () => {
+    documentThemeListeners.delete(listener);
+    if (!documentThemeListeners.size) { documentThemeObserver?.disconnect(); documentThemeObserver = null; }
+  };
+}
+
+/**
+ * The theme a provider without its own `theme` uses: the nearest provider that chose one, else the document's
+ * (the workspace's light/dark switch sets it on <html>), so a page's provider never pins light inside dark mode.
+ */
+function useInheritedTheme(): DesignSystemTheme {
+  const chosen = useContext(ChosenThemeContext);
+  const fromDocument = useSyncExternalStore(subscribeDocumentTheme, documentTheme, () => DEFAULT_SETTINGS.theme);
+  return chosen ?? fromDocument;
+}
 
 export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProviderProps>(
   function DesignSystemProvider(
     {
       children,
       className,
-      theme = DEFAULT_SETTINGS.theme,
+      theme: themeProp,
       density = DEFAULT_SETTINGS.density,
       locale: localeProp,
       regionLocale: regionLocaleProp,
@@ -70,6 +103,9 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     // their language with the region's conventions. React Aria gets that locale so keyboard, date fields
     // and overlay placement mirror too.
     const parent = useContext(DesignSystemContext);
+    const chosenTheme = useContext(ChosenThemeContext);
+    const inheritedTheme = useInheritedTheme();
+    const theme = themeProp ?? inheritedTheme;
     // A provider handed a full settings object (e.g. a nested provider re-using its parent's) keeps its region.
     const regionLocale = regionLocaleProp ?? localeProp ?? parent.regionLocale;
     const currency = currencyProp ?? parent.currency;
@@ -86,6 +122,7 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     );
 
     return (
+      <ChosenThemeContext.Provider value={themeProp ?? chosenTheme}>
       <DesignSystemContext.Provider value={value}>
         <I18nProvider locale={ariaLocale}>
           <div
@@ -101,6 +138,7 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
           </div>
         </I18nProvider>
       </DesignSystemContext.Provider>
+      </ChosenThemeContext.Provider>
     );
   },
 );
@@ -117,7 +155,9 @@ export function WorkspaceRegionProvider({ locale, currency, timeZone, children }
 }
 
 export function useDesignSystem(): DesignSystemSettings {
-  return useContext(DesignSystemContext);
+  const settings = useContext(DesignSystemContext);
+  const theme = useInheritedTheme();
+  return useMemo(() => (settings.theme === theme ? settings : { ...settings, theme }), [settings, theme]);
 }
 
 /** Portaled surfaces do not inherit theme and density from `.wd-root`. */
