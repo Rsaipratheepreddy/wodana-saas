@@ -9,14 +9,15 @@ The Expo app replaces the old Flutter app in both stores under the same identity
 | Expo account / project | `wodanas-team` / `wodana` |
 | App version | `2.0.0` (the old store app was `1.0.1`) |
 | Build number | EAS keeps it remotely and adds 1 per store build. It starts at `2026092800` (the old app's last build was `2026090101`). |
-| API (uat and production) | `https://plm.wodana.ai/api/v1` |
+| Build profiles (`eas.json`) | `development` (dev client), `preview` (UAT: internal APK and ad hoc iOS), `production` (store AAB and App Store build) |
+| API (preview and production) | `https://plm.wodana.ai/api/v1` |
 | Workspace | Chosen at sign-in from the email. To lock a build to one workspace, see step 3. |
 
 Credentials never go in the repository. That covers keystores, passwords, `google-services.json` and service-account keys; `.gitignore` refuses them. They live in EAS credentials or EAS environment variables. For a local build they can also live in `~/.gradle/gradle.properties`.
 
 ## What the owner provides
 
-1. **The EAS project id.** This is the UUID on expo.dev → wodanas-team → wodana → Overview. Push tokens are issued for it, and uat and production builds refuse to start without it.
+1. **The EAS project id.** This is the UUID on expo.dev → wodanas-team → wodana → Overview. It replaces the placeholder `REPLACE_WITH_EAS_PROJECT_ID` in `eas.json`. Push tokens are issued for it, and every EAS build refuses to start until it is set.
 2. **The Android upload keystore** that signed the old app: the `.jks` file, its alias and both passwords.
    - The old app's folder (`Wodana-Frontend/mobile_flutter/android`) has only `key.properties.example`. The keystore itself isn't there.
    - To find the right key, check Play Console → Wodana → Test and release → App integrity → App signing. The upload key certificate listed there is the one to match.
@@ -48,7 +49,7 @@ eas whoami
 
 ### 1. Link the EAS project
 
-Put the project id in `eas.json` (committed; it isn't a secret) and in the shell:
+Replace the placeholder in `eas.json` with the project id (committed; it isn't a secret), and export it for commands run outside a build:
 
 ```sh
 node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync("eas.json","utf8"));j.build.base.env.EXPO_PUBLIC_EAS_PROJECT_ID=process.argv[1];fs.writeFileSync("eas.json",JSON.stringify(j,null,2)+"\n")' <PROJECT_ID>
@@ -95,7 +96,7 @@ eas credentials --platform android
 3. Google Service Account → push notifications (FCM V1) → upload the Firebase service-account JSON.
 4. Google Service Account → Play Store submissions → upload the Play service-account JSON.
 
-Repeat step 2 for the `uat` profile when prompted; the same keystore can be reused.
+Repeat step 2 for the `preview` profile when prompted; the same keystore can be reused.
 
 ### 6. Build numbers
 
@@ -123,14 +124,16 @@ npx expo-doctor
 EXPO_PUBLIC_APP_ENV=production EXPO_PUBLIC_AUTH_API_URL=https://plm.wodana.ai/api/v1 npx expo config --type public
 ```
 
-### 2. Test with UAT builds
+### 2. Test with UAT builds (the `preview` profile)
 
 These are internal builds: an APK for Android and an ad hoc build for iOS on registered devices.
 
 ```sh
 eas device:create                               # once per tester iPhone
-eas build --profile uat --platform all
+eas build --profile preview --platform all
 ```
+
+For a developer build with the dev client (hot reload against a local API), use `eas build --profile development --platform ios` (or `android`).
 
 ### 3. Build and submit for the stores
 
@@ -183,7 +186,8 @@ cd android && ./gradlew bundleRelease     # android/app/build/outputs/bundle/rel
 3. Check in and out on Me or Today. The phone asks for location once.
 4. On a project, send a daily site report with a photo. Offline, it waits in Me → Waiting to send.
 5. Approve or return an item on Approvals, reached from Today's "N waiting for you".
-6. Send yourself a test notice from the web: Settings → Connections → Delivery → Send me a test. Tap it; the app opens its screen.
+6. For someone who answers clients: Inbox → Chats shows their chats; open one and add an internal note.
+7. Send yourself a test notice from the web: Settings → Connections → Delivery → Send me a test. Tap it; the app opens its screen.
 
 ## Store listing
 

@@ -30,7 +30,7 @@ if (release && !easProjectId) {
   throw new Error(`Set EXPO_PUBLIC_EAS_PROJECT_ID (expo.dev → the project's Overview) for the ${appEnvironment} build: push notifications need it.`);
 }
 if (easProjectId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(easProjectId)) {
-  throw new Error('EXPO_PUBLIC_EAS_PROJECT_ID must be the project UUID from expo.dev.');
+  throw new Error('EXPO_PUBLIC_EAS_PROJECT_ID must be the project UUID from expo.dev: replace REPLACE_WITH_EAS_PROJECT_ID in eas.json (RELEASE.md, step 1).');
 }
 // A store build talks to a real HTTPS API (eas.json sets it per profile); the phone refuses anything else.
 if (release) {

@@ -7,7 +7,8 @@
     "base": {
       "env": {
         "EXPO_PUBLIC_EXPO_OWNER": "wodanas-team",
-        "EXPO_PUBLIC_APP_SLUG": "wodana"
+        "EXPO_PUBLIC_APP_SLUG": "wodana",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "REPLACE_WITH_EAS_PROJECT_ID"
       }
     },
     "development": {
@@ -18,10 +19,10 @@
       "environment": "development",
       "env": { "EXPO_PUBLIC_APP_ENV": "development" }
     },
-    "uat": {
+    "preview": {
       "extends": "base",
       "distribution": "internal",
-      "channel": "uat",
+      "channel": "preview",
       "environment": "preview",
       "autoIncrement": true,
       "android": { "buildType": "apk" },
