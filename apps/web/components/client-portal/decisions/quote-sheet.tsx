@@ -67,7 +67,7 @@ export function QuoteSheet({ quote, caseId, slug, brand, customer, api, format, 
         ? <><TextAreaField label={decision === "changes" ? t("What would you like changed?") : t("Why are you declining?")} value={note} onChange={setNote} maxLength={6000} isRequired autoFocus />
           <AttachFiles caseId={caseId} api={api} onChange={setUploads} onBusy={setUploading} /></>
         : null}
-      <div className={styles.choices}>
+      <div className={`${styles.choices} ${styles.footChoices}`}>
         {decision ? <>
           <Button onPress={() => { setDecision(null); setNote(""); }}>{t("Back")}</Button>
           <Button variant="primary" isDisabled={(decision !== "accept" && !note.trim()) || uploading} onPress={() => setConfirming(true)}>{t("Continue")}</Button>

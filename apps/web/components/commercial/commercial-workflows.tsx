@@ -10,6 +10,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Check, Circle, Plus, X } from "lucide-react";
 import {
+  Badge,
   Button,
   Checkbox,
   DataGrid,
@@ -39,6 +40,7 @@ import { acceptedQuoteTotals, acceptedQuoteValue, money, statusLabel } from "@/l
 import { smallestAmount } from "@/lib/money-exact";
 import {
   activeDeliveryQuote,
+  agreementHasSignedEvidence,
   agreementIsOperational,
   agreementMatchesAcceptedQuote,
   commercialReleaseInputsReady,
@@ -70,6 +72,8 @@ const newCommissionLine = (): CommissionDraft => ({ recipientName: "", type: "sa
 const draftOf = ({ recipientName, type, basis, value }: CommissionLine): CommissionDraft => ({ recipientName, type, basis, value: value ? String(value) : "" });
 const sent = (line: CommissionDraft): CommissionLine => ({ ...line, value: Number(line.value || 0) });
 const commissionReady = (line: CommissionDraft) => Boolean(line.recipientName.trim()) && Number(line.value || 0) > 0;
+/** A row nobody filled in: it isn't a commission and isn't sent (a deal may have none). */
+const commissionBlank = (line: CommissionDraft) => !line.recipientName.trim() && !Number(line.value || 0);
 const commissionTypes = [
   { id: "sales", label: tKey("Sales") },
   { id: "designer", label: tKey("Designer") },
@@ -116,6 +120,8 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
   const conversation = request && !request.decisionRequest ? request.id : null;
   useEffect(() => { if (conversation) markRead(conversation); }, [conversation, markRead]);
   const fromClient = (comment: ChangeRequest["comments"][number]) => Boolean((comment as { fromClient?: boolean }).fromClient);
+  /** Who raised a request: kept on it, else the client contact whose portal command raised it. */
+  const raiser = (r: ChangeRequest) => r.raisedBy ?? (threads.raisedBy(r.id) ? { name: threads.raisedBy(r.id)!, client: true } : null);
   const lastReplyAt = request?.comments.filter((comment) => comment.visibility === "client" && !fromClient(comment)).map((comment) => comment.at).sort().at(-1) ?? null;
   const contractLines = availableContractLines(state.data);
   const decisionTargets = [
@@ -162,6 +168,7 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
       ) : (
         <div className={tableStyles.recordTablePanel}><DataGrid selectable={false} compactToolbar ariaLabel={t("Change requests")} data={state.data.requests} getRowId={row => row.id} searchLabel={t("Search change requests")} exportFileName="change-requests.csv" onRowAction={r => setSelected(r.id)} columns={[
           { id: "title", header: t("Request"), size: 320, accessorFn: (r) => `CR-${String(r.number).padStart(3, "0")} ${r.title}`, cell: ({ row: { original: r } }) => <button type="button" className={s.requestButton} onClick={() => setSelected(r.id)}><span className={s.muted}>{t("CR-")}{String(r.number).padStart(3, "0")} · </span>{r.title}</button> },
+          { id: "from", header: t("From"), size: 170, accessorFn: (r) => raiser(r)?.name ?? "", cell: ({ row: { original: r } }) => <>{raiser(r)?.name ?? "—"}</> },
           { id: "owner", header: t("Owner"), size: 180, accessorFn: (r) => r.owner || t("Unassigned"), cell: ({ row: { original: r } }) => <>{r.owner || t("Unassigned")}</> },
           { id: "due", header: t("Due"), size: 140, accessorFn: (r) => r.dueDate, cell: ({ row: { original: r } }) => <>{r.dueDate || "—"}</> },
           { id: "status", header: t("Status"), size: 160, accessorFn: (r) => translateKnown(t, statusLabel[r.status] ?? r.status), cell: ({ row: { original: r } }) => <span className={s.status} data-status={r.status}>{translateKnown(t, statusLabel[r.status] ?? r.status)}</span> },
@@ -270,6 +277,7 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
         }}
       >
         {request && <>
+          {raiser(request) ? <p className={s.muted}>{raiser(request)!.client ? t("From {name} · Client", { name: raiser(request)!.name }) : t("From {name}", { name: raiser(request)!.name })}</p> : null}
           <p className={s.requestDetail}>{request.detail}</p>
           <ClientFiles files={threads.files(request.id)} url={threads.fileUrl} />
           {request.decisionRequest ? <div className={s.notice}><strong>{request.decisionRequest.target.label}</strong><p>{t("Due")}{" "}{request.dueDate} {t("· Choices:")}{" "}{request.decisionRequest.allowedChoices.map((choice) => choice.label).join(" / ")}</p><p>{decisionPolicySummary(request.decisionRequest)}</p>{request.decisionRequest.decision ? <p>{t("Client response:")}{" "}{request.decisionRequest.decision.choiceLabel}{request.decisionRequest.decision.note ? ` · ${request.decisionRequest.decision.note}` : ""}</p> : <p>{t("Awaiting the designated client approver.")}</p>}</div> : null}
@@ -286,7 +294,7 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
             {request.comments.map((c) => (
               <li key={c.id}>
                 <strong>{c.author}</strong>{" "}
-                <small>{c.visibility === "internal" ? t("Internal note") : t("Client conversation")}</small>
+                <small>{c.visibility === "internal" ? t("Internal note") : fromClient(c) ? t("Client") : t("Reply to client")}</small>
                 <p>{c.text}</p>
                 <ClientFiles files={threads.files(c.id)} url={threads.fileUrl} />
                 <small>{new Date(c.at).toLocaleString()}</small>
@@ -362,6 +370,8 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
     verifying = receiptPayment?.status === "proof_submitted";
   const paymentCurrency = accepted?.currency ?? state.currency ?? workspaceCurrency;
   const agreementChanged = agreement.reference !== savedAgreement.reference || agreement.terms !== savedAgreement.terms || agreement.evidence !== savedAgreement.evidence;
+  // Why the signed agreement can't be verified yet: unsaved edits, or nothing signed on record (a file or its description).
+  const verifyBlocker = agreementChanged ? t("Save the agreement first.") : !agreementHasSignedEvidence(a) ? t("Attach the signed agreement first.") : "";
   const receiptLabel = (status?: string) => status === "finance_verified" ? t("Finance verified") : status === "provider_confirmed" ? t("Provider confirmed") : status === "reported" ? t("Receipt reported") : t("Payment request only");
   return (
     <>
@@ -398,8 +408,11 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
           ) : (
             a &&
             state.canApprove && (
-              <div className={s.formActions}><Button variant="primary" isDisabled={busy || !a.evidence || agreementChanged}
-                onPress={() => void run("execute_agreement")}>{t("Verify signed agreement")}</Button></div>
+              <div className={s.formActions}>
+                {verifyBlocker ? <span className={s.muted} role="status">{verifyBlocker}</span> : null}
+                <Button variant="primary" isDisabled={busy || Boolean(verifyBlocker)}
+                  onPress={() => void run("execute_agreement")}>{t("Verify signed agreement")}</Button>
+              </div>
             )
           )}
         </div>
@@ -409,7 +422,8 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
             {state.data.financeContext ? (
               <p className={s.detail}>
                 {state.data.financeContext.displayName} · {state.data.financeContext.code} · {state.data.financeContext.currency}
-                {state.data.financeContext.taxValidation === "unvalidated" ? ` · ${t("Tax configuration not regionally validated")}` : ""}
+                {/* The tax setup in plain words when the region's rates aren't confirmed yet. */}
+                {state.data.financeContext.taxValidation === "unvalidated" ? <> <Badge tone="warning">{t("Tax rates not confirmed for this region")}</Badge></> : null}
               </p>
             ) : <span />}
             {state.canEdit && (
@@ -527,18 +541,20 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
 function CommissionFields({ currency, index, line, onChange, onRemove, fixedRecipient }: { currency: string; index: number; line: CommissionDraft; onChange: (next: Partial<CommissionDraft>) => void; onRemove?: () => void; fixedRecipient?: boolean }) {
   const t = useT();
   const title = fixedRecipient ? `${line.recipientName} · ${translateKnown(t, commissionTypes.find((type) => type.id === line.type)?.label ?? line.type)}` : t("Commission {number}", { number: index + 1 });
+  // An untouched row is optional; once it's being filled in, it needs a recipient and a value.
+  const required = Boolean(fixedRecipient) || !commissionBlank(line);
   return <FormSection title={<span className={s.commissionTitle}>{title}{onRemove ? <IconButton aria-label={t("Remove commission {number}", { number: index + 1 })} onPress={onRemove}><X size={14} /></IconButton> : null}</span>}>
     {fixedRecipient ? null : <FormRow>
-      <TextInput isRequired label={t("Recipient")} maxLength={160} value={line.recipientName} onChange={(recipientName) => onChange({ recipientName })} />
-      <SelectField isRequired label={t("Type")} items={commissionTypes.map((type) => ({ id: type.id, label: t(type.label) }))} selectedKey={line.type}
+      <TextInput isRequired={required} label={t("Recipient")} maxLength={160} value={line.recipientName} onChange={(recipientName) => onChange({ recipientName })} />
+      <SelectField isRequired={required} label={t("Type")} items={commissionTypes.map((type) => ({ id: type.id, label: t(type.label) }))} selectedKey={line.type}
         onSelectionChange={(key) => onChange({ type: String(key ?? "sales") as CommissionDraft["type"] })} />
     </FormRow>}
     <FormRow>
-      <SelectField isRequired label={t("Basis")} items={[{ id: "amount", label: currency }, { id: "percent", label: t("Percentage") }]} selectedKey={line.basis}
+      <SelectField isRequired={required} label={t("Basis")} items={[{ id: "amount", label: currency }, { id: "percent", label: t("Percentage") }]} selectedKey={line.basis}
         onSelectionChange={(key) => onChange({ basis: String(key ?? "amount") as CommissionDraft["basis"], value: "" })} />
       {line.basis === "percent"
-        ? <PercentageInput isRequired label={t("Share")} minValue={0.01} value={line.value ? Number(line.value) : Number.NaN} onChange={(value) => onChange({ value: Number.isFinite(value) ? String(value) : "" })} />
-        : <MoneyField isRequired label={t("Amount")} currency={currency} min={smallestAmount(currency)} value={line.value} onChange={(value) => onChange({ value })} />}
+        ? <PercentageInput isRequired={required} label={t("Share")} minValue={0.01} value={line.value ? Number(line.value) : Number.NaN} onChange={(value) => onChange({ value: Number.isFinite(value) ? String(value) : "" })} />
+        : <MoneyField isRequired={required} label={t("Amount")} currency={currency} min={smallestAmount(currency)} value={line.value} onChange={(value) => onChange({ value })} />}
     </FormRow>
   </FormSection>;
 }
@@ -554,7 +570,9 @@ export function ApprovalRelease({
   const t = useT();
   const [tab, setTab] = useState<string>(initialView),
     [note, setNote] = useState(""),
+    // Finance's note and the approver's remarks are separate: one never pre-fills the other.
     [decisionNote, setDecisionNote] = useState(""),
+    [ownerNote, setOwnerNote] = useState(""),
     [commissionLines, setCommissionLines] = useState<CommissionDraft[]>(state.data.ownerReview?.commissionLines?.map(draftOf) ?? [newCommissionLine()]),
     [financeDraft, setFinanceDraft] = useState<{ key: string; lines: CommissionDraft[] }>({ key: "", lines: [] }),
     [paymentProofUrl, setPaymentProofUrl] = useState(state.data.ownerReview?.paymentProofUrl ?? ""),
@@ -588,6 +606,10 @@ export function ApprovalRelease({
     if (finance) setFinanceDraft({ key: reviewKey, lines: next }); else setCommissionLines(next);
   };
   const checklistKeys = Object.keys(checklist).filter(key => !d.servicePath || key !== "materials");
+  // Why Send to Finance can't be pressed yet (the opportunity's Won state has its own notice above the form).
+  const unfinishedCommission = commissionLines.findIndex((line) => !commissionBlank(line) && !commissionReady(line));
+  const sendBlocker = unfinishedCommission >= 0 ? t("Finish commission {number} or remove it.", { number: unfinishedCommission + 1 })
+    : !note.trim() ? t("Write the submission note.") : "";
   const checks = [
     { label: tKey("Client accepted the quotation"), done: Boolean(deliveryQuote), href: "quotations" },
     {
@@ -620,7 +642,7 @@ export function ApprovalRelease({
         Boolean(d.ownerReview.financeReviewedById) &&
         d.dealFile?.quoteId === deliveryQuote?.id &&
         Boolean(d.dealFile?.paymentProofUrl) &&
-        Boolean(d.dealFile?.commissionLines?.length),
+        Array.isArray(d.dealFile?.commissionLines),
       href: "execution-release",
       view: "owner",
     },
@@ -683,27 +705,33 @@ export function ApprovalRelease({
               <h2>{t("3 · Owner approval")}</h2>
               <ul className={s.checkList}>{Object.entries(d.ownerReview.checklist).filter(([key]) => !d.servicePath || key !== "materials").map(([key, done]) => <li key={key} data-done={done}>{done ? <Check aria-hidden="true" size={14} /> : <Circle aria-hidden="true" size={14} />}{translateKnown(t, checklistLabel[key] ?? key)}</li>)}</ul>
               <ul className={s.checkList}>{(d.ownerReview.finalCommissionLines ?? []).map((line, index) => <li key={`${line.type}-${index}`}>{line.recipientName} · {translateKnown(t, commissionTypes.find((type) => type.id === line.type)?.label ?? line.type)} · {money(line.amount, accepted.currency)}</li>)}</ul>
-              <TextAreaField label={t("Decision remarks")} value={decisionNote} onChange={setDecisionNote} placeholder={t("Required when returning or rejecting.")} />
               {!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals) && <p className={s.notice}>{t("Complete every client material decision before creating the Deal File.")}</p>}
-              {state.canApproveDeal && <div className={s.formActions}>
-                <Button variant="danger" isDisabled={busy || !decisionNote.trim()} onPress={() => void run("decide_owner_review", { decision: "reject", note: decisionNote })}>{t("Reject")}</Button>
-                <Button isDisabled={busy || !decisionNote.trim()} onPress={() => void run("decide_owner_review", { decision: "return", note: decisionNote })}>{t("Return for correction")}</Button>
-                <Button variant="primary" isLoading={busy} isDisabled={busy || Object.entries(d.ownerReview.checklist).some(([key, value]) => !value && (!d.servicePath || key !== "materials")) || (!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals))} onPress={() => void run("decide_owner_review", { decision: "approve", note: decisionNote })}>{t("Approve Deal File")}</Button>
-              </div>}
-            </section> : d.dealFile?.quoteId !== accepted.id && <Form className={s.ownerForm} onSubmit={async e => { e.preventDefault(); await run("submit_owner_review", { commissionLines: commissionLines.map(sent), paymentProofUrl, checklist, note }); }}>
+              {/* Only an approver who didn't submit or verify this deal decides it; everyone else sees who does. */}
+              {state.canApproveDeal && ![d.ownerReview.submittedById, d.ownerReview.financeReviewedById].includes(state.viewerId) ? <>
+                <TextAreaField label={t("Decision remarks")} value={ownerNote} onChange={setOwnerNote} placeholder={t("Required when returning or rejecting.")} />
+                <div className={s.formActions}>
+                  <Button variant="danger" isDisabled={busy || !ownerNote.trim()} onPress={() => void run("decide_owner_review", { decision: "reject", note: ownerNote })}>{t("Reject")}</Button>
+                  <Button isDisabled={busy || !ownerNote.trim()} onPress={() => void run("decide_owner_review", { decision: "return", note: ownerNote })}>{t("Return for correction")}</Button>
+                  <Button variant="primary" isLoading={busy} isDisabled={busy || Object.entries(d.ownerReview.checklist).some(([key, value]) => !value && (!d.servicePath || key !== "materials")) || (!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals))} onPress={() => void run("decide_owner_review", { decision: "approve", note: ownerNote })}>{t("Approve Deal File")}</Button>
+                </div>
+              </> : state.stepHolders?.approveDeal.length ? <p className={s.muted}>{t("Waiting for {names}", { names: state.stepHolders.approveDeal.join(", ") })}</p> : null}
+            </section> : d.dealFile?.quoteId !== accepted.id && <Form className={s.ownerForm} onSubmit={async e => { e.preventDefault(); await run("submit_owner_review", { commissionLines: commissionLines.filter((line) => !commissionBlank(line)).map(sent), paymentProofUrl, checklist, note }); }}>
               <h2>{t("1 · Submit Deal File")}</h2>
               {d.ownerReview && <p className={s.notice}>{t("Previous decision:")}{" "}{translateKnown(t, statusLabel[d.ownerReview.status] ?? d.ownerReview.status)}. {d.ownerReview.financeNote ?? d.ownerReview.decisionNote}</p>}
               {state.opportunityStatus !== "won" && <p className={s.notice}>{t("Mark the linked opportunity Won before submitting this Deal File.")}</p>}
               <TextInput isRequired inputType="url" label={t("Proof-of-payment link")} value={paymentProofUrl} onChange={setPaymentProofUrl} placeholder={t("https://…")} />
               {commissionLines.map((line, index) => <CommissionFields key={index} currency={accepted.currency} index={index} line={line}
                 onChange={(update) => updateCommission(index, update)}
-                onRemove={commissionLines.length > 1 ? () => setCommissionLines(commissionLines.filter((_, i) => i !== index)) : undefined} />)}
+                onRemove={() => setCommissionLines(commissionLines.filter((_, i) => i !== index))} />)}
               {commissionLines.length < 3 && <div><Button size="compact" variant="quiet" onPress={() => setCommissionLines([...commissionLines, newCommissionLine()])}><Plus size={14} />{t("Add recipient")}</Button></div>}
               <FormSection title={t("Checklist")}>
                 <div className={s.checkGrid}>{checklistKeys.map(key => <Checkbox key={key} isSelected={checklist[key as keyof typeof checklist]} onChange={(done) => setChecklist({ ...checklist, [key]: done })}>{translateKnown(t, checklistLabel[key] ?? key)}</Checkbox>)}</div>
               </FormSection>
               <TextAreaField isRequired label={t("Submission note")} value={note} onChange={setNote} placeholder={t("Summarize payment evidence, pricing decision and any conditions.")} />
-              {state.canEdit && <div className={s.formActions}><Button type="submit" variant="primary" isLoading={busy} isDisabled={busy || state.opportunityStatus !== "won" || !note.trim() || !commissionLines.every(commissionReady)}>{t("Send to Finance")}</Button></div>}
+              {state.canEdit && <div className={s.formActions}>
+                {sendBlocker ? <span className={s.muted} role="status">{sendBlocker}</span> : null}
+                <Button type="submit" variant="primary" isLoading={busy} isDisabled={busy || state.opportunityStatus !== "won" || Boolean(sendBlocker)}>{t("Send to Finance")}</Button>
+              </div>}
             </Form>}
           </>}
         </>

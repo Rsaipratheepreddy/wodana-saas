@@ -131,6 +131,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
         <Button size="compact" isDisabled={!detail} onPress={() => setEditing(true)}>{t("Edit details")}</Button>
         {/* Junk from a form (S-13): closed as spam, out of reports, and the contact blocked. */}
         {!live.isConverted && !live.spamAt ? <Button size="compact" variant="quiet" isDisabled={!detail} onPress={() => setAction({ title: t("Mark as spam"), path: `leads/${lead.id}/spam`, method: "POST", submit: t("Mark as spam"),
+          description: t("This closes the enquiry as spam and blocks the number, unless the client has other work with you."), submitVariant: "danger",
           fields: [], transform: () => ({ version }) })}>{t("Mark as spam")}</Button> : null}
       </div>
     </header>
@@ -156,7 +157,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
           <EditableField canEdit={canEdit} display={leadOptionLabel(options?.enquiryTypes, text(enquiry?.serviceType ?? lead.serviceType))} items={withCurrent(options?.enquiryTypes, text(enquiry?.serviceType ?? lead.serviceType))} kind="select" label={t("Enquiry type")}
             onReload={resource.refresh} onSave={(serviceType) => saveDetails({ serviceType })} value={text(enquiry?.serviceType ?? lead.serviceType)} />
           <div><dt>{t("Sales team")}</dt><dd>{initialData.queues.find(q => q.id === live.queueId)?.name ?? t("Not assigned")}</dd></div>
-          {live.ownershipDueAt ? <div><dt>{t("Reassign if no call or note")}</dt><dd>{dateText(live.ownershipDueAt)}</dd></div> : null}
+          {live.ownershipDueAt ? <div><dt>{t("Reassign if no call or note")}</dt><dd>{dateText(live.ownershipDueAt, zoned)}</dd></div> : null}
           <EditableField canEdit={canEdit} countryCode={text(contact.mobileCountryCode ?? contact.phoneCountryCode)} display={phoneText(enquiry?.primaryMobile ?? contact.mobile, contact.mobileCountryCode ?? contact.phoneCountryCode)} isRequired kind="phone" label={t("Mobile")}
             onReload={resource.refresh} onSave={(mobile, { countryCode }) => saveDetails({ party: { mobile, ...(countryCode ? { mobileCountryCode: countryCode } : {}) } })} value={text(enquiry?.primaryMobile ?? contact.mobile)} />
           <EditableField canEdit={canEdit} countryCode={text(contact.phoneCountryCode)} display={phoneText(enquiry?.primaryPhone ?? contact.phone)} kind="phone" label={t("Phone")} placeholder={t("Not provided")}
@@ -178,8 +179,8 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
           <EditableField canEdit={canEdit} kind="url" label={t("Website")} maxLength={255} onReload={resource.refresh} onSave={(website) => saveDetails({ party: { website } })} placeholder={t("Not provided")} value={text(contact.website)} />
           <EditableField canEdit={canEdit} label={t("Address")} maxLength={500} onReload={resource.refresh} onSave={(address) => saveDetails({ party: { address } })} placeholder={t("Not provided")} value={text(contact.address)} />
           <EditableField canEdit={canEdit} label={t("Campaign")} maxLength={160} onReload={resource.refresh} onSave={(campaign) => saveDetails({ details: { campaign } })} placeholder={t("Not provided")} value={text(enquiryDetails.campaign)} />
-          <div><dt>{t("Created")}</dt><dd>{dateText(live.createdAt)}</dd></div>
-          <div><dt>{t("Last updated")}</dt><dd>{dateText(live.updatedAt)}</dd></div>
+          <div><dt>{t("Created")}</dt><dd>{dateText(live.createdAt, zoned)}</dd></div>
+          <div><dt>{t("Last updated")}</dt><dd>{dateText(live.updatedAt, zoned)}</dd></div>
           {configuredFields.filter(field => answers[field.key] !== undefined).map(field => <div key={field.key}><dt>{field.label}</dt><dd>{qualificationAnswerText(answers[field.key])}</dd></div>)}
           <EditableField canEdit={canEdit} kind="multiline" label={t("Internal notes")} maxLength={10000} onReload={resource.refresh} onSave={(internalNotes) => saveDetails({ details: { internalNotes } })} placeholder={t("Not provided")} value={text(enquiryDetails.internalNotes)} />
         </dl>
@@ -203,23 +204,23 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
           ...(enquiry?.originalSource ? [[t("Chosen at intake"), `${leadOptionLabel(initialData.leadOptions?.sources, String(enquiry.originalSource))} · ${leadOptionLabel(initialData.leadOptions?.channels[String(enquiry.originalSource)], String(enquiry.originalChannel ?? ""))}`] as [string, string]] : []),
           ...(enquiry?.referral ? [[t("Referred by"), referralText(enquiry.referral as Referral, t, initialData.leadOptions)] as [string, string]] : []),
           [t("Intake method"), label(String(enquiry?.intakeMethod ?? lead.intakeMethod ?? "manual"))],
-          [t("Received"), dateText(enquiry?.receivedAt)],
-          [t("Processed"), dateText(enquiry?.processedAt)],
+          [t("Received"), dateText(enquiry?.receivedAt, zoned)],
+          [t("Processed"), dateText(enquiry?.processedAt, zoned)],
           [t("External reference"), String(enquiry?.externalEventId ?? t("Not supplied"))],
           [t("Correlation reference"), String(enquiry?.correlationId ?? t("Not supplied"))],
         ]} />
         <h4>{t("Attribution")}</h4>
-        {attribution.length ? attribution.map((touch) => <div className={styles.row} key={String(touch.id)}><div><strong>{label(String(touch.source))}</strong><small>{[touch.medium ? label(String(touch.medium)) : null, touch.campaign, touch.content].filter(Boolean).map(String).join(" · ") || t("Direct attribution")} · {dateText(touch.touchedAt)}</small>{touch.referrer ? <p>{String(touch.referrer)}</p> : null}</div></div>) : <p className={styles.empty}>{t("No campaign attribution was supplied.")}</p>}
-        {latestSla && <p>{t("Response target: {status} · {date}", { status: label(latestSla.status), date: dateText(latestSla.dueAt) })}</p>}
-        {live.ownershipDueAt && <p>{t("Ownership review: {date}", { date: dateText(live.ownershipDueAt) })}</p>}
+        {attribution.length ? attribution.map((touch) => <div className={styles.row} key={String(touch.id)}><div><strong>{label(String(touch.source))}</strong><small>{[touch.medium ? label(String(touch.medium)) : null, touch.campaign, touch.content].filter(Boolean).map(String).join(" · ") || t("Direct attribution")} · {dateText(touch.touchedAt, zoned)}</small>{touch.referrer ? <p>{String(touch.referrer)}</p> : null}</div></div>) : <p className={styles.empty}>{t("No campaign attribution was supplied.")}</p>}
+        {latestSla && <p>{t("Response target: {status} · {date}", { status: label(latestSla.status), date: dateText(latestSla.dueAt, zoned) })}</p>}
+        {live.ownershipDueAt && <p>{t("Ownership review: {date}", { date: dateText(live.ownershipDueAt, zoned) })}</p>}
         <h4>{t("Assignment history")}</h4>
         {((detail?.assignments ?? []) as RecordData[]).map(entry => <div key={String(entry.id)}>
           <strong>{entry.explanation && (entry.explanation as RecordData).mode === "unassigned" ? t("Left unassigned") : label(String(entry.assignmentMethod))}</strong>
-          <p>{initialData.members.find(member => member.id === entry.ownerMembershipId)?.displayName ?? t("Unassigned")} · {dateText(entry.assignedAt)}</p>
+          <p>{initialData.members.find(member => member.id === entry.ownerMembershipId)?.displayName ?? t("Unassigned")} · {dateText(entry.assignedAt, zoned)}</p>
           {entry.reason ? <p>{String(entry.reason)}</p> : null}
         </div>)}
         <h4>{t("Original enquiry")}</h4>
-        <p>{dateText(enquiry?.receivedAt)} · {label(String(enquiry?.intakeMethod ?? ""))}</p>
+        <p>{dateText(enquiry?.receivedAt, zoned)} · {label(String(enquiry?.intakeMethod ?? ""))}</p>
         <p style={{ whiteSpace: "pre-wrap" }}>{String((enquiry?.originalSubmission as RecordData | undefined)?.summary ?? t("No project description provided"))}</p>
       </div> },
       { id: "changes", label: t("History"), panel: <ChangeHistory workspaceId={workspaceId} leadId={lead.id} members={initialData.members} /> },

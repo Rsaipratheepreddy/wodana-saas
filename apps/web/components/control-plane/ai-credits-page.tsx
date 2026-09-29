@@ -35,7 +35,7 @@ export function AiCreditsPage({ canManage }: { canManage: boolean }) {
   }, [data, search]);
   const format = useConsoleFormat();
   const columns = useMemo<DataGridColumn<AiCreditsOrganization>[]>(() => [
-    { id: "organization", header: t("Organization"), size: 260, accessorFn: (row) => row.name, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
+    { id: "organization", header: t("Organization"), size: 260, accessorFn: (row) => row.name, meta: { primary: true, interactive: true, renderCell: (row) => <span className={styles.nameCell}>
       {row.accountId ? <Link href={`/internal/accounts/${row.accountId}?tab=ai-credits&org=${encodeURIComponent(row.key)}`}>{row.name}</Link> : <strong>{row.name}</strong>}
       <small>{row.aiEnabled ? t("AI on") : t("AI off")}</small></span> } },
     { id: "balance", header: t("Balance"), size: 150, accessorFn: (row) => row.balance, meta: { align: "end", renderCell: (row) => <span className={styles.inline}>

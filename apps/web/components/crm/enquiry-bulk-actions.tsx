@@ -54,7 +54,13 @@ export function EnquiryBulkDialog({ mode, rows, initialData, onClose, onDone }: 
   const [failures, setFailures] = useState<Array<{ name: string; message: string }>>([]);
   const targets = mode === "follow_up" ? rows : rows.filter(OPEN);
   const ready = mode === "assign" ? Boolean(owner) : mode === "status" ? Boolean(status) : mode === "close" ? Boolean(reason.trim()) : Boolean(title.trim() && due);
-  const heading: Record<BulkMode, MessageKey> = { assign: tKey("Assign {count} enquiries"), status: tKey("Change the status of {count} enquiries"), follow_up: tKey("Add a follow-up to {count} enquiries"), close: tKey("Close {count} enquiries") };
+  // One enquiry reads as one ("Assign 1 enquiry"), several as several.
+  const heading: Record<BulkMode, [MessageKey, MessageKey]> = {
+    assign: [tKey("Assign 1 enquiry"), tKey("Assign {count} enquiries")],
+    status: [tKey("Change the status of 1 enquiry"), tKey("Change the status of {count} enquiries")],
+    follow_up: [tKey("Add a follow-up to 1 enquiry"), tKey("Add a follow-up to {count} enquiries")],
+    close: [tKey("Close 1 enquiry"), tKey("Close {count} enquiries")],
+  };
 
   const apply = async () => {
     setBusy(true); setFailures([]);
@@ -69,11 +75,11 @@ export function EnquiryBulkDialog({ mode, rows, initialData, onClose, onDone }: 
     }
     setBusy(false);
     if (failed.length) { setFailures(failed); if (done) await onDone(t("{done} done · {failed} not changed", { done, failed: failed.length })); return; }
-    await onDone(t("{count} enquiries updated.", { count: done }));
+    await onDone(done === 1 ? t("1 enquiry updated.") : t("{count} enquiries updated.", { count: done }));
     onClose();
   };
 
-  return <ControlledModalDialog isOpen size="md" title={t(heading[mode], { count: targets.length })} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
+  return <ControlledModalDialog isOpen size="md" title={t(heading[mode][targets.length === 1 ? 0 : 1], { count: targets.length })} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{failures.length ? t("Close") : t("Cancel")}</Button>
       {failures.length ? null : <Button variant={mode === "close" ? "danger" : "primary"} isLoading={busy} isDisabled={!ready || !targets.length} onPress={() => void apply()}>{t("Apply to {count}", { count: targets.length })}</Button>}</div>}>
     <div className={styles.bulkForm}>

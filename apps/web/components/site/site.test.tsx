@@ -64,6 +64,18 @@ describe("daily progress", () => {
     expect(within(waiting).queryByRole("link", { name: "Download PDF" })).not.toBeInTheDocument();
   });
 
+  it("offers the Access view only to someone who may see who is allowed on site (m14)", async () => {
+    mount(() => state({ canSeeSiteAccess: false }));
+    const { unmount } = site();
+    await screen.findByRole("region", { name: "Daily progress" });
+    expect(screen.getByRole("radio", { name: "Deliveries" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Access" })).not.toBeInTheDocument();
+    unmount();
+    mount(() => state({ canSeeSiteAccess: true }));
+    site();
+    expect(await screen.findByRole("radio", { name: "Access" })).toBeInTheDocument();
+  });
+
   it("reviews a day beside the client's card and approves & sends it, or returns it with what to change", async () => {
     const fetcher = mount(() => state());
     site();
@@ -121,6 +133,24 @@ describe("daily progress", () => {
     expect(first).toMatchObject({ reportDate: "2026-09-27", workforce: [{ trade: "Carpenters", people: 3, hours: 8 }], tasks: [{ workItemId: "t1", progress: 100, note: "" }],
       // Finished today, so it isn't tomorrow's work.
       next: [{ workItemId: "t2", title: "Template the worktop" }] });
+  });
+
+  it("puts the cursor in the new Tomorrow line, and Enter starts the next one (m17)", async () => {
+    mount(() => state({ reports: [] }));
+    site();
+    await userEvent.click(await screen.findByRole("button", { name: "Today's report" }));
+    const dialog = await screen.findByRole("dialog", { name: "Today's report" });
+    const tomorrow = within(dialog).getByRole("group", { name: "Tomorrow" });
+    const before = within(tomorrow).queryAllByRole("textbox", { name: "Planned for tomorrow" }).length;
+    await userEvent.click(within(tomorrow).getByRole("button", { name: "Add" }));
+    const added = within(tomorrow).getAllByRole("textbox", { name: "Planned for tomorrow" });
+    expect(added).toHaveLength(before + 1);
+    expect(added.at(-1)).toHaveFocus();
+    await userEvent.keyboard("Fit the worktop{Enter}");
+    expect(added.at(-1)).toHaveValue("Fit the worktop");
+    const lines = within(tomorrow).getAllByRole("textbox", { name: "Planned for tomorrow" });
+    expect(lines).toHaveLength(before + 2);
+    expect(lines.at(-1)).toHaveFocus();
   });
 
   it("asks who recovers a blocked day and by when, and what happened in an incident", async () => {

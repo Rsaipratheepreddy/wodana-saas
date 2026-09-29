@@ -30,10 +30,15 @@ export function isOperationalEvidence(
   );
 }
 
+/** The signed agreement is on record: an uploaded signed document, or a written description of it. */
+export function agreementHasSignedEvidence(agreement: Pick<Agreement, "evidence" | "files"> | null | undefined) {
+  return Boolean(agreement && (agreement.evidence?.trim() || agreement.files?.length));
+}
+
 export function agreementIsOperational(agreement: Agreement | null | undefined) {
   return Boolean(
     agreement?.status === "executed" &&
-      agreement.evidence.trim() &&
+      agreementHasSignedEvidence(agreement) &&
       isOperationalEvidence(agreement),
   );
 }
@@ -272,7 +277,7 @@ export function commercialReleaseInputsReady(data: CommercialData | null | undef
     data.ownerReview.quoteId !== quote.id ||
     !data.ownerReview.financeReviewedById ||
     !data.dealFile.paymentProofUrl ||
-    !data.dealFile.commissionLines?.length ||
+    !Array.isArray(data.dealFile.commissionLines) ||
     !(data.servicePath ? materialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
   )
     return false;

@@ -18,3 +18,8 @@
 .wide textarea { min-block-size: 7rem; }
 /* Firm-typed text (emails, handles, addresses) keeps its own direction in either page direction. */
 .wide textarea, .wide input { unicode-bidi: plaintext; text-align: start; }
+
+/* The payment plan's milestones: name, share, when it's due, paid before work starts, remove. */
+.milestones { display: grid; gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.milestones > li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr) auto auto; align-items: end; gap: var(--wd-space-2); }
+@media (max-width: 40rem) { .milestones > li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }

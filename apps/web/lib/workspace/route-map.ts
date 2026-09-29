@@ -106,6 +106,8 @@ function routeTable() {
 
     // Operations
     { id: "purchasing", label: "Purchasing", href: "/workspace/purchasing", nav: "purchasing", paths: ["/workspace/purchasing"] },
+    // Scanning an order's or a move's code to receive it (the code printed on the order opens here).
+    { id: "receive", label: "Receive", href: "/workspace/receive", parent: "purchasing", paths: ["/workspace/receive"] },
     { id: "inventory", label: "Inventory", href: "/workspace/inventory", nav: "inventory", paths: ["/workspace/inventory"] },
     { id: "factory", label: "Factory", href: "/workspace/factory", nav: "factory", paths: ["/workspace/factory"] },
 

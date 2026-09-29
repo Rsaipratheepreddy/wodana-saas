@@ -9,6 +9,7 @@ import { ReceiveQr } from "../operations/receive-qr";
 import styles from "../operations/print.module.css";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText, useOrderLabels } from "./order-labels";
+import { useDocumentTitle } from "@/lib/document-title";
 
 /**
  * A purchase order on its own page, to print or save as PDF (D-46): the supplier, where it goes, the lines and totals,
@@ -26,6 +27,7 @@ export function OrderPrint({ workspaceId, orderId }: { workspaceId: string; orde
     catch (cause) { setError({ message: cause instanceof Error ? cause.message : t("The order didn't load."), denied: isDenied(cause) }); }
   }, [api, orderId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  useDocumentTitle(state ? [state.order.number, state.order.companyName] : null);
   if (error && !state) return <main className={styles.page}>{error.denied ? <NoAccessState /> : <ErrorState description={error.message} onRetry={() => void load()} />}</main>;
   if (!state) return <main className={styles.page}><Skeleton lines={10} shape="rows" /></main>;
   const { order, lines, supplier } = state;

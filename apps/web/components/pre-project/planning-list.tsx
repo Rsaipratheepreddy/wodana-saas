@@ -115,7 +115,7 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
   }
 
   const columns = useMemo<DataGridColumn<PlanningRow>[]>(() => [
-    { id: "case", header: t("Case"), accessorFn: (row) => `${row.title} ${row.reference ?? ""}`, size: 280, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
+    { id: "case", header: t("Case"), accessorFn: (row) => `${row.title} ${row.reference ?? ""}`, size: 280, meta: { primary: true, interactive: true, renderCell: (row) => <span className={styles.nameCell}>
       {row.href ? <Link data-tour="case-open" href={row.href}>{projectDisplayName(row.title)}</Link>
         : <button type="button" className={styles.openButton} disabled={Boolean(busy) || !(row.source?.opportunityId ? planning.canCreate : planning.canStartLead)}
             onClick={(event) => { event.stopPropagation(); void open(row); }}>{busy === row.id ? t("Opening…") : projectDisplayName(row.title)}</button>}

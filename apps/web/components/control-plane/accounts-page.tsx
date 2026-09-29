@@ -36,7 +36,7 @@ export function AccountsPage({ canProvision }: { canProvision: boolean }) {
   }, [data, filter, search]);
 
   const columns = useMemo<DataGridColumn<AccountSummary>[]>(() => [
-    { id: "account", header: t("Account"), size: 280, accessorFn: (row) => row.name, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
+    { id: "account", header: t("Account"), size: 280, accessorFn: (row) => row.name, meta: { primary: true, interactive: true, renderCell: (row) => <span className={styles.nameCell}>
       <Link href={`/internal/accounts/${row.id}`}>{row.name}</Link>
       <small>{row.organizations.length > 1 ? t("{count} organizations", { count: row.organizations.length }) : row.organizations[0]?.address}</small>
     </span> } },

@@ -7,7 +7,7 @@ export const APPROVAL_GROUPS = ["quotes", "payments", "deals", "orders", "factor
 export type ApprovalGroup = (typeof APPROVAL_GROUPS)[number];
 
 export type ApprovalKind =
-  | "quote_review" | "receipt" | "deal_finance" | "deal_approval" | "order" | "output" | "material_swap"
+  | "quote_review" | "receipt" | "agreement" | "deal_finance" | "deal_approval" | "order" | "output" | "material_swap"
   | "site_report" | "petty_cash" | "snag" | "warranty" | "stock_correction" | "bill" | "payment_run" | "reimbursement"
   // A started project's payment milestone falling due (within 3 days, or past) that nobody has invoiced (D-14).
   | "invoice"
@@ -146,7 +146,37 @@ const deals: Source = async (db, ctx) => {
     title: deal.quoteNumber ? `${deal.title} · Q-${deal.quoteNumber}` : deal.title, subject: deal.client, project: null,
     amount: deal.amount, currency: deal.currency, since: deal.since,
     own: deal.submittedById === ctx.userId || (deal.status === "pending_approval" && deal.financeReviewedById === ctx.userId),
-    href: `/workspace/pre-projects/cases/${deal.caseId}/approvals`, decide: null,
+    href: `/workspace/pre-projects/cases/${deal.caseId}/execution-release`, decide: null,
+  }));
+};
+
+/**
+ * Signed agreements on record (an uploaded signed document or its description) waiting to be verified, for
+ * whoever verifies agreements. Opened on the case's Agreement tab, where the signed document is.
+ */
+const agreements: Source = async (db, ctx) => {
+  if (!(await ctx.can("commercial.approve"))) return [];
+  const rows = (await db.query<{ caseId: string; reference: string | null; since: Date; revision: number; amount: string | null; currency: string | null;
+    quoteNumber: number | null; client: string; title: string }>(
+    `SELECT commercial.case_id AS "caseId", commercial.content->'agreement'->>'reference' AS reference, commercial.updated_at AS since, commercial.revision,
+            quote.total::text AS amount, quote.currency, quote.number AS "quoteNumber",
+            coalesce(party.display_name, opportunity.title) AS client, opportunity.title
+       FROM commercial_cases_view commercial
+       JOIN pre_project_cases pre_case ON pre_case.workspace_id = commercial.workspace_id AND pre_case.id = commercial.case_id AND pre_case.status IN ('active', 'released')
+       JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+       LEFT JOIN commercial_quotes quote ON quote.workspace_id = commercial.workspace_id AND quote.case_id = commercial.case_id
+             AND quote.id::text = commercial.content->'agreement'->>'quoteId'
+      WHERE commercial.workspace_id = $1 AND jsonb_typeof(commercial.content->'agreement') = 'object'
+        AND commercial.content->'agreement'->>'status' IS DISTINCT FROM 'executed'
+        AND (nullif(btrim(commercial.content->'agreement'->>'evidence'), '') IS NOT NULL
+             OR jsonb_array_length(CASE WHEN jsonb_typeof(commercial.content->'agreement'->'files') = 'array' THEN commercial.content->'agreement'->'files' ELSE '[]'::jsonb END) > 0)
+      ORDER BY commercial.updated_at LIMIT 100`, [ctx.workspaceId])).rows;
+  return rows.map((agreement) => row({
+    kind: "agreement", group: "deals", id: agreement.caseId, parentId: agreement.caseId, version: agreement.revision,
+    title: [agreement.title, agreement.reference || (agreement.quoteNumber ? `Q-${agreement.quoteNumber}` : "")].filter(Boolean).join(" · "),
+    subject: agreement.client, project: null, amount: agreement.amount, currency: agreement.currency, since: agreement.since, own: false,
+    href: `/workspace/pre-projects/cases/${agreement.caseId}/contracts`, decide: null,
   }));
 };
 
@@ -236,9 +266,11 @@ const site: Source = async (db, ctx) => {
        FROM work_items item JOIN delivery_projects project ON project.workspace_id = item.workspace_id AND project.id = item.project_id
       WHERE item.workspace_id = $1 AND item.type = 'snag' AND item.status = 'in_review' AND ($2::uuid[] IS NULL OR item.project_id = ANY($2::uuid[]))
       ORDER BY item.updated_at LIMIT 100`, [ctx.workspaceId, scope])).rows;
-  const warranty = (await db.query<{ id: string; number: number; description: string; since: Date; projectId: string; projectReference: string | null; projectName: string }>(
-    `SELECT claim.id, claim.number, claim.description, claim.created_at AS since, ${projectColumns}
+  const warranty = (await db.query<{ id: string; number: number; description: string; since: Date; raisedBy: string | null; projectId: string; projectReference: string | null; projectName: string }>(
+    `SELECT claim.id, claim.number, claim.description, claim.created_at AS since, ${projectColumns},
+            coalesce(nullif(claim.raised_by_name, ''), raiser.display_name) AS "raisedBy"
        FROM warranty_claims claim JOIN delivery_projects project ON project.workspace_id = claim.workspace_id AND project.id = claim.project_id
+       LEFT JOIN users raiser ON raiser.id = claim.created_by
       WHERE claim.workspace_id = $1 AND claim.status = 'open' AND ($2::uuid[] IS NULL OR claim.project_id = ANY($2::uuid[]))
       ORDER BY claim.created_at LIMIT 100`, [ctx.workspaceId, scope])).rows;
   return [
@@ -260,7 +292,7 @@ const site: Source = async (db, ctx) => {
       href: `/workspace/projects/${snag.projectId}/plan?item=${snag.id}`, decide: null,
     })),
     ...warranty.map((claim) => row({
-      kind: "warranty", group: "site", id: claim.id, parentId: claim.projectId, title: `W-${claim.number} · ${claim.description}`, project: project(claim),
+      kind: "warranty", group: "site", id: claim.id, parentId: claim.projectId, title: `W-${claim.number} · ${claim.description}`, subject: claim.raisedBy, project: project(claim),
       amount: null, currency: null, since: claim.since, own: false, href: `/workspace/projects/${claim.projectId}/warranty`, decide: null,
     })),
   ];
@@ -385,7 +417,7 @@ const aiActions: Source = async (db, ctx) => {
   }));
 };
 
-export const APPROVAL_SOURCES: Source[] = [quotes, receipts, invoices, deals, orders, factory, site, stock, finance, aiActions];
+export const APPROVAL_SOURCES: Source[] = [quotes, receipts, invoices, agreements, deals, orders, factory, site, stock, finance, aiActions];
 
 /** Everything waiting on this person, oldest first; what they may decide before what is their own. */
 export async function waitingFor(db: Db, ctx: ApprovalContext) {

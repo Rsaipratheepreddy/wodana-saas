@@ -13,6 +13,8 @@ describe("DataGrid", () => {
     render(<DesignSystemProvider><DataGrid ariaLabel="Customer organizations" columns={columns} data={[]} getRowId={(row) => row.id} isLoading /></DesignSystemProvider>);
     expect(screen.getByRole("status", { name: "Loading Customer organizations" })).toBeInTheDocument();
     expect(screen.queryByText("No records found")).not.toBeInTheDocument();
+    // No count while loading: "0 records" under the placeholders would be untrue (m21).
+    expect(screen.queryByText("0 records")).not.toBeInTheDocument();
   });
   it("doesn't tell people to adjust filters on a grid that has none", () => {
     const { unmount } = render(<DesignSystemProvider><DataGrid ariaLabel="Viewed as you" columns={columns} data={[]} getRowId={(row) => row.id} showToolbar={false} emptyTitle="Nobody has viewed as you" /></DesignSystemProvider>);
@@ -77,6 +79,19 @@ describe("DataGrid", () => {
     render(<DesignSystemProvider><DataGrid ariaLabel="Projects" columns={columns} data={rows} getRowId={(row) => row.id} renderInspector={(row) => <span>Inspector: {row.name}</span>} /></DesignSystemProvider>);
     await user.click(screen.getByRole("button", { name: "Palm Villa" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("Inspector: Palm Villa");
+  });
+  it("never nests a cell's own link or button inside the row's open button (M1)", async () => {
+    const user = userEvent.setup(), open = vi.fn(), start = vi.fn();
+    const own: DataGridColumn<Row>[] = [{ accessorKey: "name", header: "Name", meta: { primary: true, interactive: true, renderCell: (row) => row.id === "1"
+      ? <a href={`/records/${row.id}`}>{row.name}</a> : <button type="button" onClick={start}>{row.name}</button> } }, { accessorKey: "stage", header: "Stage" }];
+    const { container } = render(<DesignSystemProvider><DataGrid ariaLabel="Own links" columns={own} data={[...rows, { id: "2", name: "Lead", stage: "New" }]} getRowId={(row) => row.id} onRowAction={open} /></DesignSystemProvider>);
+    expect(container.querySelector("button button, button a, a button, a a")).toBeNull();
+    expect(screen.getByRole("link", { name: "Palm Villa" })).toHaveAttribute("href", "/records/1");
+    await user.click(screen.getByRole("button", { name: "Lead" }));
+    expect(start).toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("cell", { name: "Design" }));
+    expect(open).toHaveBeenCalledWith(rows[0]);
   });
   it("commits inline edits with Enter", async () => {
     const user = userEvent.setup();

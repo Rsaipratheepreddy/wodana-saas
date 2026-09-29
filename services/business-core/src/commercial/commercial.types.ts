@@ -381,6 +381,8 @@ export type ChangeRequest = {
   resolution: string;
   comments: CommercialComment[];
   createdAt: string;
+  /** Who raised it, for the team: the client contact (their portal name) or the team member. Never shown to the client. */
+  raisedBy?: { name: string; client: boolean };
   control?: ControlledChange;
   decisionRequest?: {
     ownerMembershipId: string;
@@ -752,6 +754,8 @@ export type CommercialState = {
   canApprove: boolean;
   canEstimate?: boolean;
   canApproveDeal?: boolean;
+  /** Who is looking (their user id), for the separation-of-duties rules the page shows. */
+  viewerId?: string;
   canVerifyFinance: boolean;
   canOverridePrice?: boolean;
   canViewCosts?: boolean;

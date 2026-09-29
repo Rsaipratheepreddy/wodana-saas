@@ -49,8 +49,11 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     try {
       setState(await api.decide(row, decision, note));
       window.dispatchEvent(new Event(APPROVALS_CHANGED));
-      setDone(decision !== "approve" ? t("{name} sent back.", { name: approvalTitle(row, locale) })
-        : row.kind === "site_report" ? t("{name} approved and sent to the client.", { name: approvalTitle(row, locale) }) : t("{name} approved.", { name: approvalTitle(row, locale) }));
+      // The same word as the button that was pressed: verified, approved (and sent), refused or sent back.
+      const name = approvalTitle(row, locale);
+      setDone(decision === "reject" ? t("{name} refused.", { name }) : decision !== "approve" ? t("{name} sent back.", { name })
+        : row.kind === "receipt" ? t("{name} verified.", { name })
+          : row.kind === "site_report" ? t("{name} approved and sent to the client.", { name }) : t("{name} approved.", { name }));
       if (decision === "approve") playFeedback("approve");
       setPending(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("The decision could not be saved.")); }

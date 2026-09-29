@@ -11,6 +11,7 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { OnboardingFlow } from "./onboarding-flow";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 import { getCompanyProfilePageData } from "@/lib/workspace/company-profile.server";
+import { canSetUpWorkspace } from "@/lib/workspace/access";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getServerT();
@@ -28,7 +29,8 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const onboarding = preview
     ? { status: "not_started" as const, currentStep: "workspace_profile" as const, completedSteps: [], version: 1 }
     : membership.onboarding;
-  if (onboarding.status === "completed") redirect("/workspace");
+  // Only the owner or an administrator sets the workspace up; everyone else waits on their Home.
+  if (onboarding.status === "completed" || !canSetUpWorkspace(membership.roles)) redirect("/workspace");
   const { canManage, profile } = await getCompanyProfilePageData();
   if (!canManage || !profile.legalEntities[0]) redirect("/workspace");
   // Not chosen on this device yet: the profile's language, else the workspace default (the person can switch).

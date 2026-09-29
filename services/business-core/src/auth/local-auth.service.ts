@@ -950,7 +950,7 @@ export class LocalAuthService {
     const selectedProfile = selectedMembership
       ? {
           ...profile,
-          nextAction: deriveWorkspaceOnboardingNextAction(selectedMembership.onboarding?.status),
+          nextAction: deriveWorkspaceOnboardingNextAction(selectedMembership.onboarding?.status, selectedMembership.roles),
         }
       : profile;
     const result = await this.database.transaction(async (client) => {

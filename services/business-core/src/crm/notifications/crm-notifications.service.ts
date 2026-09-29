@@ -17,6 +17,7 @@ import { normalizeTemplateParameter, renderTemplate, templateParametersProblem, 
 import { resolveTemplateSources } from "../conversations/inbox/template-variables";
 import { DeviceTokenStoreService } from "./device-token-store.service";
 import { approvalPush, approvalVersion } from "../../approvals/approval-push";
+import { contactEmailSql } from "../../client-portal/contact-email";
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
 @Injectable()
@@ -258,7 +259,7 @@ export class CrmNotificationsService {
     const claimed = await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
       const result = await client.query<{ id: string; subject: string | null; body: string; deepLink: string | null; email: string | null; eventType: string; recipientType: string }>(
         `WITH due AS (
-           SELECT notification.id, CASE WHEN notification.recipient_type='user' THEN person.primary_email ELSE contact.email END AS email
+           SELECT notification.id, CASE WHEN notification.recipient_type='user' THEN person.primary_email ELSE ${contactEmailSql("contact")} END AS email
            FROM notifications notification
            LEFT JOIN users person ON notification.recipient_type='user' AND person.id=notification.recipient_id
            LEFT JOIN client_portal_grants contact ON notification.recipient_type='portal_contact' AND contact.workspace_id=notification.workspace_id

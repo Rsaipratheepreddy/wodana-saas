@@ -62,8 +62,10 @@ describe("LeadsPage", () => {
     expect(within(table).getAllByRole("row")).toHaveLength(6);
     expect(within(table).getByRole("columnheader", { name: /Status/i })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: /Source/i })).toBeInTheDocument();
-    expect(within(table).getByRole("columnheader", { name: /Source/i })).toHaveStyle({ inlineSize: "150px" });
-    expect(within(table).getByRole("columnheader", { name: /Assigned to/i })).toHaveStyle({ inlineSize: "190px" });
+    // The default columns fit the content area at 1440 px, so the row actions stay in view (m1).
+    expect(within(table).getByRole("columnheader", { name: /Source/i })).toHaveStyle({ inlineSize: "130px" });
+    expect(within(table).getByRole("columnheader", { name: /Assigned to/i })).toHaveStyle({ inlineSize: "150px" });
+    expect(within(table).getByRole("columnheader", { name: /Action/i })).toHaveStyle({ inlineSize: "126px" });
     expect(within(table).queryByRole("columnheader", { name: /Channel/i })).not.toBeInTheDocument();
     expect(within(table).queryByRole("columnheader", { name: /Captured via/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Kanban" })).not.toBeInTheDocument();

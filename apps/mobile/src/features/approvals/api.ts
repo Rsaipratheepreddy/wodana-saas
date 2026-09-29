@@ -9,7 +9,7 @@ import { key } from '../../core/i18n';
 export const APPROVAL_GROUPS = ['quotes', 'payments', 'deals', 'orders', 'factory', 'site', 'stock', 'finance'] as const;
 export type ApprovalGroup = (typeof APPROVAL_GROUPS)[number];
 export type ApprovalKind =
-  | 'quote_review' | 'receipt' | 'deal_finance' | 'deal_approval' | 'order' | 'output' | 'material_swap'
+  | 'quote_review' | 'receipt' | 'agreement' | 'deal_finance' | 'deal_approval' | 'order' | 'output' | 'material_swap'
   | 'site_report' | 'petty_cash' | 'snag' | 'warranty' | 'stock_correction' | 'bill' | 'payment_run' | 'reimbursement' | 'invoice';
 export type ApprovalRow = {
   kind: ApprovalKind;
@@ -40,7 +40,7 @@ export const GROUP_LABEL: Record<ApprovalGroup, string> = {
 };
 /** What the row asks for, in a word or two (the web's words). */
 export const KIND_LABEL: Record<ApprovalKind, string> = {
-  quote_review: key('Quote to review'), receipt: key('Payment to verify'), deal_finance: key('Deal to check'), deal_approval: key('Deal to approve'),
+  quote_review: key('Quote to review'), receipt: key('Payment to verify'), agreement: key('Agreement to verify'), deal_finance: key('Deal to check'), deal_approval: key('Deal to approve'),
   order: key('Order to approve'), output: key('Output to approve'), material_swap: key('Material swap'), site_report: key('Daily progress'),
   petty_cash: key('Petty cash'), snag: key('Snag to close'), warranty: key('Warranty claim'), stock_correction: key('Stock correction'),
   bill: key('Held bill'), payment_run: key('Payment run'), reimbursement: key('To reimburse'), invoice: key('To invoice'),

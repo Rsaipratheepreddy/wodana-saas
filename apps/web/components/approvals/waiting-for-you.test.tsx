@@ -30,3 +30,16 @@ describe("Waiting for you: changes AI apps prepared", () => {
     expect(push).toHaveBeenCalledWith(`/workspace/ai-actions/${CALL}`);
   });
 });
+
+describe("Waiting for you: what a decision says (m25)", () => {
+  it("says a payment was verified, the same word as its button", async () => {
+    const receipt: ApprovalRow = { ...aiRow, kind: "receipt", group: "payments", id: "pay-1", title: "Advance on signing", phrase: null, subject: "Sofia Bennett", href: "/x",
+      decide: { approve: "verify_payment", other: null, approveNeedsNote: false }, version: 3, parentId: "case-1" };
+    const empty: WaitingForYou = { rows: [], count: 0, counts: { ...waiting.counts, ai: 0 } };
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 201, json: async () => empty })));
+    render(<DesignSystemProvider><WaitingForYouList workspaceId="00000000-0000-4000-8000-000000000001" initial={{ rows: [receipt], count: 1, counts: { ...waiting.counts, ai: 0, payments: 1 } }} /></DesignSystemProvider>);
+    await userEvent.click(screen.getByRole("button", { name: /^Verify/ }));
+    expect(await screen.findByText("Advance on signing verified.")).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+});

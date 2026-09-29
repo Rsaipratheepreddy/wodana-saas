@@ -45,7 +45,8 @@ describe("WorkspaceSearchService", () => {
     expect(result.searchedKinds).toEqual(["customer", "job", "room", "quotation", "project"]);
     expect(result.items).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "customer", route: "/workspace/crm/customers?record=customer-1" }),
-      expect.objectContaining({ kind: "job", reference: "J-000001", route: "/workspace/crm/jobs/job-1" }),
+      // The subtitle doesn't repeat the kind: every list shows it as the result's own label (m10).
+      expect.objectContaining({ kind: "job", reference: "J-000001", route: "/workspace/crm/jobs/job-1", subtitle: "Amira Hassan" }),
       expect.objectContaining({ kind: "room", route: "/workspace/pre-projects/cases/case-1/requirements?room=room-1" }),
       expect.objectContaining({ kind: "quotation", reference: "Q-001", route: "/workspace/pre-projects/cases/case-1/quotations?quote=quote-1" }),
       expect.objectContaining({ kind: "project", route: "/workspace/projects/project-1/overview" }),

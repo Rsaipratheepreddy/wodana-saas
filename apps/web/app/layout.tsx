@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { InlineScript } from "@/components/inline-script";
 import { RouteFade } from "@/components/route-fade";
 import { BlockedSaveBoundary } from "@/design-system/foundations/blocked-save-alert";
 import { I18nProvider } from "@/lib/i18n/i18n-provider";
@@ -29,7 +30,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
+        <InlineScript html={themeBootstrapScript} />
       </head>
       <body data-app-root>
         <I18nProvider dictionary={dictionaryFor(language)} language={language}><BlockedSaveBoundary>{children}</BlockedSaveBoundary></I18nProvider>

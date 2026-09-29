@@ -204,6 +204,16 @@
 .sheetLead { min-block-size: 42px; }
 .page { background: var(--wd-color-surface); padding: var(--wd-space-3) var(--wd-space-6) var(--wd-space-6); }
 .sheet :global(.wd-table-scroll) { overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--wd-color-border-strong) transparent; }
+/* On a desktop the columns keep their set widths (they add up to the content area at 1440 px), so the actions stay
+   in view; a long source, owner or customer name wraps inside its cell instead of widening it. */
+@media (min-width: 42.0625rem) {
+  .sheet :global(.wd-table) { table-layout: fixed; }
+  .sheet :global([data-source-chip]) { max-inline-size: 100%; text-align: start; }
+  .sheet :global([data-source-chip] span) { white-space: normal; overflow-wrap: anywhere; }
+  .sheet .assigneeButton { text-align: start; }
+  .sheet :global(.wd-table th .wd-sort-button > span), .sheet :global(.wd-table th .wd-column-header) { white-space: normal; text-align: start; }
+  .sheet .assigneeButton > span:last-child:not(:first-child) { overflow: visible; text-overflow: clip; white-space: normal; }
+}
 @media (max-width: 42rem) {
   .sheet :global(.wd-table-scroll) { overflow-x: auto; }
   .sheet :global(.wd-table) { inline-size: max-content !important; min-inline-size: 100%; }

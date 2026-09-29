@@ -456,6 +456,10 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           onChange={(fields) => { if (fields.title) createFromDraft(draft, fields); }} onCatalog={(hit) => createFromDraft(draft, {}, hit)}
           onNewCatalogItem={(title) => void newCatalogLine(draft, title)} onDiscard={() => discardDraft(draft)} onPasteRows={(text) => pasteRows(draft, text)}
           onOpen={() => undefined} onMenu={() => undefined} onDragStart={() => undefined} onDropBefore={() => undefined} onNewTrade={() => undefined} />)}
+        {unpricedLines(group.lines).length ? <div role="row" className={styles.priceNotice}><span role="gridcell">
+          {unpricedLines(group.lines).length === 1 ? t("1 item has no active price in {currency}.", { currency }) : t("{count} items have no active price in {currency}.", { count: unpricedLines(group.lines).length, currency })}
+          {" "}<Link href="/workspace/catalogs">{t("Set a price book")}</Link>
+        </span></div> : null}
         {state.canEdit && (depth > 0 || !group.children) ? <div role="row" className={styles.addRow}>
           <button type="button" data-tour="quote-new-line" data-tour-safe onClick={() => addDraft(context)}><Plus aria-hidden="true" size={14} />{t("New line")}</button>
         </div> : null}
@@ -540,7 +544,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
             <button type="button" onClick={() => openPanel("catalog")}><Store aria-hidden="true" size={18} /><strong>{t("Pick from the catalog")}</strong><small>{t("Search and add")}</small></button>
             <button type="button" onClick={() => setInserting(true)}><Bookmark aria-hidden="true" size={18} /><strong>{t("Insert a template")}</strong><small>{t("Saved areas and quotes")}</small></button>
           </div> : null}
-          <div ref={scroller} className={styles.gridScroll} style={{ "--visible": visible ? `${visible}px` : "100%" } as React.CSSProperties}><div role="grid" aria-label={t("Quote lines")} data-tour="quote-grid" className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width, customColumns), "--stick-serial": `${widths.width("gutter")}px`, "--stick-picture": `${widths.width("gutter") + widths.width("serial")}px`,
+          <div ref={scroller} className={styles.gridScroll} style={{ "--visible": visible ? `${visible}px` : "100%" } as React.CSSProperties}><div role="grid" aria-label={t("Quote lines")} data-tour="quote-grid" className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width, customColumns), "--grid-min": `${gridMinWidth(column, columns, widths.width, customColumns)}px`, "--stick-serial": `${widths.width("gutter")}px`, "--stick-picture": `${widths.width("gutter") + widths.width("serial")}px`,
             "--stick-item": `${widths.width("gutter") + widths.width("serial") + (columns.picture ? widths.width("picture") : 0)}px`, "--stick-menu": `${widths.width("menu")}px` } as React.CSSProperties}
             onFocusCapture={(event) => {
               const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");
@@ -630,12 +634,22 @@ const COLUMNS_DEFAULT = JSON.stringify({ picture: true, size: true, material: tr
 const readColumns = () => { try { const saved = JSON.parse(window.localStorage.getItem(COLUMNS_KEY) ?? "null"); return saved ? JSON.stringify({ ...JSON.parse(COLUMNS_DEFAULT), ...saved }) : COLUMNS_DEFAULT; } catch { return COLUMNS_DEFAULT; } };
 const subscribeColumns = (notify: () => void) => { window.addEventListener(COLUMNS_KEY, notify); window.addEventListener("storage", notify); return () => { window.removeEventListener(COLUMNS_KEY, notify); window.removeEventListener("storage", notify); }; };
 /** Starting widths (px) of the table's columns; the item column also takes any room left over. */
-const COLUMN_WIDTHS: Record<string, number> = { gutter: 20, serial: 44, picture: 96, item: 300, pick: 160, length: 84, width: 84, height: 84, material: 220, qty: 72, unit: 92, rate: 112, amount: 132, menu: 56 };
+const COLUMN_WIDTHS: Record<string, number> = { gutter: 20, serial: 44, picture: 96, item: 280, pick: 160, length: 84, width: 84, height: 84, material: 200, qty: 72, unit: 92, rate: 112, amount: 132, menu: 56 };
 const RESIZABLE = new Set(["picture", "item", "pick", "length", "width", "height", "material", "qty", "unit", "rate", "amount"]);
 /** The grid's columns, in the order the cells are drawn. */
-const gridColumns = (column: RowColumn, columns: RowColumns, width: (key: string) => number, custom: QuoteColumn[]) => ["gutter", "serial", ...(columns.picture ? ["picture"] : []), "item", ...(column ? ["pick"] : []),
-  ...(columns.size ? ["length", "width", "height"] : []), ...(columns.material ? ["material"] : []), ...custom.map((item) => `custom:${item.id}`), "qty", "unit", "rate", "amount", "menu"]
+const gridKeys = (column: RowColumn, columns: RowColumns, custom: QuoteColumn[]) => ["gutter", "serial", ...(columns.picture ? ["picture"] : []), "item", ...(column ? ["pick"] : []),
+  ...(columns.size ? ["length", "width", "height"] : []), ...(columns.material ? ["material"] : []), ...custom.map((item) => `custom:${item.id}`), "qty", "unit", "rate", "amount", "menu"];
+/** The item column takes whatever room is left; its text wraps, so a long name never widens it. */
+const gridColumns = (column: RowColumn, columns: RowColumns, width: (key: string) => number, custom: QuoteColumn[]) => gridKeys(column, columns, custom)
   .map((key) => (key === "item" ? `minmax(${width(key)}px, 1fr)` : `${width(key)}px`)).join(" ");
+/**
+ * The table's narrowest width: every column at its set width. Every area's rows share it (so the columns line up
+ * across areas), and the table scrolls sideways only when the screen is narrower than this.
+ */
+const gridMinWidth = (column: RowColumn, columns: RowColumns, width: (key: string) => number, custom: QuoteColumn[]) => gridKeys(column, columns, custom)
+  .reduce((total, key) => total + width(key), 0);
+/** Lines picked from the catalog with no live price, still without a rate of their own. */
+export const unpricedLines = (lines: BuilderLine[]) => lines.filter((line) => Boolean(line.catalogSnapshot?.priceReason) && line.pricingMode !== "build_up" && !Number(line.rate));
 
 const EMPTY_LINE: BuilderLine = {
   id: "", position: 0, version: 0, kind: "item", areaId: null, fromAreaId: null, workPackageId: null, title: "", description: "", unit: "", quantity: "1",

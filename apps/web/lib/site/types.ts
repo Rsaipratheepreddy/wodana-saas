@@ -26,6 +26,8 @@ export type SiteReport = {
   delivery?: Delivery; sentAt?: string | null; sentByName?: string | null; sentAutomatically?: boolean;
   tasks?: ReportTask[]; next?: ReportNext[]; materials?: ReportMaterial[]; issues?: ReportIssue[];
   reactions?: { like: number; love: number };
+  /** Which client contacts reacted. */
+  reactedBy?: { like: string[]; love: string[] };
 };
 /** A scope line with what approved reports installed and what submitted ones would add. */
 export type SiteLine = { id: string; title: string; unit: string; quantity: string; supply: string | null; catalogItemId: string | null; areaName: string | null; installed: string; pending: string };
@@ -40,6 +42,8 @@ export type SiteDelivery = { kind: "order" | "transfer"; id: string; label: stri
 export type SiteState = {
   site: { startedOn: string | null; finishedOn: string | null }; reports: SiteReport[]; lines: SiteLine[]; members: Array<{ membershipId: string; name: string }>;
   today: string; me: string; canReport: boolean; canApprove: boolean; canManage: boolean;
+  /** The Access view (who may be on site): the project's managers and site supervisors, and HR. */
+  canSeeSiteAccess?: boolean;
   /** When the day's report is due (HH:MM, the workspace's time). */
   dueTime?: string;
   /** What the day's report starts from: today's planned work and the next working day's. */

@@ -13,6 +13,12 @@ import styles from "./report-review.module.css";
 
 const PICK_LIMIT = 6;
 
+/** The client's reactions to a sent day, naming the contacts who gave each (a count when the names aren't there). */
+function reactionLine(report: SiteReport, t: ReturnType<typeof useT>) {
+  const who = (kind: "like" | "love") => report.reactedBy?.[kind]?.length ? report.reactedBy[kind].join(", ") : String(report.reactions?.[kind] ?? 0);
+  return t("Client: 👍 {like} · ❤️ {love}", { like: who("like"), love: who("love") });
+}
+
 /**
  * The manager's review of a day before anything leaves, on one page: the client's words (edited in place, or
  * rewritten by Woddy), which photos go and which leads, which items the client doesn't see — beside exactly what
@@ -96,7 +102,7 @@ export function ReportReview({ api, state, reportId, onState, onClose, onReject 
         </div>
 
         {report.photos.length ? <fieldset className={styles.group}>
-          <legend>{t("Photos for the client")} <span className={styles.muted}>{t("{count} of {limit}", { count: picked.length, limit: PICK_LIMIT })}</span></legend>
+          <legend>{t("Photos for the client")} <span className={styles.muted}>{t("{count} chosen · up to {limit}", { count: picked.length, limit: PICK_LIMIT })}</span></legend>
           <ul className={styles.photos}>{report.photos.map((photo) => <li key={photo.id} data-picked={photo.forClient || undefined}>
             {/* eslint-disable-next-line @next/next/no-img-element -- a private report photo */}
             <img src={api.photoUrl(photo.id)} alt={photo.name} loading="lazy" />
@@ -152,7 +158,7 @@ export function ReportReview({ api, state, reportId, onState, onClose, onReject 
         {preview ? <ProgressCard card={preview.view} photoUrl={api.photoUrl} formatDay={(day) => format.day(day)} brand={preview.view.brand}
           heading={preview.view.project.progress !== null ? <span className={styles.muted}>{t("{percent}% complete", { percent: preview.view.project.progress })}</span> : null} />
           : previewError ? <ErrorState description={previewError} onRetry={() => void loadPreview()} /> : <Skeleton lines={5} />}
-        {sent && report.reactions && (report.reactions.like || report.reactions.love) ? <p className={styles.muted}>{t("Client: 👍 {like} · ❤️ {love}", report.reactions)}</p> : null}
+        {sent && report.reactions && (report.reactions.like || report.reactions.love) ? <p className={styles.muted}>{reactionLine(report, t)}</p> : null}
       </section>
     </div>
     {returning ? <ReturnDialog onClose={() => setReturning(false)} onSave={async (note) => { if ((await run("return", { note }, "done")) === true) setReturning(false); }} /> : null}

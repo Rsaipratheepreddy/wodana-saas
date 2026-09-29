@@ -476,6 +476,7 @@ export function newRequest(
   detail: string,
   quoteId?: string,
   structured?: ChangeRequest["decisionRequest"],
+  raisedBy?: ChangeRequest["raisedBy"],
 ): ChangeRequest {
   const request: ChangeRequest = {
     id: randomUUID(),
@@ -490,6 +491,7 @@ export function newRequest(
     comments: [],
     createdAt: new Date().toISOString(),
     ...(structured ? { decisionRequest: structured } : {}),
+    ...(raisedBy?.name ? { raisedBy } : {}),
   };
   data.requests.push(request);
   return request;

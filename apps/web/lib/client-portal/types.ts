@@ -232,7 +232,9 @@ export type StaffIssue = {
   id: string; number: number; raisedOn: string; description: string; area: string | null; areaId: string | null; status: "to_triage" | "accepted" | "declined";
   severity: "minor" | "major" | "critical" | null; reason: string; by: string; snagId: string | null; version: number; decidedBy: string | null; files: PortalFile[];
 };
-export type StaffThreads = { files: Record<string, PortalFile[]>; clientRead: Record<string, string> };
+export type StaffThreads = { files: Record<string, PortalFile[]>; clientRead: Record<string, string>;
+  /** Which client contact raised each conversation (from their portal command). */
+  raisedBy?: Record<string, string> };
 
 /** What an invitation link opens: the client's number ready to sign in, or a link that no longer works. */
 export type PortalInvite = { status: "valid"; name: string; phone: string } | { status: "expired" };

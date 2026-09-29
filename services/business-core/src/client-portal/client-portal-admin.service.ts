@@ -21,6 +21,7 @@ import { decideNotice, readCaseNotices } from "./portal-payments";
 import { readView } from "./portal-read";
 import { optionalEmail, readPortalSettings, readProjectAccess, savePortalSettings, saveProjectAccess, SECTIONS } from "./portal-settings";
 import { portalUrl, readSite } from "./portal-site";
+import { contactEmailSql } from "./contact-email";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Names a case's client contacts and decision-makers (Sales sends its own quotes) without managing the portal. */
@@ -436,7 +437,7 @@ export class ClientPortalAdminService {
 
   private async readContacts(client: PoolClient, workspaceId: string, caseId: string) {
     return (await client.query<Contact & { signedIn: boolean }>(
-      `SELECT grant_row.id, grant_row.name, grant_row.confirmed_name AS "confirmedName", grant_row.phone, grant_row.email, grant_row.role, grant_row.active,
+      `SELECT grant_row.id, grant_row.name, grant_row.confirmed_name AS "confirmedName", grant_row.phone, ${contactEmailSql("grant_row")} AS email, grant_row.role, grant_row.active,
               grant_row.test_contact AS "testContact", grant_row.demo_code_hash IS NOT NULL AS "demoCode", grant_row.last_signed_in_at AS "lastSignedInAt", grant_row.version,
               EXISTS (SELECT 1 FROM client_portal_sessions session WHERE session.workspace_id = grant_row.workspace_id AND session.phone = grant_row.phone
                         AND session.revoked_at IS NULL AND session.expires_at > now() AND session.last_seen_at > now() - interval '30 days') AS "signedIn"

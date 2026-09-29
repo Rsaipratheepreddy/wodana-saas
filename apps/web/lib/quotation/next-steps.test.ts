@@ -36,6 +36,16 @@ describe("what happens after the client accepts", () => {
     expect(nextSteps(state({ ...paid, ownerReview: { quoteId: "q1", status: "approved" } as never }), quote, "c", true).every((step) => step.state === "done")).toBe(true);
   });
 
+  it("opens the Deal File to submit, check or approve the deal, not the case's Approvals table (M4)", () => {
+    const paid = { agreement: { quoteId: "q1", status: "executed" } as never, payments: [payment("verified")] as never };
+    const dealFile = "/workspace/pre-projects/cases/c/execution-release";
+    expect(nextSteps(state(paid, { canEdit: true }), quote, "c", false)[2].action).toEqual({ label: "Submit", href: dealFile });
+    expect(nextSteps(state({ ...paid, ownerReview: { quoteId: "q1", status: "pending_finance" } as never }, { canVerifyFinance: true }), quote, "c", false)[2].action)
+      .toEqual({ label: "Check", href: dealFile });
+    expect(nextSteps(state({ ...paid, ownerReview: { quoteId: "q1", status: "pending_approval" } as never }, { canApproveDeal: true }), quote, "c", false)[2].action)
+      .toEqual({ label: "Approve", href: dealFile });
+  });
+
   it("ends a design round at its deal: design work opens once it's approved", () => {
     const steps = nextSteps(state({}, { canEdit: true }), { id: "q1", round: "design" }, "c", false);
     expect(steps.map((step) => step.key)).toEqual(["agreement", "payment", "deal"]);

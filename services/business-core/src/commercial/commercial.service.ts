@@ -55,6 +55,7 @@ import {
   agreementMatchesAcceptedQuote,
   approvedMaterialEvidence,
   financeGatePaymentsReady,
+  agreementHasSignedEvidence,
   isOperationalEvidence,
   materialApprovalsComplete,
   materialListSignedOff,
@@ -118,6 +119,7 @@ import type { ProjectData } from "../projects/execution.types";
 import { ConfigurationRevisionsService } from "../workspaces/configuration-revisions.service";
 import type { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-configuration-revision.dto";
 import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
+import { contactEmailSql } from "../client-portal/contact-email";
 
 /** Remove internal cost and margin truth without mutating the persisted commercial aggregate. */
 export function commercialDataForCostAccess(data: CommercialData, canViewCosts: boolean): CommercialData {
@@ -461,7 +463,8 @@ export class CommercialService {
         }
         const contacts = (
           await client.query(
-            `SELECT id,coalesce(confirmed_name,name) AS name,phone,email,role,active,test_contact AS "testContact",version FROM client_portal_grants WHERE workspace_id=$1 AND case_id=$2 ORDER BY created_at`,
+            `SELECT grant_row.id,coalesce(grant_row.confirmed_name,grant_row.name) AS name,grant_row.phone,${contactEmailSql("grant_row")} AS email,grant_row.role,grant_row.active,
+                    grant_row.test_contact AS "testContact",grant_row.version FROM client_portal_grants grant_row WHERE grant_row.workspace_id=$1 AND grant_row.case_id=$2 ORDER BY grant_row.created_at`,
             [workspaceId, caseId],
           )
         ).rows;
@@ -501,6 +504,7 @@ export class CommercialService {
             user.userId,
             "commercial.estimate",
           ),
+          viewerId: user.userId,
           // Deal approval is a permission plus separation of duties, never a role name.
           canApproveDeal:
             (await this.access.hasPermission(
@@ -1494,6 +1498,9 @@ export class CommercialService {
             data,
             text(b.title, 240, true),
             text(b.detail, 6000, true),
+            undefined,
+            undefined,
+            { name: user.displayName, client: false },
           );
           request.owner = text(b.owner ?? "", 160);
           request.dueDate = b.dueDate ? date(b.dueDate) : "";
@@ -2586,7 +2593,8 @@ export class CommercialService {
             const told = await tellClients(client, { workspaceId, caseId, event: "quote_issued", recordId: `${q.id}:${q.hash}`, title: `${q.title} (V${q.number})`,
               due: q.validUntil, demo: this.testMode });
             const decider = (await client.query<{ name: string; email: string | null }>(
-              `SELECT name, email FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, grant.id])).rows[0];
+              `SELECT grant_row.name, ${contactEmailSql("grant_row")} AS email FROM client_portal_grants grant_row WHERE grant_row.workspace_id = $1 AND grant_row.case_id = $2 AND grant_row.id = $3`,
+              [workspaceId, caseId, grant.id])).rows[0];
             sent = { portal: true, channel: "channel" in told ? told.channel ?? null : null, emailed: "names" in told ? told.names ?? [] : [], reason: told.reason,
               decider: decider?.name ?? "", deciderHasEmail: Boolean(decider?.email) };
           }
@@ -2944,7 +2952,7 @@ export class CommercialService {
                 channels: channels as Array<"in_app" | "email" | "whatsapp">,
               },
               decision: null,
-            });
+            }, { name: user.displayName, client: false });
             request.owner = user.displayName;
             request.dueDate = dueDate;
             request.status = "awaiting_decision";
@@ -2954,6 +2962,8 @@ export class CommercialService {
               text(b.title, 240, true),
               text(b.detail, 6000, true),
               q?.id,
+              undefined,
+              { name: user.displayName, client: false },
             );
           }
         } else if (action === "update_request") {
@@ -3129,12 +3139,14 @@ export class CommercialService {
             status: "draft",
           };
         } else if (action === "execute_agreement") {
+          // The signed document itself is the evidence; a written description is optional once it's attached.
           if (
-            !data.agreement?.evidence ||
+            !data.agreement ||
+            !agreementHasSignedEvidence(data.agreement) ||
             !isOperationalEvidence(data.agreement)
           )
             throw new ConflictException(
-              "Record operational signed-agreement evidence first. Demonstration evidence cannot execute a live agreement.",
+              "Attach the signed agreement (or describe it) first. Demonstration evidence cannot execute a live agreement.",
             );
           const acceptedQuote = data.quotes.find(
             (quote) => quote.id === data.agreement!.quoteId && quote.status === "accepted",
@@ -3304,7 +3316,8 @@ export class CommercialService {
             before: { quoteId: q.id, status: "issued" }, after: { quoteId: q.id, decision, method, clientName, recorder, evidenceAssetId: evidence?.id ?? null } });
           if (typed === "accept") validateDeduction(data, q);
           q.status = typed === "accept" ? "accepted" : typed === "changes" ? "changes_requested" : "declined";
-          if (typed === "changes") newRequest(data, `Changes to quotation V${q.number}`, note, q.id);
+          // The client asked for the changes; the team member recorded them for them.
+          if (typed === "changes") newRequest(data, `Changes to quotation V${q.number}`, note, q.id, undefined, { name: clientName, client: true });
           // Acceptance is the sale: the opportunity is Won and the case moves on, with no manual step.
           if (typed === "accept" && q.kind === "quotation")
             await winOpportunityOnAcceptance(client, { workspaceId, caseId, quoteNumber: q.number, round: q.round ?? null, actorUserId: user.userId, source: "user" });

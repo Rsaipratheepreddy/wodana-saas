@@ -101,11 +101,13 @@ export async function ensureTeamsAndPeople(core: Core, data: SeedData, tenant: T
     const code = `team_${team.code.toLowerCase()}`;
     const permissionCodes = [...new Set(team.permissions.includes("*") ? everyPermission : team.permissions.filter((permission) => everyPermission.includes(permission)))].sort();
     const description = `${team.name} team (Palm tracker, Roles & Access; scope: ${team.scope}).`.slice(0, 500);
-    const existing = roles.find((role) => role.code === code);
+    // The team's own role, else the firm kit's role of the same name (never a second role with that name).
+    const existing = roles.find((role) => role.code === code)
+      ?? roles.find((role) => !role.isSystem && role.name.trim().toLowerCase() === team.name.trim().toLowerCase());
     const role = existing
       ? ((await core.ensure("role", `role ${code}`,
-        async () => existing.name === team.name && isDeepStrictEqual([...existing.permissions].sort(), permissionCodes),
-        async () => workspaces.updateRole(actor, workspaceId, existing.id, await core.validated(UpdateRoleDto, { version: existing.version, name: team.name, description, permissionCodes })))), existing)
+        async () => existing.name.trim().toLowerCase() === team.name.trim().toLowerCase() && isDeepStrictEqual([...existing.permissions].sort(), permissionCodes),
+        async () => workspaces.updateRole(actor, workspaceId, existing.id, await core.validated(UpdateRoleDto, { version: existing.version, ...(existing.name !== team.name ? { name: team.name } : {}), description, permissionCodes })))), existing)
       : await core.step("role", `role ${code}`, async () => null,
         async () => workspaces.createRole(actor, workspaceId, await core.validated(CreateRoleDto, { code, name: team.name, description, permissionCodes })) as Promise<{ id: string }>).catch(swallowPending);
     if (role) roleByTeam.set(team.code, role.id);

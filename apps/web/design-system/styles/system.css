@@ -323,7 +323,7 @@
 .wd-menu-item[data-disabled] { opacity: 0.45; cursor: default; }
 .wd-menu-item [data-tone="danger"] { color: var(--wd-danger); }
 .wd-modal-overlay, .wd-sheet-overlay { position: fixed; z-index: var(--wd-z-overlay); inset: 0; display: flex; align-items: center; justify-content: center; padding: var(--wd-space-4); background: var(--wd-scrim); overscroll-behavior: contain; backdrop-filter: blur(var(--wd-space-2)); }
-.wd-modal { inline-size: min(36rem, 100%); max-block-size: min(45rem, calc(100dvh - 2rem)); border: 1px solid color-mix(in srgb, var(--wd-line-strong) 72%, transparent); border-radius: var(--wd-radius-lg); overflow: hidden; background: var(--wd-surface); box-shadow: var(--wd-shadow-2); }
+.wd-modal { box-sizing: border-box; inline-size: min(36rem, 100%); max-block-size: min(45rem, calc(100dvh - 2rem)); border: 1px solid color-mix(in srgb, var(--wd-line-strong) 72%, transparent); border-radius: var(--wd-radius-lg); overflow: hidden; background: var(--wd-surface); box-shadow: var(--wd-shadow-2); }
 /* Only transient surfaces get a quiet frosted treatment; working tables stay opaque. */
 @supports (backdrop-filter: blur(1px)) {
   .wd-popover, .wd-tooltip, .wd-modal {

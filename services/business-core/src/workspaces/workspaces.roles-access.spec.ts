@@ -50,6 +50,26 @@ describe("workspace role catalogue access", () => {
     expect(query.mock.calls.some(([sql]) => sql.includes("INSERT INTO roles"))).toBe(false);
   });
 
+  it("refuses a second role with a name that's taken, whatever its case or spaces (m23)", async () => {
+    const workspaceId = "f81e8362-8d08-440a-89dd-06ec7a8b46e7";
+    const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes("FROM workspaces WHERE")) return { rowCount: 1, rows: [{ id: workspaceId }] };
+      if (sql.includes("FROM permissions WHERE code = ANY")) return { rowCount: 1, rows: [{ id: "permission-1", code: "payables.view" }] };
+      if (sql.includes("FROM workspace_memberships membership")) return { rowCount: 1, rows: [{ roleCode: "owner", permissionCode: "payables.view" }] };
+      if (sql.includes("lower(btrim(name))")) return { rowCount: String(params[1]).trim().toLowerCase() === "finance" ? 1 : 0, rows: [] };
+      if (sql.includes("INSERT INTO roles")) return { rowCount: 1, rows: [{ id: "role-2", code: "team_finance", name: params[2] }] };
+      return { rowCount: 0, rows: [] };
+    });
+    const access = {
+      withAnyPermission: vi.fn(async (_actor, _workspaceId, _permissions, work) => work({ query }, { userId: "user-1" })),
+      effectivePermissions: vi.fn(async (_client, _workspaceId, permissions: string[]) => permissions),
+    };
+    const service = new WorkspacesService({} as never, {} as never, access as never, {} as never, {} as never);
+    await expect(service.createRole(actor, workspaceId, { code: "team_finance", name: " FINANCE ", description: "", permissionCodes: ["payables.view"] }))
+      .rejects.toThrow("A role named FINANCE already exists");
+    expect(query.mock.calls.some(([sql]) => sql.includes("INSERT INTO roles"))).toBe(false);
+  });
+
   it("refuses to delete a role still used by a team or a pending invite", async () => {
     const workspaceId = "f81e8362-8d08-440a-89dd-06ec7a8b46e7";
     const roleId = "c09bdbfd-f755-4389-8ea6-71ac39a04245";

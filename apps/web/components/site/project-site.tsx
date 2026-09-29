@@ -63,7 +63,9 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
   const switcher = <SegmentedControl label={t("Show")} value={view} onChange={(value) => setView(value as SiteView)}
     options={[{ id: "reports", label: t("Daily progress") }, { id: "crew-days", label: t("Crew days") },
       // What's on its way to site, received where it arrives.
-      ...(onTeam ? [{ id: "deliveries", label: t("Deliveries") }, { id: "access", label: t("Access") }] : []),
+      ...(onTeam ? [{ id: "deliveries", label: t("Deliveries") }] : []),
+      // Who may be on site: only for whoever can see that list (the project's managers and site supervisors, and HR).
+      ...(onTeam && state.canSeeSiteAccess !== false ? [{ id: "access", label: t("Access") }] : []),
       // Only once the client has reported something (or a notice links here).
       ...(issues.data?.issues.length || view === "issues" ? [{ id: "issues", label: t("Client issues"), count: issues.toTriage || undefined }] : [])]} />;
   if (view === "crew-days") return <div className={styles.site}>

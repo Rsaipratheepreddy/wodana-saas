@@ -57,6 +57,15 @@ it("keeps Reports selected and preserves Sales settings destinations", () => {
   expect(screen.getByRole("link",{name:"Assignment"})).toHaveAttribute("href","/workspace/crm/leads?section=assignment");
 });
 
+it("marks Agreement, not Overview, on the Deal File (M4)",()=>{
+  query="";
+  render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/execution-release`}/>);
+  const areas=screen.getByRole("navigation",{name:"Planning sections"});
+  expect(within(areas).getByRole("link",{name:"Agreement"})).toHaveAttribute("aria-current","page");
+  expect(within(areas).getByRole("link",{name:"Overview"})).not.toHaveAttribute("aria-current");
+  expect(screen.getByRole("link",{name:"Release readiness"})).toHaveAttribute("aria-current","page");
+});
+
 it("follows the client planning order and clears review selection when changing sections",()=>{
   query="review=scope";
   render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/approvals`}/>);

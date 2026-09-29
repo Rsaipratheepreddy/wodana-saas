@@ -32,4 +32,9 @@ describe("bulk actions on Enquiries (S-17)", () => {
     expect(screen.getByText(/you don't own/)).toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it("reads one enquiry as one (m4)", () => {
+    render(<DesignSystemProvider><EnquiryBulkDialog mode="follow_up" rows={open.slice(0, 1)} initialData={data} onClose={vi.fn()} onDone={vi.fn()} /></DesignSystemProvider>);
+    expect(screen.getByRole("dialog", { name: "Add a follow-up to 1 enquiry" })).toBeInTheDocument();
+  });
 });

@@ -47,7 +47,8 @@ export default async function WorkspaceScreen({
     // Home reads its own summary; workspace setup progress lives in the account menu (see /api/workspace/setup-readiness).
     return <WorkspaceHome canManage={ownerAccess} workspaceId={membership.workspaceId} userId={profile.id}
       workspaceName={membership.workspaceName} modules={available.map(module => module.id)}
-      firstName={profile.displayName?.trim().split(/\s+/)[0] || undefined} permissions={membership.allowedPermissions ?? undefined} />;
+      firstName={profile.displayName?.trim().split(/\s+/)[0] || undefined} permissions={membership.allowedPermissions ?? undefined}
+      setupPending={Boolean(membership.onboarding) && membership.onboarding.status !== "completed" && !ownerAccess} timeZone={membership.workspaceTimezone ?? undefined} />;
 
   }
   if (pathname === "/workspace/audit-log") redirect("/workspace/settings/audit-logs");
