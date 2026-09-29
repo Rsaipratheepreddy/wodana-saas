@@ -2,6 +2,15 @@ import { BadRequestException, Injectable } from "@nestjs/common";
 import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { ReportRangeQueryDto } from "./dto/reporting.dto";
+import { loadLeadOptions } from "../leads/lead-options";
+
+const WALK_IN = /walk[\s_-]?in/i;
+
+/** "source/channel" for every channel the taxonomy calls a walk-in, by its code or its label ("Showroom Walk-in"). */
+export function walkInChannelsOf(options: { channels: Record<string, Array<{ id: string; label: string }>> }) {
+  return Object.entries(options.channels).flatMap(([source, channels]) =>
+    channels.filter((channel) => WALK_IN.test(channel.id) || WALK_IN.test(channel.label)).map((channel) => `${source}/${channel.id}`));
+}
 
 @Injectable()
 export class CrmReportingService {
@@ -66,13 +75,17 @@ export class CrmReportingService {
           count(*) FILTER (WHERE lead.status NOT IN ('qualified','disqualified') AND greatest(lead.updated_at,enquiry.updated_at) < now()-interval '7 days')::int AS stale
           FROM crm_leads lead JOIN crm_enquiries enquiry ON enquiry.id=lead.enquiry_id AND enquiry.workspace_id=lead.workspace_id
           WHERE lead.workspace_id=$1 AND lead.created_at >= $2 AND lead.created_at < $3`, [workspaceId, from, to]);
-        const walkIns = await client.query(`SELECT intake.intake_method AS "intakeMethod",count(*)::int AS count,
+        // S-14: walk-ins are whichever channels the workspace's own taxonomy names as walk-ins (a showroom and an
+        // office walk-in, under any source), not one hard-coded source and channel.
+        const walkInChannels = walkInChannelsOf(await loadLeadOptions(client, workspaceId));
+        const walkIns = walkInChannels.length ? await client.query(`SELECT intake.intake_method AS "intakeMethod",count(*)::int AS count,
           count(lead.id)::int AS leads, count(lead.id) FILTER (WHERE lead.status='qualified')::int AS qualified,
           count(lead.id) FILTER (WHERE lead.status='disqualified')::int AS disqualified,
           count(*) FILTER (WHERE intake.status='duplicate_candidate')::int AS duplicates
           FROM crm_intake_events intake LEFT JOIN crm_enquiries enquiry ON enquiry.intake_event_id=intake.id AND enquiry.workspace_id=intake.workspace_id
           LEFT JOIN crm_leads lead ON lead.enquiry_id=enquiry.id AND lead.workspace_id=enquiry.workspace_id
-          WHERE intake.workspace_id=$1 AND intake.source='company' AND intake.channel='walk_in' AND intake.received_at >= $2 AND intake.received_at < $3 GROUP BY intake.intake_method`, [workspaceId, from, to]);
+          WHERE intake.workspace_id=$1 AND (intake.source || '/' || intake.channel) = ANY($4::text[]) AND intake.received_at >= $2 AND intake.received_at < $3
+          GROUP BY intake.intake_method`, [workspaceId, from, to, walkInChannels]) : { rows: [] };
         const totals = summary.rows[0] ?? { leads: 0, unassigned: 0, qualified: 0, disqualified: 0, stale: 0 };
         const groupedLeads = grouped.rows.reduce((total, row) => total + Number(row.leads ?? 0), 0);
         return {
