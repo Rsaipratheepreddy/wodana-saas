@@ -11090,5 +11090,18 @@
   "{used} of {limit} seats · {reserved} reserved by invitations": "{used} of {limit} seats · {reserved} reserved by invitations",
   "{used} of {limit} seats": "{used} of {limit} seats",
   "Invitations wait for a free seat.": "Invitations wait for a free seat.",
-  "Add seats in Billing": "Add seats in Billing"
+  "Add seats in Billing": "Add seats in Billing",
+  "Could not load what this person holds.": "Could not load what this person holds.",
+  "Choose who takes over.": "Choose who takes over.",
+  "Could not offboard this person.": "Could not offboard this person.",
+  "Offboard": "Offboard",
+  "Project tasks": "Project tasks",
+  "{name} is offboarded. {successor} has their work.": "{name} is offboarded. {successor} has their work.",
+  "Offboard {name}": "Offboard {name}",
+  "What moves": "What moves",
+  "Nothing is open in their name.": "Nothing is open in their name.",
+  "Who takes over": "Who takes over",
+  "Nobody else is active to take over.": "Nobody else is active to take over.",
+  "Then they lose access": "Then they lose access",
+  "Their phones stop getting notices, they are signed out, and their seat is freed. Their records stay.": "Their phones stop getting notices, they are signed out, and their seat is freed. Their records stay."
 }

@@ -25,6 +25,7 @@ import { ConfigurationRevisionsService } from "./configuration-revisions.service
 import { TenantOperationsService } from "./tenant-operations.service";
 import { TaxNumberingController } from "./tax-numbering.controller";
 import { TaxNumberingService } from "./tax-numbering.service";
+import { MemberOffboardingController, MemberOffboardingService } from "./member-offboarding.service";
 
 @Module({
   imports: [EmailModule, ControlPlaneModule],
@@ -39,6 +40,7 @@ import { TaxNumberingService } from "./tax-numbering.service";
     InternalOrganizationAccountsController,
     PublicBrandingController,
     TaxNumberingController,
+    MemberOffboardingController,
   ],
   providers: [
     MemberProfileService,
@@ -55,6 +57,7 @@ import { TaxNumberingService } from "./tax-numbering.service";
     ConfigurationRevisionsService,
     TenantOperationsService,
     TaxNumberingService,
+    MemberOffboardingService,
   ],
   exports: [WorkspaceAccessService, WorkspacesService, ConfigurationRevisionsService],
 })

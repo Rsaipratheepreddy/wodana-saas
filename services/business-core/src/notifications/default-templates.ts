@@ -24,6 +24,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     body: "{{memberName}} accepted your invitation.",
     variables: ["memberName", "workspaceName"],
   },
+  // Offboarding (workspaces/member-offboarding.ts): the successor hears what they took over.
+  { code: "workspace.work_handed_over", channel: "in_app", subject: "{{memberName}}'s work is yours", body: "{{note}}", variables: ["memberName", "note"] },
   {
     code: "crm.enquiry_duplicate",
     channel: "in_app",
