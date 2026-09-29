@@ -33,12 +33,23 @@ test('notification links open the same record in the app', () => {
     [`/workspace/crm/inbox?conversation=${id}`, `/chats/${id}`],
     [`/workspace/crm/conversations?lead=${other}`, `/sales/${other}`],
     ['/workspace/inventory', '/purchasing'],
+    // Finance and supplier notices open their record in the app, not the browser (FD-6).
+    [`/workspace/finance/client-invoices?invoice=${id}`, `/finance/invoice/${id}`],
+    [`/workspace/finance/bills?bill=${id}`, `/finance/bill/${id}`],
+    [`/workspace/finance/runs?run=${id}`, `/finance/run/${id}`],
+    [`/workspace/finance/suppliers/${id}`, `/finance/supplier/${id}`],
+    [`/workspace/finance/petty-cash?claim=${id}`, '/approvals'],
+    ['/workspace/finance?tab=receivables', '/finance'],
+    ['/workspace/finance/accounting', '/finance'],
+    ['/workspace/finance/bills?bill=1', '/finance'],
+    [`/workspace/purchasing/suppliers?supplier=${id}`, `/suppliers/${id}`],
+    [`/workspace/ai-actions/${id}`, '/approvals'],
   ];
   for (const [link, route] of cases) assert.equal(appRouteFor(link), route, link);
 });
 
 test('links the app has no screen for, or that are malformed, open nothing', () => {
-  for (const link of [null, '', '/workspace/finance/bills?bill=1', '/workspace/gallery', `/workspace/projects/not-an-id/site`, `/workspace/crm/leads?lead=../../x`]) {
+  for (const link of [null, '', '/workspace/settings/members', '/workspace/gallery', `/workspace/projects/not-an-id/site`, `/workspace/crm/leads?lead=../../x`]) {
     const route = appRouteFor(link);
     assert.ok(route === null || route === '/projects' || route === '/sales', String(link));
   }

@@ -61,8 +61,22 @@ export function appRouteFor(link: string | null | undefined): string | null {
       const taskId = q('taskId');
       return projectId && taskId ? `/projects/${projectId}/task/${taskId}` : '/projects/tasks';
     }
+    case 'finance': {
+      // Client and supplier invoices, payment runs and supplier accounts open their record in the app (FD-6);
+      // petty-cash claims wait in Approvals; anything else opens the phone's Finance.
+      const section = rest[0] ?? '';
+      if (section === 'client-invoices' && q('invoice')) return `/finance/invoice/${q('invoice')}`;
+      if (section === 'bills' && q('bill')) return `/finance/bill/${q('bill')}`;
+      if (section === 'runs' && q('run')) return `/finance/run/${q('run')}`;
+      if (section === 'suppliers' && id(rest[1])) return `/finance/supplier/${rest[1]}`;
+      if (section === 'petty-cash') return '/approvals';
+      return '/finance';
+    }
+    case 'ai-actions':
+      return '/approvals';
     case 'purchasing': {
       const section = rest[0] ?? '';
+      if (section === 'suppliers') return q('supplier') ? `/suppliers/${q('supplier')}` : '/purchasing';
       if (section === 'orders' && q('order')) return `/purchasing/order/${q('order')}`;
       if (section === 'orders') return '/purchasing/orders';
       if (section === 'deliveries' && q('receipt')) return `/purchasing/receipt/${q('receipt')}`;
@@ -97,6 +111,13 @@ export function routeForDestination(destination: NoticeDestination): string | nu
       return record ? appRouteFor(`/workspace/projects/${record}/${screen}${action ? `?record=${action}` : ''}`) : '/projects';
     case 'pre-project':
       return record ? `/survey/${record}` : '/survey';
+    case 'finance':
+      if (record && ['invoice', 'bill', 'run', 'supplier'].includes(screen)) return `/finance/${screen}/${record}`;
+      return '/finance';
+    case 'purchasing':
+      return screen === 'supplier' && record ? `/suppliers/${record}` : '/purchasing';
+    case 'approvals':
+      return '/approvals';
     case 'crm':
       if (screen === 'leads') return record ? `/sales/${record}` : '/sales';
       if (screen === 'deals') return record ? `/sales/opportunity/${record}` : '/sales/opportunities';

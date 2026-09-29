@@ -504,6 +504,23 @@ export class CrmNotificationsService {
       if (visible.rowCount) return { module: "projects", screen: project[2] ?? "overview", recordId: project[1], actionId: url.searchParams.get("record") };
       return null;
     }
+    // Finance and supplier notices open their record in the app (FD-6), for people who may see it.
+    const finance = /^\/workspace\/finance(?:\/([a-z-]+))?(?:\/([0-9a-f-]{36}))?$/i.exec(path);
+    if (finance) {
+      const [, section = "", vendorId] = finance;
+      const record = (name: string) => { const value = url.searchParams.get(name); return value && /^[0-9a-f-]{36}$/i.test(value) ? value : null; };
+      const can = (code: string) => this.access.hasPermission(client, workspaceId, userId, code);
+      if (section === "client-invoices") return await can("receivables.view") ? { module: "finance", screen: record("invoice") ? "invoice" : "overview", recordId: record("invoice") } : null;
+      if (section === "bills") return await can("payables.view") ? { module: "finance", screen: record("bill") ? "bill" : "overview", recordId: record("bill") } : null;
+      if (section === "runs") return await can("payables.view") ? { module: "finance", screen: record("run") ? "run" : "overview", recordId: record("run") } : null;
+      if (section === "suppliers" && vendorId) return await can("payables.view") ? { module: "finance", screen: "supplier", recordId: vendorId } : null;
+      if (section === "petty-cash") return { module: "approvals", screen: "overview", recordId: null };
+      return await can("receivables.view") || await can("payables.view") ? { module: "finance", screen: "overview", recordId: null } : null;
+    }
+    if (path === "/workspace/purchasing/suppliers" && await this.access.hasPermission(client, workspaceId, userId, "vendors.view")) {
+      const supplier = url.searchParams.get("supplier");
+      return { module: "purchasing", screen: "supplier", recordId: supplier && /^[0-9a-f-]{36}$/i.test(supplier) ? supplier : null };
+    }
     const preProject = /^\/workspace\/pre-projects(?:\/cases)?\/([0-9a-f-]{36})(?:\/([^/?]+))?$/i.exec(path);
     if (preProject && await this.access.hasPermission(client, workspaceId, userId, "pre_projects.view")) {
       const visible = await client.query(`SELECT 1 FROM pre_project_cases WHERE workspace_id=$1 AND id=$2 LIMIT 1`, [workspaceId, preProject[1]]);
