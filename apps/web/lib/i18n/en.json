@@ -11121,5 +11121,9 @@
   "{count} already closed or converted are left as they are.": "{count} already closed or converted are left as they are.",
   "Choose a status": "Choose a status",
   "Call back": "Call back",
-  "Why they're closed": "Why they're closed"
+  "Why they're closed": "Why they're closed",
+  "Saved to the project": "Saved to the project",
+  "Save to project": "Save to project",
+  "Save {name} to a project": "Save {name} to a project",
+  "This client has no project yet. Convert their enquiry first.": "This client has no project yet. Convert their enquiry first."
 }

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Pool, type PoolClient } from "pg";
+import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BrandAssetStorageService } from "../../workspaces/brand-asset-storage.service";
 import { CrmAttachmentsService } from "./crm-attachments.service";
@@ -222,4 +223,27 @@ integration("team inbox files, numbers and scheduled messages", () => {
       expect(notice.rows).toEqual([{ subject: "Noura Haddad replied first", body: "Any thoughts on the quote?" }]);
     });
   });
+
+  it("saves a chat photo to one of the client's projects, once, and never to another client's (IN-18)", async () => {
+    await withWorld(async (client, world) => {
+      const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 200, g: 120, b: 40 } } }).png().toBuffer();
+      const attachmentId = randomUUID();
+      await world.attachments.upload(actor, world.workspaceId, world.chat, attachmentId, { buffer: png, originalname: "site.png", mimetype: "image/png", size: png.length });
+      const [opportunity, caseId, otherCase, otherOpportunity] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,pipeline_id,stage_id,title,reference) VALUES($1,$2,$3,$4,$4,'Villa 12','OP-1'),($5,$2,$6,$4,$4,'Other','OP-2')`,
+        [opportunity, world.workspaceId, world.noura, randomUUID(), otherOpportunity, randomUUID()]);
+      await client.query(`INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by,status) VALUES($1,$2,$3,$4,'active'),($5,$2,$6,$4,'active')`,
+        [caseId, world.workspaceId, opportunity, world.admin, otherCase, otherOpportunity]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      expect((await world.attachments.saveTargets(actor, world.workspaceId, world.chat)).items).toEqual([{ caseId, title: "Villa 12", projectReference: null }]);
+      const fileId = randomUUID();
+      await expect(world.attachments.saveToCase(actor, world.workspaceId, world.chat, attachmentId, { caseId, fileId })).resolves.toEqual({ id: fileId, caseId, saved: true });
+      await expect(world.attachments.saveToCase(actor, world.workspaceId, world.chat, attachmentId, { caseId, fileId })).resolves.toEqual({ id: fileId, caseId, saved: true });
+      expect((await client.query(`SELECT original_name AS name, mime_type AS type, preview_key IS NOT NULL AS preview FROM pre_project_brief_assets WHERE workspace_id = $1 AND case_id = $2`, [world.workspaceId, caseId])).rows)
+        .toEqual([{ name: "site.png", type: "image/png", preview: true }]);
+      await expect(world.attachments.saveToCase(actor, world.workspaceId, world.chat, attachmentId, { caseId: otherCase, fileId: randomUUID() })).rejects.toThrow(/this client's projects/);
+    });
+  });
 });
+

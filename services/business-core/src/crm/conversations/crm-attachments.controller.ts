@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, Put, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { IsUUID } from "class-validator";
 import { ApiBearerAuth, ApiExcludeController, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
 import { RequestActor } from "../../auth/actor";
@@ -28,6 +29,20 @@ function send(file: StoredFile, response: Response, range?: string) {
   return new StreamableFile(body, { length: body.length, type: file.contentType, disposition: `${file.inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name)}` });
 }
 
+class SaveAttachmentToCaseDto {
+  @IsUUID() caseId!: string;
+  @IsUUID() fileId!: string;
+}
+
+@ApiTags("crm-inbox") @ApiBearerAuth()
+@Controller("workspaces/:workspaceId/crm/conversations/:conversationId/save-targets")
+export class CrmAttachmentTargetsController {
+  constructor(private readonly attachments: CrmAttachmentsService) {}
+  @Get() targets(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("conversationId", ParseUUIDPipe) conversationId: string) {
+    return this.attachments.saveTargets(actor, workspaceId, conversationId);
+  }
+}
+
 @ApiTags("crm-inbox") @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/crm/conversations/:conversationId/attachments/:attachmentId")
 export class CrmAttachmentsController {
@@ -38,6 +53,13 @@ export class CrmAttachmentsController {
   upload(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("conversationId", ParseUUIDPipe) conversationId: string,
     @Param("attachmentId", ParseUUIDPipe) attachmentId: string, @UploadedFile() file?: ReferenceUpload) {
     return this.attachments.upload(actor, workspaceId, conversationId, attachmentId, file);
+  }
+
+  /** Save to project (IN-18): file this chat file into one of the client's cases. */
+  @Post("save")
+  save(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("conversationId", ParseUUIDPipe) conversationId: string,
+    @Param("attachmentId", ParseUUIDPipe) attachmentId: string, @Body() input: SaveAttachmentToCaseDto) {
+    return this.attachments.saveToCase(actor, workspaceId, conversationId, attachmentId, input);
   }
 
   @Get()
