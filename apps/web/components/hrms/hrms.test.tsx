@@ -289,7 +289,7 @@ describe("People", () => {
   });
 
   describe("people", () => {
-    it("saves a person's HR record and a limited allowance, each on its version", async () => {
+    it("saves a person's HR record and a limited allowance in place, each on its version", async () => {
       const calls = mount(({ path }) => {
         if (path === "people") return [person(), person({ membershipId: "m1", name: "Dana Designer", email: "dana@palm.test", managerId: null })];
         if (path === "leave/balances") return [balance({ membershipId: "m3", name: "Omar Joiner", version: 2 }),
@@ -301,36 +301,44 @@ describe("People", () => {
       expect(table).toHaveTextContent("omar@palm.test");
       await userEvent.click(within(table).getByText("Omar Joiner"));
       const sheet = await screen.findByRole("dialog", { name: /Omar Joiner/ });
-      expect(within(sheet).getByRole("button", { name: "Save" })).toBeDisabled();
+      expect(within(sheet).queryByRole("button", { name: "Save" })).toBeNull();
+      await userEvent.click(within(sheet).getByRole("button", { name: "Edit Designation" }));
       await userEvent.clear(within(sheet).getByRole("textbox", { name: "Designation" }));
-      await userEvent.type(within(sheet).getByRole("textbox", { name: "Designation" }), "Senior joiner");
+      await userEvent.type(within(sheet).getByRole("textbox", { name: "Designation" }), "Senior joiner{Enter}");
+      await waitFor(() => expect(writes(calls, "people/m3")).toHaveLength(1));
+      // A switch applies at once, on the version the last save returned.
       await userEvent.click(within(sheet).getByRole("switch", { name: "Remote allowed" }));
+      await waitFor(() => expect(writes(calls, "people/m3")).toHaveLength(2));
       // Reports to: anyone but themself.
-      await userEvent.click(within(sheet).getByRole("button", { name: /Reports to/ }));
+      await userEvent.click(within(sheet).getByRole("button", { name: "Edit Reports to" }));
       expect(screen.queryByRole("option", { name: "Omar Joiner" })).toBeNull();
       await userEvent.click(await screen.findByRole("option", { name: "No one" }));
+      await waitFor(() => expect(writes(calls, "people/m3")).toHaveLength(3));
+      expect(writes(calls, "people/m3")).toEqual([
+        { version: 4, enabled: true, employeeCode: "PL-07", designation: "Senior joiner", department: "Factory", managerId: "m1", calendarId: "cal1", remoteAllowed: false, activeFrom: "2026-02-01", activeTo: null },
+        { version: 5, enabled: true, employeeCode: "PL-07", designation: "Senior joiner", department: "Factory", managerId: "m1", calendarId: "cal1", remoteAllowed: true, activeFrom: "2026-02-01", activeTo: null },
+        { version: 6, enabled: true, employeeCode: "PL-07", designation: "Senior joiner", department: "Factory", managerId: null, calendarId: "cal1", remoteAllowed: true, activeFrom: "2026-02-01", activeTo: null },
+      ]);
       expect(await within(sheet).findByText("Unlimited")).toBeInTheDocument();
+      await userEvent.click(within(sheet).getByRole("button", { name: "Edit Annual leave days a year" }));
       const allowance = within(sheet).getByRole("textbox", { name: "Annual leave days a year" });
       await userEvent.clear(allowance);
-      await userEvent.type(allowance, "32.5");
-      await userEvent.tab();
-      await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
-      await waitFor(() => expect(writes(calls, "leave/allowances")).toHaveLength(1));
-      expect(writes(calls, "people/m3")).toEqual([{ version: 4, enabled: true, employeeCode: "PL-07", designation: "Senior joiner", department: "Factory", managerId: null, calendarId: "cal1",
-        remoteAllowed: true, activeFrom: "2026-02-01", activeTo: null }]);
-      expect(writes(calls, "leave/allowances")).toEqual([{ membershipId: "m3", leaveTypeId: "annual", year: 2026, days: 32.5, version: 2 }]);
-      await waitFor(() => expect(screen.queryByRole("dialog", { name: /Omar Joiner/ })).toBeNull());
+      await userEvent.type(allowance, "32.5{Enter}");
+      await waitFor(() => expect(writes(calls, "leave/allowances")).toEqual([{ membershipId: "m3", leaveTypeId: "annual", year: 2026, days: 32.5, version: 2 }]));
+      // In place: the sheet stays open for the next change.
+      expect(screen.getByRole("dialog", { name: /Omar Joiner/ })).toBeInTheDocument();
     });
 
-    it("keeps the sheet open with the server's message when someone else saved first", async () => {
+    it("keeps the new value with the server's message when someone else saved first", async () => {
       mount(({ path }) => (path === "people" ? [person()] : path === "people/m3" ? new Fail(409, { message: "Someone else changed this person. Reload to continue." }) : undefined));
       nav.query = "person=m3";
       page("people");
       const sheet = await screen.findByRole("dialog", { name: /Omar Joiner/ });
-      await userEvent.type(within(sheet).getByRole("textbox", { name: "Department" }), " workshop");
-      await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+      await userEvent.click(within(sheet).getByRole("button", { name: "Edit Department" }));
+      await userEvent.type(within(sheet).getByRole("textbox", { name: "Department" }), " workshop{Enter}");
       expect(await within(sheet).findByText("Someone else changed this person. Reload to continue.")).toBeInTheDocument();
-    });
+      expect(within(sheet).getByRole("button", { name: "Reload" })).toBeInTheDocument();
+  });
   });
 
   it("shows only the tabs the person may use", async () => {
