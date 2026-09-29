@@ -103,7 +103,9 @@ const receipts: Source = async (db, ctx) => {
             receipt.amount::text AS amount, receipt.currency, receipt.source, receipt.detail->>'reportedAt' AS since,
             receipt.detail->>'reportedById' AS "reportedById", receipt.detail->>'reportedBy' AS "reportedBy", commercial.revision,
             coalesce(party.display_name, opportunity.title) AS client,
-            project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName"
+            -- While the deal is still in Planning there is no project yet: the case (its opportunity) names the job.
+            coalesce(project.id, pre_case.id) AS "projectId", coalesce(project.reference, opportunity.reference) AS "projectReference",
+            coalesce(project.name, opportunity.title) AS "projectName"
        FROM commercial_receipts receipt
        JOIN commercial_cases commercial ON commercial.workspace_id = receipt.workspace_id AND commercial.case_id = receipt.case_id
        LEFT JOIN commercial_payments payment ON payment.workspace_id = receipt.workspace_id AND payment.case_id = receipt.case_id AND payment.id = receipt.payment_id
