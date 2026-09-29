@@ -154,7 +154,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
     { id: "all" as const, label: t("All"), count: summary?.all },
   ];
 
-  return <CrmProductShell title={t("Inbox")} description={t("Customer conversations")} canView={initialData.canView} compact useWorkspaceColors>
+  return <CrmProductShell title={t("Inbox")} description={t("Customer conversations")} canView={initialData.canView} compact header={false} useWorkspaceColors>
     <div className={styles.inbox} data-selected={Boolean(selected)} onKeyDown={onKeyDown}>
       <section aria-label={t("Customer conversations")} className={styles.threadList}>
         <header className={styles.listHeading}><h1>{t("Inbox")}</h1><div className={styles.actions}>

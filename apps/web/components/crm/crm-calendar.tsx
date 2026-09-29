@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
-import { Badge, Button, Callout, ControlledModalDialog, DesignSystemProvider, IconButton, InspectorSheet, isNoAccessError, NoAccessState, SearchInput, SelectField, useDesignSystem, useWorkspaceZoneLabel, Skeleton } from "@/design-system";
+import { Badge, Button, Callout, ControlledModalDialog, DesignSystemProvider, IconButton, InspectorSheet, isNoAccessError, NoAccessState, PageHeader, SearchInput, SelectField, useDesignSystem, useWorkspaceZoneLabel, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows, label, type RecordData } from "@/lib/crm/client";
 import { calendarDayKey, calendarRange, localDateTime, moveCalendar, type CalendarMode, type CalendarEvent } from "@/lib/crm/calendar";
@@ -146,7 +146,9 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
   };
   const periodTitle = anchor.toLocaleDateString(locale, { month: "long", year: "numeric" });
   const periodSubtitle = mode === "month" ? `${new Date(anchor.getFullYear(), anchor.getMonth(), 1).toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}` : `${range.days[0].toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${range.days.at(-1)?.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}`;
+  const addEvent = () => connections.some(item => ["connected", "degraded"].includes(item.status)) ? setGoogleCreateOn(newEventDate()) : setCreateOn(newEventDate());
   return <div className={styles.calendarLayout}><div className={styles.calendar}>
+    <PageHeader title={t("Calendar")} actions={<Button variant="primary" onPress={addEvent}><Plus size={16} aria-hidden="true" />{t("Add event")}</Button>} />
     <header className={styles.pageHeader} aria-label={t("Calendar controls")}><div className={styles.scopeBar}><div role="tablist" aria-label={t("Calendar scope")} className={styles.scopeTabs}>
       <button type="button" role="tab" aria-selected={scope === "organization"} onClick={() => { setScope("organization"); setGoogleSelection("all"); }}>{t("Organisation")}</button>
       {!membersDenied ? <button type="button" role="tab" aria-selected={scope === "personal"} onClick={() => { setScope("personal"); setGoogleSelection("all"); }}>{t("Personal")}</button> : null}
@@ -158,7 +160,6 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
       <div className={styles.search}><SearchInput label={t("Search calendar")} placeholder={t("Search events")} value={search} onChange={setSearch} /></div>
       {!connectionsDenied ? <Link className={styles.googleLink} href="/workspace/integrations?connect=google_workspace"><Image src="/icons/integrations/google-calendar.svg" alt="" width={18} height={18} aria-hidden="true" />{connections.some(item => ["connected", "degraded"].includes(item.status)) ? t("Manage Google") : t("Connect Google")}</Link> : null}
       <Button size="compact" onPress={() => setCreateOn(newEventDate())}><CalendarDays size={15} aria-hidden="true" />{t("Schedule")}</Button>
-      <Button size="compact" variant="primary" onPress={() => connections.some(item => ["connected", "degraded"].includes(item.status)) ? setGoogleCreateOn(newEventDate()) : setCreateOn(newEventDate())}><Plus size={16} aria-hidden="true" />{t("Add event")}</Button>
     </div></header>
     {memberError ? <Callout title={t("Members unavailable")} tone="warning">{memberError}</Callout> : null}
     {scope === "personal" && members.length > 0 && !currentMember ? <Callout title={t("Personal calendar unavailable")} tone="warning">{t("Your workspace membership could not be identified.")}</Callout> : null}

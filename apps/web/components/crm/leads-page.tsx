@@ -16,6 +16,7 @@ import {
   InspectorSheet,
   NoAccessNotice,
   NoAccessState,
+  PageHeader,
   type DataGridColumn,
   DesignSystemProvider,
   TextAreaField,
@@ -356,6 +357,9 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const workspaceArea = activeSection === "leads" ? "work" : activeSection === "forms" || activeSection === "sources" ? "capture" : activeSection === "assignment" || activeSection === "sla" ? "response" : "performance";
   return <DesignSystemProvider className={`${styles.provider} ${theme.theme}`} portalContainer={portalContainer} ref={setPortalContainer}>
     <section aria-label={t("Enquiries workspace")} className={styles.page}>
+      {/* One title per section, with New enquiry top-end on the list (S-20). */}
+      <div className={styles.pageHeader}><PageHeader title={t(SECTION_AREA[activeSection])} actions={activeSection === "leads" && initialData.canView
+        ? <Button variant="primary" onPress={() => setCreateOpen(true)}><Plus size={15} aria-hidden="true"/>{t("New enquiry")}</Button> : undefined} /></div>
 
 
       {workspaceArea === "capture" && !sectionDenied && !(activeSection === "forms" && formEditing) ? <nav className={styles.subnav} aria-label={t("Capture settings")}><button type="button" data-active={activeSection === "forms" || undefined} onClick={() => openSection("forms")}>{t("Forms")}</button><button type="button" data-active={activeSection === "sources" || undefined} onClick={() => openSection("sources")}>{t("Lead sources")}</button></nav> : null}
@@ -401,7 +405,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
           ...(viewCount("duplicates") ? [{ id: "duplicates" as const, label: t("Duplicates"), count: viewCount("duplicates") }] : []),
           { id: "all", label: t("All") },
         ]} />}
-            toolbarActions={<><IconMenuButton ariaLabel={t("More actions")} items={[{ id: "import", label: t("Import CSV") }, { id: "review", label: t("Intake review") }]} onAction={(id) => id === "import" ? setImportOpen(true) : setReviewOpen(true)} /><Button size="compact" variant="primary" onPress={() => setCreateOpen(true)}><Plus size={14} aria-hidden="true"/>{t("New enquiry")}</Button></>}
+            toolbarActions={<><IconMenuButton ariaLabel={t("More actions")} items={[{ id: "import", label: t("Import CSV") }, { id: "review", label: t("Intake review") }]} onAction={(id) => id === "import" ? setImportOpen(true) : setReviewOpen(true)} /></>}
             footerActions={<><Button size="compact" variant="quiet" isDisabled={busy || !items.some(lead => !lead.ownerMembershipId && ACTIVE_STATUSES.has(lead.status))} onPress={() => void runAutoAssign()}>{t("Assign unassigned")}</Button>{nextCursor ? <Button isDisabled={busy} isLoading={loadingMore} onPress={() => void loadMore()} size="compact">{t("Load more enquiries")}</Button> : null}<IconButton aria-label={t("Refresh enquiries")} onPress={() => void refresh()} isDisabled={busy} size="compact"><RefreshCw size={14} aria-hidden="true"/></IconButton></>}
           />
         </section>

@@ -312,6 +312,12 @@ describe("LeadsPage", () => {
     expect(screen.getByText("6 records")).toBeInTheDocument();
   });
 
+  it("has one title with New enquiry as its one primary action, top-end (S-20)", () => {
+    render(<LeadsPage initialData={structuredClone(leadsPageFixture)} />);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Enquiries"]);
+    expect(screen.getAllByRole("button", { name: "New enquiry" })).toHaveLength(1);
+  });
+
   it("filters by source and resets to all leads", async () => {
     const interaction = userEvent.setup();
     render(<LeadsPage initialData={structuredClone(leadsPageFixture)} />);

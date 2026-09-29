@@ -149,7 +149,8 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
   };
 
 
-  return <CrmProductShell title={t("Pipeline")} description="" canView={initialData.canView} useWorkspaceColors compact pageClassName={styles.boardPage}>
+  return <CrmProductShell title={t("Pipeline")} description="" canView={initialData.canView} useWorkspaceColors compact pageClassName={styles.boardPage}
+    actions={<Button variant="primary" onPress={() => router.push("/workspace/crm/leads")}><Plus aria-hidden="true" size={15} />{t("Convert enquiry")}</Button>}>
     <div className={styles.boardSurface}>
     <div className={styles.boardToolbar}>
       <label className={styles.search}><Search size={15} aria-hidden="true" /><input aria-label={t("Search opportunities")} placeholder={t("Search opportunities")} value={search} onChange={(e) => setSearch(e.target.value)} /></label>
@@ -159,7 +160,6 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
       <div role="group" aria-label={t("Pipeline view")} className={styles.viewSwitch}><Button size="compact" aria-pressed={layout === "board"} onPress={() => setLayout("board")}><Columns3 size={14} />{t("Board")}</Button><Button size="compact" aria-pressed={layout === "list"} onPress={() => setLayout("list")}><List size={14} />{t("List")}</Button></div>
       <div className={styles.toolbarActions}>
         <Button size="compact" aria-label={t("Refresh pipeline")} isLoading={busy} onPress={() => void reload()}><RefreshCw aria-hidden="true" size={15} /></Button>
-        <Button size="compact" variant="primary" onPress={() => router.push("/workspace/crm/leads")}><Plus aria-hidden="true" size={14} />{t("Convert enquiry")}</Button>
       </div>
     </div>
     {failure ? <Callout title={t("Could not update pipeline")} tone="warning">{failure}</Callout> : null}

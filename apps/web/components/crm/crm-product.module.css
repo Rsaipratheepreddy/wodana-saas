@@ -146,3 +146,6 @@
 .threadHeading h2 { font-size: var(--wd-text-lg); }
 @media (max-width: 48rem) { .inbox { min-block-size: 0; block-size: calc(100dvh - 12rem); } .threadList, .conversationWorkspace, .thread { block-size: 100%; } .threadContext { gap: var(--wd-space-1-5); } .composerFooter small { display: none; } .thread > .threadHeading:first-child { padding-block: var(--wd-space-1); } }
 .focusedPage { display: flex; flex-direction: column; block-size: calc(100dvh - 3.5rem); min-block-size: 0; inline-size: 100%; }
+/* The shared page header: spaced from the page below; a full-height page keeps its gutter around it. */
+.pageHeader { margin-block-end: var(--wd-space-4); }
+.focusedPage > .pageHeader { flex: none; margin: 0; padding: var(--wd-space-4) var(--wd-space-6) var(--wd-space-3); }

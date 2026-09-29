@@ -1,18 +1,22 @@
 "use client";
 
 import { useCallback, useState, type ReactNode } from "react";
-import { DesignSystemProvider, NoAccessState, useDesignSystem } from "@/design-system";
+import { DesignSystemProvider, NoAccessState, PageHeader, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import base from "./crm-screen-page.module.css";
 import styles from "./crm-product.module.css";
 import workspaceColors from "./crm-workspace-colors.module.css";
 
-export function CrmProductShell({ title, canView, actions, children, compact = false, useWorkspaceColors = false, headerClassName, pageClassName }: { title: string; description: string; canView: boolean; actions?: ReactNode; children: ReactNode; compact?: boolean; useWorkspaceColors?: boolean; headerClassName?: string; pageClassName?: string }) {
+/**
+ * A Sales page: one title and at most one primary action top-end (the shared PageHeader), then the page. `header`
+ * off is for a full-height chat layout (the Inbox), whose chat carries its own heading.
+ */
+export function CrmProductShell({ title, canView, actions, children, compact = false, header = true, useWorkspaceColors = false, headerClassName, pageClassName }: { title: string; description: string; canView: boolean; actions?: ReactNode; children: ReactNode; compact?: boolean; header?: boolean; useWorkspaceColors?: boolean; headerClassName?: string; pageClassName?: string }) {
   const t = useT();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   return <DesignSystemProvider className={[base.provider, useWorkspaceColors && workspaceColors.theme].filter(Boolean).join(" ")} portalContainer={portal} ref={setPortal}>
     <section className={[compact ? styles.focusedPage : base.page, pageClassName].filter(Boolean).join(" ")} aria-label={t("{title} workspace", { title })}>
-      {!compact && canView && actions ? <header className={[base.pageHeading, headerClassName].filter(Boolean).join(" ")}><div className={styles.actions}>{actions}</div></header> : null}
+      {header ? <div className={[styles.pageHeader, headerClassName].filter(Boolean).join(" ")}><PageHeader title={title} actions={canView ? actions : undefined} /></div> : null}
       {canView ? children : <NoAccessState area={t(title as never)} />}
     </section>
   </DesignSystemProvider>;
