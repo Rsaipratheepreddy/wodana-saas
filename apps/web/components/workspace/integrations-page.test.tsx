@@ -21,6 +21,29 @@ describe("IntegrationsPage", () => {
     expect(await screen.findByRole("dialog", { name: "Connect WhatsApp Business" })).toBeInTheDocument();
     expect(document.cookie).not.toContain("wodana_onboarding_connect");
   });
+  it("offers Connect only when Wodana has set up the provider's app, and says so plainly otherwise", async () => {
+    const data = structuredClone(integrationsPageFixture);
+    data.platformReadiness = { google_workspace: true, quickbooks: false, zoho_books: true, whatsapp: false };
+    data.connections = [{ ...data.connections[0], id: "40000000-0000-4000-8000-000000000009", provider: "whatsapp", displayName: "Sales number", status: "draft" }];
+    render(<IntegrationsPage initialData={data} />);
+    const quickbooks = screen.getByRole("article", { name: "QuickBooks integration" });
+    expect(within(quickbooks).queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+    expect(within(quickbooks).getByText("Not available yet — Wodana is setting this up")).toBeVisible();
+    const whatsapp = screen.getByRole("article", { name: "WhatsApp Business integration" });
+    expect(within(whatsapp).queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+    expect(within(whatsapp).getByText("Not available yet — Wodana is setting this up")).toBeVisible();
+    expect(within(screen.getByRole("article", { name: "Zoho Books integration" })).getByRole("button", { name: "Connect" })).toBeEnabled();
+    const accounts = screen.getByRole("row", { name: /Sales number/ });
+    expect(within(accounts).getByRole("button", { name: "Connect" })).toBeDisabled();
+  });
+  it("shows the provider's setup state as unknown, not unavailable, when it couldn't be checked", () => {
+    const data = structuredClone(integrationsPageFixture);
+    data.connections = [];
+    delete data.platformReadiness;
+    render(<IntegrationsPage initialData={data} />);
+    expect(within(screen.getByRole("article", { name: "QuickBooks integration" })).getByRole("button", { name: "Connect" })).toBeEnabled();
+    expect(screen.queryByText("Not available yet — Wodana is setting this up")).not.toBeInTheDocument();
+  });
   it("finds accounting tools by business purpose", async () => {
     render(<IntegrationsPage initialData={structuredClone(integrationsPageFixture)} />);
     await userEvent.click(screen.getByRole("button", { name: "Invoices & payments" }));

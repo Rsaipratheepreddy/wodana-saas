@@ -39,10 +39,11 @@ async def test_event_list_expands_recurrence_paginates_and_omits_cancellations()
     assert len(calls) == 2
 
 
-def test_authorization_url_uses_offline_consent_state_and_pkce() -> None:
+@pytest.mark.asyncio
+async def test_authorization_url_uses_offline_consent_state_and_pkce() -> None:
     client = GoogleCalendarClient("client-id", "client-secret", "https://app.test/callback")
 
-    url = client.authorization_url(
+    url = await client.authorization_url(
         "opaque-state",
         "pkce-challenge",
         ["openid", "calendar"],

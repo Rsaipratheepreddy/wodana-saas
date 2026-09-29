@@ -28,8 +28,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
   }
   if (!result.upstream) return NextResponse.json({ message: t("The integration authorization service is unavailable.") }, { status: 503 });
   const payload = await result.upstream.json().catch(() => null);
+  // Wodana's own app for this provider isn't set up yet (Wodana Control): say so, never the raw error.
+  const code = (payload as { error?: { code?: unknown } } | null)?.error?.code;
+  const unavailable = code === "provider_not_configured" || code === "google_not_configured";
   const response = NextResponse.json(
-    result.upstream.ok ? payload : { message: safeBackendMessage(payload, t("Provider authorization could not be started.")) },
+    result.upstream.ok ? payload : { message: unavailable ? t("Not available yet — Wodana is setting this up")
+      : safeBackendMessage(payload, t("Provider authorization could not be started.")) },
     { status: result.upstream.status },
   );
   applyRotatedSession(response, result.rotatedSession);

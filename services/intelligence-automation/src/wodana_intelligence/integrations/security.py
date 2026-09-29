@@ -34,6 +34,23 @@ class TokenCipher:
         except (InvalidToken, ValueError, json.JSONDecodeError) as error:
             raise InvalidEncryptedSecretError("Stored integration credential is invalid") from error
 
+    def seal_value(self, purpose: str, value: str) -> str:
+        """Seals one secret for one purpose (for example Wodana's Meta app secret)."""
+        envelope = json.dumps({"purpose": purpose, "value": value}, separators=(",", ":"))
+        return self._fernet.encrypt(envelope.encode("utf-8")).decode("ascii")
+
+    def open_value(self, purpose: str, token: str) -> str:
+        """Opens a value sealed for exactly this purpose; anything else is refused."""
+        try:
+            data = json.loads(self._fernet.decrypt(token.encode("ascii")))
+        except (InvalidToken, ValueError, UnicodeError) as error:
+            raise InvalidEncryptedSecretError("Stored platform credential is invalid") from error
+        if not isinstance(data, dict) or data.get("purpose") != purpose or not isinstance(
+            data.get("value"), str
+        ):
+            raise InvalidEncryptedSecretError("Stored platform credential is for something else")
+        return str(data["value"])
+
 
 class RedisStateClient(Protocol):
     async def set(self, name: str, value: str, *, ex: int, nx: bool) -> object: ...

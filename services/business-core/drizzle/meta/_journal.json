@@ -939,6 +939,13 @@
       "when": 1801320000100,
       "tag": "0190_daily_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1801740000100,
+      "tag": "0240_platform_integration_credentials",
+      "breakpoints": true
     }
   ]
 }

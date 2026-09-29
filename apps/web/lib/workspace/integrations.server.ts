@@ -2,9 +2,23 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/auth/server";
+import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile, intelligenceApiUrl } from "@/lib/auth/server";
 import type { CompanyProfileData } from "./company-profile";
-import { integrationsPageFixture, type IntegrationConnection, type IntegrationsPageData, type ProviderCapabilitiesResponse } from "./integrations";
+import { integrationsPageFixture, type IntegrationConnection, type IntegrationProvider, type IntegrationsPageData, type ProviderCapabilitiesResponse } from "./integrations";
+
+const READINESS_PROVIDERS: IntegrationProvider[] = ["google_workspace", "quickbooks", "zoho_books", "whatsapp"];
+
+/** Which providers firms can connect now: Wodana's own app for each is set up (from Wodana Control, read live). */
+async function platformReadiness(): Promise<IntegrationsPageData["platformReadiness"]> {
+  const response = await fetch(intelligenceApiUrl("/integrations/providers/readiness"), {
+    cache: "no-store", signal: AbortSignal.timeout(5_000),
+  }).catch(() => null);
+  if (!response?.ok) return undefined;
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!payload || typeof payload !== "object") return undefined;
+  return Object.fromEntries(READINESS_PROVIDERS.filter((provider) => typeof payload[provider] === "boolean")
+    .map((provider) => [provider, payload[provider] as boolean]));
+}
 
 export async function getIntegrationsPageData(workspaceId?: string, strict = false): Promise<IntegrationsPageData> {
   const authProfile = await getAuthenticatedProfile();
@@ -19,10 +33,11 @@ export async function getIntegrationsPageData(workspaceId?: string, strict = fal
     headers: { authorization: `Bearer ${token}` },
     cache: "no-store",
   }).catch(() => null);
-  const [profileResponse, connectionsResponse, capabilitiesResponse] = await Promise.all([
+  const [profileResponse, connectionsResponse, capabilitiesResponse, readiness] = await Promise.all([
     request(`/workspaces/${membership.workspaceId}`),
     request(`/workspaces/${membership.workspaceId}/integration-connections`),
     request(`/workspaces/${membership.workspaceId}/integration-capabilities`),
+    platformReadiness(),
   ]);
   if ([profileResponse, connectionsResponse, capabilitiesResponse].some((response) => response?.status === 401)) redirect("/login");
   if (!profileResponse?.ok) throw new Error("The workspace profile could not be loaded.");
@@ -40,5 +55,6 @@ export async function getIntegrationsPageData(workspaceId?: string, strict = fal
       ? await capabilitiesResponse.json() as ProviderCapabilitiesResponse
       : { generatedAt: new Date().toISOString(), providers: [] },
     workspaceId: membership.workspaceId,
+    ...(readiness ? { platformReadiness: readiness } : {}),
   };
 }

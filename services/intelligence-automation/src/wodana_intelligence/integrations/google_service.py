@@ -69,11 +69,9 @@ class GoogleIntegrationService:
         request: OAuthStartRequest,
         actor_headers: Mapping[str, str],
     ) -> OAuthStartResponse:
-        if not self._google.client_id or not self._google.client_secret:
+        if not await self._google.configured():
             raise IntegrationFlowError(
-                "google_not_configured",
-                "Google OAuth credentials have not been configured",
-                503,
+                "google_not_configured", "Not available yet — Wodana is setting this up", 503
             )
 
         public = await self._business_core.validate_connection(
@@ -119,7 +117,7 @@ class GoogleIntegrationService:
                 "Google authorization could not be started; try again",
                 503,
             ) from error
-        authorization_url = self._google.authorization_url(
+        authorization_url = await self._google.authorization_url(
             state_id,
             self._state_store.code_challenge(verifier),
             scopes,

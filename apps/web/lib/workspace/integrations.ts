@@ -34,6 +34,11 @@ export type IntegrationsPageData = {
   legalEntities: LegalEntityRecord[];
   providerCapabilities: ProviderCapabilitiesResponse;
   workspaceId: string;
+  /**
+   * Whether Wodana's own app for each provider is set up (Wodana Control), so firms can connect it.
+   * Missing when that couldn't be checked: Connect then stays available and the provider answers.
+   */
+  platformReadiness?: Partial<Record<IntegrationProvider, boolean>>;
 };
 
 export type ProviderCapability = {
@@ -153,6 +158,7 @@ export const integrationsPageFixture: IntegrationsPageData = {
   workspaceId: companyProfileFixture.workspace.id,
   legalEntities: companyProfileFixture.legalEntities,
   providerCapabilities: providerCapabilitiesFixture,
+  platformReadiness: { google_workspace: true, quickbooks: true, zoho_books: true, whatsapp: true },
   connections: [{
     id: "40000000-0000-4000-8000-000000000001",
     legalEntityId: companyProfileFixture.legalEntities[0].id,

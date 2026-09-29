@@ -102,12 +102,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "Production requires INTEGRATIONS_ENCRYPTION_KEY with at least 32 characters"
                 )
-            if not self.google_client_id or not self.google_client_secret:
-                raise ValueError("Production requires Google OAuth client credentials")
-            secure_urls = [
-                ("WEB_ORIGIN", self.web_origin.split(",", 1)[0]),
-                ("GOOGLE_REDIRECT_URI", self.google_redirect_uri),
-            ]
+            # Wodana's app credentials may come from Wodana Control instead; any given here are
+            # the fallback, and their callbacks must be HTTPS.
+            secure_urls = [("WEB_ORIGIN", self.web_origin.split(",", 1)[0])]
+            if self.google_client_id:
+                secure_urls.append(("GOOGLE_REDIRECT_URI", self.google_redirect_uri))
             if self.quickbooks_client_id:
                 secure_urls.append(("QUICKBOOKS_REDIRECT_URI", self.quickbooks_redirect_uri))
             if self.zoho_client_id:

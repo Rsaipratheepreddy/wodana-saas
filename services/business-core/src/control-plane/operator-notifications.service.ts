@@ -29,13 +29,16 @@ export class OperatorNotificationsService {
   async notify(client: Db, input: {
     permission: PlatformOperatorPermission; eventType: string; title: string; body?: string | null; link?: string | null;
     sourceType: string; sourceId: string;
+    /** The operator whose own action this is: they already know. */
+    exceptUserId?: string;
   }) {
     const operators = await client.query<{ userId: string; role: string }>(
       `SELECT operator.user_id AS "userId", operator.role
          FROM platform_administrators operator JOIN users app_user ON app_user.id = operator.user_id AND app_user.status = 'active'
         WHERE operator.status = 'active'`);
     const recipients = operators.rows
-      .filter((operator) => isPlatformOperatorRole(operator.role) && platformOperatorCan(operator.role, input.permission))
+      .filter((operator) => isPlatformOperatorRole(operator.role) && platformOperatorCan(operator.role, input.permission)
+        && operator.userId !== input.exceptUserId)
       .map((operator) => operator.userId);
     if (!recipients.length) return 0;
     await client.query(

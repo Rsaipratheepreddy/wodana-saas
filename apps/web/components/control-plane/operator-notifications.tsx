@@ -19,6 +19,7 @@ export const OPERATOR_NOTICES_EVENT = "wodana:operator-notices-changed";
 
 function eventLabel(t: Translate, eventType: string) {
   if (eventType === "sales_enquiry.received") return t("New sales enquiry");
+  if (eventType === "platform_integration.changed") return t("Platform connection changed");
   return t("Notification");
 }
 

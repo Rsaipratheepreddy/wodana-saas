@@ -55,8 +55,27 @@
 .link { display: grid; gap: var(--wd-space-2); }
 .link code { font-family: var(--wd-font-mono); font-size: var(--wd-text-xs); overflow-wrap: anywhere; direction: ltr; unicode-bidi: isolate; }
 
+/* Platform connections: the public address, then one card per provider's app */
+.addressRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-3); min-inline-size: 0; }
+.addressRow .properties { grid-template-columns: minmax(0, 1fr); flex: 1; }
+.addressRow .properties > div { grid-template-columns: max-content minmax(0, 1fr); gap: var(--wd-space-3); }
+.secret { white-space: nowrap; }
+.url { font-family: var(--wd-font-mono); font-size: var(--wd-text-xs); overflow-wrap: anywhere; direction: ltr; unicode-bidi: isolate; }
+.connectionGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-4); min-inline-size: 0; }
+.connectionCard { display: grid; align-content: start; gap: var(--wd-space-3); padding: var(--wd-space-4) var(--wd-space-5); border-radius: var(--wd-radius-md); min-inline-size: 0; }
+.connectionHead { display: flex; align-items: center; gap: var(--wd-space-3); min-inline-size: 0; }
+.connectionHead > .nameCell { flex: 1; }
+.connectionIcon { display: grid; place-items: center; inline-size: var(--wd-control-md); block-size: var(--wd-control-md); flex: 0 0 auto; border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.connectionIcon svg { inline-size: var(--wd-space-6); block-size: var(--wd-space-6); }
+.testFailed { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
+.urlList { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.urlList li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-inline-size: 0; }
+
 @media (max-width: 720px) {
   .page { padding: var(--wd-space-4); }
+  .connectionGrid { grid-template-columns: minmax(0, 1fr); }
+  .connectionCard .record { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .connectionCard .record dd { margin-block-end: var(--wd-space-2); }
   .properties, .pair, .trio { grid-template-columns: minmax(0, 1fr); }
   .properties > div { grid-template-columns: 7rem minmax(0, 1fr); }
   .operator > span:last-child { display: none; }

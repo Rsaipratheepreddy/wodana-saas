@@ -30,7 +30,8 @@ export function OperatorShell({ operator, children }: { operator: ConsoleOperato
   return <DesignSystemProvider locale={language} direction={direction} timeZone={timeZone}>
     <ToastProvider>
       <AppShell title={<Link className={styles.brand} href="/internal">{t("Wodana Control")}</Link>}
-        topNavigation={<ShellNavigation canReadSales={operator.permissions.includes("sales.read")} />}
+        topNavigation={<ShellNavigation canReadSales={operator.permissions.includes("sales.read")}
+          canManagePlatform={operator.permissions.includes("platform.integrations.manage")} />}
         topActions={<ShellActions operator={operator} theme={theme} onToggleTheme={toggleTheme} />}>
         {children}
       </AppShell>
@@ -39,7 +40,7 @@ export function OperatorShell({ operator, children }: { operator: ConsoleOperato
 }
 
 /** The portal's modules; the count on Sales enquiries is how many enquiries nobody has picked up yet. */
-function ShellNavigation({ canReadSales }: { canReadSales: boolean }) {
+function ShellNavigation({ canReadSales, canManagePlatform }: { canReadSales: boolean; canManagePlatform: boolean }) {
   const t = useT();
   const pathname = usePathname() ?? "";
   const [newEnquiries, setNewEnquiries] = useState(0);
@@ -58,9 +59,10 @@ function ShellNavigation({ canReadSales }: { canReadSales: boolean }) {
       { id: "sales", href: "/internal/sales-enquiries", label: t("Sales enquiries"), ...(newEnquiries > 0 ? { count: newEnquiries } : {}) },
       { id: "form", href: "/internal/contact-form", label: t("Contact form") },
     ] : []),
+    ...(canManagePlatform ? [{ id: "platform", href: "/internal/platform-connections", label: t("Platform connections") }] : []),
   ];
   const activeId = pathname.startsWith("/internal/sales-enquiries") ? "sales" : pathname.startsWith("/internal/contact-form") ? "form"
-    : pathname.startsWith("/internal/ai-credits") ? "ai-credits" : "accounts";
+    : pathname.startsWith("/internal/ai-credits") ? "ai-credits" : pathname.startsWith("/internal/platform-connections") ? "platform" : "accounts";
   return <ModuleNavigation activeId={activeId} items={items} />;
 }
 
