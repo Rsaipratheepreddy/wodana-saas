@@ -110,6 +110,23 @@ it("requires Finance to acknowledge payment proof before confirming a submitted 
   await waitFor(()=>expect(run).toHaveBeenCalledWith("review_deal_finance", expect.objectContaining({decision:"confirm",paymentVerified:true,commissionLines:[{recipientName:"Sales A",type:"sales",basis:"amount",value:10}]})));
 });
 
+it("keeps Finance's note out of the approver's remarks, and shows the decision only to an approver who didn't verify it (m18)", async () => {
+  const pending = (viewerId: string) => ({
+    opportunityStatus: "won", canVerifyFinance: true, canApproveDeal: true, viewerId, contacts: [], stepHolders: { verifyAgreement: [], verifyPayment: [], approveDeal: ["Olivia"], startProject: [] },
+    data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], requests: [], payments: [], materialApprovals: [], dealFile: null, ownerReview: {
+      id: "review", quoteId: "quote", status: "pending_approval", submittedById: "sara", financeReviewedById: "layla", financeNote: "Checked the transfer", checklist: { agreement: true }, finalCommissionLines: [],
+    } },
+  }) as unknown as CommercialState;
+  const { unmount } = render(<ApprovalRelease initialView="owner" state={pending("layla")} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
+  expect(screen.queryByRole("textbox", { name: "Decision remarks" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Approve Deal File" })).not.toBeInTheDocument();
+  expect(screen.getByText("Waiting for Olivia")).toBeInTheDocument();
+  unmount();
+  render(<ApprovalRelease initialView="owner" state={pending("olivia")} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
+  expect(screen.getByRole("textbox", { name: "Decision remarks" })).toHaveValue("");
+  expect(screen.getByRole("button", { name: "Approve Deal File" })).toBeInTheDocument();
+});
+
 function readyMadeServicePathState(): CommercialState {
   const quote = {
     id: "main", number: 1, round: "main", kind: "quotation", status: "accepted", hash: "main-hash",

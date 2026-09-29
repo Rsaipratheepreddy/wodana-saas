@@ -570,7 +570,9 @@ export function ApprovalRelease({
   const t = useT();
   const [tab, setTab] = useState<string>(initialView),
     [note, setNote] = useState(""),
+    // Finance's note and the approver's remarks are separate: one never pre-fills the other.
     [decisionNote, setDecisionNote] = useState(""),
+    [ownerNote, setOwnerNote] = useState(""),
     [commissionLines, setCommissionLines] = useState<CommissionDraft[]>(state.data.ownerReview?.commissionLines?.map(draftOf) ?? [newCommissionLine()]),
     [financeDraft, setFinanceDraft] = useState<{ key: string; lines: CommissionDraft[] }>({ key: "", lines: [] }),
     [paymentProofUrl, setPaymentProofUrl] = useState(state.data.ownerReview?.paymentProofUrl ?? ""),
@@ -703,13 +705,16 @@ export function ApprovalRelease({
               <h2>{t("3 · Owner approval")}</h2>
               <ul className={s.checkList}>{Object.entries(d.ownerReview.checklist).filter(([key]) => !d.servicePath || key !== "materials").map(([key, done]) => <li key={key} data-done={done}>{done ? <Check aria-hidden="true" size={14} /> : <Circle aria-hidden="true" size={14} />}{translateKnown(t, checklistLabel[key] ?? key)}</li>)}</ul>
               <ul className={s.checkList}>{(d.ownerReview.finalCommissionLines ?? []).map((line, index) => <li key={`${line.type}-${index}`}>{line.recipientName} · {translateKnown(t, commissionTypes.find((type) => type.id === line.type)?.label ?? line.type)} · {money(line.amount, accepted.currency)}</li>)}</ul>
-              <TextAreaField label={t("Decision remarks")} value={decisionNote} onChange={setDecisionNote} placeholder={t("Required when returning or rejecting.")} />
               {!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals) && <p className={s.notice}>{t("Complete every client material decision before creating the Deal File.")}</p>}
-              {state.canApproveDeal && <div className={s.formActions}>
-                <Button variant="danger" isDisabled={busy || !decisionNote.trim()} onPress={() => void run("decide_owner_review", { decision: "reject", note: decisionNote })}>{t("Reject")}</Button>
-                <Button isDisabled={busy || !decisionNote.trim()} onPress={() => void run("decide_owner_review", { decision: "return", note: decisionNote })}>{t("Return for correction")}</Button>
-                <Button variant="primary" isLoading={busy} isDisabled={busy || Object.entries(d.ownerReview.checklist).some(([key, value]) => !value && (!d.servicePath || key !== "materials")) || (!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals))} onPress={() => void run("decide_owner_review", { decision: "approve", note: decisionNote })}>{t("Approve Deal File")}</Button>
-              </div>}
+              {/* Only an approver who didn't submit or verify this deal decides it; everyone else sees who does. */}
+              {state.canApproveDeal && ![d.ownerReview.submittedById, d.ownerReview.financeReviewedById].includes(state.viewerId) ? <>
+                <TextAreaField label={t("Decision remarks")} value={ownerNote} onChange={setOwnerNote} placeholder={t("Required when returning or rejecting.")} />
+                <div className={s.formActions}>
+                  <Button variant="danger" isDisabled={busy || !ownerNote.trim()} onPress={() => void run("decide_owner_review", { decision: "reject", note: ownerNote })}>{t("Reject")}</Button>
+                  <Button isDisabled={busy || !ownerNote.trim()} onPress={() => void run("decide_owner_review", { decision: "return", note: ownerNote })}>{t("Return for correction")}</Button>
+                  <Button variant="primary" isLoading={busy} isDisabled={busy || Object.entries(d.ownerReview.checklist).some(([key, value]) => !value && (!d.servicePath || key !== "materials")) || (!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals))} onPress={() => void run("decide_owner_review", { decision: "approve", note: ownerNote })}>{t("Approve Deal File")}</Button>
+                </div>
+              </> : state.stepHolders?.approveDeal.length ? <p className={s.muted}>{t("Waiting for {names}", { names: state.stepHolders.approveDeal.join(", ") })}</p> : null}
             </section> : d.dealFile?.quoteId !== accepted.id && <Form className={s.ownerForm} onSubmit={async e => { e.preventDefault(); await run("submit_owner_review", { commissionLines: commissionLines.filter((line) => !commissionBlank(line)).map(sent), paymentProofUrl, checklist, note }); }}>
               <h2>{t("1 · Submit Deal File")}</h2>
               {d.ownerReview && <p className={s.notice}>{t("Previous decision:")}{" "}{translateKnown(t, statusLabel[d.ownerReview.status] ?? d.ownerReview.status)}. {d.ownerReview.financeNote ?? d.ownerReview.decisionNote}</p>}

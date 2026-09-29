@@ -754,6 +754,8 @@ export type CommercialState = {
   canApprove: boolean;
   canEstimate?: boolean;
   canApproveDeal?: boolean;
+  /** Who is looking (their user id), for the separation-of-duties rules the page shows. */
+  viewerId?: string;
   canVerifyFinance: boolean;
   canOverridePrice?: boolean;
   canViewCosts?: boolean;

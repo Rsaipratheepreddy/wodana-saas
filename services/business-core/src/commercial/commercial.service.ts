@@ -504,6 +504,7 @@ export class CommercialService {
             user.userId,
             "commercial.estimate",
           ),
+          viewerId: user.userId,
           // Deal approval is a permission plus separation of duties, never a role name.
           canApproveDeal:
             (await this.access.hasPermission(
