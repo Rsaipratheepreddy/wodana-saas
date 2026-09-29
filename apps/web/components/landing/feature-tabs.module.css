@@ -1,0 +1,111 @@
+/*
+ * The product tour: a segmented row of tabs over one large panel. The panels share one grid cell, so the section
+ * keeps the height of the tallest and switching never shifts the page; the chosen one fades and rises in.
+ */
+.tour { display: grid; gap: var(--wd-space-8); }
+
+.tabs {
+  display: flex;
+  justify-self: center;
+  gap: var(--wd-space-1);
+  max-inline-size: 100%;
+  padding: var(--wd-space-1);
+  overflow-x: auto;
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-surface-muted);
+  font-size: var(--wd-text-md);
+  font-weight: var(--wd-weight-semibold);
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--wd-space-2);
+  min-block-size: 2.75rem;
+  padding-inline: var(--wd-space-4) var(--wd-space-5);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--wd-radius-pill);
+  background: transparent;
+  color: var(--wd-color-text-secondary);
+  font: inherit;
+  font-size: var(--wd-text-md);
+  font-weight: var(--wd-weight-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  scroll-margin-block-start: calc(var(--landing-header) + var(--wd-space-8));
+  transition: background var(--wd-duration-base) var(--wd-ease-standard), color var(--wd-duration-base) var(--wd-ease-standard), box-shadow var(--wd-duration-base) var(--wd-ease-standard);
+}
+.tab:hover { color: var(--wd-color-text); }
+.tab[aria-selected="true"] { background: var(--wd-color-surface); color: var(--wd-color-text); box-shadow: var(--wd-shadow-xs); }
+.tab[aria-selected="true"] svg { color: var(--wd-color-action-primary); }
+.tab:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+
+/* The bar that fills while the tour waits to move on; it holds still while the tour is paused. */
+.progress {
+  position: absolute;
+  inset-inline-start: var(--wd-space-4);
+  inset-block-end: var(--wd-space-1);
+  inline-size: 0;
+  block-size: 2px;
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-action-primary);
+  opacity: 0.7;
+  animation: tour-progress var(--tour-interval, 7s) linear forwards;
+}
+.tour:not([data-playing]) .progress { animation-play-state: paused; }
+@keyframes tour-progress { to { inline-size: calc(100% - var(--wd-space-8)); } }
+
+.panels { display: grid; }
+.panel {
+  display: grid;
+  grid-area: 1 / 1;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  align-content: center;
+  align-items: center;
+  gap: clamp(1.5rem, 4vw, 4rem);
+  padding-block: clamp(1.5rem, 4vw, 3.5rem);
+  padding-inline: clamp(1.5rem, 4vw, 3.5rem);
+  overflow: hidden;
+  border-radius: var(--wd-radius-lg);
+  background: var(--wd-color-surface-muted);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 420ms var(--wd-ease-out), visibility 0s linear 420ms;
+}
+.panel[data-active] { opacity: 1; visibility: visible; transition: opacity 420ms var(--wd-ease-out), visibility 0s; }
+.panel:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 3px; }
+
+.copy { display: grid; align-content: center; gap: var(--wd-space-6); translate: 0 var(--wd-space-3); transition: translate 520ms var(--wd-ease-out); }
+.panel[data-active] .copy { translate: 0 0; }
+.title {
+  font-family: var(--wd-font-display);
+  font-size: clamp(1.625rem, 2.6vw, 2.25rem);
+  font-weight: var(--wd-weight-semibold);
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+.points { display: grid; gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
+.points li { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: var(--wd-space-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-lg); line-height: 1.45; }
+.points svg { margin-block-start: var(--wd-space-0-5); color: var(--wd-color-action-primary); }
+
+.visual { min-inline-size: 0; scale: 0.985; transition: scale 620ms var(--wd-ease-out); }
+.panel[data-active] .visual { scale: 1; }
+
+@media (max-width: 60rem) {
+  .tabs { justify-self: stretch; justify-content: flex-start; border-radius: var(--wd-radius-lg); }
+  .panel { grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .title { font-size: var(--wd-text-2xl); }
+  .points li { font-size: var(--wd-text-md); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab, .panel, .panel[data-active], .copy, .visual { transition: none; }
+  .copy { translate: none; }
+  .visual { scale: none; }
+}

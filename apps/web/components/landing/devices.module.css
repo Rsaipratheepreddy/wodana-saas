@@ -1,0 +1,146 @@
+/*
+ * Phone mockups drawn in CSS. The phone is a size container and every measure below is a share of its width
+ * (cqi), taken from the real devices: an iPhone 15 Pro (titanium rim, Dynamic Island, action button, volume and
+ * side button) and a Pixel-style Android phone (aluminium frame, punch-hole camera, power and volume rocker on one
+ * side). The hardware looks the same in light and dark themes, so it uses the fixed neutral scale.
+ * The screenshots are captured with a blank strip at the top (status bar) and bottom (home indicator), which the
+ * drawn status bar and indicator sit on. Logical properties only; the side buttons swap sides in RTL with the page.
+ */
+.device {
+  --device-w: 17.5rem;
+  container-type: inline-size;
+  flex: 0 0 auto;
+  inline-size: var(--device-w);
+  color: var(--wd-color-text);
+}
+
+.body {
+  position: relative;
+  padding: 1.3cqi;
+  border-radius: 16.6cqi;
+  background:
+    linear-gradient(150deg, var(--wd-neutral-300) 0%, var(--wd-neutral-600) 14%, var(--wd-neutral-400) 38%, var(--wd-neutral-700) 64%, var(--wd-neutral-400) 86%, var(--wd-neutral-600) 100%);
+  box-shadow:
+    inset 0 0 0 0.35cqi color-mix(in srgb, var(--wd-neutral-0) 38%, transparent),
+    inset 0 0 0 0.9cqi color-mix(in srgb, var(--wd-neutral-950) 35%, transparent),
+    0 1.2cqi 2.4cqi color-mix(in srgb, var(--wd-neutral-950) 18%, transparent),
+    0 7cqi 16cqi -4cqi color-mix(in srgb, var(--wd-neutral-950) 38%, transparent);
+}
+.device[data-kind="android"] .body {
+  padding: 1cqi;
+  border-radius: 11.5cqi;
+  background: linear-gradient(160deg, var(--wd-neutral-600) 0%, var(--wd-neutral-900) 30%, var(--wd-neutral-800) 70%, var(--wd-neutral-600) 100%);
+}
+
+/* Side buttons, just proud of the frame: ::before holds the action and volume buttons (one strip with gaps),
+   ::after the side button on the other edge. The Android phone has its power key and volume rocker on one side. */
+.buttons { position: absolute; inset-block: 0; inset-inline: -0.8cqi; pointer-events: none; }
+.buttons::before, .buttons::after { content: ""; position: absolute; inline-size: 1cqi; border-radius: 0.6cqi; }
+.buttons::before {
+  inset-inline-start: 0;
+  inset-block-start: 38cqi;
+  block-size: 50.2cqi;
+  background: linear-gradient(to bottom,
+    var(--wd-neutral-500) 0 7cqi, transparent 7cqi 18.5cqi,
+    var(--wd-neutral-500) 18.5cqi 31.1cqi, transparent 31.1cqi 37.6cqi,
+    var(--wd-neutral-500) 37.6cqi 50.2cqi);
+}
+.buttons::after { inset-inline-end: 0; inset-block-start: 61cqi; block-size: 24cqi; background: var(--wd-neutral-500); }
+.device[data-kind="android"] .buttons::before { display: none; }
+.device[data-kind="android"] .buttons::after {
+  inset-block-start: 50cqi;
+  block-size: 51cqi;
+  background: linear-gradient(to bottom, var(--wd-neutral-700) 0 14cqi, transparent 14cqi 22cqi, var(--wd-neutral-700) 22cqi 51cqi);
+}
+
+.bezel {
+  position: relative;
+  padding: 2.6cqi;
+  border-radius: 15.3cqi;
+  background: var(--wd-neutral-950);
+  box-shadow: inset 0 0 0 0.3cqi color-mix(in srgb, var(--wd-neutral-0) 8%, transparent);
+}
+.device[data-kind="android"] .bezel { padding: 2.3cqi; border-radius: 10.5cqi; }
+
+.screen {
+  position: relative;
+  aspect-ratio: 390 / 844;
+  overflow: hidden;
+  border-radius: 12.7cqi;
+  background: var(--wd-color-canvas);
+  isolation: isolate;
+}
+.device[data-kind="android"] .screen { border-radius: 8.2cqi; }
+.shot, .shot img { display: block; inline-size: 100%; block-size: 100%; }
+.shot img { object-fit: cover; object-position: top; }
+
+/* The status bar: time and glyphs either side of the island (iPhone) or at the edges (Android). */
+.status {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr 29.5cqi 1fr;
+  align-items: center;
+  block-size: 13.4cqi;
+  color: var(--wd-color-text);
+  pointer-events: none;
+}
+.status > * { justify-self: center; }
+.time { font-size: 4.2cqi; font-weight: var(--wd-weight-semibold); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; direction: ltr; }
+.glyphs { block-size: 3.1cqi; inline-size: auto; fill: currentColor; direction: ltr; }
+.status[data-kind="android"] { grid-template-columns: 1fr auto; block-size: 8.4cqi; padding-inline: 6.5cqi 5.5cqi; }
+.status[data-kind="android"] > :first-child { justify-self: start; }
+.status[data-kind="android"] > :last-child { justify-self: end; }
+.status[data-kind="android"] .time { font-size: 3.8cqi; font-weight: var(--wd-weight-medium); }
+
+.island {
+  position: absolute;
+  inset-block-start: 2.5cqi;
+  inset-inline-start: 50%;
+  z-index: 3;
+  inline-size: 29.5cqi;
+  block-size: 8.6cqi;
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-neutral-950);
+  translate: -50% 0;
+}
+.camera {
+  position: absolute;
+  inset-block-start: 2.4cqi;
+  inset-inline-start: 50%;
+  z-index: 3;
+  inline-size: 3.8cqi;
+  block-size: 3.8cqi;
+  border-radius: var(--wd-radius-round);
+  background: radial-gradient(circle at 35% 35%, var(--wd-neutral-700) 0 18%, var(--wd-neutral-950) 45%);
+  box-shadow: 0 0 0 0.4cqi var(--wd-neutral-950);
+  translate: -50% 0;
+}
+/* A logical inline-start of 50% plus a physical -50% shift centres the same in both directions. */
+:dir(rtl) .island, :dir(rtl) .camera { translate: 50% 0; }
+
+.home {
+  position: absolute;
+  inset-block-end: 1.7cqi;
+  inset-inline-start: 50%;
+  z-index: 2;
+  inline-size: 31cqi;
+  block-size: 1.2cqi;
+  border-radius: var(--wd-radius-pill);
+  background: currentColor;
+  opacity: 0.85;
+  translate: -50% 0;
+}
+:dir(rtl) .home { translate: 50% 0; }
+.device[data-kind="android"] .home { inline-size: 24cqi; block-size: 1cqi; opacity: 0.6; }
+
+/* A faint reflection across the glass. */
+.glare {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: linear-gradient(118deg, color-mix(in srgb, var(--wd-neutral-0) 16%, transparent) 0%, color-mix(in srgb, var(--wd-neutral-0) 5%, transparent) 30%, transparent 44%);
+  pointer-events: none;
+}
