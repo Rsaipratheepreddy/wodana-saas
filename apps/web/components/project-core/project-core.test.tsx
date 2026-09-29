@@ -93,6 +93,37 @@ describe("projects", () => {
     expect(posts(fetcher)[0]).toMatchObject({ stageId: "s0", checkKey: "meeting" });
   });
 
+  it("renames the project from its title and edits the priority in place, with the project's version", async () => {
+    let current = detail();
+    const fetcher = mount((url, body) => {
+      if (body?.action === "rename") current = detail({ name: String(body.name), version: 5 });
+      if (body?.action === "set_priority") current = detail({ name: current.project.name, priority: body.priority as ProjectDetail["project"]["priority"], version: 6 });
+      return current;
+    });
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: "Edit Project name" }));
+    const name = screen.getByRole("textbox", { name: "Project name" });
+    await userEvent.clear(name);
+    await userEvent.type(name, "Villa 12 · Phase 2{Enter}");
+    await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "rename", name: "Villa 12 · Phase 2", version: 4 })]));
+    expect(await screen.findByRole("heading", { level: 1, name: "Villa 12 · Phase 2" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show details" }));
+    const panel = await screen.findByRole("dialog", { name: "Details" });
+    await userEvent.click(await within(panel).findByRole("button", { name: "Edit Priority" }));
+    await userEvent.click(await screen.findByRole("option", { name: "High" }));
+    await waitFor(() => expect(posts(fetcher)[1]).toEqual(expect.objectContaining({ action: "set_priority", priority: "high", version: 5 })));
+  });
+
+  it("shows plain details to people who can't manage the project", async () => {
+    mount(() => ({ ...detail(), canManage: false }));
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
+    expect(await screen.findByRole("heading", { level: 1, name: "Villa 12" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit Project name" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show details" }));
+    const panel = await screen.findByRole("dialog", { name: "Details" });
+    expect(within(panel).queryByRole("button", { name: "Edit Priority" })).not.toBeInTheDocument();
+  });
+
   it("shows why a change was refused and reloads when someone else changed the project", async () => {
     let loads = 0;
     mount((url, body) => (body ? new Error("Someone else changed this project. Reload to see their changes.") : (loads++, detail())));
