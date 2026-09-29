@@ -23,7 +23,7 @@ describe("LeadResponseSla", () => {
     const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({
       ok: true,
       json: async () => {
-        if (url.includes("reports/sla")) return { summary: { withinTarget: 8, breached: 1, averageResponseMinutes: 48 }, rows: [] };
+        if (url.includes("reports/sla")) return { summary: { withinTarget: 8, breached: 1, averageResponseMinutes: 125 }, rows: [] };
         if (init.method === "PATCH") return { ...policy, name: "Urgent first response" };
         return data.slaPolicies;
       },
@@ -33,7 +33,7 @@ describe("LeadResponseSla", () => {
     render(<LeadResponseSla initialData={data} />);
 
     expect(await screen.findByRole("region", { name: "Response SLA policies" })).toHaveTextContent("Business hours");
-    expect(screen.getByLabelText("Response SLA health")).toHaveTextContent("48 min");
+    expect(screen.getByLabelText("Response SLA health")).toHaveTextContent("2 h 5 min");
     await user.click(screen.getByRole("button", { name: "Edit" }));
     const dialog = await screen.findByRole("dialog", { name: "Edit response SLA" });
     const name = within(dialog).getByRole("textbox", { name: "Policy name" });

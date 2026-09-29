@@ -7,6 +7,7 @@ import type { RecordData } from "@/lib/crm/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import { ActionDialog, ResourceState, choice, useCrmResource, type ActionSpec } from "./crm-workbench";
+import { durationText } from "./respond-by-chip";
 import styles from "./lead-assignment.module.css";
 
 const RESPONSE_EVENT = "first_response";
@@ -116,7 +117,7 @@ export function LeadResponseSla({ initialData }: { initialData: LeadsPageData })
 
   const health = summary?.summary ?? {};
   const averageMinutes = Number(health.averageResponseMinutes);
-  const average = health.averageResponseMinutes == null || !Number.isFinite(averageMinutes) ? "—" : t("{count} min", { count: Math.round(averageMinutes) });
+  const average = health.averageResponseMinutes == null || !Number.isFinite(averageMinutes) ? "—" : durationText(Math.round(averageMinutes), t);
   const columns: DataGridColumn<CrmSlaPolicy>[] = [
     { accessorKey: "name", header: t("Policy"), size: 220, meta: { primary: true }, cell: ({ row }) => <>{t("First response")}<small>{row.original.name}</small></> },
     { accessorKey: "warningAfterMinutes", header: t("Warning"), size: 110, cell: ({ row }) => duration(Number(row.original.warningAfterMinutes), t) },

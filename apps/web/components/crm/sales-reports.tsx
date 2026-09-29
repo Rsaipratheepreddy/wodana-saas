@@ -7,6 +7,7 @@ import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
 import { crmRequest } from "@/lib/crm/client";
 import { enquiryFields, isShown } from "@/lib/crm/enquiry-fields";
 import { leadOptionLabel } from "@/lib/crm/lead-options";
+import { durationText } from "./respond-by-chip";
 import type { LeadsPageData } from "@/lib/crm/leads";
 import styles from "./sales-reports.module.css";
 
@@ -94,7 +95,7 @@ export function SalesReports({ initialData, regionLabel }: { initialData: LeadsP
     [t("Enquiries"), String(num(summary.leads))], [t("Qualified"), String(num(summary.qualified))], [t("Unassigned"), String(num(summary.unassigned))], [t("No update in 7 days"), String(num(summary.stale))],
   ] : report === "funnel" ? [[t("Stage moves"), String(sum(rows, "count"))], [t("Stages"), String(rows.length)]]
     : report === "pipeline" ? [[t("Open"), String(sum(rows, "count", (row) => row.status === "open"))], [t("Won"), String(sum(rows, "count", (row) => row.status === "won"))], [t("Open value"), money(sum(rows, "value", (row) => row.status === "open"), rows[0]?.currency)]]
-    : report === "sla" ? [[t("On time"), summary.responseComplianceRate == null ? "—" : `${num(summary.responseComplianceRate).toFixed(1)}%`], [t("Within target"), String(num(summary.withinTarget))], [t("Breached"), String(num(summary.breached))], [t("Average first response"), summary.averageResponseMinutes == null ? "—" : t("{count} min", { count: Math.round(num(summary.averageResponseMinutes)) })]]
+    : report === "sla" ? [[t("On time"), summary.responseComplianceRate == null ? "—" : `${num(summary.responseComplianceRate).toFixed(1)}%`], [t("Within target"), String(num(summary.withinTarget))], [t("Breached"), String(num(summary.breached))], [t("Average first response"), summary.averageResponseMinutes == null ? "—" : durationText(Math.round(num(summary.averageResponseMinutes)), t)]]
     : report === "assignment" ? [[t("Assignments"), String(sum(rows, "count"))], [t("Sales owners"), String(new Set(rows.map((row) => String(row.owner ?? ""))).size)]]
     : [[t("Forecast"), money(sum(rows, "amount"), rows[0]?.currency)], [t("Weighted"), money(sum(rows, "weightedAmount"), rows[0]?.currency)], [t("Opportunities"), String(sum(rows, "count"))]];
 
@@ -114,7 +115,7 @@ export function SalesReports({ initialData, regionLabel }: { initialData: LeadsP
     const id = String(row.id ?? `${report}-${index}`);
     if (report === "funnel") return { id, title: String(row.stage ?? human(row.status)), detail: human(row.status), value: String(num(row.count)) };
     if (report === "pipeline") return { id, title: `${String(row.pipeline ?? "")} · ${String(row.stage ?? t("Not set"))}`, detail: `${human(row.status)} · ${num(row.count)}`, value: money(row.value, row.currency) };
-    if (report === "sla") return { id, title: human(row.status), detail: t("{responded} responded · {breached} breached", { responded: num(row.responded), breached: num(row.breached) }), value: row.averageMinutes == null ? "—" : t("{count} min", { count: Math.round(num(row.averageMinutes)) }) };
+    if (report === "sla") return { id, title: human(row.status), detail: t("{responded} responded · {breached} breached", { responded: num(row.responded), breached: num(row.breached) }), value: row.averageMinutes == null ? "—" : durationText(Math.round(num(row.averageMinutes)), t) };
     if (report === "assignment") return { id, title: String(row.owner ?? t("Unassigned")), detail: human(row.method), value: String(num(row.count)) };
     return { id, title: `${String(row.currency ?? "")} · ${human(row.status)}`, detail: t("{count} · Weighted {amount}", { count: num(row.count), amount: money(row.weightedAmount, row.currency) }), value: money(row.amount, row.currency) };
   });
