@@ -55,6 +55,7 @@ import {
   agreementMatchesAcceptedQuote,
   approvedMaterialEvidence,
   financeGatePaymentsReady,
+  agreementHasSignedEvidence,
   isOperationalEvidence,
   materialApprovalsComplete,
   materialListSignedOff,
@@ -3132,12 +3133,14 @@ export class CommercialService {
             status: "draft",
           };
         } else if (action === "execute_agreement") {
+          // The signed document itself is the evidence; a written description is optional once it's attached.
           if (
-            !data.agreement?.evidence ||
+            !data.agreement ||
+            !agreementHasSignedEvidence(data.agreement) ||
             !isOperationalEvidence(data.agreement)
           )
             throw new ConflictException(
-              "Record operational signed-agreement evidence first. Demonstration evidence cannot execute a live agreement.",
+              "Attach the signed agreement (or describe it) first. Demonstration evidence cannot execute a live agreement.",
             );
           const acceptedQuote = data.quotes.find(
             (quote) => quote.id === data.agreement!.quoteId && quote.status === "accepted",

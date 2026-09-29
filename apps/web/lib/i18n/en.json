@@ -11497,5 +11497,8 @@
   "the client portal is turned off": "the client portal is turned off",
   "the client's portal is paused for this project": "the client's portal is paused for this project",
   "Finish commission {number} or remove it.": "Finish commission {number} or remove it.",
-  "Write the submission note.": "Write the submission note."
+  "Write the submission note.": "Write the submission note.",
+  "Save the agreement first.": "Save the agreement first.",
+  "Attach the signed agreement first.": "Attach the signed agreement first.",
+  "Agreement to verify": "Agreement to verify"
 }

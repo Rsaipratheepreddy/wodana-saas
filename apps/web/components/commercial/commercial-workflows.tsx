@@ -39,6 +39,7 @@ import { acceptedQuoteTotals, acceptedQuoteValue, money, statusLabel } from "@/l
 import { smallestAmount } from "@/lib/money-exact";
 import {
   activeDeliveryQuote,
+  agreementHasSignedEvidence,
   agreementIsOperational,
   agreementMatchesAcceptedQuote,
   commercialReleaseInputsReady,
@@ -364,6 +365,8 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
     verifying = receiptPayment?.status === "proof_submitted";
   const paymentCurrency = accepted?.currency ?? state.currency ?? workspaceCurrency;
   const agreementChanged = agreement.reference !== savedAgreement.reference || agreement.terms !== savedAgreement.terms || agreement.evidence !== savedAgreement.evidence;
+  // Why the signed agreement can't be verified yet: unsaved edits, or nothing signed on record (a file or its description).
+  const verifyBlocker = agreementChanged ? t("Save the agreement first.") : !agreementHasSignedEvidence(a) ? t("Attach the signed agreement first.") : "";
   const receiptLabel = (status?: string) => status === "finance_verified" ? t("Finance verified") : status === "provider_confirmed" ? t("Provider confirmed") : status === "reported" ? t("Receipt reported") : t("Payment request only");
   return (
     <>
@@ -400,8 +403,11 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
           ) : (
             a &&
             state.canApprove && (
-              <div className={s.formActions}><Button variant="primary" isDisabled={busy || !a.evidence || agreementChanged}
-                onPress={() => void run("execute_agreement")}>{t("Verify signed agreement")}</Button></div>
+              <div className={s.formActions}>
+                {verifyBlocker ? <span className={s.muted} role="status">{verifyBlocker}</span> : null}
+                <Button variant="primary" isDisabled={busy || Boolean(verifyBlocker)}
+                  onPress={() => void run("execute_agreement")}>{t("Verify signed agreement")}</Button>
+              </div>
             )
           )}
         </div>

@@ -30,10 +30,15 @@ export function isOperationalEvidence(
   );
 }
 
+/** The signed agreement is on record: an uploaded signed document, or a written description of it. */
+export function agreementHasSignedEvidence(agreement: Pick<Agreement, "evidence" | "files"> | null | undefined) {
+  return Boolean(agreement && (agreement.evidence?.trim() || agreement.files?.length));
+}
+
 export function agreementIsOperational(agreement: Agreement | null | undefined) {
   return Boolean(
     agreement?.status === "executed" &&
-      agreement.evidence.trim() &&
+      agreementHasSignedEvidence(agreement) &&
       isOperationalEvidence(agreement),
   );
 }

@@ -22,6 +22,7 @@ export const APPROVAL_FILTERS: Array<{ id: "all" | ApprovalGroup; label: Message
 export const KIND_LABEL: Record<ApprovalKind, MessageKey> = {
   quote_review: tKey("Quote to review"),
   receipt: tKey("Payment to verify"),
+  agreement: tKey("Agreement to verify"),
   deal_finance: tKey("Deal to check"),
   deal_approval: tKey("Deal to approve"),
   order: tKey("Order to approve"),
