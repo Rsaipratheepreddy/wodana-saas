@@ -34,6 +34,8 @@ export class MembershipSummaryResponseDto {
   workspaceWorkingDays!: number[];
   @ApiProperty({ type: [String], example: ["2026-12-02"], description: "Days off (YYYY-MM-DD) from yesterday to about a year ahead" })
   workspaceHolidays!: string[];
+  @ApiProperty({ example: { start: "09:00", end: "18:00" }, description: "The working day (HH:MM, workspace time): the work calendar, else the default day" })
+  workspaceWorkingHours!: { start: string; end: string };
   @ApiPropertyOptional({ type: String, format: "uuid", nullable: true }) accountId!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) accountName!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true, enum: ["owner", "administrator", "member"] })

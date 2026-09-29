@@ -33,6 +33,8 @@ export type DesignSystemSettings = {
    */
   workingDays: number[] | null;
   holidays: string[];
+  /** The workspace's working day ("09:00"–"18:00"), from its work calendar. Null when unknown. */
+  workingHours: { start: string; end: string } | null;
   portalContainer: Element | null;
   /**
    * The theme above follows the document rather than a provider's choice. Spreading `useDesignSystem()` into a
@@ -57,6 +59,7 @@ const DEFAULT_SETTINGS: DesignSystemSettings = {
   timeZone: "UTC",
   workingDays: null,
   holidays: [],
+  workingHours: null,
   portalContainer: null,
 };
 
@@ -110,6 +113,7 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
       timeZone: timeZoneProp,
       workingDays: workingDaysProp,
       holidays: holidaysProp,
+      workingHours: workingHoursProp,
       portalContainer = null,
       followsDocumentTheme = false,
       ...props
@@ -133,6 +137,7 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     const timeZone = timeZoneProp ?? parent.timeZone;
     const workingDays = workingDaysProp ?? parent.workingDays;
     const holidays = holidaysProp ?? parent.holidays;
+    const workingHours = workingHoursProp ?? parent.workingHours;
     const uiLanguage = useContext(UiLanguageContext);
     const locale = formattingLocale(uiLanguage, regionLocale);
     const direction = directionOverride ?? languageDirection(uiLanguage ?? locale);
@@ -140,8 +145,8 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     const ariaLocale = languageDirection(locale) === direction ? locale
       : [regionLocale, uiLanguage ?? "", direction === "rtl" ? "ar" : "en"].find((tag) => tag && languageDirection(tag) === direction) ?? locale;
     const value = useMemo(
-      () => ({ theme, density, locale, regionLocale, direction, currency, timeZone, workingDays, holidays, portalContainer, followsDocumentTheme: follows }),
-      [theme, density, locale, regionLocale, direction, currency, timeZone, workingDays, holidays, portalContainer, follows],
+      () => ({ theme, density, locale, regionLocale, direction, currency, timeZone, workingDays, holidays, workingHours, portalContainer, followsDocumentTheme: follows }),
+      [theme, density, locale, regionLocale, direction, currency, timeZone, workingDays, holidays, workingHours, portalContainer, follows],
     );
 
     return (
@@ -167,14 +172,14 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
 );
 
 /** Sets the workspace region for every design-system provider below it. */
-export function WorkspaceRegionProvider({ locale, currency, timeZone, workingDays, holidays, children }: { locale?: string; currency?: string; timeZone?: string; workingDays?: number[]; holidays?: string[]; children: ReactNode }) {
+export function WorkspaceRegionProvider({ locale, currency, timeZone, workingDays, holidays, workingHours, children }: { locale?: string; currency?: string; timeZone?: string; workingDays?: number[]; holidays?: string[]; workingHours?: { start: string; end: string }; children: ReactNode }) {
   const parent = useContext(DesignSystemContext);
   const uiLanguage = useContext(UiLanguageContext);
   const value = useMemo(() => {
     const regionLocale = locale ?? parent.regionLocale;
     return { ...parent, locale: formattingLocale(uiLanguage, regionLocale), regionLocale, currency: currency ?? parent.currency, timeZone: timeZone ?? parent.timeZone,
-      workingDays: workingDays?.length ? workingDays : parent.workingDays, holidays: holidays ?? parent.holidays };
-  }, [parent, uiLanguage, locale, currency, timeZone, workingDays, holidays]);
+      workingDays: workingDays?.length ? workingDays : parent.workingDays, holidays: holidays ?? parent.holidays, workingHours: workingHours ?? parent.workingHours };
+  }, [parent, uiLanguage, locale, currency, timeZone, workingDays, holidays, workingHours]);
   return <DesignSystemContext.Provider value={value}>{children}</DesignSystemContext.Provider>;
 }
 

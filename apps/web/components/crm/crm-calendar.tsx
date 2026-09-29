@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
-import { Badge, Button, Callout, DesignSystemProvider, FormDialog, IconButton, InspectorSheet, isNoAccessError, MoreDetails, NoAccessState, PageHeader, SearchInput, SelectField, TextAreaField, TextInput, useDesignSystem, useWorkspaceZoneLabel, Skeleton } from "@/design-system";
+import { nextWorkingHalfHour, useWorkingCalendar, Badge, Button, Callout, DesignSystemProvider, FormDialog, IconButton, InspectorSheet, isNoAccessError, MoreDetails, NoAccessState, PageHeader, SearchInput, SelectField, TextAreaField, TextInput, useDesignSystem, useWorkspaceZoneLabel, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows, label, type RecordData } from "@/lib/crm/client";
 import { calendarDayKey, calendarRange, localDateTime, moveCalendar, type CalendarMode, type CalendarEvent } from "@/lib/crm/calendar";
@@ -139,11 +139,15 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
   }, [workspaceId, connectionIdKey, from, to, timeZone, googleKey, t]);
   const events = [...(crm?.key === key ? crm.events : []), ...(project?.key === key ? project.events : []), ...(connectionIds.length && google?.key === googleKey ? google.events : [])].filter((event) => event.title.toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.start.getTime() - b.start.getTime());
   const today = calendarDayKey(wallNow());
+  // A new event starts at the next working half-hour (today while the working day is open, else the next working
+  // day's start), or at the start of the working day on another day being viewed.
+  const workingCalendar = useWorkingCalendar();
   const newEventDate = () => {
-    if (calendarDayKey(anchor) !== today) return new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), 10);
-    const next = atWallClock(Date.now() + 60000, timeZone);
-    next.setMinutes(Math.ceil(next.getMinutes() / 30) * 30, 0, 0);
-    return next;
+    if (calendarDayKey(anchor) !== today) {
+      const [hour = 10, minute = 0] = (workingCalendar.workingHours?.start ?? "10:00").split(":").map(Number);
+      return new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), hour, minute);
+    }
+    return nextWorkingHalfHour(atWallClock(Date.now(), timeZone), workingCalendar, workingCalendar.workingHours);
   };
   const periodTitle = anchor.toLocaleDateString(locale, { month: "long", year: "numeric" });
   const periodSubtitle = mode === "month" ? `${new Date(anchor.getFullYear(), anchor.getMonth(), 1).toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}` : `${range.days[0].toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${range.days.at(-1)?.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}`;

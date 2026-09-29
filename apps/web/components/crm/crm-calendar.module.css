@@ -87,7 +87,7 @@
 .timeSlot:focus-visible { outline:2px solid var(--wd-color-focus); outline-offset:-2px; }
 .timeDay .event { position:absolute; display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; gap:var(--wd-space-1); padding:var(--wd-space-1-5) var(--wd-space-1-5); margin:0; border-inline-start:3px solid color-mix(in srgb,var(--event-color) 70%,var(--crm-accent)); border-radius:var(--wd-radius-2xs); overflow:hidden; background:color-mix(in srgb,var(--wd-color-surface) 72%,var(--event-color)); }
 .timeDay .event small { order:0; font-size:var(--wd-text-2xs); max-inline-size:100%; overflow:hidden; text-overflow:ellipsis; }
-.timeDay .eventTitle { display:block; flex:none; white-space:normal; font-size:var(--wd-text-2xs); font-weight:550; line-height:1.4; overflow-wrap:anywhere; }
+.timeDay .eventTitle { display:block; flex:none; white-space:normal; font-size:var(--wd-text-2xs); font-weight:550; line-height:1.4; overflow-wrap:break-word; }
 .allDayRow { display:grid; border-block-end:1px solid var(--wd-color-structural-divider); }
 .allDayRow > div { padding:var(--wd-space-1); border-inline-start:1px solid var(--wd-color-structural-divider); }
 .allDayRow > small { font-size:var(--wd-text-2xs); padding:var(--wd-space-2); }
@@ -103,7 +103,7 @@
 .timeCanvas { min-inline-size:49rem; }
 .timeCanvas[data-single] { min-inline-size:20rem; }
 .timeDay .event { gap:var(--wd-space-0-5); padding:var(--wd-space-0-5) var(--wd-space-1-5); }
-.timeDay .eventTitle { font-size:var(--wd-text-xs); line-height:1.25; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; min-block-size:0; flex:1; }
+.timeDay .eventTitle { font-size:var(--wd-text-xs); line-height:1.25; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; min-block-size:0; flex:0 1 auto; max-block-size:2lh; }
 .timeDay .event small { flex-shrink:0; }
 @media(max-width:90rem){.scheduleLayout{grid-template-columns:minmax(0,1fr)}.calendarSide{display:none}}
 
@@ -164,7 +164,7 @@
 .calendarFrame .allDayRow .event { display:flex; flex-direction:column; align-items:flex-start; gap:var(--wd-space-0-5); min-inline-size:0; margin:0; padding:var(--wd-space-1-5) var(--wd-space-2); border-radius:var(--wd-radius-xs); background:var(--cal-event-blue); color:var(--wd-color-text); }
 .calendarFrame .allDayRow .event[data-provider=project] { background:var(--cal-event-warm); }
 .calendarFrame .allDayRow .event[data-kind=call] { background:var(--cal-event-purple); }
-.calendarFrame .allDayRow .eventTitle { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; white-space:normal; overflow-wrap:anywhere; font-size:var(--wd-text-xs); font-weight:650; line-height:1.3; }
+.calendarFrame .allDayRow .eventTitle { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; white-space:normal; overflow-wrap:break-word; font-size:var(--wd-text-xs); font-weight:650; line-height:1.3; }
 .calendarFrame .allDayRow .event small { order:0; font-size:var(--wd-text-2xs); color:var(--wd-color-text-secondary); }
 .calendarFrame .timeDay .event { min-inline-size:0; }
 .calendarFrame .timeDay .eventTitle { color:var(--wd-color-text); font-size:var(--wd-text-xs); font-weight:650; line-height:1.25; }

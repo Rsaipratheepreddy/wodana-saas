@@ -36,6 +36,7 @@ export type AuthProfile = {
     /** The workspace's working week (0 = Sunday) and upcoming days off, for dates people pick. */
     workspaceWorkingDays?: number[];
     workspaceHolidays?: string[];
+    workspaceWorkingHours?: { start: string; end: string } | null;
     accountName?: string | null;
     /** A suspended organization stays readable; the API refuses its changes (423). */
     workspaceStatus?: string;

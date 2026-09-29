@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { today as todayIn, type CalendarDate } from "@internationalized/date";
+import { CalendarDate, today as todayIn } from "@internationalized/date";
 import { useDesignSystem } from "./provider";
 
 type WeekInfo = { firstDay?: number; weekend?: number[] };
@@ -41,10 +41,30 @@ export function workingCalendar(workingDays: readonly number[], holidays: readon
  * week of its region locale. `today` is the workspace's date, in its time zone.
  */
 export function useWorkingCalendar() {
-  const { holidays, regionLocale, timeZone, workingDays } = useDesignSystem();
+  const { holidays, regionLocale, timeZone, workingDays, workingHours } = useDesignSystem();
   return useMemo(() => {
     const calendar = workingCalendar(workingDays?.length ? workingDays : localeWorkingDays(regionLocale), holidays);
     const today = () => todayIn(timeZone);
-    return { ...calendar, today, nextWorkingDayFromToday: () => calendar.nextWorkingDay(today()), timeZone };
-  }, [holidays, regionLocale, timeZone, workingDays]);
+    return { ...calendar, today, nextWorkingDayFromToday: () => calendar.nextWorkingDay(today()), timeZone, workingHours };
+  }, [holidays, regionLocale, timeZone, workingDays, workingHours]);
+}
+
+const minutesOf = (time: string) => { const [hour = 0, minute = 0] = time.split(":").map(Number); return hour * 60 + minute; };
+
+/**
+ * The next half-hour to book, on the workspace's wall clock (`wallNow` and the result are wall-clock Dates): later
+ * today while the working day is open, else the start of the next working day. Without known hours, the next half-hour.
+ */
+export function nextWorkingHalfHour(wallNow: Date, calendar: { isWorkingDay: (date: CalendarDate) => boolean }, hours: { start: string; end: string } | null): Date {
+  const slot = new Date(wallNow.getTime() + 60_000);
+  slot.setMinutes(Math.ceil(slot.getMinutes() / 30) * 30, 0, 0);
+  if (!hours) return slot;
+  const start = minutesOf(hours.start), end = minutesOf(hours.end);
+  const at = (day: Date, minutes: number) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(minutes / 60), minutes % 60);
+  const dateOf = (day: Date) => new CalendarDate(day.getFullYear(), day.getMonth() + 1, day.getDate());
+  const minute = slot.getHours() * 60 + slot.getMinutes();
+  if (calendar.isWorkingDay(dateOf(slot)) && minute + 30 <= end) return minute < start ? at(slot, start) : slot;
+  let day = new Date(slot.getFullYear(), slot.getMonth(), slot.getDate() + 1);
+  for (let guard = 0; !calendar.isWorkingDay(dateOf(day)) && guard < 400; guard += 1) day = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+  return at(day, start);
 }
