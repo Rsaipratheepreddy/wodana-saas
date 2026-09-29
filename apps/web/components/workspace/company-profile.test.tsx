@@ -68,9 +68,8 @@ describe("CompanyProfile", () => {
     await interaction.clear(name);
     await interaction.click(within(dialog).getByRole("button", { name: "Save" }));
 
-    await waitFor(() => {
-      expect(within(dialog).getAllByText("Enter a company name.")).toHaveLength(2);
-    });
+    // The empty required name blocks the save, and the summary names it.
+    expect(await within(dialog).findByText("Check 1 field")).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => url === "/api/workspace/company-profile")).toBe(false);
 
     await interaction.type(name, "Iglo Architecture");

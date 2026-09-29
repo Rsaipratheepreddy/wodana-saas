@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
-import { Badge, Button, Checkbox, ControlledModalDialog, DataGrid, EmptyState, InlineNotice, NoAccessState, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, Checkbox, ControlledModalDialog, DataGrid, EmptyState, InlineNotice, NoAccessState, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn, FormDialog } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
 import { fillTemplate, LABEL_COLORS, renderTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_SOURCES, TEMPLATE_STATUS, type InboxLabel, type InboxTemplate, type LabelColor, type QuickReply, type TemplateSource } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -155,9 +155,7 @@ function StarterPackDialog({ workspaceId, onClose, onSubmit }: { workspaceId: st
   }, [workspaceId]);
   const names: Record<string, string> = { en: "English", ar: "العربية" };
   const missing = pack?.items.filter((item) => languages.has(item.language) && !item.status) ?? [];
-  return <ControlledModalDialog isOpen size="lg" title={t("Starter templates")} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={saving} isDisabled={!missing.length}
-      onPress={async () => { setSaving(true); await onSubmit([...languages]); setSaving(false); }}>{missing.length ? t("Send {count} to Meta", { count: missing.length }) : t("Nothing to add")}</Button></div>}>
+  return <FormDialog size="lg" title={t("Starter templates")} onClose={onClose} isSubmitDisabled={!missing.length} submitLabel={missing.length ? t("Send {count} to Meta", { count: missing.length }) : t("Nothing to add")} onSubmit={async () => { setSaving(true); await onSubmit([...languages]); setSaving(false); }}>
     <div className={styles.form}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
       {!pack && !error ? <Skeleton lines={5} /> : null}
@@ -169,7 +167,7 @@ function StarterPackDialog({ workspaceId, onClose, onSubmit }: { workspaceId: st
         </li>)}</ul>
       </> : null}
     </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function LabelDialog({ initial, onClose, onSave }: { initial: Partial<InboxLabel>; onClose: () => void; onSave: (value: Partial<InboxLabel>) => Promise<void> }) {
@@ -231,8 +229,7 @@ function TemplateVariablesDialog({ template, onClose, onSave }: { template: Inbo
     await onSave(template.positions.map((position) => ({ position, source: sources[position] as TemplateSource })));
     setSaving(false);
   };
-  return <ControlledModalDialog isOpen title={template.code} description={template.locale} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={saving} onPress={() => void save()}>{t("Save variables")}</Button></div>}>
+  return <FormDialog title={template.code} description={template.locale} onClose={onClose} isSubmitting={saving} submitLabel={t("Save variables")} onSubmit={() => save()}>
     <div className={styles.variables}>
       <p className={styles.preview}>{preview}</p>
       {template.positions.map((position) => <SelectField key={position} isRequired label={`{{${position}}}`} placeholder={t("Choose a field")}
@@ -240,5 +237,5 @@ function TemplateVariablesDialog({ template, onClose, onSave }: { template: Inbo
         selectedKey={sources[position] || null} onSelectionChange={(key) => setSources((current) => ({ ...current, [position]: (key ? String(key) : "") as TemplateSource | "" }))} />)}
       {error ? <InlineNotice message={error} tone="error" /> : null}
     </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

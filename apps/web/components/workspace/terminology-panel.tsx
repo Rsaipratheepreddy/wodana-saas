@@ -2,7 +2,7 @@
 
 import { CheckCircle2, History, Pencil, RotateCcw } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, InspectorSheet, TextInput, Skeleton, useDesignSystem } from "@/design-system";
+import { Badge, Button, Callout, ConfirmationDialog, InspectorSheet, TextInput, Skeleton, useDesignSystem, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkspaceConfigurationRevision, WorkspaceTerminologyData, WorkspaceTerminologyItem } from "@/lib/workspace/company-profile";
 import styles from "./company-profile.module.css";
@@ -203,26 +203,13 @@ export function TerminologyPanel({
       {!canManage && data ? <p className={styles.permissionNote}>{t("Only workspace owners and administrators can change workspace language.")}</p> : null}
     </section>
 
-    <ControlledModalDialog
-      description={editing ? t("Choose how {name} appears across this workspace.", { name: itemLabel(editing) }) : undefined}
-      footer={<div className="wd-dialog-actions">
-        {editing ? <Button isDisabled={saving} onPress={() => void loadHistory(editing)} variant="quiet"><History aria-hidden="true" size={14} />{t("History")}</Button> : null}
-        {editing?.overridden ? <Button isDisabled={saving} onPress={() => { setEditing(null); setRestoreTarget(editing); }} variant="quiet"><RotateCcw aria-hidden="true" size={14} />{t("Restore default")}</Button> : null}
-        <span />
-        <Button isDisabled={saving} onPress={() => setEditing(null)}>{t("Cancel")}</Button>
-        <Button form="terminology-form" isLoading={saving} type="submit" variant="primary">{t("Save language")}</Button>
-      </div>}
-      isDismissable={!saving}
-      isOpen={Boolean(editing)}
-      onOpenChange={(open) => { if (!open && !saving) setEditing(null); }}
-      title={editing ? t("Edit {name}", { name: editing.defaultVisibleName }) : t("Edit workspace language")}
-    >
-      <form className={styles.terminologyForm} id="terminology-form" noValidate onSubmit={save}>
+    <FormDialog isOpen={Boolean(editing)} title={editing ? t("Edit {name}", { name: editing.defaultVisibleName }) : t("Edit workspace language")} description={editing ? t("Choose how {name} appears across this workspace.", { name: itemLabel(editing) }) : undefined} onClose={() => { setEditing(null); }} isSubmitting={saving} submitLabel={t("Save language")} onSubmit={save} formClassName={styles.terminologyForm} secondaryAction={<>{editing ? <Button isDisabled={saving} onPress={() => void loadHistory(editing)} variant="quiet"><History aria-hidden="true" size={14} />{t("History")}</Button> : null}{editing?.overridden ? <Button isDisabled={saving} onPress={() => { setEditing(null); setRestoreTarget(editing); }} variant="quiet"><RotateCcw aria-hidden="true" size={14} />{t("Restore default")}</Button> : null}<span /></>}>
+
         {error ? <Callout title={t("Could not update workspace language")} tone="danger">{error}</Callout> : null}
         <TextInput description={t("Used when referring to one record.")} isRequired label={t("Singular")} onChange={(visibleName) => { setDraft((current) => current ? { ...current, visibleName } : current); setError(""); }} value={draft?.visibleName ?? ""} />
         <TextInput description={t("Used in navigation, lists, and counts.")} isRequired label={t("Plural")} onChange={(visibleNamePlural) => { setDraft((current) => current ? { ...current, visibleNamePlural } : current); setError(""); }} value={draft?.visibleNamePlural ?? ""} />
-      </form>
-    </ControlledModalDialog>
+      
+</FormDialog>
 
     <InspectorSheet
       description={historyTarget ? t("Review changes to {name}. Restoring a revision creates a new revision; it never erases history.", { name: itemLabel(historyTarget) }) : undefined}

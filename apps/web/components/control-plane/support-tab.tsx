@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Badge, Button, ControlledModalDialog, EmptyState, ErrorState, InlineNotice, RecordTable, SelectField, TextAreaField,
-  type DataGridColumn,
-} from "@/design-system";
+  Badge, Button, EmptyState, ErrorState, InlineNotice, RecordTable, SelectField, TextAreaField,
+  type DataGridColumn, FormDialog } from "@/design-system";
 import type { OperatorPermission } from "@/lib/internal/auth";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { consoleApi, type SupportActivity, type SupportMembers, type SupportSession } from "@/lib/internal/console";
@@ -131,19 +130,13 @@ function RequestDialog({ onClose, onSave }: { onClose: () => void; onSave: (reas
   const [minutes, setMinutes] = useState(60);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  return <ControlledModalDialog isOpen size="md" title={t("Request access")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={reason.trim().length < 10} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={t("Request access")} onClose={onClose} error={error || undefined} isSubmitDisabled={reason.trim().length < 10} submitLabel={t("Request")} onSubmit={async () => { setError("");
         try { await onSave(reason.trim(), minutes); } catch (cause) { setError((cause as Error).message || t("Access could not be requested.")); }
-        finally { setBusy(false); }
-      }}>{t("Request")}</Button></div>}>
-    <div className={styles.dialogBody}>
+        finally { }
+      }}>
       <SelectField label={t("Length")} accent="neutral" isRequired selectedKey={String(minutes)}
         items={DURATIONS.map((value) => ({ id: String(value), label: value < 60 ? t("{minutes} min", { minutes: value }) : t("{hours} h", { hours: value / 60 }) }))}
         onSelectionChange={(value) => { if (value) setMinutes(Number(value)); }} />
       <TextAreaField label={t("Reason")} isRequired value={reason} onChange={setReason} description={t("At least 10 characters.")} />
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

@@ -4,9 +4,8 @@ import { parseDate } from "@internationalized/date";
 import { Copy } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Badge, Button, Callout, ControlledModalDialog, DateField, ErrorState, InlineNotice, InspectorSheet, RecordTable, TextInput,
-  EmptyState, type DataGridColumn,
-} from "@/design-system";
+  Badge, Button, Callout, DateField, ErrorState, InlineNotice, InspectorSheet, RecordTable, TextInput,
+  EmptyState, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { consoleApi, type ConsoleDomain, type DomainList } from "@/lib/internal/console";
 import { useConsoleFormat, useConsoleLabels } from "./labels";
@@ -119,18 +118,12 @@ function CertificateDialog({ onClose, onSave }: { onClose: () => void; onSave: (
   const [date, setDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  return <ControlledModalDialog isOpen size="md" title={t("Record certificate")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!date} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={t("Record certificate")} onClose={onClose} error={error || undefined} isSubmitDisabled={!date} submitLabel={t("Save")} onSubmit={async () => { setError("");
         try { await onSave(new Date(`${date}T00:00:00`).toISOString()); } catch (cause) { setError((cause as Error).message || t("The certificate could not be recorded.")); }
-        finally { setBusy(false); }
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+        finally { }
+      }}>
       <DateField label={t("Expires on")} isRequired value={date ? parseDate(date) : null} onChange={(value) => setDate(value ? value.toString() : null)} />
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function AddDomainDialog({ orgKey, onClose, onAdded }: { orgKey: string; onClose: () => void; onAdded: (id: string) => Promise<void> }) {
@@ -139,17 +132,11 @@ function AddDomainDialog({ orgKey, onClose, onAdded }: { orgKey: string; onClose
   const [key] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  return <ControlledModalDialog isOpen size="md" title={t("Add domain")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!hostname.trim()} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={t("Add domain")} onClose={onClose} error={error || undefined} isSubmitDisabled={!hostname.trim()} submitLabel={t("Add")} onSubmit={async () => { setError("");
         try { const created = await consoleApi.requestDomain(orgKey, hostname.trim(), key); await onAdded(created.id); }
         catch (cause) { setError((cause as Error).message || t("The domain could not be added.")); }
-        finally { setBusy(false); }
-      }}>{t("Add")}</Button></div>}>
-    <div className={styles.dialogBody}>
+        finally { }
+      }}>
       <TextInput label={t("Domain")} isRequired value={hostname} onChange={setHostname} placeholder="portal.example.com" />
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

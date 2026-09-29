@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Time, parseDate } from "@internationalized/date";
 import type { CalendarInput, HrmsBootstrap, HrmsCalendar, HrmsHoliday } from "@wodana/contracts";
 import {
-  Badge, Button, Checkbox, ConfirmationDialog, ControlledModalDialog, DataGrid, DateRangeField, EmptyState, ErrorState, InlineNotice, InspectorSheet, SelectField, TextInput, TimeField,
+  Badge, Button, Checkbox, ConfirmationDialog, DataGrid, DateRangeField, EmptyState, ErrorState, InlineNotice, InspectorSheet, SelectField, TextInput, TimeField,
   type DataGridColumn,
-} from "@/design-system";
+ FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
 import { timeZoneOptions } from "@/lib/workspace/regional-options";
@@ -154,14 +154,9 @@ function HolidayDialog({ api, calendarId, holiday, onClose, onSaved }: { api: Hr
     try { if (holiday) await api.updateHoliday(holiday.id, { ...input, version: holiday.version }); else await api.addHoliday(calendarId, input); onSaved(); }
     catch (cause) { setError(format.failure(cause, t("Could not save."))); setBusy(false); }
   };
-  return <ControlledModalDialog isOpen size="md" title={holiday ? holiday.name : t("Add holiday")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!name.trim() || !range} onPress={() => void save()}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={holiday ? holiday.name : t("Add holiday")} onClose={onClose} error={error || undefined} isSubmitting={busy} isSubmitDisabled={!name.trim() || !range} submitLabel={t("Save")} onSubmit={() => save()}>
       <TextInput label={t("Name")} isRequired value={name} onChange={setName} maxLength={120} />
       <DateRangeField label={t("Dates")} isRequired value={range ? { start: parseDate(range.start), end: parseDate(range.end) } : null}
         onChange={(value) => setRange(value ? { start: value.start.toString(), end: value.end.toString() } : null)} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

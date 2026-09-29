@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, Callout, ControlledModalDialog, ErrorState, InlineNotice, Skeleton, Switch, TextAreaField } from "@/design-system";
+import { Badge, Button, Callout, ControlledModalDialog, ErrorState, InlineNotice, Skeleton, Switch, TextAreaField, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { consoleApi, type AccountOrganization, type TenantBillingOverview, type TenantModuleCode, type TenantOperationsOverview } from "@/lib/internal/console";
 import { useConsoleFormat } from "./labels";
@@ -83,20 +83,13 @@ export function PlanTab({ orgKey, organization, canManage }: { orgKey: string; o
 function ModulesDialog({ removed, onClose, onSave }: { removed: string[]; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  return <ControlledModalDialog isOpen size="md" title={t("Change modules")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={reason.trim().length < 10} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={t("Change modules")} onClose={onClose} error={error || undefined} isSubmitDisabled={reason.trim().length < 10} submitLabel={t("Save")} onSubmit={async () => { setError("");
         try { await onSave(reason.trim()); } catch (cause) { setError((cause as Error).message || t("The modules could not be saved.")); }
-        finally { setBusy(false); }
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+        finally { }
+      }}>
       {removed.length ? <Callout tone="warning" title={t("Turning off {modules}", { modules: removed.join(", ") })}>
         {t("Their data stays. People lose access until they're turned on again.")}</Callout> : null}
       <TextAreaField label={t("Reason")} isRequired value={reason} onChange={setReason} description={t("At least 10 characters.")} />
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy } from "lucide-react";
 import {
-  Button, ControlledModalDialog, DataGrid, ErrorState, InlineNotice, NoAccessState, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch,
-  formatDate, isNoAccessError, useDesignSystem, type DataGridColumn,
-} from "@/design-system";
+  Button, DataGrid, ErrorState, InlineNotice, NoAccessState, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch,
+  formatDate, isNoAccessError, useDesignSystem, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
 import { AiAppsRequestError, aiAppsApi, type McpConnection, type McpOverview } from "@/lib/workspace/ai-apps";
@@ -104,12 +103,8 @@ export function AiAppsPage({ workspaceId }: { workspaceId: string }) {
       <DataGrid ariaLabel={t("Connected apps")} columns={columns} data={overview.connections} getRowId={(row) => row.id}
         emptyTitle={t("No AI apps connected")} pageSize={25} pinFirstColumn={false} rowNumbers={false} selectable={false} showToolbar={false} wrapText />
     </SettingsSection>
-    {revoking ? <ControlledModalDialog isOpen title={t("Revoke {app}?", { app: revoking.clientName })} onOpenChange={(open) => { if (!open && !busy) setRevoking(null); }}
-      footer={<div className="wd-dialog-actions">
-        <Button isDisabled={busy} onPress={() => setRevoking(null)}>{t("Cancel")}</Button>
-        <Button isLoading={busy} onPress={() => void revoke()} variant="danger">{t("Revoke")}</Button>
-      </div>}>
+    {revoking ? <FormDialog title={t("Revoke {app}?", { app: revoking.clientName })} onClose={() => { setRevoking(null); }} isSubmitting={busy} submitVariant="danger" submitLabel={t("Revoke")} onSubmit={() => revoke()}>
       <p className={styles.dialogText}>{t("{app} loses access to this workspace.", { app: revoking.clientName })}</p>
-    </ControlledModalDialog> : null}
+    </FormDialog> : null}
   </SettingsPage>;
 }

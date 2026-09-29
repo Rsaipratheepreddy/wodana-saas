@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Time } from "@internationalized/date";
 import type { AttendanceDay, AttendanceEvent, AttendanceHistory, AttendanceSession } from "@wodana/contracts";
-import { Button, ControlledModalDialog, InlineNotice, InspectorSheet, SelectField, TextAreaField, TimeField } from "@/design-system";
+import { Button, InspectorSheet, SelectField, TextAreaField, TimeField, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
 import { localDay, wallTime, zonedInstant } from "@/lib/hrms/client";
@@ -110,17 +110,12 @@ function ReviewRequestDialog({ api, kind, day, events, session, onClose, onSent 
       onSent();
     } catch (cause) { setError(format.failure(cause, t("Could not send."))); setBusy(false); }
   };
-  return <ControlledModalDialog isOpen size="md" title={kind === "correction" ? t("Ask for correction") : t("Missing check-out")} onOpenChange={(value) => { if (!value) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!ready} onPress={() => void send()}>{t("Send request")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={kind === "correction" ? t("Ask for correction") : t("Missing check-out")} onClose={onClose} error={error || undefined} isSubmitting={busy} isSubmitDisabled={!ready} submitLabel={t("Send request")} onSubmit={() => send()}>
       {kind === "correction" ? <SelectField label={t("Event")} isRequired selectedKey={eventId} placeholder={t("Choose")}
         onSelectionChange={(key) => { const next = events.find((item) => item.id === key); setEventId(next?.id ?? null); if (next) setTime(toTime(wallTime(next.effectiveAt, zone))); }}
         items={events.map((item) => ({ id: item.id, label: `${labels.event(item.kind)} · ${format.time(item.effectiveAt, zone)}` }))} /> : null}
       <TimeField label={kind === "correction" ? t("Correct time") : t("Checked out at")} isRequired value={time} onChange={(value) => setTime(value ? new Time(value.hour, value.minute) : null)}
         isInvalid={future} errorMessage={future ? t("Choose a time that has passed.") : undefined} />
       <TextAreaField label={t("Reason")} isRequired value={reason} onChange={setReason} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

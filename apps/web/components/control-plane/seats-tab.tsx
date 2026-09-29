@@ -1,10 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Badge, Button, Callout, ControlledModalDialog, ErrorState, InlineNotice, NumericInput, RecordTable, Skeleton, TextAreaField,
-  EmptyState, type DataGridColumn,
-} from "@/design-system";
+import { Badge, Button, Callout, ErrorState, NumericInput, RecordTable, Skeleton, TextAreaField, EmptyState, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { consoleApi, type SeatsView } from "@/lib/internal/console";
 import { useConsoleFormat } from "./labels";
@@ -63,22 +60,15 @@ function SeatLimitDialog({ seats, onClose, onSave }: { seats: SeatsView; onClose
   const t = useT();
   const [limit, setLimit] = useState<number>(seats.position.limit ?? seats.position.members);
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const valid = Number.isInteger(limit) && limit >= 1 && reason.trim().length >= 10;
-  return <ControlledModalDialog isOpen size="md" title={t("Change limit")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={t("Change limit")} onClose={onClose} error={error || undefined} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={async () => { setError("");
         try { await onSave(limit, reason.trim()); } catch (cause) { setError((cause as Error).message || t("The limit could not be saved.")); }
-        finally { setBusy(false); }
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+        finally { }
+      }}>
       <NumericInput label={t("Seats")} isRequired minValue={1} value={limit} onChange={(value) => setLimit(value)}
         description={seats.contractSeatLimit ? t("Contract allows {count}", { count: seats.contractSeatLimit }) : undefined} />
       {limit < seats.position.members ? <Badge tone="warning">{t("Below the {count} members: invites stay blocked", { count: seats.position.members })}</Badge> : null}
       <TextAreaField label={t("Reason")} isRequired value={reason} onChange={setReason} description={t("At least 10 characters.")} />
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

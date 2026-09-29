@@ -7,8 +7,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent 
 import { CheckCircle2, Trash2 } from "lucide-react";
 import {
   Button, Callout, ComboboxField, ConfirmationDialog, ControlledModalDialog,
-  DesignSystemProvider, SelectField, SettingsPage, SettingsRow, SettingsSection, TextInput, ValidationSummary, useDesignSystem,
-} from "@/design-system";
+  DesignSystemProvider, SelectField, SettingsPage, SettingsRow, SettingsSection, TextInput, ValidationSummary, useDesignSystem, FormDialog } from "@/design-system";
 import type { Translate } from "@/lib/i18n/keys";
 import {
   type CompanyAddress, type CompanyProfileData, type CompanyProfileUpdate, type LegalEntityRecord,
@@ -350,8 +349,8 @@ export function CompanyProfile({
         {!canManage ? <p className={styles.permissionNote}>{t("Only workspace owners and administrators can edit this profile.")}</p> : null}
       </SettingsPage>
 
-      {entity ? <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isSaving} onPress={() => requestEditorChange(false)}>{t("Cancel")}</Button><Button form="company-profile-form" isLoading={isSaving} type="submit" variant="primary">{t("Save")}</Button></div>} isOpen={isOpen} onOpenChange={requestEditorChange} size="lg" title={t("Edit profile")}>
-        <form className={styles.editor} id="company-profile-form" noValidate onSubmit={submit}>
+      {entity ? <FormDialog isOpen={isOpen} size="lg" title={t("Edit profile")} onClose={() => { requestEditorChange(false); }} isSubmitting={isSaving} submitLabel={t("Save")} onSubmit={submit} formClassName={styles.editor}>
+
           <ValidationSummary errors={Object.values(errors).filter((error): error is string => Boolean(error))} />
           {saveError ? <Callout title={t("Could not save changes")} tone="danger">{saveError}</Callout> : null}
           {logoError ? <Callout title={t("Could not update logo")} tone="danger">{logoError}</Callout> : null}
@@ -373,8 +372,8 @@ export function CompanyProfile({
             <SelectField items={[{ id: "metric", label: t("Metric") }, { id: "imperial", label: t("Imperial") }, { id: "mixed", label: t("Mixed") }]} label={t("Measurement system")} onSelectionChange={(key) => key && updateField("unitSystem", String(key))} selectedKey={form.unitSystem} />
             <SelectField items={[{ id: "0", label: t("Sunday") }, { id: "1", label: t("Monday") }, { id: "6", label: t("Saturday") }]} label={t("Week starts on")} onSelectionChange={(key) => key && updateField("weekStartsOn", String(key))} selectedKey={form.weekStartsOn} />
           </div>
-        </form>
-      </ControlledModalDialog> : null}
+        
+</FormDialog> : null}
       <ConfirmationDialog body={t("Your edits have not been saved. Discard them and close the editor?")} confirmLabel={t("Discard changes")} isOpen={discardOpen} onConfirm={discardChanges} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} />
       <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isRemovingLogo} onPress={() => setRemoveLogoOpen(false)}>{t("Keep logo")}</Button><Button isLoading={isRemovingLogo} onPress={removeLogo} variant="danger">{t("Remove logo")}</Button></div>} isOpen={removeLogoOpen} onOpenChange={setRemoveLogoOpen} title={t("Remove company logo?")}>{t("The initials fallback will replace the logo on the workspace and tenant sign-in screen.")}</ControlledModalDialog>
     </DesignSystemProvider>
