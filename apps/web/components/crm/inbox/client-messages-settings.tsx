@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, ControlledModalDialog, DataGrid, InlineNotice, SelectField, SettingsSection, Skeleton, Switch, TextInput, ToggleButton, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, FormDialog, InlineNotice, SelectField, SettingsSection, Skeleton, Switch, TextInput, ToggleButton, type DataGridColumn } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
 import { CLIENT_EVENT_LABELS, FOLLOW_UP_EVENTS, type ClientMessageRow, type FollowUpTiming, type InboxTemplate } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -73,8 +73,8 @@ function FollowUpTimingDialog({ workspaceId, canManage, timing, onClose, onSaved
     } catch (reason) { setError(reason instanceof Error ? reason.message : t("The timing could not be saved.")); }
     finally { setSaving(false); }
   };
-  return <ControlledModalDialog isOpen title={t("Follow-up timing")} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button>{canManage ? <Button variant="primary" isLoading={saving} onPress={() => void save()}>{t("Save timing")}</Button> : null}</div>}>
+  return <FormDialog title={t("Follow-up timing")} onClose={onClose} error={error || undefined} isSubmitting={saving} hideSubmit={!canManage} cancelLabel={canManage ? undefined : t("Close")}
+    submitLabel={t("Save timing")} onSubmit={() => save()}>
     <div className={styles.fields}>
       <SelectField label={t("Quiet enquiry: first follow-up after")} isDisabled={!canManage} items={DAY_CHOICES.map((count) => ({ id: String(count), label: days(count) }))} selectedKey={String(draft.quietDays)}
         onSelectionChange={(key) => key && setDraft((current) => ({ ...current, quietDays: Number(key) }))} />
@@ -84,8 +84,7 @@ function FollowUpTimingDialog({ workspaceId, canManage, timing, onClose, onSaved
         onSelectionChange={(key) => key && setDraft((current) => ({ ...current, quoteDays: Number(key) }))} />
       <TextInput label={t("Review link")} inputType="url" maxLength={500} isDisabled={!canManage} value={draft.reviewUrl} placeholder="https://" onChange={(value) => setDraft((current) => ({ ...current, reviewUrl: value }))} />
     </div>
-    {error ? <InlineNotice tone="error" message={error} /> : null}
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 const OFFSET_CHOICES = [-7, -3, -1, 0, 1, 3, 7, 14, 30];
@@ -107,11 +106,10 @@ function ReminderSchedule({ workspaceId, canManage, onClose }: { workspaceId: st
     catch (reason) { setError(reason instanceof Error ? reason.message : t("The schedule could not be saved.")); }
     finally { setSaving(false); }
   };
-  return <ControlledModalDialog isOpen title={t("Payment reminder schedule")} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button>{canManage ? <Button variant="primary" isLoading={saving} onPress={() => void save()}>{t("Save schedule")}</Button> : null}</div>}>
+  return <FormDialog title={t("Payment reminder schedule")} onClose={onClose} error={error || undefined} isSubmitting={saving} hideSubmit={!canManage} cancelLabel={canManage ? undefined : t("Close")}
+    submitLabel={t("Save schedule")} onSubmit={() => save()}>
     {!schedule && !error ? <Skeleton lines={3} /> : null}
     {schedule ? <div className={styles.fields} role="group" aria-label={t("Days")}>{[...new Set([...OFFSET_CHOICES, ...schedule.offsets])].sort((a, b) => a - b).map((offset) =>
       <ToggleButton key={offset} size="compact" isDisabled={!canManage} isSelected={chosen.has(offset)} onPress={() => setChosen((current) => { const next = new Set(current); if (next.has(offset)) next.delete(offset); else next.add(offset); return next; })}>{label(offset)}</ToggleButton>)}</div> : null}
-    {error ? <InlineNotice tone="error" message={error} /> : null}
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

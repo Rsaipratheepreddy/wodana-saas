@@ -4,7 +4,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { Copy, Download } from "lucide-react";
-import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, SettingsRow, SettingsSection, Switch, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, FormDialog, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, SettingsRow, SettingsSection, Switch, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import type { ViewAsSettings, ViewAsTarget } from "@/lib/workspace/view-as";
 import { ViewAsDialog } from "./view-as-dialog";
 import type { Translate } from "@/lib/i18n/keys";
@@ -663,7 +663,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
 
       <ViewAsDialog mfaEnabled={Boolean(viewAs?.mfaEnabled)} onClose={() => setViewAsTarget(null)} target={viewAsTarget} workspaceId={initialData.workspaceId} />
 
-      <ControlledModalDialog
+      <FormDialog
         description={invitationResult
           ? invitationResult.deliveryStatus === "sent"
             ? t("The invitation was emailed. The secure copy link is shown only now.")
@@ -671,12 +671,14 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           : bulkInvitationResult
             ? t("Bulk invitation processing is complete.")
             : t("The member will receive access after activating the invitation.")}
-        footer={hasInvitationOutcome
-          ? <div className="wd-dialog-actions"><Button onPress={() => setInviteOpen(false)}>{t("Done")}</Button></div>
-          : <div className="wd-dialog-actions"><Button isDisabled={isInviting} onPress={() => setInviteOpen(false)}>{t("Cancel")}</Button><Button form="invite-member-form" isLoading={isInviting} type="submit" variant="primary">{t("Create invitation")}</Button></div>}
-        isDismissable={!isInviting}
+        hideSubmit={hasInvitationOutcome}
+        cancelLabel={hasInvitationOutcome ? t("Done") : undefined}
+        isSubmitting={isInviting}
+        isDirty={!hasInvitationOutcome && Boolean(inviteName.trim() || inviteEmail.trim())}
         isOpen={inviteOpen}
-        onOpenChange={(open) => { if (!isInviting) setInviteOpen(open); }}
+        onClose={() => setInviteOpen(false)}
+        onSubmit={createInvitation}
+        submitLabel={t("Create invitation")}
         title={invitationResult ? t("Invitation ready") : bulkInvitationResult ? t("Bulk invitations ready") : t("Invite a member")}
       >
         {invitationResult ? <div className={styles.invitationReady}>
@@ -692,25 +694,26 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           {bulkInvitationResult.failedEmails.length ? <Callout title={bulkInvitationResult.failedEmails.length === 1 ? t("1 invitation failed") : t("{count} invitations failed", { count: bulkInvitationResult.failedEmails.length })} tone="danger">
             {bulkInvitationResult.failedEmails.length > 5 ? t("{emails} and {count} more", { emails: bulkInvitationResult.failedEmails.slice(0, 5).join(", "), count: bulkInvitationResult.failedEmails.length - 5 }) : bulkInvitationResult.failedEmails.join(", ")}
           </Callout> : null}
-        </div> : <Form className={styles.form} id="invite-member-form" noValidate onSubmit={createInvitation}>
+        </div> : <>
           <ValidationSummary errors={inviteErrors} />
           {inviteFailure ? <Callout title={t("Could not create invitation")} tone="danger">{inviteFailure}</Callout> : null}
           <TextInput isRequired label={t("Full name")} onChange={setInviteName} placeholder={t("e.g. Maya Thomas")} value={inviteName} />
           <TextInput inputType="email" isRequired label={t("Work email")} onChange={setInviteEmail} placeholder={t("maya@company.com")} value={inviteEmail} />
           <MultiSelectField items={assignableTeams.map((team) => ({ id: team.id, label: team.name }))} label={t("Teams")} onSelectionChange={(keys) => setInviteTeamIds(new Set(Array.from(keys, String)))} selectedKeys={inviteTeamIds} />
           <RoleChoices onChange={setInviteRoles} roles={assignableRoles} selected={inviteRoles} />
-        </Form>}
-      </ControlledModalDialog>
+        </>}
+      </FormDialog>
 
-      <ControlledModalDialog
+      <FormDialog
         description={editingMember ? t("Update workspace access for {email}.", { email: editingMember.email }) : undefined}
-        footer={<div className="wd-dialog-actions"><Button isDisabled={isSavingMember} onPress={() => { setMemberReviewOpen(false); setEditingMember(null); }}>{t("Cancel")}</Button><Button form="edit-member-form" isLoading={isSavingMember} type="submit" variant="primary">{t("Review changes")}</Button></div>}
-        isDismissable={!isSavingMember}
+        isSubmitting={isSavingMember}
         isOpen={Boolean(editingMember)}
-        onOpenChange={(open) => { if (!open && !isSavingMember) { setMemberReviewOpen(false); setEditingMember(null); } }}
+        onClose={() => { setMemberReviewOpen(false); setEditingMember(null); }}
+        onSubmit={reviewMember}
+        submitLabel={t("Review changes")}
         title={t("Edit member access")}
       >
-        {editingMember ? <Form className={styles.form} id="edit-member-form" noValidate onSubmit={reviewMember}>
+        {editingMember ? <>
           {editFailure ? <Callout title={t("Could not save member")} tone="danger">{editFailure}</Callout> : null}
           <div className={styles.memberPreview}><Avatar name={editingMember.displayName} preset={editingMember.avatarPreset ?? "auto"} roles={[...editingMember.roles, ...(editingMember.inheritedRoles ?? [])]} seed={editingMember.userId} size="lg" src={editingMember.photoUrl} /><span><strong>{editingMember.displayName}</strong><small>{editingMember.email}</small></span></div>
           <RoleChoices onChange={setEditRoles} roles={assignableRoles} selected={editRoles} />
@@ -723,8 +726,8 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             onSelectionChange={(key) => key && setEditStatus(String(key) as "active" | "suspended")}
             selectedKey={editStatus}
           />
-        </Form> : null}
-      </ControlledModalDialog>
+        </> : null}
+      </FormDialog>
 
       <ConfirmationDialog
         body={editingMember ? <div className={styles.accessReview}>
