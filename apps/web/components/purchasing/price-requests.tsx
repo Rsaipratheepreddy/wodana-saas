@@ -16,10 +16,19 @@ function useRequestLabels() {
   return useMemo(() => ({ open: t("Waiting for prices"), awarded: t("Awarded"), cancelled: t("Cancelled") } satisfies Record<PriceRequestStatus, string>), [t]);
 }
 
+/** An open request whose suppliers have all answered is ready to award, not still "waiting for prices". */
+function useRequestState() {
+  const t = useT();
+  const labels = useRequestLabels();
+  return useCallback((status: PriceRequestStatus, answered: number, asked: number) => status === "open" && asked > 0 && answered >= asked
+    ? { label: t("Ready to award"), tone: "info" as const }
+    : { label: labels[status], tone: status === "open" ? "warning" as const : status === "awarded" ? "success" as const : "neutral" as const }, [labels, t]);
+}
+
 /** Price requests: what was asked, of how many suppliers, and how many replied. A row opens the comparison. */
 export function PriceRequests({ api, openId, onOpen, onOrder, refreshKey }: { api: PurchasingApi; openId: string | null; onOpen: (id: string | null) => void; onOrder: (orderId: string) => void; refreshKey: number }) {
   const t = useT();
-  const labels = useRequestLabels();
+  const requestState = useRequestState();
   const format = useProjectFormat();
   const [state, setState] = useState<PriceRequestsState | null>(null);
   const [error, setError] = useState("");
@@ -33,7 +42,7 @@ export function PriceRequests({ api, openId, onOpen, onOrder, refreshKey }: { ap
   const columns: DataGridColumn<PriceRequestRow>[] = [
     { id: "number", header: t("Price request"), accessorFn: (row) => String(row.number), size: 160, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{t("Price request {number}", { number: row.number })}</span><small>{row.lines === 1 ? t("1 line") : t("{count} lines", { count: row.lines })}</small></span> } },
-    { id: "status", header: t("Status"), accessorFn: (row) => labels[row.status], size: 160, meta: { renderCell: (row) => <Badge tone={row.status === "open" ? "warning" : row.status === "awarded" ? "success" : "neutral"}>{labels[row.status]}</Badge> } },
+    { id: "status", header: t("Status"), accessorFn: (row) => requestState(row.status, row.replied, row.suppliers).label, size: 160, meta: { renderCell: (row) => { const shown = requestState(row.status, row.replied, row.suppliers); return <Badge tone={shown.tone}>{shown.label}</Badge>; } } },
     { id: "replies", header: t("Replies"), accessorFn: (row) => row.replied, size: 120, meta: { renderCell: (row) => t("{replied} of {count}", { replied: row.replied, count: row.suppliers }) } },
     { id: "projects", header: t("For"), accessorFn: (row) => row.projects.join(", "), size: 160, meta: { mobileHidden: true } },
     { id: "needed", header: t("Needed by"), accessorFn: (row) => row.neededBy ?? "", size: 130, meta: { mobileHidden: true, renderCell: (row) => format.day(row.neededBy) } },
@@ -56,7 +65,7 @@ export function PriceRequests({ api, openId, onOpen, onOrder, refreshKey }: { ap
 function PriceRequestSheet({ api, requestId, onChanged, onClose, onOrder }: { api: PurchasingApi; requestId: string; onChanged: () => void; onClose: () => void; onOrder: (orderId: string) => void }) {
   const t = useT();
   const format = useProjectFormat();
-  const labels = useRequestLabels();
+  const requestState = useRequestState();
   const [state, setState] = useState<PriceRequestState | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -95,7 +104,7 @@ function PriceRequestSheet({ api, requestId, onChanged, onClose, onOrder }: { ap
       }}>{t("Award and create orders")}</Button></div> : null}>
     {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state ? <Skeleton lines={8} shape="rows" /> : <div className={styles.sheet}>
       <div className={styles.approvalRow}>
-        <Badge tone={state.request.status === "open" ? "warning" : state.request.status === "awarded" ? "success" : "neutral"}>{labels[state.request.status]}</Badge>
+        {(() => { const shown = requestState(state.request.status, state.suppliers.filter((item) => item.status !== "asked").length, state.suppliers.length); return <Badge tone={shown.tone}>{shown.label}</Badge>; })()}
         <span className={styles.muted}>{[state.request.companyName, state.request.neededBy ? t("Needed by {date}", { date: format.day(state.request.neededBy) }) : ""].filter(Boolean).join(" · ")}</span>
       </div>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
