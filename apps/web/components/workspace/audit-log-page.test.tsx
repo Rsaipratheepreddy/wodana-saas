@@ -14,18 +14,31 @@ describe("AuditLogPage", () => {
     render(<AuditLogPage initialData={{ ...structuredClone(auditLogFixture), nextCursor: null }} />);
 
     expect(screen.getByRole("table", { name: "Workspace audit log" })).toBeInTheDocument();
-    expect(screen.getByText("Member Invited")).toBeInTheDocument();
+    expect(screen.getByText("Member invited")).toBeInTheDocument();
 
     await interaction.type(screen.getByRole("searchbox", { name: "Search audit log" }), "google");
-    expect(screen.getByText("Connection Completed")).toBeInTheDocument();
-    expect(screen.queryByText("Member Invited")).not.toBeInTheDocument();
+    expect(screen.getByText("Connection completed")).toBeInTheDocument();
+    expect(screen.queryByText("Member invited")).not.toBeInTheDocument();
 
     await interaction.clear(screen.getByRole("searchbox", { name: "Search audit log" }));
-    await interaction.click(screen.getByRole("button", { name: "View Member Invited details" }));
-    const dialog = await screen.findByRole("dialog", { name: "Member Invited" });
+    await interaction.click(screen.getByRole("button", { name: "View Member invited details" }));
+    const dialog = await screen.findByRole("dialog", { name: "Member invited" });
     expect(within(dialog).getByText("Changed fields")).toBeInTheDocument();
     expect(within(dialog).getByText("Email")).toBeInTheDocument();
     expect(within(dialog).getByText("Roles")).toBeInTheDocument();
+  });
+
+  it("names events and records in the product's words, not table names", () => {
+    const base = structuredClone(auditLogFixture.items[0]);
+    const items: AuditEvent[] = [
+      { ...base, id: "70000000-0000-4000-8000-000000000011", action: "pre_project.case_started.v1", entityType: "pre_project_case" },
+      { ...base, id: "70000000-0000-4000-8000-000000000012", action: "crm.lead_created.v1", entityType: "crm_lead" },
+      { ...base, id: "70000000-0000-4000-8000-000000000013", action: "workspace.invitation_sent.v1", entityType: "workspace_invitation" },
+    ];
+    render(<AuditLogPage initialData={{ ...structuredClone(auditLogFixture), items, nextCursor: null }} />);
+    const table = within(screen.getByRole("table", { name: "Workspace audit log" }));
+    for (const text of ["Planning case started", "Planning case", "Enquiry created", "Enquiry", "Invitation sent", "Invitation"]) expect(table.getByText(text)).toBeInTheDocument();
+    expect(table.queryByText(/Crm|Pre Project|Workspace Invitation/)).toBeNull();
   });
 
   it("loads the next cursor page without duplicating existing events", async () => {
@@ -55,8 +68,8 @@ describe("AuditLogPage", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(String(fetchMock.mock.calls[0][0])).toContain(`workspaceId=${auditLogFixture.workspaceId}`);
     expect(String(fetchMock.mock.calls[0][0])).toContain("cursor=fixture-next-page");
-    expect(await screen.findByText("Legal Entity Updated")).toBeInTheDocument();
-    expect(screen.getAllByText("Member Invited")).toHaveLength(1);
+    expect(await screen.findByText("Legal entity updated")).toBeInTheDocument();
+    expect(screen.getAllByText("Member invited")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
 

@@ -18,10 +18,27 @@ function humanize(value: string) {
     .join(" ");
 }
 
+/** Internal table and module names → the words the product uses for the same records. */
+const PRODUCT_WORDS: Array<[RegExp, string]> = [
+  [/\bpre project cases\b/g, "planning cases"], [/\bpre project case\b/g, "planning case"], [/\bpre projects?\b/g, "planning"],
+  [/\bcrm leads\b/g, "enquiries"], [/\bcrm lead\b/g, "enquiry"], [/\bleads\b/g, "enquiries"], [/\blead\b/g, "enquiry"],
+  [/\bcrm opportunit(y|ies)\b/g, "opportunit$1"], [/\bcrm parties\b/g, "customers"], [/\bcrm party\b/g, "customer"],
+  [/\bworkspace invitations?\b/g, "invitation"], [/\bworkspace memberships?\b/g, "member"], [/\bworkspace members?\b/g, "member"],
+  [/\bdelivery projects?\b/g, "project"], [/\bcommercial cases?\b/g, "deal"], [/\bcrm\b/g, ""],
+];
+
+/** An event or record name in the product's words, in sentence case ("Planning case started", "Enquiry"). */
+function productLabel(value: string) {
+  let text = value.replace(/\.v\d+$/i, "").split(/[._-]+/).filter(Boolean).join(" ").toLowerCase();
+  for (const [pattern, word] of PRODUCT_WORDS) text = text.replace(pattern, word);
+  text = text.replace(/\s+/g, " ").trim();
+  return text ? text[0].toUpperCase() + text.slice(1) : humanize(value);
+}
+
 function actionLabel(action: string) {
   const words = action.replace(/\.v\d+$/i, "").split(".");
   const broadModules = new Set(["automation", "crm", "integration", "notification", "security", "workspace"]);
-  return humanize(words.length > 1 && broadModules.has(words[0] ?? "") ? words.slice(1).join(" ") : action);
+  return productLabel(words.length > 1 && broadModules.has(words[0] ?? "") ? words.slice(1).join(" ") : action);
 }
 
 function sourceLabel(source: string, t: Translate) {
@@ -84,7 +101,7 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
     { id: "event", accessorFn: (item) => actionLabel(item.action), header: t("Event"), size: 230, meta: { primary: true } },
     { id: "actor", accessorFn: (item) => item.actorName ?? t("System"), header: t("Actor"), size: 215, cell: ({ row }) => <span className={styles.actor}><span>{row.original.actorName ?? t("System")}</span>{row.original.actorEmail ? <small>{row.original.actorEmail}</small> : null}</span> },
     { id: "source", accessorFn: (item) => sourceLabel(item.source, t), header: t("Source"), size: 115 },
-    { id: "record", accessorFn: (item) => humanize(item.entityType), header: t("Record"), size: 165 },
+    { id: "record", accessorFn: (item) => productLabel(item.entityType), header: t("Record"), size: 165 },
     { id: "occurred", accessorFn: (item) => item.occurredAt, header: t("Date & time"), size: 195, cell: ({ row }) => <time dateTime={row.original.occurredAt}>{timestamp(row.original.occurredAt, { locale, timeZone })}</time> },
     { id: "action", header: t("Action"), size: 90, enableSorting: false, cell: ({ row }) => <Button aria-label={t("View {event} details", { event: actionLabel(row.original.action) })} onPress={() => setSelectedEvent(row.original)} size="compact" variant="quiet">{t("View")}</Button> },
   ];
@@ -161,7 +178,7 @@ function AuditEventDialog({ event, onClose }: { event: AuditEvent | null; onClos
   const { locale, timeZone } = useDesignSystem();
   const fields = event ? changedFields(event) : [];
   return <ControlledModalDialog
-    description={event ? `${humanize(event.entityType)} · ${event.entityId?.slice(0, 8) ?? t("No record ID")}` : undefined}
+    description={event ? `${productLabel(event.entityType)} · ${event.entityId?.slice(0, 8) ?? t("No record ID")}` : undefined}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Done")}</Button></div>}
     isOpen={Boolean(event)}
     onOpenChange={(open) => { if (!open) onClose(); }}
