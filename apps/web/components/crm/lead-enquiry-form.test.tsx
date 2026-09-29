@@ -228,7 +228,7 @@ it("routes company enquiries and gives self-generated ones to the person creatin
   const { user, onSaved, body } = setup(undefined, salesperson);
   expect(screen.getByRole("button", { name: /Owner/ })).toHaveTextContent("Use routing rules");
   await completeRequired(user, "Self Generated");
-  expect(screen.getByRole("button", { name: /Owner/ })).toHaveTextContent("Me (Sara)");
+  expect(screen.getByRole("button", { name: /Owner/ })).toHaveTextContent("Me · Sara");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalled());
   expect(body()).toMatchObject({ source: "self_generated", channel: "whatsapp", assignment: { mode: "manual", ownerMembershipId: SARA } });
@@ -236,7 +236,7 @@ it("routes company enquiries and gives self-generated ones to the person creatin
 
 it("owns it yourself when no routing is set up, and offers others only to people who may assign", async () => {
   const assigner = setup(undefined, (data) => { salesperson(data); data.assignmentPolicies = []; data.queues = []; });
-  expect(screen.getByRole("button", { name: /Owner/ })).toHaveTextContent("Me (Sara)");
+  expect(screen.getByRole("button", { name: /Owner/ })).toHaveTextContent("Me · Sara");
   await choose(assigner.user, /Owner/, "Zaid");
   await completeRequired(assigner.user);
   await assigner.user.click(screen.getByRole("button", { name: "Create enquiry" }));
@@ -247,7 +247,7 @@ it("owns it yourself when no routing is set up, and offers others only to people
   const seller = setup(undefined, (data) => { salesperson(data); data.canAssign = false; });
   await seller.user.click(screen.getByRole("button", { name: /Owner/ }));
   expect(screen.queryByRole("option", { name: "Zaid" })).toBeNull();
-  expect(screen.getByRole("option", { name: "Me (Sara)" })).toBeVisible();
+  expect(screen.getByRole("option", { name: "Me · Sara" })).toBeVisible();
 }, 20_000);
 
 it("doesn't preselect someone who can't own enquiries", async () => {
@@ -268,7 +268,7 @@ it("fills a new enquiry from a pasted message with Woddy, for the person to chec
   await user.click(screen.getByRole("button", { name: "Read it" }));
   await user.click(await screen.findByRole("button", { name: "Use 4 values" }));
   expect(screen.getByLabelText(/Customer name/)).toHaveValue("Sara Khan");
-  await waitFor(() => expect(screen.getByRole("textbox", { name: "Mobile" })).toHaveValue("501234567"));
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Mobile" })).toHaveValue("50 123 4567"));
   expect(screen.getByRole("button", { name: "Mobile country code" })).toHaveTextContent("+971");
   // What went under More details is open to check.
   expect(screen.getByRole("textbox", { name: "Company" })).toHaveValue("Palm Holdings");

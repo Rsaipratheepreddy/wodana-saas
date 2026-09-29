@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { phoneProblem, splitPhone } from "./phone";
+import { groupNational, phoneProblem, splitPhone } from "./phone";
 
 const text = {
   tooShort: (c: string, code: string, n: number) => `Too short — ${c} numbers are ${n} digits after ${code}`,
@@ -41,5 +41,14 @@ describe("phoneProblem", () => {
   });
   it("asks for a country when none is chosen", () => {
     expect(phoneProblem("501234567", "", text)).toBe("Choose the country code");
+  });
+});
+
+describe("groupNational", () => {
+  it("groups a valid local number after its code and keeps anything unfinished as typed", () => {
+    expect(groupNational("0507421938", "AE")).toBe("50 742 1938");
+    expect(groupNational("507421938", "ae")).toBe("50 742 1938");
+    expect(groupNational("050 742", "AE")).toBe("050 742");
+    expect(groupNational("", "AE")).toBe("");
   });
 });

@@ -30,25 +30,25 @@ describe("CRM phone country picker", () => {
 
   it("never shows or saves the country code twice (PLM-034)", async () => {
     render(<Example initial="+917780768279" initialCountry="IN" />);
-    expect(await screen.findByRole("textbox", { name: /Mobile/ })).toHaveValue("7780768279");
+    expect(await screen.findByRole("textbox", { name: /Mobile/ })).toHaveValue("77807 68279");
     expect(screen.getByRole("button", { name: "Mobile country code" })).toHaveTextContent("+91");
   });
 
-  it("switches the code when an international number is pasted, and drops a leading 0 on blur", async () => {
+  it("switches the code when an international number is pasted, and on blur drops a leading 0 but keeps the local grouping", async () => {
     const user = userEvent.setup();
     render(<Example />);
     const input = screen.getByRole("textbox", { name: /Mobile/ });
     await user.click(input);
     await user.paste("+44 7400 123456");
     expect(screen.getByRole("button", { name: "Mobile country code" })).toHaveTextContent("+44");
-    expect(input).toHaveValue("7400123456");
+    expect(input).toHaveValue("7400 123456");
     await user.clear(input);
     await user.click(screen.getByRole("button", { name: "Mobile country code" }));
     await user.type(screen.getByRole("searchbox", { name: "Search country or code" }), "United Arab");
     await user.click(screen.getByRole("option", { name: /United Arab Emirates/ }));
     await user.type(input, "050 123 4567");
     await user.tab();
-    expect(input).toHaveValue("501234567");
+    expect(input).toHaveValue("50 123 4567");
   });
 
   it("explains a number that is too long for the country (PLM-021)", async () => {

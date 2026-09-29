@@ -6,7 +6,7 @@ import { ChevronDown } from "lucide-react";
 import { getExampleNumber, isSupportedCountry, type CountryCode } from "libphonenumber-js/max";
 import mobileExamples from "libphonenumber-js/examples.mobile.json";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { joinPhone, phoneCountry, phoneCountryOptions, phoneProblem, splitPhone, toE164 } from "@/lib/phone";
+import { groupNational, joinPhone, phoneCountry, phoneCountryOptions, phoneProblem, splitPhone, toE164 } from "@/lib/phone";
 import { countryFromLocale } from "@/lib/workspace/region-labels";
 import { useDesignSystem } from "../foundations/provider";
 import { SearchInput, TextInput } from "./forms";
@@ -57,12 +57,19 @@ export function PhoneField({ label, value, onChange, countryCode: chosenCountry,
     if (next.national !== value) onChange(next.national);
   }, [value, countryCode, chosenCountry, onChange, onCountryChange]);
 
+  // What the input shows: while it has focus, what the person typed; otherwise the number grouped the local way
+  // ("50 742 1938" beside +971). The value reported stays the plain local number, so saved data doesn't change.
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? groupNational(value, countryCode);
   const type = (raw: string) => {
     const next = splitPhone(raw, countryCode);
     if (next.country && next.country !== chosenCountry) onCountryChange(next.country);
-    onChange(/^\s*(\+|00)/.test(raw) ? next.national : raw);
+    const international = /^\s*(\+|00)/.test(raw);
+    setDraft(international ? groupNational(next.national, next.country || countryCode) : raw);
+    onChange(international ? next.national : raw);
   };
   const tidy = () => {
+    setDraft(null);
     const next = splitPhone(value, countryCode);
     if (next.national !== value) onChange(next.national);
   };
@@ -97,8 +104,8 @@ export function PhoneField({ label, value, onChange, countryCode: chosenCountry,
     </Popover>
   </DialogTrigger>;
 
-  const field = <TextInput autoFocus={autoFocus} description={description} inputType="tel" isDisabled={isDisabled} isReadOnly={isReadOnly} isRequired={isRequired} label={label} onBlur={tidy} onChange={type}
-    placeholder={example ? example.formatNational() : undefined} prefix={picker} validate={validate} value={value} />;
+  const field = <TextInput autoFocus={autoFocus} description={description} inputType="tel" isDisabled={isDisabled} isReadOnly={isReadOnly} isRequired={isRequired} label={label} onFocus={() => setDraft(shown)} onBlur={tidy} onChange={type}
+    placeholder={example ? example.formatNational() : undefined} prefix={picker} validate={validate} value={shown} />;
   return notice ? <div className="wd-field-with-notice">{field}<div aria-live="polite" className="wd-field-notice">{notice}</div></div> : field;
 }
 
