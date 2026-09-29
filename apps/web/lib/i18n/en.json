@@ -11491,5 +11491,7 @@
   "Tomorrow · {when}": "Tomorrow · {when}",
   "Woddy needs a connection.": "Woddy needs a connection.",
   "No longer waiting for you": "No longer waiting for you",
-  "We couldn’t confirm the enquiry was saved. Try again: it won’t be created twice.": "We couldn’t confirm the enquiry was saved. Try again: it won’t be created twice."
+  "We couldn’t confirm the enquiry was saved. Try again: it won’t be created twice.": "We couldn’t confirm the enquiry was saved. Try again: it won’t be created twice.",
+  "Your workspace is being set up": "Your workspace is being set up",
+  "Your owner is finishing the setup. Some settings may still change.": "Your owner is finishing the setup. Some settings may still change."
 }

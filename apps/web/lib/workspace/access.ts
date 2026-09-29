@@ -107,6 +107,14 @@ export function isWorkspaceAdministrator(roles: readonly string[] | null | undef
   return (roles ?? []).some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
 }
 
+/**
+ * Whether the person finishes the workspace's first-time setup: the owner or an administrator. Everyone else
+ * enters the workspace while it is being set up (no roles: an older session that doesn't say, which keeps the setup).
+ */
+export function canSetUpWorkspace(roles: readonly string[] | null | undefined) {
+  return !Array.isArray(roles) || isWorkspaceAdministrator(roles);
+}
+
 export function meetsRule(rule: AccessRule | undefined, context: AccessContext): boolean {
   if (!rule?.length || isWorkspaceAdministrator(context.roles)) return true;
   const held = new Set(context.permissions ?? []);

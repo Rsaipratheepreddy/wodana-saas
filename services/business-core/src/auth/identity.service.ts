@@ -21,24 +21,33 @@ export type AuthBootstrapNextAction =
   | "enter_workspace"
   | "await_invitation";
 
+/**
+ * The first-time setup belongs to the workspace's owner or administrator. Anyone else enters the workspace while it
+ * is still being set up (roles missing: an older caller that doesn't say, which keeps the setup route).
+ */
+export function canSetUpWorkspace(roles: readonly string[] | null | undefined) {
+  return !roles || roles.some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
+}
+
 export function deriveWorkspaceOnboardingNextAction(
   status: string | null | undefined,
+  roles?: readonly string[] | null,
 ): Extract<AuthBootstrapNextAction, "start_onboarding" | "resume_onboarding" | "enter_workspace"> {
-  if (status === "completed") return "enter_workspace";
+  if (status === "completed" || !canSetUpWorkspace(roles)) return "enter_workspace";
   if (!status || status === "not_started") return "start_onboarding";
   return "resume_onboarding";
 }
 
 export function deriveAuthBootstrapNextAction(
-  memberships: Array<{ onboarding: { status: string } }>,
+  memberships: Array<{ onboarding: { status: string }; roles?: readonly string[] }>,
   pendingInvitationCount: number,
 ): AuthBootstrapNextAction {
   if (memberships.length === 0) {
     return pendingInvitationCount > 0 ? "accept_invitation" : "await_invitation";
   }
-  const unfinished = memberships.find(({ onboarding }) => onboarding.status !== "completed");
+  const unfinished = memberships.find(({ onboarding, roles }) => onboarding.status !== "completed" && canSetUpWorkspace(roles));
   if (!unfinished) return "enter_workspace";
-  return deriveWorkspaceOnboardingNextAction(unfinished.onboarding.status);
+  return deriveWorkspaceOnboardingNextAction(unfinished.onboarding.status, unfinished.roles);
 }
 
 @Injectable()

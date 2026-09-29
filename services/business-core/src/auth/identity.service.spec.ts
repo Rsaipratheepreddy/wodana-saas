@@ -25,4 +25,16 @@ describe("deriveAuthBootstrapNextAction", () => {
     expect(deriveWorkspaceOnboardingNextAction("completed")).toBe("enter_workspace");
     expect(deriveWorkspaceOnboardingNextAction(undefined)).toBe("start_onboarding");
   });
+
+  it("never sends someone other than the owner or an administrator to the setup (M2)", () => {
+    expect(deriveWorkspaceOnboardingNextAction("in_progress", ["sales"])).toBe("enter_workspace");
+    expect(deriveWorkspaceOnboardingNextAction("not_started", ["finance", "sales"])).toBe("enter_workspace");
+    expect(deriveWorkspaceOnboardingNextAction("not_started", ["owner"])).toBe("start_onboarding");
+    expect(deriveWorkspaceOnboardingNextAction("in_progress", ["Administrator"])).toBe("resume_onboarding");
+    expect(deriveAuthBootstrapNextAction([{ onboarding: { status: "in_progress" }, roles: ["sales"] }], 0)).toBe("enter_workspace");
+    expect(deriveAuthBootstrapNextAction([
+      { onboarding: { status: "in_progress" }, roles: ["sales"] },
+      { onboarding: { status: "not_started" }, roles: ["owner"] },
+    ], 0)).toBe("start_onboarding");
+  });
 });

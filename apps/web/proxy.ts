@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { forwardedDeviceHeaders } from "@/lib/auth/device-request";
 import { deferredModuleForPath, isCrmFirstWorkspace, moduleForWorkspacePath } from "@/lib/workspace/module-rollout";
-import { accessRuleForPath, meetsRule } from "@/lib/workspace/access";
+import { accessRuleForPath, canSetUpWorkspace, meetsRule } from "@/lib/workspace/access";
 
 const ACCESS_COOKIE = "wodana_access";
 const REFRESH_COOKIE = "wodana_refresh";
@@ -12,8 +12,9 @@ type BootstrapProfile = {
 
 const ALL_WORKSPACE_MODULES = ["workspace", "crm", "pre-project", "projects", "hrms"] as const;
 
-function needsOnboarding(profile: BootstrapProfile | null, membership?: { onboarding?: { status?: string } }) {
-  if (membership?.onboarding) return membership.onboarding.status !== "completed";
+/** Only the person who sets the workspace up is sent to the setup; everyone else opens the workspace meanwhile. */
+function needsOnboarding(profile: BootstrapProfile | null, membership?: { roles?: string[]; onboarding?: { status?: string } }) {
+  if (membership?.onboarding) return membership.onboarding.status !== "completed" && canSetUpWorkspace(membership.roles);
   return profile?.nextAction === "start_onboarding" || profile?.nextAction === "resume_onboarding";
 }
 

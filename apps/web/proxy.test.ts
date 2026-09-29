@@ -65,6 +65,27 @@ describe("workspace onboarding gate", () => {
     expect(onboarding.headers.get("location")).toBe("http://localhost/onboarding");
   });
 
+  it("lets a member who isn't the owner into the workspace while the owner is still setting it up (M2)", async () => {
+    vi.stubEnv("E2E_AUTH_BYPASS", "false");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({ nextAction: "enter_workspace", memberships: [
+        { workspaceId: "one", workspaceSlug: "one", roles: ["sales"], allowedModules: ["workspace", "crm"], onboarding: { status: "in_progress" } },
+      ] }),
+    }));
+    const home = await proxy(new NextRequest("http://localhost/workspace", { headers: { cookie: "wodana_access=access-token" } }));
+    expect(home.headers.get("location")).toBeNull();
+    expect(home.headers.get("x-middleware-next")).toBe("1");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({ nextAction: "resume_onboarding", memberships: [
+        { workspaceId: "one", workspaceSlug: "one", roles: ["owner"], allowedModules: ["workspace", "crm"], onboarding: { status: "in_progress" } },
+      ] }),
+    }));
+    const owner = await proxy(new NextRequest("http://localhost/workspace", { headers: { cookie: "wodana_access=access-token" } }));
+    expect(owner.headers.get("location")).toBe("http://localhost/onboarding");
+  });
+
   it("does not open a workspace when all organizations are suspended", async () => {
     vi.stubEnv("E2E_AUTH_BYPASS", "false");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200,
