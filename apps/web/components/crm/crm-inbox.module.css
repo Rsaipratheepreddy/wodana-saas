@@ -234,3 +234,14 @@
 .contextRecord { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .contextRecord span { color: var(--wd-color-text-secondary); }
 @media (max-width: 48rem) { .threadHeading .actions { flex-wrap: wrap; justify-content: flex-end; } }
+
+/* Files in chats: a player for audio and video, a chip for a file being picked, fetched or lost. */
+.mediaPlayer { display: block; inline-size: min(320px, 100%); }
+.mediaPlayer[data-kind="video"] { inline-size: min(360px, 100%); max-block-size: 260px; border-radius: var(--wd-radius-2xs); background: var(--wd-color-surface-muted); }
+.mediaFile small { color: var(--wd-color-text-secondary); }
+.mediaFile[data-state="failed"], .mediaFile[aria-disabled="true"] { color: var(--wd-color-text-secondary); }
+.attachmentChip { display: flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; padding-block: var(--wd-space-1); padding-inline: var(--wd-space-3) var(--wd-space-1); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.attachmentChip span { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+.attachmentChip small { flex-shrink: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.attachButton { flex-shrink: 0; align-self: center; }
+.composer[data-dragging] .composerInput { outline: 2px dashed var(--chat-accent); outline-offset: 2px; }

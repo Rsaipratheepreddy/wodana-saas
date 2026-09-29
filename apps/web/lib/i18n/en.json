@@ -10737,5 +10737,22 @@
   "Second follow-up": "Second follow-up",
   "No second follow-up": "No second follow-up",
   "{count} days after the first": "{count} days after the first",
-  "Quotation follow-up after": "Quotation follow-up after"
+  "Quotation follow-up after": "Quotation follow-up after",
+  "WhatsApp can't send this type of file. Send a JPEG or PNG photo, an MP4 video, an audio file, a PDF or an Office document.": "WhatsApp can't send this type of file. Send a JPEG or PNG photo, an MP4 video, an audio file, a PDF or an Office document.",
+  "This file is empty.": "This file is empty.",
+  "Photos can be up to {size} MB on WhatsApp.": "Photos can be up to {size} MB on WhatsApp.",
+  "Videos can be up to {size} MB on WhatsApp.": "Videos can be up to {size} MB on WhatsApp.",
+  "Audio can be up to {size} MB on WhatsApp.": "Audio can be up to {size} MB on WhatsApp.",
+  "Files can be up to {size} MB.": "Files can be up to {size} MB.",
+  "The file could not be attached.": "The file could not be attached.",
+  "Getting the file…": "Getting the file…",
+  "This file isn't available.": "This file isn't available.",
+  "WhatsApp no longer has this file.": "WhatsApp no longer has this file.",
+  "This file couldn't be kept.": "This file couldn't be kept.",
+  "WhatsApp sends audio without a caption. Send the text as its own message.": "WhatsApp sends audio without a caption. Send the text as its own message.",
+  "Remove file": "Remove file",
+  "Attach a file": "Attach a file",
+  "Add a caption": "Add a caption",
+  "Invalid file.": "Invalid file.",
+  "Files can be up to 20 MB.": "Files can be up to 20 MB."
 }

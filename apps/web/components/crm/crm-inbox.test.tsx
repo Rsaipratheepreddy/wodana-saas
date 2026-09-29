@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { crmScreenFixture } from "@/lib/crm/screens";
@@ -236,5 +236,53 @@ describe("CRM inbox", () => {
     await user.click(within(dialog).getByRole("button", { name: /Channel/ }));
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["WhatsApp", "Email"]);
     expect(screen.queryByText(/portal/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a client's photo, a voice note with a player and a document from storage; one still coming or lost says so", async () => {
+    const now = new Date().toISOString();
+    const file = (id: string, kind: string, status: string, extra: Record<string, unknown> = {}) => ({ id, kind, mimeType: null, fileName: null, byteSize: 2048, status, failureCode: null, ...extra });
+    const { data, record } = setup({ messages: [
+      { id: "photo", direction: "inbound", status: "delivered", bodyText: "Image received", metadata: { messageType: "image" }, attachment: file("f-photo", "image", "stored"), createdAt: now },
+      { id: "voice", direction: "inbound", status: "delivered", bodyText: "Audio received", metadata: { messageType: "audio" }, attachment: file("f-voice", "audio", "stored", { fileName: "voice.ogg" }), createdAt: now },
+      { id: "plan", direction: "outbound", status: "delivered", bodyText: "The plan", metadata: { messageType: "document" }, attachment: file("f-plan", "document", "stored", { fileName: "Plan.pdf" }), createdAt: now },
+      { id: "coming", direction: "inbound", status: "delivered", bodyText: "Video received", metadata: { messageType: "video" }, attachment: file("f-video", "video", "pending"), createdAt: now },
+      { id: "lost", direction: "inbound", status: "delivered", bodyText: "Document received", metadata: { messageType: "document" }, attachment: file("f-lost", "document", "failed", { failureCode: "media_expired" }), createdAt: now },
+    ] });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    const photo = await screen.findByRole("link", { name: /Open image/ });
+    expect(photo).toHaveAttribute("href", expect.stringContaining(`/api/workspace/crm/attachments/${record.id}/f-photo?workspaceId=`));
+    expect(screen.queryByText("Image received")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("voice.ogg").tagName).toBe("AUDIO");
+    expect(screen.getByRole("link", { name: /Plan\.pdf/ })).toHaveAttribute("download", "Plan.pdf");
+    expect(screen.getByText("The plan")).toBeInTheDocument();
+    expect(screen.getByText("Getting the file…")).toBeInTheDocument();
+    expect(screen.getByText("WhatsApp no longer has this file.")).toBeInTheDocument();
+  });
+
+  it("attaches one file WhatsApp takes, uploads it first and sends it with the caption", async () => {
+    const user = userEvent.setup(), { data, record, fetcher, posted } = setup();
+    const base = fetcher.getMockImplementation()!;
+    const uploads: string[] = [];
+    fetcher.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/api/workspace/crm/attachments/")) { uploads.push(String(url)); return { ok: true, status: 200, json: async () => ({ id: String(url).split("/")[6].split("?")[0], kind: "document", status: "stored" }) }; }
+      return base(url, init);
+    });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await screen.findByRole("textbox", { name: "Message" });
+    const picker = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(picker, { target: { files: [new File(["MZ"], "setup.exe", { type: "application/octet-stream" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("WhatsApp can't send this type of file");
+    fireEvent.change(picker, { target: { files: [new File([new Uint8Array(6 * 1024 * 1024)], "big.jpg", { type: "image/jpeg" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Photos can be up to 5 MB on WhatsApp.");
+    fireEvent.change(picker, { target: { files: [new File(["%PDF-1.7"], "Plan.pdf", { type: "application/pdf" })] } });
+    expect(screen.getByText("Plan.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Attach a file" })).toBeDisabled();
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Our plan");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByText("Message queued")).toBeInTheDocument();
+    expect(uploads).toEqual([expect.stringContaining(`/api/workspace/crm/attachments/${record.id}/`)]);
+    const [sent] = posted("/messages");
+    expect(sent).toEqual({ direction: "outbound", purpose: "service", bodyText: "Our plan", attachmentId: uploads[0].split("/")[6].split("?")[0], clientMessageId: expect.any(String) });
+    expect(screen.queryByText("Plan.pdf")).not.toBeInTheDocument();
   });
 });
