@@ -1,5 +1,6 @@
 import { aiConfigured } from "../ai-gateway/ai-gateway.service";
 import { DEFAULT_DECISION_REMINDER_DAYS, reminderDays } from "../commercial/client-decision-reminders";
+import { decisionRecorder } from "../commercial/quote-decision-access";
 import { randomUUID as randomUUIDv4 } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
@@ -680,16 +681,17 @@ export class QuotationBuilderService {
         WHERE workspace_id = $1 AND case_id = $2 AND kind = $3 AND coalesce(family_id, id) = coalesce($4, $5) ORDER BY number`,
       [workspaceId, caseId, quote.kind, quote.familyId, quote.id])).rows;
     const can = async (code: string) => this.access.hasPermission(client, workspaceId, userId, code);
-    const decision = quote.detail.clientDecision as { decision: string; decidedBy: string; decidedAt: string; note?: string; method?: string; recordedBy?: string } | undefined;
+    const decision = quote.detail.clientDecision as { decision: string; decidedBy: string; decidedAt: string; note?: string; method?: string; recordedBy?: string; evidence?: { id: string; name: string } } | undefined;
     const hideCost = <T extends { unitCost: string | null }>(row: T) => (canViewCosts ? row : { ...row, unitCost: null });
     const checks = await quoteChecks(client, workspaceId, caseId, { lines, components, decimals, pricing, settings, canViewCosts, paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], draft: quote.status === "draft", kind: quote.kind });
     return {
       quote: { id: quote.id, number: quote.number, title: quote.title, status: quote.status, kind: quote.kind, round: quote.round, currency: quote.currency, decimals, validUntil: quote.validUntil, taxRate: quote.taxRate, revision,
         paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], approvedBy: (quote.detail.approvedBy as string | undefined) ?? null,
-        clientDecision: decision ? { decision: decision.decision, decidedBy: decision.decidedBy, decidedAt: decision.decidedAt, note: decision.note ?? "", method: decision.method ?? null, recordedBy: decision.recordedBy ?? null } : null },
+        clientDecision: decision ? { decision: decision.decision, decidedBy: decision.decidedBy, decidedAt: decision.decidedAt, note: decision.note ?? "", method: decision.method ?? null, recordedBy: decision.recordedBy ?? null, evidence: decision.evidence ?? null } : null },
       family,
       flow: { internalReview: settings.internalReview, reviewAction: commercial?.palm && quote.kind === "quotation" ? "qs_approve" : "approve",
-        canReview: await can(commercial?.palm && quote.kind === "quotation" ? "commercial.estimate" : "commercial.approve"), canRecordDecision: await can("commercial.approve") },
+        canReview: await can(commercial?.palm && quote.kind === "quotation" ? "commercial.estimate" : "commercial.approve"),
+        ...await (async () => { const recorder = await decisionRecorder(client, can, { workspaceId, caseId, userId }); return { canRecordDecision: Boolean(recorder), decisionEvidenceRequired: recorder === "sales" }; })() },
       paymentTemplates: (await client.query<{ id: string; name: string; milestones: unknown }>(`SELECT id, name, milestones FROM commercial_payment_templates WHERE workspace_id = $1 AND status = 'active' ORDER BY name`, [workspaceId])).rows,
       settings,
       areas: await caseAreas(client, workspaceId, caseId),

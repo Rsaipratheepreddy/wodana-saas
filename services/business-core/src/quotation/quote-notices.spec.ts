@@ -56,4 +56,25 @@ describe("quote review notices", () => {
     await noticeQuoteStep(db, input);
     expect(db.queries.find((query) => query.sql.includes("permission.code"))!.params).toEqual(["ws", "commercial.approve"]);
   });
+
+  it("tells the estimators and deal approvers when Sales recorded the client's acceptance from outside the portal (Q-24)", async () => {
+    const db = fakeDb();
+    const base = db.query;
+    db.query = async (sql: string, params: unknown[] = []) => {
+      if (sql.includes("FROM notification_templates")) { db.queries.push({ sql, params }); return { rows: [{ id: "t", subject: "{{title}} accepted", body: "b" }], rowCount: 1 }; }
+      if (sql.includes("INSERT INTO notifications")) { db.queries.push({ sql, params }); return { rows: [{ id: "n", correlationId: "c" }], rowCount: 1 }; }
+      return base(sql, params);
+    };
+    await noticeQuoteStep(db, { ...input, action: "record_decision", decision: "accept", recordedBySales: true });
+    expect(db.queries.filter((query) => query.sql.includes("permission.code")).map((query) => query.params[1])).toEqual(["commercial.estimate", "commercial.deal.approve"]);
+    const told = new Set(db.queries.filter((query) => query.sql.includes("INSERT INTO notifications")).map((query) => query.params[2]));
+    expect([...told].sort()).toEqual(["approver", "owner"]);
+  });
+
+  it("keeps a decision the approver recorded to the Account Manager and the editors", async () => {
+    const db = fakeDb();
+    await noticeQuoteStep(db, { ...input, action: "record_decision", decision: "accept" });
+    expect(db.queries.some((query) => query.sql.includes("permission.code"))).toBe(false);
+  });
 });
+

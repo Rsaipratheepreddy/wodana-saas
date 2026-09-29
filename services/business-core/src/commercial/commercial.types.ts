@@ -244,7 +244,10 @@ export type QuoteDecisionEvidence = {
   note?: string;
   /** Set when staff recorded the decision (signed copy, email…), not the client on the portal. */
   recordedBy?: string;
+  recordedById?: string;
   method?: "signed_document" | "email" | "in_person" | "phone" | "message";
+  /** The case file the client decided in (a signed copy, the email or message), when staff recorded it. */
+  evidence?: { id: string; name: string; mimeType: string; byteSize: number; hasPreview: boolean };
 };
 export type Quote = {
   /** Separate client and payment rounds for Palm's design and main proposal. */

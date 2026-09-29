@@ -11037,5 +11037,8 @@
   "Searching…": "Searching…",
   "↑ ↓ to move · Enter to open · Esc to close": "↑ ↓ to move · Enter to open · Esc to close",
   "Remind the client after (days)": "Remind the client after (days)",
-  "While a quote or design waits, the client and the case owner hear on each of these days. Leave empty for none.": "While a quote or design waits, the client and the case owner hear on each of these days. Leave empty for none."
+  "While a quote or design waits, the client and the case owner hear on each of these days. Leave empty for none.": "While a quote or design waits, the client and the case owner hear on each of these days. Leave empty for none.",
+  "Evidence · optional": "Evidence · optional",
+  "Attach the signed copy, email or message": "Attach the signed copy, email or message",
+  "Record a client's decision on a quote": "Record a client's decision on a quote"
 }

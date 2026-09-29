@@ -208,6 +208,21 @@ describe("quotation builder", () => {
     await waitFor(() => expect(posted(fetcher)).toContainEqual(expect.objectContaining({ action: "record_decision", decision: "accept", method: "signed_document", clientName: "Maya Client", selectedOptionLineIds: ["o"] })));
   });
 
+  it("asks Sales for the file the client decided in before recording it (Q-24)", async () => {
+    const base = state([line({})]);
+    const initial = { ...base, quote: { ...base.quote, status: "issued" }, flow: { ...base.flow, decisionEvidenceRequired: true }, canEdit: false };
+    const asset = { id: "55555555-5555-4555-8555-555555555555", name: "signed.pdf", mimeType: "application/pdf", byteSize: 10, hasPreview: false };
+    const fetcher = mount(initial, (url) => url.includes("/assets/") ? asset : url.includes("/api/commercial/") ? { data: { revision: 2, quotes: [] } } : initial);
+    await userEvent.click(screen.getByRole("button", { name: "Record client decision" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Decided by/ }), "Maya Client");
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.upload(within(dialog).getByLabelText("Attach the signed copy, email or message"), new File(["%PDF"], "signed.pdf", { type: "application/pdf" }));
+    expect(await within(dialog).findByText("signed.pdf")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posted(fetcher)).toContainEqual(expect.objectContaining({ action: "record_decision", evidenceAssetId: asset.id })));
+  });
+
   it("only saves payment milestones that add up to 100%", async () => {
     const initial = state([line({})]);
     const fetcher = mount(initial);

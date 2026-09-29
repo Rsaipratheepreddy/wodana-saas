@@ -6,6 +6,8 @@ import { Button, Checkbox, ControlledModalDialog, EmptyState, IconButton, Inline
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { StartProjectDialog } from "@/components/project-core/start-project-dialog";
+import { AssetUpload } from "@/components/pre-project/case-controls";
+import type { CaseAsset } from "@/lib/pre-project/content";
 import { SendQuoteDialog, deliveryMessage } from "./send-quote-dialog";
 import { projectApi } from "@/lib/project-core/client";
 import Link from "next/link";
@@ -107,7 +109,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
     {starting ? <StartProjectDialog workspaceId={workspaceId} caseId={caseId} onClose={() => setStarting(false)} /> : null}
     {returning ? <ReturnDialog busy={busy === "return"} onClose={() => setReturning(false)}
       onSave={async (note) => { await run("return", [["return", { note }]]); setReturning(false); }} /> : null}
-    {deciding ? <DecisionDialog state={state} onClose={() => setDeciding(false)}
+    {deciding ? <DecisionDialog state={state} workspaceId={workspaceId} caseId={caseId} onClose={() => setDeciding(false)}
       onSave={async (input) => { await run("decide", [["record_decision", input]]); setDeciding(false); }} busy={busy === "decide"} /> : null}
   </>;
 }
@@ -127,9 +129,13 @@ function ReturnDialog({ onClose, onSave, busy }: { onClose: () => void; onSave: 
 
 const METHODS = [["signed_document", "Signed copy"], ["email", "Email"], ["in_person", "In person"], ["phone", "Phone"], ["message", "Message"]] as const;
 
-function DecisionDialog({ state, onClose, onSave, busy }: { state: BuilderState; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>; busy: boolean }) {
+function DecisionDialog({ state, workspaceId, caseId, onClose, onSave, busy }: { state: BuilderState; workspaceId: string; caseId: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>; busy: boolean }) {
   const t = useT();
   const { locale } = useDesignSystem();
+  // The file the client decided in: a signed copy, the email or a screenshot of the message (required from Sales, Q-24).
+  const [evidence, setEvidence] = useState<CaseAsset | null>(null);
+  const [uploadError, setUploadError] = useState("");
+  const evidenceRequired = Boolean(state.flow.decisionEvidenceRequired);
   const [decision, setDecision] = useState("accept");
   const [method, setMethod] = useState("signed_document");
   const [clientName, setClientName] = useState("");
@@ -139,8 +145,8 @@ function DecisionDialog({ state, onClose, onSave, busy }: { state: BuilderState;
   const priced = new Map(state.pricing.lines.map((line) => [line.id, line.total]));
   return <ControlledModalDialog isOpen size="md" title={t("Record client decision")} onOpenChange={(open) => { if (!open) onClose(); }}
     footer={<div className={styles.formActions}><span className={styles.spacer} /><Button size="compact" onPress={onClose}>{t("Cancel")}</Button>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!clientName.trim() || (decision !== "accept" && !note.trim())}
-        onPress={() => void onSave({ decision, method, clientName: clientName.trim(), note: note.trim(), selectedOptionLineIds: decision === "accept" ? options : [] })}>{t("Save")}</Button></div>}>
+      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!clientName.trim() || (decision !== "accept" && !note.trim()) || (evidenceRequired && !evidence)}
+        onPress={() => void onSave({ decision, method, clientName: clientName.trim(), note: note.trim(), selectedOptionLineIds: decision === "accept" ? options : [], ...(evidence ? { evidenceAssetId: evidence.id } : {}) })}>{t("Save")}</Button></div>}>
     <div className={styles.dialogForm}>
       <div className={styles.pair}>
         <SelectField label={t("Decision")} selectedKey={decision} onSelectionChange={(key) => setDecision(String(key))}
@@ -155,6 +161,12 @@ function DecisionDialog({ state, onClose, onSave, busy }: { state: BuilderState;
         </Checkbox>)}
       </fieldset> : null}
       <TextAreaField label={decision === "accept" ? t("Note · optional") : t("What they asked for")} isRequired={decision !== "accept"} value={note} onChange={setNote} />
+      <fieldset className={styles.options}>
+        <legend>{evidenceRequired ? t("Evidence") : t("Evidence · optional")}</legend>
+        {evidence ? <div className={styles.evidence}><span>{evidence.name}</span><Button size="compact" variant="quiet" onPress={() => setEvidence(null)}>{t("Remove")}</Button></div>
+          : <AssetUpload workspaceId={workspaceId} caseId={caseId} multiple={false} label={t("Attach the signed copy, email or message")} disabled={busy} onUploaded={setEvidence} onError={setUploadError} />}
+        {uploadError ? <InlineNotice tone="error" message={uploadError} /> : null}
+      </fieldset>
     </div>
   </ControlledModalDialog>;
 }

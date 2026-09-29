@@ -60,10 +60,10 @@ export type BuilderState = {
   quote: {
     id: string; number: number; title: string; status: string; kind: string; round: string | null; currency: string; decimals: number; validUntil: string | null; taxRate: string; revision: number;
     paymentTerms: PaymentMilestone[]; approvedBy: string | null;
-    clientDecision: { decision: string; decidedBy: string; decidedAt: string; note: string; method: string | null; recordedBy: string | null } | null;
+    clientDecision: { decision: string; decidedBy: string; decidedAt: string; note: string; method: string | null; recordedBy: string | null; evidence?: { id: string; name: string } | null } | null;
   };
   family: Array<{ id: string; number: number; status: string; total: string; createdAt: string | null }>;
-  flow: { internalReview: boolean; reviewAction: "approve" | "qs_approve"; canReview: boolean; canRecordDecision: boolean };
+  flow: { internalReview: boolean; reviewAction: "approve" | "qs_approve"; canReview: boolean; canRecordDecision: boolean; decisionEvidenceRequired?: boolean };
   paymentTemplates: Array<{ id: string; name: string; milestones: PaymentMilestone[] }>;
   settings: QuotationSettings;
   areas: Array<{ id: string; name: string }>;
