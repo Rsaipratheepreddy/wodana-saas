@@ -229,7 +229,7 @@ function GoogleEventDialog({ workspaceId, connections, date, onClose, onSaved }:
     event.preventDefault();
     const selectedCalendar = calendars[Number(calendarIndex)];
     const from = new Date(zonedDateTimeToIso(start, timeZone) ?? NaN), to = new Date(zonedDateTimeToIso(end, timeZone) ?? NaN);
-    if (!selectedCalendar) { setError(t("Choose a writable Google calendar in Integrations.")); return; }
+    if (!selectedCalendar) { setError(t("Choose a writable Google calendar in Connections.")); return; }
     if (!title.trim() || !Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || to <= from) { setError(t("Enter a title and an end time after the start.")); return; }
     const attendeeEmails = attendees.split(/[\s,;]+/).map(email => email.trim()).filter(Boolean);
     setSaving(true); setError("");

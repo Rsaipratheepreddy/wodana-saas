@@ -69,7 +69,7 @@ describe("Follow-up list", () => {
 
   it("supports opening reminders by keyboard and links to the correct calendar route", async () => {
     const user = userEvent.setup(); render(<CrmFollowUps initialLayout="list" initialData={fixture()} />);
-    expect(screen.getByRole("link", { name: "Open schedule" })).toHaveAttribute("href", "/workspace/crm/follow-ups?view=schedule");
+    expect(screen.getByRole("link", { name: "Open calendar" })).toHaveAttribute("href", "/workspace/crm/follow-ups?view=schedule");
     screen.getByRole("button", { name: /Discuss quotation/ }).focus();
     await user.keyboard("{Enter}");
     expect(await screen.findByRole("textbox", { name: "Notes" })).toBeInTheDocument();

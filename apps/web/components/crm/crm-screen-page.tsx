@@ -381,7 +381,7 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
         {creating ? <CrmCreateDialog workspaceId={initialData.workspaceId} id={initialData.id} onClose={() => setCreating(false)} onSaved={() => reload()} /> : null}
         {linkedRecord ? <InspectorSheet isOpen title={t("Record details")} size="md" onOpenChange={(open) => { if (!open) setLinkedRecord(undefined); }}><LinkedRecordWorkbench workspaceId={initialData.workspaceId} id={initialData.id} recordId={linkedRecord} onChanged={() => reload()} /></InspectorSheet> : null}
         {initialData.id === "opportunities" ? <Tabs selectedKey={section} onSelectionChange={setSection} items={[{ id: "records", label: t("Opportunities"), panel: null }, { id: "pipeline", label: t("Pipelines & rules"), panel: <PipelineSettings workspaceId={initialData.workspaceId} /> }]} /> : null}
-        {initialData.id === "activities" ? <Link href="/workspace/crm/follow-ups?view=schedule">{t("Open schedule")}</Link> : null}
+        {initialData.id === "activities" ? <Link href="/workspace/crm/follow-ups?view=schedule">{t("Open calendar")}</Link> : null}
         {section === "records" ? <><div className={styles.gridRegion}>
           <DataGrid
             ariaLabel={t("CRM {items}", { items: noun })}

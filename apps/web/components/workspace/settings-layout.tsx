@@ -19,16 +19,16 @@ const ICONS: Record<string, LucideIcon> = {
 
 /**
  * Settings: one short grouped list on the inline-start side (Account, Company, Modules, People & access,
- * Connections) with a search box on top, and the page beside it. The list comes from the module
+ * Apps & delivery) with a search box on top, and the page beside it. The list comes from the module
  * navigation, already scoped to the person's access; People & access links into People.
  */
 export function SettingsLayout({ module, pathname, children }: { module: WorkspaceModuleDefinition; pathname: string; children: ReactNode }) {
   const t = useT();
   const router = useRouter();
   const labels: Record<string, string> = {
-    "workspace-me": t("Account"), "workspace-company": t("Company"), "workspace-modules": t("Modules"), "workspace-people": t("People & access"), "workspace-connections": t("Connections"),
+    "workspace-me": t("Account"), "workspace-company": t("Company"), "workspace-modules": t("Modules"), "workspace-people": t("People & access"), "workspace-connections": t("Apps & delivery"),
     profile: t("Profile"), security: t("Sign-in security"), company: t("Company profile"), "workspace-language": t("Workspace language"), members: t("People"), teams: t("Teams"), roles: t("Roles & permissions"),
-    "business-records": t("Business records"), billing: t("Billing"), "audit-log": t("Audit history"), integrations: t("Integrations"), "client-portal-settings": t("Client portal"), "design-packages": t("Design packages"), "reminder-settings": t("Reminders"),
+    "business-records": t("Business records"), billing: t("Billing"), "audit-log": t("Audit history"), integrations: t("Connections"), "client-portal-settings": t("Client portal"), "design-packages": t("Design packages"), "reminder-settings": t("Reminders"),
     "attendance-settings": t("Attendance & leave"), "inbox-settings": t("Inbox"), "delivery-health": t("Delivery"), "notification-settings": t("Notifications"),
     "ai-credits": t("AI credits"), "ai-apps": t("AI apps"),
   };

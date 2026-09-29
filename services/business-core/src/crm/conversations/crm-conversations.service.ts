@@ -763,7 +763,7 @@ export class CrmConversationsService {
       }
       if (conversation.channel === "whatsapp") {
         const health = await client.query<{ health: Record<string, unknown> | null }>(CHAT_NUMBER_SQL, [workspaceId, conversation.connection_id ?? null]);
-        if (health.rows[0]?.health?.state === "blocked") throw new UnprocessableEntityException("Meta has stopped sending from this WhatsApp number. Check it in Integrations.");
+        if (health.rows[0]?.health?.state === "blocked") throw new UnprocessableEntityException("Meta has stopped sending from this WhatsApp number. Check it in Connections.");
       }
       if (conversation.channel === "whatsapp" && !input.templateId) {
         const lastInbound = conversation.last_inbound_at ? new Date(String(conversation.last_inbound_at)) : null;

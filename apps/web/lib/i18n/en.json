@@ -11059,5 +11059,13 @@
   "Finance isn’t on for you": "Finance isn’t on for you",
   "Client invoices due": "Client invoices due",
   "Nothing due from clients": "Nothing due from clients",
-  "Supplier invoices to pay": "Supplier invoices to pay"
+  "Supplier invoices to pay": "Supplier invoices to pay",
+  "Google Calendar is unavailable. Check your connection in Connections.": "Google Calendar is unavailable. Check your connection in Connections.",
+  "Choose a writable Google calendar in Connections.": "Choose a writable Google calendar in Connections.",
+  "Connect WhatsApp in Connections to reply.": "Connect WhatsApp in Connections to reply.",
+  "Meta has stopped sending from this number. Check it in Connections.": "Meta has stopped sending from this number. Check it in Connections.",
+  "Apps & delivery": "Apps & delivery",
+  "Reconnect WhatsApp in Connections.": "Reconnect WhatsApp in Connections.",
+  "Connect WhatsApp in Connections.": "Connect WhatsApp in Connections.",
+  "Check the WhatsApp connection and its templates in Connections.": "Check the WhatsApp connection and its templates in Connections."
 }

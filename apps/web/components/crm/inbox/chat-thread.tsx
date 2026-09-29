@@ -100,8 +100,8 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
   const replyingAs = thread.replyingAs as { businessName: string | null; number: string | null } | undefined;
   const blocked = !thread.canSend ? t("You can view this conversation. Ask an administrator for permission to reply.")
     : status === "closed" ? t("This conversation is resolved. Reopen it to reply.")
-    : isWhatsApp && !thread.whatsappConnected ? t("Connect WhatsApp in Integrations to reply.")
-    : isWhatsApp && thread.numberHealth === "blocked" ? t("Meta has stopped sending from this number. Check it in Integrations.") : "";
+    : isWhatsApp && !thread.whatsappConnected ? t("Connect WhatsApp in Connections to reply.")
+    : isWhatsApp && thread.numberHealth === "blocked" ? t("Meta has stopped sending from this number. Check it in Connections.") : "";
   const workday = lookups.settings?.workday;
   const presets = snoozePresets({ now: new Date(now), timeZone, dayStart: workday?.start, workingDays: workday?.days });
   const owners = lookups.owners;

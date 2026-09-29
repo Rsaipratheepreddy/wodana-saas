@@ -17,7 +17,7 @@ describe("Settings menu", () => {
   it("is a short grouped index: Account, Company, Modules, People & access, Connections", () => {
     render(<DesignSystemProvider><SettingsLayout module={settings} pathname="/workspace/company"><p>Company</p></SettingsLayout></DesignSystemProvider>);
     const menu = screen.getByRole("navigation", { name: "Settings" });
-    expect(within(menu).getAllByRole("region").map((group) => group.getAttribute("aria-label"))).toEqual(["Account", "Company", "Modules", "People & access", "Connections"]);
+    expect(within(menu).getAllByRole("region").map((group) => group.getAttribute("aria-label"))).toEqual(["Account", "Company", "Modules", "People & access", "Apps & delivery"]);
     expect(within(within(menu).getByRole("region", { name: "Modules" })).getByRole("link", { name: "Quotations" })).toHaveAttribute("href", "/workspace/settings/quotations");
     // People & access links into People rather than copying it.
     expect(within(within(menu).getByRole("region", { name: "People & access" })).getByRole("link", { name: "Teams" })).toHaveAttribute("href", "/workspace/teams");

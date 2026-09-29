@@ -111,13 +111,13 @@ export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "ti
   ];
 
   const actions = <div className={styles.actions}>
-    {!tasksOnly?<Link href="/workspace/crm/follow-ups?view=schedule" className={styles.calendarLink}><CalendarDays aria-hidden="true" size={15} />{t("Open schedule")}</Link>:null}
+    {!tasksOnly?<Link href="/workspace/crm/follow-ups?view=schedule" className={styles.calendarLink}><CalendarDays aria-hidden="true" size={15} />{t("Open calendar")}</Link>:null}
     <IconButton size="compact" aria-label={t("Refresh follow-ups")} isDisabled={busy} onPress={() => { void reload(); setRevision(value => value + 1); }}><RefreshCw size={15} /></IconButton>
   </div>;
   // One primary action, top-end in the page header (S-20).
   const primary = <Button variant="primary" onPress={() => setCreating(true)}><Plus size={15} aria-hidden="true" />{tasksOnly ? t("Add task") : t("Add follow-up")}</Button>;
   // The title follows the layout: the Sales task board is Tasks, the timeline and table are Follow-ups (S-19).
-  return <CrmProductShell title={tasksOnly ? t("Tasks") : t("Follow-ups")} description="" canView={initialData.canView} actions={primary} useWorkspaceColors pageClassName={tasksOnly?boardStyles.page:styles.page}>
+  return <CrmProductShell title={t("Follow-ups")} description="" canView={initialData.canView} actions={primary} useWorkspaceColors pageClassName={tasksOnly?boardStyles.page:styles.page}>
     {failure ? <Callout title={t("Could not load follow-ups")} tone="warning">{failure}<Button size="compact" onPress={() => void reload()}>{t("Retry")}</Button></Callout> : null}
     {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
     {!creating && !selected ? <>{tasksOnly?<div className={boardStyles.boardHeader}><nav aria-label={t("Task boards")} className={boardStyles.boardSwitcher}><Link aria-current="page" href="/workspace/crm/follow-ups?view=activity">{t("Sales")}</Link><Link href="/workspace/tasks">{t("Projects")}</Link></nav></div>:null}
