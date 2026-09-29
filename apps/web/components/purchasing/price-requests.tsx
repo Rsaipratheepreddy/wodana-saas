@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, NoAccessState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, EmptyState, ErrorState, NoAccessState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, type DataGridColumn, FormDialog, FormRow, MoneyField, NumericInput, PercentageInput, VisuallyHidden } from "@/design-system";
 import { parseDate } from "@internationalized/date";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
@@ -73,11 +73,15 @@ function PriceRequestSheet({ api, requestId, onChanged, onClose, onOrder }: { ap
     try { accept(await api.priceRequest(requestId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The price request didn't load.")); }
   }, [api, requestId, accept, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  const run = async (action: string, input: Record<string, unknown> = {}) => {
+  const run = async (action: string, input: Record<string, unknown> = {}, inDialog = false) => {
     if (!state) return null;
     setNotice(""); setBusy(true);
     try { const next = await api.priceRequestCommand(requestId, state.request.version, action, input); accept(next); onChanged(); return next; }
-    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); if (cause instanceof Error && "status" in cause && cause.status === 409) await load(); return null; }
+    catch (cause) {
+      if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
+      if (inDialog) throw cause;
+      setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return null;
+    }
     finally { setBusy(false); }
   };
   const open = state?.request.status === "open" && state.canBuy;
@@ -136,7 +140,7 @@ function PriceRequestSheet({ api, requestId, onChanged, onClose, onOrder }: { ap
     </div>}
     {replying && state ? <ReplyDialog state={state} vendorId={replying} onClose={() => setReplying(null)}
       onDecline={async (note) => { if (await run("decline", { vendorId: replying, note })) setReplying(null); }}
-      onSave={async (input) => { if (await run("record_reply", { vendorId: replying, ...input })) setReplying(null); }} /> : null}
+      onSave={async (input) => { await run("record_reply", { vendorId: replying, ...input }, true); setReplying(null); }} /> : null}
   </InspectorSheet>;
 }
 
@@ -153,33 +157,27 @@ function ReplyDialog({ state, vendorId, onClose, onSave, onDecline }: {
   const [lead, setLead] = useState(supplier.leadTimeDays !== null ? String(supplier.leadTimeDays) : "");
   const [valid, setValid] = useState<string | null>(supplier.validUntil);
   const [note, setNote] = useState(supplier.note);
-  const [busy, setBusy] = useState(false);
+  const [declining, setDeclining] = useState(false);
   const any = Object.values(prices).some((item) => Number(item.unitPrice) > 0);
-  return <ControlledModalDialog isOpen size="lg" title={supplier.name} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions">
-      <Button variant="quiet" isDisabled={busy} onPress={async () => { setBusy(true); await onDecline(note.trim()); setBusy(false); }}>{t("They declined")}</Button><span className={styles.spacer} />
-      <Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!any} onPress={async () => {
-        setBusy(true);
-        await onSave({ prices: Object.entries(prices).map(([lineId, item]) => ({ lineId, unitPrice: item.unitPrice || null, discountPercent: item.discountPercent || null })), leadTimeDays: lead || null, validUntil: valid, note: note.trim() });
-        setBusy(false);
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="lg" title={supplier.name} onClose={onClose} isSubmitDisabled={!any} submitLabel={t("Save")} isDirty={any && !state.quotes.some((item) => item.vendorId === vendorId)}
+    onSubmit={() => onSave({ prices: Object.entries(prices).map(([lineId, item]) => ({ lineId, unitPrice: item.unitPrice || null, discountPercent: item.discountPercent || null })), leadTimeDays: lead || null, validUntil: valid, note: note.trim() })}
+    secondaryAction={<Button variant="quiet" isLoading={declining} onPress={async () => { setDeclining(true); try { await onDecline(note.trim()); } finally { setDeclining(false); } }}>{t("They declined")}</Button>}>
       <ul className={styles.draftLines} aria-label={t("Prices")}>
         {state.lines.map((line) => <li key={line.id}>
           <span className={styles.nameCell}><span>{line.description}</span><small>{`${quantityText(line.quantity)} ${line.unit}`}</small></span>
-          <TextInput aria-label={t("Price for {item}", { item: line.description })} label={null} inputMode="decimal" placeholder={t("Price")} suffix={state.request.currency} value={prices[line.id].unitPrice}
-            onChange={(value) => setPrices({ ...prices, [line.id]: { ...prices[line.id], unitPrice: numeric(value) } })} />
-          <TextInput aria-label={t("Discount for {item}", { item: line.description })} label={null} inputMode="decimal" placeholder={t("Discount %")} value={prices[line.id].discountPercent}
-            onChange={(value) => setPrices({ ...prices, [line.id]: { ...prices[line.id], discountPercent: numeric(value) } })} />
+          <MoneyField label={<VisuallyHidden>{t("Price for {item}", { item: line.description })}</VisuallyHidden>} placeholder={t("Price")} currency={state.request.currency} value={prices[line.id].unitPrice}
+            onChange={(unitPrice) => setPrices({ ...prices, [line.id]: { ...prices[line.id], unitPrice } })} />
+          <PercentageInput label={<VisuallyHidden>{t("Discount for {item}", { item: line.description })}</VisuallyHidden>} formatOptions={{ maximumFractionDigits: 2 }}
+            value={prices[line.id].discountPercent === "" ? Number.NaN : Number(prices[line.id].discountPercent)}
+            onChange={(value) => setPrices({ ...prices, [line.id]: { ...prices[line.id], discountPercent: Number.isFinite(value) ? String(value) : "" } })} />
           <span />
         </li>)}
       </ul>
-      <div className={styles.pair}>
-        <TextInput label={t("Delivery in days")} inputMode="numeric" value={lead} onChange={(value) => setLead(value.replace(/\D/g, "").slice(0, 4))} />
+      <FormRow>
+        <NumericInput label={t("Delivery in days")} minValue={0} maxValue={9999} formatOptions={{ maximumFractionDigits: 0 }} value={lead === "" ? Number.NaN : Number(lead)}
+          onChange={(value) => setLead(Number.isFinite(value) ? String(Math.round(value)) : "")} />
         <DateField label={t("Prices valid until")} value={valid ? parseDate(valid) : null} onChange={(value) => setValid(value ? value.toString() : null)} />
-      </div>
+      </FormRow>
       <TextAreaField label={t("Note")} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

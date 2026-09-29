@@ -90,7 +90,8 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
     queueMicrotask(() => setAsked(null));
   }, [state, asked]);
 
-  const run = async (action: string, input: Record<string, unknown> = {}, version = state?.order.version) => {
+  /** An order command; from a dialog (`inDialog`) a refusal is thrown so the dialog shows it and keeps the typing. */
+  const run = async (action: string, input: Record<string, unknown> = {}, version = state?.order.version, inDialog = false) => {
     if (!state || version === undefined) return null;
     setNotice(null); setBusy(true);
     try {
@@ -100,8 +101,9 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
         : next.order.sentTo ? { tone: "info", text: next.delivery === "failed" ? t("The email didn't go. Send the order to the supplier yourself.") : t("Email isn't set up here. Send the order to the supplier yourself.") } : null);
       return next;
     } catch (cause) {
-      setNotice({ tone: "error", text: cause instanceof Error ? cause.message : t("Could not save.") });
       if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
+      if (inDialog) throw cause;
+      setNotice({ tone: "error", text: cause instanceof Error ? cause.message : t("Could not save.") });
       return null;
     } finally { setBusy(false); }
   };
@@ -412,24 +414,24 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
       ]} />
     </div>}
     {dialog === "cancel" || dialog === "change" || dialog === "return" || dialog === "close" ? <ReasonDialog kind={dialog} optional={dialog === "close" && !short} onClose={() => setDialog(null)}
-      onSave={async (reason) => { if (await run(dialog === "return" ? "return" : dialog, dialog === "return" ? { note: reason } : { reason })) setDialog(null); }} /> : null}
+      onSave={async (reason) => { await run(dialog === "return" ? "return" : dialog, dialog === "return" ? { note: reason } : { reason }, undefined, true); setDialog(null); }} /> : null}
     {dialog === "receive" ? <ReceiveDialog api={api} orderId={orderId} onClose={() => setDialog(null)} onReceived={(receipt) => { setDialog(null); onChanged(); onReceipt(receipt.receipt.id); }} /> : null}
     {dialog === "send" && state ? <SendDialog email={state.supplier?.email ?? ""} onClose={() => setDialog(null)}
-      onSave={async (to, message) => { if (await run("send", { to, message, ...holdInput })) setDialog(null); }} /> : null}
+      onSave={async (to, message) => { await run("send", { to, message, ...holdInput }, undefined, true); setDialog(null); }} /> : null}
     {dialog === "confirm" && order && state ? <ConfirmDialog promised={order.promisedDate} reference={order.supplierReference} lines={state.lines} onClose={() => setDialog(null)}
-      onSave={async (input) => { if (await run("confirm", input)) setDialog(null); }} /> : null}
-    {dialog === "continue" ? <ReasonDialog kind="continue" onClose={() => setDialog(null)} onSave={async (note) => { if (await run("continue_on_hold", { note })) setDialog(null); }} /> : null}
-    {dialog === "funds" ? <ReasonDialog kind="funds" onClose={() => setDialog(null)} onSave={async (reason) => { if (await run("override_funds", { reason })) setDialog(null); }} /> : null}
-    {dialog === "chase" ? <ChaseDialog onClose={() => setDialog(null)} onSave={async (note, promisedDate) => { if (await run("chase", { note, promisedDate })) setDialog(null); }} /> : null}
+      onSave={async (input) => { await run("confirm", input, undefined, true); setDialog(null); }} /> : null}
+    {dialog === "continue" ? <ReasonDialog kind="continue" onClose={() => setDialog(null)} onSave={async (note) => { await run("continue_on_hold", { note }, undefined, true); setDialog(null); }} /> : null}
+    {dialog === "funds" ? <ReasonDialog kind="funds" onClose={() => setDialog(null)} onSave={async (reason) => { await run("override_funds", { reason }, undefined, true); setDialog(null); }} /> : null}
+    {dialog === "chase" ? <ChaseDialog onClose={() => setDialog(null)} onSave={async (note, promisedDate) => { await run("chase", { note, promisedDate }, undefined, true); setDialog(null); }} /> : null}
     {dialog && typeof dialog === "object" ? <ShipmentDialog shipment={dialog.shipment} onClose={() => setDialog(null)}
-      onSave={async (input) => { if (await run("track", input)) { setDialog(null); setTab("deliveries"); } }} /> : null}
-    {offering ? <OfferAlternateDialog line={offering} onClose={() => setOffering(null)}
-      onSave={async (input) => { if (await run("offer_alternate", { lineId: offering.id, ...input })) setOffering(null); }} /> : null}
+      onSave={async (input) => { await run("track", input, undefined, true); { setDialog(null); setTab("deliveries"); } }} /> : null}
+    {offering ? <OfferAlternateDialog line={offering} currency={order?.currency} onClose={() => setOffering(null)}
+      onSave={async (input) => { await run("offer_alternate", { lineId: offering.id, ...input }, undefined, true); setOffering(null); }} /> : null}
     {refusing ? <RefuseAlternateDialog onClose={() => setRefusing(null)}
-      onSave={async (note) => { if (await run("decide_alternate", { lineId: refusing.id, decision: "reject", note })) setRefusing(null); }} /> : null}
+      onSave={async (note) => { await run("decide_alternate", { lineId: refusing.id, decision: "reject", note }, undefined, true); setRefusing(null); }} /> : null}
     {cancelling ? <CancelLineDialog api={api} line={cancelling} left={stillToCome(cancelling)} vendorId={order?.vendorId ?? ""} onClose={() => setCancelling(null)}
       onSave={async (input) => {
-        const next = await run("cancel_line", { lineId: cancelling.id, ...input });
+        const next = await run("cancel_line", { lineId: cancelling.id, ...input }, undefined, true);
         if (next) { setCancelling(null); if (next.reordered) onOpenOrder?.(next.reordered); }
       }} /> : null}
   </InspectorSheet>;

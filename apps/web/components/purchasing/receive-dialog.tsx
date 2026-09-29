@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, ControlledModalDialog, DateField, InlineNotice, SelectField, Skeleton, TextInput } from "@/design-system";
+import { Button, DateField, FormDialog, FormRow, InlineNotice, SelectField, Skeleton, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
@@ -42,7 +42,6 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
   const photoIds = useMemo(() => photos.map(() => crypto.randomUUID()), [photos]);
   const [lines, setLines] = useState<Record<string, LineInput>>({});
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     api.receiving(orderId).then((next) => {
       setForm(next); setPlace(next.defaultPlace);
@@ -62,35 +61,34 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
   const photoNeeded = Boolean(form?.requireSitePhoto && atSite && !photos.length);
   const save = async () => {
     if (!form || !place) return;
-    setBusy(true); setError("");
-    try {
+    setError("");
+    {
       let saved = await api.receive({ id, orderId, place, receivedOn, deliveryNote: note.trim(), handedOverBy: handedOverBy.trim(), lines: entered.map((item) => ({ orderLineId: item.id, received: line(item.id).received,
         noted: line(item.id).noted || null,
         ...(form.requireInspection ? {} : { rejected: line(item.id).rejected || "0", rejectKind: line(item.id).kind, rejectReason: line(item.id).reason.trim() }) })) });
       // The delivery is saved; its photos follow (each once, by its own id).
       for (const [index, file] of photos.entries()) saved = await api.uploadPhoto({ kind: "receipt", id: saved.receipt.id }, photoIds[index], file);
       onReceived(saved);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
+    }
   };
-  return <ControlledModalDialog isOpen size="lg" title={form ? t("Receive {order}", { order: form.order.number }) : t("Receive")} onOpenChange={(value) => { if (!value) onClose(); }}
-    footer={<div className="wd-dialog-actions">
-      {form && open.length ? <Button variant="quiet" onPress={() => setLines(Object.fromEntries(open.map((item) => [item.id, { ...line(item.id), received: quantityText(item.outstanding) }])))}>{t("Everything left")}</Button> : null}
-      {form && open.length ? <Button variant="quiet" onPress={() => setLines(Object.fromEntries(open.map((item) => [item.id, { ...line(item.id), received: "" }])))}>{t("Clear")}</Button> : null}
-      <span className={styles.spacer} />
-      <Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!place || !entered.length || Boolean(tooMuch || unexplained || overRejected) || photoNeeded} onPress={() => void save()}>{t("Receive")}</Button></div>}>
-    {!form && !error ? <Skeleton lines={5} /> : <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="lg" title={form ? t("Receive {order}", { order: form.order.number }) : t("Receive")} onClose={onClose} error={error || undefined}
+    isDirty={Boolean(entered.length || note.trim() || photos.length)} submitLabel={t("Receive")}
+    isSubmitDisabled={!place || !entered.length || Boolean(tooMuch || unexplained || overRejected) || photoNeeded} onSubmit={save}
+    secondaryAction={form && open.length ? <>
+      <Button variant="quiet" onPress={() => setLines(Object.fromEntries(open.map((item) => [item.id, { ...line(item.id), received: quantityText(item.outstanding) }])))}>{t("Everything left")}</Button>
+      <Button variant="quiet" onPress={() => setLines(Object.fromEntries(open.map((item) => [item.id, { ...line(item.id), received: "" }])))}>{t("Clear")}</Button>
+    </> : undefined}>
+    {!form && !error ? <Skeleton lines={5} /> : <>
       {form ? <>
-        <div className={styles.pair}>
+        <FormRow>
           <SelectField label={t("Arrived at")} isRequired selectedKey={place} onSelectionChange={(key) => setPlace(key === null ? null : String(key))}
             items={form.places.map((item) => ({ id: item.key, label: placeLabel(item) }))} />
           <DateField label={t("Received on")} isRequired value={parseDate(receivedOn)} onChange={(value) => value && setReceivedOn(value.toString())} />
-        </div>
-        <div className={styles.pair}>
-          <TextInput label={t("Delivery note")} value={note} onChange={setNote} />
-          <TextInput label={t("Handed over by")} value={handedOverBy} onChange={setHandedOverBy} />
-        </div>
+        </FormRow>
+        <FormRow>
+          <TextInput label={t("Delivery note")} maxLength={120} value={note} onChange={setNote} />
+          <TextInput label={t("Handed over by")} maxLength={160} value={handedOverBy} onChange={setHandedOverBy} />
+        </FormRow>
         {!open.length ? <InlineNotice tone="info" message={t("Everything on this order has arrived.")} /> : <div className={styles.receiveLines} role="table" aria-label={t("What arrived")}
           data-columns={form.requireInspection ? "4" : "5"}>
           <div role="row" className={styles.receiveHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Left")}</span>
@@ -119,8 +117,8 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
         {photoNeeded ? <InlineNotice tone="info" message={t("A photo is needed for deliveries to site.")} /> : null}
         <PhotoPicker files={photos} onChange={setPhotos} label={atSite && form.requireSitePhoto ? t("Add a photo of the delivery") : undefined} />
       </> : null}
-    </div>}
-  </ControlledModalDialog>;
+    </>}
+  </FormDialog>;
 }
 
 /** What was wrong with rejected goods (damaged, defective, the wrong item, not to spec) and a note. */

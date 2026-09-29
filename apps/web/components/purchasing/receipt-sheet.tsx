@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Checkbox, ControlledModalDialog, ErrorState, InlineNotice, InspectorSheet, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Badge, Button, Checkbox, ErrorState, FormDialog, InlineNotice, InspectorSheet, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { addExact, subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
@@ -151,7 +151,7 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
       </section> : null}
     </div>}
     {dialog === "reverse" ? <ReverseDialog onClose={() => setDialog(null)} onSave={async (reason) => {
-      try { accept(await api.reverse(receiptId, reason)); setDialog(null); onChanged(); } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); setDialog(null); }
+      accept(await api.reverse(receiptId, reason)); setDialog(null); onChanged();
     }} /> : null}
     {dialog === "return" && state ? <ReturnDialog api={api} receipt={state} onClose={() => setDialog(null)}
       onCreated={(next) => { setDialog(null); void load(); onChanged(); onReturn?.(next); }} /> : null}
@@ -161,13 +161,8 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
 function ReverseDialog({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Reverse this delivery")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Reverse")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <p className={styles.dialogText}>{t("It stops counting and its goods come out of stock. Receive the right delivery again.")}</p>
-      <TextAreaField label={t("What was wrong with it")} isRequired value={reason} onChange={setReason} />
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog size="md" title={t("Reverse this delivery")} description={t("It stops counting and its goods come out of stock. Receive the right delivery again.")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()}
+    submitLabel={t("Reverse")} submitVariant={"danger"} onSubmit={() => onSave(reason.trim())}>
+    <TextAreaField label={t("What was wrong with it")} isRequired value={reason} onChange={setReason} />
+  </FormDialog>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, ControlledModalDialog, InlineNotice, SelectField, TextInput } from "@/design-system";
+import { Button, FormDialog, FormRow, SelectField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { ReorderPoint, StockState } from "@/lib/inventory/types";
@@ -27,30 +27,25 @@ export function ReorderPointDialog({ api, state, item, point, suppliers, onClose
   const [quantity, setQuantity] = useState(point?.reorderQuantity ? quantityText(point.reorderQuantity) : "");
   const [vendorId, setVendorId] = useState<string>(point?.vendorId ?? NOBODY);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const save = async (remove = false) => {
-    setBusy(true); setError("");
-    try {
-      onDone(await api.setReorderPoint(remove ? { id, version: point?.version, remove: true } : { id, version: point?.version, itemId: item.itemId, locationId: place === EVERYWHERE ? null : place,
-        reorderAt, reorderQuantity: quantity || null, vendorId: vendorId === NOBODY ? null : vendorId }));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
+    onDone(await api.setReorderPoint(remove ? { id, version: point?.version, remove: true } : { id, version: point?.version, itemId: item.itemId, locationId: place === EVERYWHERE ? null : place,
+      reorderAt, reorderQuantity: quantity || null, vendorId: vendorId === NOBODY ? null : vendorId }));
   };
-  return <ControlledModalDialog isOpen size="md" title={t("Reorder point")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions">
-      {point ? <Button variant="quiet" isLoading={busy} onPress={() => void save(true)}>{t("Remove")}</Button> : null}<span className={styles.spacer} />
-      <Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={reorderAt === ""} onPress={() => void save()}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-      <p className={styles.dialogText}>{item.itemName}</p>
-      <SelectField label={t("Where")} isDisabled={Boolean(point)} selectedKey={place} onSelectionChange={(key) => setPlace(String(key ?? EVERYWHERE))}
+  const remove = async () => {
+    setRemoving(true); setError("");
+    try { await save(true); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setRemoving(false); }
+  };
+  return <FormDialog size="md" title={t("Reorder point")} description={item.itemName} onClose={onClose} error={error || undefined} isSubmitDisabled={reorderAt === ""} submitLabel={t("Save")}
+    onSubmit={() => { setError(""); return save(); }}
+    secondaryAction={point ? <Button variant="quiet" isLoading={removing} onPress={() => void remove()}>{t("Remove")}</Button> : undefined}>
+      <SelectField label={t("Where")} isRequired isDisabled={Boolean(point)} selectedKey={place} onSelectionChange={(key) => setPlace(String(key ?? EVERYWHERE))}
         items={[{ id: EVERYWHERE, label: t("Every place together") }, ...state.locations.filter((location) => location.kind !== "site").map((location) => ({ id: location.id, label: location.name }))]} />
-      <div className={styles.pair}>
+      <FormRow>
         <TextInput label={t("Low at")} description={t("Free stock at or below this")} isRequired inputMode="decimal" suffix={item.unit || undefined} value={reorderAt} onChange={(value) => setReorderAt(numeric(value))} />
         <TextInput label={t("Order")} inputMode="decimal" suffix={item.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
-      </div>
+      </FormRow>
       {suppliers ? <SelectField label={t("From")} selectedKey={vendorId} onSelectionChange={(key) => setVendorId(String(key ?? NOBODY))}
         items={[{ id: NOBODY, label: t("Any supplier") }, ...suppliers.map((supplier) => ({ id: supplier.id, label: supplier.name }))]} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

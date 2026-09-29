@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, FormDialog, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import { addExact } from "@/lib/purchasing/amounts";
@@ -54,11 +54,15 @@ export function ReturnSheet({ api, returnId, onChanged, onClose, onOpenOrder }: 
     try { setState(await api.supplierReturn(returnId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The return didn't load.")); }
   }, [api, returnId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  const run = async (action: string, input: Record<string, unknown> = {}) => {
+  const run = async (action: string, input: Record<string, unknown> = {}, inDialog = false) => {
     if (!state) return false;
     setBusy(true); setNotice("");
     try { setState(await api.returnCommand(returnId, state.return.version, action, input)); onChanged(); return true; }
-    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); if (cause instanceof Error && "status" in cause && cause.status === 409) await load(); return false; }
+    catch (cause) {
+      if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
+      if (inDialog) throw cause;
+      setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false;
+    }
     finally { setBusy(false); }
   };
   const row = state?.return;
@@ -96,17 +100,15 @@ export function ReturnSheet({ api, returnId, onChanged, onClose, onOpenOrder }: 
       </section>
       {row.note ? <p className={styles.dialogText}>{row.note}</p> : null}
     </div>}
-    {cancelling ? <CancelReturn onClose={() => setCancelling(false)} onSave={async (reason) => { if (await run("cancel", { reason })) setCancelling(false); }} /> : null}
+    {cancelling ? <CancelReturn onClose={() => setCancelling(false)} onSave={async (reason) => { await run("cancel", { reason }, true); setCancelling(false); }} /> : null}
   </InspectorSheet>;
 }
 
 function CancelReturn({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Cancel return")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Cancel return")}</Button></div>}>
+  return <FormDialog size="md" title={t("Cancel return")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()}
+    submitLabel={t("Cancel return")} submitVariant={"danger"} onSubmit={() => onSave(reason.trim())}>
     <TextAreaField label={t("Why it's cancelled")} isRequired value={reason} onChange={setReason} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
