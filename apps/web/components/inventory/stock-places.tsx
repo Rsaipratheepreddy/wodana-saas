@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, ControlledModalDialog, EmptyState, InlineNotice, SelectField, SettingsPage, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
+import { Button, EmptyState, SelectField, SettingsPage, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { inventoryApi } from "@/lib/inventory/client";
 import type { LocationKind, StockLocation } from "@/lib/inventory/types";
@@ -46,16 +46,10 @@ function PlaceDialog({ draft, kinds, onClose, onSave }: { draft: Draft; kinds: R
   const t = useT();
   const [value, setValue] = useState(draft);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   const site = value.kind === "site";
-  return <ControlledModalDialog isOpen size="md" title={draft.isNew ? t("Add place") : draft.name} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!value.name.trim()} onPress={async () => {
-        setBusy(true); setError("");
-        try { await onSave(value); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={draft.isNew ? t("Add place") : draft.name} onClose={onClose} error={error || undefined} isSubmitDisabled={!value.name.trim()} submitLabel={t("Save")} onSubmit={async () => { setError("");
+        try { await onSave(value); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+      }}>
       <div className={styles.pair}>
         <TextInput label={t("Name")} isRequired value={value.name} onChange={(name) => setValue({ ...value, name })} />
         {site ? <TextInput label={t("Kind")} isReadOnly value={kinds.site} onChange={() => undefined} /> : <SelectField label={t("Kind")} isDisabled={!draft.isNew} selectedKey={value.kind}
@@ -66,6 +60,5 @@ function PlaceDialog({ draft, kinds, onClose, onSave }: { draft: Draft; kinds: R
         <Switch isSelected={value.isDefault} onChange={(isDefault) => setValue({ ...value, isDefault })}>{t("Default place of this kind")}</Switch>
         {draft.isNew ? null : <Switch isSelected={value.active} onChange={(active) => setValue({ ...value, active })}>{t("Open")}</Switch>}
       </>}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

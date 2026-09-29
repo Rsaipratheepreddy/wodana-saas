@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, ListTabs, NoResultsState, Skeleton, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, ListTabs, NoResultsState, Skeleton, TextAreaField, TextInput, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { TransferRow, TransferState, TransfersState, TransferStatus } from "@/lib/inventory/types";
@@ -172,9 +172,7 @@ function CancelMove({ onClose, onSave }: { onClose: () => void; onSave: (reason:
   const t = useT();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Cancel move")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Cancel move")}</Button></div>}>
+  return <FormDialog size="md" title={t("Cancel move")} onClose={onClose} cancelLabel={t("Back")} isSubmitDisabled={!reason.trim()} submitLabel={t("Cancel move")} onSubmit={async () => { await onSave(reason.trim()); }}>
     <TextAreaField label={t("Why it's cancelled")} isRequired value={reason} onChange={setReason} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

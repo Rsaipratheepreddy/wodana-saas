@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorState, InlineNotice, ListTabs, NoResultsState, SelectField, TextInput, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, DateField, EmptyState, ErrorState, InlineNotice, ListTabs, NoResultsState, SelectField, TextInput, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
 import type { FactoryState, WorkOrderNext, WorkOrderRow, Workcenter } from "@/lib/factory/types";
@@ -143,15 +143,10 @@ function BatchDialog({ api, orders, workcenters, onClose, onSaved }: { api: Fact
   const [plannedOn, setPlannedOn] = useState<string | null>(orders.map((order) => order.plannedStart).filter((value): value is string => Boolean(value)).sort()[0] ?? null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Run together")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!name.trim()} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={t("Run together")} onClose={onClose} error={error || undefined} isSubmitDisabled={!name.trim()} submitLabel={t("Create batch")} onSubmit={async () => { setError("");
         try { await api.saveBatch({ id, name: name.trim(), workcenterId: workcenterId || null, plannedOn, orderIds: orders.map((order) => order.id) }); onSaved(id); }
-        catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
-      }}>{t("Create batch")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+        catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+      }}>
       <p className={styles.muted}>{orders.map((order) => `${orderNumber(order.number)} · ${order.projectReference}`).join(", ")}</p>
       <TextInput label={t("Name")} isRequired value={name} onChange={setName} />
       <div className={styles.pair}>
@@ -159,6 +154,5 @@ function BatchDialog({ api, orders, workcenters, onClose, onSaved }: { api: Fact
           items={workcenters.map((center) => ({ id: center.id, label: center.name }))} />
         <DateField label={t("Day")} value={plannedOn ? parseDate(plannedOn) : null} onChange={(value) => setPlannedOn(value ? value.toString() : null)} />
       </div>
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
