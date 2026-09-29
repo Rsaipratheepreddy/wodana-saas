@@ -31,6 +31,17 @@ export class UpdateClientMessageDto {
   @IsOptional() @IsString() @Matches(/^[a-z0-9_.-]{1,100}$/) templateCode?: string | null;
 }
 
+/** When the follow-ups go (days after our last message; after the quote was issued) and the review link after handover. */
+export class UpdateFollowUpTimingDto {
+  /** 0 while the workspace runs on the defaults. */
+  @IsInt() @Min(0) version!: number;
+  @IsInt() @Min(1) @Max(30) quietDays!: number;
+  /** A second, later nudge (days after our last message); null for one follow-up only. */
+  @IsOptional() @IsInt() @Min(2) @Max(60) quietSecondDays?: number | null;
+  @IsInt() @Min(1) @Max(30) quoteDays!: number;
+  @IsOptional() @IsString() @MaxLength(500) @Matches(/^https:\/\/\S{3,}$/, { message: "Use a full https:// link" }) reviewUrl?: string | null;
+}
+
 export class SendPaymentReminderDto {
   @IsUUID() caseId!: string;
   @IsString() @Matches(/^[A-Za-z0-9_.:-]{1,80}$/) paymentId!: string;

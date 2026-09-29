@@ -4,6 +4,7 @@ import { validate } from "class-validator";
 import type { CrmActivitiesService } from "../crm/activities/crm-activities.service";
 import type { CrmConversationsService } from "../crm/conversations/crm-conversations.service";
 import type { CrmInboxService } from "../crm/conversations/crm-inbox.service";
+import type { CrmScheduledMessagesService } from "../crm/conversations/crm-scheduled-messages.service";
 import type { CrmIntakeService } from "../crm/intake/crm-intake.service";
 import type { CrmLeadsService } from "../crm/leads/crm-leads.service";
 import type { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
@@ -24,6 +25,7 @@ export type ToolServices = {
   parties: CrmPartiesService;
   conversations: CrmConversationsService;
   inbox: CrmInboxService;
+  scheduled: CrmScheduledMessagesService;
   work: ProjectWorkService;
   quoteComments: QuotationCollabService;
 };

@@ -18,6 +18,8 @@ export type TemplateContext = {
   /** An event's own record (the invoice issued, the payment due or received, the stage that started) wins over "latest". */
   record?: {
     invoiceId?: string | null; paymentId?: string | null; quoteId?: string | null; projectId?: string | null; stageName?: string | null;
+    /** A visit or meeting: its time (in the workspace's time zone) and its address. */
+    appointmentId?: string | null;
     /** What is still owed (a reminder), exact decimal and currency; wins over the milestone's full amount. */
     amountDue?: { amount: string; currency: string } | null;
   };
@@ -129,9 +131,28 @@ export async function resolveTemplateSources(db: Db, context: TemplateContext, s
         values[source] = settings.enabled && context.config ? await portalUrl(db, context.config, workspaceId, settings.slug) : null;
         break;
       }
+      case "meeting.time":
+      case "meeting.place": {
+        const row = context.record?.appointmentId ? (await db.query<{ startsAt: Date; address: string | null; url: string | null }>(
+          `SELECT starts_at AS "startsAt", nullif(btrim(location->>'address'), '') AS address, nullif(btrim(location->>'url'), '') AS url
+             FROM crm_appointments WHERE workspace_id=$1 AND id=$2`, [workspaceId, context.record.appointmentId])).rows[0] : undefined;
+        values[source] = !row ? null : source === "meeting.time" ? formatDateTime(new Date(row.startsAt), locale, timeZone) : row.address ?? row.url ?? null;
+        break;
+      }
+      case "review.link": {
+        const row = (await db.query<{ url: string | null }>(`SELECT review_url AS url FROM crm_inbox_settings WHERE workspace_id=$1`, [workspaceId])).rows[0];
+        values[source] = row?.url?.trim() || null;
+        break;
+      }
     }
   }
   return values;
+}
+
+/** "Tuesday, 14 October 2026 at 11:00" in the workspace's locale and time zone. */
+function formatDateTime(value: Date, locale: string, timeZone: string) {
+  try { return new Intl.DateTimeFormat(locale, { dateStyle: "full", timeStyle: "short", timeZone }).format(value); }
+  catch { return new Intl.DateTimeFormat("en", { dateStyle: "full", timeStyle: "short", timeZone: "UTC" }).format(value); }
 }
 
 function formatDate(value: Date, locale: string, timeZone: string) {

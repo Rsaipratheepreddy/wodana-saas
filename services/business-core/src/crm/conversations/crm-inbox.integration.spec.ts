@@ -7,6 +7,7 @@ import { CrmInboxService } from "./crm-inbox.service";
 import { CrmMessageReceiptService } from "./crm-message-receipt.service";
 import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
 import { sendClientEvent } from "./inbox/client-messages";
+import { STARTER_PACK } from "./inbox/whatsapp-starter-pack";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -222,14 +223,14 @@ integration("team inbox", () => {
     await withInbox(async (client, { workspaceId, manager, sara, nouraChat, conversations, templates, as }) => {
       as(manager);
       const first = await templates.submitStarterPack(actor, workspaceId, { languages: ["en", "ar"] });
-      expect(first.added).toBe(16);
-      expect(await templates.submitStarterPack(actor, workspaceId, { languages: ["en"] })).toEqual({ added: 0, skipped: 8 });
+      expect(first.added).toBe(STARTER_PACK.length * 2);
+      expect(await templates.submitStarterPack(actor, workspaceId, { languages: ["en"] })).toEqual({ added: 0, skipped: STARTER_PACK.length });
       const mapping = await client.query(`SELECT position, source FROM crm_template_variables WHERE workspace_id=$1 AND template_code='wd_payment_due' ORDER BY position`, [workspaceId]);
       expect(mapping.rows.map((row) => row.source)).toEqual(["contact.first_name", "payment.amount", "invoice.due_date", "portal.link"]);
 
       const work = await templates.dueWorkInternal(workspaceId);
       expect(work.sync).toBe(true);
-      expect(work.submissions).toHaveLength(16);
+      expect(work.submissions).toHaveLength(STARTER_PACK.length * 2);
       expect(work.submissions.find((item) => item.name === "wd_invoice_issued" && item.language === "en")).toMatchObject({ category: "UTILITY", examples: ["Noura", "INV-0101", expect.stringContaining("12,500"), expect.stringMatching(/\/portal$/)] });
       // Claimed for ten minutes: a second pass doesn't submit them again, and the daily sync isn't due again.
       expect(await templates.dueWorkInternal(workspaceId)).toEqual({ submissions: [], sync: false });

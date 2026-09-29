@@ -49,6 +49,7 @@ export type ChatContext = {
 export const TEMPLATE_SOURCES = [
   "contact.first_name", "contact.name", "enquiry.reference", "opportunity.reference", "project.name", "project.stage",
   "quote.number", "invoice.number", "invoice.total", "invoice.due_date", "payment.amount", "portal.link", "staff.first_name", "business.name", "today.date",
+  "meeting.time", "meeting.place", "review.link",
 ] as const;
 export type TemplateSource = (typeof TEMPLATE_SOURCES)[number];
 /** What each source is called in the mapping and in a blocked send (i18n keys). */
@@ -58,6 +59,7 @@ export const TEMPLATE_SOURCE_LABELS: Record<TemplateSource, MessageKey> = {
   "invoice.number": tKey("Invoice number"), "invoice.total": tKey("Invoice amount"), "portal.link": tKey("Client portal link"),
   "project.stage": tKey("Project stage"), "invoice.due_date": tKey("Invoice due date"), "payment.amount": tKey("Payment amount"),
   "staff.first_name": tKey("Your first name"), "business.name": tKey("Business name"), "today.date": tKey("Today's date"),
+  "meeting.time": tKey("Appointment date and time"), "meeting.place": tKey("Appointment address"), "review.link": tKey("Review link"),
 };
 
 /** Meta's review state of a WhatsApp template, as the inbox shows it (only approved ones can be sent). */
@@ -74,7 +76,71 @@ export const CLIENT_EVENT_LABELS: Record<string, MessageKey> = {
   "crm.enquiry.created": tKey("Welcome on a new enquiry"), "portal.quote_issued": tKey("Quotation ready"), "portal.invoice_issued": tKey("Invoice issued"),
   "receivables.payment_received": tKey("Payment received"), "portal.decision_waiting": tKey("Decision waiting"), "portal.update_published": tKey("Progress update shared"),
   "project.stage_started": tKey("Stage started"), "payments.reminder": tKey("Payment reminder"),
+  "crm.meeting.booked": tKey("Visit or meeting confirmed"), "crm.meeting.reminder": tKey("Visit reminder the day before"),
+  "crm.enquiry.quiet": tKey("Follow-up on a quiet enquiry"), "commercial.quote_follow_up": tKey("Quotation follow-up"),
+  "crm.opportunity.won": tKey("Thank you for choosing us"), "project.handover_thanks": tKey("Thank you after handover"),
 };
+/** A chat file as the thread shows it: kept in the workspace's storage ("stored"), still being fetched, or lost. */
+export type ChatAttachment = {
+  id: string; kind: "image" | "document" | "audio" | "video" | "sticker"; mimeType: string | null; fileName: string | null;
+  byteSize: number | null; status: "pending" | "stored" | "failed"; failureCode: string | null;
+};
+/** Where a chat file is read from (our storage only, so it opens the same while viewing as a colleague). */
+export const attachmentUrl = (workspaceId: string, conversationId: string, attachmentId: string) =>
+  `/api/workspace/crm/attachments/${conversationId}/${attachmentId}?workspaceId=${encodeURIComponent(workspaceId)}`;
+
+const MB = 1024 * 1024;
+/**
+ * What WhatsApp takes from us, per kind (business-core inbox/attachment-rules.ts): photos JPEG/PNG up to 5 MB,
+ * videos MP4/3GP and audio up to 16 MB, documents up to 20 MB (what Wodana keeps). Audio has no caption.
+ */
+export const SENDABLE_FILES: Record<"image" | "video" | "audio" | "document", { extensions: string[]; maxBytes: number }> = {
+  image: { extensions: ["jpg", "jpeg", "png"], maxBytes: 5 * MB },
+  video: { extensions: ["mp4", "3gp"], maxBytes: 16 * MB },
+  audio: { extensions: ["aac", "amr", "mp3", "m4a", "ogg", "opus"], maxBytes: 16 * MB },
+  document: { extensions: ["pdf", "txt", "doc", "docx", "xls", "xlsx", "ppt", "pptx"], maxBytes: 20 * MB },
+};
+export const ATTACH_ACCEPT = Object.values(SENDABLE_FILES).flatMap((rule) => rule.extensions.map((extension) => `.${extension}`)).join(",");
+
+/** The kind a picked file would go as, from its name; null when WhatsApp wouldn't take it. */
+export function sendableKind(name: string): keyof typeof SENDABLE_FILES | null {
+  const extension = /\.([a-z0-9]{1,5})$/i.exec(name)?.[1]?.toLowerCase() ?? "";
+  return (Object.keys(SENDABLE_FILES) as Array<keyof typeof SENDABLE_FILES>).find((kind) => SENDABLE_FILES[kind].extensions.includes(extension)) ?? null;
+}
+
+/** Why a picked file can't be attached (an i18n key and its values), or null. */
+export function attachProblem(file: { name: string; size: number }): { key: MessageKey; values?: Record<string, string | number> } | null {
+  const kind = sendableKind(file.name);
+  if (!kind) return { key: tKey("WhatsApp can't send this type of file. Send a JPEG or PNG photo, an MP4 video, an audio file, a PDF or an Office document.") };
+  if (!file.size) return { key: tKey("This file is empty.") };
+  if (file.size > SENDABLE_FILES[kind].maxBytes) return { key: TOO_LARGE[kind], values: { size: SENDABLE_FILES[kind].maxBytes / MB } };
+  return null;
+}
+const TOO_LARGE: Record<keyof typeof SENDABLE_FILES, MessageKey> = {
+  image: tKey("Photos can be up to {size} MB on WhatsApp."), video: tKey("Videos can be up to {size} MB on WhatsApp."),
+  audio: tKey("Audio can be up to {size} MB on WhatsApp."), document: tKey("Files can be up to {size} MB."),
+};
+
+/** "2.4 MB" in the person's locale. */
+export function fileSizeText(bytes: number | null | undefined, locale?: string) {
+  if (!bytes || bytes < 0) return "";
+  const [value, unit] = bytes >= MB ? [bytes / MB, "megabyte"] : bytes >= 1024 ? [bytes / 1024, "kilobyte"] : [bytes, "byte"];
+  return new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "short", maximumFractionDigits: value < 10 ? 1 : 0 }).format(value);
+}
+
+/** Uploads a file for a reply; the same id and file again returns the same attachment. */
+export async function uploadAttachment(workspaceId: string, conversationId: string, attachmentId: string, file: File, signal?: AbortSignal): Promise<ChatAttachment> {
+  const body = new FormData();
+  body.set("file", file);
+  const response = await fetch(attachmentUrl(workspaceId, conversationId, attachmentId), { method: "POST", body, signal });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(typeof result?.message === "string" ? result.message : tKey("The file could not be attached."));
+  return result as ChatAttachment;
+}
+
+/** Client messages with timing or a link to set (Settings → Inbox → Client messages → Timing). */
+export const FOLLOW_UP_EVENTS = new Set(["crm.enquiry.quiet", "commercial.quote_follow_up", "project.handover_thanks"]);
+export type FollowUpTiming = { quietDays: number; quietSecondDays: number | null; quoteDays: number; reviewUrl: string | null; version: number };
 /** Enquiry states a chat can be filtered by. */
 export const ENQUIRY_STAGE_LABELS: Record<string, MessageKey> = {
   new: tKey("New"), attempting_contact: tKey("Contacting"), connected: tKey("Connected"), nurturing: tKey("Nurturing"),

@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiGatewayService, AiTurnResult } from "../ai-gateway/ai-gateway.service";
-import { UpdateConversationDto } from "../crm/conversations/dto/conversations.dto";
+import { CreateScheduledMessageDto, UpdateConversationDto } from "../crm/conversations/dto/conversations.dto";
 import { UpdateLeadDetailsDto } from "../crm/intake/dto/intake.dto";
 import { currentCommandOrigin } from "../database/command-origin";
 import type { AiTool } from "./ai-tool";
@@ -94,7 +94,14 @@ function world(granted: string[] = ALL) {
       get: vi.fn(async (_actor: unknown, _workspace: string, id: string) => chat(id, id === CHAT_A ? 4 : 9)),
       updateConversation: vi.fn(async () => ({ changed: true })),
     },
-    inbox: { context: vi.fn(async () => ({ party: { name: "Omar", contacts: [{ type: "phone", value: "+10000000002" }] }, enquiries: [], opportunities: [], projects: [] })), labels: vi.fn(async () => []), setConversationLabels: vi.fn() },
+    inbox: { context: vi.fn(async () => ({ party: { name: "Omar", contacts: [{ type: "phone", value: "+10000000002" }] }, enquiries: [], opportunities: [], projects: [] })), labels: vi.fn(async () => []), setConversationLabels: vi.fn(),
+      templates: vi.fn(async () => [{ id: "55555555-5555-4555-8555-000000000001", code: "wd_visit_reminder", body: "Hi {{1}}, see you tomorrow.", approved: true, usable: true }]) },
+    scheduled: {
+      preview: vi.fn(async (_actor: unknown, _workspace: string, _chat: string, input: { sendAt: string; bodyText?: string | null; templateId?: string | null; templateParameters?: string[] }) => ({
+        sendAt: input.sendAt, bodyText: input.bodyText ?? null, templateId: input.templateId ?? null, templateCode: input.templateId ? "wd_visit_reminder" : null,
+        templateParameters: input.templateId ? ["Omar"] : [], renderedText: input.templateId ? "Hi Omar, see you tomorrow." : `${input.bodyText}\n— Sam`, partyName: "Omar", channel: "whatsapp" })),
+      create: vi.fn(async () => ({ id: "66666666-6666-4666-8666-666666666666", sendAt: "2026-10-01T09:00:00.000Z" })),
+    },
     work: { item: vi.fn(), command: vi.fn() },
     quoteComments: { comment: vi.fn() },
   };
@@ -130,7 +137,7 @@ describe("the tool registry", () => {
     const offered = registry.offered(new Set(ALL));
     expect(offered.map((tool) => tool.name).sort()).toEqual([
       "add_comment", "assign_records", "convert_enquiry", "create_enquiry", "create_task", "draft_message", "find_member", "get_conversation", "get_record", "label_chats",
-      "list_conversations", "list_my_work", "log_activity", "move_opportunity", "schedule_follow_up", "search_records", "set_chat_state", "update_enquiry", "update_task",
+      "list_conversations", "list_my_work", "log_activity", "move_opportunity", "schedule_follow_up", "schedule_message", "search_records", "set_chat_state", "update_enquiry", "update_task",
     ]);
     expect(offered.filter((tool) => NEVER_TOOL_NAMES.test(tool.name))).toEqual([]);
     const tool = (patch: Partial<AiTool>): AiTool => ({ name: "noop", description: "", kind: "read", parameters: { type: "object", properties: {} }, calls: "", permissions: [], confirmation: "none", run: async () => ({ data: null }), ...patch });
@@ -290,6 +297,21 @@ describe("confirming what Woddy proposed", () => {
     await expect(setup.calls.confirm(actor, WS, card.id, { version: done.version })).resolves.toMatchObject({ status: "executed" });
     expect(setup.services.intake.updateDetails).toHaveBeenCalledTimes(1);
     expect(setup.state.audits.map((audit) => audit.action)).toEqual(["ai.tool_call.confirmed", "ai.tool_call.executed"]);
+  });
+
+  it("schedules a message only after confirming a card with its exact words and time, once", async () => {
+    const card = await propose("schedule_message", { args: { sendAt: "2099-10-01T10:00", text: "We'll be at the site at 10." }, record: { type: "conversation", id: CHAT_A } });
+    expect(card.preview).toMatchObject({ kind: "text", text: "We'll be at the site at 10.\n— Sam", fields: [{ label: "To", after: "Omar · WhatsApp" }, { label: "Send at", format: "datetime" }] });
+    expect(setup.services.scheduled.create).not.toHaveBeenCalled();
+    await setup.calls.confirm(actor, WS, card.id, { version: card.version });
+    const [, workspaceId, chatId, dto] = setup.services.scheduled.create.mock.calls[0] as unknown as [unknown, string, string, CreateScheduledMessageDto];
+    expect([workspaceId, chatId]).toEqual([WS, CHAT_A]);
+    expect(dto).toBeInstanceOf(CreateScheduledMessageDto);
+    expect(dto).toMatchObject({ bodyText: "We'll be at the site at 10.", clientRequestId: expect.any(String) });
+    // A template is named by its approved name; its filled-in text is what the card shows.
+    const template = await propose("schedule_message", { args: { sendAt: "2099-10-01T10:00", template: "wd_visit_reminder" }, record: { type: "conversation", id: CHAT_A } });
+    expect(template.preview).toMatchObject({ kind: "text", text: "Hi Omar, see you tomorrow.", fields: expect.arrayContaining([{ label: "Template", after: "wd_visit_reminder" }]) });
+    await expect(propose("schedule_message", { args: { sendAt: "2099-10-01T10:00", template: "no_such" }, record: { type: "conversation", id: CHAT_A } })).rejects.toThrow(/No approved template/);
   });
 
   it("creates an enquiry with the proposal's idempotency key and links the chat it came from", async () => {

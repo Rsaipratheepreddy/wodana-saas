@@ -7,7 +7,8 @@ import { notifyUserInApp } from "../../notifications/default-templates";
 import { webOrigin } from "../../client-portal/portal-site";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
-import { SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
+import { SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, UpdateFollowUpTimingDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
+import { readFollowUpSettings, runClientFollowUps } from "./inbox/client-followups";
 import { CLIENT_EVENTS, clientMessageRule, EMAIL_FALLBACK } from "./inbox/client-messages";
 import { numberHealthState, templatePlaceholders, type NumberHealth } from "./inbox/inbox-rules";
 import { metaBodyProblem, sampleValues, STARTER_LANGUAGES, STARTER_PACK, starterByName, type StarterEvent, type StarterLanguage } from "./inbox/whatsapp-starter-pack";
@@ -189,8 +190,34 @@ export class CrmWhatsAppTemplatesService {
         rows.push({ event, enabled: rule.enabled, templateCode: rule.templateCode, version: rule.version, template, emailFallback: EMAIL_FALLBACK.has(event),
           channel: whatsapp ? "whatsapp" : rule.enabled && EMAIL_FALLBACK.has(event) ? "email" : "none" });
       }
-      return { connected, events: rows };
+      return { connected, events: rows, timing: await readFollowUpSettings(client, workspaceId) };
     });
+  }
+
+  /** The follow-ups' timing and the review link after handover (version-checked and audited; saving the same is a no-op). */
+  setFollowUpTiming(actor: RequestActor, workspaceId: string, input: UpdateFollowUpTimingDto) {
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+      const current = await readFollowUpSettings(client, workspaceId);
+      const next = { quietDays: input.quietDays, quietSecondDays: input.quietSecondDays ?? null, quoteDays: input.quoteDays, reviewUrl: input.reviewUrl?.trim() || null };
+      if (next.quietSecondDays !== null && next.quietSecondDays <= next.quietDays) throw new UnprocessableEntityException("The second follow-up comes after the first");
+      if (current.quietDays === next.quietDays && current.quietSecondDays === next.quietSecondDays && current.quoteDays === next.quoteDays && current.reviewUrl === next.reviewUrl) return current;
+      if (current.version !== input.version) throw new ConflictException("The follow-up timing changed; reload and try again");
+      await client.query(
+        `INSERT INTO crm_inbox_settings (workspace_id, quiet_followup_days, quiet_followup_second_days, quote_followup_days, review_url, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (workspace_id) DO UPDATE SET quiet_followup_days = EXCLUDED.quiet_followup_days, quiet_followup_second_days = EXCLUDED.quiet_followup_second_days,
+           quote_followup_days = EXCLUDED.quote_followup_days, review_url = EXCLUDED.review_url, updated_by = EXCLUDED.updated_by, updated_at = now(),
+           followups_version = crm_inbox_settings.followups_version + 1`,
+        [workspaceId, next.quietDays, next.quietSecondDays, next.quoteDays, next.reviewUrl, actorUser.userId]);
+      const saved = await readFollowUpSettings(client, workspaceId);
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.client_message.timing_updated.v1", entityType: "crm_inbox_settings", entityId: workspaceId, before: current, after: saved });
+      return saved;
+    });
+  }
+
+  /** The worker's pass over the time-based client messages (visit reminders, quiet enquiries, quotation follow-ups). */
+  followUpsInternal(workspaceId: string) {
+    return this.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, (client) => runClientFollowUps(client, workspaceId, { config: this.config }));
   }
 
   /** Turns an event on or off, or picks its template (version-checked; the first change creates the rule). */

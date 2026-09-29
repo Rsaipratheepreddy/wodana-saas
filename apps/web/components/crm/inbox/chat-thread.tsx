@@ -2,10 +2,10 @@
 
 import Image from "next/image";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
+import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, FileX, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
 import { Avatar, Badge, Button, ControlledModalDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
-import { CLIENT_EVENT_LABELS, channelName, eventLine, snoozePresets, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
+import { attachmentUrl, CLIENT_EVENT_LABELS, channelName, eventLine, fileSizeText, snoozePresets, type ChatAttachment, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -235,8 +235,8 @@ function MessageHistory({ workspaceId, thread, onHide, canShowHidden, after, rev
     {entries.map((entry, index) => <Fragment key={`${entry.kind}:${entry.kind === "message" ? entry.message.id : entry.kind === "album" ? entry.messages[0].id : entry.event.id}`}>
       {dateOf(entry.at) !== dateOf(entries[index - 1]?.at) ? <div className={styles.dateDivider}><span>{dateOf(entry.at)}</span></div> : null}
       {entry.kind === "event" ? <EventLine event={entry.event} time={inboxTime(entry.at, locale, timeZone)} />
-        : entry.kind === "album" ? <PhotoAlbum messages={entry.messages} partyName={partyName} workspaceId={workspaceId} time={inboxTime(entry.at, locale, timeZone)} />
-        : <MessageBubble message={entry.message} partyName={partyName} workspaceId={workspaceId} time={inboxTime(entry.at, locale, timeZone)} onHide={onHide} canShowHidden={canShowHidden} />}
+        : entry.kind === "album" ? <PhotoAlbum messages={entry.messages} partyName={partyName} workspaceId={workspaceId} conversationId={String(thread.id)} time={inboxTime(entry.at, locale, timeZone)} />
+        : <MessageBubble message={entry.message} partyName={partyName} workspaceId={workspaceId} conversationId={String(thread.id)} time={inboxTime(entry.at, locale, timeZone)} onHide={onHide} canShowHidden={canShowHidden} />}
     </Fragment>)}
     {!entries.length ? <div className={styles.empty}><MessageCircle size={30} /><p>{t("No messages yet.")}</p></div> : null}
     {after}
@@ -249,7 +249,7 @@ function EventLine({ event, time }: { event: ChatEvent; time: string }) {
   return <p className={styles.systemLine}><span>{t(line.key, { ...line.values, actor: line.values.actor || t("Someone") })}</span><time dateTime={event.createdAt}>{time}</time></p>;
 }
 
-function MessageBubble({ message, partyName, workspaceId, time, onHide, canShowHidden = false }: { message: RecordData; partyName: string; workspaceId: string; time: string; onHide?: (messageId: string, hidden: boolean) => void; canShowHidden?: boolean }) {
+function MessageBubble({ message, partyName, workspaceId, conversationId, time, onHide, canShowHidden = false }: { message: RecordData; partyName: string; workspaceId: string; conversationId: string; time: string; onHide?: (messageId: string, hidden: boolean) => void; canShowHidden?: boolean }) {
   const t = useT();
   const direction = String(message.direction);
   const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata as Record<string, unknown> : {};
@@ -260,28 +260,47 @@ function MessageBubble({ message, partyName, workspaceId, time, onHide, canShowH
     <span className={styles.messageAvatar}><Avatar name={sender} size="sm" /></span>
     <strong className={styles.messageSender}>{sender}{direction === "internal" ? <span className={styles.noteTag}>{t("Note")}</span> : null}{automatic ? <span className={styles.automaticTag}>{autoReply ? t("Auto reply") : t(CLIENT_EVENT_LABELS[automatic] ?? "Client message")}</span> : null}</strong>
     {message.hiddenAt ? <p className={styles.hiddenText}>{t("Hidden by {name}", { name: String(message.hiddenByName ?? t("Someone")) })}{canShowHidden && onHide ? <> <Button size="compact" variant="quiet" onPress={() => onHide(message.id, false)}>{t("Show again")}</Button></> : null}</p>
-      : <MessageContent message={message} workspaceId={workspaceId} />}
+      : <MessageContent message={message} workspaceId={workspaceId} conversationId={conversationId} />}
     {onHide && !message.hiddenAt ? <IconButton aria-label={t("Hide message")} className={styles.hideButton} size="compact" variant="quiet" onPress={() => onHide(message.id, true)}><EyeOff size={13} /></IconButton> : null}
     <footer><time dateTime={String(message.createdAt)}>{time}</time>{direction === "outbound" ? <DeliveryState status={String(message.status)} /> : null}</footer>
     {message.failureCode ? <small className={styles.error}>{t("Not delivered: {reason}", { reason: String(message.failureCode) })}</small> : null}
   </article>;
 }
 
-function PhotoAlbum({ messages, partyName, workspaceId, time }: { messages: RecordData[]; partyName: string; workspaceId: string; time: string }) {
+function PhotoAlbum({ messages, partyName, workspaceId, conversationId, time }: { messages: RecordData[]; partyName: string; workspaceId: string; conversationId: string; time: string }) {
   const t = useT();
   return <article className={styles.message} data-direction="inbound" aria-label={t("Contact message")}>
     <span className={styles.messageAvatar}><Avatar name={partyName} size="sm" /></span>
     <strong className={styles.messageSender}>{partyName}</strong>
     <p>{t("{count} photos", { count: messages.length })}</p>
-    <div className={styles.album}>{messages.map((message) => { const url = mediaUrlOf(message, workspaceId); return url ? <a key={message.id} href={url} target="_blank" rel="noreferrer"><Image src={url} alt={String(message.bodyText ?? t("WhatsApp image"))} width={160} height={160} unoptimized /></a> : <span key={message.id} className={styles.mediaFile}><ImageIcon aria-hidden="true" size={16} /></span>; })}</div>
+    <div className={styles.album}>{messages.map((message) => {
+      const file = attachmentOf(message);
+      const url = file?.status === "stored" ? attachmentUrl(workspaceId, conversationId, file.id) : "";
+      return url ? <a key={message.id} href={url} target="_blank" rel="noreferrer" aria-label={t("Open image")}><Image src={url} alt={String(message.bodyText ?? t("WhatsApp image"))} width={160} height={160} unoptimized /></a>
+        : <span key={message.id} className={styles.mediaFile} data-state={file?.status ?? "missing"} role={file?.status === "pending" ? "status" : undefined} aria-label={file?.status === "pending" ? t("Getting the file…") : t("This file isn't available.")}>{file?.status === "pending" ? <Clock3 aria-hidden="true" size={16} /> : <ImageIcon aria-hidden="true" size={16} />}</span>;
+    })}</div>
     <footer><time>{time}</time></footer>
   </article>;
 }
 
-function mediaUrlOf(message: RecordData, workspaceId: string) {
-  const metadata = message.metadata && typeof message.metadata === "object" && !Array.isArray(message.metadata) ? message.metadata as Record<string, unknown> : {};
-  const connectionId = String(metadata.connectionId ?? ""), mediaId = String(metadata.mediaId ?? "");
-  return connectionId && mediaId ? `/api/workspace/integration-connections/${connectionId}/media/${mediaId}?workspaceId=${workspaceId}` : "";
+const attachmentOf = (message: RecordData) => message.attachment && typeof message.attachment === "object" ? message.attachment as ChatAttachment : null;
+/** What the provider writes when a file has no caption ("Image received") is not repeated under the file. */
+const isFilePlaceholder = (text: string, fileName: string | null) => !text || text === fileName || /^(Image|Video|Document|Audio|Sticker) received$/.test(text);
+
+/**
+ * A chat file: a photo as a thumbnail that opens full size, a voice note or audio with a player, a video with its
+ * player, anything else as a file chip to download. One still being fetched says so; one that is lost says why.
+ */
+function ChatFile({ file, url, fallbackName }: { file: ChatAttachment; url: string; fallbackName: string }) {
+  const t = useT();
+  const { locale } = useDesignSystem();
+  const name = file.fileName ?? fallbackName;
+  if (file.status === "pending") return <span className={styles.mediaFile} role="status"><Clock3 aria-hidden="true" size={16} /><span>{t("Getting the file…")}</span></span>;
+  if (file.status === "failed") return <span className={styles.mediaFile} data-state="failed"><FileX aria-hidden="true" size={16} /><span>{file.failureCode === "media_expired" || file.failureCode === "media_unavailable" ? t("WhatsApp no longer has this file.") : t("This file couldn't be kept.")}</span></span>;
+  if (file.kind === "image" || file.kind === "sticker") return <a className={styles.mediaPreview} href={url} target="_blank" rel="noreferrer"><Image src={url} alt={name} width={360} height={260} unoptimized /><span><ImageIcon aria-hidden="true" size={13} /> {t("Open image")}</span></a>;
+  if (file.kind === "audio") return <audio className={styles.mediaPlayer} controls preload="none" src={url} aria-label={name} />;
+  if (file.kind === "video") return <video className={styles.mediaPlayer} data-kind="video" controls preload="metadata" src={url} aria-label={name} />;
+  return <a className={styles.mediaFile} href={url} download={name}><FileText aria-hidden="true" size={16} /><span>{name}</span>{file.byteSize ? <small>{fileSizeText(file.byteSize, locale)}</small> : null}</a>;
 }
 
 /** ✓ sent (the provider accepted it), ✓✓ delivered, blue ✓✓ read; only the provider's receipts move it past sent. */
@@ -291,17 +310,19 @@ export function DeliveryState({ status, compact = false }: { status: string; com
   return <span className={styles.delivery} data-status={status} aria-label={text} title={text}>{status === "read" || status === "delivered" ? <CheckCheck size={15} /> : status === "sent" ? <Check size={15} /> : status === "failed" ? <span aria-hidden="true">!</span> : <Clock3 size={13} />}{!compact && status === "failed" ? text : null}</span>;
 }
 
-function MessageContent({ message, workspaceId }: { message: RecordData; workspaceId: string }) {
+function MessageContent({ message, workspaceId, conversationId }: { message: RecordData; workspaceId: string; conversationId: string }) {
   const t = useT();
   const metadata = message.metadata && typeof message.metadata === "object" && !Array.isArray(message.metadata) ? message.metadata as Record<string, unknown> : {};
   const kind = String(metadata.messageType ?? "");
-  const connectionId = String(metadata.connectionId ?? "");
-  const mediaId = String(metadata.mediaId ?? "");
-  const mediaUrl = connectionId && mediaId ? `/api/workspace/integration-connections/${connectionId}/media/${mediaId}?workspaceId=${workspaceId}` : "";
+  const file = attachmentOf(message);
+  const media = Boolean(file) || (kind !== "" && kind !== "text");
+  const fileName = typeof metadata.fileName === "string" ? metadata.fileName : null;
+  const text = typeof message.bodyText === "string" ? message.bodyText : "";
   const template = metadata.template && typeof metadata.template === "object" ? metadata.template as { code?: string } : null;
-  return <>{kind === "image" && mediaUrl ? <a className={styles.mediaPreview} href={mediaUrl} target="_blank" rel="noreferrer"><Image src={mediaUrl} alt={String(message.bodyText ?? t("WhatsApp image"))} width={360} height={260} unoptimized /><span><ImageIcon size={13} /> {t("Open image")}</span></a>
-    : kind && kind !== "text" ? <a className={styles.mediaFile} href={mediaUrl || undefined} target={mediaUrl ? "_blank" : undefined} rel={mediaUrl ? "noreferrer" : undefined} aria-disabled={!mediaUrl}>{kind === "video" ? <Video size={16} /> : <FileText size={16} />}<span>{String(metadata.fileName ?? t("{kind} attachment", { kind: label(kind) }))}</span></a> : null}
-    <p>{String(message.bodyText ?? t("This message has no plain-text preview."))}</p>
+  const fallbackName = t("{kind} attachment", { kind: label(file?.kind ?? kind) });
+  return <>{file ? <ChatFile file={file} url={attachmentUrl(workspaceId, conversationId, file.id)} fallbackName={fallbackName} />
+    : media ? <span className={styles.mediaFile} aria-disabled="true">{kind === "video" ? <Video aria-hidden="true" size={16} /> : <FileText aria-hidden="true" size={16} />}<span>{fileName ?? fallbackName}</span></span> : null}
+    {!media ? <p>{text || t("This message has no plain-text preview.")}</p> : !isFilePlaceholder(text, file?.fileName ?? fileName) ? <p>{text}</p> : null}
     {template?.code ? <small className={styles.templateTag}><FileText aria-hidden="true" size={12} />{template.code}</small> : null}</>;
 }
 

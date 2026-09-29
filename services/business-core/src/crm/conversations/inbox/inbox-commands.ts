@@ -40,7 +40,7 @@ export function mapConversation(row: ConversationRow) {
     id: row.id, partyId: row.party_id, leadId: row.lead_id, channel: row.channel, subject: row.subject, status: row.status,
     ownerMembershipId: row.owner_membership_id, lastMessageAt: row.last_message_at, lastInboundAt: row.last_inbound_at,
     unreadCount: row.unread_count, snoozedUntil: row.snoozed_until ?? null, waitingSince: row.waiting_since ?? null,
-    assignedAt: row.assigned_at ?? null, resolvedAt: row.resolved_at ?? null, version: Number(row.version),
+    assignedAt: row.assigned_at ?? null, resolvedAt: row.resolved_at ?? null, connectionId: row.connection_id ?? null, version: Number(row.version),
   };
 }
 

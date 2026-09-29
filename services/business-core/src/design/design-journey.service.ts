@@ -7,6 +7,7 @@ import { checkIntroSlot, meetingLocation, meetingWhen } from "../crm/opportuniti
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { siteEvidenceProblem, STAGE_LABELS, type JourneyStage } from "./design-journey.domain";
+import { confirmAppointment } from "../crm/conversations/inbox/client-followups";
 import { caseFacts, completeStage, recordProjectSiteVisit, startJourney } from "./design-journey.store";
 import { isDeliverableStage, stageProgress, syncDesignStages } from "./design-stage-sync";
 
@@ -61,6 +62,8 @@ export class DesignJourneyService {
            location = excluded.location, attendee_membership_ids = excluded.attendee_membership_ids, version = crm_appointments.version + 1`,
         [workspaceId, stage.activityId, input.startsAt, input.endsAt, input.timezone, location, JSON.stringify([facts.partyId]), JSON.stringify(attendees)]);
       await client.query(`UPDATE crm_activities SET type = 'meeting', due_at = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, stage.activityId, input.startsAt]);
+      // The client gets the site visit's confirmation on WhatsApp, with its address (when the firm has it on).
+      await confirmAppointment(client, workspaceId, stage.activityId, { actorUserId: userId });
       await client.query(`INSERT INTO design_journey_events (workspace_id, case_id, stage, action, actor_user_id) VALUES ($1, $2, 'site_visit', 'scheduled', $3)`, [workspaceId, caseId, userId]);
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.site_visit_scheduled.v1", entityType: "pre_project_case", entityId: caseId, after: { startsAt: input.startsAt, endsAt: input.endsAt, timezone: input.timezone, attendees } });
 

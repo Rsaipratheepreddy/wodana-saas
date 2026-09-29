@@ -792,6 +792,27 @@
       "when": 1801240000001,
       "tag": "0165_mcp_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1801250000000,
+      "tag": "0166_inbox_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1801250000001,
+      "tag": "0167_scheduled_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1801260000009,
+      "tag": "0169_client_follow_up_messages",
+      "breakpoints": true
     }
   ]
 }

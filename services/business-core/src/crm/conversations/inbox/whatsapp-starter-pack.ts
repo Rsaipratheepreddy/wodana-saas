@@ -7,7 +7,8 @@ import type { TemplateVariableSource } from "./inbox-rules";
  */
 export type StarterEvent =
   | "crm.enquiry.created" | "portal.quote_issued" | "portal.invoice_issued" | "receivables.payment_received"
-  | "portal.decision_waiting" | "portal.update_published" | "project.stage_started" | "payments.reminder";
+  | "portal.decision_waiting" | "portal.update_published" | "project.stage_started" | "payments.reminder"
+  | "crm.meeting.booked" | "crm.meeting.reminder" | "crm.enquiry.quiet" | "commercial.quote_follow_up" | "crm.opportunity.won" | "project.handover_thanks";
 
 export type StarterTemplate = {
   key: string;
@@ -86,11 +87,86 @@ export const STARTER_PACK: StarterTemplate[] = [
       ar: "مرحبًا {{1}}، نذكّرك بأن مبلغ {{2}} مستحق في {{3}}. يمكنك الدفع هنا: {{4}} شكرًا لك.",
     },
   },
+  // An event with two templates sends the first whose values the record has: with the address, else without it.
+  {
+    key: "visit_confirmed", event: "crm.meeting.booked", name: "wd_visit_confirmed",
+    sources: ["contact.first_name", "business.name", "meeting.time", "meeting.place"],
+    bodies: {
+      en: "Hello {{1}}, your appointment with {{2}} is confirmed for {{3}} at {{4}}. Reply here if you need to change it. Thank you.",
+      ar: "مرحبًا {{1}}، تم تأكيد موعدك مع {{2}} بتاريخ {{3}}، والعنوان: {{4}}. يمكنك الرد هنا إذا احتجت إلى تغييره. شكرًا لك.",
+    },
+  },
+  {
+    key: "visit_confirmed_time", event: "crm.meeting.booked", name: "wd_visit_confirmed_time",
+    sources: ["contact.first_name", "business.name", "meeting.time"],
+    bodies: {
+      en: "Hello {{1}}, your appointment with {{2}} is confirmed for {{3}}. Reply here if you need to change it. Thank you.",
+      ar: "مرحبًا {{1}}، تم تأكيد موعدك مع {{2}} بتاريخ {{3}}. يمكنك الرد هنا إذا احتجت إلى تغييره. شكرًا لك.",
+    },
+  },
+  {
+    key: "visit_reminder", event: "crm.meeting.reminder", name: "wd_visit_reminder",
+    sources: ["contact.first_name", "business.name", "meeting.time", "meeting.place"],
+    bodies: {
+      en: "Hello {{1}}, a reminder of your appointment with {{2}} tomorrow, {{3}}, at {{4}}. Reply here if anything changes. See you soon.",
+      ar: "مرحبًا {{1}}، نذكّرك بموعدك مع {{2}} غدًا، {{3}}، والعنوان: {{4}}. يمكنك الرد هنا إذا تغيّر أي شيء. نراك قريبًا.",
+    },
+  },
+  {
+    key: "visit_reminder_time", event: "crm.meeting.reminder", name: "wd_visit_reminder_time",
+    sources: ["contact.first_name", "business.name", "meeting.time"],
+    bodies: {
+      en: "Hello {{1}}, a reminder of your appointment with {{2}} tomorrow, {{3}}. Reply here if anything changes. See you soon.",
+      ar: "مرحبًا {{1}}، نذكّرك بموعدك مع {{2}} غدًا، {{3}}. يمكنك الرد هنا إذا تغيّر أي شيء. نراك قريبًا.",
+    },
+  },
+  {
+    key: "enquiry_follow_up", event: "crm.enquiry.quiet", name: "wd_enquiry_follow_up",
+    sources: ["contact.first_name", "enquiry.reference", "business.name"],
+    bodies: {
+      en: "Hello {{1}}, we are following up on your enquiry {{2}}. Is there anything {{3}} can help you with? Just reply to this message.",
+      ar: "مرحبًا {{1}}، نتابع معك بخصوص طلبك {{2}}. هل هناك ما يمكن أن يساعدك به فريق {{3}}؟ يكفي أن ترد على هذه الرسالة.",
+    },
+  },
+  {
+    key: "quote_follow_up", event: "commercial.quote_follow_up", name: "wd_quote_follow_up",
+    sources: ["contact.first_name", "quote.number", "portal.link"],
+    bodies: {
+      en: "Hello {{1}}, did you have a chance to look at quotation {{2}}? You can review it and share your decision here: {{3}} Thank you.",
+      ar: "مرحبًا {{1}}، هل اطلعت على عرض السعر {{2}}؟ يمكنك مراجعته ومشاركة قرارك هنا: {{3}} شكرًا لك.",
+    },
+  },
+  {
+    key: "deal_won", event: "crm.opportunity.won", name: "wd_deal_won",
+    sources: ["contact.first_name", "business.name"],
+    bodies: {
+      en: "Hello {{1}}, thank you for choosing {{2}}! Our team will contact you shortly to plan the next steps of your project.",
+      ar: "مرحبًا {{1}}، شكرًا لاختيارك {{2}}! سيتواصل معك فريقنا قريبًا لتخطيط الخطوات التالية لمشروعك.",
+    },
+  },
+  {
+    key: "handover_review", event: "project.handover_thanks", name: "wd_handover_review",
+    sources: ["contact.first_name", "project.name", "business.name", "review.link"],
+    bodies: {
+      en: "Hello {{1}}, {{2}} is complete. Thank you for choosing {{3}}. We would love to hear how it went: {{4}} Thank you.",
+      ar: "مرحبًا {{1}}، اكتمل {{2}}. شكرًا لاختيارك {{3}}. يسعدنا أن نعرف رأيك في تجربتك: {{4}} شكرًا لك.",
+    },
+  },
+  {
+    key: "handover_thanks", event: "project.handover_thanks", name: "wd_handover_thanks",
+    sources: ["contact.first_name", "project.name", "business.name"],
+    bodies: {
+      en: "Hello {{1}}, {{2}} is complete. Thank you for choosing {{3}}. We hope you enjoy your new space.",
+      ar: "مرحبًا {{1}}، اكتمل {{2}}. شكرًا لاختيارك {{3}}. نتمنى أن تستمتع بمساحتك الجديدة.",
+    },
+  },
 ];
 
 /** The starter template a stored template came from, by its Meta name. */
 export const starterByName = (name: string) => STARTER_PACK.find((template) => template.name === name) ?? null;
 export const starterForEvent = (event: string) => STARTER_PACK.find((template) => template.event === event) ?? null;
+/** Every starter template for an event, in the order they are tried (the richest first). */
+export const startersForEvent = (event: string) => STARTER_PACK.filter((template) => template.event === event);
 
 /** Sample values Meta reviews with the template, in the workspace's own currency, locale and name. */
 export function sampleValues(template: StarterTemplate, region: { businessName: string; currency: string; locale: string; webOrigin: string }) {
@@ -101,6 +177,8 @@ export function sampleValues(template: StarterTemplate, region: { businessName: 
     "project.name": "Villa renovation", "project.stage": "Joinery", "quote.number": "V2", "invoice.number": "INV-0101",
     "invoice.total": money(12500), "invoice.due_date": date, "payment.amount": money(12500), "portal.link": `${region.webOrigin.replace(/\/$/, "")}/portal`,
     "staff.first_name": "Sara", "business.name": region.businessName, "today.date": date,
+    "meeting.time": (() => { try { return new Intl.DateTimeFormat(region.locale, { dateStyle: "full", timeStyle: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 9, 15, 10))); } catch { return "15 Oct 2026, 10:00"; } })(),
+    "meeting.place": "Villa 12, Garden Street", "review.link": `${region.webOrigin.replace(/\/$/, "")}/review`,
   };
   return template.sources.map((source) => samples[source]);
 }

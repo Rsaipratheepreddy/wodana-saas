@@ -109,10 +109,75 @@ async def test_oversized_push_is_not_retried() -> None:
 class FakeWhatsApp:
     def __init__(self) -> None:
         self.requests: list[dict] = []
+        self.connections: list[str | None] = []
+        self.uploads: list[tuple[bytes, str, str] | None] = []
 
-    async def send_whatsapp_notification(self, _workspace: str, request: object) -> dict:
+    async def send_whatsapp_notification(
+        self,
+        _workspace: str,
+        request: object,
+        connection: str | None = None,
+        upload: tuple[bytes, str, str] | None = None,
+    ) -> dict:
         self.requests.append(request.payload)  # type: ignore[attr-defined]
+        self.connections.append(connection)
+        self.uploads.append(upload)
         return {"id": "wamid.accepted", "status": "accepted"}
+
+
+class FakeCoreFiles:
+    def __init__(self) -> None:
+        self.read: list[str] = []
+
+    async def attachment_content(self, _workspace: str, attachment: str) -> tuple[bytes, str]:
+        self.read.append(attachment)
+        return b"%PDF-1.7 quote", "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_a_chat_file_goes_from_the_chats_number_uploaded_then_sent_with_its_caption() -> None:
+    providers, core = FakeWhatsApp(), FakeCoreFiles()
+    adapter = ConnectedProviderAdapter(core, object(), providers)  # type: ignore[arg-type]
+    number = "55555555-5555-4555-8555-555555555555"
+    result = await adapter.deliver(DeliveryJob.model_validate({
+        "id": NOTIFICATION_ID, "workspaceId": WORKSPACE_ID, "attempt": 1, "channel": "whatsapp",
+        "body": "Your quote", "destination": {"normalizedValue": "+15551234567"},
+        "connectionId": number,
+        "media": {"attachmentId": USER_ID, "kind": "document", "mimeType": "application/pdf",
+                  "fileName": "Quote V2.pdf", "caption": "Your quote"},
+    }))
+    assert result.result == "accepted"
+    assert core.read == [USER_ID]
+    assert providers.connections == [number]
+    assert providers.uploads == [(b"%PDF-1.7 quote", "application/pdf", "Quote V2.pdf")]
+    assert providers.requests[0] == {
+        "to": "+15551234567", "optInConfirmed": True, "mediaType": "document",
+        "caption": "Your quote", "filename": "Quote V2.pdf",
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_voice_note_has_no_caption_and_a_reply_without_a_number_uses_the_default() -> None:
+    providers, core = FakeWhatsApp(), FakeCoreFiles()
+    adapter = ConnectedProviderAdapter(core, object(), providers)  # type: ignore[arg-type]
+    await adapter.deliver(DeliveryJob.model_validate({
+        "id": NOTIFICATION_ID, "workspaceId": WORKSPACE_ID, "attempt": 1, "channel": "whatsapp",
+        "body": "voice.ogg", "destination": {"normalizedValue": "+15551234567"},
+        "media": {"attachmentId": USER_ID, "kind": "audio", "mimeType": "audio/ogg",
+                  "fileName": "voice.ogg", "caption": "ignored"},
+    }))
+    assert providers.connections == [None]
+    assert providers.requests[0] == {
+        "to": "+15551234567", "optInConfirmed": True, "mediaType": "audio"
+    }
+
+
+@pytest.mark.asyncio
+async def test_test_and_unconfigured_delivery_never_fetch_client_files() -> None:
+    for adapter in (DeterministicTestAdapter(), UnconfiguredAdapter()):
+        with pytest.raises(RuntimeError) as failure:
+            await adapter.download_whatsapp_media(WORKSPACE_ID, None, "123")
+        assert getattr(failure.value, "code", None) == "provider_unconfigured"
 
 
 @pytest.mark.asyncio

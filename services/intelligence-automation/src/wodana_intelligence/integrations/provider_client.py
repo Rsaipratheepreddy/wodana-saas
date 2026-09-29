@@ -644,9 +644,78 @@ class ProviderClient:
         )
         return {"id": str(data.get("id", "")), "status": str(data.get("status", "PENDING"))}
 
+    async def upload_media(
+        self, credential: ProviderCredential, body: bytes, mime_type: str, filename: str
+    ) -> str:
+        """Uploads a file to the sending number; the answer is the media id a message names."""
+        url, query, headers = self._signed(
+            credential, f"/{credential.configuration['phoneNumberId']}/media", None
+        )
+        data = await self.request(
+            "POST",
+            url,
+            params=query,
+            headers=headers,
+            data={"messaging_product": "whatsapp", "type": mime_type},
+            files={"file": (filename, body, mime_type)},
+        )
+        media_id = str(data.get("id") or "")
+        if not media_id:
+            raise IntegrationFlowError(
+                "provider_invalid_response", "WhatsApp did not return a media id", 502
+            )
+        return media_id
+
+    async def download_media(
+        self, credential: ProviderCredential, media_id: str, max_bytes: int
+    ) -> tuple[bytes, str]:
+        """A client's file: the media id's short-lived URL, then its bytes with the same token."""
+        metadata = await self.api(credential, "GET", f"/{media_id}")
+        url = str(metadata.get("url", ""))
+        if not url.startswith("https://"):
+            raise IntegrationFlowError("media_unavailable", "WhatsApp media is unavailable", 404)
+        declared = int(metadata.get("file_size") or 0)
+        if declared > max_bytes:
+            raise IntegrationFlowError("media_too_large", "WhatsApp media is too large", 413)
+        response = await self.http.get(
+            url, headers={"Authorization": f"Bearer {credential.access_token}"}
+        )
+        if response.is_error:
+            raise IntegrationFlowError(
+                "media_download_failed",
+                "WhatsApp media could not be downloaded",
+                response.status_code,
+            )
+        if len(response.content) > max_bytes:
+            raise IntegrationFlowError("media_too_large", "WhatsApp media is too large", 413)
+        return response.content, str(metadata.get("mime_type") or "application/octet-stream")
+
     async def send_template(
         self, credential: ProviderCredential, payload: WhatsAppMessageRequest
     ) -> dict[str, Any]:
+        if payload.media_type:
+            if not payload.media_id:
+                raise IntegrationFlowError(
+                    "media_missing", "Upload the file before sending it", 409
+                )
+            media: dict[str, Any] = {"id": payload.media_id}
+            if payload.caption:
+                media["caption"] = payload.caption
+            if payload.filename and payload.media_type == "document":
+                media["filename"] = payload.filename
+            data = await self.api(
+                credential,
+                "POST",
+                f"/{credential.configuration['phoneNumberId']}/messages",
+                json={
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": payload.to.lstrip("+"),
+                    "type": payload.media_type,
+                    payload.media_type: media,
+                },
+            )
+            return {"id": data["messages"][0]["id"], "status": "accepted"}
         if payload.text:
             data = await self.api(
                 credential,
