@@ -32,6 +32,7 @@ import { HandoverService } from "../site/handover.service";
 import { WarrantyService } from "../site/warranty.service";
 import { processWarrantyExpiry } from "../site/site-reminders";
 import { processSiteReports } from "../site/site-reminders";
+import { processDailyProgressAutoSend, processWeeklyRollups } from "../site/progress-delivery";
 import { PayablesService } from "../purchasing/payables.service";
 import { ProjectMoneyService } from "./project-money.service";
 import { processProjectBudgets } from "./project-money";
@@ -2470,6 +2471,192 @@ integration("projects core (plan §6.10)", () => {
       await w.client.query("DELETE FROM site_reports WHERE project_id = $1 AND report_date = (now() AT TIME ZONE 'Asia/Dubai')::date - 1", [projectId]);
       expect((await processSiteReports(w.client, w.workspaceId)).sent).toBeGreaterThanOrEqual(1);
       expect((await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'site.report_overdue'", [w.workspaceId])).rows).toEqual([{ id: w.manager }]);
+    });
+  });
+
+  it("runs daily progress: today's plan onto the work, photos by room, issues raised as real work, a review, approve & send with a client card that carries nothing internal, the late reminder, D-40 and the roll-up", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      await core.command(actor, w.workspaceId, projectId, { action: "set_member", role: "site_supervisor", membershipId: w.designerMembership, version: detail.project.version });
+      const today = await workspaceToday(w);
+      const yesterday = plusDays(today, -1);
+      // Every day is worked but tomorrow's weekday: today is the last working day of the week (the roll-up's day).
+      const rest = new Date(`${plusDays(today, 1)}T00:00:00Z`).getUTCDay();
+      await w.client.query("INSERT INTO hrms_calendars (workspace_id, name, timezone, working_days) VALUES ($1, 'Site', 'Asia/Dubai', $2::int[])", [w.workspaceId, [0, 1, 2, 3, 4, 5, 6].filter((day) => day !== rest)]);
+      const planner = w.work(w.manager);
+      const carcasses = randomUUID(), doors = randomUUID(), worktop = randomUUID(), design = randomUUID();
+      await planner.command(actor, w.workspaceId, projectId, { action: "create", id: carcasses, title: "Fit kitchen carcasses", startDate: today, dueDate: plusDays(today, 2) });
+      await planner.command(actor, w.workspaceId, projectId, { action: "create", id: doors, title: "Hang wardrobe doors", startDate: plusDays(today, -3), dueDate: yesterday });
+      await planner.command(actor, w.workspaceId, projectId, { action: "create", id: worktop, title: "Template the worktop", startDate: plusDays(today, 3), dueDate: plusDays(today, 4) });
+      await planner.command(actor, w.workspaceId, projectId, { action: "create", id: design, title: "Plan the lighting", startDate: today });
+      await planner.command(actor, w.workspaceId, projectId, { action: "create", id: randomUUID(), title: "Choose the switches", parentId: design, startDate: today });
+      const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-progress-")) }));
+      const as = (userId: string, permissions = ["projects.view"]) => new SiteService({
+        asMember: async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          await w.client.query("SAVEPOINT progress"); try { const result = await fn(w.client, { userId }); await w.client.query("RELEASE SAVEPOINT progress"); return result; }
+          catch (error) { await w.client.query("ROLLBACK TO SAVEPOINT progress"); throw error; } },
+        hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never, storage);
+      const supervisor = as(w.designer), pm = as(w.manager);
+
+      // Today's planned work: running and late tasks (never a parent with subtasks, never tomorrow's), late first.
+      let site = await supervisor.state(actor, w.workspaceId, projectId);
+      expect(site.plan.today.map((task) => [task.title, task.overdue])).toEqual([["Hang wardrobe doors", true], ["Choose the switches", false], ["Fit kitchen carcasses", false]]);
+      // Tomorrow isn't worked here: the next working day's open work.
+      expect(site.plan.tomorrow.day).toBe(plusDays(today, 2));
+      expect(site.plan.tomorrow.tasks.map((task) => task.title)).toEqual(["Hang wardrobe doors", "Choose the switches", "Fit kitchen carcasses"]);
+      expect(site.dueTime).toBe("18:00");
+
+      // The day, as the supervisor writes it (a day late, so today's reminder still has something to chase).
+      const report = randomUUID(), internalIssue = randomUUID(), clientNote = randomUUID();
+      const kitchen = (await w.client.query<{ id: string }>("SELECT id FROM pre_project_rooms WHERE workspace_id = $1 AND case_id = $2 AND name = 'Kitchen'", [w.workspaceId, w.caseId])).rows[0].id;
+      site = await supervisor.command(actor, w.workspaceId, projectId, { id: report, action: "save_report", reportDate: yesterday, workforce: [{ trade: "Carpenters", people: 3, hours: 8 }],
+        notes: "Ravi left early; cost overrun of 500 on screws.", lines: [],
+        tasks: [{ workItemId: carcasses, progress: 100 }, { workItemId: doors, progress: 50, note: "Hinges swapped" }],
+        next: [{ workItemId: worktop }, { title: "Clean the kitchen for the client's visit" }],
+        materials: [{ direction: "received", description: "Marble slab from the yard", quantity: "2", unit: "pcs" }],
+        issues: [{ id: internalIssue, severity: "major", description: "Tile batch cracked by the supplier", internal: true },
+          { id: clientNote, severity: "minor", description: "Wardrobe handles arrive on Thursday", internal: false }] });
+      let mine = site.reports.find((row) => row.id === report)!;
+      expect(mine.workforce).toEqual([{ trade: "Carpenters", people: 3, hours: "8.00" }]);
+      expect(mine.tasks.map((task) => [task.title, task.progress, task.previous])).toEqual([["Fit kitchen carcasses", 100, null], ["Hang wardrobe doors", 50, null]]);
+      await expect(supervisor.command(actor, w.workspaceId, projectId, { id: randomUUID(), action: "save_report", reportDate: today, tasks: [{ workItemId: design, progress: 50 }] }))
+        .rejects.toThrow(/has subtasks: report on those instead/);
+      const png = { buffer: await sharp({ create: { width: 8, height: 8, channels: 3, background: "#8a8a8a" } }).png().toBuffer(), originalname: "before.png", mimetype: "image/png", size: 0 };
+      const jpg = { buffer: await sharp({ create: { width: 8, height: 8, channels: 3, background: "#b0b0b0" } }).jpeg().toBuffer(), originalname: "after.jpg", mimetype: "image/jpeg", size: 0 };
+      const before = randomUUID(), after = randomUUID();
+      await supervisor.uploadPhoto(actor, w.workspaceId, projectId, report, before, png, { areaId: kitchen, phase: "before", pairId: after });
+      site = await supervisor.uploadPhoto(actor, w.workspaceId, projectId, report, after, jpg, { areaId: kitchen, phase: "after", pairId: before });
+      mine = site.reports.find((row) => row.id === report)!;
+      expect(mine.photos.map((photo) => [photo.phase, photo.pairId, photo.areaId])).toEqual([["before", after, kitchen], ["after", before, kitchen]]);
+
+      // The cracked tiles become a snag on the plan (once, whatever the retries).
+      site = await supervisor.command(actor, w.workspaceId, projectId, { action: "raise_issue", issueId: internalIssue, kind: "snag" });
+      site = await supervisor.command(actor, w.workspaceId, projectId, { action: "raise_issue", issueId: internalIssue, kind: "snag" });
+      const raised = site.reports.find((row) => row.id === report)!.issues.find((issue) => issue.id === internalIssue)!;
+      expect(raised).toMatchObject({ raised: "snag" });
+      expect((await w.client.query("SELECT type, severity, title FROM work_items WHERE workspace_id = $1 AND id = $2", [w.workspaceId, raised.workItemId])).rows)
+        .toEqual([{ type: "snag", severity: "major", title: "Tile batch cracked by the supplier" }]);
+
+      // Submitted: the progress lands on the plan, the best photos are picked, and the client's words are written from the facts.
+      mine = site.reports.find((row) => row.id === report)!;
+      site = await supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: report, version: mine.version });
+      mine = site.reports.find((row) => row.id === report)!;
+      expect((await w.client.query("SELECT title, status, progress FROM work_items WHERE workspace_id = $1 AND id = ANY($2::uuid[]) ORDER BY title", [w.workspaceId, [carcasses, doors]])).rows)
+        .toEqual([{ title: "Fit kitchen carcasses", status: "done", progress: 100 }, { title: "Hang wardrobe doors", status: "in_progress", progress: 50 }]);
+      expect(mine).toMatchObject({ status: "submitted", summarySource: "template", heroPhotoId: after, delivery: "pending", late: true });
+      expect(mine.clientSummary).toContain("Today the team finished Fit kitchen carcasses.");
+      expect(mine.photos.filter((photo) => photo.forClient).map((photo) => photo.id).sort()).toEqual([after, before].sort());
+      expect((await w.client.query("SELECT recipient_id AS id, deep_link AS link FROM notifications WHERE workspace_id = $1 AND event_type = 'site.report_waiting'", [w.workspaceId])).rows)
+        .toEqual([{ id: w.manager, link: `/workspace/projects/${projectId}/site?report=${report}` }]);
+
+      // The manager edits the words and hides the doors; the supervisor can't review their own day.
+      await expect(supervisor.command(actor, w.workspaceId, projectId, { action: "review", reportId: report, version: mine.version, summary: "x" }))
+        .rejects.toThrow("Only the project manager reviews what the client sees.");
+      const doorsRow = mine.tasks.find((task) => task.workItemId === doors)!;
+      site = await pm.command(actor, w.workspaceId, projectId, { action: "review", reportId: report, version: mine.version, summary: "The kitchen carcasses are in and level. Next we template the worktop.",
+        tasks: [{ id: doorsRow.id, hidden: true }] });
+      mine = site.reports.find((row) => row.id === report)!;
+      expect(mine.summarySource).toBe("edited");
+
+      // Approve & send: the client's card is frozen as it went, with nothing internal in it, and the client is told by branded email.
+      await w.client.query("INSERT INTO client_portal_settings (workspace_id, slug, enabled) VALUES ($1, $2, true)", [w.workspaceId, `studio-${w.workspaceId.slice(0, 8)}`]);
+      await w.client.query("INSERT INTO client_portal_grants (workspace_id, case_id, name, phone, role, email) VALUES ($1, $2, 'Maya Client', '+10000000001', 'approver', 'maya@client.example')", [w.workspaceId, w.caseId]);
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "approve_send", reportId: report, version: mine.version - 1 })).rejects.toThrow("This report changed elsewhere.");
+      site = await pm.command(actor, w.workspaceId, projectId, { action: "approve_send", reportId: report, version: mine.version });
+      mine = site.reports.find((row) => row.id === report)!;
+      expect(mine).toMatchObject({ status: "approved", delivery: "sent", sentAutomatically: false, sentByName: "Omar Manager" });
+      const card = (await w.client.query<{ view: Record<string, unknown> }>("SELECT client_view AS view FROM site_reports WHERE workspace_id = $1 AND id = $2", [w.workspaceId, report])).rows[0].view;
+      expect(Object.keys(card).sort()).toEqual(["advanced", "brand", "completed", "date", "hero", "next", "noWork", "notes", "photos", "project", "reportId", "summary"]);
+      expect(card).toMatchObject({ summary: "The kitchen carcasses are in and level. Next we template the worktop.", completed: ["Fit kitchen carcasses"], advanced: [],
+        next: ["Template the worktop", "Clean the kitchen for the client's visit"], notes: ["Wardrobe handles arrive on Thursday"], hero: { id: after, area: "Kitchen", phase: "after", pairId: before } });
+      const words = JSON.stringify(card);
+      for (const internal of ["Ravi", "overrun", "Carpenters", "Tile batch", "Marble slab", "Hinges", "Hang wardrobe doors", "Omar", "Dana"]) expect(words).not.toContain(internal);
+      expect((await w.client.query("SELECT count(*)::int AS count FROM site_report_photos WHERE workspace_id = $1 AND report_id = $2 AND shared_at IS NOT NULL", [w.workspaceId, report])).rows[0].count).toBe(2);
+      const email = (await w.client.query<{ subject: string; body: string; link: string }>(
+        "SELECT subject, body, deep_link AS link FROM notifications WHERE workspace_id = $1 AND recipient_type = 'portal_contact' AND event_type = 'portal.daily_progress'", [w.workspaceId])).rows;
+      expect(email).toHaveLength(1);
+      expect(email[0].body).toContain("The kitchen carcasses are in and level.");
+      expect(email[0].body).not.toContain("Ravi");
+      expect(email[0].link).toContain(`card=${report}`);
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "send", reportId: report, version: mine.version })).rejects.toThrow("This day already went to the client.");
+      expect((await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'site.report_approved'", [w.workspaceId])).rows).toEqual([{ id: w.designer }]);
+
+      // The new tables are tenant-isolated for the app's role.
+      await w.client.query("SAVEPOINT rls");
+      await w.client.query("SET LOCAL ROLE wodana_app");
+      const tables = ["site_report_tasks", "site_report_next", "site_report_materials", "site_report_issues", "site_report_reactions", "site_report_rollups"];
+      const visible = async () => {
+        const counts: Record<string, number> = {};
+        for (const table of tables) counts[table] = (await w.client.query<{ count: number }>(`SELECT count(*)::int AS count FROM ${table}`)).rows[0].count;
+        return counts;
+      };
+      expect(await visible()).toMatchObject({ site_report_tasks: 2, site_report_next: 2, site_report_materials: 1, site_report_issues: 2 });
+      await w.client.query("SELECT set_config('app.current_workspace_id', $1, true)", [randomUUID()]);
+      expect(Object.values(await visible()).every((count) => count === 0)).toBe(true);
+      await w.client.query("ROLLBACK TO SAVEPOINT rls");
+      await w.client.query("RESET ROLE");
+      await w.client.query("SELECT set_config('app.current_workspace_id', $1, true)", [w.workspaceId]);
+      const guarded = (await w.client.query<{ name: string }>(`SELECT relname AS name FROM pg_class WHERE relname = ANY($1::text[]) AND relrowsecurity AND relforcerowsecurity ORDER BY relname`, [tables])).rows;
+      expect(guarded.map((row) => row.name)).toEqual([...tables].sort());
+
+      // Nobody reported today: from the end-of-day time the supervisor hears it, and an hour later the manager.
+      const minutes = (await w.client.query<{ minutes: number }>("SELECT (extract(hour FROM now() AT TIME ZONE 'Asia/Dubai') * 60 + extract(minute FROM now() AT TIME ZONE 'Asia/Dubai'))::int AS minutes")).rows[0].minutes;
+      await w.client.query("UPDATE workspace_project_settings SET report_due_time = '00:00' WHERE workspace_id = $1", [w.workspaceId]);
+      await processSiteReports(w.client, w.workspaceId);
+      expect((await w.client.query("SELECT recipient_id AS id, body FROM notifications WHERE workspace_id = $1 AND event_type = 'site.report_missing'", [w.workspaceId])).rows)
+        .toEqual([{ id: w.designer, body: "Add today's report before the end of the day." }]);
+      expect((await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'site.report_late'", [w.workspaceId])).rows)
+        .toEqual(minutes >= 60 ? [{ id: w.manager }] : []);
+      await processSiteReports(w.client, w.workspaceId);
+      expect((await w.client.query("SELECT count(*)::int AS count FROM notifications WHERE workspace_id = $1 AND event_type IN ('site.report_missing', 'site.report_late')", [w.workspaceId])).rows[0].count)
+        .toBe(minutes >= 60 ? 2 : 1);
+
+      // D-40: an approved day nobody sent goes after the hours; one kept internal never does; one nobody reviewed only when the firm says so.
+      const day = async (reportDate: string, end: "approve" | "approve_hold" | "submit") => {
+        const id = randomUUID();
+        let state = await supervisor.command(actor, w.workspaceId, projectId, { id, action: "save_report", reportDate, noWorkReason: "Rain all day", next: [{ title: "Back on the carcasses" }] });
+        state = await supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: id, version: state.reports.find((row) => row.id === id)!.version });
+        if (end !== "submit") await pm.command(actor, w.workspaceId, projectId, { action: end, reportId: id, version: state.reports.find((row) => row.id === id)!.version });
+        await w.client.query("UPDATE site_reports SET decided_at = now() - interval '3 hours', submitted_at = now() - interval '3 hours' WHERE workspace_id = $1 AND id = $2", [w.workspaceId, id]);
+        return id;
+      };
+      const unsent = await day(plusDays(today, -2), "approve"), held = await day(plusDays(today, -3), "approve_hold"), pending = await day(plusDays(today, -4), "submit");
+      expect((await processDailyProgressAutoSend(w.client, w.workspaceId)).sent).toBe(0);
+      await w.client.query("UPDATE workspace_project_settings SET client_update_auto_send_hours = 2 WHERE workspace_id = $1", [w.workspaceId]);
+      expect((await processDailyProgressAutoSend(w.client, w.workspaceId)).sent).toBe(1);
+      await w.client.query("UPDATE workspace_project_settings SET auto_send_pending_reports = true WHERE workspace_id = $1", [w.workspaceId]);
+      expect((await processDailyProgressAutoSend(w.client, w.workspaceId)).sent).toBe(1);
+      expect((await processDailyProgressAutoSend(w.client, w.workspaceId)).sent).toBe(0);
+      const states = (await w.client.query<{ id: string; status: string; delivery: string; automatic: boolean; summary: string }>(
+        `SELECT id, status, delivery, sent_automatically AS automatic, client_view->>'summary' AS summary FROM site_reports WHERE workspace_id = $1 AND id = ANY($2::uuid[])`,
+        [w.workspaceId, [unsent, held, pending]])).rows;
+      expect(Object.fromEntries(states.map((row) => [row.id, [row.status, row.delivery, row.automatic]]))).toEqual({
+        [unsent]: ["approved", "sent", true], [held]: ["approved", "internal", false], [pending]: ["submitted", "sent", true] });
+      expect(states.find((row) => row.id === pending)!.summary).toBe("There was no work on site today. Next up: Back on the carcasses.");
+      expect((await w.client.query("SELECT count(*)::int AS count FROM notifications WHERE workspace_id = $1 AND event_type = 'site.report_sent' AND recipient_id = $2", [w.workspaceId, w.manager])).rows[0].count).toBe(2);
+      // A day that already went can't be sent back to the supervisor.
+      const pendingRow = (await pm.state(actor, w.workspaceId, projectId)).reports.find((row) => row.id === pending)!;
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "return", reportId: pending, note: "Wrong day", version: pendingRow.version })).rejects.toThrow("This day already went to the client.");
+
+      // The weekly roll-up (off by default) sends the week's days once, on the week's last working day after its end-of-day time.
+      expect((await processWeeklyRollups(w.client, w.workspaceId)).sent).toBe(0);
+      await w.client.query("UPDATE workspace_project_settings SET weekly_rollup = true WHERE workspace_id = $1", [w.workspaceId]);
+      expect((await processWeeklyRollups(w.client, w.workspaceId)).sent).toBe(1);
+      expect((await processWeeklyRollups(w.client, w.workspaceId)).sent).toBe(0);
+      const rollup = (await w.client.query<{ count: number; digest: string }>("SELECT report_count AS count, digest FROM site_report_rollups WHERE workspace_id = $1", [w.workspaceId])).rows[0];
+      expect(rollup.count).toBe(3);
+      expect(rollup.digest).toContain("Finished this week: Fit kitchen carcasses.");
+      expect((await w.client.query("SELECT count(*)::int AS count FROM notifications WHERE workspace_id = $1 AND event_type = 'portal.weekly_rollup'", [w.workspaceId])).rows[0].count).toBe(1);
+
+      // Home: nothing waits for the manager's review now, and today's missing report shows after the end of the day.
+      const home = await pm.attention(actor, w.workspaceId);
+      expect(home).toMatchObject({ pastDue: true });
+      // The day that went by itself still waits for the manager's approval.
+      expect(home.toReview.map((row) => row.reportId)).toEqual([pending]);
+      expect(home.missing.map((row) => row.projectId)).toEqual([projectId]);
     });
   });
 

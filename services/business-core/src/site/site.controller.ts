@@ -65,11 +65,20 @@ export class SiteController {
     return this.site.command(actor, workspaceId, projectId, input ?? {});
   }
 
+  /** A photo for a report being written, with its room or area, before/after and the photo it pairs with (query). */
   @Post("reports/:reportId/photos/:photoId")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 1 } }))
   upload(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
-    @Param("reportId", ParseUUIDPipe) reportId: string, @Param("photoId", ParseUUIDPipe) photoId: string, @UploadedFile() file: ReferenceUpload) {
-    return this.site.uploadPhoto(actor, workspaceId, projectId, reportId, photoId, file);
+    @Param("reportId", ParseUUIDPipe) reportId: string, @Param("photoId", ParseUUIDPipe) photoId: string, @UploadedFile() file: ReferenceUpload,
+    @Query("area") area?: string, @Query("phase") phase?: string, @Query("pair") pair?: string) {
+    return this.site.uploadPhoto(actor, workspaceId, projectId, reportId, photoId, file, { areaId: area || null, phase: phase || null, pairId: pair || null });
+  }
+
+  /** The client's card for a day: as it would go now, or as it went. */
+  @Get("reports/:reportId/client-view")
+  clientView(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("reportId", ParseUUIDPipe) reportId: string) {
+    return this.site.clientView(actor, workspaceId, projectId, reportId);
   }
 
   @Get("photos/:photoId")
@@ -90,6 +99,10 @@ export class SitesTodayController {
 
   @Get("today")
   today(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.site.sitesToday(actor, workspaceId); }
+
+  /** Home: daily reports waiting for my review, and (after the end-of-day time) running sites without today's report. */
+  @Get("attention")
+  attention(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.site.attention(actor, workspaceId); }
 }
 
 /** Settings → Projects → Warranty: months of warranty for each way of delivering a package. */

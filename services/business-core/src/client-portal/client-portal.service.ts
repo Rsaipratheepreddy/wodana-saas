@@ -21,6 +21,7 @@ import { comment, raiseRequest, readThread } from "./portal-messages";
 import { addInspiration, boardComment, react, removeInspiration } from "./portal-moodboard";
 import { tellStaffClientSignedIn } from "./portal-notices";
 import { invoiceDocument, receiptDocument, reportPayment } from "./portal-payments";
+import { askAboutDay, reactToDay } from "./portal-progress";
 import { isImage, readView, workspaceToday } from "./portal-read";
 import { readPortalSettings, SECTIONS, type PortalSettings, type Section } from "./portal-settings";
 import { findSite, readSite } from "./portal-site";
@@ -37,7 +38,7 @@ const COMMANDS: Record<string, [Handler, Section]> = {
   request_answer: [answerRequest, "decisions"], materials_decision: [decideMaterials, "decisions"], handover_decision: [decideHandover, "decisions"],
   warranty_claim: [claimWarranty, "warranty"], request: [raiseRequest, "messages"], comment: [comment, "messages"], read_thread: [readThread, "messages"],
   react: [react, "moodboard"], board_comment: [boardComment, "moodboard"], add_inspiration: [addInspiration, "moodboard"], remove_inspiration: [removeInspiration, "moodboard"],
-  report_payment: [reportPayment, "payments"], report_issue: [reportIssue, "progress"],
+  report_payment: [reportPayment, "payments"], report_issue: [reportIssue, "progress"], progress_react: [reactToDay, "progress"], progress_question: [askAboutDay, "progress"],
 };
 
 /**
@@ -255,7 +256,7 @@ export class ClientPortalService {
       const row = (await client.query<Omit<Found, "sections">>(
         `SELECT project.case_id AS "caseId", photo.object_key AS "objectKey", photo.preview_key AS "previewKey", photo.mime_type AS "mimeType", photo.original_name AS name
            FROM site_report_photos photo
-           JOIN site_reports report ON report.workspace_id = photo.workspace_id AND report.id = photo.report_id AND report.status = 'approved'
+           JOIN site_reports report ON report.workspace_id = photo.workspace_id AND report.id = photo.report_id AND (report.status = 'approved' OR report.delivery = 'sent')
            JOIN delivery_projects project ON project.workspace_id = report.workspace_id AND project.id = report.project_id
           WHERE photo.workspace_id = $1 AND photo.id = $2 AND photo.shared_at IS NOT NULL`, [workspaceId, id])).rows[0];
       const settings = await readPortalSettings(client, workspaceId);

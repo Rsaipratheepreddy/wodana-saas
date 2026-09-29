@@ -1,5 +1,6 @@
 import { Dec } from "../catalog-core/decimal";
 import { projectBalance } from "../project-core/project-milestones";
+import { readProgress as readWorkProgress } from "../project-core/project-work";
 import type { PoolClient } from "pg";
 import { commercialRepository } from "../commercial/commercial-repository";
 import type { CommercialData } from "../commercial/commercial.types";
@@ -74,7 +75,7 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     unread: 0, latestUpdate: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null, messages: null };
   const commercial = await loadCommercial(db, workspaceId, row.caseId);
   const on = (section: Section) => sections[section];
-  const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files) : null;
+  const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files, grant.id) : null;
   const moodboard = on("moodboard") ? await readMoodboard(db, workspaceId, grant, row.caseId, takesIdeas(row), files) : null;
   const decisions = on("decisions") ? await readDecisions(db, workspaceId, grant, row, commercial, today, definitions, files) : null;
   const payments = on("payments") ? await readPayments(db, workspaceId, row, settings, today) : null;
@@ -82,7 +83,10 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
   const warranty = started && on("warranty") ? await readWarranty(db, workspaceId, row, today) : null;
   const messages = on("messages") ? await readMessages(db, workspaceId, grant, row.caseId, commercial) : null;
   const stage = started ? await readStage(db, workspaceId, row.projectId!, row.projectStatus!, settings) : null;
-  const latestUpdate = progress?.updates[0] ?? null;
+  // The newest word from the team: a written update or the latest day's card.
+  const card = progress?.cards.find((item) => item.summary);
+  const latestUpdate = [progress?.updates[0], card ? { id: card.id, at: card.sentAt, text: card.summary } : undefined]
+    .filter((item): item is { id: string; at: string; text: string } => Boolean(item)).sort((a, b) => (a.at < b.at ? 1 : -1))[0] ?? null;
   const dates = started && settings.progress.dates;
   return {
     ...base, sections: sections as Sections,
@@ -135,7 +139,7 @@ async function readStage(db: Db, workspaceId: string, projectId: string, status:
   return { number: Math.min(index + 1, stages.length), total: stages.length, name: settings.progress.stageNames ? stages[Math.min(index, stages.length - 1)].name : null };
 }
 
-async function readProgress(db: Db, workspaceId: string, row: CaseRow, settings: PortalSettings, running: boolean, files: FilePresence) {
+async function readProgress(db: Db, workspaceId: string, row: CaseRow, settings: PortalSettings, running: boolean, files: FilePresence, grantId: string) {
   const projectId = row.projectId!;
   const stages = (await readStages(db, workspaceId, projectId)).map((stage) => ({
     name: settings.progress.stageNames ? stage.name : null,
@@ -146,17 +150,63 @@ async function readProgress(db: Db, workspaceId: string, row: CaseRow, settings:
     `SELECT id, created_at AS at, note AS text FROM project_status_updates
       WHERE workspace_id = $1 AND project_id = $2 AND shared_at IS NOT NULL AND btrim(note) <> '' ORDER BY created_at DESC LIMIT 50`, [workspaceId, projectId])).rows
     .map((update) => ({ id: update.id, at: new Date(update.at).toISOString(), text: update.text })) : [];
+  // Photos shared on their own from approved days before daily cards (a day that went as a card shows in its card).
   const shared = settings.progress.photos ? (await db.query<{ id: string; on: string; objectKey: string; previewKey: string | null }>(
     `SELECT photo.id, report.report_date::text AS on, photo.object_key AS "objectKey", photo.preview_key AS "previewKey" FROM site_report_photos photo
        JOIN site_reports report ON report.workspace_id = photo.workspace_id AND report.id = photo.report_id
-      WHERE photo.workspace_id = $1 AND report.project_id = $2 AND report.status = 'approved' AND photo.shared_at IS NOT NULL AND photo.mime_type LIKE 'image/%'
+      WHERE photo.workspace_id = $1 AND report.project_id = $2 AND report.status = 'approved' AND report.delivery <> 'sent' AND photo.shared_at IS NOT NULL AND photo.mime_type LIKE 'image/%'
       ORDER BY report.report_date DESC, photo.created_at LIMIT 240`, [workspaceId, projectId])).rows : [];
   // Only photos whose file is there: a missing file is left out (and logged), never a broken picture.
   const photos = await files.present(shared);
   const days = new Map<string, Array<{ id: string }>>();
   for (const photo of photos) days.set(photo.on, [...(days.get(photo.on) ?? []), { id: photo.id }]);
   return { stages, updates, photoDays: [...days].map(([on, list]) => ({ on, photos: list })),
+    ...(await readDailyCards(db, workspaceId, projectId, grantId, settings, files)),
+    percent: settings.progress.stageNames ? (await readWorkProgress(db, workspaceId, projectId)).project : null,
     issues: await readIssues(db, workspaceId, row.caseId, projectId), canReportIssue: running };
+}
+
+type CardPhoto = { id: string; area: string | null; phase: "before" | "after" | null; pairId: string | null };
+type StoredView = { date: string; summary: string; noWork?: boolean; hero: CardPhoto | null; photos: CardPhoto[]; completed: string[]; advanced: Array<{ title: string; progress: number }>;
+  next: string[]; notes?: string[] };
+
+/**
+ * The daily cards: each day the team sent, exactly as it went (the report's frozen client view), newest first, with
+ * the client's reactions; the week's roll-ups beside them. Words need Updates on, pictures need Photos on, and a
+ * photo whose file isn't there is left out. Every field is named: nothing else of the report is read here.
+ */
+async function readDailyCards(db: Db, workspaceId: string, projectId: string, grantId: string, settings: PortalSettings, files: FilePresence) {
+  if (!settings.progress.updates && !settings.progress.photos) return { cards: [], weeks: [] };
+  const sent = (await db.query<{ id: string; sentAt: string; view: StoredView }>(
+    `SELECT id, sent_at AS "sentAt", client_view AS view FROM site_reports WHERE workspace_id = $1 AND project_id = $2 AND delivery = 'sent' ORDER BY report_date DESC, sent_at DESC LIMIT 60`,
+    [workspaceId, projectId])).rows;
+  const ids = sent.map((row) => row.id);
+  const reactions = (await db.query<{ reportId: string; reaction: "like" | "love"; count: number; mine: boolean }>(
+    `SELECT report_id AS "reportId", reaction, count(*)::int AS count, bool_or(grant_id = $3) AS mine FROM site_report_reactions
+      WHERE workspace_id = $1 AND report_id = ANY($2::uuid[]) GROUP BY report_id, reaction`, [workspaceId, ids, grantId])).rows;
+  const stored = settings.progress.photos ? await files.present((await db.query<{ id: string; objectKey: string; previewKey: string | null }>(
+    `SELECT id, object_key AS "objectKey", preview_key AS "previewKey" FROM site_report_photos WHERE workspace_id = $1 AND report_id = ANY($2::uuid[]) AND shared_at IS NOT NULL`,
+    [workspaceId, ids])).rows) : [];
+  const present = new Set(stored.map((photo) => photo.id));
+  const photo = (item: CardPhoto | null) => (item && present.has(item.id) ? { id: item.id, area: item.area ?? null, phase: item.phase ?? null, pairId: item.pairId && present.has(item.pairId) ? item.pairId : null } : null);
+  const cards = sent.map(({ id, sentAt, view }) => {
+    const pictures = [photo(view.hero), ...(view.photos ?? []).map(photo)].filter((item): item is CardPhoto => Boolean(item));
+    const count = (reaction: "like" | "love") => reactions.find((item) => item.reportId === id && item.reaction === reaction);
+    return {
+      id, date: view.date, sentAt: new Date(sentAt).toISOString(),
+      summary: settings.progress.updates ? view.summary : "",
+      noWork: Boolean(view.noWork),
+      hero: pictures[0] ?? null, photos: pictures.slice(1),
+      completed: settings.progress.updates ? view.completed ?? [] : [], advanced: settings.progress.updates ? view.advanced ?? [] : [],
+      next: settings.progress.updates ? view.next ?? [] : [], notes: settings.progress.updates ? view.notes ?? [] : [],
+      reactions: { like: count("like")?.count ?? 0, love: count("love")?.count ?? 0 },
+      mine: { like: Boolean(count("like")?.mine), love: Boolean(count("love")?.mine) },
+    };
+  }).filter((card) => card.summary || card.hero);
+  const weeks = settings.progress.updates ? (await db.query<{ id: string; weekEnding: string; digest: string }>(
+    `SELECT id, week_ending::text AS "weekEnding", digest FROM site_report_rollups WHERE workspace_id = $1 AND project_id = $2 ORDER BY week_ending DESC LIMIT 20`,
+    [workspaceId, projectId])).rows : [];
+  return { cards, weeks };
 }
 
 async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: CaseRow, commercial: CommercialData, today: string, definitions: DefinitionSource,

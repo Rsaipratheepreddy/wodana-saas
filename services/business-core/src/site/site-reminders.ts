@@ -1,20 +1,26 @@
 import type { PoolClient } from "pg";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { readCalendar, workdays } from "../project-core/work-calendar";
+import { readProgressSettings } from "./progress-delivery";
 
 type Db = Pick<PoolClient, "query">;
 
 /**
- * The daily look at sites, in one workspace's tenant transaction. While site work is running on a
- * project and the day is worked: from 19:00 in the workspace's time zone, the site supervisor is
- * reminded when nobody has submitted today's report; and the project manager hears when yesterday (a
- * worked day) ended without one. Once per project and day.
+ * The look at sites, in one workspace's tenant transaction (every 15 minutes). While site work is running on a
+ * project and the day is worked (the workspace's working week and holidays): from the end-of-day time (Settings →
+ * Projects, 18:00 by default, in the workspace's time zone) the site supervisor is reminded when nobody has
+ * submitted today's report; an hour later the project manager is told; and a worked day that ended without one
+ * reaches the manager the next day. Once per project, day and person.
  */
 export async function processSiteReports(db: Db, workspaceId: string) {
-  const now = (await db.query<{ today: string; hour: number }>(
+  const now = (await db.query<{ today: string; minutes: number }>(
     `SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today,
-            extract(hour FROM now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::int AS hour FROM workspaces WHERE id = $1`, [workspaceId])).rows[0];
+            (extract(hour FROM now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC')) * 60
+              + extract(minute FROM now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC')))::int AS minutes FROM workspaces WHERE id = $1`, [workspaceId])).rows[0];
   if (!now) return { sent: 0 };
+  const { dueTime } = await readProgressSettings(db, workspaceId);
+  const [dueHour, dueMinute] = dueTime.split(":").map(Number);
+  const due = dueHour * 60 + dueMinute;
   const math = workdays(await readCalendar(db, workspaceId));
   const yesterday = new Date(Date.parse(`${now.today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
   // Site work starts by itself with the first delivery to the project's site (or its first report).
@@ -35,29 +41,38 @@ export async function processSiteReports(db: Db, workspaceId: string) {
       WHERE project.workspace_id = $1 AND project.status = 'active' AND project.site_started_on IS NOT NULL AND project.site_started_on <= $2::date
         AND (project.site_finished_on IS NULL OR project.site_finished_on >= $3::date)`, [workspaceId, now.today, yesterday])).rows;
   let sent = 0;
-  const people = async (projectId: string, supervisor: boolean) => (await db.query<{ userId: string }>(
-    `SELECT DISTINCT membership.user_id AS "userId" FROM project_assignments assignment
-       JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
-      WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND (CASE WHEN $3 THEN 'site_supervisor' = ANY(assignment.role_keys) ELSE assignment.is_manager END)`,
-    [workspaceId, projectId, supervisor])).rows.map((row) => row.userId);
+  // The supervisor named on the project; without one, whoever reported on it in the last two weeks.
+  const people = async (projectId: string, supervisor: boolean) => {
+    const named = (await db.query<{ userId: string }>(
+      `SELECT DISTINCT membership.user_id AS "userId" FROM project_assignments assignment
+         JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
+        WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND (CASE WHEN $3 THEN 'site_supervisor' = ANY(assignment.role_keys) ELSE assignment.is_manager END)`,
+      [workspaceId, projectId, supervisor])).rows.map((row) => row.userId);
+    if (named.length || !supervisor) return named;
+    return (await db.query<{ userId: string }>(
+      `SELECT DISTINCT report.author_id AS "userId" FROM site_reports report
+         JOIN workspace_memberships membership ON membership.workspace_id = report.workspace_id AND membership.user_id = report.author_id AND membership.status = 'active'
+        WHERE report.workspace_id = $1 AND report.project_id = $2 AND report.report_date >= $3::date - 14`, [workspaceId, projectId, now.today])).rows.map((row) => row.userId);
+  };
   const reported = async (projectId: string, day: string) => Boolean((await db.query(
     `SELECT 1 FROM site_reports WHERE workspace_id = $1 AND project_id = $2 AND report_date = $3 AND status IN ('submitted', 'approved') LIMIT 1`, [workspaceId, projectId, day])).rowCount);
+  // `key` names the notice once per project, day and person (the same-day and next-day notices to the manager share it).
+  const tell = async (userIds: string[], code: string, project: { id: string; title: string; clientName: string }, note: string, day: string, key = code) => {
+    for (const userId of userIds) {
+      const result = await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code, eventType: code,
+        variables: { title: project.title, clientName: project.clientName, actor: "", note }, deepLink: `/workspace/projects/${project.id}/site`,
+        idempotencyKey: `${key}:${project.id}:${day}:${userId}` });
+      if (result.queued) sent += 1;
+    }
+  };
   for (const project of projects) {
     const running = (day: string) => day >= project.started && (!project.finished || day <= project.finished) && math.isWorking(day);
-    if (now.hour >= 19 && running(now.today) && !(await reported(project.id, now.today)))
-      for (const userId of await people(project.id, true)) {
-        const result = await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: "site.report_missing", eventType: "site.report_missing",
-          variables: { title: project.title, clientName: project.clientName, actor: "", note: "" }, deepLink: `/workspace/projects/${project.id}/site`,
-          idempotencyKey: `site.report_missing:${project.id}:${now.today}:${userId}` });
-        if (result.queued) sent += 1;
-      }
+    const late = running(now.today) && now.minutes >= due && !(await reported(project.id, now.today));
+    if (late) await tell(await people(project.id, true), "site.report_missing", project, `Due by ${dueTime}.`, now.today);
+    // An hour after the end of the day, the project manager (keyed like the next morning's notice, so it comes once).
+    if (late && now.minutes >= due + 60) await tell(await people(project.id, false), "site.report_late", project, `Nobody submitted today's report by ${dueTime}.`, now.today, "site.report_overdue");
     if (running(yesterday) && !(await reported(project.id, yesterday)))
-      for (const userId of await people(project.id, false)) {
-        const result = await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: "site.report_overdue", eventType: "site.report_overdue",
-          variables: { title: project.title, clientName: project.clientName, actor: "", note: `Nobody submitted a report for ${yesterday}.` }, deepLink: `/workspace/projects/${project.id}/site`,
-          idempotencyKey: `site.report_overdue:${project.id}:${yesterday}:${userId}` });
-        if (result.queued) sent += 1;
-      }
+      await tell(await people(project.id, false), "site.report_overdue", project, `Nobody submitted a report for ${yesterday}.`, yesterday);
   }
   return { sent };
 }

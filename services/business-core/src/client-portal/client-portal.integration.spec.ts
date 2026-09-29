@@ -49,6 +49,14 @@ projects[].progress projects[].progress.stages projects[].progress.stages[] proj
 projects[].progress.stages[].startedOn projects[].progress.stages[].finishedOn projects[].progress.updates projects[].progress.updates[]
 projects[].progress.updates[].id projects[].progress.updates[].at projects[].progress.updates[].text projects[].progress.photoDays projects[].progress.photoDays[]
 projects[].progress.photoDays[].on projects[].progress.photoDays[].photos projects[].progress.photoDays[].photos[] projects[].progress.photoDays[].photos[].id
+projects[].progress.percent projects[].progress.weeks projects[].progress.weeks[].id projects[].progress.weeks[].weekEnding projects[].progress.weeks[].digest
+projects[].progress.cards projects[].progress.cards[].id projects[].progress.cards[].date projects[].progress.cards[].sentAt projects[].progress.cards[].summary
+projects[].progress.cards[].noWork projects[].progress.cards[].hero projects[].progress.cards[].hero.id projects[].progress.cards[].hero.area projects[].progress.cards[].hero.phase
+projects[].progress.cards[].hero.pairId projects[].progress.cards[].photos projects[].progress.cards[].photos[].id projects[].progress.cards[].photos[].area
+projects[].progress.cards[].photos[].phase projects[].progress.cards[].photos[].pairId projects[].progress.cards[].completed projects[].progress.cards[].advanced
+projects[].progress.cards[].advanced[].title projects[].progress.cards[].advanced[].progress projects[].progress.cards[].next projects[].progress.cards[].notes
+projects[].progress.cards[].reactions projects[].progress.cards[].reactions.like projects[].progress.cards[].reactions.love projects[].progress.cards[].mine
+projects[].progress.cards[].mine.like projects[].progress.cards[].mine.love
 projects[].decisions projects[].decisions.quotes projects[].decisions.quotes[] projects[].decisions.quotes[].id projects[].decisions.quotes[].number
 projects[].decisions.quotes[].kind projects[].decisions.quotes[].direction projects[].decisions.quotes[].status projects[].decisions.quotes[].title
 projects[].decisions.quotes[].currency projects[].decisions.quotes[].validUntil projects[].decisions.quotes[].issuedAt projects[].decisions.quotes[].total
@@ -611,6 +619,23 @@ integration("client portal (plan §6.22)", () => {
       await pmSite.command(actor, w.workspaceId, projectId, { action: "approve", reportId: report, version: mine.version });
       reports = await pmSite.command(actor, w.workspaceId, projectId, { action: "share_photo", photoId: shown, shared: true });
       expect(Object.fromEntries(reports.reports.find((row) => row.id === report)!.photos.map((photo) => [photo.id, photo.shared]))).toEqual({ [shown]: true, [hidden]: false });
+      // A day sent as a daily card: its words, its picked photo and what the team chose to tell — never its notes, crew, materials or internal issues.
+      const day = randomUUID(), cardPhoto = randomUUID();
+      let sent = await site.command(actor, w.workspaceId, projectId, { id: day, action: "save_report", reportDate: "2026-09-26", notes: "INTERNAL-NOTE crew",
+        workforce: [{ trade: "INTERNAL-CREW", people: 2 }], materials: [{ direction: "used", description: "INTERNAL-MATERIAL" }],
+        issues: [{ id: randomUUID(), severity: "major", description: "INTERNAL-ISSUE cracked", internal: true }, { id: randomUUID(), severity: "minor", description: "Handles arrive Thursday", internal: false }] });
+      sent = await site.uploadPhoto(actor, w.workspaceId, projectId, day, cardPhoto, png, { areaId: w.kitchen, phase: "after" });
+      sent = await site.command(actor, w.workspaceId, projectId, { action: "submit", reportId: day, version: sent.reports.find((row) => row.id === day)!.version });
+      await pmSite.command(actor, w.workspaceId, projectId, { action: "approve_send", reportId: day, version: sent.reports.find((row) => row.id === day)!.version });
+      const early = await signIn(w, APPROVER);
+      // The client reacts and asks about the day: the manager hears both, and the question is a conversation with the team.
+      await w.portal.command(w.slug, early, { commandId: randomUUID(), action: "progress_react", caseId: w.caseId, reportId: day, reaction: "love" });
+      const asked = await w.portal.command(w.slug, early, { commandId: randomUUID(), action: "progress_question", caseId: w.caseId, reportId: day, text: "Is the worktop sealed?" }) as { requestId?: string };
+      expect(asked.requestId).toEqual(expect.any(String));
+      expect((await w.client.query("SELECT event_type AS type, channel FROM notifications WHERE workspace_id = $1 AND recipient_id = $2 AND event_type IN ('site.client_reacted', 'site.client_question') ORDER BY event_type, channel",
+        [w.workspaceId, w.manager])).rows).toEqual([{ type: "site.client_question", channel: "email" }, { type: "site.client_question", channel: "in_app" }, { type: "site.client_reacted", channel: "in_app" }]);
+      const again = await w.portal.view(w.slug, early);
+      expect(again.projects[0].progress!.cards[0]).toMatchObject({ reactions: { like: 0, love: 1 }, mine: { like: false, love: true } });
       // A tax invoice for the advance, paid by a verified receipt; the second milestone has a pay link.
       const finance = new ReceivablesService({ withPermission: async (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => w.savepoint(async () => fn(w.client, { userId: w.manager })),
         hasPermission: async () => true } as never);
@@ -637,12 +662,16 @@ integration("client portal (plan §6.22)", () => {
       expect(unlisted).toEqual([]);
       const text = JSON.stringify(view);
       for (const secret of ["424242", "999111", "Secret Supplier", "SKU-SECRET", "INTERNAL-NOTE", "INTERNAL-RISK", "INTERNAL-DESIGN-NOTE", "INTERNAL-EVIDENCE", "INTERNAL-PROOF",
-        "INTERNAL-COMMENT", "INTERNAL-ERROR", "INTERNAL-SITE", "SECRET-PROVIDER", "TT-SECRET", "Dana Designer", "at_risk", w.designer, hidden])
+        "INTERNAL-COMMENT", "INTERNAL-ERROR", "INTERNAL-SITE", "SECRET-PROVIDER", "TT-SECRET", "Dana Designer", "at_risk", w.designer, hidden,
+        "INTERNAL-CREW", "INTERNAL-MATERIAL", "INTERNAL-ISSUE"])
         expect(text, secret).not.toContain(secret);
+      expect(view.projects[0].progress!.cards).toEqual([expect.objectContaining({ id: day, date: "2026-09-26", noWork: false, notes: ["Handles arrive Thursday"],
+        hero: { id: cardPhoto, area: "Kitchen", phase: "after", pairId: null }, photos: [], reactions: { like: 0, love: 1 }, mine: { like: false, love: true } })]);
 
       const project = view.projects[0];
       expect(project).toMatchObject({ id: w.caseId, title: "Villa 12", role: "approver", status: "active", paused: false, manager: "Omar Manager",
-        stage: { number: 1, total: expect.any(Number), name: expect.any(String) }, latestUpdate: { text: "Cabinets are in the factory." } });
+        stage: { number: 1, total: expect.any(Number), name: expect.any(String) }, latestUpdate: { text: "The team was on site today, working in Kitchen." } });
+      // The latest word from the team is the day sent last (written updates and daily cards alike).
       expect(project.progress!.updates.map((update) => update.text)).toEqual(["Cabinets are in the factory."]);
       expect(project.progress!.photoDays).toEqual([{ on: "2026-09-25", photos: [{ id: shown }] }]);
       expect(project.decisions!.materials).toMatchObject({ number: 1, status: "sent", canDecide: true,
@@ -658,7 +687,7 @@ integration("client portal (plan §6.22)", () => {
       expect(printed).toMatchObject({ kind: "invoice", invoice: { status: "paid", balance: "0.0000" } });
       expect(JSON.stringify(printed)).not.toMatch(/issuedByName|Omar/);
       expect(project.documents).toEqual([]);
-      expect(project.messages!.requests[0].comments.map((comment) => [comment.text, comment.fromClient])).toEqual([["Yes, we'll add it.", false]]);
+      expect(project.messages!.requests.find((request) => !request.title.startsWith("About the progress"))!.comments.map((comment) => [comment.text, comment.fromClient])).toEqual([["Yes, we'll add it.", false]]);
       expect(project.next.map((step) => step.kind)).toEqual(["materials"]);
       // A viewer reads the same project but decides nothing.
       const viewer = await w.portal.view(w.slug, await signIn(w, VIEWER, "whatsapp").catch(async () => {

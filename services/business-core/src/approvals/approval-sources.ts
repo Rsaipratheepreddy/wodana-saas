@@ -40,6 +40,8 @@ export type ApprovalRow = {
   version: number | null;
   /** The record the decision is sent to when it isn't the row itself (a work order, a case, a project). */
   parentId: string | null;
+  /** A look at what's being approved: a daily report's words for the client, its lead photo and how many photos it has. */
+  preview?: { text: string; photoId: string | null; photos: number } | null;
 };
 
 export type ApprovalContext = {
@@ -210,8 +212,13 @@ const site: Source = async (db, ctx) => {
   if (!all && !ctx.managedProjects.size) return [];
   const scope = all ? null : [...ctx.managedProjects];
   const projectColumns = `project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName"`;
-  const reports = (await db.query<{ id: string; reportDate: string; since: Date; authorId: string; version: number; author: string | null; projectId: string; projectReference: string | null; projectName: string }>(
-    `SELECT report.id, report.report_date::text AS "reportDate", report.submitted_at AS since, report.author_id AS "authorId", report.version, author.display_name AS author, ${projectColumns}
+  const reports = (await db.query<{ id: string; reportDate: string; since: Date; authorId: string; version: number; author: string | null; projectId: string; projectReference: string | null; projectName: string;
+    summary: string; photoId: string | null; photos: number }>(
+    `SELECT report.id, report.report_date::text AS "reportDate", report.submitted_at AS since, report.author_id AS "authorId", report.version, author.display_name AS author, ${projectColumns},
+            report.client_summary AS summary,
+            coalesce(report.hero_photo_id, (SELECT photo.id FROM site_report_photos photo WHERE photo.workspace_id = report.workspace_id AND photo.report_id = report.id
+                                             ORDER BY photo.for_client DESC, photo.position, photo.created_at LIMIT 1)) AS "photoId",
+            (SELECT count(*)::int FROM site_report_photos photo WHERE photo.workspace_id = report.workspace_id AND photo.report_id = report.id) AS photos
        FROM site_reports report JOIN delivery_projects project ON project.workspace_id = report.workspace_id AND project.id = report.project_id
        LEFT JOIN users author ON author.id = report.author_id
       WHERE report.workspace_id = $1 AND report.status = 'submitted' AND ($2::uuid[] IS NULL OR report.project_id = ANY($2::uuid[]))
@@ -236,7 +243,9 @@ const site: Source = async (db, ctx) => {
     ...reports.map((report) => row({
       kind: "site_report", group: "site", id: report.id, parentId: report.projectId, title: report.reportDate, subject: report.author, project: project(report),
       amount: null, currency: null, since: report.since, own: report.authorId === ctx.userId, version: report.version,
-      href: `/workspace/projects/${report.projectId}/site`, decide: { approve: "approve", other: "return", approveNeedsNote: false },
+      // Approving in the row sends the day to the client as reviewed; opening it reviews the client's card first.
+      href: `/workspace/projects/${report.projectId}/site?report=${report.id}`, decide: { approve: "approve_send", other: "return", approveNeedsNote: false },
+      preview: { text: report.summary, photoId: report.photoId, photos: report.photos },
     })),
     ...claims.map((claim) => row({
       kind: "petty_cash", group: "site", id: claim.id, parentId: claim.projectId, title: `PC-${claim.number} · ${claim.description}`, project: project(claim),

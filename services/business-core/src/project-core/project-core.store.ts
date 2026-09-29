@@ -17,6 +17,12 @@ export type ProjectSettings = {
   autoFinish: boolean;
   /** D-40: hours after which a drafted client update nobody sent or discarded goes to the client by itself; null keeps it manual. */
   clientUpdateAutoSendHours: number | null;
+  /** When the day's site report is due (HH:MM, the workspace's time): reminders start then. */
+  reportDueTime: string;
+  /** With "Send by itself" on, daily reports nobody reviewed also go (as written) after its hours. */
+  autoSendPendingReports: boolean;
+  /** The week's sent days go to the client as one digest on the last working day (instead of the weekly draft). */
+  weeklyRollup: boolean;
 };
 
 /** The workspace's project settings, created with the defaults the first time they're read. */
@@ -26,7 +32,9 @@ export async function ensureSettings(db: Db, workspaceId: string): Promise<Proje
   return (await db.query<ProjectSettings>(
     `SELECT require_agreement AS "requireAgreement", require_payment AS "requirePayment", require_approval AS "requireApproval",
             require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version, auto_finish AS "autoFinish",
-            client_update_auto_send_hours AS "clientUpdateAutoSendHours" FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+            client_update_auto_send_hours AS "clientUpdateAutoSendHours", to_char(report_due_time, 'HH24:MI') AS "reportDueTime",
+            auto_send_pending_reports AS "autoSendPendingReports", weekly_rollup AS "weeklyRollup"
+       FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 
 export type TemplateRow = { id: string; name: string; isDefault: boolean; version: number; stages: TemplateStage[] };

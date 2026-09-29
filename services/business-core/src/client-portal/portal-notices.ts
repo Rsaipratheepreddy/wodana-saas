@@ -18,23 +18,29 @@ type Db = Pick<PoolClient, "query">;
  * Nothing goes out while the portal is off, the project is paused, or the section it belongs to is hidden.
  * Each email opens the portal where the thing is.
  */
-export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "team_replied" | "payment_checked" | "issue_triaged" | "payment_due";
+export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "team_replied" | "payment_checked" | "issue_triaged" | "payment_due"
+  | "daily_progress" | "weekly_rollup";
 
 //   team_replied       the team answered them on the moodboard   everyone on the project
 //   payment_checked    finance checked a payment they reported   everyone on the project
 //   issue_triaged      the manager took up or declined an issue  everyone on the project
 //   payment_due        a reminder that a payment is due          everyone on the project
+//   daily_progress     the manager sent a day's progress card    everyone on the project (WhatsApp and email)
+//   weekly_rollup      the week's sent days in one digest        everyone on the project (WhatsApp and email)
 const SECTION: Record<ClientEvent, Section> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress",
-  team_replied: "moodboard", payment_checked: "payments", issue_triaged: "progress", payment_due: "payments" };
+  team_replied: "moodboard", payment_checked: "payments", issue_triaged: "progress", payment_due: "payments", daily_progress: "progress", weekly_rollup: "progress" };
 const TEMPLATE: Record<ClientEvent, string> = {
   quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
   team_replied: "portal.team_replied", payment_checked: "portal.payment_checked", issue_triaged: "portal.issue_triaged", payment_due: "portal.payment_due",
+  daily_progress: "portal.daily_progress", weekly_rollup: "portal.weekly_rollup",
 };
 /** The WhatsApp client message a portal event is (the others go by email only). */
 const WHATSAPP_EVENT: Partial<Record<ClientEvent, StarterEvent>> = {
   quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
-  payment_due: "payments.reminder",
+  payment_due: "payments.reminder", daily_progress: "portal.update_published", weekly_rollup: "portal.update_published",
 };
+/** Events that go by WhatsApp and also by the branded email (each where the client's preferences allow), not one or the other. */
+const BOTH_CHANNELS = new Set<ClientEvent>(["daily_progress", "weekly_rollup"]);
 
 const render = (template: string, variables: Record<string, string>) => template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
 
@@ -66,6 +72,8 @@ export async function tellClients(db: Db, input: {
   if (!effectiveSections(settings, access)[section]) return { queued: 0, reason: "hidden" as const };
   // WhatsApp first when the firm has the event on and an approved template; email to the portal contacts otherwise.
   const whatsappEvent = WHATSAPP_EVENT[input.event];
+  const both = BOTH_CHANNELS.has(input.event);
+  let whatsappSent: string | null = null;
   if (whatsappEvent) {
     const client = await partyOfCase(db, input.workspaceId, input.caseId);
     const whatsapp = await sendClientEvent(db, {
@@ -73,26 +81,29 @@ export async function tellClients(db: Db, input: {
       record: input.record ? { projectId: facts.projectId, ...input.record } : input.event === "invoice_issued" ? { invoiceId: input.recordId, projectId: facts.projectId }
         : input.event === "quote_issued" ? { quoteId: input.recordId.split(":")[0], projectId: facts.projectId } : { projectId: facts.projectId },
     });
-    if (whatsapp.sent) return { queued: 1, reason: null, channel: "whatsapp" as const, messageId: whatsapp.messageId };
-    await recordClientMessageSkipped(db, input.workspaceId, whatsappEvent, input.recordId, whatsapp, true);
+    if (whatsapp.sent && !both) return { queued: 1, reason: null, channel: "whatsapp" as const, messageId: whatsapp.messageId };
+    if (whatsapp.sent) whatsappSent = whatsapp.messageId;
+    else await recordClientMessageSkipped(db, input.workspaceId, whatsappEvent, input.recordId, whatsapp, true);
   }
+  const whatsappOnly = () => ({ queued: 1, reason: null, channel: "whatsapp" as const, messageId: whatsappSent!, names: [] as string[] });
   const recipients = (await db.query<{ id: string; name: string }>(
     `SELECT id, name FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND active AND email IS NOT NULL AND ($3::boolean = false OR test_contact)
        AND ($4::boolean = false OR role = 'approver') ORDER BY created_at`,
     [input.workspaceId, input.caseId, input.demo ?? (process.env.PORTAL_DEMO_OTP === "true" && process.env.NODE_ENV !== "production"), input.event === "decision_waiting"])).rows;
-  if (!recipients.length) return { queued: 0, reason: "no_contact" as const };
+  if (!recipients.length) return whatsappSent ? whatsappOnly() : { queued: 0, reason: "no_contact" as const };
   const template = (await db.query<{ id: string; subject: string | null; body: string }>(
     `SELECT id, subject_template AS subject, body_template AS body FROM notification_templates
       WHERE workspace_id = $1 AND code = $2 AND channel = 'email' AND status = 'approved' AND locale = 'en' ORDER BY version_number DESC LIMIT 1`,
     [input.workspaceId, TEMPLATE[input.event]])).rows[0];
-  if (!template) return { queued: 0, reason: "template_missing" as const };
+  if (!template) return whatsappSent ? whatsappOnly() : { queued: 0, reason: "template_missing" as const };
   let due = "";
   if (input.due) {
     try { due = `Due ${new Intl.DateTimeFormat(facts.locale, { dateStyle: "long", timeZone: "UTC" }).format(new Date(`${input.due.slice(0, 10)}T00:00:00Z`))}.`; }
     catch { due = `Due ${input.due.slice(0, 10)}.`; }
   }
-  const variables = { company: facts.company, project: facts.project, title: input.title, due, note: (input.note ?? "").slice(0, 480) };
-  const link = await portalLink(db, input.workspaceId, settings.slug, `?project=${input.caseId}&open=${section}`);
+  // A day's card or a week's digest carries its whole summary; other notes are a line or two.
+  const variables = { company: facts.company, project: facts.project, title: input.title, due, note: (input.note ?? "").slice(0, both ? 1800 : 480) };
+  const link = await portalLink(db, input.workspaceId, settings.slug, `?project=${input.caseId}&open=${section}${input.event === "daily_progress" ? `&card=${input.recordId}` : ""}`);
   let queued = 0;
   const names: string[] = [];
   for (const recipient of recipients) {
@@ -117,6 +128,8 @@ export async function tellClients(db: Db, input: {
       [eventId, input.workspaceId, inserted.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: inserted.id,
         actorUserId: null, occurredAt: new Date().toISOString(), correlationId: inserted.correlationId, causationId: null, data: { channel: "email" } })]);
   }
+  // WhatsApp went, and the emails queued too (names says to whom).
+  if (whatsappSent) return { queued: queued + 1, reason: null, channel: "whatsapp" as const, messageId: whatsappSent, names };
   // Nothing queued with contacts in place means each one switched these emails off (or already has this one).
   return queued ? { queued, reason: null, channel: "email" as const, names } : { queued, reason: "not_sent" as const, names };
 }

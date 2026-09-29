@@ -99,10 +99,15 @@ export class ProjectCoreService {
       const autoSend = body.clientUpdateAutoSendHours === undefined ? current.clientUpdateAutoSendHours : body.clientUpdateAutoSendHours;
       if (autoSend !== null && !(Number.isInteger(autoSend) && Number(autoSend) >= 1 && Number(autoSend) <= 168))
         throw new BadRequestException("Send client updates by themselves after 1 to 168 hours, or keep them manual.");
+      const dueTime = body.reportDueTime === undefined ? current.reportDueTime : String(body.reportDueTime);
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(dueTime)) throw new BadRequestException("Give the day's report a time, like 18:00.");
+      const option = (key: "autoSendPendingReports" | "weeklyRollup") => (body[key] === undefined ? current[key] : body[key] === true);
       await client.query(
         `UPDATE workspace_project_settings SET require_agreement = $2, require_payment = $3, require_approval = $4, reference_prefix = $5, roles = $6::jsonb,
-                require_variation_payment = $8, auto_finish = $9, client_update_auto_send_hours = $10, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
-        [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment"), flag("autoFinish"), autoSend]);
+                require_variation_payment = $8, auto_finish = $9, client_update_auto_send_hours = $10, report_due_time = $11::time, auto_send_pending_reports = $12, weekly_rollup = $13,
+                version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
+        [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment"), flag("autoFinish"), autoSend,
+          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup")]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.settings_changed", entityType: "workspace_project_settings", entityId: workspaceId, before: current, after: { ...body, roles } });
       const saved = await ensureSettings(client, workspaceId);
       return { settings: saved, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, saved.roles), canManage: true };
