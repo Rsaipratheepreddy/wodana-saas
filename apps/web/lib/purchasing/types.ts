@@ -212,12 +212,21 @@ export type SupplierReturnState = {
 export type SupplierReturnsState = { returns: SupplierReturnRow[]; canBuy: boolean; canReceive: boolean };
 
 export type ExpectedOrder = OrderRow & { deliverTo: DeliverTo; linesLeft: number; due: string | null };
+/** Whether the client confirmed site access for a delivery day (D-29). */
+export type SiteAccess = {
+  id: string; date: string; items: string; status: "waiting" | "confirmed" | "move_asked"; answeredBy: string | null; answeredAt: string | null;
+  clientReason: string | null; clientDate: string | null; movedFrom: string | null; moveReason: string | null; chargeable: boolean; version: number;
+};
 /** What's on its way to one project's site: supplier orders delivering there and moves to it. */
 export type ArrivalsState = {
-  orders: Array<OrderRow & { items: Array<{ description: string; left: string; unit: string; due: string | null }> }>;
+  orders: Array<OrderRow & { items: Array<{ description: string; left: string; unit: string; due: string | null }>; access: SiteAccess | null }>;
   moves: Array<{ id: string; number: number; status: "in_transit" | "received" | "cancelled"; fromName: string; toName: string; sentOn: string; items: string; workOrderId: string | null;
     workOrderNumber: number | null; note: string }>;
   canReceive: boolean; canReceiveMoves: boolean;
+  /** Whether this person may record the client's confirmation or move a delivery (the project manager or a buyer). */
+  canArrange: boolean;
+  /** The workspace's today (YYYY-MM-DD). */
+  today: string;
 };
 export type DeliveriesState = {
   expected: ExpectedOrder[]; inspection: Receipt[]; received: Receipt[]; locations: StockLocation[]; canReceive: boolean; canInspect: boolean; userId: string;

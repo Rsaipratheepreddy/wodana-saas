@@ -69,6 +69,9 @@ export function appRouteFor(link: string | null | undefined): string | null {
       if (section === 'deliveries' || !section) return '/purchasing';
       return null;
     }
+    // The code printed on an order or a move (D-46) opens its receive screen.
+    case 'receive':
+      return q('order') ? `/purchasing/receive/${q('order')}` : q('move') ? `/purchasing/move/${q('move')}` : '/purchasing/scan';
     case 'factory':
       return q('order') ? `/factory/${q('order')}` : '/factory';
     case 'inventory':

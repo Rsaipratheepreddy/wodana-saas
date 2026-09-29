@@ -17,6 +17,7 @@ import { tellOverOrdered } from "./purchasing-changes";
 import { closeSettledBlockers, raiseLateBlockers, readLineBlockers } from "./purchasing-blockers";
 import { ReceivingService } from "./receiving.service";
 import { SuppliersService } from "./suppliers.service";
+import { answerSiteAccess, arrangeSiteAccess, readClientSiteAccess, readSiteAccess } from "../site/site-access";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -216,6 +217,76 @@ integration("operations v2 (plan §6.14–6.16, D-8, D-11, D-20, D-26, D-38, D-4
       expect([coming.canReceive, coming.canReceiveMoves]).toEqual([true, true]);
       stock = await buyer.stock.stock(actor, w.workspaceId);
       expect(stock.inTransit).toBe(1);
+    });
+  });
+
+  it("asks the client to confirm site access for the supplier's day, gives the supervisor a task, and moves the delivery with a reason (D-29)", async () => {
+    await world(async (w) => {
+      const { projectId, vendor, buyer } = await started(w);
+      // Days from the workspace's today, so the test holds on any date.
+      const today = (await w.client.query<{ day: string }>("SELECT (now() AT TIME ZONE 'Asia/Dubai')::date::text AS day")).rows[0].day;
+      const plus = (days: number) => new Date(Date.parse(`${today}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+      const supervisor = randomUUID(), supervisorMembership = randomUUID(), grant = randomUUID();
+      await w.client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Sami Supervisor')", [supervisor, `${supervisor.slice(0, 8)}@example.com`]);
+      await w.client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [supervisorMembership, w.workspaceId, supervisor]);
+      await w.client.query("INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager,active,role_keys) VALUES($1,$2,$3,false,true,ARRAY['site_supervisor'])",
+        [w.workspaceId, projectId, supervisorMembership]);
+      await w.client.query("INSERT INTO client_portal_settings(workspace_id,slug,enabled) VALUES($1,'studio',true)", [w.workspaceId]);
+      await w.client.query("INSERT INTO client_portal_grants(id,workspace_id,case_id,name,phone,role,email) VALUES($1,$2,$3,'Maya Client','+15550100','approver','maya@example.com')",
+        [grant, w.workspaceId, w.caseId]);
+      let detail = await w.core.get(actor, w.workspaceId, projectId);
+      detail = await w.core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "20", unit: "sheets", clientChoice: false, version: detail.project.version });
+      const oak = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((need) => need.title === "Oak veneer")!;
+      let order = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "material", materialItemId: oak.sourceId, quantity: "20", unitPrice: "90" }], { deliverTo: "site", expectedDate: plus(10) });
+      expect(await readSiteAccess(w.client, w.workspaceId, projectId)).toEqual([]);
+
+      // The supplier confirms a day: the client is asked (in the portal and by email) and the supervisor gets a task for it.
+      order = await buyer.orders.command(actor, w.workspaceId, order.order.id, { action: "confirm", version: order.order.version, promisedDate: plus(5) });
+      let [request] = await readSiteAccess(w.client, w.workspaceId, projectId);
+      expect([request.status, request.date, request.items, request.orderNumber]).toEqual(["waiting", plus(5), "Oak veneer", order.order.number]);
+      const task = (await w.client.query<{ id: string; title: string; due: string; assignee: string }>(
+        `SELECT id, title, due_date::text AS due, assignee_membership_id AS assignee FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND type = 'task'`, [w.workspaceId, projectId])).rows;
+      expect(task.map((row) => [row.title, row.due, row.assignee])).toEqual([[`Meet delivery ${order.order.number} on site`, plus(5), supervisorMembership]]);
+      expect((await told(w, "work.assigned")).map((row) => row.recipient)).toEqual([supervisor]);
+      const asked = async () => (await w.client.query<{ subject: string }>(
+        "SELECT subject FROM notifications WHERE workspace_id = $1 AND event_type = 'portal.site_access' AND recipient_type = 'portal_contact' ORDER BY created_at, subject", [w.workspaceId])).rows;
+      expect((await asked()).map((row) => row.subject)).toEqual([expect.stringMatching(/^Confirm site access for /)]);
+      expect((await buyer.receiving.arrivals(actor, w.workspaceId, projectId)).orders.map((row) => [row.number, row.access?.status])).toEqual([[order.order.number, "waiting"]]);
+      // The same day again asks nothing new.
+      order = await buyer.orders.command(actor, w.workspaceId, order.order.id, { action: "confirm", version: order.order.version, promisedDate: plus(5) });
+      expect((await asked()).length).toBe(1);
+
+      // The client can't make it: they say why and which day suits; the supervisor and the manager hear it.
+      const move = { requestId: request.id, decision: "move", reason: "Nobody home that day", preferredDate: plus(7) };
+      await expect(answerSiteAccess(w.client, w.workspaceId, { projectId, grantId: grant, name: "Maya Client", body: { ...move, version: request.version + 1 } })).rejects.toThrow(/changed/);
+      await expect(answerSiteAccess(w.client, w.workspaceId, { projectId, grantId: grant, name: "Maya Client", body: { ...move, reason: " ", version: request.version } })).rejects.toThrow(/Say why/);
+      await answerSiteAccess(w.client, w.workspaceId, { projectId, grantId: grant, name: "Maya Client", body: { ...move, version: request.version } });
+      [request] = await readSiteAccess(w.client, w.workspaceId, projectId);
+      expect([request.status, request.clientReason, request.clientDate, request.answeredBy]).toEqual(["move_asked", "Nobody home that day", plus(7), "Maya Client"]);
+      expect((await told(w, "site.access_move_asked")).map((row) => row.recipient).sort()).toEqual([supervisor, w.manager].sort());
+
+      // The manager moves it to that day, charged: the order's line is promised for it, the task moves, the client is asked again, the buyer hears.
+      await expect(arrangeSiteAccess(w.client, w.workspaceId, projectId, w.manager, request.id, { action: "reschedule", version: request.version, date: plus(7) })).rejects.toThrow(/Say why/);
+      await arrangeSiteAccess(w.client, w.workspaceId, projectId, w.manager, request.id, { action: "reschedule", version: request.version, date: plus(7), reason: "Client away", chargeable: true });
+      const [moved] = await readSiteAccess(w.client, w.workspaceId, projectId);
+      expect([moved.status, moved.date, moved.movedFrom, moved.moveReason, moved.chargeable]).toEqual(["waiting", plus(7), plus(5), "Client away", true]);
+      expect((await w.client.query("SELECT promised_date::text AS day FROM purchase_order_lines WHERE workspace_id = $1 AND order_id = $2", [w.workspaceId, order.order.id])).rows).toEqual([{ day: plus(7) }]);
+      expect((await w.client.query("SELECT id, due_date::text AS due FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND type = 'task'", [w.workspaceId, projectId])).rows)
+        .toEqual([{ id: task[0].id, due: plus(7) }]);
+      expect((await asked()).length).toBe(2);
+      expect((await told(w, "site.delivery_moved")).map((row) => row.recipient).sort()).toEqual([supervisor, w.designer].sort());
+      expect((await buyer.orders.get(actor, w.workspaceId, order.order.id)).events.map((event) => event.kind)).toContain("delivery_moved");
+
+      // The client confirms the new day; the portal shows it confirmed.
+      await answerSiteAccess(w.client, w.workspaceId, { projectId, grantId: grant, name: "Maya Client", body: { requestId: moved.id, decision: "confirm", version: moved.version } });
+      expect((await readClientSiteAccess(w.client, w.workspaceId, projectId, today)).map((row) => [row.date, row.status])).toEqual([[plus(7), "confirmed"]]);
+      expect((await told(w, "site.access_confirmed")).map((row) => row.recipient).sort()).toEqual([supervisor, w.manager].sort());
+
+      // Cancelled, nothing is coming: the request closes and the task is cancelled.
+      order = await buyer.orders.get(actor, w.workspaceId, order.order.id);
+      await buyer.orders.command(actor, w.workspaceId, order.order.id, { action: "cancel", version: order.order.version, reason: "Supplier out of stock" });
+      expect(await readSiteAccess(w.client, w.workspaceId, projectId)).toEqual([]);
+      expect((await w.client.query("SELECT status FROM work_items WHERE id = $1", [task[0].id])).rows[0].status).toBe("cancelled");
     });
   });
 

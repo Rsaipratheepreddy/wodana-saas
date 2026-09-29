@@ -25,7 +25,7 @@ const project = (patch: Partial<PortalProject> = {}): PortalProject => ({
   latestUpdate: { id: "u1", at: "2026-09-25T09:00:00.000Z", text: "Cabinets are in the factory." },
   progress: { stages: [{ name: "Design", state: "done", startedOn: "2026-09-01", finishedOn: "2026-09-10" }, { name: "Production", state: "current", startedOn: "2026-09-11", finishedOn: null },
     { name: "Installation", state: "upcoming", startedOn: null, finishedOn: null }], updates: [{ id: "u1", at: "2026-09-25T09:00:00.000Z", text: "Cabinets are in the factory." }],
-    photoDays: [{ on: "2026-09-25", photos: [{ id: "p1" }] }], issues: [], canReportIssue: true },
+    photoDays: [{ on: "2026-09-25", photos: [{ id: "p1" }] }], issues: [], canReportIssue: true, siteAccess: [] },
   moodboard: { canAdd: true, boards: [{ id: "b1", title: "Kitchen concept", room: "Kitchen", number: 2, status: "client_review", mimeType: "image/png", sharedAt: "2026-09-20T09:00:00.000Z",
     hasImage: true, reaction: null, comments: [] }],
     pins: [{ id: "pin1", title: "Warm oak", note: "Like this grain", link: null, room: null, addedAt: "2026-09-21T09:00:00.000Z", feeling: "love", fromClient: false, mine: false, author: null,
@@ -305,6 +305,30 @@ describe("client portal", () => {
     await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "report_payment", caseId: "c1", paymentId: "p3", paidOn: "2026-09-27",
       amount: "2000", reference: "TT-4455", uploadIds: [] })]));
     expect(await screen.findByText("Thank you. We'll check your payment and let you know.")).toBeInTheDocument();
+  });
+
+  it("confirms site access for a delivery day, or asks to move it with why (D-29)", async () => {
+    const delivery = { id: "sa1", date: "2026-10-03", items: "Oak veneer, Brass handles", status: "waiting" as const, clientReason: null, clientDate: null, movedFrom: null, moveReason: null,
+      chargeable: false, version: 1 };
+    const waiting = project({ next: [{ kind: "site_access", id: "sa1", title: delivery.items, due: delivery.date }], progress: { ...project().progress!, siteAccess: [delivery] } });
+    const fetcher = mount((url) => (url.endsWith("/command") ? { body: { ok: true } } : { body: view({}, [waiting]) }));
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    await user.click(await screen.findByRole("button", { name: /Confirm site access for Oct 3, 2026/ }));
+    let dialog = await screen.findByRole("dialog", { name: "Confirm site access for Oct 3, 2026" });
+    expect(within(dialog).getByText("Oak veneer, Brass handles")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "site_access", caseId: "c1", requestId: "sa1", decision: "confirm", version: 1 })]));
+    expect(await screen.findByText("Thank you. Your project team knows someone will let them in.")).toBeInTheDocument();
+
+    // Or the day doesn't work: they say why before sending.
+    await user.click(screen.getByRole("button", { name: /Confirm site access for Oct 3, 2026/ }));
+    dialog = await screen.findByRole("dialog", { name: "Confirm site access for Oct 3, 2026" });
+    await user.click(within(dialog).getByRole("button", { name: "Ask to move" }));
+    expect(within(dialog).getByRole("button", { name: "Send" })).toBeDisabled();
+    await user.type(within(dialog).getByRole("textbox", { name: /Why doesn't the day work/ }), "We travel that week");
+    await user.click(within(dialog).getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(sent(fetcher, "command").at(-1)).toEqual(expect.objectContaining({ action: "site_access", decision: "move", reason: "We travel that week", preferredDate: null })));
   });
 
   it("reports an issue while the work is on and shows what the team decided", async () => {

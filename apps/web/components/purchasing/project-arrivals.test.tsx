@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import type { ArrivalsState } from "@/lib/purchasing/types";
@@ -19,7 +20,7 @@ describe("what's on its way to a project's site (D-20)", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("lists supplier deliveries and moves from the factory, each received where it arrives", async () => {
-    serve({ orders: [order], moves: [move], canReceive: true, canReceiveMoves: true });
+    serve({ orders: [order], moves: [move], canReceive: true, canReceiveMoves: true, canArrange: false, today: "2099-10-01" });
     mount();
     const suppliers = await screen.findByRole("region", { name: "From suppliers" });
     expect(within(suppliers).getByText("Calacatta slab · 4 m²")).toBeInTheDocument();
@@ -33,13 +34,33 @@ describe("what's on its way to a project's site (D-20)", () => {
   });
 
   it("shows what's coming without a Receive button to someone who doesn't receive goods, and says when nothing is", async () => {
-    serve({ orders: [order], moves: [], canReceive: false, canReceiveMoves: false });
+    serve({ orders: [order], moves: [], canReceive: false, canReceiveMoves: false, canArrange: false, today: "2099-10-01" });
     const { unmount } = mount();
     const suppliers = await screen.findByRole("region", { name: "From suppliers" });
     expect(within(suppliers).queryByRole("button", { name: /Receive/ })).toBeNull();
     unmount();
-    serve({ orders: [], moves: [], canReceive: true, canReceiveMoves: true });
+    serve({ orders: [], moves: [], canReceive: true, canReceiveMoves: true, canArrange: false, today: "2099-10-01" });
     mount();
     expect(await screen.findByText("Nothing on its way to site")).toBeInTheDocument();
+  });
+
+  it("shows whether the client confirmed site access, and the manager moves the delivery with why (D-29)", async () => {
+    const access = { id: "a1", date: "2099-10-10", items: "Calacatta slab", status: "move_asked" as const, answeredBy: "Maya Client", answeredAt: "2099-10-02T08:00:00.000Z",
+      clientReason: "Nobody home", clientDate: "2099-10-14", movedFrom: null, moveReason: null, chargeable: false, version: 2 };
+    const fetcher = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ orders: [{ ...order, access }], moves: [], canReceive: true, canReceiveMoves: true, canArrange: true, today: "2099-10-01" }) }));
+    vi.stubGlobal("fetch", fetcher);
+    const user = userEvent.setup();
+    mount();
+    const suppliers = await screen.findByRole("region", { name: "From suppliers" });
+    expect(within(suppliers).getByText("Client asked to move")).toBeInTheDocument();
+    await user.click(within(suppliers).getByRole("button", { name: "Site access for FAC-PO-2026-00003" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Why: Nobody home")).toBeInTheDocument();
+    // The client's reason and day come in; the manager says whether the new delivery is charged.
+    await user.click(within(dialog).getByRole("checkbox", { name: "The new delivery is charged" }));
+    await user.click(within(dialog).getByRole("button", { name: "Move delivery" }));
+    const call = fetcher.mock.calls.find((args) => String((args as unknown[])[0]).includes("/access/")) as unknown as [string, RequestInit];
+    expect(call[0]).toBe("/api/site/projects/p1/access/a1?workspaceId=w");
+    expect(JSON.parse(String(call[1].body))).toEqual({ action: "reschedule", version: 2, date: "2099-10-14", reason: "Nobody home", chargeable: true });
   });
 });

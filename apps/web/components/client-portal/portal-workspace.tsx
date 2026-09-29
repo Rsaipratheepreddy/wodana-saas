@@ -12,6 +12,7 @@ import { HandoverSheet } from "./decisions/handover-sheet";
 import { MaterialsSheet } from "./decisions/materials-sheet";
 import { QuestionSheet } from "./decisions/question-sheet";
 import { QuoteSheet } from "./decisions/quote-sheet";
+import { SiteAccessSheet } from "./decisions/site-access-sheet";
 import { ClaimForm } from "./forms/claim-form";
 import { BoardDetail, IdeaForm, PinDetail } from "./forms/idea-forms";
 import { IssueForm } from "./forms/issue-form";
@@ -121,6 +122,11 @@ function dialogFor(target: PortalTarget, project: PortalProject, { site, custome
   if (target.kind === "request") {
     const question = decisions?.requests.find((item) => item.id === target.id);
     return question ? { title: question.title, body: <QuestionSheet question={question} caseId={project.id} api={api} format={format} onDecided={decided} /> } : null;
+  }
+  if (target.kind === "site_access") {
+    const delivery = project.progress?.siteAccess.find((item) => item.id === target.id);
+    return delivery ? { title: t("Confirm site access for {date}", { date: format.date(delivery.date) }), body: <SiteAccessSheet delivery={delivery} caseId={project.id} api={api} format={format}
+      today={today} onDone={(decision) => void done(decision === "confirm" ? t("Thank you. Your project team knows someone will let them in.") : t("Your project team will come back with a new day."))()} /> } : null;
   }
   if (target.kind === "thread") {
     const request = project.messages?.requests.find((item) => item.id === target.id);

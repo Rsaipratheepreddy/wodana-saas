@@ -5,7 +5,7 @@ export const THEME_STORAGE_KEY = "wodana-theme";
  * Sign-in pages and client- and supplier-facing pages (the client portal, public enquiry forms, shared quotations and supplier
  * orders) keep the tenant's light look whatever the visitor's device prefers.
  */
-export const LIGHT_ONLY_PATH = /^\/(?:portal|enquiry|quotation|vendor|login|internal\/sign-in)(?:\/|$)/;
+export const LIGHT_ONLY_PATH = /^\/(?:portal|enquiry|quotation|vendor|print|login|internal\/sign-in)(?:\/|$)/;
 
 /**
  * Runs while the browser parses <head>, before the first paint: puts the stored theme, else the device's, on

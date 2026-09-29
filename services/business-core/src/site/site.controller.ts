@@ -65,6 +65,12 @@ export class SiteController {
     return this.site.command(actor, workspaceId, projectId, input ?? {});
   }
 
+  @Post("access/:requestId")
+  arrangeAccess(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("requestId", ParseUUIDPipe) requestId: string, @Body() input: Record<string, unknown>) {
+    return this.site.arrangeAccess(actor, workspaceId, projectId, requestId, input ?? {});
+  }
+
   @Post("reports/:reportId/photos/:photoId")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 1 } }))
   upload(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,

@@ -7,40 +7,46 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { inventoryApi } from "@/lib/inventory/client";
 import { isDenied, purchasingApi } from "@/lib/purchasing/client";
 import type { ArrivalsState } from "@/lib/purchasing/types";
+import { siteApi } from "@/lib/site/client";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
 import { orderNumber } from "../factory/factory-labels";
 import { MoveSheet } from "../inventory/moves";
 import { Cell, DueText, Section, operationsStyles as ops } from "../operations/ops";
 import { quantityText, useOrderLabels } from "./order-labels";
 import { ReceiveDialog } from "./receive-dialog";
+import { SiteAccessBadge, SiteAccessDialog } from "./site-access";
 
 // Deliveries and moves change what's on its way.
 const SCOPES = ["purchasing", "factory"] as const;
 
 /**
  * What's on its way to one project's site (D-20): supplier orders delivering there with lines still to come,
- * and moves from the warehouse or the factory. Whoever receives goods receives them here, where they arrive.
+ * and moves from the warehouse or the factory. Whoever receives goods receives them here, where they arrive. Each supplier
+ * delivery shows whether the client confirmed site access for its day (D-29); the manager or a buyer records it or moves it.
  */
 export function ProjectArrivals({ workspaceId, projectId, switcher }: { workspaceId: string; projectId: string; switcher?: ReactNode }) {
   const t = useT();
   const labels = useOrderLabels();
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const stock = useMemo(() => inventoryApi(workspaceId), [workspaceId]);
+  const site = useMemo(() => siteApi(workspaceId, projectId), [workspaceId, projectId]);
   const [state, setState] = useState<ArrivalsState | null>(null);
   const [error, setError] = useState<{ message: string; denied: boolean } | null>(null);
   const [receiving, setReceiving] = useState<string | null>(null);
   const [move, setMove] = useState<string | null>(null);
+  const [arranging, setArranging] = useState<string | null>(null);
   const load = useCallback(async () => {
     try { setState(await api.arrivals(projectId)); setError(null); }
     catch (cause) { setError({ message: cause instanceof Error ? cause.message : t("What's on its way didn't load."), denied: isDenied(cause) }); }
   }, [api, projectId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  useLiveInvalidate(workspaceId, SCOPES, () => { if (!receiving && !move) void load(); }, 2_000);
+  useLiveInvalidate(workspaceId, SCOPES, () => { if (!receiving && !move && !arranging) void load(); }, 2_000);
 
   const toolbar = switcher ? <div className={ops.sectionHead}>{switcher}</div> : null;
   if (error && !state) return <>{toolbar}{error.denied ? <NoAccessState /> : <ErrorState description={error.message} onRetry={() => void load()} />}</>;
   if (!state) return <>{toolbar}<Skeleton lines={4} shape="rows" /></>;
   const nothing = !state.orders.length && !state.moves.length;
+  const arrangingOrder = arranging ? state.orders.find((row) => row.id === arranging) : null;
   return <>
     {toolbar}
     {nothing ? <EmptyState illustration={null} title={t("Nothing on its way to site")} /> : null}
@@ -53,6 +59,9 @@ export function ProjectArrivals({ workspaceId, projectId, switcher }: { workspac
               {order.shipment ? ` · ${[labels.shipment[order.shipment.status], order.shipment.carrier].filter(Boolean).join(" ")}` : ""}</>}
             tone={order.shipment?.status === "delayed" ? "danger" : undefined} />
           <DueText date={due} />
+          {order.access ? <SiteAccessBadge access={order.access} /> : null}
+          {state.canArrange && order.access ? <Button size="compact" variant="quiet" aria-label={t("Site access for {order}", { order: order.number })}
+            onPress={() => setArranging(order.id)}>{t("Site access")}</Button> : null}
           {state.canReceive ? <Button size="compact" variant="secondary" aria-label={t("Receive {order}", { order: order.number })} onPress={() => setReceiving(order.id)}>{t("Receive")}</Button> : null}
         </li>;
       })}</ul>
@@ -66,6 +75,8 @@ export function ProjectArrivals({ workspaceId, projectId, switcher }: { workspac
         {state.canReceiveMoves ? <Button size="compact" variant="secondary" aria-label={t("Receive move {number}", { number: trip.number })} onPress={() => setMove(trip.id)}>{t("Receive")}</Button> : null}
       </li>)}</ul>
     </Section> : null}
+    {arrangingOrder?.access ? <SiteAccessDialog access={arrangingOrder.access} orderNumber={arrangingOrder.number} api={site} today={state.today} onClose={() => setArranging(null)}
+      onChanged={() => { setArranging(null); void load(); }} /> : null}
     {receiving ? <ReceiveDialog api={api} orderId={receiving} onClose={() => setReceiving(null)} onReceived={() => { setReceiving(null); void load(); }} /> : null}
     {move ? <MoveSheet api={stock} transferId={move} onChanged={() => void load()} onClose={() => { setMove(null); void load(); }} /> : null}
   </>;

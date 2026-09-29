@@ -51,7 +51,7 @@ if (!/^\d{1,10}$/.test(buildNumber) || Number(buildNumber) <= 2026090101 || Numb
 }
 
 // What the phone says before it asks; the app never asks for more than these.
-const cameraPermission = `${name} uses the camera to photograph site progress, measurements, snags and deliveries.`;
+const cameraPermission = `${name} uses the camera to photograph site progress, measurements, snags and deliveries, and to scan the code on a delivery to receive it.`;
 const photosPermission = `${name} lets you attach photos from your library to site reports, snags and other work records.`;
 const locationPermission = `${name} uses your location to confirm where you are when you check in or out and when you record a crew day.`;
 
@@ -111,7 +111,7 @@ const config: ExpoConfig = {
     // Store builds use the production APNs environment; the white house is Android's status-bar icon.
     ['expo-notifications', { color: accent, defaultChannel: 'work', icon: './assets/notification-icon.png', mode: release ? 'production' : 'development', enableBackgroundRemoteNotifications: true }],
     ['expo-image-picker', { photosPermission, cameraPermission, microphonePermission: false }],
-    ['expo-camera', { cameraPermission, microphonePermission: false, recordAudioAndroid: false, barcodeScannerEnabled: false }],
+    ['expo-camera', { cameraPermission, microphonePermission: false, recordAudioAndroid: false, barcodeScannerEnabled: true }],
     ['expo-location', { locationWhenInUsePermission: locationPermission, locationAlwaysAndWhenInUsePermission: false, locationAlwaysPermission: false, isIosBackgroundLocationEnabled: false, isAndroidBackgroundLocationEnabled: false }],
     ['@react-native-community/datetimepicker', {}],
     ['expo-splash-screen', {

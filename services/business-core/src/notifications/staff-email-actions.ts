@@ -24,6 +24,7 @@ const EVENT_ACTIONS: Record<string, string> = {
   "site.incident": "Open report",
   "site.report_missing": "Add report",
   "site.report_waiting": "Review report",
+  "site.access_move_asked": "Open deliveries",
   "warranty.claim": "Open claim",
   "payables.run_submitted": "Review payment run",
   "petty_cash.submitted": "Review expense",

@@ -126,6 +126,8 @@ export function MoveSheet({ api, transferId, onChanged, onClose, onOpenMove }: {
           <span>{`${transfer.fromName} → ${transfer.toName}`}</span>
           <ProjectLinks projects={transfer.projects ?? []} />
           {transfer.workOrderId && transfer.workOrderNumber ? <Link className={ops.projectLink} href={`/workspace/factory/orders?order=${transfer.workOrderId}`}>{orderNumber(transfer.workOrderNumber)}</Link> : null}
+          {/* The printed move goes with the goods; its code opens the receive screen where they arrive (D-46). */}
+          {transfer.status === "in_transit" ? <a className={ops.projectLink} href={`/print/move/${transfer.id}`} target="_blank" rel="noopener">{t("Print")}</a> : null}
         </div>
         {open ? <NextStep title={t("Receive it where it arrived")} detail={made ? t("Refuse anything damaged or not to spec: it goes back to the factory to be made again.") : null} /> : null}
       </div>

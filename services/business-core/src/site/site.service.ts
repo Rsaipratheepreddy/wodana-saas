@@ -11,6 +11,7 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { reworkInstallation } from "./installation-rework";
+import { arrangeSiteAccess } from "./site-access";
 import { readSitesToday } from "./sites-today";
 
 type Db = PoolClient;
@@ -206,6 +207,25 @@ export class SiteService {
       } else throw new BadRequestException("Unknown action.");
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `site.${action}`, entityType: "project", entityId: projectId, after: audit });
       return this.read(client, workspaceId, projectId, user.userId);
+    });
+  }
+
+  /**
+   * D-29: the project manager or a buyer records the client's confirmation of site access for them (given by phone),
+   * or moves the delivery to a new day with a reason (and whether the new delivery is charged). Version-checked and audited.
+   */
+  arrangeAccess(actor: RequestActor, workspaceId: string, projectId: string, requestId: string, body: Record<string, unknown>) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      if (!(await this.access.hasPermission(client, workspaceId, user.userId, "purchasing.manage"))) {
+        const who = await this.who(client, workspaceId, projectId, user.userId);
+        if (!who.manager) throw new ForbiddenException("Only the project manager or a buyer arranges deliveries.");
+      }
+      const project = await readProject(client, workspaceId, projectId);
+      if (!project) throw new NotFoundException("Project not found.");
+      if (project.status !== "active") throw new ConflictException("The project isn't running.");
+      const result = await arrangeSiteAccess(client, workspaceId, projectId, user.userId, requestId, body);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `site_access.${String(body.action)}`, entityType: "site_access_request", entityId: result.id, after: result.audit });
+      return { ok: true, id: result.id };
     });
   }
 

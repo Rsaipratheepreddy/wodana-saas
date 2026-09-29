@@ -1,0 +1,6 @@
+/* Receiving on a phone (D-46): the camera first, the number below it. */
+.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; }
+.scanner { display: grid; gap: var(--wd-space-3); inline-size: 100%; max-inline-size: var(--wd-content-narrow); }
+.camera { inline-size: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-muted); }
+.hint { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.manual { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--wd-space-2); }

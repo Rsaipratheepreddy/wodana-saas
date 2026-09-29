@@ -33,6 +33,10 @@ test('notification links open the same record in the app', () => {
     [`/workspace/crm/inbox?conversation=${id}`, `/chats/${id}`],
     [`/workspace/crm/conversations?lead=${other}`, `/sales/${other}`],
     ['/workspace/inventory', '/purchasing'],
+    // The code on a printed order or move (D-46), from any of the tenant's hosts.
+    [`https://tenant.example.com/workspace/receive?order=${id}`, `/purchasing/receive/${id}`],
+    [`/workspace/receive?move=${other}`, `/purchasing/move/${other}`],
+    ['/workspace/receive', '/purchasing/scan'],
   ];
   for (const [link, route] of cases) assert.equal(appRouteFor(link), route, link);
 });
