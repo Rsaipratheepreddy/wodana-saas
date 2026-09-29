@@ -6,7 +6,7 @@ The Expo app replaces the old Flutter app in both stores under the same identity
 | --- | --- |
 | iOS bundle id / Android package | `ai.wodana.mobile` |
 | Apple team | `MSZ9TCZKAB` |
-| Expo account / project | `wodanas-team` / `wodana` |
+| Expo account / project | `pratheeprdys-team` / `wodana` (project id `9c7fb91b-e067-46bd-b675-2bc920452f75`) |
 | App version | `2.0.0` (the old store app was `1.0.1`) |
 | Build number | EAS keeps it remotely and adds 1 per store build. It starts at `2026092800` (the old app's last build was `2026090101`). |
 | Build profiles (`eas.json`) | `development` (dev client), `preview` (UAT: internal APK and ad hoc iOS), `production` (store AAB and App Store build) |
