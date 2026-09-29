@@ -35,9 +35,15 @@ export function usePortalLabels() {
   }, [t]);
 }
 
-/** A one-word state with its tone. */
-export function StateLabel({ state }: { state: string }) {
+const WAITING_STATES = new Set(["issued", "client_review", "sent", "awaiting_confirmation", "awaiting_decision"]);
+
+/**
+ * A one-word state with its tone. `canDecide` false on something still waiting means someone else decides it
+ * (the named decision-maker), so it doesn't say "Waiting for you" to a person who has nothing to do.
+ */
+export function StateLabel({ state, canDecide }: { state: string; canDecide?: boolean }) {
+  const t = useT();
   const { states } = usePortalLabels();
-  const [label, tone] = states[state] ?? [state, "neutral" as Tone];
+  const [label, tone] = canDecide === false && WAITING_STATES.has(state) ? [t("Waiting for a decision"), "info" as Tone] : states[state] ?? [state, "neutral" as Tone];
   return <span className={styles.state} data-tone={tone}>{label}</span>;
 }

@@ -32,7 +32,7 @@ export function DesignSheet({ design, caseId, api, format, channels, onDecided }
     onConfirm={async (proof) => { await api.command(id, { action: "design_decision", caseId, versionId: design.id, decision, note: note.trim(), uploadIds: decision === "accept" ? [] : uploads, ...proof }); onDecided(); }} />;
   return <div className={styles.sheet}>
     <div className={styles.rowHead}>
-      <StateLabel state={design.status} />
+      <StateLabel state={design.status} canDecide={design.canDecide} />
       <span className={styles.muted}>{[design.room, design.item, design.type].filter(Boolean).join(" · ")}</span>
     </div>
     {image
