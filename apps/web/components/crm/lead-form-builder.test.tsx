@@ -26,6 +26,13 @@ function mockApi() {
       record = { ...record, draft: body.draft, version: record.version + 1, ...(body.action === "publish" ? { status: "published", published: body.draft } : {}) };
       return { ok: true, json: async () => record };
     }
+    if (String(_url).includes("lead-forms/blank")) return { ok: true, json: async () => ({ draft: structuredClone(fixture.draft) }) };
+    if (init?.method === "DELETE") return { ok: true, json: async () => ({ deleted: true }) };
+    // Creating a form saves what the builder holds (a template or the default); it counts as its first save.
+    if (init?.method === "POST" && String(_url).includes("/lead-forms?")) {
+      const body = JSON.parse(String(init.body ?? "{}")); saves.push({ draft: body.draft, version: 0, action: "create" });
+      record = { ...record, draft: body.draft ?? record.draft }; return { ok: true, json: async () => record };
+    }
     if (init?.method === "POST") return { ok: true, json: async () => record };
     return { ok: true, json: async () => ({ data: [record] }) };
   });
@@ -157,7 +164,10 @@ describe("LeadFormBuilder", () => {
     await user.click(screen.getByRole("button", { name: "New form" }));
     await user.click(within(await screen.findByRole("dialog", { name: "New form" })).getByRole("button", { name: /Default enquiry form/ }));
     expect(await openPalette(user)).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true);
+    // Nothing is created until the form is saved.
+    expect(fetchMock.mock.calls.some(([url, init]) => init?.method === "POST" && String(url).includes("/lead-forms?"))).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => init?.method === "POST" && String(url).includes("/lead-forms?"))).toBe(true));
   });
 
   it("adds every shown enquiry field once and saves their order", async () => {
@@ -185,6 +195,16 @@ describe("LeadFormBuilder flows", () => {
       ["mobile", "Mobile number", true], ["displayName", "Your name", true], ["emirate", "Emirate", true],
       ["serviceType", "What should we call about?", true], ["summary", "Best time to call", false],
     ]);
+  });
+
+  it("deletes a draft that was never published, after asking", async () => {
+    const { fetchMock } = mockApi(); const user = userEvent.setup();
+    render(<LeadFormBuilder initialData={withFields()} autosaveDelay={0} />);
+    await user.click(await screen.findByRole("button", { name: "Delete the draft Project enquiry" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Delete the draft Project enquiry?" })).getByRole("button", { name: "Delete draft" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => init?.method === "DELETE" && String(url).includes("/lead-forms/form-one?version=1"))).toBe(true));
+    expect(await screen.findByText("Draft deleted.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Edit form Project enquiry/ })).not.toBeInTheDocument();
   });
 
   it("saves the draft by itself after an edit", async () => {

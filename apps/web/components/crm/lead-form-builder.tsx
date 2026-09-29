@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { ArrowLeft, Download, Eye, FileText, LayoutTemplate, Plus, QrCode, RefreshCw, Upload } from "lucide-react";
+import { ArrowLeft, Download, Eye, FileText, LayoutTemplate, Plus, QrCode, RefreshCw, Trash2, Upload } from "lucide-react";
 import { Badge, Button, Callout, ControlledModalDialog, DataGrid, DesignSystemProvider, EmptyState, FormSection, IconButton, InspectorSheet, isNoAccessError, NoAccessNotice, SearchInput, SegmentedControl, SelectField, Tabs, formatDate, useConfirmationDialog, useDesignSystem, useMediaQuery, type StatusTone } from "@/design-system";
 import type { LeadsPageData } from "@/lib/crm/leads";
 import { type LeadFormRecord, type LeadFormSchema } from "@/lib/crm/lead-forms";
@@ -68,7 +68,8 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
   const [reload, setReload] = useState(0);
   const responseRequest = useRef<AbortController | null>(null);
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
-  const dirty = Boolean(record && draft && JSON.stringify(record.draft) !== JSON.stringify(draft));
+  // A form not saved yet (no id) is unsaved work until it is saved.
+  const dirty = Boolean(record && draft && (!record.id || JSON.stringify(record.draft) !== JSON.stringify(draft)));
   const unpublished = Boolean(record?.published && JSON.stringify(record.published) !== JSON.stringify(record.draft));
   const options = initialData.leadOptions;
   const consentLabel = t("I agree to be contacted about this enquiry.");
@@ -102,15 +103,25 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
     return () => { window.removeEventListener("beforeunload", warn); document.removeEventListener("click", navigate, true); };
   }, [dirty, requestConfirmation]);
   const open = (form: LeadFormRecord, next?: LeadFormSchema) => { responseRequest.current?.abort(); setResponses([]); setResponseCursor(null); setResponse(undefined); setLoadingResponses(false); setPreview(false); setSharing(null); setRecord(form); setDraft(next ?? structuredClone(form.draft)); setTab("questions"); setError(""); setNotice(""); setSaveState("idle"); onEditingChange?.(true); };
+  // A new form (from a template or the default) is only in the builder until it is saved or published: leaving it
+  // saves nothing, so abandoned drafts don't pile up in the list.
   const create = async (template?: LeadFormTemplate) => {
     setBusy(true); setError("");
     try {
-      const form = await crmRequest<LeadFormRecord>(initialData.workspaceId, "lead-forms", "POST", {});
-      setForms(previous => [form, ...previous]); setPicking(false);
-      open(form, template ? applyLeadFormTemplate(template, form.draft, fields, t, SYSTEM_FIELDS) : undefined);
+      const { draft: base } = await crmRequest<{ draft: LeadFormSchema }>(initialData.workspaceId, "lead-forms/blank");
+      setPicking(false);
+      const unsaved: LeadFormRecord = { id: "", token: "", draft: base, published: null, status: "draft", version: 0, updatedAt: new Date().toISOString() };
+      open(unsaved, template ? applyLeadFormTemplate(template, base, fields, t, SYSTEM_FIELDS) : undefined);
     } catch (failure) { setError(failure instanceof Error ? failure.message : t("Form could not be created.")); }
     finally { setBusy(false); }
   };
+  /** A draft nobody published can be deleted; a published form is paused instead. */
+  const removeDraft = (form: LeadFormRecord) => requestConfirmation({
+    title: t("Delete the draft {title}?", { title: form.draft.title }), body: t("The draft is removed. It was never published, so no enquiries came from it."), confirmLabel: t("Delete draft"),
+    onConfirm: () => void crmRequest(initialData.workspaceId, `lead-forms/${form.id}?version=${form.version}`, "DELETE")
+      .then(() => { setForms(previous => previous.filter(item => item.id !== form.id)); setNotice(t("Draft deleted.")); })
+      .catch(failure => setError(failure instanceof Error ? failure.message : t("The draft could not be deleted."))),
+  });
   /** Saves the draft (or publishes it). Autosave is quiet: editing carries on and only a failure is shown. */
   const save = async (action = "save", quiet = false) => {
     if (!record || !draft || saveState === "saving") return;
@@ -120,7 +131,13 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
     if (!quiet) setBusy(true);
     setSaveState("saving"); setError(""); if (!quiet) setNotice("");
     try {
-      const result = await crmRequest<LeadFormRecord>(initialData.workspaceId, `lead-forms/${record.id}`, "PATCH", { version: record.version, draft: sent, action });
+      let saved = record;
+      if (!saved.id) {
+        // The first save creates the form with what is in the builder.
+        const created = await crmRequest<LeadFormRecord>(initialData.workspaceId, "lead-forms", "POST", { draft: sent });
+        saved = created; setRecord(created); setForms(previous => [created, ...previous]);
+      }
+      const result = action === "save" && saved !== record ? saved : await crmRequest<LeadFormRecord>(initialData.workspaceId, `lead-forms/${saved.id}`, "PATCH", { version: saved.version, draft: sent, action });
       setRecord(result); setForms(previous => previous.map(form => form.id === result.id ? result : form));
       // Edits made while an autosave was on its way are kept; otherwise the server's copy is the draft.
       if (!quiet || draftRef.current === sent) setDraft(structuredClone(result.draft));
@@ -131,12 +148,12 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
     finally { if (!quiet) setBusy(false); }
   };
   useEffect(() => {
-    if (!dirty || !autosaveDelay || busy || !draft || saveState === "saving" || validateDraft(draft, false, t)) return;
+    if (!record?.id || !dirty || !autosaveDelay || busy || !draft || saveState === "saving" || validateDraft(draft, false, t)) return;
     const timer = window.setTimeout(() => void save("save", true), autosaveDelay);
     return () => window.clearTimeout(timer);
   }, [draft, dirty, busy, record, saveState, autosaveDelay]);
   const loadResponses = async (cursor?: string) => {
-    if (!record) return;
+    if (!record?.id) return;
     responseRequest.current?.abort();
     const controller = new AbortController(); responseRequest.current = controller;
     setLoadingResponses(true);
@@ -211,6 +228,7 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
             <span><strong>{form.draft.title}</strong><small>{t("Updated {date}", { date: formatDate(form.updatedAt, { locale, timeZone }) })}</small></span>
             <Badge tone={form.status === "published" ? "success" : "neutral"}>{formStatusLabels[form.status] ? t(formStatusLabels[form.status]) : form.status}</Badge>
             {form.status === "published" && <IconButton size="compact" aria-label={t("Share {title}", { title: form.draft.title })} onPress={() => setSharing(form)}><QrCode size={15} /></IconButton>}
+            {form.status === "draft" && !form.published && <IconButton size="compact" aria-label={t("Delete the draft {title}", { title: form.draft.title })} isDisabled={busy} onPress={() => removeDraft(form)}><Trash2 size={15} /></IconButton>}
           </footer>
         </article>)}
         {!forms.length && <EmptyState title={t("No forms yet")} description={t("Start from a template; every submission becomes an enquiry.")} action={<Button size="compact" variant="primary" onPress={() => void create()}>{t("Create default enquiry form")}</Button>} />}

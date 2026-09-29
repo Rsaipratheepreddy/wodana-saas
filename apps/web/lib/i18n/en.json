@@ -11681,5 +11681,11 @@
   "Me · {name}": "Me · {name}",
   "1 pin": "1 pin",
   "Enquiry requirements": "Enquiry requirements",
-  "{duration} overdue": "{duration} overdue"
+  "{duration} overdue": "{duration} overdue",
+  "Delete the draft {title}?": "Delete the draft {title}?",
+  "The draft is removed. It was never published, so no enquiries came from it.": "The draft is removed. It was never published, so no enquiries came from it.",
+  "Delete draft": "Delete draft",
+  "Draft deleted.": "Draft deleted.",
+  "The draft could not be deleted.": "The draft could not be deleted.",
+  "Delete the draft {title}": "Delete the draft {title}"
 }

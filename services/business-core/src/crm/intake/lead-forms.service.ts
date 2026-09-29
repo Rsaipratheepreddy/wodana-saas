@@ -51,15 +51,49 @@ export class LeadFormsService {
     });
   }
 
-  create(actor: RequestActor, workspaceId: string) {
+  /** A new form's starting draft, for the builder to fill in; nothing is saved until the person saves it. */
+  blank(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client) => ({ draft: defaultLeadForm(await loadLeadOptions(client, workspaceId)) }));
+  }
+
+  /** Saves a new form: the builder's draft when it sends one (a template the person edited), else the default. */
+  create(actor: RequestActor, workspaceId: string, input: { draft?: unknown } = {}) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
       const choices = await loadLeadOptions(client, workspaceId);
+      const draft = input.draft === undefined ? defaultLeadForm(choices) : await this.prepareDraft(client, workspaceId, input.draft, false, choices);
       const result = await client.query(`INSERT INTO crm_lead_forms (workspace_id,token,draft,created_by)
         VALUES ($1,$2,$3,$4) RETURNING id,token,draft,published,status,version,updated_at AS "updatedAt"`,
-        [workspaceId, randomBytes(24).toString("base64url"), defaultLeadForm(choices), user.userId]);
+        [workspaceId, randomBytes(24).toString("base64url"), draft, user.userId]);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.lead_form.created.v1", entityType: "crm_lead_form", entityId: result.rows[0].id, after: { status: "draft" } });
       return result.rows[0];
     });
+  }
+
+  /** Deletes a draft that was never published (nothing was ever submitted through it); a published form is paused instead. */
+  remove(actor: RequestActor, workspaceId: string, id: string, version: number) {
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
+      const found = await client.query<{ status: string; published: unknown; version: number }>(`SELECT status, published, version FROM crm_lead_forms WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, [workspaceId, id]);
+      const before = found.rows[0];
+      if (!before) throw new NotFoundException("Form not found");
+      if (before.version !== version) throw new ConflictException("This form changed. Reload before deleting");
+      if (before.status !== "draft" || before.published) throw new ConflictException("Only a draft that was never published can be deleted. Pause a published form instead");
+      await client.query(`UPDATE workspace_galleries SET lead_form_id = NULL WHERE workspace_id=$1 AND lead_form_id=$2`, [workspaceId, id]);
+      await client.query(`DELETE FROM crm_lead_forms WHERE workspace_id=$1 AND id=$2`, [workspaceId, id]);
+      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.lead_form.deleted.v1", entityType: "crm_lead_form", entityId: id, before: { version: before.version, status: before.status } });
+      return { id, deleted: true };
+    });
+  }
+
+  /** A draft as saved: the workspace's current choices on its fixed questions, custom fields linked. */
+  private async prepareDraft(client: PoolClient, workspaceId: string, raw: unknown, publishing: boolean, choices: Awaited<ReturnType<typeof loadLeadOptions>>) {
+    const draft = parseLeadForm(completeLeadForm(raw as LeadFormSchema, choices), publishing, requiredFormFields(choices));
+    for (const question of draft.questions) {
+      if (question.field === "serviceType") question.options = choices.enquiryTypes;
+      if (question.field === "budgetRange") question.options = choices.budgetRanges;
+      if (question.field === "emirate") question.options = choices.emirates;
+    }
+    await linkCustomFields(client, workspaceId, draft);
+    return draft;
   }
 
   update(actor: RequestActor, workspaceId: string, id: string, input: { version: number; draft?: unknown; action?: string }) {
@@ -70,13 +104,7 @@ export class LeadFormsService {
       if (before.version !== input.version) throw new ConflictException("This form changed. Reload before saving");
       const publishing = input.action === "publish";
       const choices = await loadLeadOptions(client, workspaceId);
-      const draft = parseLeadForm(completeLeadForm((input.draft ?? before.draft) as LeadFormSchema, choices), publishing, requiredFormFields(choices));
-      for (const question of draft.questions) {
-        if (question.field === "serviceType") question.options = choices.enquiryTypes;
-        if (question.field === "budgetRange") question.options = choices.budgetRanges;
-        if (question.field === "emirate") question.options = choices.emirates;
-      }
-      await linkCustomFields(client, workspaceId, draft);
+      const draft = await this.prepareDraft(client, workspaceId, input.draft ?? before.draft, publishing, choices);
       if (publishing) {
         // Publishing defines the questions; an emirate is supplied by each eventual respondent.
         await validateLeadOptions(client, workspaceId, { source: draft.source, channel: draft.channel, serviceType: choices.enquiryTypes[0]?.id }, undefined, { requireEmirate: false });
