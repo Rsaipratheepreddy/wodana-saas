@@ -238,6 +238,17 @@ describe("CRM inbox", () => {
     expect(screen.queryByText(/portal/i)).not.toBeInTheDocument();
   });
 
+  it("shows one WhatsApp number's chats when the firm has two or more, and which number each chat is with", async () => {
+    const A = "40000000-0000-4000-8000-000000000001", B = "40000000-0000-4000-8000-000000000002";
+    const user = userEvent.setup(), { data, record, fetcher } = setup({ connectionId: B }, { payloads: { "inbox/summary": { mine: 1, unassigned: 4, team: 6, all: 9, snoozed: 2, unreadForMe: 1, membershipId: ME,
+      numbers: [{ connectionId: A, number: "+1 555 0100", accountName: null, isDefault: true }, { connectionId: B, number: "+1 555 0200", accountName: "Showroom", isDefault: false }] } } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    expect((await screen.findAllByText("+1 555 0200 · Showroom")).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: /Number/ }));
+    await user.click(await screen.findByRole("option", { name: "+1 555 0200 · Showroom" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes(`connectionId=${B}`))).toBe(true));
+  });
+
   it("shows a client's photo, a voice note with a player and a document from storage; one still coming or lost says so", async () => {
     const now = new Date().toISOString();
     const file = (id: string, kind: string, status: string, extra: Record<string, unknown> = {}) => ({ id, kind, mimeType: null, fileName: null, byteSize: 2048, status, failureCode: null, ...extra });

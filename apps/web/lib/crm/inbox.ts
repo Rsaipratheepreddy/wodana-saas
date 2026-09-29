@@ -9,7 +9,9 @@ export const LABEL_COLORS: LabelColor[] = ["viz-1", "viz-2", "viz-3", "viz-4", "
 
 export type InboxLabel = { id: string; name: string; color: LabelColor; status?: "active" | "archived"; version?: number; openChats?: number };
 export type InboxOwner = { id: string; displayName: string; openChats: number; away: boolean; isMe: boolean };
-export type InboxSummary = { mine: number; unassigned: number; team: number | null; all: number; snoozed: number; unreadForMe: number; membershipId: string | null };
+export type InboxSummary = { mine: number; unassigned: number; team: number | null; all: number; snoozed: number; unreadForMe: number; membershipId: string | null;
+  /** The connected WhatsApp numbers; with two or more the inbox can show one number's chats. */
+  numbers?: Array<{ connectionId: string; number: string | null; accountName: string | null; isDefault: boolean }> };
 export type QuickReply = { id: string; shortcut: string; body: string; status: "active" | "archived"; version: number; scope: "workspace" | "personal"; canEdit: boolean };
 export type InboxTemplate = {
   id: string; code: string; locale: string; body: string; positions: number[]; usable: boolean;
