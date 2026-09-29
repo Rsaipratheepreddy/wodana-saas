@@ -194,7 +194,8 @@ export class WorkspaceSearchService {
     )).rows;
     return rows.map((row) => ({
       id: row.id, kind: "job", title: row.title,
-      subtitle: row.customer ? `Job · ${row.customer}` : "Job",
+      // The kind is the result's own label (Job) in every list; the subtitle adds only what's new.
+      subtitle: row.customer ?? "",
       reference: row.reference,
       route: `/workspace/crm/jobs/${routeSegment(row.id)}`,
     }));
@@ -272,7 +273,7 @@ export class WorkspaceSearchService {
     )).rows;
     return rows.map((row) => ({
       id: row.id, kind: "project", title: row.name,
-      subtitle: `Project · ${row.customer} · ${row.status}`,
+      subtitle: [row.customer, row.status.replaceAll("_", " ")].filter(Boolean).join(" · "),
       reference: row.reference,
       route: `/workspace/projects/${routeSegment(row.id)}/overview`,
     }));
