@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { OpenWork, ProjectDetail, ProjectRow, WorkBoard, WorkDetail } from '../../../../web/lib/project-core/types';
+import type { OpenWork, ProjectDetail, ProjectOverview, ProjectRow, WorkBoard, WorkDetail } from '../../../../web/lib/project-core/types';
 import type { HandoverState, SitesToday, SiteState } from '../../../../web/lib/site/types';
 import { useApi } from '../../core/api';
 import { useSession } from '../../core/session';
@@ -11,6 +11,7 @@ export const projectKeys = {
   all: (ws: string) => ['projects', ws] as const,
   list: (ws: string) => ['projects', ws, 'list'] as const,
   detail: (ws: string, id: string) => ['projects', ws, id, 'detail'] as const,
+  overview: (ws: string, id: string) => ['projects', ws, id, 'overview'] as const,
   board: (ws: string, id: string) => ['projects', ws, id, 'work'] as const,
   item: (ws: string, id: string, itemId: string) => ['projects', ws, id, 'work', itemId] as const,
   openWork: (ws: string, view: 'mine' | 'all') => ['projects', ws, 'open-work', view] as const,
@@ -32,6 +33,12 @@ export function useProjects() {
 export function useProject(id: string) {
   const api = useApi();
   return useQuery({ queryKey: projectKeys.detail(api.workspaceId, id), queryFn: () => api.get<ProjectDetail>(`project-core/projects/${id}`), enabled: useOn() && !!id });
+}
+
+/** What holds a project up, its dates, and its money at a glance for the people who may see it (the server decides). */
+export function useProjectOverview(id: string) {
+  const api = useApi();
+  return useQuery({ queryKey: projectKeys.overview(api.workspaceId, id), queryFn: () => api.get<ProjectOverview>(`project-core/projects/${id}/overview`), enabled: useOn() && !!id });
 }
 
 export function useWorkBoard(id: string, enabled = true) {

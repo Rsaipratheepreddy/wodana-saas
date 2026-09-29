@@ -23,7 +23,12 @@ export function appRouteFor(link: string | null | undefined): string | null {
       const record = q('record') ?? q('item');
       if (section === 'site' && q('crewDay')) return `/crew-day/${q('crewDay')}`;
       if (section === 'plan' && q('item')) return `/projects/${projectId}/task/${q('item')}`;
-      if (section === 'plan' || section === 'plan-teams') return record ? `/projects/${projectId}/task/${record}` : `/projects/${projectId}/plan`;
+      if (section === 'plan' || section === 'plan-teams') {
+        if (record) return `/projects/${projectId}/task/${record}`;
+        // The overview's "3 tasks late" opens that list.
+        const filter = url.searchParams.get('filter');
+        return filter && /^(late|blocked|snags|materials)$/.test(filter) ? `/projects/${projectId}/plan?filter=${filter}` : `/projects/${projectId}/plan`;
+      }
       if (section === 'snagging') return record ? `/projects/${projectId}/task/${record}` : `/projects/${projectId}/snags`;
       // A day to review (a notice, Approvals) opens that day.
       if (section === 'site' && q('report')) return `/projects/${projectId}/reports?report=${q('report')}`;
