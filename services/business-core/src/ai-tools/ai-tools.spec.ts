@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException } from "@nestjs/common";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiGatewayService, AiTurnResult } from "../ai-gateway/ai-gateway.service";
 import { CreateScheduledMessageDto, UpdateConversationDto } from "../crm/conversations/dto/conversations.dto";
 import { UpdateLeadDetailsDto } from "../crm/intake/dto/intake.dto";
@@ -131,6 +131,8 @@ function scriptedModel(turns: Array<Partial<AiTurnResult>>) {
 const agentFor = (setup: ReturnType<typeof world>, gateway: AiGatewayService) => new AiAgentService(gateway, setup.access as never, setup.calls, setup.registry);
 const responsesOf = (model: { sent: SentRequest[] }, call: number) => model.sent[call].contents.at(-1)!.parts.map((part) => part.functionResponse!);
 
+afterEach(() => vi.useRealTimers());
+
 describe("the tool registry", () => {
   it("never exposes approve, issue or send a quote, money, release, publish, settings, permissions, delete, view as or export", () => {
     const { registry } = world();
@@ -214,6 +216,8 @@ describe("the agent loop", () => {
   });
 
   it("a write only proposes: nothing changes until the person confirms the card", async () => {
+    // The fake database judges expiry by the clock, so pin it to the conversation's "now".
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-29T08:00:00Z") });
     const setup = world();
     const { gateway, turn, sent } = scriptedModel([
       { calls: [{ id: "t1", name: "schedule_follow_up", args: { recordType: "enquiry", recordId: LEAD, when: "2026-09-30T10:00" } }] },
