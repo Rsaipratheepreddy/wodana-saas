@@ -96,9 +96,9 @@ export function EnquiryFieldsSettings({ workspaceId, leadOptions, regionLabel, o
   </section>;
 }
 
-export function CustomFieldSheet({ workspaceId, field, position, onClose, onSaved, onArchived }: { workspaceId: string; field?: CustomEnquiryField; position: number; onClose: () => void; onSaved: (field: CustomEnquiryField) => void; onArchived?: (id: string) => void }) {
+export function CustomFieldSheet({ workspaceId, field, type, position, onClose, onSaved, onArchived }: { workspaceId: string; field?: CustomEnquiryField; /** A new field's starting type, picked in the form builder's palette. */ type?: EnquiryFieldType; position: number; onClose: () => void; onSaved: (field: CustomEnquiryField) => void; onArchived?: (id: string) => void }) {
   const t = useT();
-  const initial: Draft = { label: field?.label ?? "", type: field ? (field.dataType === "text" && field.configuration.multiline ? "paragraph" : field.dataType) : "text", options: field?.configuration.options ?? [] };
+  const initial: Draft = { label: field?.label ?? "", type: field ? (field.dataType === "text" && field.configuration.multiline ? "paragraph" : field.dataType) : type ?? "text", options: field?.configuration.options ?? (type === "select" || type === "multi_select" ? [""] : []) };
   const [draft, setDraft] = useState<Draft>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
