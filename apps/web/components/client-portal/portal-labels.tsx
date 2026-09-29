@@ -11,8 +11,8 @@ type Tone = "success" | "warning" | "danger" | "info" | "neutral";
 export function usePortalLabels() {
   const t = useT();
   return useMemo(() => {
-    const sections: Record<"home" | PortalSection, string> = {
-      home: t("Home"), progress: t("Progress"), moodboard: t("Moodboard"), decisions: t("Decisions"), payments: t("Payments"), documents: t("Documents"), warranty: t("Warranty"),
+    const sections: Record<"overview" | PortalSection, string> = {
+      overview: t("Overview"), progress: t("Progress"), moodboard: t("Moodboard"), decisions: t("Decisions"), payments: t("Payments"), documents: t("Documents"), warranty: t("Warranty"),
       messages: t("Messages"),
     };
     const states: Record<string, [string, Tone]> = {

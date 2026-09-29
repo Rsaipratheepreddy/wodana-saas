@@ -23,6 +23,8 @@ export type SectionProps = {
   /** The tenant's today (YYYY-MM-DD). */
   today: string;
   open: (target: PortalTarget) => void;
-  go: (section: "home" | PortalSection) => void;
+  go: (section: "overview" | PortalSection) => void;
   reload: () => Promise<void>;
+  /** A wide screen: the project's profile is in the side column (a narrow one shows it in the Overview). */
+  wide?: boolean;
 };

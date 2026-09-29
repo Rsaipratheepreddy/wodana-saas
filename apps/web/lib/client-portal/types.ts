@@ -116,6 +116,10 @@ export type PortalDayCard = {
 
 export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice" | "site_access"; id: string; title: string; due: string | null };
 
+/** Someone the client deals with: their project manager, designer or sales contact (one person may be two). */
+export type PortalTeamRole = "manager" | "designer" | "sales";
+export type PortalTeamMember = { roles: PortalTeamRole[]; name: string; email: string | null; avatar: string | null };
+
 export type PortalProject = {
   id: string; title: string; reference: string | null; role: "approver" | "viewer"; status: "planning" | "active" | "on_hold" | "completed" | "cancelled"; paused: boolean;
   sections: PortalSections; manager: string | null; stage: { number: number; total: number; name: string | null } | null;
@@ -123,6 +127,12 @@ export type PortalProject = {
   handoverDate: string | null;
   /** When it was handed over, once complete, and the last day of its warranty. */
   handedOverOn: string | null; warrantyUntil: string | null;
+  /** Where the project is (its site's address, or the area given when the client first asked). */
+  address?: string | null;
+  /** When the work started, when the tenant shows dates. */
+  startDate?: string | null;
+  /** The client's project manager, designer and sales contact. */
+  team?: PortalTeamMember[];
   rooms: Array<{ id: string; name: string }>;
   next: PortalStep[];
   /** Team replies the client hasn't read, across conversations. */
@@ -143,7 +153,9 @@ export type PortalProject = {
   };
   moodboard: PortalMoodboard | null;
   decisions: null | { quotes: PortalQuote[]; designs: PortalDesign[]; requests: PortalQuestion[]; definition: PortalDefinition | null; materials: PortalMaterials | null; handovers: PortalHandover[] };
-  payments: null | { currency: string | null; showAmounts: boolean; milestones: PortalMilestone[] };
+  payments: null | { currency: string | null; showAmounts: boolean; milestones: PortalMilestone[];
+    /** Paid and still to pay across the plan (exact decimals), when the tenant shows amounts. */
+    totals?: { paid: string; left: string } | null };
   documents: PortalDocument[] | null;
   warranty: null | {
     rooms: Array<{ id: string | null; name: string | null; until: string; active: boolean; items: Array<{ id: string; title: string; until: string; active: boolean }> }>;

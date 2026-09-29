@@ -49,7 +49,7 @@ describe("client portal decisions", () => {
     const fetcher = mount();
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Decisions" }));
+    await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /^Decisions/ }));
     await user.click(await screen.findByRole("button", { name: /Kitchen · V2/ }));
     const dialog = await screen.findByRole("dialog", { name: "Kitchen · V2" });
     expect(within(dialog).getByRole("link", { name: "Print or save as PDF" })).toHaveAttribute("href", expect.stringContaining(`/portal/studio/print?case=c1&quote=q1&snapshot=${"h".repeat(64)}`));
@@ -67,7 +67,7 @@ describe("client portal decisions", () => {
     mount();
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Decisions" }));
+    await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /^Decisions/ }));
     await user.click(await screen.findByRole("button", { name: /Kitchen · V2/ }));
     const dialog = await screen.findByRole("dialog", { name: "Kitchen · V2" });
     await user.click(within(dialog).getByRole("button", { name: "Decline" }));
@@ -80,7 +80,7 @@ describe("client portal decisions", () => {
     const fetcher = mount();
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Decisions" }));
+    await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /^Decisions/ }));
     await user.click(await screen.findByRole("button", { name: /Villa handover · R1/ }));
     const dialog = await screen.findByRole("dialog", { name: "Villa handover · R1" });
     expect(within(dialog).getByRole("link", { name: /Care guide/ })).toHaveAttribute("href", "/api/client-portal/studio/files/handover/d1");
@@ -97,8 +97,8 @@ describe("client portal decisions", () => {
     const fetcher = mount();
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    const tabs = await screen.findByRole("tablist", { name: "Sections" });
-    await user.click(within(tabs).getByRole("tab", { name: "Warranty" }));
+    const tabs = await screen.findByRole("navigation", { name: "Sections" });
+    await user.click(within(tabs).getByRole("button", { name: /^Warranty/ }));
     // One line per room: how many items and until when; opening it lists them.
     expect(await screen.findByText("1 item · until Aug 31, 2027")).toBeInTheDocument();
     expect(screen.getByText("Cabinets")).not.toBeVisible();
@@ -107,7 +107,7 @@ describe("client portal decisions", () => {
     await user.type(within(dialog).getByRole("textbox", { name: /What's wrong/ }), "Drawer won't close");
     await user.click(within(dialog).getByRole("button", { name: "Send report" }));
     await waitFor(() => expect(bodies(fetcher, "command").at(-1)).toMatchObject({ action: "warranty_claim", caseId: "c1", description: "Drawer won't close" }));
-    await user.click(within(tabs).getByRole("tab", { name: "Messages" }));
+    await user.click(within(tabs).getByRole("button", { name: /^Messages/ }));
     await user.click(await screen.findByRole("button", { name: "New message" }));
     const message = await screen.findByRole("dialog", { name: "New message" });
     await user.type(within(message).getByRole("textbox", { name: /Subject/ }), "Paint");

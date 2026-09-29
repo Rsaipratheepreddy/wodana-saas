@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { MessageCircleQuestion } from "lucide-react";
-import { Button, EmptyState, MoreDetails, Progress, ToggleButton } from "@/design-system";
+import { Button, EmptyState, MoreDetails, ToggleButton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId } from "@/lib/client-portal/client";
 import { stageName } from "@/lib/client-portal/stage-names";
@@ -27,7 +27,7 @@ function linkedCard() {
 }
 
 /**
- * Where the project is (its stage and how far, at the top), then the team's days as a feed, newest first: each day's
+ * The team's days as a feed, newest first: each day's
  * card with its photos (full size on a tap), what was finished and what's next — with 👍 or ❤️ and a question for
  * the team — beside written updates and the week's roll-ups; and the issues the client reported while the work is on.
  */
@@ -51,8 +51,6 @@ export function ProgressSection({ project, api, format, open, reload }: SectionP
   ].sort((a, b) => (a.on < b.on ? 1 : a.on > b.on ? -1 : 0));
   const nothing = !progress.stages.length && !feed.length && !progress.issues.length;
   if (nothing) return <EmptyState illustration="calendar" title={t("Nothing to show yet")} description={t("Your team's updates and photos will appear here.")} action={report} />;
-  const current = progress.stages.findIndex((stage) => stage.state === "current");
-  const stage = current >= 0 ? progress.stages[current] : null;
   const photoUrl = (id: string, preview: boolean) => api.file("photo", id, preview);
   const react = async (card: PortalDayCard, reaction: "like" | "love") => {
     setReacting(`${card.id}:${reaction}`);
@@ -60,17 +58,8 @@ export function ProgressSection({ project, api, format, open, reload }: SectionP
     catch { /* the next load shows what was kept */ }
     finally { setReacting(null); }
   };
+  // The stage and how far the project is are in the project's profile, beside this feed.
   return <div className={styles.section}>
-    {stage || typeof progress.percent === "number" ? <div className={styles.stage}>
-      <p className={styles.itemTitle}>{stage ? (stage.name
-        ? t("Stage {number} of {total} · {name}", { number: current + 1, total: progress.stages.length, name: isolate(stageName(t, stage.name)) })
-        : t("Stage {number} of {total}", { number: current + 1, total: progress.stages.length })) : t("Progress")}</p>
-      {typeof progress.percent === "number" ? <>
-        <Progress label={t("How far the project is")} value={progress.percent} />
-        <p className={styles.itemMeta}>{t("{percent}% complete", { percent: progress.percent })}</p>
-      </> : null}
-    </div> : null}
-
     {feed.length ? <section className={styles.group} aria-labelledby="portal-feed">
       <h2 className={styles.groupTitle} id="portal-feed">{t("Day by day")}</h2>
       <ol className={styles.days}>{feed.map((item) => {

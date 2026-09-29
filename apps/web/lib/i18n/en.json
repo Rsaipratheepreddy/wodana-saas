@@ -11464,5 +11464,17 @@
   "Test code sent. Check that phone's WhatsApp.": "Test code sent. Check that phone's WhatsApp.",
   "The test code could not be sent.": "The test code could not be sent.",
   "Send a test code": "Send a test code",
-  "Mobile number for the test": "Mobile number for the test"
+  "Mobile number for the test": "Mobile number for the test",
+  "{count} to decide": "{count} to decide",
+  "{count} due": "{count} due",
+  "Next milestone": "Next milestone",
+  "Warranty until": "Warranty until",
+  "Key dates": "Key dates",
+  "Still to pay": "Still to pay",
+  "See payments": "See payments",
+  "Email {name}": "Email {name}",
+  "Next for you": "Next for you",
+  "Latest from site": "Latest from site",
+  "Recent documents": "Recent documents",
+  "See documents": "See documents"
 }

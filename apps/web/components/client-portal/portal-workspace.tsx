@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ControlledModalDialog, EmptyState, InlineNotice, PillTabs, SelectField } from "@/design-system";
+import { useRef, useState } from "react";
+import { ControlledModalDialog, EmptyState, InlineNotice, useMediaQuery } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PortalApi } from "@/lib/client-portal/client";
 import { siteBrand } from "@/lib/client-portal/document-quote";
@@ -19,9 +19,11 @@ import { IssueForm } from "./forms/issue-form";
 import { NewMessage, Thread } from "./forms/message-forms";
 import { PaidForm } from "./forms/paid-form";
 import { QuestionForm } from "./forms/question-form";
-import { isolate, usePortalFormat, type PortalFormat } from "./portal-format";
+import { usePortalFormat, type PortalFormat } from "./portal-format";
 import { usePortalLabels } from "./portal-labels";
 import styles from "./portal.module.css";
+import { ProjectProfile } from "./project-profile";
+import { SectionNav, type NavItem, type PortalPage } from "./section-nav";
 import { DecisionsSection } from "./sections/decisions-section";
 import { DocumentsSection } from "./sections/documents-section";
 import { HomeSection } from "./sections/home-section";
@@ -32,12 +34,15 @@ import { ProgressSection } from "./sections/progress-section";
 import type { PortalTarget, SectionProps } from "./sections/section-types";
 import { WarrantySection } from "./sections/warranty-section";
 
-type Tab = "home" | PortalSection;
-const SECTIONS = { home: HomeSection, progress: ProgressSection, moodboard: MoodboardSection, decisions: DecisionsSection, payments: PaymentsSection, documents: DocumentsSection,
+const SECTIONS = { overview: HomeSection, progress: ProgressSection, moodboard: MoodboardSection, decisions: DecisionsSection, payments: PaymentsSection, documents: DocumentsSection,
   warranty: WarrantySection, messages: MessagesSection } as const;
+/** The order the client reads them in: where it stands, what to decide, the ideas, then money, papers, cover and talk. */
+const ORDER: PortalSection[] = ["progress", "decisions", "moodboard", "payments", "documents", "warranty", "messages"];
 const DECISION_STEPS = ["quote", "design", "definition", "materials", "handover", "request"];
+/** The side column opens from a small laptop up; below it the profile is a card above the sections. */
+const WIDE = "(min-width: 64rem)";
 
-/** A section is a tab when it's shared and has something in it (or something the client can do there). */
+/** A section is shown when it's shared and has something in it (or something the client can do there). */
 function hasContent(project: PortalProject, section: PortalSection) {
   if (!project.sections[section] || project[section] === null) return false;
   if (section === "progress") { const p = project.progress!; return Boolean(p.stages.length || p.updates.length || p.photoDays.length || p.cards?.length || p.issues.length || p.canReportIssue); }
@@ -55,44 +60,71 @@ function fromLocation() {
   return { project: params.get("project"), open: params.get("open") };
 }
 
-/** The signed-in client's projects: one at a time, Home first, then the sections the team shares. */
+/** What waits in each section, as a badge beside it ("2 to decide", "1 due", "3 new"). */
+function badges(project: PortalProject, t: ReturnType<typeof useT>): Partial<Record<PortalPage, NavItem["badge"]>> {
+  const decide = project.next.filter((step) => DECISION_STEPS.includes(step.kind)).length;
+  const milestones = project.payments?.milestones ?? [];
+  const overdue = milestones.filter((item) => item.status === "overdue").length;
+  const due = milestones.filter((item) => ["overdue", "due", "part_paid"].includes(item.status)).length;
+  return {
+    decisions: decide ? { text: t("{count} to decide", { count: decide }), tone: "warning" } : undefined,
+    payments: due ? { text: overdue ? t("{count} overdue", { count: overdue }) : t("{count} due", { count: due }), tone: overdue ? "danger" : "warning" } : undefined,
+    messages: project.unread ? { text: t("{count} new", { count: project.unread }), tone: "info" } : undefined,
+  };
+}
+
+/**
+ * The signed-in client's projects, one at a time: the client and project profile on one side (stage, key dates,
+ * balance, team and the sections), and the open section on the other, the Overview first. On a narrow screen the
+ * profile is a compact card and the sections one row that scrolls sideways.
+ */
 export function PortalWorkspace({ view, site, api, reload }: { view: PortalView; site: PortalSite; api: PortalApi; reload: () => Promise<void> }) {
   const t = useT();
   const labels = usePortalLabels();
   const format = usePortalFormat(site.region);
+  const wide = useMediaQuery(WIDE);
+  const content = useRef<HTMLDivElement>(null);
   const [initial] = useState(fromLocation);
   const [projectId, setProjectId] = useState(() => view.projects.find((item) => item.id === initial.project)?.id ?? view.projects[0]?.id ?? "");
-  const [tab, setTab] = useState<Tab>(() => (PORTAL_SECTIONS as readonly string[]).includes(initial.open ?? "") ? initial.open as PortalSection : "home");
+  const [section, setSection] = useState<PortalPage>(() => (PORTAL_SECTIONS as readonly string[]).includes(initial.open ?? "") ? initial.open as PortalSection : "overview");
   const [target, setTarget] = useState<PortalTarget | null>(null);
   const [notice, setNotice] = useState("");
   const project = view.projects.find((item) => item.id === projectId) ?? view.projects[0];
   if (!project) return <EmptyState illustration="locked" title={t("No projects to show")} description={t("Your project team hasn't shared a project with you yet.")} />;
-  const tabs: Tab[] = ["home", ...PORTAL_SECTIONS.filter((section) => hasContent(project, section))];
-  const current: Tab = tabs.includes(tab) ? tab : "home";
-  const go = (next: Tab) => { setTab(next); setNotice(""); };
+  const shown: PortalPage[] = ["overview", ...ORDER.filter((item) => hasContent(project, item))];
+  const current: PortalPage = shown.includes(section) ? section : "overview";
+  const go = (next: PortalPage) => {
+    setSection(next); setNotice("");
+    // A long section read to its foot: the next one opens at its top.
+    const top = content.current?.getBoundingClientRect().top ?? 0;
+    if (top < 0) content.current?.scrollIntoView?.({ block: "start" });
+  };
+  const open = (next: PortalTarget) => { setNotice(""); setTarget(next); };
   const done = (message: string) => async () => { setTarget(null); setNotice(message); await reload(); };
-  const props: SectionProps = { project, site, api, format, today: view.today, open: (next) => { setNotice(""); setTarget(next); }, go, reload };
-  const counts: Partial<Record<Tab, number>> = { decisions: project.next.filter((step) => DECISION_STEPS.includes(step.kind)).length, messages: project.unread };
+  const props: SectionProps = { project, site, api, format, today: view.today, open, go, reload, wide };
+  const counts = badges(project, t);
   const Section = SECTIONS[current];
   const dialog = target ? dialogFor(target, project, { site, customer: view.contact.name, api, format, done, reload, today: view.today, t }) : null;
-  return <>
-    <div className={styles.projectHead}>
-      {view.projects.length > 1 ? <SelectField label={t("Project")} selectedKey={project.id} onSelectionChange={(key) => { if (key) { setProjectId(String(key)); setTab("home"); } }}
-        items={view.projects.map((item) => ({ id: item.id, label: item.title }))} /> : null}
-      <h1 className={styles.title} dir="auto">{project.title}</h1>
-      <p className={styles.meta}>{[labels.projectStates[project.status], isolate(project.reference)].filter(Boolean).join(" · ")}</p>
+  const nav = !project.paused && shown.length > 1
+    ? <SectionNav items={shown.map((id) => ({ id, label: labels.sections[id], badge: counts[id] }))} current={current} onSelect={go} layout={wide ? "list" : "scroll"} /> : null;
+  return <div className={styles.workspace} data-layout={wide ? "wide" : "narrow"}>
+    <aside className={styles.aside} aria-label={t("Your project")}>
+      <ProjectProfile project={project} view={view} site={site} format={format} wide={wide} showNext={current !== "overview"} open={open} go={go}
+        onProject={(id) => { setProjectId(id); setSection("overview"); setNotice(""); }} />
+      {nav}
+    </aside>
+    <div className={styles.content} ref={content}>
+      {project.paused ? <EmptyState illustration="locked" title={t("Your project page is paused")}
+        description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
+        <h2 className={styles.viewTitle} id="portal-view-title">{labels.sections[current]}</h2>
+        {notice ? <InlineNotice tone="success" message={notice} /> : null}
+        <section aria-labelledby="portal-view-title" className={styles.view}><Section {...props} /></section>
+      </>}
     </div>
-    {project.paused ? <EmptyState illustration="locked" title={t("Your project page is paused")}
-      description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
-      {tabs.length > 1 ? <div className={styles.nav}><PillTabs ariaLabel={t("Sections")} selectedKey={current} onSelectionChange={(key) => go(key as Tab)} tour="portal-tab" layout="scroll"
-        items={tabs.map((id) => ({ id, label: labels.sections[id], count: counts[id] || undefined }))} /></div> : null}
-      {notice ? <InlineNotice tone="success" message={notice} /> : null}
-      <div role="tabpanel" aria-label={labels.sections[current]}><Section {...props} /></div>
-    </>}
-    {dialog ? <ControlledModalDialog isOpen onOpenChange={(open) => { if (!open) setTarget(null); }} size={target?.kind === "quote" ? "xl" : target?.kind === "board" ? "lg" : "md"} title={dialog.title}>
+    {dialog ? <ControlledModalDialog isOpen onOpenChange={(isOpen) => { if (!isOpen) setTarget(null); }} size={target?.kind === "quote" ? "xl" : target?.kind === "board" ? "lg" : "md"} title={dialog.title}>
       {dialog.body}
     </ControlledModalDialog> : null}
-  </>;
+  </div>;
 }
 
 type Tools = { site: PortalSite; customer: string; api: PortalApi; format: PortalFormat; done: (message: string) => () => Promise<void>; reload: () => Promise<void>; today: string;

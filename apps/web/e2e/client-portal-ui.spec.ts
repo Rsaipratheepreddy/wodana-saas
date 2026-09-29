@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 const slug = process.env.CLIENT_PORTAL_QA_SLUG ?? "local-portal-audit";
 
-test("client portal: Home first, the shared sections, photos and decisions usable on desktop and mobile, without writes", async ({ page }, testInfo) => {
+test("client portal: Overview first, the shared sections, photos and decisions usable on desktop and mobile, without writes", async ({ page }, testInfo) => {
   test.skip(!process.env.CLIENT_PORTAL_QA_SLUG, "Set CLIENT_PORTAL_QA_SLUG to an enabled isolated local fixture portal.");
   const writes: string[] = [];
   await page.route(`**/api/client-portal/${slug}/**`, async (route) => {
@@ -25,23 +25,23 @@ test("client portal: Home first, the shared sections, photos and decisions usabl
         decisions: { quotes: [], requests: [], definition: null, materials: null, handovers: [],
           designs: [{ id: "00000000-0000-4000-8000-000000000002", title: "Shared design image", type: "Render", number: 1, status: "client_review", dueAt: "2026-10-01T00:00:00.000Z",
             room: "Bedroom", item: null, mimeType: "image/png", canDecide: true }] },
-        payments: { currency: "USD", showAmounts: true, invoices: [], schedule: [] }, documents: [], warranty: null, messages: { requests: [] },
+        payments: { currency: "USD", showAmounts: true, milestones: [] }, documents: [], warranty: null, messages: { requests: [], unread: 0 },
       }],
     } });
   });
   await page.goto(`/portal/${slug}`);
   await expect(page.getByRole("heading", { name: "Local layout review" })).toBeVisible();
   await expect(page.getByText("Stage 2 of 5 · Production")).toBeVisible();
-  const tabs = page.getByRole("tablist", { name: "Sections" }).getByRole("tab");
-  await expect(tabs).toHaveCount(6);
+  const tabs = page.getByRole("navigation", { name: "Sections" }).getByRole("button");
+  await expect(tabs).toHaveCount(4);
   const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
   expect(await overflow()).toBe(false);
   await page.screenshot({ path: testInfo.outputPath("portal-home.png"), fullPage: true });
-  await page.getByRole("tab", { name: "Progress" }).click();
+  await page.getByRole("button", { name: "Progress" }).click();
   const photo = page.getByRole("img", { name: /Site photo 1/ });
   await expect(photo).toBeVisible();
   expect(await photo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
-  await page.getByRole("tab", { name: "Decisions" }).click();
+  await page.getByRole("button", { name: /^Decisions/ }).click();
   await page.getByRole("button", { name: /Shared design image · V1/ }).click();
   const dialog = page.getByRole("dialog", { name: "Shared design image · V1" });
   await expect(dialog.getByRole("img", { name: "Shared design image · V1" })).toBeVisible();
