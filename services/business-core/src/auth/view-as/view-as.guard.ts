@@ -7,6 +7,8 @@ import { viewAsRouteLabel } from "./view-as.domain";
 import { ViewAsService } from "./view-as.service";
 
 const READ_METHODS = new Set(["GET", "HEAD"]);
+/** Reads outside a workspace that a view may make: the (subject's) profile and shared reference data. */
+const SHARED_READS = /^\/(?:me|reference|health)(?:\/|$)/;
 
 export const VIEW_AS_READ_ONLY = "view_as_read_only";
 export const VIEW_AS_PRIVATE = "view_as_private";
@@ -42,6 +44,11 @@ export class ViewAsGuard implements CanActivate {
     }
     if (this.reflector.getAllAndOverride<boolean>(HIDDEN_DURING_VIEW_AS_KEY, targets)) {
       throw new ForbiddenException({ code: VIEW_AS_PRIVATE, message: `This stays private to ${session.subjectName}.` });
+    }
+    // Outside the workspace only the profile and shared reference data are read: not the subject's other workspaces.
+    const path = (request.originalUrl ?? request.url ?? "").split("?")[0].replace(/^\/api\/v\d+/, "");
+    if (typeof workspaceId !== "string" && !SHARED_READS.test(path)) {
+      throw new ForbiddenException({ code: VIEW_AS_OTHER_WORKSPACE, message: "Exit the view to open this." });
     }
     const page = request.headers["x-wodana-page"];
     const route = viewAsRouteLabel({ method: request.method, path: request.originalUrl ?? request.url, workspaceId: session.workspaceId,

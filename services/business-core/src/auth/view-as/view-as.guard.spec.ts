@@ -69,6 +69,9 @@ describe("the view-as guard", () => {
       .canActivate(context(request("GET", `/api/v1/workspaces/${workspaceId}/hrms/documents`))))).toBe("view_as_private");
     expect(await refusal(guardFor(session).guard
       .canActivate(context(request("GET", "/api/v1/workspaces/x/crm/leads", { workspaceId: "00000000-0000-4000-8000-000000000002" }))))).toBe("view_as_other_workspace");
+    // Outside the workspace: the profile and reference data, not the subject's other workspaces.
+    expect(await refusal(guardFor(session).guard.canActivate(context(request("GET", "/api/v1/workspaces", {}))))).toBe("view_as_other_workspace");
+    await expect(guardFor(session).guard.canActivate(context(request("GET", "/api/v1/reference/permissions", {})))).resolves.toBe(true);
     await expect(guardFor(session, { [ALLOW_DURING_VIEW_AS_KEY]: true }).guard
       .canActivate(context(request("POST", `/api/v1/workspaces/${workspaceId}/view-as/${session.sessionId}/exit`)))).resolves.toBe(true);
     await expect(guardFor(session, { [IS_PUBLIC_KEY]: true }).guard.canActivate(context(request("POST", "/api/v1/auth/logout", {})))).resolves.toBe(true);
