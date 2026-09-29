@@ -522,7 +522,7 @@ export function LoginScreen({
             : passwordResetToken ? t("Save new password") : invitationToken ? t("Activate invitation") : credentialStep === "identify" ? t("Continue") : t("Sign in");
 
   return (
-    <DesignSystemProvider className={styles.loginRoot} data-tenant-slug={tenant.loginSlug} locale={language} portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant)}>
+    <DesignSystemProvider className={styles.loginRoot} theme="light" data-tenant-slug={tenant.loginSlug} locale={language} portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant)}>
       <main className={styles.loginLayout}>
         <div aria-hidden="true" className={styles.brandPanel} />
 
