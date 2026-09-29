@@ -84,6 +84,7 @@ export class MeResponseDto {
   @ApiProperty() displayName!: string;
   @ApiProperty({ example: "en" }) preferredLocale!: string;
   @ApiProperty({ example: "UTC" }) preferredTimezone!: string;
+  @ApiProperty({ description: "Sound and haptics on this person's devices", example: true }) feedbackEnabled!: boolean;
   @ApiProperty() status!: string;
   @ApiPropertyOptional({ type: String, nullable: true, enum: ["administrator"] })
   platformRole!: string | null;

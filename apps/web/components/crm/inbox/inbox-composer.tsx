@@ -12,6 +12,7 @@ import { submitChatOnEnter } from "../chat-composer";
 import { ScheduleDialog } from "./scheduled-messages";
 import styles from "../crm-inbox.module.css";
 import parts from "./inbox-parts.module.css";
+import { playFeedback } from "@/lib/feedback/sounds";
 
 const timeout = () => AbortSignal.timeout(20_000);
 
@@ -95,6 +96,7 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
       attempt.current = null; setMentions([]);
       if (attached) setFile(null);
       setNotice(note ? t("Note added") : t("Message queued"));
+      if (!note) playFeedback("send");
       after?.();
       await onSent();
     } catch (error) { setFailure(error instanceof Error ? error.message : t("Message could not be sent. Your draft is saved.")); }

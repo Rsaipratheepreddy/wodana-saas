@@ -8,7 +8,7 @@ export type ProjectNotice =
   | { code: "project.started"; memberships: Array<{ membershipId: string; role: string }> }
   | { code: "project.team_added"; membershipId: string; role: string }
   | { code: "project.stage_done"; stage: string; previous: string; memberships: string[] }
-  | { code: "project.on_hold" | "project.resumed" | "project.off_track" | "project.cancelled" | "project.completed" | "project.reopened"; note: string; memberships: string[] }
+  | { code: "project.on_hold" | "project.resumed" | "project.off_track" | "project.cancelled" | "project.completed" | "project.finished_automatically" | "project.reopened"; note: string; memberships: string[] }
   | { code: "project.variation_applied"; variation: string; amount: string; memberships: string[] }
   | { code: "project.materials_signed_off" | "project.materials_changes"; revision: string; note: string; memberships: string[] };
 
@@ -18,7 +18,7 @@ export type ProjectNotice =
  * off track, and when it's cancelled (also by email), completed or reopened. The person who acted is never
  * told about their own step.
  */
-export async function noticeProject(db: Db, input: { workspaceId: string; projectId: string; key: string; actorUserId: string; notice: ProjectNotice }) {
+export async function noticeProject(db: Db, input: { workspaceId: string; projectId: string; key: string; actorUserId: string | null; notice: ProjectNotice }) {
   const facts = (await db.query<{ title: string; clientName: string }>(
     `SELECT project.reference || ' · ' || project.name AS title, coalesce(party.display_name, opportunity.title) AS "clientName"
        FROM delivery_projects project

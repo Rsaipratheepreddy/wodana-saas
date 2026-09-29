@@ -27,7 +27,7 @@ export function OperatorShell({ operator, children }: { operator: ConsoleOperato
   useEffect(() => {
     queueMicrotask(() => setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone));
   }, []);
-  return <DesignSystemProvider theme={theme === "dark" ? "dark" : "light"} locale={language} direction={direction} timeZone={timeZone}>
+  return <DesignSystemProvider locale={language} direction={direction} timeZone={timeZone}>
     <ToastProvider>
       <AppShell title={<Link className={styles.brand} href="/internal">{t("Wodana Control")}</Link>}
         topNavigation={<ShellNavigation canReadSales={operator.permissions.includes("sales.read")} />}

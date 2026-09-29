@@ -11,7 +11,7 @@ import { SiteService } from "../site/site.service";
 import { WarrantyService } from "../site/warranty.service";
 import { readSitesToday } from "../site/sites-today";
 import { readHomeOverview } from "../workspaces/home-overview";
-import { decideClientUpdate, processClientUpdateDrafts } from "./client-updates";
+import { decideClientUpdate, processClientUpdateAutoSend, processClientUpdateDrafts } from "./client-updates";
 import { processMaterialsWaiting, processMilestonesDue, processWeeklySummaries } from "./delivery-reminders";
 import { ProjectCoreService } from "./project-core.service";
 import { ProjectMoneyService } from "./project-money.service";
@@ -224,6 +224,55 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
     });
   });
 
+  /** Every stage before Handover done, then the client accepts a whole-project pack (with the balance still due, and why). */
+  async function acceptHandover(w: World) {
+    await w.client.query(`UPDATE project_stages SET status = 'done', started_at = coalesce(started_at, now()), completed_at = now(), completed_by = $3
+      WHERE workspace_id = $1 AND project_id = $2 AND key <> 'handover'`, [w.workspaceId, w.projectId, w.manager]);
+    await w.client.query(`UPDATE project_stages SET status = 'current', started_at = now() WHERE workspace_id = $1 AND project_id = $2 AND key = 'handover'`, [w.workspaceId, w.projectId]);
+    const handover = w.handover(w.manager);
+    const packId = randomUUID();
+    let state = await handover.command(actor, w.workspaceId, w.projectId, { action: "create_pack", id: packId, title: "Whole home" });
+    await w.client.query(`INSERT INTO handover_documents(id,workspace_id,pack_id,kind,title,original_name,mime_type,byte_size,object_key,sha256,created_by)
+      VALUES($1,$2,$3,'warranty','Warranty','warranty.pdf','application/pdf',10,'handover/x',repeat('c',64),$4)`, [randomUUID(), w.workspaceId, packId, w.manager]);
+    let pack = state.packs.find((entry: { id: string }) => entry.id === packId)!;
+    state = await handover.command(actor, w.workspaceId, w.projectId, { action: "issue", packId, version: pack.version, confirmOpen: true, openReason: "Test" });
+    pack = state.packs.find((entry: { id: string }) => entry.id === packId)!;
+    await handover.command(actor, w.workspaceId, w.projectId, { action: "accept", packId, version: pack.version, decidedOn: w.today, decidedByName: "Maya", method: "in_person",
+      confirmOpen: true, openReason: "Test", balanceReason: "Final payment on handover per the agreement" });
+  }
+
+  it("D-7: with 'Finish by itself' on, the client accepting the handover finishes the project, audited as automatic", async () => {
+    await world(async (w) => {
+      const core = w.core(w.manager);
+      const settings = (await w.client.query<{ version: number }>("SELECT version FROM workspace_project_settings WHERE workspace_id = $1", [w.workspaceId])).rows[0];
+      expect((await core.saveSettings(actor, w.workspaceId, { version: settings.version, autoFinish: true })).settings.autoFinish).toBe(true);
+      await acceptHandover(w);
+      const detail = await core.get(actor, w.workspaceId, w.projectId);
+      expect(detail.project.status).toBe("completed");
+      expect(detail.stages.at(-1)).toMatchObject({ key: "handover", status: "done", finishedAutomatically: true, completedByName: "Omar Manager" });
+      const audits = (await w.client.query<{ action: string; actor: string | null; source: string; automatic: boolean }>(
+        `SELECT action, actor_user_id AS actor, source, (after->>'automatic')::boolean AS automatic FROM audit_events
+          WHERE workspace_id = $1 AND entity_id = $2 AND action IN ('project.completed', 'project.complete_stage') ORDER BY occurred_at`, [w.workspaceId, w.projectId])).rows;
+      expect(audits).toEqual([
+        { action: "project.complete_stage", actor: null, source: "internal", automatic: true },
+        { action: "project.completed", actor: null, source: "internal", automatic: true },
+      ]);
+      expect((await w.notices("project.finished_automatically")).map((row) => row.recipient).sort()).toEqual([w.manager, w.designer].sort());
+      // The daily run has nothing left to do.
+      expect(await noticeStageReady(w.client, w.workspaceId, w.projectId, null)).toBe(0);
+    });
+  });
+
+  it("D-7: with 'Finish by itself' off, an accepted handover leaves the last stage for the project manager to finish", async () => {
+    await world(async (w) => {
+      await acceptHandover(w);
+      const detail = await w.core(w.manager).get(actor, w.workspaceId, w.projectId);
+      expect(detail.project.status).toBe("active");
+      expect(detail.stages.at(-1)).toMatchObject({ key: "handover", status: "current", finishedAutomatically: false });
+      expect(detail.stages.at(-1)?.ready).toBe(true);
+    });
+  });
+
   it("D-9: accepting a handover with money due needs someone who manages projects and why; it stays on the pack", async () => {
     await world(async (w) => {
       const handover = w.handover(w.manager);
@@ -368,6 +417,38 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
       expect((await w.client.query("SELECT shared_at IS NOT NULL AS shared FROM site_report_photos WHERE id=$1", [photo])).rows[0].shared).toBe(true);
       await expect(decideClientUpdate(w.client, { workspaceId: w.workspaceId, projectId: w.projectId, caseId: w.caseId, title: "Villa 12", updateId: draft.id, note: "", approve: true, userId: w.manager }))
         .rejects.toThrow(/already sent/);
+    });
+  });
+
+  it("D-40: with 'Send by itself', a client update nobody sent or discarded goes out after the chosen hours, audited as automatic", async () => {
+    await world(async (w) => {
+      const core = w.core(w.manager);
+      const settings = (await w.client.query<{ version: number }>("SELECT version FROM workspace_project_settings WHERE workspace_id = $1", [w.workspaceId])).rows[0];
+      // Off by default: nothing goes by itself.
+      const stale = randomUUID(), fresh = randomUUID();
+      await w.client.query(`INSERT INTO project_status_updates(id,workspace_id,project_id,health,note,created_by,kind,draft_week,created_at)
+        VALUES($1,$3,$4,'on_track','This week: cabinets.',$5,'client_update',$6::date,now() - interval '25 hours'),($2,$3,$4,'on_track','This week: worktop.',$5,'client_update',NULL,now() - interval '2 hours')`,
+        [stale, fresh, w.workspaceId, w.projectId, w.manager, day(w.today, -1)]);
+      expect(await processClientUpdateAutoSend(w.client, w.workspaceId)).toEqual({ sent: 0 });
+      await expect(core.saveSettings(actor, w.workspaceId, { version: settings.version, clientUpdateAutoSendHours: 0 })).rejects.toThrow(/1 to 168 hours/);
+      expect((await core.saveSettings(actor, w.workspaceId, { version: settings.version, clientUpdateAutoSendHours: 24 })).settings.clientUpdateAutoSendHours).toBe(24);
+      // The draft says when it will go.
+      const before = await core.get(actor, w.workspaceId, w.projectId);
+      const freshDraft = before.updates.find((update) => update.id === fresh)!;
+      expect(Date.parse(String(freshDraft.sendsAt)) - Date.parse(String(freshDraft.at))).toBe(24 * 3_600_000);
+      expect(await processClientUpdateAutoSend(w.client, w.workspaceId)).toEqual({ sent: 1 });
+      expect(await processClientUpdateAutoSend(w.client, w.workspaceId)).toEqual({ sent: 0 });
+      const rows = (await w.client.query<{ id: string; shared: boolean; approvedBy: string | null }>(
+        `SELECT id, shared_at IS NOT NULL AS shared, approved_by AS "approvedBy" FROM project_status_updates WHERE id = ANY($1::uuid[]) ORDER BY created_at`, [[stale, fresh]])).rows;
+      expect(rows).toEqual([{ id: stale, shared: true, approvedBy: w.manager }, { id: fresh, shared: false, approvedBy: null }]);
+      const audit = (await w.client.query(`SELECT actor_user_id AS actor, source, after->>'automatic' AS automatic, after->>'afterHours' AS hours FROM audit_events
+        WHERE workspace_id = $1 AND action = 'project.approve_client_update'`, [w.workspaceId])).rows;
+      expect(audit).toEqual([{ actor: null, source: "internal", automatic: "true", hours: "24" }]);
+      expect((await w.notices("project.client_update_auto_sent")).map((row) => row.recipient)).toEqual([w.manager]);
+      // A project on hold holds its updates too.
+      await w.client.query("UPDATE project_status_updates SET created_at = now() - interval '30 hours' WHERE id = $1", [fresh]);
+      await core.command(actor, w.workspaceId, w.projectId, { action: "hold", reason: "Client travelling", version: await w.version() });
+      expect(await processClientUpdateAutoSend(w.client, w.workspaceId)).toEqual({ sent: 0 });
     });
   });
 });

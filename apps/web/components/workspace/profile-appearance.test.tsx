@@ -46,4 +46,15 @@ describe("profile appearance", () => {
     expect(await screen.findByText("Use a PNG, JPG or WebP photo.")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("turns sound and haptics off for every device the person uses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ feedbackEnabled: false }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProfileAppearance email="sara@example.com" initial={{ avatarPreset: null, photoUrl: null, version: 0 }} name="Sara Khan" roles={["sales"]} userId={userId} workspaceId={workspaceId} />);
+    const toggle = screen.getByRole("switch", { name: "Sound & haptics" });
+    expect(toggle).toBeChecked();
+    await userEvent.click(toggle);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/workspace/profile/feedback", expect.objectContaining({ method: "PUT", body: JSON.stringify({ workspaceId, enabled: false }) })));
+    expect(toggle).not.toBeChecked();
+  });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button, Callout, ControlledModalDialog, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
@@ -12,24 +12,25 @@ import { startViewAs, type ViewAsTarget } from "@/lib/workspace/view-as";
  * MFA step-up), then lands on Home as that person, read-only. Without two-step verification it points to
  * Security instead.
  */
-export function ViewAsDialog({ mfaEnabled, onClose, target, workspaceId }: {
+type Props = {
   mfaEnabled: boolean;
   onClose: () => void;
   target: ViewAsTarget | null;
   workspaceId: string;
-}) {
+};
+
+export function ViewAsDialog(props: Props) {
+  // Each opening starts afresh (empty code, no old error) with its own idempotency key: a double press starts one view.
+  const opening = props.target ? (props.target.kind === "role" ? `role:${props.target.roleId}` : `person:${props.target.membershipId}`) : "closed";
+  return <ViewAsDialogBody key={opening} {...props} />;
+}
+
+function ViewAsDialogBody({ mfaEnabled, onClose, target, workspaceId }: Props) {
   const t = useT();
   const [code, setCode] = useState("");
   const [failure, setFailure] = useState("");
   const [working, setWorking] = useState(false);
-  const [key, setKey] = useState("");
-  // One idempotency key per opening: a double press starts one view.
-  useEffect(() => {
-    if (!target) return;
-    setCode("");
-    setFailure("");
-    setKey(crypto.randomUUID());
-  }, [target]);
+  const [key] = useState(() => crypto.randomUUID());
 
   const start = async () => {
     if (!target || working) return;

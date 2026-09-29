@@ -23,4 +23,10 @@ describe("contact outcomes (PLM-042, PLM-076, S-16)", () => {
     expect(unansweredNote("no_answer", 3)).toBe("No answer · attempt 3");
     expect(unansweredNote("message_sent_no_reply", 1)).toBe("Message sent, no reply · attempt 1");
   });
+
+  it("closes an enquiry the client never answered as unreachable, noted for the person, no reason needed (S-28)", () => {
+    expect(statusForOutcome("unreachable")).toBe("disqualified");
+    expect(checkContact({ outcome: "unreachable" })).toEqual({ note: "", next: null });
+    expect(unansweredNote("unreachable", 4)).toBe("Unreachable · attempt 4");
+  });
 });

@@ -4,7 +4,7 @@ import { DatabaseService } from "../database/database.service";
 import { processDesignDeadlines } from "../design/design-journey.store";
 import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { processHrmsCheckouts, processHrmsDocuments } from "../hrms/hrms-reminders";
-import { processClientUpdateDrafts } from "../project-core/client-updates";
+import { processClientUpdateAutoSend, processClientUpdateDrafts } from "../project-core/client-updates";
 import { processMaterialsWaiting, processMilestonesDue, processStagesReady, processWeeklySummaries } from "../project-core/delivery-reminders";
 import { processSiteReports, processWarrantyExpiry } from "../site/site-reminders";
 import { processProjectBudgets } from "../project-core/project-money";
@@ -31,7 +31,7 @@ export class ProjectRemindersService {
     const workspaces = await this.db.query<{ workspace_id: string }>(
       "SELECT workspace_id FROM list_reminder_workspaces()",
     );
-    const totals = { created: 0, decisionReminders: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, designAlerts: 0,
+    const totals = { created: 0, decisionReminders: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
       workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, payablesDue: 0, retentionReleased: 0, overBudget: 0,
       receivablesOverdue: 0, checkoutReminders: 0, documentReminders: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
@@ -45,6 +45,8 @@ export class ProjectRemindersService {
           materials: await processMaterialsWaiting(client, workspaceId),
           milestones: await processMilestonesDue(client, workspaceId),
           clientUpdates: await processClientUpdateDrafts(client, workspaceId),
+          // Drafts nobody sent or discarded in time go out by themselves when the firm chose so (D-40).
+          clientUpdatesSent: await processClientUpdateAutoSend(client, workspaceId),
           purchasing: await processPurchasingDeadlines(client, workspaceId),
           suppliers: await processSupplierDocuments(client, workspaceId),
           factory: await processFactoryDeadlines(client, workspaceId),
@@ -64,6 +66,7 @@ export class ProjectRemindersService {
         totals.materialsWaiting += run.materials.sent;
         totals.milestonesDue += run.milestones.sent;
         totals.clientUpdates += run.clientUpdates.drafted;
+        totals.clientUpdatesSent += run.clientUpdatesSent.sent;
         totals.designAlerts += (run.design?.alerted ?? 0) + (run.design?.closed ?? 0);
         totals.workReminders += run.work.sent;
         totals.lateOrders += run.purchasing.sent;

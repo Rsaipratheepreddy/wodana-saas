@@ -1,16 +1,16 @@
 import { tKey, type MessageKey, type Translate } from "@/lib/i18n/keys";
 
-export const CONTACT_OUTCOMES = ["no_answer", "message_sent_no_reply", "willing_to_talk", "come_back_later", "not_interested"] as const;
+export const CONTACT_OUTCOMES = ["no_answer", "message_sent_no_reply", "willing_to_talk", "come_back_later", "not_interested", "unreachable"] as const;
 export const CONTACT_CHANNELS = ["call", "whatsapp", "email", "meeting", "sms"] as const;
 export type ContactOutcome = (typeof CONTACT_OUTCOMES)[number];
 /** Tries that reached nobody: the note is optional and each one is counted (S-16). */
-export const UNANSWERED_OUTCOMES: readonly ContactOutcome[] = ["no_answer", "message_sent_no_reply"];
+export const UNANSWERED_OUTCOMES: readonly ContactOutcome[] = ["no_answer", "message_sent_no_reply", "unreachable"];
 export type ContactChannel = (typeof CONTACT_CHANNELS)[number];
 
 const CHANNEL_LABELS: Record<ContactChannel, MessageKey> = { call: tKey("Call"), whatsapp: tKey("WhatsApp"), email: tKey("Email"), meeting: tKey("Meeting"), sms: tKey("SMS") };
 const OUTCOME_LABELS: Record<ContactOutcome, MessageKey> = {
   no_answer: tKey("No answer"), message_sent_no_reply: tKey("Message sent, no reply"), willing_to_talk: tKey("Willing to talk"),
-  come_back_later: tKey("Come back later"), not_interested: tKey("Not interested"),
+  come_back_later: tKey("Come back later"), not_interested: tKey("Not interested"), unreachable: tKey("Unreachable"),
 };
 
 /** A logged contact reads "Call · Willing to talk" in the reader's language; any other activity keeps its own title. */

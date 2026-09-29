@@ -34,6 +34,11 @@ export type DesignSystemSettings = {
   workingDays: number[] | null;
   holidays: string[];
   portalContainer: Element | null;
+  /**
+   * The theme above follows the document rather than a provider's choice. Spreading `useDesignSystem()` into a
+   * nested provider hands this on, so the nested one follows the document too instead of pinning `theme`.
+   */
+  followsDocumentTheme?: boolean;
 };
 
 export type DesignSystemProviderProps = Omit<HTMLAttributes<HTMLDivElement>, "dir"> &
@@ -82,10 +87,12 @@ function subscribeDocumentTheme(listener: () => void) {
 /**
  * The theme a provider without its own `theme` uses: the nearest provider that chose one, else the document's
  * (the workspace's light/dark switch sets it on <html>), so a page's provider never pins light inside dark mode.
+ * Null on the server and while hydrating: the document's theme is only known in the browser (the root layout's
+ * inline bootstrap sets it before paint), so the markup says "document" and the tokens follow <html>.
  */
-function useInheritedTheme(): DesignSystemTheme {
+function useInheritedTheme(): DesignSystemTheme | null {
   const chosen = useContext(ChosenThemeContext);
-  const fromDocument = useSyncExternalStore(subscribeDocumentTheme, documentTheme, () => DEFAULT_SETTINGS.theme);
+  const fromDocument = useSyncExternalStore(subscribeDocumentTheme, documentTheme, () => null);
   return chosen ?? fromDocument;
 }
 
@@ -104,6 +111,7 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
       workingDays: workingDaysProp,
       holidays: holidaysProp,
       portalContainer = null,
+      followsDocumentTheme = false,
       ...props
     },
     ref,
@@ -115,7 +123,10 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     const parent = useContext(DesignSystemContext);
     const chosenTheme = useContext(ChosenThemeContext);
     const inheritedTheme = useInheritedTheme();
-    const theme = themeProp ?? inheritedTheme;
+    const ownTheme = followsDocumentTheme ? undefined : themeProp;
+    const resolvedTheme = ownTheme ?? inheritedTheme;
+    const theme = resolvedTheme ?? DEFAULT_SETTINGS.theme;
+    const follows = !ownTheme && !chosenTheme;
     // A provider handed a full settings object (e.g. a nested provider re-using its parent's) keeps its region.
     const regionLocale = regionLocaleProp ?? localeProp ?? parent.regionLocale;
     const currency = currencyProp ?? parent.currency;
@@ -129,19 +140,19 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     const ariaLocale = languageDirection(locale) === direction ? locale
       : [regionLocale, uiLanguage ?? "", direction === "rtl" ? "ar" : "en"].find((tag) => tag && languageDirection(tag) === direction) ?? locale;
     const value = useMemo(
-      () => ({ theme, density, locale, regionLocale, direction, currency, timeZone, workingDays, holidays, portalContainer }),
-      [theme, density, locale, regionLocale, direction, currency, timeZone, workingDays, holidays, portalContainer],
+      () => ({ theme, density, locale, regionLocale, direction, currency, timeZone, workingDays, holidays, portalContainer, followsDocumentTheme: follows }),
+      [theme, density, locale, regionLocale, direction, currency, timeZone, workingDays, holidays, portalContainer, follows],
     );
 
     return (
-      <ChosenThemeContext.Provider value={themeProp ?? chosenTheme}>
+      <ChosenThemeContext.Provider value={ownTheme ?? chosenTheme}>
       <DesignSystemContext.Provider value={value}>
         <I18nProvider locale={ariaLocale}>
           <div
             {...props}
             className={["wd-root", className].filter(Boolean).join(" ")}
             data-wd-density={density}
-            data-wd-theme={theme}
+            data-wd-theme={resolvedTheme ?? "document"}
             dir={direction}
             lang={uiLanguage ?? locale}
             ref={ref}
@@ -169,7 +180,7 @@ export function WorkspaceRegionProvider({ locale, currency, timeZone, workingDay
 
 export function useDesignSystem(): DesignSystemSettings {
   const settings = useContext(DesignSystemContext);
-  const theme = useInheritedTheme();
+  const theme = useInheritedTheme() ?? settings.theme;
   return useMemo(() => (settings.theme === theme ? settings : { ...settings, theme }), [settings, theme]);
 }
 

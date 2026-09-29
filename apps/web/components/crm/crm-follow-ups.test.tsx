@@ -124,7 +124,7 @@ describe("Notes and rescheduling", () => {
     await user.click(screen.getByRole("spinbutton", { name: /am\/pm, Reminder time/i })); await user.keyboard("a");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText("Saved. Your reminder is updated in Today and Calendar.");
-    expect(api).toHaveBeenCalledWith(workspaceId, "activities/reminder", "PATCH", { version: 3, title: initial.title, description: "Client asked me to call tomorrow.", dueAt: new Date("2026-09-08T10:30").toISOString() });
+    expect(api).toHaveBeenCalledWith(workspaceId, "activities/reminder", "PATCH", { version: 3, title: initial.title, description: "Client asked me to call tomorrow.", dueAt: "2026-09-08T10:30:00.000Z" });
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ version: 4 }));
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
   });
@@ -224,7 +224,7 @@ it("uses the shared reminder editor with a preselected enquiry and keeps a saved
   await user.click(screen.getByRole("button", { name: "Save reminder" }));
   await waitFor(() => expect(onCreated).toHaveBeenCalledOnce());
   const post = api.mock.calls.find(call => call[2] === "POST");
-  expect(post?.[3]).toMatchObject({ leadId: "lead-1", ownerMembershipId: "owner-1", type: "call", durationMinutes: 30, isNextAction: true, dueAt: new Date("2026-09-23T09:30").toISOString() });
+  expect(post?.[3]).toMatchObject({ leadId: "lead-1", ownerMembershipId: "owner-1", type: "call", durationMinutes: 30, isNextAction: true, dueAt: "2026-09-23T09:30:00.000Z" });
   expect(await screen.findByText("Follow-up saved. Close and refresh to see it. Do not create it again.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Save reminder" })).toBeDisabled();
 });

@@ -7,6 +7,7 @@ import { getMyProfile } from "@/lib/workspace/profile.server";
 import { I18nProvider, LanguagePreferenceProvider } from "@/lib/i18n/i18n-provider";
 import { Callout, ReadOnlyProvider, WorkspaceRegionProvider } from "@/design-system";
 import { ViewAsBanner } from "@/components/workspace/view-as-banner";
+import { FeedbackSettings } from "@/components/workspace/feedback-settings";
 import { translator } from "@/lib/i18n/messages";
 import { getWorkspaceRegion, type WorkspaceRegion } from "@/lib/workspace/region.server";
 import { LANGUAGE_COOKIE, chooseLanguage, supportedLanguage } from "@/lib/i18n/languages";
@@ -71,6 +72,7 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
       user={user}
       workspaces={workspaces.map(({ accountName, ...workspace }) => ({ ...workspace, description: `${accountName ?? t("Organization")} · ${t("Active")}` }))}>
       {!(process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") ? <SessionMonitor /> : null}
+      <FeedbackSettings enabled={profile.feedbackEnabled !== false} viewingAs={Boolean(viewAs)} />
       {readOnly ? <Callout tone="warning" title={t("Read-only")}>{t("Changes are paused. You can still read and export your records.")}</Callout> : null}
       <ReadOnlyProvider reason={viewAs ? t("Read-only while viewing as {name}", { name: viewAs.subjectName }) : null}>{children}</ReadOnlyProvider>
     </WorkspaceShell>

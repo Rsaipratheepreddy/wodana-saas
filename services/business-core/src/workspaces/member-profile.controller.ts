@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Req, Res } from "@nestjs/common";
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min, ValidateIf } from "class-validator";
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min, ValidateIf } from "class-validator";
 import type { Request, Response } from "express";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
@@ -20,6 +20,11 @@ export class SetAvatarDto {
 export class SetLanguageDto {
   @IsString() @MaxLength(35) @Matches(LANGUAGE_LOCALE_PATTERN)
   preferredLocale!: string;
+}
+
+export class SetFeedbackDto {
+  @IsBoolean()
+  enabled!: boolean;
 }
 
 @ApiTags("workspace members")
@@ -45,6 +50,12 @@ export class MemberProfileController {
   @ApiOperation({ summary: "Save my interface language (it follows me to every device)" })
   setLanguage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: SetLanguageDto) {
     return this.profiles.setLanguage(actor, workspaceId, input.preferredLocale);
+  }
+
+  @Put("me/feedback")
+  @ApiOperation({ summary: "Turn sound and haptics on or off on my devices" })
+  setFeedback(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: SetFeedbackDto) {
+    return this.profiles.setFeedback(actor, workspaceId, input.enabled);
   }
 
   @Post("me/photo")

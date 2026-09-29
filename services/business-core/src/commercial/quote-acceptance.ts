@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
 import { thankForDeal } from "../crm/conversations/inbox/client-followups";
+import { tellDealOutcome } from "../crm/leads/sales-attention";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -65,6 +66,8 @@ export async function winOpportunityOnAcceptance(db: Db, input: {
     won = true;
     // The client is thanked on WhatsApp and told what happens next (once per opportunity).
     await thankForDeal(db, input.workspaceId, String(opportunity.id), { actorUserId: input.actorUserId });
+    // The Sales admin and the Owners hear the deal is won (S-23).
+    await tellDealOutcome(db, input.workspaceId, { opportunityId: String(opportunity.id), outcome: "won", reason, actorUserId: input.actorUserId });
   }
   let phase: string | null = null;
   if (input.round !== "design") {

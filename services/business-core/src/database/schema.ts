@@ -91,6 +91,8 @@ export const users = pgTable(
     displayName: varchar("display_name", { length: 160 }).notNull(),
     preferredLocale: varchar("preferred_locale", { length: 35 }).notNull().default("en"),
     preferredTimezone: varchar("preferred_timezone", { length: 64 }).notNull().default("UTC"),
+    // Sound and haptics on this person's devices (Profile → Sound & haptics).
+    feedbackEnabled: boolean("feedback_enabled").notNull().default(true),
     status: userStatus("status").notNull().default("active"),
     mfaSessionVersion: integer("mfa_session_version").notNull().default(0),
     ...auditColumns,

@@ -42,7 +42,7 @@ export function CrmRecordWorkbench({ id, row, workspaceId, onChanged }: { id: Cr
 
 function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: string; row: RecordData; onChanged: () => Promise<void> }) {
   const t = useT();
-  const { locale, currency: regionCurrency } = useDesignSystem();
+  const { locale, currency: regionCurrency, timeZone } = useDesignSystem();
   useWoddyRecord("opportunity", row.id, String(row.title ?? t("Opportunity")));
   const router = useRouter();
   const [openingCase, setOpeningCase] = useState(false);
@@ -170,7 +170,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
         <div><dt>{t("Stage")}</dt><dd>{String(live.stageName ?? t("Not set"))}</dd></div>
         <EditableField canEdit={Boolean(resource.data)} display={String(live.ownerName ?? t("Unassigned"))} items={owners} kind="select" label={t("Sales owner")} onReload={resource.refresh}
           onSave={(ownerMembershipId) => patch({ ownerMembershipId: ownerMembershipId || null })} value={ownerId} />
-        <div><dt>{t("Next follow-up")}</dt><dd>{dateText(live.nextActionAt ?? live.next_action_at)}</dd></div>
+        <div><dt>{t("Next follow-up")}</dt><dd>{dateText(live.nextActionAt ?? live.next_action_at, { locale, timeZone })}</dd></div>
         <EditableField canEdit={Boolean(resource.data)} display={closeDate ? dateText(live.expectedCloseAt ?? live.expected_close_at) : undefined} kind="date" label={t("Expected close")} onReload={resource.refresh}
           onSave={(date) => patch({ expectedCloseAt: date ? new Date(`${date}T12:00:00`).toISOString() : null })} placeholder={t("Not set")} value={closeDate} />
       </dl>

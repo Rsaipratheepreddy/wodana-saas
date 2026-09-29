@@ -11,6 +11,7 @@ import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvidence } from "../leads/qualification-evidence";
 import { hasResolvedEnquiryType } from "../leads/lead-options";
 import { thankForDeal } from "../conversations/inbox/client-followups";
+import { tellDealOutcome } from "../leads/sales-attention";
 import { ELIGIBLE_SALES_OWNERS_SQL, SALES_OWNER_PERMISSIONS } from "../leads/crm-leads.service";
 import {
   AddStakeholderDto,
@@ -396,6 +397,8 @@ export class CrmOpportunitiesService {
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: event, entityType: "crm_opportunity", entityId: opportunityId, before, after: response });
       // A won deal: the client is thanked on WhatsApp and told what happens next (once per opportunity).
       if (targetStatus === "won") await thankForDeal(client, workspaceId, opportunityId, { actorUserId: actorUser.userId });
+      // The Sales admin and the Owners hear a deal closed, with why (S-23).
+      if (targetStatus === "won" || targetStatus === "lost") await tellDealOutcome(client, workspaceId, { opportunityId, outcome: targetStatus, reason: input.reason ?? null, actorUserId: actorUser.userId });
       const canViewSensitiveValues = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.sensitive_values");
       return this.presentOpportunity(response, canViewSensitiveValues);
     });

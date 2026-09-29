@@ -92,7 +92,7 @@ export function OperatorSignIn() {
   }
 
   return (
-    <DesignSystemProvider className={styles.page} theme={theme === "dark" ? "dark" : "light"} locale={language} direction={direction}>
+    <DesignSystemProvider className={styles.page} locale={language} direction={direction}>
       <Container as="main" size="form">
         <Stack gap={8}>
           <Inline>

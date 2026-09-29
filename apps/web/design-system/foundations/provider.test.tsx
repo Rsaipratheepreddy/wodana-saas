@@ -1,6 +1,12 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { DesignSystemProvider, WorkspaceRegionProvider, usePortalThemeAttributes } from "./provider";
+import { renderToString } from "react-dom/server";
+import { DesignSystemProvider, WorkspaceRegionProvider, useDesignSystem, usePortalThemeAttributes } from "./provider";
+
+function Nested() {
+  const settings = useDesignSystem();
+  return <DesignSystemProvider {...settings} data-testid="nested"><span /></DesignSystemProvider>;
+}
 
 function PortaledTheme() {
   const attributes = usePortalThemeAttributes();
@@ -32,5 +38,16 @@ describe("design-system provider theme", () => {
   it("is light outside a dark document", () => {
     const { container } = render(<DesignSystemProvider><span /></DesignSystemProvider>);
     expect(container.querySelector(".wd-root")).toHaveAttribute("data-wd-theme", "light");
+  });
+
+  it("says 'document' in server markup when it follows the page, so a dark page never renders light first", () => {
+    expect(renderToString(<DesignSystemProvider><Nested /></DesignSystemProvider>).match(/data-wd-theme="document"/g)).toHaveLength(2);
+    expect(renderToString(<DesignSystemProvider theme="light"><Nested /></DesignSystemProvider>).match(/data-wd-theme="light"/g)).toHaveLength(2);
+  });
+
+  it("follows the page in a nested provider handed the settings above it", () => {
+    document.documentElement.dataset.theme = "dark";
+    render(<DesignSystemProvider><Nested /></DesignSystemProvider>);
+    expect(screen.getByTestId("nested")).toHaveAttribute("data-wd-theme", "dark");
   });
 });

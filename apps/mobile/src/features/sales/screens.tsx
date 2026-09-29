@@ -19,7 +19,7 @@ import { useActivities, useLead, useLeads, useOpportunities, useOpportunity, use
 
 const OUTCOMES = [
   { value: 'willing_to_talk', label: key('Willing to talk') }, { value: 'no_answer', label: key('No answer') }, { value: 'message_sent_no_reply', label: key('Message sent, no reply') },
-  { value: 'come_back_later', label: key('Come back later') }, { value: 'not_interested', label: key('Not interested') },
+  { value: 'come_back_later', label: key('Come back later') }, { value: 'not_interested', label: key('Not interested') }, { value: 'unreachable', label: key('Unreachable') },
 ] as const;
 const CHANNELS = [{ value: 'call', label: key('Call') }, { value: 'whatsapp', label: key('WhatsApp') }, { value: 'email', label: key('Email') }, { value: 'meeting', label: key('Meeting') }] as const;
 type Channel = (typeof CHANNELS)[number]['value'];

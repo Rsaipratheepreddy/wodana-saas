@@ -59,6 +59,19 @@ export class MemberProfileService {
     });
   }
 
+  /** Sound and haptics on the person's devices (on by default), kept on their user record like their language. */
+  async setFeedback(actor: RequestActor, workspaceId: string, enabled: boolean) {
+    if (typeof enabled !== "boolean") throw new BadRequestException("Choose on or off");
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const current = await client.query<{ enabled: boolean }>(`SELECT feedback_enabled AS enabled FROM users WHERE id = $1 FOR UPDATE`, [user.userId]);
+      const before = current.rows[0]?.enabled ?? true;
+      if (before === enabled) return { feedbackEnabled: enabled };
+      await client.query(`UPDATE users SET feedback_enabled = $2 WHERE id = $1`, [user.userId, enabled]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "member.feedback_changed", entityType: "user", entityId: user.userId, before: { feedbackEnabled: before }, after: { feedbackEnabled: enabled } });
+      return { feedbackEnabled: enabled };
+    });
+  }
+
   async uploadPhoto(actor: RequestActor, workspaceId: string, contentType: string, body: Buffer) {
     if (!body.byteLength) throw new BadRequestException("Choose a photo to upload");
     if (body.byteLength > PROFILE_PHOTO_MAX_BYTES) throw new BadRequestException("Photo must be 5 MB or smaller");

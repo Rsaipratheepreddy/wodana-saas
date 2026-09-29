@@ -8,6 +8,7 @@ import type { Health, ProjectDetail, StatusUpdate } from "@/lib/project-core/typ
 import { siteApi } from "@/lib/site/client";
 import { SavedPhotos } from "../purchasing/delivery-photos";
 import { useProjectFormat } from "./format";
+import { playFeedback } from "@/lib/feedback/sounds";
 import styles from "./project-core.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
@@ -68,13 +69,14 @@ function ClientUpdateDraft({ update, run, photoUrl }: { update: StatusUpdate; ru
   const [note, setNote] = useState(update.note);
   const [busy, setBusy] = useState<"send" | "discard" | null>(null);
   return <section className={styles.draft} aria-label={t("Client update to approve")}>
-    <div className={styles.draftHead}><Badge tone="warning">{t("Draft")}</Badge><strong>{t("Client update")}</strong><span className={styles.muted}>{format.when(update.at)}</span></div>
+    <div className={styles.draftHead}><Badge tone="warning">{t("Draft")}</Badge><strong>{t("Client update")}</strong><span className={styles.muted}>{update.sendsAt
+      ? t("Goes to the client by itself {when}", { when: format.when(update.sendsAt) }) : format.when(update.at)}</span></div>
     <TextAreaField label={t("What the client reads")} value={note} onChange={setNote} />
     {update.photoIds?.length && photoUrl ? <SavedPhotos photos={update.photoIds.map((id, index) => ({ id, name: t("Photo {number}", { number: index + 1 }), byName: update.byName, at: update.at }))} url={photoUrl} /> : null}
     <div className={styles.draftActions}>
       <Button size="compact" variant="quiet" isLoading={busy === "discard"} onPress={async () => { setBusy("discard"); await run("discard_client_update", { updateId: update.id }); setBusy(null); }}>{t("Discard")}</Button>
       <Button size="compact" variant="primary" isLoading={busy === "send"} isDisabled={!note.trim()}
-        onPress={async () => { setBusy("send"); await run("approve_client_update", { updateId: update.id, note: note.trim() }); setBusy(null); }}>{t("Send to client")}</Button>
+        onPress={async () => { setBusy("send"); if (await run("approve_client_update", { updateId: update.id, note: note.trim() })) playFeedback("send"); setBusy(null); }}>{t("Send to client")}</Button>
     </div>
   </section>;
 }

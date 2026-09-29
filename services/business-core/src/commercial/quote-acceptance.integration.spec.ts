@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { releasePhaseOnDealApproval, winOpportunityOnAcceptance } from "./quote-acceptance";
+import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 
 // Opt-in: PROJECT_REPOSITORY_TEST_DATABASE_URL must point at a local, migrated database with a
 // superuser role. Every test runs in a transaction that is rolled back.
@@ -56,6 +57,21 @@ integration("the client's acceptance is the sale", () => {
       // An approved deal releases the case.
       expect(await releasePhaseOnDealApproval(client, { workspaceId: ids.workspaceId, caseId: ids.caseId, actorUserId: randomUUID() })).toBe(true);
       expect((await client.query(`SELECT phase FROM pre_project_cases WHERE id = $1`, [ids.caseId])).rows[0].phase).toBe("release");
+    });
+  });
+
+  it("tells the Owner in the app that the deal is won, with why (S-23)", async () => {
+    await withCase("price", async (client, ids) => {
+      const owner = randomUUID(), membership = randomUUID(), role = randomUUID();
+      await client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Olivia Owner')", [owner, `${owner.slice(0, 8)}@example.com`]);
+      await client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [membership, ids.workspaceId, owner]);
+      await client.query("INSERT INTO roles(id,workspace_id,code,name,is_system) VALUES($1,$2,'owner','Owner',true)", [role, ids.workspaceId]);
+      await client.query("INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3)", [ids.workspaceId, membership, role]);
+      await seedDefaultNotificationTemplates(client, ids.workspaceId);
+      await winOpportunityOnAcceptance(client, { workspaceId: ids.workspaceId, caseId: ids.caseId, quoteNumber: 12, round: "main", actorUserId: null, source: "client_portal" });
+      const told = (await client.query(`SELECT recipient_id AS recipient, subject, body, deep_link AS link FROM notifications WHERE workspace_id = $1 AND event_type = 'crm.deal_won' AND channel = 'in_app'`,
+        [ids.workspaceId])).rows;
+      expect(told).toEqual([{ recipient: owner, subject: "Won: Villa", body: expect.stringMatching(/^Aisha AED\s1,000\.00 · Client accepted Q-12$/), link: `/workspace/crm/opportunities?record=${ids.opportunityId}` }]);
     });
   });
 

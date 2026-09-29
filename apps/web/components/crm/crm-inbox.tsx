@@ -11,6 +11,7 @@ import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { ENQUIRY_STAGE_LABELS, nextChatId, snoozePresets, type ChatState, type InboxLabel, type InboxOwner, type InboxSummary, type InboxView } from "@/lib/crm/inbox";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
 import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
+import { playFeedback } from "@/lib/feedback/sounds";
 import { CrmProductShell, useCrmTime } from "./crm-product-shell";
 import { ConversationThread, DeliveryState, inboxDate } from "./inbox/chat-thread";
 import { useWoddySelection } from "./woddy-chat";
@@ -59,6 +60,8 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false), [failure, setFailure] = useState(""), [bulkBusy, setBulkBusy] = useState(false);
   const requestPending = useRef(false), controller = useRef<AbortController | null>(null), cursorRef = useRef(cursor);
+  // Unread counts last seen, so a chat that gets a new message while the list refreshes itself plays a soft sound.
+  const unreadSeen = useRef<Map<string, number> | null>(null);
   const threadActions = useRef<{ resolve: () => void } | null>(null);
   useEffect(() => { cursorRef.current = cursor; }, [cursor]);
   const query = new URLSearchParams({ limit: "100", status: state, ...(stageParam ? { stage: stageParam } : {}), ...(view === "team" && ownerFilter ? { ownerMembershipId: ownerFilter } : view !== "all" ? { view } : {}), ...(labelId ? { labelId } : {}), ...(channelFilter !== "all" ? { channel: channelFilter } : {}), ...(numberFilter ? { connectionId: numberFilter } : {}), ...(search.trim() ? { search: search.trim() } : {}) }).toString();
@@ -85,6 +88,11 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
       ]);
       if (request.signal.aborted) return;
       setItems((old) => more ? [...old, ...result.data.filter((row) => !old.some((item) => item.id === row.id))] : result.data);
+      if (!more) {
+        const unread = new Map(result.data.map((row) => [String(row.id), Number(row.unreadCount) || 0]));
+        if (background && unreadSeen.current && [...unread].some(([id, count]) => count > (unreadSeen.current!.get(id) ?? 0))) playFeedback("notice");
+        unreadSeen.current = unread;
+      }
       setCursor(result.nextCursor); setFailure(""); setLoaded(true);
     } catch (error) { if (!request.signal.aborted) setFailure(error instanceof Error ? error.message : t("Chats could not be loaded.")); }
     finally { if (controller.current === request) requestPending.current = false; if (!request.signal.aborted) setBusy(false); }

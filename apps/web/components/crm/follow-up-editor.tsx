@@ -8,7 +8,7 @@ import { Button, Callout, ComboboxField, ControlledModalDialog, InspectorSheet, 
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, CrmRequestError, label, rows, type RecordData } from "@/lib/crm/client";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
-import { localDateTime } from "@/lib/crm/calendar";
+import { zonedDateTime, zonedDateTimeToIso, zonedToday } from "@/lib/crm/zoned-time";
 import { useCrmResource } from "./crm-workbench";
 import styles from "./follow-up-editor.module.css";
 
@@ -27,18 +27,20 @@ function EditorPage({ title, onClose, children }: { title: string; onClose: () =
 }
 
 type Draft = { title: string; notes: string; date: string; time: string; duration: string };
-function draftFor(record: RecordData): Draft {
-  const local = localDateTime(record.dueAt);
+/** The reminder's date and time on the workspace's wall clock (its region's zone). */
+function draftFor(record: RecordData, timeZone: string): Draft {
+  const local = zonedDateTime(record.dueAt, timeZone);
   const appointment = record.appointment as Record<string, unknown> | undefined;
   const duration = appointment ? Math.round((Date.parse(String(appointment.endsAt)) - Date.parse(String(appointment.startsAt))) / 60000) : 0;
   return { duration: duration > 0 ? String(duration) : "", title: String(record.title ?? ""), notes: String(record.description ?? ""), date: local.slice(0, 10), time: local.slice(11, 16) };
 }
-export function reminderTimestamp(date: string, time: string, required = false): string | null {
+/** A reminder date and time in the workspace's zone as an instant; throws when missing or when the zone skips that time. */
+export function reminderTimestamp(date: string, time: string, required = false, timeZone = "UTC"): string | null {
   if (!date && !time && !required) return null;
   if (!date || !time) throw new Error(tKey("Choose both a reminder date and a time."));
-  const value = new Date(`${date}T${time}`);
-  if (!Number.isFinite(value.getTime()) || localDateTime(value.toISOString()) !== `${date}T${time}`) throw new Error(tKey("Choose a valid date and time in your timezone."));
-  return value.toISOString();
+  const instant = zonedDateTimeToIso(`${date}T${time}`, timeZone);
+  if (!instant) throw new Error(tKey("Choose a valid date and time."));
+  return instant;
 }
 
 function DurationField({ draft, onChange }: { draft: Draft; onChange: (value: string) => void }) {
@@ -50,11 +52,21 @@ function DurationField({ draft, onChange }: { draft: Draft; onChange: (value: st
   return <div className={styles.duration}><SelectField label={t("Duration")} selectedKey={draft.duration || "none"} items={[...(!draft.duration ? [{ id: "none", label: t("No end time") }] : []), ...[...new Set([15, 30, 45, 60, 90, 120, 180, 240, ...(draft.duration ? [Number(draft.duration)] : [])])].sort((a,b) => a-b).map(value => ({ id: String(value), label: t("{count} minutes", { count: value }) }))]} onSelectionChange={key => onChange(key === "none" ? "" : String(key))} />{start && end ? <strong>{end.getDate() !== start.getDate() ? t("{from} – {to} · next day", { from: time(start), to: time(end) }) : `${time(start)} – ${time(end)}`}</strong> : null}</div>;
 }
 
+/** The workspace's date `days` after today in its zone ("yyyy-mm-dd"). */
+function workspaceDay(timeZone: string, days: number) {
+  const [year, month, day] = zonedToday(timeZone).split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
 function ScheduleFields({ date, time, onChange, required = false }: { date: string; time: string; onChange: (value: { date: string; time: string }) => void; required?: boolean }) {
   const t = useT();
+  const { locale, timeZone } = useDesignSystem();
+  // The date and time are the workspace's; the viewer's own time shows beside it only when their zone differs.
   const zone = useWorkspaceZoneLabel();
+  const instant = zone && date && time ? zonedDateTimeToIso(`${date}T${time}`, timeZone) : null;
+  const hint = zone ? instant ? t("{zone} · {time} your time", { zone, time: new Intl.DateTimeFormat(locale, { weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(instant)) }) : zone : null;
   return <section className={styles.schedule} aria-label={t("Reminder schedule")}><h3><CalendarDays size={15} />{t("Reminder")}</h3><CrmDateTimeField label={t("Reminder")} isRequired={required} value={`${date}T${time}`} onChange={value => { const [date = "", time = ""] = value.split("T"); onChange({ date, time }); }} />
-  <div className={styles.shortcuts} aria-label={t("Quick reminder dates")}>{[{ label: t("Today"), offset: 0 }, { label: t("Tomorrow"), offset: 1 }, { label: t("Next week"), offset: 7 }].map((item) => <button key={item.offset} type="button" onClick={() => { const next = new Date(); next.setDate(next.getDate() + item.offset); onChange({ date: localDateTime(next.toISOString()).slice(0, 10), time: time || "10:00" }); }}>{item.label}</button>)}</div><p className={styles.hint}>{zone ? t("Your local time · Workspace: {zone}", { zone }) : t("Your local time")}</p></section>;
+  <div className={styles.shortcuts} aria-label={t("Quick reminder dates")}>{[{ label: t("Today"), offset: 0 }, { label: t("Tomorrow"), offset: 1 }, { label: t("Next week"), offset: 7 }].map((item) => <button key={item.offset} type="button" onClick={() => onChange({ date: workspaceDay(timeZone, item.offset), time: time || "10:00" })}>{item.label}</button>)}</div>{hint ? <p className={styles.hint}>{hint}</p> : null}</section>;
 }
 
 export function FollowUpSheet({ workspaceId, recordId, summary, onClose, onSaved, inline = false, sample = false }: { sample?: boolean; inline?: boolean; workspaceId: string; recordId: string; summary?: RecordData; onClose: () => void; onSaved: (record: RecordData) => void }) {
@@ -79,14 +91,14 @@ function FollowUpForm({ workspaceId, initial, onSaved, onEditingChange, onReload
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const [record, setRecord] = useState(initial);
-  const [draft, setDraft] = useState(() => draftFor(initial));
+  const [draft, setDraft] = useState(() => draftFor(initial, timeZone));
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
   const [failure, setFailure] = useState("");
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState("");
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
-  const dirty = JSON.stringify(draft) !== JSON.stringify(draftFor(record));
+  const dirty = JSON.stringify(draft) !== JSON.stringify(draftFor(record, timeZone));
   const pending = record.status === "pending";
   useEffect(() => onEditingChange(dirty, busy), [dirty, busy, onEditingChange]);
   useEffect(() => {
@@ -104,13 +116,13 @@ function FollowUpForm({ workspaceId, initial, onSaved, onEditingChange, onReload
       if (!draft.title.trim()) throw new Error(t("Give this follow-up a short title."));
       let current = record;
       if (dirty) {
-        const old = draftFor(record);
+        const old = draftFor(record, timeZone);
         const scheduleChanged = old.date !== draft.date || old.time !== draft.time;
-        const changes = { ...(old.duration !== draft.duration && draft.duration ? { durationMinutes: Number(draft.duration) } : {}), version: record.version, title: draft.title.trim(), description: draft.notes.trim() || null, ...(scheduleChanged ? { dueAt: reminderTimestamp(draft.date, draft.time, Boolean(record.appointment || record.isNextAction)) } : {}) };
+        const changes = { ...(old.duration !== draft.duration && draft.duration ? { durationMinutes: Number(draft.duration) } : {}), version: record.version, title: draft.title.trim(), description: draft.notes.trim() || null, ...(scheduleChanged ? { dueAt: reminderTimestamp(draft.date, draft.time, Boolean(record.appointment || record.isNextAction), timeZone) } : {}) };
         const result = sample ? { ...changes, version: Number(record.version) + 1 } : await crmRequest<RecordData>(workspaceId, `activities/${record.id}`, "PATCH", changes);
         current = { ...record, ...result };
-        if (sample && draft.duration && draft.date && draft.time) { const start = reminderTimestamp(draft.date, draft.time, true)!; current.appointment = { startsAt: start, endsAt: new Date(Date.parse(start) + Number(draft.duration) * 60000).toISOString() }; }
-        setRecord(current); setDraft(draftFor(current)); onSaved(current); savedChanges = true;
+        if (sample && draft.duration && draft.date && draft.time) { const start = reminderTimestamp(draft.date, draft.time, true, timeZone)!; current.appointment = { startsAt: start, endsAt: new Date(Date.parse(start) + Number(draft.duration) * 60000).toISOString() }; }
+        setRecord(current); setDraft(draftFor(current, timeZone)); onSaved(current); savedChanges = true;
       }
       if (complete) {
         const result = sample ? { status: "completed", version: Number(current.version) + 1 } : await crmRequest<RecordData>(workspaceId, `activities/${record.id}/complete`, "POST", { version: current.version });
@@ -180,7 +192,8 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
   const [type, setType] = useState<string>(initialType);
   const initialOwner = String(initialLead?.ownerMembershipId ?? "unassigned");
   const [owner, setOwner] = useState(initialOwner);
-  const [initial] = useState(() => { const date = new Date(); date.setDate(date.getDate() + 1); return { title: "", notes: "", date: initialSchedule?.date ?? localDateTime(date.toISOString()).slice(0, 10), time: initialSchedule?.time ?? "10:00", duration: "30" }; });
+  const { timeZone } = useDesignSystem();
+  const [initial] = useState(() => ({ title: "", notes: "", date: initialSchedule?.date ?? workspaceDay(timeZone, 1), time: initialSchedule?.time ?? "10:00", duration: "30" }));
   const [draft, setDraft] = useState<Draft>(initial);
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
@@ -207,7 +220,7 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
       const [kind, id] = relation.split(":");
       const name = String(target.record.partyName ?? target.record.displayName ?? t("Client"));
       const title = draft.title.trim() || t("{type} follow-up · {name}", { type: translateKnown(t, label(type)), name });
-      const body = { durationMinutes: Number(draft.duration), title, description: draft.notes.trim() || undefined, type, dueAt: reminderTimestamp(draft.date, draft.time, true), priority: "normal", customerVisible: false, ...(owner !== "unassigned" ? { ownerMembershipId: owner } : {}), ...(kind === "lead" ? { leadId: id, isNextAction: !target.record.isConverted && !["qualified", "disqualified", "paused"].includes(String(target.record.status)) } : { partyId: id, isNextAction: false }) };
+      const body = { durationMinutes: Number(draft.duration), title, description: draft.notes.trim() || undefined, type, dueAt: reminderTimestamp(draft.date, draft.time, true, timeZone), priority: "normal", customerVisible: false, ...(owner !== "unassigned" ? { ownerMembershipId: owner } : {}), ...(kind === "lead" ? { leadId: id, isNextAction: !target.record.isConverted && !["qualified", "disqualified", "paused"].includes(String(target.record.status)) } : { partyId: id, isNextAction: false }) };
       const record = await crmRequest<RecordData>(workspaceId, "activities", "POST", body);
       setCreated(true);
       try { await onCreated({ ...body, status: "pending", partyName: name, ...(kind === "lead" ? { leadTitle: target.record.title } : {}), ownerName: rows(members.data).find((item) => item.id === owner)?.displayName, ...record }); } catch { setFailure(t("Follow-up saved. Close and refresh to see it. Do not create it again.")); }

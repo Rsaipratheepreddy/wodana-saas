@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown, type MessageKey, type Translate } from "@/lib/i18n/keys";
 import { decideWoddyCard, type WoddyCard, type WoddyCardStatus, type WoddyPreviewField } from "@/lib/woddy/agent";
 import styles from "./woddy.module.css";
+import { playFeedback } from "@/lib/feedback/sounds";
 
 const STATUS: Record<WoddyCardStatus, { label: MessageKey; tone: StatusTone }> = {
   proposed: { label: tKey("Waiting for you"), tone: "info" },
@@ -68,6 +69,7 @@ export function WoddyActionCard({ workspaceId, card: initial, onChange }: { work
     try {
       const next = await decideWoddyCard(workspaceId, card, decision, selectable ? items.filter((item) => kept.has(item.id)).map((item) => item.id) : undefined);
       setCard(next); onChange?.(next);
+      if (decision === "confirm" && next.status !== "failed") playFeedback("confirm");
     } catch (error) { setFailure(error instanceof Error ? translateKnown(t, error.message) : t("The action could not be completed.")); }
     finally { setBusy(null); }
   };

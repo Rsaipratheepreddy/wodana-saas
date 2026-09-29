@@ -8,6 +8,7 @@ describe('CalendarTimeGrid', () => {
     const start = new Date(2026, 8, 21, 10, 30);
     render(<CalendarTimeGrid
       days={[new Date(2026, 8, 21)]}
+      today="2026-09-21"
       events={[{ id: 'task-1', title: 'Review production schedule', start, end: new Date(2026, 8, 21, 11), provider: 'crm' }]}
       onSelect={vi.fn()}
       onSchedule={vi.fn()}
@@ -23,7 +24,7 @@ describe('CalendarTimeGrid', () => {
       { id: 'visit', title: 'Site visit – Palm Jumeirah', start: new Date(2026, 8, 21, 10, 30), end: new Date(2026, 8, 21, 11, 30), provider: 'crm' as const },
       ...Array.from({ length: 4 }, (_, index) => ({ id: `follow-${index}`, title: `Follow up ${index}`, start: new Date(2026, 8, 21, 11), provider: 'crm' as const })),
     ];
-    render(<CalendarTimeGrid days={Array.from({ length: 7 }, (_, index) => new Date(2026, 8, 20 + index))} events={events} onSelect={onSelect} onSchedule={vi.fn()} />);
+    render(<CalendarTimeGrid days={Array.from({ length: 7 }, (_, index) => new Date(2026, 8, 20 + index))} today="2026-09-21" events={events} onSelect={onSelect} onSchedule={vi.fn()} />);
     expect(screen.getByRole('button', { name: /CRM Site visit – Palm Jumeirah/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /CRM Follow up 0/ })).toBeNull();
     const chip = screen.getByRole('button', { name: /Show 4 more events from/ });

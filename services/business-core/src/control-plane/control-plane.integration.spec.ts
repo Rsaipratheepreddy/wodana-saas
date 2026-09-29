@@ -18,6 +18,7 @@ import { TenantLifecycleService } from "./tenant-lifecycle.service";
 import type { PlatformOperatorPermission } from "../auth/platform-operator-policy";
 import { platformOperatorPermissions } from "../auth/platform-operator-policy";
 import { ViewAsService } from "../auth/view-as/view-as.service";
+import { ROLE_TEMPLATES } from "../workspaces/role-templates";
 
 // Real PostgreSQL, run as the app role (forced RLS applies). Rows are committed so concurrent commands
 // really race; every row this suite creates is removed afterwards.
@@ -164,14 +165,17 @@ integration("control plane with PostgreSQL", () => {
     ]);
     const byCode = Object.fromEntries(roles.rows.map((role) => [role.code, role]));
     // Sales sends its own quotes: it names the client's decision-maker (portal.contacts.manage).
-    expect(byCode.sales).toMatchObject({ isSystem: false, permissions: 20 });
+    // The kit's Sales template, plus asking Woddy, which every kit role gets (the AI switch and credits still decide).
+    const salesTemplate = ROLE_TEMPLATES.find((template) => template.code === "sales")!;
+    expect(byCode.sales).toMatchObject({ isSystem: false, permissions: new Set([...salesTemplate.permissions, "ai.suggestions.use"]).size });
     expect(byCode.project_manager.permissions).toBeGreaterThan(byCode.site_supervisor.permissions);
     const salesPermissions = await owner.query<{ code: string }>(
       `SELECT permission.code FROM role_permissions granted JOIN roles role ON role.id = granted.role_id
          JOIN permissions permission ON permission.id = granted.permission_id
         WHERE role.workspace_id = $1 AND role.code = 'sales' ORDER BY permission.code`, [workspaceId]);
     const codes = salesPermissions.rows.map((row) => row.code);
-    expect(codes).toEqual(expect.arrayContaining(["crm.leads.manage", "crm.opportunities.manage", "pre_projects.create", "pre_projects.edit"]));
+    expect(codes).toEqual(expect.arrayContaining(["crm.leads.manage", "crm.opportunities.manage", "pre_projects.create", "pre_projects.edit", "ai.suggestions.use"]));
+    expect([...codes].sort()).toEqual([...new Set([...salesTemplate.permissions, "ai.suggestions.use"])].sort());
     expect(codes.some((code) => code.startsWith("commercial.") || code === "crm.settings.manage")).toBe(false);
 
     const pipelines = await owner.query<{ code: string; isDefault: boolean; status: string; stages: number }>(

@@ -42,7 +42,8 @@ export function ProjectStages({ detail, run, onTeam, plan, today, api }: {
         const who = stage.owner?.name ?? (stage.ownerRole ? t("{role} · not named", { role: t(roleLabel(stage.ownerRole) as never) }) : "");
         const planned = window?.start && (stage.status === "current" || stage.status === "upcoming")
           ? `${format.short(window.start)}${window.end && window.end !== window.start ? ` – ${format.short(window.end)}` : ""}` : "";
-        const meta = stage.status === "done" ? t("Done {date}", { date: format.when(stage.completedAt) }) + (stage.completedByName ? ` · ${stage.completedByName}` : "")
+        const meta = stage.status === "done" ? t("Done {date}", { date: format.when(stage.completedAt) })
+            + (stage.finishedAutomatically ? ` · ${t("Finished by itself")}` : stage.completedByName ? ` · ${stage.completedByName}` : "")
           : stage.status === "skipped" ? t("Skipped · {reason}", { reason: stage.skipReason ?? "" })
           : [planned, who].filter(Boolean).join(" · ");
         const head = <>

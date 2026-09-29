@@ -17,6 +17,8 @@ export type AuthProfile = {
   displayName: string;
   /** The person's saved interface language with the workspace region ("ar-AE"); plain "en" means not chosen. */
   preferredLocale?: string | null;
+  /** Sound and haptics on this person's devices (Profile → Sound & haptics); on unless they turned it off. */
+  feedbackEnabled?: boolean;
   platformRole?: "administrator" | null;
   memberships: Array<{
     workspaceId: string;

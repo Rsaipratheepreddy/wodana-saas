@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Archive, CalendarClock, Check, GitMerge, Pencil, Plus, ShieldCheck, Trash2, UserRound } from "lucide-react";
-import { ActivityFeed, Badge, Button, Callout, ControlledModalDialog, EditableField, EditableFieldList, EmptyState, NumericInput, SelectField, TextInput, TextAreaField, Checkbox, Tabs, Skeleton } from "@/design-system";
+import { ActivityFeed, Badge, Button, Callout, ControlledModalDialog, EditableField, EditableFieldList, EmptyState, NumericInput, SelectField, TextInput, TextAreaField, Checkbox, Tabs, Skeleton, useDesignSystem } from "@/design-system";
 import { CrmRequestError, crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import { clientTimelineItems } from "@/lib/crm/client-timeline";
 import type { ClientTimelineEvent } from "@wodana/contracts";
 import styles from "./crm-workbench.module.css";
 import { useWoddyRecord } from "./woddy-chat";
 import { CrmDateTimeField } from "./crm-date-time-field";
-import { localDateTime } from "@/lib/crm/calendar";
+import { zonedDateTime, zonedDateTimeToIso } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { activityTitle } from "@/lib/crm/contact";
 
@@ -35,7 +35,9 @@ export function Fields({ fields, values, onChange }: { fields: FieldSpec[]; valu
 
 export function ActionDialog({ action, workspaceId, onClose, onSaved }: { action: ActionSpec; workspaceId: string; onClose: () => void; onSaved: (result: RecordData) => Promise<void> | void }) {
   const t = useT();
-  const [values, setValues] = useState<Record<string, unknown>>(() => Object.fromEntries(action.fields.map((f) => { const value = action.initial?.[f.key] ?? f.value ?? (f.type === "multi-select" ? [] : ""); return [f.key, f.type === "datetime-local" ? localDateTime(value) : value]; })));
+  // Date-and-time fields read and write the workspace's wall clock (its region's zone), like the calendar.
+  const { timeZone } = useDesignSystem();
+  const [values, setValues] = useState<Record<string, unknown>>(() => Object.fromEntries(action.fields.map((f) => { const value = action.initial?.[f.key] ?? f.value ?? (f.type === "multi-select" ? [] : ""); return [f.key, f.type === "datetime-local" ? zonedDateTime(value, timeZone) : value]; })));
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
   const [failure, setFailure] = useState("");
@@ -50,7 +52,13 @@ export function ActionDialog({ action, workspaceId, onClose, onSaved }: { action
           const value = values[field.key];
           if (field.required && (value === "" || value === undefined || (typeof value === "string" && !value.trim()) || (Array.isArray(value) && !value.length))) throw new Error(t("Enter {field}.", { field: field.label.toLowerCase() }));
           if (value === "" || value === undefined) { delete body[field.key]; continue; }
-          body[field.key] = field.type === "number" ? Number(value) : field.type === "datetime-local" ? new Date(String(value)).toISOString() : typeof value === "string" ? value.trim() : value;
+          if (field.type === "datetime-local") {
+            const instant = zonedDateTimeToIso(String(value), timeZone);
+            if (!instant) throw new Error(t("Choose a valid date and time for {field}.", { field: field.label.toLowerCase() }));
+            body[field.key] = instant;
+            continue;
+          }
+          body[field.key] = field.type === "number" ? Number(value) : typeof value === "string" ? value.trim() : value;
         }
         const path = typeof action.path === "function" ? action.path(body) : action.path;
         const result = await crmRequest(workspaceId, path, action.method ?? "POST", action.transform ? action.transform(body) : body);
@@ -104,6 +112,7 @@ export type AssignmentEntry = { id: string; at: string; ownerName: string | null
 /** Activities and (for enquiries) assignments in one timeline, newest first (PLM-095). */
 export function ActivityPanel({ workspaceId, leadId, partyId, opportunityId, ownerMembershipId, onChanged, assignments = [] }: { workspaceId: string; leadId?: string; partyId?: string; opportunityId?: string; ownerMembershipId?: string | null; onChanged?: () => Promise<void> | void; assignments?: AssignmentEntry[] }) {
   const t = useT();
+  const zoned = useDesignSystem();
   const query = new URLSearchParams({ limit: "100", ...(leadId ? { leadId } : opportunityId ? { opportunityId } : partyId ? { partyId } : {}) });
   const resource = useCrmResource<unknown>(workspaceId, `activities?${query}`);
   const [action, setAction] = useState<ActionSpec | null>(null);
@@ -114,13 +123,13 @@ export function ActivityPanel({ workspaceId, leadId, partyId, opportunityId, own
   const nextCursor = cursor ?? (resource.data as { nextCursor?: string } | null)?.nextCursor;
   const target = { ...(leadId ? { leadId } : {}), ...(partyId ? { partyId } : {}), ...(opportunityId ? { opportunityId } : {}), ...(ownerMembershipId ? { ownerMembershipId } : {}) };
   return <div className={`${styles.workbench} ${styles.activityPanel}`}>
-    <div className={styles.toolbar}><Button size="compact" className={styles.activityAddAction} onPress={() => setAction({ title: t("Add activity"), description: t("A saved note or scheduled call is an internal record. Complete an outbound call only after the customer interaction actually happened."), path: "activities", initial: { ...target, type: "task", isNextAction: true }, fields: [{ key: "type", label: t("Activity"), options: choice(["task", "call", "meeting", "note"]), required: true }, { key: "title", label: t("Title"), required: true }, { key: "dueAt", label: t("Due (your local time)"), type: "datetime-local" }, { key: "isNextAction", label: t("Make this the next action"), type: "checkbox" }, { key: "description", label: t("Notes"), type: "textarea" }], transform: (v) => { if (v.type === "note") { v.isNextAction = false; v.interactionDirection = "internal"; } if (v.type === "call") v.interactionDirection = "outbound"; if (v.isNextAction && !v.dueAt) throw new Error(t("Choose a due date for the next action.")); return v; } })}><Plus aria-hidden="true" size={14} />{t("Add activity")}</Button></div>
+    <div className={styles.toolbar}><Button size="compact" className={styles.activityAddAction} onPress={() => setAction({ title: t("Add activity"), description: t("A saved note or scheduled call is an internal record. Complete an outbound call only after the customer interaction actually happened."), path: "activities", initial: { ...target, type: "task", isNextAction: true }, fields: [{ key: "type", label: t("Activity"), options: choice(["task", "call", "meeting", "note"]), required: true }, { key: "title", label: t("Title"), required: true }, { key: "dueAt", label: t("Due"), type: "datetime-local" }, { key: "isNextAction", label: t("Make this the next action"), type: "checkbox" }, { key: "description", label: t("Notes"), type: "textarea" }], transform: (v) => { if (v.type === "note") { v.isNextAction = false; v.interactionDirection = "internal"; } if (v.type === "call") v.interactionDirection = "outbound"; if (v.isNextAction && !v.dueAt) throw new Error(t("Choose a due date for the next action.")); return v; } })}><Plus aria-hidden="true" size={14} />{t("Add activity")}</Button></div>
     <ResourceState {...resource} retry={resource.refresh} />
     {!resource.loading && !resource.failure && !activities.length && !assignments.length ? <p className={styles.empty}>{t("No activities yet. Schedule a follow-up or record a note.")}</p> : null}
     {timelineOf(activities, assignments).map((entry) => entry.kind === "assignment" ? <div className={styles.timelineAssignment} key={`assignment-${entry.item.id}`}>
       <UserRound aria-hidden="true" size={14} />
       <div><strong>{entry.item.ownerName ? t("Assigned to {name}", { name: entry.item.ownerName }) : t("Returned to the queue")}</strong><small>{label(entry.item.method)} · {dateText(entry.item.at)}</small>{entry.item.reason ? <p>{entry.item.reason}</p> : null}</div>
-    </div> : (activity => <div className={styles.row} key={activity.id}><div><strong>{activityTitle(activity, t)}</strong><small>{label(activity.type)}{activity.interactionDirection ? ` · ${label(activity.interactionDirection)}` : ""} · {label(activity.status)} · {dateText(activity.dueAt)}{activity.isNextAction ? ` · ${t("Next action")}` : ""}</small>{activity.description ? <p>{String(activity.description)}</p> : null}</div>{activity.status === "pending" ? <div className={`${styles.actions} ${styles.activityActions}`}><Button size="compact" onPress={() => setAction({ title: t("Reschedule activity"), path: `activities/${activity.id}`, method: "PATCH", initial: { version: activity.version }, fields: [{ key: "dueAt", label: t("New due date"), type: "datetime-local", required: true }] })}><CalendarClock aria-hidden="true" size={14} />{t("Reschedule")}</Button><Button size="compact" variant="primary" onPress={() => setAction({ title: activity.type === "call" ? t("Confirm completed call") : t("Complete activity"), description: activity.type === "call" ? t("Confirm only after a real outbound customer call. This becomes first-response evidence.") : undefined, path: `activities/${activity.id}/complete`, initial: { version: activity.version }, fields: [{ key: "outcome", label: t("Outcome"), required: true }], submit: t("Complete") })}><Check aria-hidden="true" size={14} />{t("Complete")}</Button></div> : <Badge tone="neutral">{label(activity.status)}</Badge>}</div>)(entry.item))}
+    </div> : (activity => <div className={styles.row} key={activity.id}><div><strong>{activityTitle(activity, t)}</strong><small>{label(activity.type)}{activity.interactionDirection ? ` · ${label(activity.interactionDirection)}` : ""} · {label(activity.status)} · {dateText(activity.dueAt, zoned)}{activity.isNextAction ? ` · ${t("Next action")}` : ""}</small>{activity.description ? <p>{String(activity.description)}</p> : null}</div>{activity.status === "pending" ? <div className={`${styles.actions} ${styles.activityActions}`}><Button size="compact" onPress={() => setAction({ title: t("Reschedule activity"), path: `activities/${activity.id}`, method: "PATCH", initial: { version: activity.version }, fields: [{ key: "dueAt", label: t("New due date"), type: "datetime-local", required: true }] })}><CalendarClock aria-hidden="true" size={14} />{t("Reschedule")}</Button><Button size="compact" variant="primary" onPress={() => setAction({ title: activity.type === "call" ? t("Confirm completed call") : t("Complete activity"), description: activity.type === "call" ? t("Confirm only after a real outbound customer call. This becomes first-response evidence.") : undefined, path: `activities/${activity.id}/complete`, initial: { version: activity.version }, fields: [{ key: "outcome", label: t("Outcome"), required: true }], submit: t("Complete") })}><Check aria-hidden="true" size={14} />{t("Complete")}</Button></div> : <Badge tone="neutral">{label(activity.status)}</Badge>}</div>)(entry.item))}
     {nextCursor && cursor !== "done" ? <Button size="compact" onPress={async () => { try { const result = await crmRequest<{ data: RecordData[]; nextCursor: string | null }>(workspaceId, `activities?${query}&cursor=${encodeURIComponent(nextCursor)}`); setExtra((old) => [...old, ...result.data.filter((row) => !activities.some((a) => a.id === row.id))]); setCursor(result.nextCursor ?? "done"); } catch (error) { setPageError((error as Error).message); } }}>{t("Load more activities")}</Button> : null}
     {pageError ? <p role="alert">{pageError}</p> : null}
     {action ? <ActionDialog action={action} workspaceId={workspaceId} onClose={() => setAction(null)} onSaved={async () => { setExtra([]); setCursor(null); resource.refresh(); await onChanged?.(); }} /> : null}

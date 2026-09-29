@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarClock, CircleSlash, Mail, MessageCircle, MessageSquareText, Phone, PhoneMissed, ThumbsUp, Users, type LucideIcon } from "lucide-react";
+import { CalendarClock, CircleSlash, Mail, MessageCircle, MessageSquareText, Phone, PhoneMissed, PhoneOff, ThumbsUp, Users, type LucideIcon } from "lucide-react";
 import { Button, ControlledModalDialog, InlineNotice, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
@@ -13,8 +13,8 @@ import { CrmDateTimeField } from "./crm-date-time-field";
 import styles from "./log-contact-dialog.module.css";
 
 const CHANNEL_ICONS: Record<ContactChannel, LucideIcon> = { call: Phone, whatsapp: MessageCircle, email: Mail, meeting: Users, sms: MessageSquareText };
-const OUTCOME_ICONS: Record<ContactOutcome, LucideIcon> = { no_answer: PhoneMissed, message_sent_no_reply: MessageSquareText, willing_to_talk: ThumbsUp, come_back_later: CalendarClock, not_interested: CircleSlash };
-const OUTCOME_TONES: Partial<Record<ContactOutcome, string>> = { willing_to_talk: "success", come_back_later: "attention", not_interested: "danger" };
+const OUTCOME_ICONS: Record<ContactOutcome, LucideIcon> = { no_answer: PhoneMissed, message_sent_no_reply: MessageSquareText, willing_to_talk: ThumbsUp, come_back_later: CalendarClock, not_interested: CircleSlash, unreachable: PhoneOff };
+const OUTCOME_TONES: Partial<Record<ContactOutcome, string>> = { willing_to_talk: "success", come_back_later: "attention", not_interested: "danger", unreachable: "danger" };
 
 /**
  * PLM-042: record one contact attempt; the outcome moves the enquiry to the right list. S-16: a try
@@ -51,10 +51,12 @@ export function LogContactDialog({ workspaceId, lead, slaPolicies = [], onClose,
     { id: "willing_to_talk", label: t("Willing to talk") },
     { id: "come_back_later", label: t("Come back later") },
     { id: "not_interested", label: t("Not interested") },
+    // S-28: closes an enquiry the client never answered, reported apart from "not interested".
+    { id: "unreachable", label: t("Unreachable") },
   ];
   const unanswered = outcome !== null && UNANSWERED_OUTCOMES.includes(outcome);
   const needsFollowUp = outcome === "come_back_later";
-  const showFollowUp = outcome !== null && outcome !== "not_interested";
+  const showFollowUp = outcome !== null && outcome !== "not_interested" && outcome !== "unreachable";
   const chipLabel = (id: (typeof suggestions)[number]["id"], at: Date) => {
     const when = deadlineText(at.toISOString(), { locale, timeZone }, now);
     return id === "two_hours" ? t("In 2 h · {when}", { when }) : id === "next_day" ? t("Next working day · {when}", { when }) : t("In 3 days · {when}", { when });
@@ -63,7 +65,7 @@ export function LogContactDialog({ workspaceId, lead, slaPolicies = [], onClose,
   const choose = (next: ContactOutcome) => {
     setOutcome(next); setError("");
     // Suggest a next step where one is expected; the person can change or clear it.
-    if (!followUp && UNANSWERED_OUTCOMES.includes(next)) setFollowUp(wallClock(suggestions[0].at, timeZone));
+    if (!followUp && UNANSWERED_OUTCOMES.includes(next) && next !== "unreachable") setFollowUp(wallClock(suggestions[0].at, timeZone));
     if (!followUp && next === "come_back_later") setFollowUp(wallClock(suggestions[1].at, timeZone));
   };
 

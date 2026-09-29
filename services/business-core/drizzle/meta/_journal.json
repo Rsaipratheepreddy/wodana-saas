@@ -820,6 +820,27 @@
       "when": 1801280000000,
       "tag": "0170_sales_enquiries",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1801290000100,
+      "tag": "0172_project_auto_finish",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1801290000200,
+      "tag": "0173_client_update_auto_send",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1801290000300,
+      "tag": "0174_user_feedback_setting",
+      "breakpoints": true
     }
   ]
 }

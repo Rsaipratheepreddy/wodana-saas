@@ -19,6 +19,8 @@ export type Profile = {
   id: string; primaryEmail: string; displayName: string; status: string;
   /** The interface language saved on the person's profile ("ar-AE"); plain "en" is the default, not a choice. */
   preferredLocale?: string | null;
+  /** Sound and haptics on this person's devices (Me → Sound & haptics); on unless they turned it off. */
+  feedbackEnabled?: boolean;
   memberships: Membership[]; nextAction: string;
   unavailableOrganizations?: Array<{ workspaceId: string; workspaceName: string; workspaceStatus: string }>;
 };

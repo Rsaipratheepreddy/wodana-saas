@@ -99,8 +99,24 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
         <Switch aria-label={t("Change payment verified")} isDisabled={readOnly} isSelected={form.requireVariationPayment} onChange={(value) => setForm({ ...form, requireVariationPayment: value })} />
       </SettingsRow>
     </SettingsSection>
+    <SettingsSection id="finish" title={t("When a project finishes")}>
+      <SettingsRow label={t("Finish by itself")} hint={t("When the client accepts the handover and nothing is left open.")}>
+        <Switch aria-label={t("Finish by itself")} isDisabled={readOnly} isSelected={form.autoFinish} onChange={(value) => setForm({ ...form, autoFinish: value })} />
+      </SettingsRow>
+    </SettingsSection>
+    <SettingsSection id="client-updates" title={t("Client updates")}>
+      <SettingsRow label={t("Send by itself")} hint={t("The week's drafted update goes to the client when nobody sent or discarded it in time.")}>
+        <Switch aria-label={t("Send by itself")} isDisabled={readOnly} isSelected={form.clientUpdateAutoSendHours !== null}
+          onChange={(value) => setForm({ ...form, clientUpdateAutoSendHours: value ? 24 : null })} />
+      </SettingsRow>
+      {form.clientUpdateAutoSendHours !== null ? <SettingsRow label={t("After")}>
+        <SelectField aria-label={t("After")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={String(form.clientUpdateAutoSendHours)}
+          items={[...new Set([12, 24, 48, 72, form.clientUpdateAutoSendHours])].sort((a, b) => a - b).map((hours) => ({ id: String(hours), label: t("{count} hours", { count: hours }) }))}
+          onSelectionChange={(key) => setForm({ ...form, clientUpdateAutoSendHours: Number(key) })} />
+      </SettingsRow> : null}
+    </SettingsSection>
     {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} isDisabled={!/^[A-Z]/.test(form.referencePrefix)} onDiscard={() => setForm(data.settings)}
-      onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment, referencePrefix: form.referencePrefix }); setBusy(false); }} />}
+      onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment, autoFinish: form.autoFinish, clientUpdateAutoSendHours: form.clientUpdateAutoSendHours, referencePrefix: form.referencePrefix }); setBusy(false); }} />}
   </>;
 }
 

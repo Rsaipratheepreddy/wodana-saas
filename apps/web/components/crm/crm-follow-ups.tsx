@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { CalendarDays, Filter, Plus, RefreshCw, Phone, CheckSquare, UserRound } from "lucide-react";
-import { Avatar, Badge, Button, Callout, DataGrid, IconButton, SearchInput, SelectField, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { Avatar, Badge, Button, Callout, DataGrid, IconButton, SearchInput, SelectField, useDesignSystem, useWorkspaceZoneLabel, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import {FollowUpKanban} from './follow-up-kanban';
@@ -12,13 +12,12 @@ import { crmRequest, type RecordData } from "@/lib/crm/client";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
 import { CrmProductShell } from "./crm-product-shell";
 import { FollowUpSheet, NewFollowUpDialog } from "./follow-up-editor";
-import { calendarDayKey } from "@/lib/crm/calendar";
+import { zonedDateTime, zonedToday } from "@/lib/crm/zoned-time";
 import { FollowUpTimeline } from "./follow-up-timeline";
 import styles from "./crm-follow-ups.module.css";
 
 type FollowUpView = "todo" | "completed" | "all";
 const groups = ["Overdue", "Today", "Upcoming", "In progress", "Completed", "Cancelled"] as const;
-const subscribe = () => () => {};
 const subscribeToClock = (update: () => void) => { const timer = window.setInterval(update, 1_000); return () => window.clearInterval(timer); };
 const currentMinute = () => Math.floor(Date.now() / 60_000) * 60_000;
 const ownerKey = (item: RecordData) => String(item.ownerMembershipId ?? '').trim() || (item.ownerName ? `name:${String(item.ownerName).trim().toLocaleLowerCase()}` : '');
@@ -46,7 +45,9 @@ function columnsFor(now: number, timeZone: string, locale: string, t: Translate)
 
 export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "timeline", tasksOnly = false }: { tasksOnly?: boolean; initialLayout?: "timeline" | "list" | "kanban"; initialData: CrmScreenPageData; initialRecordId?: string }) {
   const t = useT();
-  const { locale } = useDesignSystem();
+  // Due times, "today" and the schedule are the workspace's (its region's zone), wherever the viewer is.
+  const { locale, timeZone } = useDesignSystem();
+  const zoneLabel = useWorkspaceZoneLabel();
   const [items, setItems] = useState(initialData.items);
   const [cursor, setCursor] = useState(initialData.nextCursor);
   const [view, setView] = useState<FollowUpView>(tasksOnly ? "all" : "todo");
@@ -56,7 +57,7 @@ export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "ti
   const [ownerFilter, setOwnerFilter] = useState("");
   const [peopleSearch, setPeopleSearch] = useState("");
   const peopleMenu = useRef<HTMLDetailsElement | null>(null);
-  const [day, setDay] = useState(() => calendarDayKey(new Date(initialData.referenceTime)));
+  const [day, setDay] = useState(() => zonedToday(timeZone, new Date(initialData.referenceTime)));
   const [createTime, setCreateTime] = useState("10:00");
   const [revision, setRevision] = useState(0);
   const [creating, setCreating] = useState(false);
@@ -66,8 +67,6 @@ export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "ti
   const [failure, setFailure] = useState("");
   const [notice, setNotice] = useState("");
   const now = useSyncExternalStore(subscribeToClock, currentMinute, () => Date.parse(initialData.referenceTime));
-  const ready = useSyncExternalStore(subscribe, () => true, () => false);
-  const timeZone = ready ? Intl.DateTimeFormat().resolvedOptions().timeZone : "UTC";
 
   const reload = async (more = false) => {
     if (fetching.current || more && !cursor) return;
@@ -81,7 +80,7 @@ export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "ti
   };
   const saved = (record: RecordData) => {
     setRevision(value => value + 1);
-    if (record.dueAt) setDay(calendarDayKey(new Date(String(record.dueAt))));
+    if (record.dueAt) setDay(zonedDateTime(record.dueAt, timeZone).slice(0, 10));
     setItems((old) => old.some((item) => item.id === record.id) ? old.map((item) => item.id === record.id ? { ...item, ...record } : item) : [record, ...old]);
     setNotice(record.status === "completed" ? t("Follow-up completed.") : t("Follow-up saved. Its reminder is available in Today and Calendar."));
   };
@@ -115,7 +114,7 @@ export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "ti
     <IconButton size="compact" aria-label={t("Refresh follow-ups")} isDisabled={busy} onPress={() => { void reload(); setRevision(value => value + 1); }}><RefreshCw size={15} /></IconButton>
     <Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus size={15} />{tasksOnly?t('Add task'):t('Add follow-up')}</Button>
   </div>;
-  return <CrmProductShell title={t("Calendar")} description="" canView={initialData.canView} useWorkspaceColors pageClassName={tasksOnly?boardStyles.page:styles.page}>
+  return <CrmProductShell title={t("Follow-ups")} description="" canView={initialData.canView} useWorkspaceColors pageClassName={tasksOnly?boardStyles.page:styles.page}>
     {failure ? <Callout title={t("Could not load follow-ups")} tone="warning">{failure}<Button size="compact" onPress={() => void reload()}>{t("Retry")}</Button></Callout> : null}
     {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
     {!creating && !selected ? <>{tasksOnly?<div className={boardStyles.boardHeader}><nav aria-label={t("Task boards")} className={boardStyles.boardSwitcher}><Link aria-current="page" href="/workspace/crm/follow-ups?view=activity">{t("Sales")}</Link><Link href="/workspace/tasks">{t("Projects")}</Link></nav></div>:null}
@@ -142,7 +141,7 @@ export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "ti
       selectedView={view}
       onViewChange={(id) => setView(id as FollowUpView)}
     />}
-    <p className={styles.timeZone}>{cursor ? t("Times in {timeZone} · More follow-ups are available", { timeZone }) : t("Times in {timeZone}", { timeZone })}</p></> : null}
+    {zoneLabel || cursor ? <p className={styles.timeZone}>{[zoneLabel ? t("Times in {zone}", { zone: zoneLabel }) : null, cursor ? t("More follow-ups are available") : null].filter(Boolean).join(" · ")}</p> : null}</> : null}
     {creating ? <NewFollowUpDialog initialType={tasksOnly ? "task" : "call"} inline={layout === "timeline"} initialSchedule={{ date: day, time: createTime }} workspaceId={initialData.workspaceId} onClose={() => setCreating(false)} onCreated={(record) => { saved(record); setView("todo"); setSearch(""); setCreating(false); }} /> : null}
     {selected ? <FollowUpSheet inline={layout === "timeline"} key={selected} recordId={selected} summary={items.find((item) => item.id === selected)} workspaceId={initialData.workspaceId} onClose={() => setSelected(undefined)} onSaved={saved} /> : null}
   </CrmProductShell>;

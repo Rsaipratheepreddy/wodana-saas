@@ -4,7 +4,7 @@ import { projectRead } from "@/lib/projects/server";
 import type { ProjectWorkflowTemplatesResponse } from "@/lib/projects/workflow-templates";
 import { isNoAccessError } from "@/design-system/foundations/access";
 
-/** Everything the Planning and Projects boards need, loaded once on the server. */
+/** Everything the Planning list needs, loaded once on the server. */
 export async function loadProjectsBoard() {
   const [execution, planning, workflow] = await Promise.allSettled([projectRead<PortfolioRow[]>("portfolio"), getPreProjects(new URLSearchParams()), projectRead<ProjectWorkflowTemplatesResponse>("workflow-templates")]);
   if (planning.status === "rejected") throw planning.reason;
@@ -18,9 +18,14 @@ export async function loadProjectsBoard() {
     if (!fresh.length) break;
     data.items.push(...fresh);
   }
+  // Each workflow template's stages and their phase, so Planning reads a project's stage from its own route.
+  const workflowPhases = workflow.status === "fulfilled"
+    ? Object.fromEntries([workflow.value.data.defaultTemplate, ...workflow.value.data.templates].map((template) => [template.code, Object.fromEntries(template.stages.map((stage) => [stage.key, stage.phase]))]))
+    : {};
   return {
     projects: execution.status === "fulfilled" ? execution.value.data : [],
     planning: data,
+    workflow: workflowPhases,
     palmFlowEnabled,
     // Someone without Projects simply has no project rows here; only a failing service is worth a warning.
     projectError: execution.status === "rejected" && !isNoAccessError(execution.reason) ? "Projects could not be loaded. Refresh to try again." : workflow.status === "rejected" && !isNoAccessError(workflow.reason) ? "Project workflow could not be loaded. Refresh to confirm which records belong in Planning." : undefined,

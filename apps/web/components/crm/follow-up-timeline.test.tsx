@@ -10,7 +10,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/crm/client", async original => ({ ...await original<object>(), crmRequest: vi.fn() }));
 const api = vi.mocked(crmRequest);
 const day = "2026-09-22";
-const record = { id: "one", type: "call", title: "Discuss quote", status: "pending", dueAt: new Date(`${day}T18:00`).toISOString(), description: "Check oak finish", partyName: "Amira", version: 1 };
+const record = { id: "one", type: "call", title: "Discuss quote", status: "pending", dueAt: `${day}T18:00:00.000Z`, description: "Check oak finish", partyName: "Amira", version: 1 };
 beforeEach(() => { vi.clearAllMocks(); });
 describe("Follow-up timeline", () => {
   it("loads every page for the selected local day and opens a scheduled record", async () => {
@@ -22,7 +22,7 @@ describe("Follow-up timeline", () => {
     await userEvent.click(await screen.findByRole("button", { name: /Discuss quote/ }));
     expect(open).toHaveBeenCalledWith(record);
     expect(screen.getByRole("button", { name: /Second call/ })).toBeInTheDocument();
-    expect(api.mock.calls[0][1]).toContain(encodeURIComponent(followUpDayRange(day).from));
+    expect(api.mock.calls[0][1]).toContain(encodeURIComponent(followUpDayRange(day, "UTC").from));
     expect(api.mock.calls[1][1]).toContain("cursor=page2");
     await userEvent.click(screen.getByRole("button", { name: "Add follow-up at 18:00" }));
     expect(create).toHaveBeenCalledWith("18:00");
@@ -41,7 +41,7 @@ describe("Follow-up timeline", () => {
       if (path.startsWith("activities?")) return { data: saved ? [{ ...saved, id: "created", status: "pending" }] : [], nextCursor: null };
       return { data: [], nextCursor: null };
     });
-    render(<CrmFollowUps initialData={{ ...crmScreenFixture("follow-ups"), workspaceId: "ws", items: [], referenceTime: new Date(`${day}T12:00`).toISOString() }} />);
+    render(<CrmFollowUps initialData={{ ...crmScreenFixture("follow-ups"), workspaceId: "ws", items: [], referenceTime: `${day}T12:00:00.000Z` }} />);
     await userEvent.click(screen.getByRole("button", { name: "Add follow-up at 18:00" }));
     expect(screen.getByRole("spinbutton", { name: /hour,.*Reminder time/i })).toHaveAttribute("aria-valuenow", "6");
     const combo = screen.getByRole("combobox", { name: /Enquiry or customer/ });
@@ -56,7 +56,7 @@ describe("Follow-up timeline", () => {
     await userEvent.type(screen.getByRole("textbox", { name: "Notes" }), "Discuss oak finish");
     await userEvent.click(screen.getByRole("button", { name: "Save reminder" }));
     expect(await screen.findByRole("button", { name: /Call at 7 pm/ })).toBeInTheDocument();
-    expect(saved).toMatchObject({ dueAt: new Date(`${day}T19:00`).toISOString(), description: "Discuss oak finish", customerVisible: false });
+    expect(saved).toMatchObject({ dueAt: `${day}T19:00:00.000Z`, description: "Discuss oak finish", customerVisible: false });
   });
   it("keeps sample edits local, including completion in RTL", async () => {
     const saved = vi.fn(); const close = vi.fn();
