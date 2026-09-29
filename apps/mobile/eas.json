@@ -1,31 +1,57 @@
 {
   "cli": {
     "version": ">= 16.0.0",
-    "appVersionSource": "local"
+    "appVersionSource": "remote"
   },
   "build": {
+    "base": {
+      "env": {
+        "EXPO_PUBLIC_EXPO_OWNER": "wodanas-team",
+        "EXPO_PUBLIC_APP_SLUG": "wodana",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
       "channel": "development",
+      "environment": "development",
       "env": { "EXPO_PUBLIC_APP_ENV": "development" }
     },
-    "uat": {
+    "preview": {
+      "extends": "base",
       "distribution": "internal",
-      "channel": "uat",
+      "channel": "preview",
+      "environment": "preview",
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_APP_ENV": "uat" }
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "uat",
+        "EXPO_PUBLIC_AUTH_API_URL": "https://plm.wodana.ai/api/v1"
+      }
     },
     "production": {
+      "extends": "base",
+      "distribution": "store",
       "channel": "production",
+      "environment": "production",
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_APP_ENV": "production" }
+      "android": { "buildType": "app-bundle" },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "production",
+        "EXPO_PUBLIC_AUTH_API_URL": "https://plm.wodana.ai/api/v1"
+      }
     }
   },
   "submit": {
     "production": {
       "ios": {
         "appleTeamId": "MSZ9TCZKAB"
+      },
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     }
   }

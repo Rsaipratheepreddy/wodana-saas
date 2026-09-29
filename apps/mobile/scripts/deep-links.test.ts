@@ -29,7 +29,9 @@ test('notification links open the same record in the app', () => {
     [`/workspace/inventory/moves?move=${id}`, `/purchasing/move/${id}`],
     [`/workspace/pre-projects/cases/${id}/overview`, `/survey/${id}`],
     [`/workspace/tasks?projectId=${id}&taskId=${other}`, `/projects/${id}/task/${other}`],
-    [`/workspace/crm/conversations?record=${id}&lead=${other}`, `/sales/${other}`],
+    [`/workspace/crm/conversations?record=${id}&lead=${other}`, `/chats/${id}`],
+    [`/workspace/crm/inbox?conversation=${id}`, `/chats/${id}`],
+    [`/workspace/crm/conversations?lead=${other}`, `/sales/${other}`],
     ['/workspace/inventory', '/purchasing'],
   ];
   for (const [link, route] of cases) assert.equal(appRouteFor(link), route, link);

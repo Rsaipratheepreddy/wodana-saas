@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as Device from 'expo-device';
@@ -7,7 +8,7 @@ import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi, type Api } from '../../core/api';
-import { useLanguage } from '../../core/i18n';
+import { useLanguage, useT } from '../../core/i18n';
 import { useSession } from '../../core/session';
 import { consentChanged, deviceLocale, devicePermission, permissionAllows, pushState, shouldEnablePush, type DevicePermission, type NotificationSettings } from './push-model';
 
@@ -47,11 +48,14 @@ async function currentPermission(ask: boolean): Promise<DevicePermission> {
  * Consent, the Expo token, the device and the push switch, each only when it changed. `ask` shows the
  * system prompt the first time (on sign-in); coming back to the app only notices a change in Settings.
  */
-async function register(api: Api, identity: { workspaceId: string; userId: string; locale: string }, ask: boolean) {
+type Identity = { workspaceId: string; userId: string; locale: string; channelName: string };
+
+async function register(api: Api, identity: Identity, ask: boolean) {
   const projectId = pushProjectId();
   if (!projectId || !pushSupported()) return;
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('work', { name: 'Work', importance: Notifications.AndroidImportance.HIGH });
+    // The channel the server's pushes use (app.config: defaultChannel); Android 13 asks only once one exists.
+    await Notifications.setNotificationChannelAsync('work', { name: identity.channelName, importance: Notifications.AndroidImportance.HIGH });
   }
   const id = await installationId();
   const before = await api.get<NotificationSettings>('crm/notification-settings');
@@ -70,29 +74,59 @@ async function register(api: Api, identity: { workspaceId: string; userId: strin
   if (shouldEnablePush(before, id)) await api.send('crm/notification-settings/push', 'PUT', { enabled: true });
 }
 
+// "Not now" on the app's own question waits a week before it asks again (the phone's prompt can be shown once).
+const laterKey = 'wodana.mobile.push-ask-later.v1';
+const LATER_MS = 7 * 24 * 60 * 60 * 1000;
+const askedLately = async () => Number(await AsyncStorage.getItem(laterKey).catch(() => null)) > Date.now() - LATER_MS;
+
 /**
  * Registers this phone for pushes when the person signs in to a workspace, and again when they come back
- * to the app after allowing notifications in Settings or when the phone's push token changes.
+ * to the app after allowing notifications in Settings or when the phone's push token changes. Before the
+ * phone's one-time prompt, the app asks in its own words (`asking`): `allow` shows the prompt, `later`
+ * waits a week. The person can always turn pushes on in Me.
  */
 export function usePushRegistration() {
   const api = useApi();
+  const t = useT();
   const { workspaceId, userId, membership } = useSession();
   const { language } = useLanguage();
   const queryClient = useQueryClient();
-  const running = useRef(false);
+  const [asking, setAsking] = useState(false);
+  // One registration at a time, in order: the answer to the question never races a return to the app.
+  const queue = useRef<Promise<void>>(Promise.resolve());
   const locale = deviceLocale(Intl.DateTimeFormat().resolvedOptions().locale, deviceLocale(membership.workspaceLocale ?? language));
-  const run = useCallback(async (ask: boolean) => {
-    if (running.current) return;
-    running.current = true;
-    try {
-      await register(api, { workspaceId, userId, locale }, ask);
-    } catch {
-      // Push is a convenience: the inbox still has every notice. The next sign-in or return tries again.
-    } finally {
-      running.current = false;
-      void queryClient.invalidateQueries({ queryKey: notificationSettingsKey(workspaceId) });
-    }
-  }, [api, workspaceId, userId, locale, queryClient]);
+  const channelName = t('Work');
+  const run = useCallback((ask: boolean) => {
+    queue.current = queue.current.then(async () => {
+      try {
+        let prompt = ask;
+        if (ask && pushSupported()) {
+          const answer = await Notifications.getPermissionsAsync();
+          if (answer.status === 'undetermined' && answer.canAskAgain) {
+            if (!(await askedLately())) setAsking(true);
+            prompt = false;
+          }
+        }
+        await register(api, { workspaceId, userId, locale, channelName }, prompt);
+      } catch {
+        // Push is a convenience: the inbox still has every notice. The next sign-in or return tries again.
+      } finally {
+        void queryClient.invalidateQueries({ queryKey: notificationSettingsKey(workspaceId) });
+      }
+    });
+    return queue.current;
+  }, [api, workspaceId, userId, locale, channelName, queryClient]);
+  const allow = useCallback(() => {
+    setAsking(false);
+    queue.current = queue.current.then(async () => {
+      try { await register(api, { workspaceId, userId, locale, channelName }, true); } catch { /* the inbox still has every notice */ }
+      finally { void queryClient.invalidateQueries({ queryKey: notificationSettingsKey(workspaceId) }); }
+    });
+  }, [api, workspaceId, userId, locale, channelName, queryClient]);
+  const later = useCallback(() => {
+    setAsking(false);
+    void AsyncStorage.setItem(laterKey, String(Date.now())).catch(() => undefined);
+  }, []);
   useEffect(() => {
     if (!native) return;
     void run(true);
@@ -100,6 +134,7 @@ export function usePushRegistration() {
     const rotated = Notifications.addPushTokenListener(() => { void run(false); });
     return () => { returning.remove(); rotated.remove(); };
   }, [run]);
+  return { asking, allow, later };
 }
 
 /** This person's notification settings in the workspace (push switch, devices, unread count). */
@@ -135,13 +170,19 @@ export function useSetPush() {
   const queryClient = useQueryClient();
   const { workspaceId, userId, membership } = useSession();
   const { language } = useLanguage();
+  const t = useT();
   return useMutation({
     mutationFn: async (enabled: boolean) => {
-      if (enabled) await register(api, { workspaceId, userId, locale: deviceLocale(membership.workspaceLocale ?? language) }, true);
+      if (enabled) await register(api, { workspaceId, userId, locale: deviceLocale(membership.workspaceLocale ?? language), channelName: t('Work') }, true);
       return api.send<NotificationSettings>('crm/notification-settings/push', 'PUT', { enabled });
     },
     onSuccess: (settings) => queryClient.setQueryData(notificationSettingsKey(api.workspaceId), settings),
   });
+}
+
+/** Before signing out or switching workspace: stop this phone's pushes, waiting at most a moment on it. */
+export function releaseThisPhone(api: Api) {
+  return Promise.race([unregisterThisPhone(api).catch(() => undefined), new Promise<void>((resolve) => setTimeout(resolve, 3000))]);
 }
 
 /** Signing out stops this phone's pushes for the person (best effort: signing out never waits on it). */

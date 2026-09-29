@@ -42,3 +42,13 @@ yarn-error.*
 
 # Generated local validation bundles
 .artifacts/
+
+# Store credentials never live in the repository (RELEASE.md): keystores, key properties,
+# Firebase configuration and store service-account keys.
+*.keystore
+key.properties
+keystore.properties
+google-services.json
+GoogleService-Info.plist
+credentials.json
+*service-account*.json
