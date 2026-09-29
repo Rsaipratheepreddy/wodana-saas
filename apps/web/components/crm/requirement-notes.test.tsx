@@ -26,7 +26,7 @@ describe('Requirement notebook',()=>{
   await screen.findByRole('textbox',{name:'Note title'});await userEvent.type(screen.getByRole('textbox',{name:'Note title'}),' revised');
   await userEvent.click(screen.getByRole('button',{name:'Open Bedroom'}));await userEvent.click(screen.getByRole('button',{name:'Open Kitchen storage revised'}));
   expect(screen.getByRole('textbox',{name:'Note title'})).toHaveValue('Kitchen storage revised');
-  await userEvent.type(screen.getByRole('textbox',{name:'Search notes'}),'Quiet');
+  await userEvent.type(screen.getByRole('searchbox',{name:'Search notes'}),'Quiet');
   expect(screen.queryByRole('button',{name:'Open Kitchen storage revised'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Open Bedroom'})).toBeVisible();
  });
  it('creates an explicit draft and sends the note document and original version',async()=>{

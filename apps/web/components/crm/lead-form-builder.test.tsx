@@ -51,7 +51,7 @@ describe("LeadFormBuilder", () => {
     mockApi();
     render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} />);
     expect(await screen.findByRole("button", { name: /Edit form Project enquiry/ })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Search forms" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Search forms" })).toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "Enquiry forms" })).not.toBeInTheDocument();
   });
   it("adds an enquiry field, previews it, and saves and reloads the draft", async () => {

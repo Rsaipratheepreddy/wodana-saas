@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileUp, Plus } from "lucide-react";
 import {
-  Button, Callout, ControlledModalDialog, DataGrid, EmptyState, ErrorState, NoResultsState, PageHeader, SelectField, TextInput,
+  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, FormRow, MoreDetails, NoResultsState, PageHeader, SelectField, TextAreaField, TextInput, useFormDraft, useRememberedChoice,
   type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { catalogApi, type CatalogItemRow, type CatalogStructure, type CatalogSummary } from "@/lib/workspace/catalog-v2";
+import { useAiReady } from "@/lib/workspace/ai-settings";
+import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
 import { CatalogImportDialog } from "./catalog-import-dialog";
 import { CatalogItemInspector } from "./catalog-item-inspector";
 import styles from "./catalog-page.module.css";
@@ -115,54 +117,56 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
 function NewCatalogDialog({ isOpen, onClose, onCreated, workspaceId }: { isOpen: boolean; onClose: () => void; onCreated: (catalog: CatalogSummary) => void; workspaceId: string }) {
   const t = useT();
   const [name, setName] = useState("");
-  const [purpose, setPurpose] = useState<"sell" | "buy" | "reference">("sell");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault(); setSaving(true); setError("");
-    try {
-      const created = await catalogApi<{ id: string }>(workspaceId, "", { body: { name, purpose } });
-      onCreated({ id: created.id, code: "", name, purpose, itemCount: 0, version: 1 });
-    } catch (reason) { setError(reason instanceof Error ? reason.message : ""); }
-    finally { setSaving(false); }
+  const [purpose, setPurpose] = useState<CatalogSummary["purpose"]>("sell");
+  const submit = async () => {
+    const created = await catalogApi<{ id: string }>(workspaceId, "", { body: { name, purpose } });
+    onCreated({ id: created.id, code: "", name, purpose, itemCount: 0, version: 1 });
   };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button><Button form="new-catalog" isLoading={saving} type="submit" variant="primary">{t("Create catalog")}</Button></div>} isOpen={isOpen} onOpenChange={(open) => { if (!open) onClose(); }} title={t("New catalog")}>
-    <form className={styles.form} id="new-catalog" onSubmit={submit}>
-      {error ? <Callout title={t("Not saved")} tone="danger">{error}</Callout> : null}
-      <TextInput autoFocus isRequired label={t("Name")} onChange={setName} value={name} />
-      <SelectField items={[{ id: "sell", label: t("Items we sell") }, { id: "buy", label: t("Materials we buy") }, { id: "reference", label: t("Reference only") }]} label={t("Used for")} onSelectionChange={(key) => setPurpose(String(key) as typeof purpose)} selectedKey={purpose} />
-    </form>
-  </ControlledModalDialog>;
+  return <FormDialog isDirty={Boolean(name.trim())} isOpen={isOpen} onClose={onClose} onSubmit={submit} submitLabel={t("Create catalog")} title={t("New catalog")}>
+    <TextInput isRequired label={t("Name")} onChange={setName} value={name} />
+    <SelectField isRequired items={[{ id: "sell", label: t("Items we sell") }, { id: "buy", label: t("Materials we buy") }, { id: "reference", label: t("Reference only") }]} label={t("Used for")} onSelectionChange={(key) => setPurpose(String(key) as typeof purpose)} selectedKey={purpose} />
+  </FormDialog>;
 }
 
 function NewItemDialog({ isOpen, onClose, onCreated, structure, workspaceId, catalogId }: { isOpen: boolean; onClose: () => void; onCreated: () => void; structure: CatalogStructure | null; workspaceId: string; catalogId: string }) {
   const t = useT();
-  const [draft, setDraft] = useState({ code: "", name: "", itemType: "material", unitCode: "pcs", categoryId: "" });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const units = structure?.units ?? [];
+  const categories = structure?.categories ?? [];
+  const types = typeLabels(t);
+  // The type, unit and category this person used last start the next item.
+  const lastType = useRememberedChoice("catalog.item.type", (value) => value in types);
+  const lastUnit = useRememberedChoice("catalog.item.unit", (value) => units.some((unit) => unit.code === value));
+  const lastCategory = useRememberedChoice("catalog.item.category", (value) => categories.some((category) => category.id === value));
+  const blank = () => ({ code: "", name: "", itemType: lastType.read() ?? "material", unitCode: lastUnit.read() ?? units[0]?.code ?? "pcs", categoryId: lastCategory.read() ?? "", description: "" });
+  const [draft, setDraft] = useState(blank);
   const set = (key: keyof typeof draft) => (value: string) => setDraft((current) => ({ ...current, [key]: value }));
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault(); setSaving(true); setError("");
-    try {
-      await catalogApi(workspaceId, `${catalogId}/items`, { body: { ...draft, categoryId: draft.categoryId || undefined } });
-      setDraft({ code: "", name: "", itemType: "material", unitCode: "pcs", categoryId: "" });
-      onCreated();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : ""); }
-    finally { setSaving(false); }
+  const dirty = Boolean(draft.code || draft.name || draft.description);
+  const saved = useFormDraft(isOpen ? `${workspaceId}/catalog/${catalogId}/new-item` : null, draft, { isDirty: dirty, restore: setDraft });
+  const aiReady = useAiReady(isOpen ? workspaceId : null);
+  const submit = async () => {
+    await catalogApi(workspaceId, `${catalogId}/items`, { body: { ...draft, categoryId: draft.categoryId || undefined, description: draft.description.trim() || undefined } });
+    lastType.remember(draft.itemType); lastUnit.remember(draft.unitCode); lastCategory.remember(draft.categoryId);
+    setDraft(blank());
+    onCreated();
   };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button><Button form="new-item" isLoading={saving} type="submit" variant="primary">{t("Add item")}</Button></div>} isOpen={isOpen} onOpenChange={(open) => { if (!open) onClose(); }} title={t("New item")}>
-    <form className={styles.form} id="new-item" onSubmit={submit}>
-      {error ? <Callout title={t("Not saved")} tone="danger">{error}</Callout> : null}
-      <TextInput autoFocus isRequired label={t("Name")} onChange={set("name")} value={draft.name} />
-      <div className={styles.formRow}>
-        <TextInput isRequired label={t("Code")} onChange={set("code")} value={draft.code} />
-        <SelectField isRequired items={Object.entries(typeLabels(t)).map(([id, label]) => ({ id, label }))} label={t("Type")} onSelectionChange={(key) => set("itemType")(String(key))} selectedKey={draft.itemType} />
-      </div>
-      <div className={styles.formRow}>
-        <SelectField isRequired items={(structure?.units ?? []).map((unit) => ({ id: unit.code, label: `${unit.code} · ${unit.label}` }))} label={t("Unit")} onSelectionChange={(key) => set("unitCode")(String(key))} selectedKey={draft.unitCode} />
-        <SelectField items={[{ id: "", label: t("No category") }, ...(structure?.categories ?? []).map((category) => ({ id: category.id, label: category.name }))]} label={t("Category")} onSelectionChange={(key) => set("categoryId")(String(key ?? ""))} selectedKey={draft.categoryId} />
-      </div>
-    </form>
-  </ControlledModalDialog>;
+  const fill = (found: Record<string, string>) => setDraft((current) => ({ ...current, ...(found.name ? { name: found.name } : {}), ...(found.code ? { code: found.code } : {}),
+    ...(found.description ? { description: found.description } : {}),
+    ...(found.unit && units.some((unit) => unit.code.toLowerCase() === found.unit.toLowerCase()) ? { unitCode: units.find((unit) => unit.code.toLowerCase() === found.unit.toLowerCase())!.code } : {}) }));
+  return <FormDialog draft={saved} isDirty={dirty} isOpen={isOpen} onClose={onClose} onSubmit={submit} submitLabel={t("Add item")} title={t("New item")}
+    lead={aiReady ? <FillWithWoddy fields={[{ key: "name", label: t("Name") }, { key: "code", label: t("Code") }, { key: "unit", label: t("Unit") }, { key: "description", label: t("Description") }]}
+      onApply={fill} onExtract={async ({ text, image }) => fillWithWoddy(workspaceId, "catalog_item", { ...(text ? { text } : {}), ...(image ? { image: await imageForWoddy(image) } : {}) })} /> : null}>
+    <TextInput isRequired label={t("Name")} maxLength={200} onChange={set("name")} value={draft.name} />
+    <FormRow>
+      <TextInput isRequired label={t("Code")} maxLength={80} onChange={set("code")} value={draft.code} />
+      <SelectField isRequired items={Object.entries(types).map(([id, label]) => ({ id, label }))} label={t("Type")} onSelectionChange={(key) => set("itemType")(String(key))} selectedKey={draft.itemType} />
+    </FormRow>
+    <FormRow>
+      <SelectField isRequired items={units.map((unit) => ({ id: unit.code, label: `${unit.code} · ${unit.label}` }))} label={t("Unit")} onSelectionChange={(key) => set("unitCode")(String(key))} selectedKey={draft.unitCode} />
+      <SelectField items={[{ id: "", label: t("No category") }, ...categories.map((category) => ({ id: category.id, label: category.name }))]} label={t("Category")} onSelectionChange={(key) => set("categoryId")(String(key ?? ""))} selectedKey={draft.categoryId} />
+    </FormRow>
+    <MoreDetails filled={draft.description ? 1 : 0}>
+      <TextAreaField label={t("Description")} maxLength={4000} onChange={set("description")} value={draft.description} />
+    </MoreDetails>
+  </FormDialog>;
 }
 

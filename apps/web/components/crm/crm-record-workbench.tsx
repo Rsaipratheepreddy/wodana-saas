@@ -10,7 +10,10 @@ import { OpportunityEditDialog, localDate } from "./opportunity-edit-dialog";
 import { RecordAttachments } from "./record-attachments";
 import { SequenceEditor } from "./sequence-editor";
 import { useWoddyRecord } from "./woddy-chat";
-import { Badge, Button, Callout, EditableField, EmptyState, Tabs, useDesignSystem } from "@/design-system";
+import { Badge, Button, Callout, EditableField, EmptyState, FillWithWoddy, Tabs, useDesignSystem } from "@/design-system";
+import { useAiReady } from "@/lib/workspace/ai-settings";
+import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
+import { ContactMatchNotice } from "./contact-match-notice";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { CrmScreenId } from "@/lib/crm/screens";
@@ -237,14 +240,23 @@ function AutomationWorkbench({ kind, workspaceId, row, onChanged }: { kind: "seq
 
 export function CrmCreateDialog({ id, workspaceId, onClose, onSaved, initialValues, defaultCurrency }: { defaultCurrency?: string; initialValues?: Record<string, unknown>; id: CrmScreenId; workspaceId: string; onClose: () => void; onSaved: (result?: RecordData) => Promise<void> }) {
   const t = useT();
+  const { currency: regionCurrency } = useDesignSystem();
+  const aiReady = useAiReady(id === "customers" || id === "organizations" ? workspaceId : null);
   const customers = useCrmResource<unknown>(workspaceId, ["opportunities", "activities", "conversations"].includes(id) ? "parties?limit=100" : null);
   const pipelines = useCrmResource<unknown>(workspaceId, id === "opportunities" ? "pipelines" : null);
   const members = useCrmResource<unknown>(workspaceId, ["opportunities", "activities"].includes(id) ? "sales-owners" : null);
   const partyField: FieldSpec = { key: "partyId", label: t("Customer"), options: options(rows(customers.data), "displayName"), required: true };
   const ownerField: FieldSpec = { key: "ownerMembershipId", label: t("Sales owner"), options: options(rows(members.data), "displayName"), required: true };
   let action: ActionSpec;
-  if (id === "customers" || id === "organizations") action = { title: id === "customers" ? t("Add customer") : t("Create company"), path: "parties", initial: { type: id === "customers" ? "person" : "organization" }, fields: [...(id === "customers" ? [{ key: "type", label: t("Record type"), options: choice(["person", "organization"]), required: true }] : []), { key: "displayName", label: t("Name"), required: true }, { key: "email", label: t("Email"), type: "email" }, { key: "phone", label: t("Phone"), type: "tel" }], transform: ({ email, phone, ...v }) => ({ ...v, contacts: [...(email ? [{ type: "email", value: email, isPrimary: true }] : []), ...(phone ? [{ type: "phone", value: phone, isPrimary: true }] : [])] }) };
-  else if (id === "opportunities") action = { title: t("Create opportunity"), path: "opportunities", initial: initialValues, fields: [partyField, { key: "title", label: t("Title"), required: true }, ownerField, { key: "pipelineId", label: t("Pipeline"), options: options(rows(pipelines.data).filter((p) => p.status === "active")), required: true }, { key: "amount", label: defaultCurrency ? t("Value ({currency})", { currency: defaultCurrency }) : t("Value"), type: "number", min: 0 }, { key: "nextActionAt", label: t("Next follow-up"), type: "datetime-local", required: true }], transform: (v) => ({ ...v, ...(initialValues?.stageId && v.pipelineId !== initialValues.pipelineId ? { stageId: undefined } : {}), ...(v.amount !== undefined && v.amount !== "" ? { currencyCode: defaultCurrency } : {}) }) };
+  if (id === "customers" || id === "organizations") action = { title: id === "customers" ? t("Add customer") : t("Create company"), path: "parties", initial: { type: id === "customers" ? "person" : "organization" },
+    fields: [...(id === "customers" ? [{ key: "type", label: t("Record type"), options: choice(["person", "organization"]), required: true }] : []), { key: "displayName", label: t("Name"), required: true }, { key: "phone", label: t("Phone"), type: "phone" }, { key: "email", label: t("Email"), type: "email" }],
+    transform: ({ email, phone, ...v }) => ({ ...v, contacts: [...(email ? [{ type: "email", value: email, isPrimary: true }] : []), ...(phone ? [{ type: "phone", value: phone, isPrimary: true }] : [])] }),
+    // Someone may already be a client: said under the phone and the email as they're typed.
+    notice: (key, values) => key === "phone" || key === "email" ? <ContactMatchNotice workspaceId={workspaceId} {...(key === "phone" ? { phone: String(values.phone ?? "") } : { email: String(values.email ?? "") })} /> : null,
+    lead: (_values, set) => aiReady ? <FillWithWoddy fields={[{ key: "name", label: t("Name") }, { key: "phone", label: t("Phone") }, { key: "email", label: t("Email") }]}
+      onApply={(found) => set({ ...(found.name ? { displayName: found.name } : {}), ...(found.phone ? { phone: found.phone.replace(/[\s().-]/g, "") } : {}), ...(found.email ? { email: found.email } : {}) })}
+      onExtract={async ({ text, image }) => fillWithWoddy(workspaceId, "client", { ...(text ? { text } : {}), ...(image ? { image: await imageForWoddy(image) } : {}) })} /> : null };
+  else if (id === "opportunities") action = { title: t("Create opportunity"), path: "opportunities", initial: initialValues, fields: [partyField, { key: "title", label: t("Title"), required: true }, ownerField, { key: "pipelineId", label: t("Pipeline"), options: options(rows(pipelines.data).filter((p) => p.status === "active")), required: true }, { key: "amount", label: t("Value"), type: "money", min: 0, more: true }, { key: "nextActionAt", label: t("Next follow-up"), type: "datetime-local", required: true }], transform: (v) => ({ ...v, ...(initialValues?.stageId && v.pipelineId !== initialValues.pipelineId ? { stageId: undefined } : {}), ...(v.amount !== undefined && v.amount !== "" ? { amount: Number(v.amount), currencyCode: defaultCurrency ?? regionCurrency } : {}) }) };
   else if (id === "activities") action = { title: t("Create activity"), path: "activities", fields: [partyField, { key: "type", label: t("Type"), options: choice(["task", "call", "meeting", "note"]), required: true }, { key: "title", label: t("Title"), required: true }, ownerField, { key: "dueAt", label: t("Due"), type: "datetime-local" }, { key: "description", label: t("Notes"), type: "textarea" }] };
   else if (id === "conversations") action = { title: t("Start conversation"), path: "conversations", fields: [partyField, { key: "channel", label: t("Channel"), options: choice(["whatsapp", "email", "phone", "internal"]), required: true }, { key: "subject", label: t("Subject"), required: true }] };
   else if (id === "sequences") action = { title: t("Create follow-up sequence"), description: t("Start with a task reminder. Customer replies stop outreach."), path: "sequences", fields: [{ key: "name", label: t("Name"), required: true }, { key: "taskTitle", label: t("Follow-up task"), required: true }, { key: "delayMinutes", label: t("Wait (minutes)"), type: "number", min: 0, required: true }], transform: (v) => ({ name: v.name, exitConditions: { customerReply: true, opportunityClosed: true }, steps: [{ type: "task", delayMinutes: v.delayMinutes, configuration: { title: v.taskTitle } }] }) };

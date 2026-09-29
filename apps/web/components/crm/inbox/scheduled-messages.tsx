@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Clock3, TriangleAlert } from "lucide-react";
-import { Button, ControlledModalDialog, InlineNotice, TextAreaField, useConfirmationDialog, useDesignSystem, useReadOnlyReason } from "@/design-system";
+import { Button, FormDialog, TextAreaField, useConfirmationDialog, useDesignSystem, useReadOnlyReason } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -42,26 +42,19 @@ export function ScheduleDialog({ title, initial, freeText, windowClosesAt, text,
   const t = useT();
   const { timeZone } = useDesignSystem();
   const [value, setValue] = useState(() => initial ?? wallTime(new Date(Date.now() + 3_600_000), timeZone));
-  const [error, setError] = useState(""), [saving, setSaving] = useState(false);
+  const [start] = useState(value);
   const submit = async () => {
     const [date, time] = value.split("T");
     const sendAt = date && time ? zonedToUtc(date, time, timeZone) : null;
-    if (!sendAt || Date.parse(sendAt) < Date.now() + 60_000) { setError(t("Choose a time at least a minute from now")); return; }
-    if (freeText && windowClosesAt !== undefined && !windowOpenAt(windowClosesAt, sendAt)) { setError(t("WhatsApp's 24-hour window will be closed by then. Choose an earlier time or a template.")); return; }
-    if (onTextChange && !text?.trim()) { setError(t("Write a message")); return; }
-    setSaving(true); setError("");
-    try { await onSchedule(sendAt); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : t("The message could not be scheduled.")); }
-    finally { setSaving(false); }
+    if (!sendAt || Date.parse(sendAt) < Date.now() + 60_000) throw new Error(t("Choose a time at least a minute from now"));
+    if (freeText && windowClosesAt !== undefined && !windowOpenAt(windowClosesAt, sendAt)) throw new Error(t("WhatsApp's 24-hour window will be closed by then. Choose an earlier time or a template."));
+    if (onTextChange && !text?.trim()) throw new Error(t("Write a message"));
+    await onSchedule(sendAt);
   };
-  return <ControlledModalDialog isOpen title={title} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={saving} onPress={() => void submit()}>{t("Schedule")}</Button></div>}>
-    <div className={styles.templatePicker}>
-      {onTextChange ? <TextAreaField label={t("Message")} value={text ?? ""} maxLength={4096} onChange={onTextChange} /> : null}
-      <CrmDateTimeField label={t("Send at")} value={value} onChange={setValue} isRequired />
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog isDirty={value !== start} onClose={onClose} onSubmit={submit} submitLabel={t("Schedule")} title={title}>
+    {onTextChange ? <TextAreaField isRequired label={t("Message")} value={text ?? ""} maxLength={4096} onChange={onTextChange} /> : null}
+    <CrmDateTimeField label={t("Send at")} value={value} onChange={setValue} isRequired />
+  </FormDialog>;
 }
 
 /** The chat's messages waiting to go ("Scheduled for …"), with Edit and Cancel; one that couldn't go says why. */

@@ -2,9 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { CalendarClock, CircleSlash, Mail, MessageCircle, MessageSquareText, Phone, PhoneMissed, PhoneOff, ThumbsUp, Users, type LucideIcon } from "lucide-react";
-import { Button, ControlledModalDialog, InlineNotice, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { FormDialog, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { translateKnown } from "@/lib/i18n/keys";
 import { logLeadContact, UNANSWERED_OUTCOMES, type ContactChannel, type ContactOutcome, type LoggedContact } from "@/lib/crm/contact";
 import type { CrmSlaPolicy } from "@/lib/crm/leads";
 import { deadlineText, quickFollowUps, salesHours, wallClock } from "@/lib/crm/sales-time";
@@ -36,8 +35,6 @@ export function LogContactDialog({ workspaceId, lead, slaPolicies = [], onClose,
   const [note, setNote] = useState("");
   const [reason, setReason] = useState("");
   const [followUp, setFollowUp] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const hours = useMemo(() => salesHours(slaPolicies, timeZone), [slaPolicies, timeZone]);
   const [now] = useState(() => new Date());
   const suggestions = useMemo(() => quickFollowUps(hours, now), [hours, now]);
@@ -63,39 +60,28 @@ export function LogContactDialog({ workspaceId, lead, slaPolicies = [], onClose,
   };
 
   const choose = (next: ContactOutcome) => {
-    setOutcome(next); setError("");
+    setOutcome(next);
     // Suggest a next step where one is expected; the person can change or clear it.
     if (!followUp && UNANSWERED_OUTCOMES.includes(next) && next !== "unreachable") setFollowUp(wallClock(suggestions[0].at, timeZone));
     if (!followUp && next === "come_back_later") setFollowUp(wallClock(suggestions[1].at, timeZone));
   };
 
   const save = async () => {
-    if (!outcome) { setError(t("Choose the outcome of this contact.")); return; }
-    if (!unanswered && !note.trim()) { setError(t("Add a note about this contact.")); return; }
-    if (outcome === "not_interested" && !reason.trim()) { setError(t("Add the reason the client is not interested.")); return; }
+    if (!outcome) throw new Error(t("Choose the outcome of this contact."));
+    if (!unanswered && !note.trim()) throw new Error(t("Add a note about this contact."));
+    if (outcome === "not_interested" && !reason.trim()) throw new Error(t("Add the reason the client is not interested."));
     const [date = "", time = ""] = followUp.split("T");
     const nextAt = showFollowUp && date && time ? zonedToUtc(date, time, timeZone) : null;
-    if (needsFollowUp && (!nextAt || Date.parse(nextAt) <= Date.now())) { setError(t("Book a follow-up date in the future.")); return; }
-    setSaving(true); setError("");
-    try {
-      const saved = await logLeadContact(workspaceId, lead.id, {
-        version: lead.version, channel, outcome, note: note.trim(),
-        ...(outcome === "not_interested" ? { reason: reason.trim() } : {}),
-        ...(nextAt ? { nextActionAt: nextAt } : {}),
-      });
-      onLogged(saved, outcome);
-    } catch (reasonError) { setError(reasonError instanceof Error ? translateKnown(t, reasonError.message) : t("The contact could not be logged.")); }
-    finally { setSaving(false); }
+    if (needsFollowUp && (!nextAt || Date.parse(nextAt) <= Date.now())) throw new Error(t("Book a follow-up date in the future."));
+    const saved = await logLeadContact(workspaceId, lead.id, {
+      version: lead.version, channel, outcome, note: note.trim(),
+      ...(outcome === "not_interested" ? { reason: reason.trim() } : {}),
+      ...(nextAt ? { nextActionAt: nextAt } : {}),
+    });
+    onLogged(saved, outcome);
   };
 
-  return <ControlledModalDialog
-    description={lead.name}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button isLoading={saving} onPress={() => void save()} variant="primary">{t("Log contact")}</Button></div>}
-    isDismissable={!saving}
-    isOpen
-    onOpenChange={(open) => { if (!open && !saving) onClose(); }}
-    title={t("Log contact")}
-  >
+  return <FormDialog description={lead.name} isDirty={Boolean(outcome || note.trim() || reason.trim())} onClose={onClose} onSubmit={save} submitLabel={t("Log contact")} title={t("Log contact")}>
     <div className={styles.body}>
       <div className={styles.group} role="radiogroup" aria-label={t("How")}>
         <span className={styles.groupLabel}>{t("How")}</span>
@@ -111,18 +97,17 @@ export function LogContactDialog({ workspaceId, lead, slaPolicies = [], onClose,
           return <button aria-checked={outcome === id} className={styles.outcome} data-tone={OUTCOME_TONES[id]} key={id} onClick={() => choose(id)} role="radio" type="button"><Icon aria-hidden="true" size={15} /><span>{label}</span></button>;
         })}</div>
       </div>
-      <TextAreaField isRequired={!unanswered} label={t("Note")} maxLength={4000} onChange={setNote} placeholder={unanswered ? t("Noted as an attempt if you leave it empty") : t("What did you discuss?")} value={note} />
-      {outcome === "not_interested" ? <TextInput isRequired label={t("Reason")} maxLength={160} onChange={setReason} value={reason} /> : null}
+      <TextAreaField errorMessage={t("Add a note about this contact.")} isRequired={!unanswered} label={t("Note")} maxLength={4000} onChange={setNote} placeholder={unanswered ? t("Noted as an attempt if you leave it empty") : t("What did you discuss?")} value={note} />
+      {outcome === "not_interested" ? <TextInput errorMessage={t("Add the reason the client is not interested.")} isRequired label={t("Reason")} maxLength={160} onChange={setReason} value={reason} /> : null}
       {showFollowUp ? <div className={styles.group}>
-        <div className={styles.chips} role="group" aria-label={t("Suggested times")}>
+        <div className="wd-quick-picks" role="group" aria-label={t("Suggested times")}>
           {suggestions.map(({ id, at }) => {
             const value = wallClock(at, timeZone);
-            return <button key={id} type="button" className={styles.channel} aria-pressed={followUp === value} onClick={() => setFollowUp(value)}>{chipLabel(id, at)}</button>;
+            return <button key={id} type="button" className="wd-chip" aria-pressed={followUp === value} onClick={() => setFollowUp(value)}>{chipLabel(id, at)}</button>;
           })}
         </div>
         <CrmDateTimeField isRequired={needsFollowUp} label={needsFollowUp ? t("Come back on") : t("Next follow-up")} onChange={setFollowUp} value={followUp} />
       </div> : null}
-      {error ? <InlineNotice message={error} tone="error" /> : null}
     </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

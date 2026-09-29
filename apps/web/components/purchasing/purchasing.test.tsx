@@ -96,11 +96,13 @@ describe("suppliers", () => {
     await userEvent.click(within(sheet).getByRole("button", { name: /Payment terms/ }));
     await userEvent.click(await screen.findByRole("option", { name: "Advance, rest on delivery" }));
     await userEvent.type(within(sheet).getByRole("textbox", { name: "Advance" }), "40");
+    await userEvent.type(within(sheet).getByRole("textbox", { name: "Contact" }), "Antony");
+    // The deal waits under More details.
+    await userEvent.click(within(sheet).getByRole("button", { name: "More details" }));
     await userEvent.click(within(sheet).getByRole("button", { name: /Discount or commission/ }));
     await userEvent.click(await screen.findByRole("option", { name: "Commission" }));
     await userEvent.type(within(sheet).getByRole("textbox", { name: "Percent" }), "5");
-    await userEvent.type(within(sheet).getByRole("textbox", { name: "Contact" }), "Antony");
-    await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    await userEvent.click(within(sheet).getByRole("button", { name: "Add supplier" }));
     await waitFor(() => expect(posts(fetcher)).toHaveLength(1));
     const [{ url, body }] = posts(fetcher);
     expect(url).toContain("/api/purchasing/suppliers?");

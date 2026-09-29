@@ -3,9 +3,10 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, CalendarDays, ChevronDown, CircleDot, Globe, Mail, MessageCircle, Phone, PhoneCall, UserRound } from "lucide-react";
-import { Button, Callout, EditableField, EditableFieldList, Tabs, SelectField, TextInput, useDesignSystem } from "@/design-system";
+import { Button, Callout, EditableField, EditableFieldList, Form, Tabs, SelectField, TextInput, useDesignSystem } from "@/design-system";
 import { leadStageLabel, leadStageOptions, salesOwnerChoices, type CrmLeadListItem, type LeadsPageData } from "@/lib/crm/leads";
 import { CrmRequestError, crmRequest, dateText, label, type RecordData } from "@/lib/crm/client";
+import { zonedDateTimeToIso } from "@/lib/crm/zoned-time";
 import { CrmDateTimeField } from "./crm-date-time-field";
 import { NewFollowUpDialog } from "./follow-up-editor";
 import { ActionDialog, ActivityPanel, FactList, ResourceState, useCrmResource, type ActionSpec } from "./crm-workbench";
@@ -240,6 +241,8 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
 
 function InlineStageEditor({ initialStage = "", lead, workspaceId, onCancel, onSaved }: { initialStage?: string; lead: CrmLeadListItem; workspaceId: string; onCancel: () => void; onSaved: () => Promise<void> }) {
   const t = useT();
+  // The follow-up is the workspace's wall clock (its region's zone).
+  const { timeZone } = useDesignSystem();
   const stage = initialStage;
   const inFlight = useRef(false);
   const [persisted, setPersisted] = useState(false);
@@ -247,13 +250,15 @@ function InlineStageEditor({ initialStage = "", lead, workspaceId, onCancel, onS
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
-  return <form className={styles.inlineStageEditor} aria-label={t("Update enquiry stage")} onSubmit={async event => {
+  return <Form className={styles.inlineStageEditor} aria-label={t("Update enquiry stage")} fieldMarkers="none" onSubmit={async event => {
     event.preventDefault(); if (inFlight.current || persisted || !stage) return;
     inFlight.current = true;
     setBusy(true); setFailure("");
     try {
       if (stage === "disqualified" && !reason.trim()) throw new Error(t("Add a reason for disqualifying this enquiry."));
-      await crmRequest(workspaceId, `leads/${lead.id}/status`, "POST", { ...(nextDate && !["disqualified", "paused"].includes(stage) ? { nextActionAt: new Date(nextDate).toISOString() } : {}), version: lead.version, status: stage, ...(reason.trim() ? { reason: reason.trim() } : {}), ...(lead.nextActionAt && !["qualified", "disqualified", "paused"].includes(stage) ? { nextActionAt: lead.nextActionAt } : {}) });
+      const nextActionAt = nextDate && !["disqualified", "paused"].includes(stage) ? zonedDateTimeToIso(nextDate, timeZone) : null;
+      if (nextDate && !["disqualified", "paused"].includes(stage) && !nextActionAt) throw new Error(t("Choose the next follow-up date and time."));
+      await crmRequest(workspaceId, `leads/${lead.id}/status`, "POST", { ...(nextActionAt ? { nextActionAt } : {}), version: lead.version, status: stage, ...(reason.trim() ? { reason: reason.trim() } : {}), ...(lead.nextActionAt && !["qualified", "disqualified", "paused"].includes(stage) ? { nextActionAt: lead.nextActionAt } : {}) });
       setPersisted(true);
       try { await onSaved(); } catch { setFailure(t("Stage saved. Refresh the enquiry to see the change.")); }
     } catch (error) { setFailure(error instanceof Error ? error.message : t("Stage could not be updated.")); }
@@ -264,7 +269,7 @@ function InlineStageEditor({ initialStage = "", lead, workspaceId, onCancel, onS
     {stage && !["disqualified", "paused"].includes(stage) && !lead.ownerMembershipId && !lead.nextActionAt && <CrmDateTimeField label={t("Next follow-up")} isRequired value={nextDate} isDisabled={busy} onChange={setNextDate} />}
     {stage === "disqualified" && <TextInput label={t("Reason")} value={reason} onChange={setReason} isRequired isDisabled={busy} />}
     <div className={styles.actions}><Button size="compact" isDisabled={busy} onPress={onCancel}>{t("Cancel")}</Button><Button size="compact" type="submit" variant="primary" isDisabled={!stage || persisted} isLoading={busy}>{t("Save stage")}</Button></div>
-  </form>;
+  </Form>;
 }
 
 type Referral = { kind?: string; name?: string | null; contact?: string | null; memberName?: string | null; option?: string | null };

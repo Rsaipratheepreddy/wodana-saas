@@ -26,9 +26,18 @@ export function FormRow({ children }: { children: ReactNode }) {
  * The fields most people skip, folded away under "More details". Stays mounted, so values and validation
  * are kept; it opens by itself when a blocked save needs one of its fields.
  */
-export function MoreDetails({ children, defaultOpen = false, filled = 0, label }: { children: ReactNode; defaultOpen?: boolean; /** How many of its fields hold a value, shown while folded. */ filled?: number; label?: string }) {
+export function MoreDetails({ children, defaultOpen = false, filled = 0, isOpen, label, onOpenChange }: {
+  children: ReactNode; defaultOpen?: boolean; /** How many of its fields hold a value, shown while folded. */ filled?: number; label?: string;
+  /** Controlled: the form opens it itself (after an assistant filled a field inside). */
+  isOpen?: boolean; onOpenChange?: (open: boolean) => void;
+}) {
   const t = useT();
-  const [open, setOpen] = useState(defaultOpen);
+  const [ownOpen, setOwnOpen] = useState(defaultOpen);
+  const open = isOpen ?? ownOpen;
+  const setOpen = (next: boolean | ((current: boolean) => boolean)) => {
+    const value = typeof next === "function" ? next(open) : next;
+    setOwnOpen(value); onOpenChange?.(value);
+  };
   const region = useId();
   return <div className="wd-more-details" data-open={open || undefined} onInvalidCapture={() => { if (!open) flushSync(() => setOpen(true)); }}>
     <Button aria-controls={region} aria-expanded={open} className="wd-more-details-toggle" onPress={() => setOpen((value) => !value)} size="compact" variant="quiet">
@@ -138,6 +147,14 @@ export function isVersionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "status" in error && (error as { status?: unknown }).status === 409;
 }
 
+/**
+ * Thrown from a FormDialog's onSubmit when the caller already shows why the save failed (its `error`
+ * prop): the dialog stays open, and no second message is added.
+ */
+export class FormNotSaved extends Error {
+  constructor() { super(""); this.name = "FormNotSaved"; }
+}
+
 export type FormConflictHandlers = {
   /** Put the latest saved record into the form (the person's changes go). */
   onReload: () => void | Promise<void>;
@@ -172,15 +189,15 @@ export function submitOnModEnter(event: Pick<KeyboardEvent, "key" | "metaKey" | 
 }
 
 /** Cancel, then the primary action at the inline end; other actions (Delete) sit at the inline start. */
-export function FormFooter({ cancelLabel, formId, isSubmitDisabled, isSubmitting, onCancel, secondary, submitLabel, submitVariant = "primary" }: {
-  cancelLabel?: string; formId: string; isSubmitDisabled?: boolean; isSubmitting?: boolean; onCancel: () => void; secondary?: ReactNode; submitLabel: string; submitVariant?: "primary" | "danger";
+export function FormFooter({ cancelLabel, formId, hideSubmit = false, isSubmitDisabled, isSubmitting, onCancel, secondary, submitLabel, submitVariant = "primary" }: {
+  cancelLabel?: string; formId: string; hideSubmit?: boolean; isSubmitDisabled?: boolean; isSubmitting?: boolean; onCancel: () => void; secondary?: ReactNode; submitLabel: string; submitVariant?: "primary" | "danger";
 }) {
   const t = useT();
   return <div className="wd-form-footer">
     {secondary ? <div className="wd-form-footer-start">{secondary}</div> : null}
     <div className="wd-dialog-actions">
       <Button isDisabled={isSubmitting} onPress={onCancel}>{cancelLabel ?? t("Cancel")}</Button>
-      <Button aria-keyshortcuts="Meta+Enter Control+Enter" form={formId} isDisabled={isSubmitDisabled} isLoading={isSubmitting} type="submit" variant={submitVariant}>{submitLabel}</Button>
+      {hideSubmit ? null : <Button aria-keyshortcuts="Meta+Enter Control+Enter" form={formId} isDisabled={isSubmitDisabled} isLoading={isSubmitting} type="submit" variant={submitVariant}>{submitLabel}</Button>}
     </div>
   </div>;
 }
@@ -207,6 +224,8 @@ export type FormDialogProps = {
   cancelLabel?: string;
   isDirty?: boolean;
   isSubmitDisabled?: boolean;
+  /** The work is done (saved, but something after it failed): only Cancel/Close is left, so nothing is sent twice. */
+  hideSubmit?: boolean;
   /** Busy from outside (a save the caller runs itself). */
   isSubmitting?: boolean;
   /** Actions for the footer's inline start (Delete, Archive). */
@@ -238,7 +257,7 @@ const FIRST_FIELD = "input:not([type=hidden]):not([disabled]):not([aria-hidden=t
  */
 export function FormDialog({
   autoFocus = true, cancelLabel, children, closeOnSuccess = false, conflict, description, draft, error, errorTitle, fieldMarkers, formClassName, formId: formIdProp,
-  isDirty = false, isDismissable, isOpen = true, isSubmitDisabled, isSubmitting: externalBusy = false, lead, onClose, onSubmit, secondaryAction, size, submitLabel, submitVariant, title,
+  hideSubmit, isDirty = false, isDismissable, isOpen = true, isSubmitDisabled, isSubmitting: externalBusy = false, lead, onClose, onSubmit, secondaryAction, size, submitLabel, submitVariant, title,
 }: FormDialogProps) {
   const t = useT();
   const generated = useId();
@@ -273,12 +292,12 @@ export function FormDialog({
       if (closeOnSuccess) onClose();
     } catch (cause) {
       if (conflict && isVersionConflict(cause)) setConflicted(true);
-      else setFailure(cause instanceof Error && cause.message ? translateKnown(t, cause.message) : t("Could not save."));
+      else if (!(cause instanceof FormNotSaved)) setFailure(cause instanceof Error && cause.message ? translateKnown(t, cause.message) : t("Could not save."));
     } finally { inFlight.current = false; setBusy(false); }
   };
 
   const closeNow = (open: boolean) => { if (!open) onClose(); };
-  return <ControlledModalDialog description={description} footer={<DialogFooter cancelLabel={cancelLabel} formId={formId} isSubmitDisabled={isSubmitDisabled || conflicted} isSubmitting={submitting} secondary={secondaryAction} submitLabel={submitLabel} submitVariant={submitVariant} />}
+  return <ControlledModalDialog description={description} footer={<DialogFooter cancelLabel={cancelLabel} formId={formId} hideSubmit={hideSubmit} isSubmitDisabled={isSubmitDisabled || conflicted} isSubmitting={submitting} secondary={secondaryAction} submitLabel={submitLabel} submitVariant={submitVariant} />}
     isDirty={isDirty && !submitting} isDismissable={isDismissable ?? !submitting} isOpen={isOpen} keepsDraft={Boolean(draft)} onKeyDown={(event) => submitOnModEnter(event, form.current)} onOpenChange={closeNow} size={size} title={title}>
     <Form className={formClassName} fieldMarkers={fieldMarkers} id={formId} onSubmit={(event) => void submit(event)} ref={form}>
       {draft?.restored ? <DraftNotice onDiscard={draft.discard} /> : null}

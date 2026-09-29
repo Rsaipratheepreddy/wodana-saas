@@ -11,7 +11,7 @@ import { QuotationMaterialsEditor, QuotationMaterialsSummary } from "./quotation
 import { customUnit, selectUnit } from "@/lib/commercial/materials";
 import q from "./quotation-line-fields.module.css";
 import { PaymentScheduleEditor } from "./payment-schedule-editor";
-import { DataGrid, ControlledModalDialog, EmptyState, useDesignSystem } from "@/design-system";
+import { Checkbox, DataGrid, ControlledModalDialog, EmptyState, useDesignSystem } from "@/design-system";
 import type { Quote, QuoteLine, ChangeRequest } from "@/lib/commercial/types";
 import { money, newLine, quoteCurrencyChoices, quoteTotals } from "@/lib/commercial/client";
 import { catalogPriceInput, usesCatalogPricing } from "@/lib/commercial/catalog-price";
@@ -311,21 +311,19 @@ export function QuotationEditor({
                         ) || quote.requestIds.includes(r.id),
                     )
                     .map((r) => (
-                      <label className={s.check} key={r.id}>
-                        <input
-                          type="checkbox"
-                          disabled={readOnly}
-                          checked={quote.requestIds.includes(r.id)}
-                          onChange={(e) =>
-                            patch({
-                              requestIds: e.target.checked
-                                ? [...quote.requestIds, r.id]
-                                : quote.requestIds.filter((id) => id !== r.id),
-                            })
-                          }
-                        />
+                      <Checkbox key={r.id}
+                        isDisabled={readOnly}
+                        isSelected={quote.requestIds.includes(r.id)}
+                        onChange={(addresses) =>
+                          patch({
+                            requestIds: addresses
+                              ? [...quote.requestIds, r.id]
+                              : quote.requestIds.filter((id) => id !== r.id),
+                          })
+                        }
+                      >
                         {t("Addresses CR-{number} · {title}", { number: String(r.number).padStart(3, "0"), title: r.title })}
-                      </label>
+                      </Checkbox>
                     ))}
                 </div>
               </section>
@@ -635,13 +633,8 @@ export function QuotationEditor({
                 ),
               )}
             </div>
-            {itemMode === "details" && <label className={s.check}>
-              <input
-                type="checkbox"
-                checked={roomFilter}
-                onChange={(e) => setRoomFilter(e.target.checked)}
-              />{" "}
-              {t("Show items linked to this room and variants linked to the selected item")}</label>}
+            {itemMode === "details" && <Checkbox isSelected={roomFilter} onChange={setRoomFilter}>
+              {t("Show items linked to this room and variants linked to the selected item")}</Checkbox>}
             <p className={s.muted}>
               {t("Catalog selections keep their source links. Quantities and selling rates are set for this quotation.")}</p>
             {itemMode === "details" && <><div className={s.grid}>

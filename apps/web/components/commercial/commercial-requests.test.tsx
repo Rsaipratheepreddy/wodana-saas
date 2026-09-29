@@ -59,7 +59,10 @@ it("sends a client decision request pinned to an assigned exact revision", async
   await user.type(screen.getByLabelText("What does the client need to decide?"), "Choose the approved finish for this exact quotation.");
   await user.click(screen.getByRole("button", { name: /Select an option Exact revision/ }));
   await user.click(screen.getByRole("option", { name: "Quotation V2" }));
-  fireEvent.change(screen.getByLabelText("Due date"), { target: { value: "2099-01-02" } });
+  for (const [segment, value] of [["year", "2099"], ["month", "1"], ["day", "2"]]) {
+    await user.click(screen.getByRole("spinbutton", { name: new RegExp(`${segment},.*Due date`, "i") }));
+    await user.keyboard(value);
+  }
   await user.click(screen.getByRole("button", { name: "Send decision request" }));
 
   await waitFor(() => expect(run).toHaveBeenCalledWith("request", expect.objectContaining({
@@ -90,9 +93,23 @@ describe("a client's conversation", () => {
           { id: "c3", author: "Sara", text: "Needs the electrician", at: "2026-09-23T10:00:00.000Z", visibility: "internal" },
         ] }] },
     } as unknown as CommercialState;
-    render(<CommercialRequests state={state} run={vi.fn()} busy={false} openRequestId="r1" />);
-    return fetcher;
+    const run = vi.fn().mockResolvedValue(true);
+    render(<CommercialRequests state={state} run={run} busy={false} openRequestId="r1" />);
+    return Object.assign(fetcher, { run });
   };
+
+  it("edits the owner in place and replies with an internal note", async () => {
+    const user = userEvent.setup();
+    const { run } = conversation("2026-09-22T08:00:00.000Z");
+    const dialog = screen.getByRole("dialog", { name: "Move the TV wall" });
+    await user.click(within(dialog).getByRole("button", { name: "Edit Owner" }));
+    await user.keyboard("Sara{Enter}");
+    await waitFor(() => expect(run).toHaveBeenCalledWith("update_request", { requestId: "r1", owner: "Sara", dueDate: "", status: "open", resolution: "" }));
+    await user.type(within(dialog).getByRole("textbox", { name: "Reply" }), "Checked with the electrician");
+    await user.click(within(dialog).getByRole("checkbox", { name: /Internal note/ }));
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+    await waitFor(() => expect(run).toHaveBeenCalledWith("comment", { requestId: "r1", text: "Checked with the electrician", visibility: "internal" }));
+  });
 
   it("shows the client's files on the request and on their messages, tells them it was seen, and whether they saw the reply", async () => {
     const fetcher = conversation("2026-09-22T08:00:00.000Z");

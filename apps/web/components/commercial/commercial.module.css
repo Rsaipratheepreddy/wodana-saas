@@ -378,16 +378,18 @@
 .dealBanner { display: grid; grid-template-columns: minmax(14rem, 1fr) auto auto; gap: var(--wd-space-4); align-items: center; padding: var(--wd-space-4); background: var(--wd-color-surface-muted); border-inline-start: 3px solid var(--wd-color-action-primary); }
 .dealBanner span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); margin-block-start: var(--wd-space-1); }
 .ownerForm { display: grid; gap: var(--wd-space-4); max-inline-size: 52rem; padding-block: var(--wd-space-2); }
-.ownerForm > label, .decisionField, .approverField { display: flex; flex-direction: column; gap: var(--wd-space-1-5); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.ownerForm input, .ownerForm textarea, .decisionField textarea, .approverField select { padding: var(--wd-space-3) var(--wd-space-3); border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-xs); background: var(--wd-color-surface); color: var(--wd-color-text); }
-.ownerForm textarea, .decisionField textarea { min-block-size: 5rem; resize: vertical; }
-.commissionRows { display: grid; gap: var(--wd-space-3); padding-block: var(--wd-space-3); border-block: 1px solid var(--wd-color-structural-divider); }
-.commissionRow { display: grid; grid-template-columns: minmax(10rem, 2fr) minmax(7rem, 1fr) minmax(5rem, .7fr) minmax(6rem, .8fr) auto; gap: var(--wd-space-2); align-items: center; }
-.commissionRow > input, .commissionRow > select { min-inline-size: 0; padding: var(--wd-space-2) var(--wd-space-3); border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); color: var(--wd-color-text); }
-.inlineCheck { display: flex; align-items: center; gap: var(--wd-space-2); }
+.ownerForm > h2 { margin: 0; font-size: var(--wd-text-md); }
+.ownerForm > p { margin: 0; }
+.commissionTitle { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); inline-size: 100%; }
 .checkGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-2) var(--wd-space-4); }
-.checkGrid label, .checkGrid > span { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: 2.2rem; text-transform: capitalize; color: var(--wd-color-text-secondary); }
-.checkGrid > span[data-done="true"] { color: var(--wd-color-text); }
+.checkList { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.checkList > li { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-space-8); color: var(--wd-color-text-secondary); }
+.checkList > li[data-done="true"] { color: var(--wd-color-text); }
+.checkList > li > span { flex: 1; min-inline-size: 0; }
+.agreementPanel { display: grid; gap: var(--wd-space-4); max-inline-size: 48rem; }
+.agreementForm { display: grid; gap: var(--wd-space-4); max-inline-size: 48rem; }
+.formActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-2); }
+.requestDetail { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .materialRow { display: grid; grid-template-columns: 4.5rem minmax(14rem, 1fr) auto auto auto; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-3) 0; border-block-end: 1px solid var(--wd-color-structural-divider); }
 .materialRow > img, .materialThumb { inline-size: 4.5rem; block-size: 3.5rem; object-fit: cover; background: var(--wd-color-surface-muted); display: grid; place-items: center; color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
 .materialRow > div > strong, .materialRow > div > span, .materialRow > div > small { display: block; }
@@ -480,7 +482,6 @@
 @media (max-width: 760px) {
   .controlSummary, .dealBanner { grid-template-columns: 1fr 1fr; }
   .checkGrid { grid-template-columns: 1fr; }
-  .commissionRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .materialRow { grid-template-columns: 4rem minmax(0, 1fr) auto; }
   .materialRow > .button, .materialRow > .primary { grid-column: 2 / -1; }
   .flowIntro { align-items: start; flex-direction: column; }
@@ -1230,7 +1231,7 @@
 .editorTabs { display: flex; gap: var(--wd-space-1-5); border-block-end: 1px solid var(--wd-color-structural-divider); padding-block-end: var(--wd-space-3); }
 .editorTabs button { border: 0; border-radius: var(--wd-radius-xs); color: var(--wd-color-text-secondary); padding: var(--wd-space-2) var(--wd-space-3); background: transparent; font: inherit; cursor: pointer; }
 .editorTabs button[aria-pressed="true"] { background: var(--wd-color-surface-muted); color: var(--wd-color-action-primary); box-shadow: inset 0 -2px var(--wd-color-action-primary); }
-:global([data-theme="dark"]) .studioPage > .toolbar > .actions > strong { color: var(--wd-color-text); }
+.studioPage > .toolbar > .actions > strong { color: var(--wd-color-text); }
 .studioPage > .toolbar { padding-block: var(--wd-space-1-5); }
 
 
@@ -1240,8 +1241,6 @@
 .reviewPage > .toolbar { position:static; margin:0 0 var(--wd-space-3); }
 .reviewPage > a { margin-bottom:var(--wd-space-3); }
 
-.paymentConditions { display:grid; gap:var(--wd-space-2); padding-block:var(--wd-space-1); }
-.modalActions { display:flex; justify-content:flex-end; gap:var(--wd-space-2); padding-top:var(--wd-space-3); border-top:1px solid var(--wd-color-border); }
 /* Files going with a reply the client reads: what is attached, then the upload. */
 .replyFiles { display: grid; gap: var(--wd-space-2); }
 .replyFiles ul { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }

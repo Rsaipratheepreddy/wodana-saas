@@ -61,7 +61,6 @@
 .builder>.tabs .addPage select,.builder>.tabs summary { font-size:var(--wd-text-2xs); }
 @media(max-width:900px){.header{flex-wrap:wrap;}.header .actions{flex-wrap:wrap;}.builder>.tabs{overflow:visible;}.builder>.tabs>div[role=tablist]{overflow:auto;}}
 
-:global([data-theme="light"]) .builder {background:var(--wd-color-surface); }
 .tabs > [role="tablist"] { scrollbar-width:none; }
 .tabs > [role="tablist"]::-webkit-scrollbar { display:none; }
 @media(max-width:640px) {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { crmScreenFixture } from "@/lib/crm/screens";
@@ -226,5 +226,7 @@ it("uses the shared reminder editor with a preselected enquiry and keeps a saved
   const post = api.mock.calls.find(call => call[2] === "POST");
   expect(post?.[3]).toMatchObject({ leadId: "lead-1", ownerMembershipId: "owner-1", type: "call", durationMinutes: 30, isNextAction: true, dueAt: "2026-09-23T09:30:00.000Z" });
   expect(await screen.findByText("Follow-up saved. Close and refresh to see it. Do not create it again.")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Save reminder" })).toBeDisabled();
+  // Saved once: only Close is left, so it can't be created twice.
+  expect(screen.queryByRole("button", { name: "Save reminder" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Close" })).toBeEnabled();
 });

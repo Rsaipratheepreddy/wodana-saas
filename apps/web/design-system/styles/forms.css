@@ -80,6 +80,25 @@
 .wd-field-with-notice { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
 .wd-field-notice:empty { display: none; }
 
+/* ── Fill with Woddy (top of a create form) ─────────────────────────────────────────────────────────── */
+.wd-fill-woddy[data-step="closed"] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.wd-fill-woddy-open > .wd-woddy { flex: none; }
+.wd-fill-woddy-done { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.wd-fill-woddy:not([data-step="closed"]) {
+  display: grid; gap: var(--wd-space-3); padding: var(--wd-space-3) var(--wd-space-4); border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface-subtle); animation: wd-fade-up var(--wd-duration-base) var(--wd-ease-out) both;
+}
+.wd-fill-woddy > header { display: flex; align-items: center; gap: var(--wd-space-2); }
+.wd-fill-woddy > header > strong { flex: 1; font-size: var(--wd-text-sm); }
+.wd-fill-woddy-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+.wd-fill-woddy-actions > :first-child { margin-inline-end: auto; }
+.wd-fill-woddy-file { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.wd-fill-woddy-problem { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
+.wd-fill-woddy-found { display: grid; gap: var(--wd-space-1-5); margin: 0; padding: 0; list-style: none; }
+.wd-fill-woddy-found .wd-checkbox { align-items: flex-start; }
+.wd-fill-woddy-label { display: block; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.wd-fill-woddy-value { display: block; color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+
 /* ── Money ──────────────────────────────────────────────────────────────────────────────────────────── */
 .wd-money-input { font-variant-numeric: tabular-nums; }
 
@@ -128,5 +147,5 @@
 @keyframes wd-tick-in { from { opacity: 0; transform: scale(0.5); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .wd-form-summary, .wd-form-banner, .wd-draft-notice, .wd-more-details-body, .wd-editable-tick { animation: none; }
+  .wd-form-summary, .wd-form-banner, .wd-draft-notice, .wd-more-details-body, .wd-editable-tick, .wd-fill-woddy { animation: none; }
 }

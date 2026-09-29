@@ -32,6 +32,8 @@ async function request<T>(url: string, method = "GET", body?: unknown): Promise<
 export function purchasingApi(workspaceId: string) {
   const at = (value: string, query: Record<string, string> = {}) => path(workspaceId, value, query);
   return {
+    /** The workspace these calls act in (for helpers beside them, like Fill with Woddy). */
+    workspaceId,
     suppliers: () => request<SupplierState>(at("suppliers")),
     saveSupplier: (input: Record<string, unknown>) => request<SupplierState>(at("suppliers"), "POST", input),
     approveSupplier: (id: string, input: Record<string, unknown>) => request<SupplierState>(at(`suppliers/${id}/approval`), "POST", input),

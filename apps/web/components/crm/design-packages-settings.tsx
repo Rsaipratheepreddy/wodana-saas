@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, DataGrid, InlineNotice, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, FormDialog, FormRow, InlineNotice, MoneyField, MoreDetails, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { loadDesignSettings, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type DesignPackage, type DesignSettings, type PricingMethod } from "@/lib/design/packages";
 import styles from "./design-packages-settings.module.css";
@@ -93,39 +93,33 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
 
 function PackageDialog({ initial, onClose, onSave }: { initial: Partial<DesignPackage>; onClose: () => void; onSave: (value: Partial<DesignPackage>) => Promise<void> }) {
   const t = useT();
-  const [value, setValue] = useState<Partial<DesignPackage>>({ ...initial, rate: initial.rate ? String(Number(initial.rate)) : "" });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [start] = useState<Partial<DesignPackage>>(() => ({ ...initial, rate: initial.rate ? String(Number(initial.rate)) : "" }));
+  const [value, setValue] = useState<Partial<DesignPackage>>(start);
   const set = <K extends keyof DesignPackage>(key: K) => (next: DesignPackage[K]) => setValue((current) => ({ ...current, [key]: next }));
   const methods: Array<{ id: PricingMethod; label: string }> = [{ id: "per_area", label: t("Per area") }, { id: "per_space", label: t("Per space") }, { id: "fixed", label: t("Fixed fee") }];
   const save = async () => {
-    if (!value.name?.trim()) { setError(t("Enter the package name.")); return; }
-    if (!value.rate) { setError(t("Enter the rate.")); return; }
-    setSaving(true); setError("");
-    try {
-      await onSave({ ...value, code: value.code || slug(value.name), rate: Number(value.rate).toFixed(2), areaUnit: value.pricingMethod === "per_area" ? value.areaUnit ?? "sqft" : null, requiredRoleCode: value.requiredRoleCode || null, inclusions: value.inclusions || null });
-    } catch (reason) { setError(reason instanceof Error ? reason.message : t("Design settings could not be saved.")); }
-    finally { setSaving(false); }
+    if (!value.name?.trim()) throw new Error(t("Enter the package name."));
+    if (!value.rate) throw new Error(t("Enter the rate."));
+    await onSave({ ...value, code: value.code || slug(value.name), rate: value.rate, areaUnit: value.pricingMethod === "per_area" ? value.areaUnit ?? "sqft" : null, requiredRoleCode: value.requiredRoleCode || null, inclusions: value.inclusions || null });
   };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button isLoading={saving} onPress={() => void save()} variant="primary">{t("Save package")}</Button></div>}
-    isOpen onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={initial.id ? t("Edit package") : t("New package")}>
-    <form className={styles.form} onSubmit={(event) => { event.preventDefault(); void save(); }}>
-      <TextInput isRequired label={t("Name")} onChange={set("name")} value={value.name ?? ""} />
-      <div className={styles.row}>
-        <SelectField isRequired items={methods} label={t("Priced")} onSelectionChange={(key) => set("pricingMethod")(String(key) as PricingMethod)} selectedKey={value.pricingMethod ?? "per_area"} />
-        <TextInput isRequired label={t("Rate")} onChange={(next) => set("rate")(amount(next))} suffix={value.pricingMethod === "per_area" ? `${value.currency} / ${value.areaUnit === "sqm" ? t("sq m") : t("sq ft")}` : value.pricingMethod === "per_space" ? `${value.currency} / ${t("space")}` : value.currency} value={value.rate ?? ""} />
-      </div>
-      {value.pricingMethod === "per_area" ? <SelectField items={[{ id: "sqft", label: t("Square feet") }, { id: "sqm", label: t("Square metres") }]} label={t("Area unit")} onSelectionChange={(key) => set("areaUnit")(String(key) as "sqft" | "sqm")} selectedKey={value.areaUnit ?? "sqft"} /> : null}
-      <div className={styles.row}>
-        <TextInput label={t("Included revisions")} onChange={(next) => set("includedRevisions")(Math.min(20, Number(next.replace(/\D/g, "") || 0)))} value={String(value.includedRevisions ?? 2)} />
+  const per = value.pricingMethod === "per_area" ? (value.areaUnit === "sqm" ? t("Per sq m") : t("Per sq ft")) : value.pricingMethod === "per_space" ? t("Per space") : undefined;
+  return <FormDialog isDirty={JSON.stringify(value) !== JSON.stringify(start)} onClose={onClose} onSubmit={save} submitLabel={t("Save package")} title={initial.id ? t("Edit package") : t("New package")}>
+    <TextInput isRequired label={t("Name")} onChange={set("name")} value={value.name ?? ""} />
+    <FormRow>
+      <SelectField isRequired items={methods} label={t("Priced")} onSelectionChange={(key) => set("pricingMethod")(String(key) as PricingMethod)} selectedKey={value.pricingMethod ?? "per_area"} />
+      <MoneyField currency={value.currency ?? undefined} description={per} isRequired label={t("Rate")} min="0" onChange={(next) => set("rate")(next)} value={value.rate ?? ""} />
+    </FormRow>
+    {value.pricingMethod === "per_area" ? <SelectField items={[{ id: "sqft", label: t("Square feet") }, { id: "sqm", label: t("Square metres") }]} label={t("Area unit")} onSelectionChange={(key) => set("areaUnit")(String(key) as "sqft" | "sqm")} selectedKey={value.areaUnit ?? "sqft"} /> : null}
+    <MoreDetails filled={[value.requiredRoleCode, value.inclusions, value.includesSpacePlanning, value.includesRenders].filter(Boolean).length}>
+      <FormRow>
+        <TextInput inputMode="numeric" label={t("Included revisions")} onChange={(next) => set("includedRevisions")(Math.min(20, Number(next.replace(/\D/g, "") || 0)))} value={String(value.includedRevisions ?? 2)} />
         <TextInput description={t("Added to the project automatically, e.g. creative_director.")} label={t("Required role")} onChange={(next) => set("requiredRoleCode")(next.toLowerCase().replace(/[^a-z0-9_]/g, ""))} value={value.requiredRoleCode ?? ""} />
-      </div>
+      </FormRow>
       <div className={styles.toggles}>
         <Switch isSelected={Boolean(value.includesSpacePlanning)} onChange={set("includesSpacePlanning")}>{t("Space planning")}</Switch>
         <Switch isSelected={Boolean(value.includesRenders)} onChange={set("includesRenders")}>{t("3D renders")}</Switch>
       </div>
       <TextAreaField label={t("What's included")} maxLength={2000} onChange={set("inclusions")} value={value.inclusions ?? ""} />
-      {error ? <InlineNotice message={error} tone="error" /> : null}
-    </form>
-  </ControlledModalDialog>;
+    </MoreDetails>
+  </FormDialog>;
 }

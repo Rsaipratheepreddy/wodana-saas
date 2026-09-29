@@ -1,6 +1,7 @@
 'use client';
 import { useT } from "@/lib/i18n/i18n-provider";
 import {useEffect,useRef,useState} from 'react';
+import { Checkbox } from "@/design-system";
 import {Sparkles,X} from 'lucide-react';
 import type {Quote} from '@/lib/commercial/types';
 import {roomNames} from '@/lib/commercial/room-builder';
@@ -22,7 +23,7 @@ export function QuotationScopeAssistant({quote,workspaceId,caseId,disabled,onClo
   {paused?<AiPauseNotice message={paused}/>:null}{error&&<p role="alert" className={s.error}>{error}</p>}
   {analysis&&<div className={s.results}>
    <p>{analysis.summary}</p><small>{t("{requirements} requirements · {measurements} measurements · {files} files analysed",{requirements:analysis.sources.requirements,measurements:analysis.sources.measurements,files:analysis.filesAnalyzed})}</small>
-   {analysis.rooms.map(room=><section key={room.id}><label className={s.check}><input type="checkbox" checked={selected.has(room.id)} disabled={disabled||busy} onChange={event=>setSelected(value=>{const next=new Set(value);if(event.target.checked)next.add(room.id);else next.delete(room.id);return next;})}/><strong>{room.name}</strong><small>{t("{count} items",{count:room.items.length})}</small></label><p>{room.reason}</p>{room.items.map(item=><div className={s.suggestion} key={item.work.id}><strong>{item.work.name}</strong><p>{item.reason}</p>{item.materials.length>0&&<small>{item.materials.map(material=>material.name).join(' · ')}</small>}</div>)}</section>)}
+   {analysis.rooms.map(room=><section key={room.id}><Checkbox isSelected={selected.has(room.id)} isDisabled={disabled||busy} onChange={on=>setSelected(value=>{const next=new Set(value);if(on)next.add(room.id);else next.delete(room.id);return next;})}><strong>{room.name}</strong> <small>{t("{count} items",{count:room.items.length})}</small></Checkbox><p>{room.reason}</p>{room.items.map(item=><div className={s.suggestion} key={item.work.id}><strong>{item.work.name}</strong><p>{item.reason}</p>{item.materials.length>0&&<small>{item.materials.map(material=>material.name).join(' · ')}</small>}</div>)}</section>)}
    {(analysis.review.length>0||analysis.notes.length>0)&&<section><strong>{t("Needs your review")}</strong><ul>{[...analysis.review,...analysis.notes].map((note,index)=><li key={index}>{note}</li>)}</ul></section>}
    <p className={s.help}>{t("Only missing items are added. Confirm quantities, dimensions and rates in the grid.")}</p>
    <button type="button" className={s.primary} disabled={disabled||busy||!selected.size} onClick={()=>{onApply(analysis.rooms.filter(room=>selected.has(room.id)));setSelected(new Set());}}>{t("Add selected suggestions")}</button>

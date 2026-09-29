@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Archive, CalendarClock, Check, GitMerge, Pencil, Plus, ShieldCheck, Trash2, UserRound } from "lucide-react";
-import { ActivityFeed, Badge, Button, Callout, ControlledModalDialog, EditableField, EditableFieldList, EmptyState, NumericInput, SelectField, TextInput, TextAreaField, Checkbox, Tabs, Skeleton, useDesignSystem } from "@/design-system";
+import { ActivityFeed, Badge, Button, Callout, DateField, EditableField, EditableFieldList, EmptyState, FieldCaption, FormDialog, MoneyField, MoreDetails, NumericInput, PhoneField, SelectField, TextInput, TextAreaField, Checkbox, Tabs, Skeleton, useDesignSystem } from "@/design-system";
+import { parseDate } from "@internationalized/date";
+import { joinPhone, phoneCountry, splitPhone, toE164 } from "@/lib/phone";
 import { CrmRequestError, crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import { clientTimelineItems } from "@/lib/crm/client-timeline";
 import type { ClientTimelineEvent } from "@wodana/contracts";
@@ -13,66 +15,111 @@ import { zonedDateTime, zonedDateTimeToIso } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { activityTitle } from "@/lib/crm/contact";
 
-export type FieldSpec = { key: string; label: string; type?: "text" | "email" | "tel" | "number" | "date" | "datetime-local" | "textarea" | "checkbox" | "multi-select"; required?: boolean; min?: number; max?: number; options?: { id: string; label: string }[]; value?: unknown };
-export type ActionSpec = { title: string; description?: string; blockedReason?: string; path: string | ((values: Record<string, unknown>) => string); method?: string; fields: FieldSpec[]; initial?: Record<string, unknown>; transform?: (values: Record<string, unknown>) => Record<string, unknown>; submit?: string };
+export type FieldSpec = {
+  key: string; label: string;
+  /** "phone" keeps a full international number; "money" an exact decimal string; "date" YYYY-MM-DD. */
+  type?: "text" | "email" | "tel" | "phone" | "number" | "money" | "date" | "datetime-local" | "textarea" | "checkbox" | "multi-select";
+  required?: boolean; min?: number; max?: number; options?: { id: string; label: string }[]; value?: unknown;
+  /** Folded under More details: the essentials come first. */
+  more?: boolean;
+};
+export type ActionSpec = {
+  title: string; description?: string; blockedReason?: string; path: string | ((values: Record<string, unknown>) => string); method?: string; fields: FieldSpec[];
+  initial?: Record<string, unknown>; transform?: (values: Record<string, unknown>) => Record<string, unknown>; submit?: string; submitVariant?: "primary" | "danger";
+  /** Above the fields: an assistant that fills them (Fill with Woddy). */
+  lead?: (values: Record<string, unknown>, set: (patch: Record<string, unknown>) => void) => ReactNode;
+  /** Under a field: a warning that doesn't block the save (someone already has this phone). */
+  notice?: (key: string, values: Record<string, unknown>) => ReactNode;
+};
 
-export function Fields({ fields, values, onChange }: { fields: FieldSpec[]; values: Record<string, unknown>; onChange: (key: string, value: unknown) => void }) {
+function PhoneSpecField({ field, value, onChange }: { field: FieldSpec; value: string; onChange: (value: string) => void }) {
+  const { regionLocale } = useDesignSystem();
+  // What was typed stays as typed; the stored value is one international number (exact when valid).
+  const [phone, setPhone] = useState(() => splitPhone(value, phoneCountry(null, regionLocale) ?? ""));
+  const [sent, setSent] = useState(value);
+  if (value !== sent) { setSent(value); setPhone(splitPhone(value, phone.country)); }
+  const full = (code: string, number: string) => number.trim() ? toE164(number, code) ?? joinPhone(code, number) : "";
+  // The field may report a pasted number's country and its local part one after the other: build on the latest.
+  const latest = useRef(phone);
+  useEffect(() => { latest.current = phone; }, [phone]);
+  const change = (patch: Partial<{ country: string; national: string }>) => {
+    const next = { ...latest.current, ...patch };
+    latest.current = next; setPhone(next);
+    const stored = full(next.country, next.national); setSent(stored); onChange(stored);
+  };
+  return <PhoneField countryCode={phone.country} isRequired={field.required} kind="any" label={field.label} onChange={(national) => change({ national })}
+    onCountryChange={(country) => change({ country })} value={phone.national} />;
+}
+
+export function Fields({ fields, values, onChange, notice }: { fields: FieldSpec[]; values: Record<string, unknown>; onChange: (key: string, value: unknown) => void; notice?: ActionSpec["notice"] }) {
   const t = useT();
-  return <div className={styles.fields}>{fields.map((field) => <div className={styles.field} key={field.key}>
-    {field.type === "multi-select" ? <fieldset className={styles.multiSelect}><legend>{field.label}{field.required ? " *" : ""}</legend>{field.options?.map((option) => {
+  const field = (field: FieldSpec) => <div className={styles.field} key={field.key}>
+    {field.type === "multi-select" ? <div aria-label={field.label} className={styles.multiSelect} role="group"><FieldCaption isRequired={field.required}>{field.label}</FieldCaption>{field.options?.map((option) => {
       const selected = Array.isArray(values[field.key]) ? values[field.key] as string[] : [];
       return <Checkbox key={option.id} isSelected={selected.includes(option.id)} onChange={(checked) => onChange(field.key, checked ? [...selected, option.id] : selected.filter((id) => id !== option.id))}>{option.label}</Checkbox>;
-    })}</fieldset>
+    })}</div>
       : field.options ? <SelectField label={field.label} isRequired={field.required} selectedKey={String(values[field.key] ?? "") || null} onSelectionChange={(key) => onChange(field.key, key === "__none__" ? "" : String(key ?? ""))} items={field.required ? field.options : [{ id: "__none__", label: t("None") }, ...field.options]} />
       : field.type === "textarea" ? <TextAreaField label={field.label} maxLength={10000} isRequired={field.required} value={String(values[field.key] ?? "")} onChange={(value) => onChange(field.key, value)} />
       : field.type === "checkbox" ? <Checkbox isSelected={Boolean(values[field.key])} onChange={(value) => onChange(field.key, value)}>{field.label}</Checkbox>
       : field.type === "number" ? <NumericInput label={field.label} isRequired={field.required} minValue={field.min} maxValue={field.max} value={values[field.key] === "" || values[field.key] === undefined ? undefined : Number(values[field.key])} onChange={(value) => onChange(field.key, value)} />
-      : field.type === "date" ? <TextInput label={field.label} inputType="date" isRequired={field.required} value={String(values[field.key] ?? "")} onChange={(value) => onChange(field.key, value)} />
+      : field.type === "money" ? <MoneyField label={field.label} isRequired={field.required} min={field.min === undefined ? undefined : String(field.min)} value={String(values[field.key] ?? "")} onChange={(value) => onChange(field.key, value)} />
+      : field.type === "date" ? <DateField label={field.label} isRequired={field.required} value={safeDay(values[field.key])} onChange={(value) => onChange(field.key, value?.toString() ?? "")} />
       : field.type === "datetime-local" ? <CrmDateTimeField label={field.label} isRequired={field.required} value={String(values[field.key] ?? "")} onChange={(value) => onChange(field.key, value)} />
+      : field.type === "phone" ? <PhoneSpecField field={field} value={String(values[field.key] ?? "")} onChange={(value) => onChange(field.key, value)} />
       : <TextInput label={field.label} inputType={field.type ?? "text"} maxLength={500} isRequired={field.required} value={String(values[field.key] ?? "")} onChange={(value) => onChange(field.key, value)} />}
-  </div>)}</div>;
+    {notice?.(field.key, values)}
+  </div>;
+  const first = fields.filter((item) => !item.more);
+  const later = fields.filter((item) => item.more);
+  return <div className={styles.fields}>{first.map(field)}{later.length ? <MoreDetails filled={later.filter((item) => values[item.key] !== "" && values[item.key] !== undefined && !(Array.isArray(values[item.key]) && !(values[item.key] as unknown[]).length)).length}>{later.map(field)}</MoreDetails> : null}</div>;
 }
 
+function safeDay(value: unknown) {
+  try { return typeof value === "string" && value ? parseDate(value.slice(0, 10)) : null; } catch { return null; }
+}
+
+/**
+ * The CRM's generic create and edit dialog, on the shared form: Cancel then the action at the end, the
+ * essentials first, a blocked save names its fields, Esc asks before losing changes. A save that worked but
+ * whose screen couldn't refresh leaves only Close, so nothing is sent twice.
+ */
 export function ActionDialog({ action, workspaceId, onClose, onSaved }: { action: ActionSpec; workspaceId: string; onClose: () => void; onSaved: (result: RecordData) => Promise<void> | void }) {
   const t = useT();
   // Date-and-time fields read and write the workspace's wall clock (its region's zone), like the calendar.
   const { timeZone } = useDesignSystem();
-  const [values, setValues] = useState<Record<string, unknown>>(() => Object.fromEntries(action.fields.map((f) => { const value = action.initial?.[f.key] ?? f.value ?? (f.type === "multi-select" ? [] : ""); return [f.key, f.type === "datetime-local" ? zonedDateTime(value, timeZone) : value]; })));
-  const [busy, setBusy] = useState(false);
-  const saving = useRef(false);
+  const [initialValues] = useState<Record<string, unknown>>(() => Object.fromEntries(action.fields.map((f) => { const value = action.initial?.[f.key] ?? f.value ?? (f.type === "multi-select" ? [] : ""); return [f.key, f.type === "datetime-local" ? zonedDateTime(value, timeZone) : value]; })));
+  const [values, setValues] = useState(initialValues);
   const [failure, setFailure] = useState("");
   const [saved, setSaved] = useState(false);
-  const id = useId();
-  return <ControlledModalDialog title={action.title} description={action.description} isOpen isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) onClose(); }} size="lg" footer={<div className={styles.actions}><Button isDisabled={busy} onPress={onClose}>{saved ? t("Close") : t("Cancel")}</Button>{!saved ? <Button form={id} type="submit" variant="primary" isDisabled={Boolean(action.blockedReason)} isLoading={busy}>{action.submit ?? t("Save")}</Button> : null}</div>}>
-    <form className={styles.form} id={id} onSubmit={async (event) => {
-      event.preventDefault(); if (saving.current || saved || action.blockedReason) return; saving.current = true; setBusy(true); setFailure("");
-      try {
-        const body = { ...action.initial };
-        for (const field of action.fields) {
-          const value = values[field.key];
-          if (field.required && (value === "" || value === undefined || (typeof value === "string" && !value.trim()) || (Array.isArray(value) && !value.length))) throw new Error(t("Enter {field}.", { field: field.label.toLowerCase() }));
-          if (value === "" || value === undefined) { delete body[field.key]; continue; }
-          if (field.type === "datetime-local") {
-            const instant = zonedDateTimeToIso(String(value), timeZone);
-            if (!instant) throw new Error(t("Choose a valid date and time for {field}.", { field: field.label.toLowerCase() }));
-            body[field.key] = instant;
-            continue;
-          }
-          body[field.key] = field.type === "number" ? Number(value) : typeof value === "string" ? value.trim() : value;
-        }
-        const path = typeof action.path === "function" ? action.path(body) : action.path;
-        const result = await crmRequest(workspaceId, path, action.method ?? "POST", action.transform ? action.transform(body) : body);
-        setSaved(true);
-        try { await onSaved(result); onClose(); }
-        catch { setFailure(t("Your change was saved, but the screen could not refresh. Close this dialog and refresh the page. Do not submit it again.")); }
-      } catch (error) { setFailure(error instanceof Error ? error.message : t("The change could not be saved.")); }
-      finally { saving.current = false; setBusy(false); }
-    }}>
-      {action.blockedReason ? <p role="status">{action.blockedReason}</p> : null}
-      {failure ? <Callout title={saved ? t("Saved — refresh needed") : t("Could not save")} tone={saved ? "warning" : "danger"}>{failure}</Callout> : null}
-      <fieldset disabled={busy || saved} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><Fields fields={action.fields} values={values} onChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))} /></fieldset>
-    </form>
-  </ControlledModalDialog>;
+  const set = (patch: Record<string, unknown>) => setValues((current) => ({ ...current, ...patch }));
+  const submit = async () => {
+    if (saved || action.blockedReason) return;
+    setFailure("");
+    const body = { ...action.initial };
+    for (const field of action.fields) {
+      const value = values[field.key];
+      if (field.required && (value === "" || value === undefined || (typeof value === "string" && !value.trim()) || (Array.isArray(value) && !value.length))) throw new Error(t("Enter {field}.", { field: field.label.toLowerCase() }));
+      if (value === "" || value === undefined) { delete body[field.key]; continue; }
+      if (field.type === "datetime-local") {
+        const instant = zonedDateTimeToIso(String(value), timeZone);
+        if (!instant) throw new Error(t("Choose a valid date and time for {field}.", { field: field.label.toLowerCase() }));
+        body[field.key] = instant;
+        continue;
+      }
+      body[field.key] = field.type === "number" ? Number(value) : typeof value === "string" ? value.trim() : value;
+    }
+    const path = typeof action.path === "function" ? action.path(body) : action.path;
+    const result = await crmRequest(workspaceId, path, action.method ?? "POST", action.transform ? action.transform(body) : body);
+    setSaved(true);
+    try { await onSaved(result); onClose(); }
+    catch { setFailure(t("Your change was saved, but the screen could not refresh. Close this dialog and refresh the page. Do not submit it again.")); }
+  };
+  return <FormDialog cancelLabel={saved ? t("Close") : undefined} description={action.description} error={failure || undefined} errorTitle={t("Saved — refresh needed")}
+    hideSubmit={saved} isDirty={!saved && JSON.stringify(values) !== JSON.stringify(initialValues)} isSubmitDisabled={Boolean(action.blockedReason)}
+    lead={<>{action.blockedReason ? <p role="status">{action.blockedReason}</p> : null}{action.lead?.(values, set)}</>}
+    onClose={onClose} onSubmit={submit} size="lg" submitLabel={action.submit ?? t("Save")} submitVariant={action.submitVariant} title={action.title}>
+    <fieldset disabled={saved} className={styles.plainFieldset}><Fields fields={action.fields} notice={action.notice} values={values} onChange={(key, value) => set({ [key]: value })} /></fieldset>
+  </FormDialog>;
 }
 
 export function useCrmResource<T>(workspaceId: string, path: string | null) {

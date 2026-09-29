@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, FileX, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
-import { Avatar, Badge, Button, ControlledModalDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
+import { Avatar, Badge, Button, FormDialog, IconButton, IconMenuButton, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
 import { attachmentUrl, CLIENT_EVENT_LABELS, channelName, eventLine, fileSizeText, snoozePresets, type ChatAttachment, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -156,18 +156,15 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
 function CustomSnooze({ timeZone, onClose, onSnooze }: { timeZone: string; onClose: () => void; onSnooze: (until: string) => Promise<void> }) {
   const t = useT();
   const [value, setValue] = useState("");
-  const [error, setError] = useState("");
   const submit = async () => {
     const [date, time] = value.split("T");
     const until = date && time ? zonedToUtc(date, time, timeZone) : null;
-    if (!until || Date.parse(until) <= Date.now() + 60_000) { setError(t("Choose a time in the future")); return; }
+    if (!until || Date.parse(until) <= Date.now() + 60_000) throw new Error(t("Choose a time in the future"));
     await onSnooze(until);
   };
-  return <ControlledModalDialog isOpen title={t("Snooze until")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" onPress={() => void submit()}>{t("Snooze")}</Button></div>}>
+  return <FormDialog isDirty={Boolean(value)} onClose={onClose} onSubmit={submit} submitLabel={t("Snooze")} title={t("Snooze until")}>
     <CrmDateTimeField label={t("Snooze until")} value={value} onChange={setValue} isRequired />
-    {error ? <InlineNotice tone="error" message={error} /> : null}
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function useLiveConversation(workspaceId: string, id: string) {
