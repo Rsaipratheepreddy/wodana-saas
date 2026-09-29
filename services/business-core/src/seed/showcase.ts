@@ -41,6 +41,8 @@ import { HandoverService } from "../site/handover.service";
 import { SiteService } from "../site/site.service";
 import { seedShowcaseInbox } from "./showcase-inbox";
 import { WarrantyService } from "../site/warranty.service";
+import { CatalogV2Service } from "../catalog-core/catalog-v2.service";
+import { priceShowcaseItems, type ShowcasePriceLine } from "./showcase-prices";
 
 /**
  * The showcase: fictional clients and projects at every stage of the funnel, run through the core's own
@@ -1643,6 +1645,7 @@ class ShowcaseSeed {
     };
     // Realistic lines from the workspace's own catalog; a line whose item isn't in the catalog is entered by hand.
     const ops: unknown[] = [];
+    const picked: ShowcasePriceLine[] = [];
     let fromCatalog = 0;
     for (const line of s.lines) {
       const id = this.id(ctx, `line:${line.key}`);
@@ -1650,8 +1653,11 @@ class ShowcaseSeed {
       const hit = await search(line.catalog);
       const fields: Any = { id, quantity: line.quantity, unit: hit?.unitCode || line.unit, rate: line.rate, unitCost: line.unitCost, areaId: rooms.get(line.room) ?? null,
         title: line.title ?? hit?.name ?? line.catalog[0], description: hit?.description ?? "" };
-      if (hit) { fromCatalog += 1; ops.push({ op: "catalog", itemId: hit.id, line: fields }); } else ops.push({ op: "upsert", line: fields });
+      if (hit) { fromCatalog += 1; picked.push({ itemId: hit.id, rate: line.rate, unitCost: line.unitCost }); ops.push({ op: "catalog", itemId: hit.id, line: fields }); } else ops.push({ op: "upsert", line: fields });
     }
+    // A picked item reads its rate from a live price in the workspace's currency, as on a real quote.
+    // Someone who can't manage the catalog leaves the lines priced by the seed alone (as before).
+    if (picked.length) await this.catalogPrices(picked).catch((error: unknown) => this.log(`  note     catalog prices not set: ${describe(error)}`));
     const editor = await this.actor(this.input.actorUserId);
     if (ops.length) {
       await this.advance(`${ops.length} quotation lines (${fromCatalog} from the catalog)`, false, async () => {
@@ -1667,6 +1673,32 @@ class ShowcaseSeed {
     await this.advance(`payment schedule ${s.terms.map((term) => term.percent).join(" / ")}`, terms.length === s.terms.length && terms.every((term, index) => term.title === s.terms[index].title && Number(term.percent) === s.terms[index].percent),
       () => builder.setPaymentTerms(salesAdmin, this.w, caseId, quoteId, { terms: s.terms.map((term) => ({ id: this.id(ctx, `term:${term.title}`), ...term })) }));
     return quoteId;
+  }
+
+  /** Live prices in the workspace's currency for the catalog items the quotations pick (see showcase-prices). */
+  private async catalogPrices(lines: ShowcasePriceLine[]) {
+    const catalogs = this.get(CatalogV2Service);
+    const author = await this.actor(this.input.actorUserId);
+    const reviewer = await this.other(author, ["estimator", "owner", "manager"]);
+    const done = await priceShowcaseItems({
+      read: async (itemIds, currency) => (await this.db.tenantTransaction(this.w, author.userId, (client) => client.query<{ itemId: string; catalogId: string; priced: boolean }>(
+        `SELECT item.id AS "itemId", item.catalog_id AS "catalogId",
+                EXISTS (SELECT 1 FROM price_entries entry JOIN price_books book ON book.workspace_id = entry.workspace_id AND book.id = entry.price_book_id
+                         WHERE entry.workspace_id = item.workspace_id AND entry.item_id = item.id AND entry.variant_id IS NULL AND entry.status IN ('active', 'reviewed')
+                           AND book.status = 'active' AND book.currency = $3) AS priced
+           FROM catalog_items item WHERE item.workspace_id = $1 AND item.id = ANY($2::uuid[])`, [this.w, itemIds, currency]))).rows,
+      books: async (catalogId) => (await catalogs.listPriceBooks(author, this.w, catalogId)) as Array<{ id: string; name: string; currency: string; status: string; version: number }>,
+      createBook: (catalogId, input) => catalogs.createPriceBook(author, this.w, catalogId, input),
+      activateBook: (bookId, version) => catalogs.setPriceBookStatus(author, this.w, bookId, { version, status: "active" }),
+      draft: (bookId, itemId, input) => catalogs.savePrice(author, this.w, bookId, itemId, input),
+      // The catalog's rule: someone other than the author reviews a price before quotes use it.
+      review: async (entryId) => {
+        const entry = (await this.db.tenantTransaction(this.w, author.userId, (client) => client.query<{ version: number }>(
+          `SELECT version FROM price_entries WHERE workspace_id = $1 AND id = $2`, [this.w, entryId]))).rows[0];
+        return catalogs.reviewPrice(reviewer, this.w, entryId, { version: entry.version, decision: "reviewed" });
+      },
+    }, { currency: this.currency, bookName: `${this.currency} list prices`, lines });
+    if (done.priced) this.made(`${done.priced} catalog prices in ${this.currency}`); else this.kept(`catalog prices in ${this.currency}`);
   }
 
   /**
