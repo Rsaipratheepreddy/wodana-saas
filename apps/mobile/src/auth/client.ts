@@ -130,7 +130,7 @@ export class AuthClient {
     this.storageWork = next;
     return next;
   }
-  private async request(path: string, body?: unknown, token?: string, api?:{method:string;binary?:boolean}): Promise<unknown> {
+  private async request(path: string, body?: unknown, token?: string, api?:{method:string;binary?:boolean;headers?:Record<string,string>}): Promise<unknown> {
     let url: URL | null = null;
     try { url = new URL(this.base); } catch { /* report configuration error below */ }
     const local = url && ['localhost', '127.0.0.1', '[::1]', '10.0.2.2'].includes(url.hostname);
@@ -143,7 +143,7 @@ export class AuthClient {
     try {
       const response = await this.fetcher(`${this.base}${path}`, {
         method: api?.method ?? (body === undefined ? 'GET' : 'POST'),
-        headers: { accept: 'application/json', ...(body === undefined || body instanceof FormData ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        headers: { ...Object.fromEntries(Object.entries(api?.headers ?? {}).filter(([name]) => !['authorization', 'content-type', 'accept'].includes(name.toLowerCase()))), accept: 'application/json', ...(body === undefined || body instanceof FormData ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
         body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
         credentials: this.options.credentials ?? 'omit', signal: controller.signal, redirect: 'error',
       });
@@ -485,8 +485,11 @@ export class AuthClient {
       throw error;
     }
   }
-  /** Workspace API requests share auth rotation and preserve multipart bodies on retry. */
-  async api<T>(path:string,method='GET',body?:unknown,binary=false):Promise<T>{
+  /**
+   * Workspace API requests share auth rotation and preserve multipart bodies on retry. `headers` carries a
+   * command's own headers (an Idempotency-Key); it never overrides the authorization or content type.
+   */
+  async api<T>(path:string,method='GET',body?:unknown,binary=false,headers?:Record<string,string>):Promise<T>{
     const epoch=this.epoch;let session=this.session;
     if(!session||this.state.status!=='signedIn')throw expired();
     const workspaceId=session.workspaceId;
@@ -499,8 +502,8 @@ export class AuthClient {
     try{
       if(session.accessExpiresAt<=this.now()+30000)session=await this.rotate(session);
       let result:unknown;
-      try{result=await this.request(path,body,session.accessToken,{method,binary});}
-      catch(error){if(!(error instanceof AuthError)||error.code!=='expired')throw error;session=this.session&&this.session!==session?this.session:await this.rotate(session);result=await this.request(path,body,session.accessToken,{method,binary});}
+      try{result=await this.request(path,body,session.accessToken,{method,binary,headers});}
+      catch(error){if(!(error instanceof AuthError)||error.code!=='expired')throw error;session=this.session&&this.session!==session?this.session:await this.rotate(session);result=await this.request(path,body,session.accessToken,{method,binary,headers});}
       if(epoch!==this.epoch)throw cancelled();return result as T;
     }catch(error){
       if(epoch===this.epoch&&error instanceof ApiError&&error.status===403)await this.revalidateAccess(session,epoch);

@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState, type PropsWithChildren } from 'react';
 import { Pressable, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
-import { Camera, ClipboardList, HardHat, MessageSquarePlus, PackageCheck, PhoneCall, ReceiptText, Ruler, TriangleAlert, type LucideIcon } from 'lucide-react-native';
+import { Camera, ClipboardList, HardHat, MessageSquarePlus, PackageCheck, PhoneCall, ReceiptText, Ruler, TriangleAlert, UserPlus, type LucideIcon } from 'lucide-react-native';
 import { captureActions, type CaptureAction } from '../../core/access';
 import { haptic } from '../../core/haptics';
 import { key, useT } from '../../core/i18n';
@@ -18,6 +18,7 @@ const ACTIONS: Record<CaptureAction, { label: string; icon: LucideIcon; href: Hr
   snag: { label: key('Raise snag'), icon: TriangleAlert, href: '/capture/pick/snag' },
   measurement: { label: key('Measurement'), icon: Ruler, href: '/capture/measure' },
   delivery: { label: key('Receive delivery'), icon: PackageCheck, href: '/purchasing' },
+  enquiry: { label: key('New enquiry'), icon: UserPlus, href: '/sales/new' },
   note: { label: key('Log a call'), icon: PhoneCall, href: '/capture/note' },
   'follow-up': { label: key('Follow-up'), icon: MessageSquarePlus, href: '/capture/follow-up' },
   expense: { label: key('Expense'), icon: ReceiptText, href: '/capture/pick/expense' },

@@ -272,6 +272,20 @@ test('workspace writes retry a 401 with the same action and preserve API validat
  assert.equal(client.getSnapshot().status,'signedIn');
  await assert.rejects(client.api('/workspaces/other-workspace/hrms/bootstrap'),/outside the active workspace/);
 });
+test('a command keeps its own idempotency key across the 401 retry, and it can never replace the token', async () => {
+  const h = harness(), client = h.create(); await client.signIn('member@example.com', 'password');
+  const seen: Array<{ key: string | null; auth: string | null }> = [];
+  h.override = (path, init) => {
+    if (!path.includes('/crm/intake-events')) return undefined;
+    const headers = new Headers(init.headers);
+    seen.push({ key: headers.get('idempotency-key'), auth: headers.get('authorization') });
+    return headers.get('authorization') === 'Bearer access-1' ? response({}, 401) : response({ leadId: 'lead-1' }, 201);
+  };
+  const result = await client.api('/workspaces/workspace-1/crm/intake-events', 'POST', { source: 'company' }, false, { 'idempotency-key': 'lead-app:1', authorization: 'Bearer forged' });
+  assert.deepEqual(result, { leadId: 'lead-1' });
+  assert.deepEqual(seen.map((item) => item.key), ['lead-app:1', 'lead-app:1']);
+  assert.deepEqual(seen.map((item) => item.auth), ['Bearer access-1', 'Bearer access-2']);
+});
 test('a server-side module downgrade refreshes stale native capabilities and blocks later queued writes locally',async()=>{
  const h=harness(),client=h.create();
  let current={...profile,memberships:[{...profile.memberships[0],allowedModules:['workspace','crm','projects']}]} as typeof profile;

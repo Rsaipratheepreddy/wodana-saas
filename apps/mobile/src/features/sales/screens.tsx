@@ -1,76 +1,112 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Linking, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { CalendarCheck, CalendarPlus, Check, Handshake, Mail, MessageCircle, NotebookPen, Phone, PhoneCall, Users } from 'lucide-react-native';
+import { CalendarCheck, CalendarPlus, Check, Handshake, Mail, MessageCircle, NotebookPen, Phone, PhoneCall, Plus, UserPlus, Users } from 'lucide-react-native';
 import { errorMessage } from '../../core/api';
 import { mailLink, telLink, whatsappLink } from '../../core/contact';
 import { addDays, useFormat } from '../../core/format';
 import { key, useT } from '../../core/i18n';
 import { useSession } from '../../core/session';
 import { DateField } from '../../ui/date-field';
-import { FilterChips, SearchField, SegmentedControl, TextField } from '../../ui/fields';
-import { Banner, Empty, Failure, Fact, ListRow, ListScreen, Loading, Screen, Section } from '../../ui/layout';
+import { FilterChips, OptionSheet, SearchField, SegmentedControl, TextField } from '../../ui/fields';
+import { Banner, Card, Empty, Failure, Fact, ListRow, ListScreen, Loading, Screen, Section } from '../../ui/layout';
 import { Button, Chip, IconButton, Row, Stack, Text } from '../../ui/primitives';
 import { Sheet } from '../../ui/sheet';
 import { StatusChip } from '../../ui/status';
 import { useToast } from '../../ui/toast';
 import { useTheme } from '../../ui/theme';
-import { useActivities, useLead, useLeads, useOpportunities, useOpportunity, useSalesCommand, type Activity, type LeadDetail, type LeadRow } from './api';
-
-const OUTCOMES = [
-  { value: 'willing_to_talk', label: key('Willing to talk') }, { value: 'no_answer', label: key('No answer') }, { value: 'message_sent_no_reply', label: key('Message sent, no reply') },
-  { value: 'come_back_later', label: key('Come back later') }, { value: 'not_interested', label: key('Not interested') }, { value: 'unreachable', label: key('Unreachable') },
-] as const;
-const CHANNELS = [{ value: 'call', label: key('Call') }, { value: 'whatsapp', label: key('WhatsApp') }, { value: 'email', label: key('Email') }, { value: 'meeting', label: key('Meeting') }] as const;
-type Channel = (typeof CHANNELS)[number]['value'];
-type Outcome = (typeof OUTCOMES)[number]['value'];
-const CLOSED = ['qualified', 'disqualified', 'duplicate'];
+import { useActivities, useAssignLead, useLead, useLeads, useOpportunities, useOpportunity, useSalesCommand, useSalesOwners, type Activity, type LeadDetail, type LeadRow } from './api';
+import { byUrgency, CLOSED_LEAD_STATUSES, CONTACT_CHANNELS, CONTACT_OUTCOMES, contactProblem, contactRules, endOfToday, isMyDay, isUnowned, quickFollowUps, UNANSWERED, type ContactChannel, type ContactOutcome } from './model';
 
 const leadName = (lead: Pick<LeadRow, 'partyName' | 'title' | 'reference'>) => lead.partyName || lead.title || lead.reference || '—';
+type LeadView = 'my_day' | 'new' | 'contacted' | 'come_back' | 'unowned' | 'all';
+const VIEWS: LeadView[] = ['my_day', 'new', 'contacted', 'come_back', 'unowned', 'all'];
+// Kept with the assignment history (English, like every audit reason).
+const TAKE_REASON = 'Taken on the phone';
+const ASSIGN_REASON = 'Sales owner selected on the phone';
+const respondingBy = (lead: Pick<LeadRow, 'slaDueAt' | 'slaStatus'>) => !!lead.slaDueAt && ['active', 'warning', 'breached'].includes(lead.slaStatus ?? '');
 
-/** Enquiries: mine by default, by where they are in the funnel, searchable; the list pages as you scroll. */
+/**
+ * Enquiries (S-30): My day first (my new ones, those waiting for a first response, and follow-ups due today or
+ * earlier), then the funnel lists; people who give enquiries out also see the ones nobody owns, and everyone's.
+ */
 export function LeadsScreen() {
   const t = useT();
   const theme = useTheme();
   const router = useRouter();
   const format = useFormat();
+  const session = useSession();
+  const toast = useToast();
+  const params = useLocalSearchParams<{ view?: string }>();
+  const me = session.membershipId;
+  const canAssign = session.can('crm.leads.assign');
+  const canCreate = session.can('crm.leads.manage');
+  const views = VIEWS.filter((value) => (value === 'unowned' ? canAssign : value === 'my_day' ? !!me : true));
+  const [view, setView] = useState<LeadView>(() => (views.includes(params.view as LeadView) ? params.view as LeadView : me ? 'my_day' : 'new'));
   const [who, setWho] = useState<'mine' | 'all'>('mine');
-  const [funnel, setFunnel] = useState<'new' | 'contacted' | 'come_back' | 'all'>('new');
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   useEffect(() => { const timer = setTimeout(() => setDebounced(search.trim()), 300); return () => clearTimeout(timer); }, [search]);
-  const leads = useLeads({ mine: who === 'mine' ? 'true' : '', funnel: funnel === 'all' ? '' : funnel, search: debounced });
-  const rows = useMemo(() => leads.data?.pages.flatMap((page) => page.data) ?? [], [leads.data]);
-  const now = new Date().toISOString();
+  // My day and No owner read the latest hundred and choose on the phone, as the web does.
+  const filters: Record<string, string> = view === 'my_day' ? { mine: 'true', limit: '100', search: debounced }
+    : view === 'unowned' ? { limit: '100', search: debounced }
+      : { mine: who === 'mine' || !canAssign ? 'true' : '', funnel: view === 'all' ? '' : view, search: debounced };
+  const leads = useLeads(filters);
+  const dayEnds = endOfToday(format.today(), format.timeZone);
+  const rows = useMemo(() => {
+    const all = leads.data?.pages.flatMap((page) => page.data) ?? [];
+    if (view === 'my_day') return all.filter((lead) => isMyDay(lead, me, dayEnds)).sort(byUrgency);
+    if (view === 'unowned') return all.filter(isUnowned).sort(byUrgency);
+    return all;
+  }, [leads.data, view, me, dayEnds]);
+  const assign = useAssignLead();
+  const owners = useSalesOwners(canAssign && view === 'unowned');
+  const meCanOwn = !!me && (owners.data?.items ?? []).some((item) => item.id === me);
+  const take = async (lead: LeadRow) => {
+    try { await assign.mutateAsync({ leadId: lead.id, version: lead.version, ownerMembershipId: me, reason: TAKE_REASON }); toast.success(t('It’s yours')); }
+    catch (error) { toast.error(errorMessage(error, t('Something went wrong'))); }
+  };
+  const nowIso = new Date().toISOString();
+  const label: Record<LeadView, string> = { my_day: t('My day'), new: t('New'), contacted: t('Contacted'), come_back: t('Come back'), unowned: t('No owner'), all: t('All') };
+  const counted = (value: LeadView) => value === view && (value === 'my_day' || value === 'unowned') && !leads.isLoading && !leads.error;
   return <ListScreen title={t('Enquiries')} back items={rows} keyExtractor={(lead) => lead.id}
+    action={canCreate ? <IconButton icon={Plus} label={t('New enquiry')} tone="action" onPress={() => router.push('/sales/new')} /> : undefined}
     toolbar={<View style={{ gap: theme.space(3) }}>
       <SearchField value={search} onChange={setSearch} placeholder={t('Name or reference')} />
-      <SegmentedControl value={who} onChange={setWho} options={[{ value: 'mine', label: t('Mine') }, { value: 'all', label: t('Everyone') }]} />
-      <FilterChips value={funnel} onChange={setFunnel} options={[{ value: 'new', label: t('New') }, { value: 'contacted', label: t('Contacted') }, { value: 'come_back', label: t('Come back') }, { value: 'all', label: t('All') }]} />
+      <FilterChips value={view} onChange={setView} options={views.map((value) => ({ value, label: counted(value) ? `${label[value]} · ${rows.length}` : label[value] }))} />
+      {canAssign && view !== 'my_day' && view !== 'unowned' ? <SegmentedControl value={who} onChange={setWho} options={[{ value: 'mine', label: t('Mine') }, { value: 'all', label: t('Everyone') }]} /> : null}
     </View>}
     loading={leads.isLoading} error={leads.error ? errorMessage(leads.error, t('Enquiries could not be loaded.')) : null} onRetry={() => void leads.refetch()}
     onRefresh={() => void leads.refetch()} refreshing={leads.isRefetching && !leads.isFetchingNextPage}
     onEndReached={() => { if (leads.hasNextPage && !leads.isFetchingNextPage) void leads.fetchNextPage(); }}
-    empty={<Empty icon={Users} title={debounced ? t('Nothing matches') : t('No enquiries here')} />}
+    empty={<Empty icon={view === 'my_day' ? CalendarCheck : Users}
+      title={debounced ? t('Nothing matches') : view === 'my_day' ? t('Nothing due today') : view === 'unowned' ? t('Every enquiry has an owner') : t('No enquiries here')}
+      action={!debounced && canCreate && (view === 'my_day' || view === 'new') ? { label: t('New enquiry'), onPress: () => router.push('/sales/new') } : undefined} />}
     renderItem={(lead, _, first) => <ListRow first={first} title={leadName(lead)} onPress={() => router.push(`/sales/${lead.id}`)}
-      detail={[lead.reference, lead.source, lead.details?.area ?? lead.details?.location].filter(Boolean).join(' · ')}
-      meta={lead.nextActionAt ? <Text variant="caption" tone={lead.nextActionAt < now ? 'danger' : 'tertiary'}>{t('Next {when}', { when: format.when(lead.nextActionAt) })}</Text>
-        : lead.slaDueAt && lead.status === 'new' ? <Text variant="caption" tone={lead.slaStatus === 'breached' ? 'danger' : 'warning'}>{t('Respond by {when}', { when: format.when(lead.slaDueAt) })}</Text> : undefined}
-      trailing={<StatusChip status={lead.status} />} />} />;
+      detail={[lead.reference, lead.source, lead.details?.area ?? lead.details?.location, !lead.ownerMembershipId && view !== 'unowned' ? t('No owner') : null].filter(Boolean).join(' · ')}
+      meta={respondingBy(lead) ? <Text variant="caption" tone={lead.slaStatus === 'breached' ? 'danger' : 'warning'}>{t('Respond by {when}', { when: format.when(lead.slaDueAt) })}</Text>
+        : lead.nextActionAt ? <Text variant="caption" tone={lead.nextActionAt < nowIso ? 'danger' : 'tertiary'}>{t('Next {when}', { when: format.when(lead.nextActionAt) })}</Text> : undefined}
+      trailing={view === 'unowned' && meCanOwn ? <Button size="sm" label={t('Take it')} icon={UserPlus} loading={assign.isPending && assign.variables?.leadId === lead.id}
+        disabled={assign.isPending} onPress={() => void take(lead)} /> : <StatusChip status={lead.status} />} />} />;
 }
 
-/** One enquiry: call, WhatsApp or email in one tap; log what happened; schedule the next follow-up. */
+/** One enquiry: call, WhatsApp or email in one tap; log what happened; take it or give it out; schedule the next follow-up. */
 export function LeadScreen() {
   const t = useT();
   const router = useRouter();
   const format = useFormat();
   const session = useSession();
+  const toast = useToast();
   const { id, log, schedule } = useLocalSearchParams<{ id: string; log?: string; schedule?: string }>();
   const lead = useLead(id);
   const activities = useActivities({ leadId: id });
-  const [logging, setLogging] = useState<Channel | null>(log ? 'call' : null);
+  const canAssign = session.can('crm.leads.assign');
+  const owners = useSalesOwners(canAssign);
+  const assign = useAssignLead();
+  const [logging, setLogging] = useState<ContactChannel | null>(log ? 'call' : null);
   const [scheduling, setScheduling] = useState(!!schedule);
-  const calledAt = useRef<{ channel: Channel; at: number } | null>(null);
+  const [assigning, setAssigning] = useState(false);
+  const calledAt = useRef<{ channel: ContactChannel; at: number } | null>(null);
   // Back from a call or WhatsApp: offer to log it straight away.
   useEffect(() => {
     const listener = AppState.addEventListener('change', (state) => {
@@ -83,10 +119,20 @@ export function LeadScreen() {
   const data = lead.data;
   const enquiry = data.enquiry;
   const phone = enquiry?.primaryMobile ?? enquiry?.primaryPhone ?? null;
-  const open = (url: string | null, channel?: Channel) => { if (!url) return; if (channel) calledAt.current = { channel, at: Date.now() }; void Linking.openURL(url).catch(() => undefined); };
+  const open = (url: string | null, channel?: ContactChannel) => { if (!url) return; if (channel) calledAt.current = { channel, at: Date.now() }; void Linking.openURL(url).catch(() => undefined); };
   const canManage = session.can('crm.leads.manage');
   const canPlan = session.can('crm.activities.manage');
-  const closed = CLOSED.includes(data.status);
+  const closed = CLOSED_LEAD_STATUSES.has(data.status);
+  const me = session.membershipId;
+  const meCanOwn = !!me && (owners.data?.items ?? []).some((item) => item.id === me);
+  const ownerName = data.ownerMembershipId ? (data.ownerMembershipId === me ? t('Me') : owners.data?.items.find((item) => item.id === data.ownerMembershipId)?.displayName ?? null) : null;
+  const giveTo = async (membershipId: string, reason: string) => {
+    try {
+      const fresh = (await lead.refetch()).data ?? data;
+      await assign.mutateAsync({ leadId: data.id, version: fresh.version, ownerMembershipId: membershipId, reason });
+      toast.success(membershipId === me ? t('It’s yours') : t('Assigned'));
+    } catch (error) { toast.error(errorMessage(error, t('Something went wrong'))); }
+  };
   const list = [...(activities.data?.data ?? [])].sort((a, b) => (b.completedAt ?? b.dueAt ?? b.createdAt).localeCompare(a.completedAt ?? a.dueAt ?? a.createdAt));
   const next = list.filter((item) => item.status === 'pending' && item.dueAt).sort((a, b) => (a.dueAt ?? '').localeCompare(b.dueAt ?? ''))[0];
   return <Screen back title={enquiry?.partyName ?? enquiry?.title ?? t('Enquiry')} subtitle={[enquiry?.reference, enquiry?.title].filter(Boolean).join(' · ')}
@@ -101,6 +147,14 @@ export function LeadScreen() {
       <ContactButton icon={MessageCircle} label={t('WhatsApp')} onPress={whatsappLink(phone) ? () => open(whatsappLink(phone), 'whatsapp') : undefined} />
       <ContactButton icon={Mail} label={t('Email')} onPress={mailLink(enquiry?.primaryEmail) ? () => open(mailLink(enquiry?.primaryEmail, enquiry?.reference ?? undefined), 'email') : undefined} />
     </Row>
+    {!data.ownerMembershipId && !closed && canAssign ? <Card tone="muted">
+      <Text variant="subheading">{t('No owner yet')}</Text>
+      <Row gap={2}>
+        {meCanOwn ? <View style={{ flex: 1 }}><Button label={t('Take it')} icon={UserPlus} variant="primary" full loading={assign.isPending && assign.variables?.ownerMembershipId === me}
+          disabled={assign.isPending} onPress={() => void giveTo(me, TAKE_REASON)} /></View> : null}
+        <View style={{ flex: 1 }}><Button label={t('Assign')} full disabled={assign.isPending || owners.isLoading} onPress={() => setAssigning(true)} /></View>
+      </Row>
+    </Card> : null}
     {next ? <Banner tone={next.dueAt && next.dueAt < new Date().toISOString() ? 'warning' : 'info'} icon={CalendarCheck} title={next.title} detail={format.when(next.dueAt)} /> : null}
     {data.status === 'paused' && data.pausedReason ? <Banner tone="neutral" title={t('Paused')} detail={data.pausedReason} /> : null}
     <Section>
@@ -111,7 +165,9 @@ export function LeadScreen() {
       {enquiry?.details?.budgetRange ? <Fact label={t('Budget')} value={enquiry.details.budgetRange} /> : null}
       {enquiry?.source ? <Fact label={t('Source')} value={[enquiry.source, enquiry.channel].filter(Boolean).join(' · ')} /> : null}
       {enquiry?.receivedAt ? <Fact label={t('Received')} value={format.when(enquiry.receivedAt)} /> : null}
+      {data.ownerMembershipId && ownerName ? <Fact label={t('Owner')} value={ownerName} /> : null}
     </Section>
+    {data.ownerMembershipId && canAssign && !closed ? <Button label={t('Reassign')} variant="ghost" onPress={() => setAssigning(true)} /> : null}
     {enquiry?.summary ? <Text tone="secondary">{enquiry.summary}</Text> : null}
     {data.opportunities.length ? <Section title={t('Opportunities')}>
       {data.opportunities.map((item, index) => <ListRow key={item.id} first={index === 0} icon={Handshake} title={item.title} trailing={<StatusChip status={item.status} />} onPress={() => router.push(`/sales/opportunity/${item.id}`)} />)}
@@ -122,6 +178,9 @@ export function LeadScreen() {
     </Section>
     <LogContactSheet lead={data} channel={logging} onClose={() => setLogging(null)} />
     <ScheduleSheet leadId={data.id} name={enquiry?.partyName ?? ''} open={scheduling} onClose={() => setScheduling(false)} />
+    <OptionSheet open={assigning} onClose={() => setAssigning(false)} title={data.ownerMembershipId ? t('Reassign enquiry') : t('Assign enquiry')} value={data.ownerMembershipId}
+      options={(owners.data?.items ?? []).map((item) => ({ value: item.id, label: item.id === me ? t('Me ({name})', { name: item.displayName || item.email }) : item.displayName || item.email, detail: item.email }))}
+      onChange={(value) => { setAssigning(false); if (value && value !== data.ownerMembershipId) void giveTo(value, value === me ? TAKE_REASON : ASSIGN_REASON); }} />
   </Screen>;
 }
 
@@ -137,47 +196,83 @@ function ActivityRow({ item, first }: { item: Activity; first: boolean }) {
   const t = useT();
   const format = useFormat();
   const icon = item.type === 'call' ? PhoneCall : item.type === 'whatsapp' ? MessageCircle : item.type === 'email' ? Mail : item.type === 'meeting' ? Users : NotebookPen;
-  return <ListRow first={first} icon={icon} iconTone={item.status === 'pending' ? 'action' : 'neutral'} title={item.title}
-    detail={[item.description, item.completionOutcome].filter(Boolean).join(' · ') || undefined}
+  const channel = CONTACT_CHANNELS.find((option) => option.value === item.type);
+  const outcome = CONTACT_OUTCOMES.find((option) => option.value === item.completionOutcome);
+  // A logged contact reads "Call · Willing to talk" in the reader's language; anything else keeps its own title.
+  const title = channel && outcome ? `${t(channel.label)} · ${t(outcome.label)}` : item.title;
+  return <ListRow first={first} icon={icon} iconTone={item.status === 'pending' ? 'action' : 'neutral'} title={title}
+    detail={[item.description, outcome ? null : item.completionOutcome].filter(Boolean).join(' · ') || undefined}
     meta={<Text variant="caption" tone="tertiary">{[item.status === 'pending' ? t('Due {when}', { when: format.when(item.dueAt) }) : format.when(item.completedAt ?? item.createdAt), item.ownerName].filter(Boolean).join(' · ')}</Text>} />;
 }
 
-/** What happened when you contacted them; the outcome moves the enquiry on (the server decides how). */
-function LogContactSheet({ lead, channel: initial, onClose }: { lead: LeadDetail; channel: Channel | null; onClose: () => void }) {
+/**
+ * What happened when you contacted them (PLM-042, S-16): the outcome moves the enquiry on (the server decides how).
+ * A try that reached nobody needs no note; the next try is one chip away; "Come back later" needs its date.
+ */
+function LogContactSheet({ lead, channel: initial, onClose }: { lead: LeadDetail; channel: ContactChannel | null; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
   const format = useFormat();
   const leadQuery = useLead(lead.id);
-  const [channel, setChannel] = useState<Channel>('call');
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [channel, setChannel] = useState<ContactChannel>('call');
+  const [outcome, setOutcome] = useState<ContactOutcome | null>(null);
   const [note, setNote] = useState('');
   const [reason, setReason] = useState('');
-  const [day, setDay] = useState(addDays(format.today(), 1));
-  const [time, setTime] = useState('10:00');
-  useEffect(() => { if (initial) { setChannel(initial); setOutcome(null); setNote(''); setReason(''); } }, [initial]);
+  const [day, setDay] = useState('');
+  const [time, setTime] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const [opened] = useState(() => new Date());
+  useEffect(() => { if (initial) { setChannel(initial); setOutcome(null); setNote(''); setReason(''); setDay(''); setTime(''); setProblem(null); } }, [initial]);
   const command = useSalesCommand((api, body: Record<string, unknown>) => api.send(`crm/leads/${lead.id}/contacts`, 'POST', body));
-  const needsDate = outcome === 'come_back_later';
-  const ready = !!outcome && note.trim().length > 0 && (outcome !== 'not_interested' || reason.trim().length > 0) && (!needsDate || (!!day && !!time));
+  const rules = contactRules(outcome);
+  const picks = quickFollowUps(opened, format.today(), format.timeZone);
+  const setAt = (iso: string) => { setDay(format.dayOf(iso)); setTime(format.clock(iso)); setProblem(null); };
+  const nextAt = rules.followUp && day && time ? format.instant(day, time) : null;
+  const choose = (next: ContactOutcome) => {
+    setOutcome(next);
+    setProblem(null);
+    // A next step where one is expected; the person can change or clear it.
+    if (!day && UNANSWERED.has(next) && next !== 'unreachable') setAt(picks[0].at);
+    if (!day && next === 'come_back_later') setAt(picks[1].at);
+  };
   const save = async () => {
+    const blocked = contactProblem({ outcome, note, reason, nextAt });
+    if (blocked) { setProblem(blocked); return; }
     try {
       const fresh = (await leadQuery.refetch()).data ?? lead;
       await command.mutateAsync({ version: fresh.version, channel, outcome, note: note.trim().slice(0, 4000), ...(outcome === 'not_interested' ? { reason: reason.trim().slice(0, 160) } : {}),
-        ...(needsDate ? { nextActionAt: format.instant(day, time) } : {}) });
-      toast.success(t('Logged'));
+        ...(nextAt ? { nextActionAt: nextAt } : {}) });
+      toast.success(t('Logged'), 'send');
       onClose();
-    } catch (error) { toast.error(errorMessage(error, t('Something went wrong'))); }
+    } catch (error) { setProblem(errorMessage(error, t('The contact could not be logged.'))); }
   };
-  return <Sheet open={!!initial} onClose={onClose} title={t('Log contact')} full
-    footer={<Button label={t('Save')} variant="primary" size="lg" full disabled={!ready} loading={command.isPending} onPress={save} />}>
-    <SegmentedControl value={channel} onChange={setChannel} options={CHANNELS.map((option) => ({ value: option.value, label: t(option.label) }))} />
+  const pickLabel = (id: (typeof picks)[number]['id'], at: string) => (id === 'two_hours' ? t('In 2 h · {when}', { when: format.when(at) })
+    : id === 'tomorrow' ? t('Tomorrow · {when}', { when: format.time(at) }) : t('In 3 days · {when}', { when: format.when(at) }));
+  return <Sheet open={!!initial} onClose={onClose} title={t('Log contact')} subtitle={lead.enquiry?.partyName ?? undefined} full
+    footer={<Stack gap={2}>
+      {problem ? <Banner tone="danger" title={t(problem)} /> : null}
+      <Button label={t('Log contact')} variant="primary" size="lg" full disabled={!outcome} loading={command.isPending} onPress={() => void save()} />
+    </Stack>}>
     <Stack gap={2}>
-      <Text variant="label" tone="secondary">{t('How did it go?')}</Text>
-      <Row gap={2} wrap>{OUTCOMES.map((option) => <Chip key={option.value} label={t(option.label)} selected={outcome === option.value} onPress={() => setOutcome(option.value)} />)}</Row>
+      <Text variant="label" tone="secondary">{t('How')}</Text>
+      <Row gap={2} wrap>{CONTACT_CHANNELS.map((option) => <Chip key={option.value} label={t(option.label)} selected={channel === option.value} onPress={() => setChannel(option.value)} />)}</Row>
     </Stack>
-    {outcome === 'not_interested' ? <TextField label={t('Why')} value={reason} onChangeText={setReason} maxLength={160} /> : null}
-    {needsDate ? <Row gap={2}><View style={{ flex: 1 }}><DateField label={t('Come back on')} value={day} onChange={setDay} min={format.today()} /></View>
-      <View style={{ flex: 1 }}><DateField label={t('At')} value={time} onChange={setTime} mode="time" /></View></Row> : null}
-    <TextField label={t('Note')} value={note} onChangeText={setNote} multiline maxLength={4000} placeholder={t('What did you talk about?')} />
+    <Stack gap={2}>
+      <Text variant="label" tone="secondary">{t('Outcome')}</Text>
+      <Row gap={2} wrap>{CONTACT_OUTCOMES.map((option) => <Chip key={option.value} label={t(option.label)} selected={outcome === option.value} onPress={() => choose(option.value)} />)}</Row>
+    </Stack>
+    {rules.reasonRequired ? <TextField label={t('Reason')} value={reason} onChangeText={(value) => { setReason(value); setProblem(null); }} maxLength={160} /> : null}
+    <TextField label={t('Note')} value={note} onChangeText={(value) => { setNote(value); setProblem(null); }} multiline maxLength={4000}
+      placeholder={outcome && !rules.noteRequired ? t('Noted as an attempt if you leave it empty') : t('What did you discuss?')} />
+    {rules.followUp ? <Stack gap={2}>
+      <Text variant="label" tone="secondary">{rules.followUpRequired ? t('Come back on') : t('Next follow-up')}</Text>
+      <Row gap={2} wrap>{picks.map((pick) => <Chip key={pick.id} label={pickLabel(pick.id, pick.at)} selected={nextAt === pick.at} onPress={() => setAt(pick.at)} />)}</Row>
+      <Row gap={2}>
+        <View style={{ flex: 1 }}><DateField label={t('Day')} value={day} onChange={(value) => { setDay(value); if (!time) setTime('10:00'); setProblem(null); }} min={format.today()} placeholder={t('Not set')} /></View>
+        <View style={{ flex: 1 }}><DateField label={t('Time')} value={time} onChange={(value) => { setTime(value); setProblem(null); }} mode="time" disabled={!day} /></View>
+      </Row>
+      {day && !rules.followUpRequired ? <Button label={t('No follow-up')} variant="ghost" size="sm" onPress={() => { setDay(''); setTime(''); }} /> : null}
+    </Stack> : null}
   </Sheet>;
 }
 
@@ -318,7 +413,7 @@ export function PickLeadScreen({ next }: { next: 'log' | 'schedule' }) {
   const [debounced, setDebounced] = useState('');
   useEffect(() => { const timer = setTimeout(() => setDebounced(search.trim()), 300); return () => clearTimeout(timer); }, [search]);
   const leads = useLeads({ mine: debounced ? '' : 'true', search: debounced });
-  const rows = (leads.data?.pages.flatMap((page) => page.data) ?? []).filter((lead) => !CLOSED.includes(lead.status));
+  const rows = (leads.data?.pages.flatMap((page) => page.data) ?? []).filter((lead) => !CLOSED_LEAD_STATUSES.has(lead.status));
   return <ListScreen title={next === 'log' ? t('Log a call') : t('Follow-up')} back items={rows} keyExtractor={(lead) => lead.id}
     toolbar={<SearchField value={search} onChange={setSearch} placeholder={t('Which enquiry?')} autoFocus />}
     loading={leads.isLoading} error={leads.error ? errorMessage(leads.error, t('Enquiries could not be loaded.')) : null} onRetry={() => void leads.refetch()}

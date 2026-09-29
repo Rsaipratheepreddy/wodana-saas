@@ -11464,5 +11464,16 @@
   "Test code sent. Check that phone's WhatsApp.": "Test code sent. Check that phone's WhatsApp.",
   "The test code could not be sent.": "The test code could not be sent.",
   "Send a test code": "Send a test code",
-  "Mobile number for the test": "Mobile number for the test"
+  "Mobile number for the test": "Mobile number for the test",
+  "Choose the region.": "Choose the region.",
+  "Choose the enquiry type.": "Choose the enquiry type.",
+  "Add who referred this client.": "Add who referred this client.",
+  "Enter a valid mobile number.": "Enter a valid mobile number.",
+  "Enquiry {reference} created": "Enquiry {reference} created",
+  "New enquiries need a connection.": "New enquiries need a connection.",
+  "Enquiry options could not be loaded.": "Enquiry options could not be loaded.",
+  "It’s yours": "It’s yours",
+  "Nothing due today": "Nothing due today",
+  "Every enquiry has an owner": "Every enquiry has an owner",
+  "Tomorrow · {when}": "Tomorrow · {when}"
 }

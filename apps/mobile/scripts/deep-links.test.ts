@@ -22,6 +22,7 @@ test('notification links open the same record in the app', () => {
     ['/workspace/hrms?day=2026-09-20', '/hrms/days?day=2026-09-20'],
     [`/workspace/crm/leads?lead=${id}`, `/sales/${id}`],
     [`/crm/leads/${id}`, `/sales/${id}`],
+    ['/workspace/crm/leads?create=true', '/sales/new'],
     [`/workspace/crm/opportunities?record=${id}`, `/sales/opportunity/${id}`],
     [`/workspace/crm/follow-ups?record=${id}`, '/sales/follow-ups'],
     [`/workspace/purchasing/orders?order=${id}`, `/purchasing/order/${id}`],

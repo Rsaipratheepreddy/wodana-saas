@@ -47,6 +47,7 @@ export function appRouteFor(link: string | null | undefined): string | null {
       const section = rest[0] ?? '';
       if (section === 'leads') {
         const lead = id(rest[1]) ?? q('lead') ?? q('record');
+        if (!lead && url.searchParams.get('create') === 'true') return '/sales/new';
         return lead ? `/sales/${lead}` : '/sales';
       }
       if (section === 'opportunities') return id(rest[1]) ? `/sales/opportunity/${rest[1]}` : q('record') ? `/sales/opportunity/${q('record')}` : '/sales/opportunities';

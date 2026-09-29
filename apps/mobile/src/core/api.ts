@@ -10,7 +10,8 @@ export type Api = {
   workspaceId: string;
   /** A workspace path such as `hrms/bootstrap` (no leading slash). */
   get: <T>(path: string) => Promise<T>;
-  send: <T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => Promise<T>;
+  /** A command; `headers` carries its own headers (an Idempotency-Key). */
+  send: <T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown, headers?: Record<string, string>) => Promise<T>;
   /** A file as multipart form data under `field` (the only part: the server takes no other fields). */
   upload: <T>(path: string, method: 'POST' | 'PUT', field: string, file: UploadFile) => Promise<T>;
   /** The absolute URL of a workspace file, for an image loader that sends the authorization header. */
@@ -34,7 +35,7 @@ export function useApi(): Api {
     return {
       workspaceId,
       get: <T,>(path: string) => client.api<T>(url(path)),
-      send: <T,>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown) => client.api<T>(url(path), method, body ?? {}),
+      send: <T,>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown, headers?: Record<string, string>) => client.api<T>(url(path), method, body ?? {}, false, headers),
       upload: async <T,>(path: string, method: 'POST' | 'PUT', field: string, file: UploadFile) => {
         const form = new FormData();
         const part = await formPart(file);
