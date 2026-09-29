@@ -75,7 +75,8 @@ function KeyDates({ project, format, today }: { project: PortalProject; format: 
   const following = project.status === "completed" ? null : stages.slice(current + 1).find((stage) => stage.state === "upcoming") ?? null;
   const nextName = following ? (following.name ? stageName(t, following.name) : t("Stage {number}", { number: stages.indexOf(following) + 1 })) : null;
   const rows: Array<[string, string]> = [];
-  if (project.startDate) rows.push([t("Started"), format.date(project.startDate)]);
+  // A start still ahead reads "Starts", never "Started" with a future date.
+  if (project.startDate) rows.push([daysBetween(today, project.startDate) > 0 ? t("Starts") : t("Started"), format.date(project.startDate)]);
   if (nextName) rows.push([t("Next milestone"), nextName]);
   if (project.handedOverOn) {
     rows.push([t("Handed over"), format.date(project.handedOverOn)]);

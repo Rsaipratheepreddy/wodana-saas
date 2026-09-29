@@ -461,6 +461,15 @@ describe("client portal", () => {
     expect(within(nav).getByRole("button", { name: "Messages" })).toHaveAttribute("aria-current", "page");
     expect(await screen.findByRole("heading", { level: 2, name: "Messages" })).toBeInTheDocument();
   });
+  it("says a project starts on a date still ahead, not that it started", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("min-width: 64rem"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    mount(() => ({ body: view({}, [project({ startDate: "2026-10-04" })]) }));
+    render(<PortalApp site={site} />);
+    const profile = within(await screen.findByRole("complementary", { name: "Your project" }));
+    const dates = within(profile.getByRole("region", { name: "Key dates" }));
+    expect(dates.getByText("Starts").nextElementSibling).toHaveTextContent("Oct 4, 2026");
+    expect(dates.queryByText("Started")).toBeNull();
+  });
 
   it("collapses the profile into a card on a phone: the project, its stage, and the next thing to do from any section", async () => {
     mount(() => ({ body: view() }));
