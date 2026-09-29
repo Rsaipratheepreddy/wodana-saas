@@ -11085,5 +11085,6 @@
   "The client portal is off, so there is no link to share.": "The client portal is off, so there is no link to share.",
   "WhatsApp {name}": "WhatsApp {name}",
   "No client contact has a mobile number yet.": "No client contact has a mobile number yet.",
-  "Send again": "Send again"
+  "Send again": "Send again",
+  "Issue invoice · {milestone}": "Issue invoice · {milestone}"
 }

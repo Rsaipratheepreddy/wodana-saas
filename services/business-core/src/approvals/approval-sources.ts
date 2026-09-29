@@ -9,6 +9,8 @@ export type ApprovalGroup = (typeof APPROVAL_GROUPS)[number];
 export type ApprovalKind =
   | "quote_review" | "receipt" | "deal_finance" | "deal_approval" | "order" | "output" | "material_swap"
   | "site_report" | "petty_cash" | "snag" | "warranty" | "stock_correction" | "bill" | "payment_run" | "reimbursement"
+  // A started project's payment milestone falling due (within 3 days, or past) that nobody has invoiced (D-14).
+  | "invoice"
   // A change an AI app prepared through MCP (W-5): the person it acts as confirms it in Wodana.
   | "ai_action";
 
@@ -319,6 +321,43 @@ const finance: Source = async (db, ctx) => {
   return out;
 };
 
+/** Days ahead a milestone to invoice shows in the list (and in the daily notice, project-core/delivery-reminders). */
+export const INVOICE_AHEAD_DAYS = 3;
+
+/**
+ * Milestones of started projects falling due within three days, or already past, with no issued invoice and no
+ * payment reported or verified: "Issue invoice" for the people who invoice clients (D-14). It opens the project's
+ * client money, where the invoice is issued; nothing is decided in the row.
+ */
+const invoices: Source = async (db, ctx) => {
+  if (!(await ctx.can("receivables.manage"))) return [];
+  const rows = (await db.query<{ id: string; caseId: string; title: string; amount: string; currency: string | null; dueDate: string; client: string;
+    projectId: string; projectReference: string | null; projectName: string }>(
+    `SELECT payment.id, payment.case_id AS "caseId", payment.title, payment.amount::text AS amount, coalesce(payment.currency, project.currency) AS currency,
+            payment.due_date::text AS "dueDate", coalesce(party.display_name, opportunity.title) AS client,
+            project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName"
+       FROM commercial_payments payment
+       JOIN delivery_projects project ON project.workspace_id = payment.workspace_id AND project.case_id = payment.case_id
+        AND project.status = 'active' AND project.started_at IS NOT NULL
+       JOIN project_scope_seals seal ON seal.workspace_id = project.workspace_id AND seal.project_id = project.id AND seal.quote_id = payment.source_quote_id
+       JOIN workspaces workspace ON workspace.id = payment.workspace_id
+       JOIN pre_project_cases pre_case ON pre_case.workspace_id = payment.workspace_id AND pre_case.id = payment.case_id
+       JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+      WHERE payment.workspace_id = $1 AND payment.status = 'pending' AND payment.due_date IS NOT NULL
+        AND payment.due_date <= (now() AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date + $2::int
+        AND NOT EXISTS (SELECT 1 FROM client_invoices invoice WHERE invoice.workspace_id = payment.workspace_id AND invoice.payment_id = payment.id
+                          AND invoice.case_id = payment.case_id AND invoice.status = 'issued')
+        AND NOT EXISTS (SELECT 1 FROM commercial_receipts receipt WHERE receipt.workspace_id = payment.workspace_id AND receipt.case_id = payment.case_id
+                          AND receipt.payment_id = payment.id AND receipt.status <> 'rejected')
+      ORDER BY payment.due_date, project.reference LIMIT 100`, [ctx.workspaceId, INVOICE_AHEAD_DAYS])).rows;
+  return rows.map((milestone) => row({
+    kind: "invoice", group: "payments", id: milestone.id, title: milestone.title, phrase: { key: "Issue invoice · {milestone}", values: { milestone: milestone.title } },
+    subject: milestone.client, project: project(milestone), amount: milestone.amount, currency: milestone.currency, since: new Date(Date.parse(`${milestone.dueDate}T00:00:00.000Z`) - INVOICE_AHEAD_DAYS * 86_400_000),
+    own: false, parentId: milestone.caseId, href: `/workspace/projects/${milestone.projectId}/money?view=client`, decide: null,
+  }));
+};
+
 /**
  * Changes an AI app prepared through MCP (W-5) that wait for this person's OK: only their own, while the
  * proposal is open. Always opened (the card shows exactly what changes), never decided in the row.
@@ -337,7 +376,7 @@ const aiActions: Source = async (db, ctx) => {
   }));
 };
 
-export const APPROVAL_SOURCES: Source[] = [quotes, receipts, deals, orders, factory, site, stock, finance, aiActions];
+export const APPROVAL_SOURCES: Source[] = [quotes, receipts, invoices, deals, orders, factory, site, stock, finance, aiActions];
 
 /** Everything waiting on this person, oldest first; what they may decide before what is their own. */
 export async function waitingFor(db: Db, ctx: ApprovalContext) {
