@@ -64,6 +64,18 @@ describe("daily progress", () => {
     expect(within(waiting).queryByRole("link", { name: "Download PDF" })).not.toBeInTheDocument();
   });
 
+  it("offers the Access view only to someone who may see who is allowed on site (m14)", async () => {
+    mount(() => state({ canSeeSiteAccess: false }));
+    const { unmount } = site();
+    await screen.findByRole("region", { name: "Daily progress" });
+    expect(screen.getByRole("radio", { name: "Deliveries" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Access" })).not.toBeInTheDocument();
+    unmount();
+    mount(() => state({ canSeeSiteAccess: true }));
+    site();
+    expect(await screen.findByRole("radio", { name: "Access" })).toBeInTheDocument();
+  });
+
   it("reviews a day beside the client's card and approves & sends it, or returns it with what to change", async () => {
     const fetcher = mount(() => state());
     site();

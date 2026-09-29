@@ -739,6 +739,8 @@ export class SiteService {
       missing: await this.missingDays(client, workspaceId, projectId, today, dates.started, dates.finished, dueTime),
       // Nothing new is reported while the project is on hold; reports already submitted can still be decided.
       me: userId, canReport: who.onTeam && who.project.status === "active", canApprove: who.manager, canManage: who.manager && who.project.status === "active",
+      // Site access (HR's list of who may be on site) is for the project's managers and site supervisors, and HR.
+      canSeeSiteAccess: await this.seesSiteAccess(client, workspaceId, projectId, userId, who.manager),
     };
   }
 
@@ -887,6 +889,16 @@ export class SiteService {
       `SELECT is_manager AS lead FROM project_assignments WHERE workspace_id = $1 AND project_id = $2 AND membership_id = $3 AND active`, [workspaceId, projectId, membershipId])).rows[0];
     if (!all && !assignment) throw new NotFoundException("Project not found.");
     return { project, onTeam: all || Boolean(assignment), manager: all || Boolean(assignment?.lead) };
+  }
+
+  /** The same rule the site-access list itself applies (HR, whoever manages projects, the project's managers and site supervisors). */
+  private async seesSiteAccess(client: Db, workspaceId: string, projectId: string, userId: string, manager: boolean) {
+    if (manager || await this.access.hasPermission(client, workspaceId, userId, "hrms.manage")) return true;
+    return Boolean((await client.query(
+      `SELECT 1 FROM project_assignments assignment
+         JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.user_id = $3
+        WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND 'site_supervisor' = ANY(assignment.role_keys)`,
+      [workspaceId, projectId, userId])).rowCount);
   }
 
   private async leads(client: Db, workspaceId: string, projectId: string) {

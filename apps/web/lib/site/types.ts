@@ -42,6 +42,8 @@ export type SiteDelivery = { kind: "order" | "transfer"; id: string; label: stri
 export type SiteState = {
   site: { startedOn: string | null; finishedOn: string | null }; reports: SiteReport[]; lines: SiteLine[]; members: Array<{ membershipId: string; name: string }>;
   today: string; me: string; canReport: boolean; canApprove: boolean; canManage: boolean;
+  /** The Access view (who may be on site): the project's managers and site supervisors, and HR. */
+  canSeeSiteAccess?: boolean;
   /** When the day's report is due (HH:MM, the workspace's time). */
   dueTime?: string;
   /** What the day's report starts from: today's planned work and the next working day's. */
