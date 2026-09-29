@@ -39,6 +39,8 @@ import { IntakeInbox, LeadRouting } from "./lead-operations";
 import { LeadImportDialog } from "./lead-import-dialog";
 import { LeadResponseSla } from "./lead-sla-policies";
 import { LeadAssignmentDialog } from "./lead-assignment-dialog";
+import Link from "next/link";
+import { quickConversion, quickConvert } from "@/lib/crm/quick-convert";
 import { CreateDealDialog } from "./create-deal-dialog";
 import { CrmDateTimeField } from "./crm-date-time-field";
 import { NewFollowUpDialog } from "./follow-up-editor";
@@ -144,6 +146,9 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const activeSection = initialSection;
   const [assignment, setAssignment] = useState<CrmLeadListItem | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
+  // One-click Convert (S-39): the opportunity just made, to open from the enquiry list.
+  const [converted, setConverted] = useState<{ name: string; id: string } | null>(null);
+  const [convertingId, setConvertingId] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [failure, setFailure] = useState("");
   const [followUp, setFollowUp] = useState<CrmLeadListItem | null>(null);
@@ -316,6 +321,24 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
     finally { mutationInFlight.current = false; setAutoBusy(false); }
   };
   const scheduleFollowUp = (lead: CrmLeadListItem) => setFollowUp(lead);
+  /**
+   * One-click Convert (S-39): with the enquiry's own title and owner, the default pipeline and a follow-up
+   * (its own if one is ahead, else tomorrow 10:00), the opportunity is made at once and the list stays open with a
+   * "View opportunity" link. Anything missing opens the full dialog instead.
+   */
+  const convertNow = async (lead: CrmLeadListItem) => {
+    const body = quickConversion(lead, initialData, timeZone);
+    if (!body) { setQualificationLead(lead); return; }
+    setConvertingId(lead.id); setFailure(""); setConverted(null);
+    try {
+      const record = await quickConvert(initialData.workspaceId, lead, body);
+      setConverted({ name: customerDisplayName(lead.partyName), id: String(record.id) });
+      await reloadLeads();
+    } catch (error) {
+      setFailure(error instanceof Error ? translateKnown(t, error.message) : t("Could not convert the enquiry."));
+      setQualificationLead(lead);
+    } finally { setConvertingId(null); }
+  };
   const busy = Boolean(savingLeadId || refreshing || loadingMore || pendingMove || qualificationLead || autoBusy);
   const sourceLabel = (source: string) => initialData.leadOptions?.sources.find(option => option.id === source)?.label ?? humanize(source, notSet);
   // Hidden enquiry fields leave the list; the workspace's own fields become columns.
@@ -363,7 +386,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
       ? <Button size="compact" variant="quiet" onPress={() => setCardLead(lead)}>{t("View opportunity")}</Button>
       : ["disqualified", "paused"].includes(lead.status) ? <span className={styles.sheetText}>—</span>
       : !hasResolvedEnquiryType(lead.serviceType) ? <Button size="compact" className={styles.createDeal} isDisabled={busy} aria-label={t("Choose enquiry type for {name}", { name: customerDisplayName(lead.partyName) })} onPress={() => setCardLead(lead)}>{t("Choose type")}</Button>
-      : <Button size="compact" className={styles.createDeal} data-tour="enquiry-convert" data-tour-safe isDisabled={busy} aria-label={t("Convert {name} to opportunity", { name: customerDisplayName(lead.partyName) })} onPress={() => setQualificationLead(lead)}>{t("Convert")}</Button> },
+      : <Button size="compact" className={styles.createDeal} data-tour="enquiry-convert" data-tour-safe isDisabled={busy} isLoading={convertingId === lead.id} aria-label={t("Convert {name} to opportunity", { name: customerDisplayName(lead.partyName) })} onPress={() => void convertNow(lead)}>{t("Convert")}</Button> },
   ];
   const pendingLead = pendingMove ? items.find((lead) => lead.id === pendingMove.leadId) : undefined;
   const workspaceArea = activeSection === "leads" ? "work" : activeSection === "forms" || activeSection === "sources" ? "capture" : activeSection === "assignment" || activeSection === "sla" ? "response" : "performance";
@@ -381,6 +404,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
         {linkedLead ? <InspectorSheet isOpen hideTitle title={t("Enquiry details")} size="md" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}
         {failure ? <Callout title={t("Enquiries could not be updated")} tone="danger">{failure}</Callout> : null}
         {statusMessage ? <p aria-live="polite" className={styles.statusMessage}>{statusMessage}</p> : null}
+        {converted ? <p aria-live="polite" className={styles.statusMessage}>{t("{name}: opportunity created.", { name: converted.name })} <Link href={`/workspace/crm/opportunities?record=${encodeURIComponent(converted.id)}`}>{t("View opportunity")}</Link></p> : null}
 
         <div className={styles.sections}>
           {activeSection === "leads" ? <>
