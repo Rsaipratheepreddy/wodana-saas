@@ -248,7 +248,7 @@ export function CrmCreateDialog({ id, workspaceId, onClose, onSaved, initialValu
   const partyField: FieldSpec = { key: "partyId", label: t("Customer"), options: options(rows(customers.data), "displayName"), required: true };
   const ownerField: FieldSpec = { key: "ownerMembershipId", label: t("Sales owner"), options: options(rows(members.data), "displayName"), required: true };
   let action: ActionSpec;
-  if (id === "customers" || id === "organizations") action = { title: id === "customers" ? t("Add customer") : t("Create company"), path: "parties", initial: { type: id === "customers" ? "person" : "organization" },
+  if (id === "customers" || id === "organizations") action = { title: id === "customers" ? t("Add client") : t("Create company"), path: "parties", initial: { type: id === "customers" ? "person" : "organization" },
     fields: [...(id === "customers" ? [{ key: "type", label: t("Record type"), options: choice(["person", "organization"]), required: true }] : []), { key: "displayName", label: t("Name"), required: true }, { key: "phone", label: t("Phone"), type: "phone" }, { key: "email", label: t("Email"), type: "email" }],
     transform: ({ email, phone, ...v }) => ({ ...v, contacts: [...(email ? [{ type: "email", value: email, isPrimary: true }] : []), ...(phone ? [{ type: "phone", value: phone, isPrimary: true }] : [])] }),
     // Someone may already be a client: said under the phone and the email as they're typed.

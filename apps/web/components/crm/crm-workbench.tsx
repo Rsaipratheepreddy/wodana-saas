@@ -13,6 +13,7 @@ import { CrmDateTimeField } from "./crm-date-time-field";
 import { zonedDateTime, zonedDateTimeToIso } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { activityTitle } from "@/lib/crm/contact";
+import { formatPhoneForDisplay } from "@/lib/phone";
 
 export type FieldSpec = {
   key: string; label: string;
@@ -199,7 +200,8 @@ export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId
   const party = resource.data;
   const contacts = (party?.contacts ?? []) as RecordData[];
   const addresses = (party?.addresses ?? []) as RecordData[];
-  const timeline = clientTimelineItems((party?.clientTimeline ?? []) as ClientTimelineEvent[], String(party?.displayName ?? t("Client")));
+  const { locale, timeZone } = useDesignSystem();
+  const timeline = clientTimelineItems((party?.clientTimeline ?? []) as ClientTimelineEvent[], String(party?.displayName ?? t("Client")), { t, locale, timeZone });
   const timelineAccess = party?.clientTimelineAccess as { communications?: boolean; activities?: boolean } | undefined;
   const saved = async () => { resource.refresh(); enquiries.refresh(); relatedParties.refresh(); await onChanged?.(); };
   // In-place edits go through the party's own update with its version (the newest this view saw); a contact through its own.
@@ -232,7 +234,7 @@ export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId
       <EditableField canEdit={editable} label={t("Website domain")} maxLength={255} onReload={resource.refresh} onSave={(websiteDomain) => updateParty({ websiteDomain: websiteDomain || null })} value={text(party.websiteDomain)} />
       <EditableField canEdit={editable} label={t("Industry")} maxLength={120} onReload={resource.refresh} onSave={(industry) => updateParty({ industry: industry || null })} value={text(party.industry)} />
     </>}
-    {phone ? <EditableField canEdit={editable} countryCode={text(phone.countryCode)} display={text(phone.rawValue ?? phone.value)} isRequired kind="phone" label={t("Phone")} onReload={resource.refresh}
+    {phone ? <EditableField canEdit={editable} countryCode={text(phone.countryCode)} display={formatPhoneForDisplay(text(phone.rawValue ?? phone.value))} isRequired kind="phone" label={t("Phone")} onReload={resource.refresh}
       onSave={(value, { countryCode }) => update(`parties/${partyId}/contact-points/${phone.id}`, { version: phone.version, value, ...(countryCode ? { countryCode } : {}) })} value={text(phone.rawValue ?? phone.value)} /> : null}
     {email ? <EditableField canEdit={editable} isRequired kind="email" label={t("Email")} onReload={resource.refresh}
       onSave={(value) => update(`parties/${partyId}/contact-points/${email.id}`, { version: email.version, value })} value={text(email.rawValue ?? email.value)} /> : null}

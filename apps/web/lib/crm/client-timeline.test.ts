@@ -8,8 +8,15 @@ describe("client timeline presentation", () => {
       { id: "failed", kind: "message", channel: "whatsapp", direction: "outbound", status: "failed", providerStatus: "failed", title: "Reminder", detail: null, occurredAt: "2026-09-18T08:00:00Z", actor: null, failureCode: "provider_rejected", source: { type: "conversation", id: "conversation" } },
       { id: "note", kind: "activity", channel: "internal", direction: "internal", status: "manually_logged", providerStatus: null, title: "Private note", detail: "Call tomorrow", occurredAt: "2026-09-18T07:00:00Z", actor: { id: "user", name: "Asha" }, failureCode: null, source: { type: "activity", id: "activity" } },
     ], "Client");
-    expect(items.map((item) => item.status?.label)).toEqual(["Queued", "Failed", "Manually Logged"]);
+    expect(items.map((item) => item.status?.label)).toEqual(["Queued", "Failed", "Logged"]);
     expect(items[1].meta).toContain("Failure: provider_rejected");
     expect(items[2]).toMatchObject({ actor: "Asha", detail: "Call tomorrow" });
+  });
+
+  it("reads a logged contact's outcome and channel as words, not stored codes", () => {
+    const [item] = clientTimelineItems([
+      { id: "call", kind: "activity", channel: "phone", direction: "outbound", status: "manually_logged", providerStatus: null, title: "Call", detail: "willing_to_talk", occurredAt: "2026-09-18T07:00:00Z", actor: null, failureCode: null, source: { type: "activity", id: "activity" } },
+    ], "Client");
+    expect(item).toMatchObject({ detail: "Willing to talk", meta: ["Phone", "Outbound"], status: { label: "Logged" } });
   });
 });

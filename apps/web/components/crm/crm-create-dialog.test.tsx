@@ -24,7 +24,7 @@ describe("new client", () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ enabled: false, available: false }) })));
     const user = userEvent.setup();
     view();
-    const dialog = await screen.findByRole("dialog", { name: "Add customer" });
+    const dialog = await screen.findByRole("dialog", { name: "Add client" });
     await user.type(within(dialog).getByRole("textbox", { name: "Name" }), "Sara K");
     await user.type(within(dialog).getByRole("textbox", { name: "Phone" }), "050 123 4567");
     const notice = await within(dialog).findByRole("status");

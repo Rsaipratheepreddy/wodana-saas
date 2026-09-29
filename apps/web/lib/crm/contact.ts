@@ -20,6 +20,12 @@ export function activityTitle(item: { type?: unknown; title?: unknown; completio
   return channel && outcome ? `${t(CHANNEL_LABELS[channel])} · ${t(OUTCOME_LABELS[outcome])}` : String(item.title ?? "");
 }
 
+/** A logged contact's outcome code ("willing_to_talk") in the reader's words, or null for anything else. */
+export function contactOutcomeLabel(value: unknown, t: Translate): string | null {
+  const outcome = CONTACT_OUTCOMES.find((item) => item === value);
+  return outcome ? t(OUTCOME_LABELS[outcome]) : null;
+}
+
 export type LoggedContact = { id?: string; status: string; version: number; nextActionAt: string | null; updatedAt?: string; contactAttempts?: number };
 
 export async function logLeadContact(workspaceId: string, leadId: string, input: { version: number; channel: ContactChannel; outcome: ContactOutcome; note?: string; reason?: string; nextActionAt?: string }) {
