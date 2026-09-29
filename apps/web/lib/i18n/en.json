@@ -11505,5 +11505,12 @@
   "This closes the enquiry as spam and blocks the number, unless the client has other work with you.": "This closes the enquiry as spam and blocks the number, unless the client has other work with you.",
   "1 item has no active price in {currency}.": "1 item has no active price in {currency}.",
   "{count} items have no active price in {currency}.": "{count} items have no active price in {currency}.",
-  "Set a price book": "Set a price book"
+  "Set a price book": "Set a price book",
+  "Assign 1 enquiry": "Assign 1 enquiry",
+  "Change the status of 1 enquiry": "Change the status of 1 enquiry",
+  "Add a follow-up to 1 enquiry": "Add a follow-up to 1 enquiry",
+  "Close 1 enquiry": "Close 1 enquiry",
+  "1 enquiry updated.": "1 enquiry updated.",
+  "1 enquiry needs an owner": "1 enquiry needs an owner",
+  "1 enquiry assigned": "1 enquiry assigned"
 }

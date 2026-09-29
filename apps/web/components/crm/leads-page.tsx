@@ -417,7 +417,8 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
         <section data-sales-grid data-tour="enquiry-list" aria-label={t("Enquiries")} className={`${styles.boardRegion} ${styles.sheet}`}>
           {autoProgress && <section className={styles.assignmentSummary} aria-label={t("Assignment results")}>
             <div className={styles.assignmentSummaryHeader}>
-              <strong role="status">{autoBusy ? t("Assigning enquiries… {completed}/{total}", { completed: autoProgress.completed, total: autoProgress.total }) : autoProgress.remaining.length ? t("{count} enquiries need an owner", { count: autoProgress.remaining.length }) : t("{count} enquiries assigned", { count: autoProgress.assigned })}</strong>
+              <strong role="status">{autoBusy ? t("Assigning enquiries… {completed}/{total}", { completed: autoProgress.completed, total: autoProgress.total }) : autoProgress.remaining.length ? (autoProgress.remaining.length === 1 ? t("1 enquiry needs an owner") : t("{count} enquiries need an owner", { count: autoProgress.remaining.length }))
+                : autoProgress.assigned === 1 ? t("1 enquiry assigned") : t("{count} enquiries assigned", { count: autoProgress.assigned })}</strong>
               {!autoBusy && <Button size="compact" variant="quiet" onPress={() => setAutoProgress(null)}>{t("Dismiss")}</Button>}
             </div>
             {!autoBusy && autoProgress.remaining.length > 0 && <>
