@@ -105,6 +105,7 @@ export function SalesReports({ initialData, regionLabel }: { initialData: LeadsP
     { id: "qualified", header: t("Qualified"), size: 110, accessorFn: (row) => num(row.qualified), meta: { align: "end" } },
     { id: "rate", header: t("Qualified %"), size: 115, accessorFn: (row) => `${num(row.qualificationRate).toFixed(1)}%`, meta: { align: "end" } },
     { id: "disqualified", header: t("Not interested"), size: 130, accessorFn: (row) => num(row.disqualified), meta: { align: "end" } },
+    { id: "unreachable", header: t("Unreachable"), size: 120, accessorFn: (row) => num(row.unreachable), meta: { align: "end" } },
     { id: "won", header: t("Won"), size: 90, accessorFn: (row) => num(row.won), meta: { align: "end" } },
     { id: "lost", header: t("Lost"), size: 90, accessorFn: (row) => num(row.lost), meta: { align: "end" } },
     { id: "stale", header: t("No update in 7 days"), size: 170, accessorFn: (row) => num(row.stale), meta: { align: "end" } },

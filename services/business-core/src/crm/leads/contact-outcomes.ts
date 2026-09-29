@@ -1,17 +1,20 @@
 import { UnprocessableEntityException } from "@nestjs/common";
 
 /** PLM-042: every contact attempt is logged with one of these outcomes. */
-export const CONTACT_OUTCOMES = ["no_answer", "message_sent_no_reply", "willing_to_talk", "come_back_later", "not_interested"] as const;
+/** S-28: `unreachable` closes an enquiry the client never answered (reported in its own bucket, not as not interested). */
+export const CONTACT_OUTCOMES = ["no_answer", "message_sent_no_reply", "willing_to_talk", "come_back_later", "not_interested", "unreachable"] as const;
 export type ContactOutcome = (typeof CONTACT_OUTCOMES)[number];
 export const CONTACT_CHANNELS = ["call", "whatsapp", "email", "meeting", "sms"] as const;
 /** The outcomes that are one more try without reaching the client; they count as attempts (S-16). */
-export const UNANSWERED_OUTCOMES: readonly ContactOutcome[] = ["no_answer", "message_sent_no_reply"];
+export const UNANSWERED_OUTCOMES: readonly ContactOutcome[] = ["no_answer", "message_sent_no_reply", "unreachable"];
+/** The reason an enquiry closed as unreachable carries, unless the person wrote their own. */
+export const UNREACHABLE_REASON = "Unreachable";
 
 /** The enquiry status each outcome leads to. */
 export function statusForOutcome(outcome: ContactOutcome) {
   if (outcome === "willing_to_talk") return "connected";
   if (outcome === "come_back_later") return "paused";
-  if (outcome === "not_interested") return "disqualified";
+  if (outcome === "not_interested" || outcome === "unreachable") return "disqualified";
   return "attempting_contact";
 }
 
@@ -34,5 +37,5 @@ export function checkContact(input: { outcome: ContactOutcome; note?: string; re
 
 /** "No answer · attempt 3": the note written for an unanswered try the person did not describe. */
 export function unansweredNote(outcome: ContactOutcome, attempt: number) {
-  return `${outcome === "no_answer" ? "No answer" : "Message sent, no reply"} · attempt ${attempt}`;
+  return `${outcome === "no_answer" ? "No answer" : outcome === "unreachable" ? "Unreachable" : "Message sent, no reply"} · attempt ${attempt}`;
 }

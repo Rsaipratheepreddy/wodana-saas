@@ -31,7 +31,7 @@ import {
   UpsertQualificationDto,
 } from "./dto/leads.dto";
 import { notifyUserInApp, queueUserEmail } from "../../notifications/default-templates";
-import { checkContact, statusForOutcome, UNANSWERED_OUTCOMES, unansweredNote } from "./contact-outcomes";
+import { checkContact, statusForOutcome, UNANSWERED_OUTCOMES, UNREACHABLE_REASON, unansweredNote } from "./contact-outcomes";
 import { addSlaMinutes, normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
 import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvaluation } from "./qualification-evidence";
@@ -486,7 +486,7 @@ export class CrmLeadsService {
                 lead.duplicate_of_lead_id AS "duplicateOfLeadId",
                 lead.escalated_at AS "escalatedAt", lead.escalation_due_at AS "escalationDueAt",
                 (SELECT count(*)::int FROM crm_activities attempt WHERE attempt.workspace_id = lead.workspace_id AND attempt.lead_id = lead.id
-                   AND attempt.status = 'completed' AND attempt.completion_outcome IN ('no_answer', 'message_sent_no_reply')) AS "contactAttempts",
+                   AND attempt.status = 'completed' AND attempt.completion_outcome IN ('no_answer', 'message_sent_no_reply', 'unreachable')) AS "contactAttempts",
                 (SELECT count(*)::int FROM crm_identity_candidates candidate WHERE candidate.workspace_id = lead.workspace_id
                    AND candidate.intake_event_id = enquiry.intake_event_id AND candidate.status = 'pending') AS "clientMatches"
          FROM crm_leads lead
@@ -1310,7 +1310,7 @@ export class CrmLeadsService {
            closed_at = CASE WHEN $3 = 'disqualified' THEN now() ELSE NULL END,
            ownership_due_at = NULL, version = version + 1
          WHERE workspace_id = $1 AND id = $2 AND version = $7 RETURNING *`,
-        [workspaceId, leadId, status, input.reason?.trim() || null, note, next, input.version]);
+        [workspaceId, leadId, status, input.reason?.trim() || (input.outcome === "unreachable" ? UNREACHABLE_REASON : null), note, next, input.version]);
       if (!updated.rowCount) throw new ConflictException("Lead changed; reload and try again");
       await this.slas.recordFirstResponse(client, workspaceId, leadId, { sourceType: "activity", sourceId: activity.rows[0].id, actorUserId: actorUser.userId, respondedAt: new Date() });
       // Recording the first response recomputes the next action from open tasks; the follow-up booked here wins.

@@ -164,8 +164,8 @@ export class UpdateSalesSettingsDto {
 export class LogContactDto {
   @IsInt() @Min(1) version!: number;
   @IsIn(["call", "whatsapp", "email", "meeting", "sms"]) channel!: "call" | "whatsapp" | "email" | "meeting" | "sms";
-  @IsIn(["no_answer", "message_sent_no_reply", "willing_to_talk", "come_back_later", "not_interested"])
-  outcome!: "no_answer" | "message_sent_no_reply" | "willing_to_talk" | "come_back_later" | "not_interested";
+  @IsIn(["no_answer", "message_sent_no_reply", "willing_to_talk", "come_back_later", "not_interested", "unreachable"])
+  outcome!: "no_answer" | "message_sent_no_reply" | "willing_to_talk" | "come_back_later" | "not_interested" | "unreachable";
   @IsOptional() @IsString() @MaxLength(4000) note?: string;
   @IsOptional() @IsString() @MaxLength(160) reason?: string;
   @IsOptional() @IsString() nextActionAt?: string;

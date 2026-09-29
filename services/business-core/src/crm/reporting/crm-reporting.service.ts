@@ -5,6 +5,9 @@ import { ReportRangeQueryDto } from "./dto/reporting.dto";
 import { loadLeadOptions } from "../leads/lead-options";
 
 const WALK_IN = /walk[\s_-]?in/i;
+/** S-28: an enquiry closed because the client never answered: its own bucket, apart from "not interested". */
+const UNREACHABLE = `lead.status='disqualified' AND EXISTS (SELECT 1 FROM crm_activities attempt WHERE attempt.workspace_id=lead.workspace_id AND attempt.lead_id=lead.id
+  AND attempt.status='completed' AND attempt.completion_outcome='unreachable')`;
 
 /** "source/channel" for every channel the taxonomy calls a walk-in, by its code or its label ("Showroom Walk-in"). */
 export function walkInChannelsOf(options: { channels: Record<string, Array<{ id: string; label: string }>> }) {
@@ -53,6 +56,7 @@ export class CrmReportingService {
           count(*) FILTER (WHERE lead.owner_membership_id IS NULL)::int AS unassigned,
           count(*) FILTER (WHERE lead.status='qualified')::int AS qualified,
           count(*) FILTER (WHERE lead.status='disqualified')::int AS disqualified,
+          count(*) FILTER (WHERE ${UNREACHABLE})::int AS unreachable,
           count(*) FILTER (WHERE EXISTS (SELECT 1 FROM crm_opportunities opportunity WHERE opportunity.workspace_id=lead.workspace_id AND opportunity.lead_id=lead.id AND opportunity.status='won'))::int AS won,
           count(*) FILTER (WHERE EXISTS (SELECT 1 FROM crm_opportunities opportunity WHERE opportunity.workspace_id=lead.workspace_id AND opportunity.lead_id=lead.id AND opportunity.status='lost'))::int AS lost,
           count(*) FILTER (WHERE lead.status NOT IN ('qualified','disqualified') AND greatest(lead.updated_at,enquiry.updated_at) < now()-interval '7 days')::int AS stale,
@@ -72,6 +76,7 @@ export class CrmReportingService {
           count(*) FILTER (WHERE lead.owner_membership_id IS NULL)::int AS unassigned,
           count(*) FILTER (WHERE lead.status='qualified')::int AS qualified,
           count(*) FILTER (WHERE lead.status='disqualified')::int AS disqualified,
+          count(*) FILTER (WHERE ${UNREACHABLE})::int AS unreachable,
           count(*) FILTER (WHERE lead.status NOT IN ('qualified','disqualified') AND greatest(lead.updated_at,enquiry.updated_at) < now()-interval '7 days')::int AS stale
           FROM crm_leads lead JOIN crm_enquiries enquiry ON enquiry.id=lead.enquiry_id AND enquiry.workspace_id=lead.workspace_id
           WHERE lead.workspace_id=$1 AND lead.created_at >= $2 AND lead.created_at < $3`, [workspaceId, from, to]);
@@ -86,7 +91,7 @@ export class CrmReportingService {
           LEFT JOIN crm_leads lead ON lead.enquiry_id=enquiry.id AND lead.workspace_id=enquiry.workspace_id
           WHERE intake.workspace_id=$1 AND (intake.source || '/' || intake.channel) = ANY($4::text[]) AND intake.received_at >= $2 AND intake.received_at < $3
           GROUP BY intake.intake_method`, [workspaceId, from, to, walkInChannels]) : { rows: [] };
-        const totals = summary.rows[0] ?? { leads: 0, unassigned: 0, qualified: 0, disqualified: 0, stale: 0 };
+        const totals = summary.rows[0] ?? { leads: 0, unassigned: 0, qualified: 0, disqualified: 0, unreachable: 0, stale: 0 };
         const groupedLeads = grouped.rows.reduce((total, row) => total + Number(row.leads ?? 0), 0);
         return {
           report,
