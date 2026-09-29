@@ -131,6 +131,38 @@ export async function salesEscalationRecipients(db: Db, workspaceId: string, exc
   return result.rows;
 }
 
+function moneyText(amount: string, currency: string, locale: string) {
+  try { return new Intl.NumberFormat(locale, { style: "currency", currency }).format(amount as unknown as number); } catch { return `${currency} ${amount}`; }
+}
+
+/**
+ * S-23: a deal won or lost is told in the app to the Sales admin (and whoever manages Sales settings) and to the
+ * workspace's Owners, with the reason; never to the person who closed it. Once each time the deal closes.
+ */
+export async function tellDealOutcome(db: Db, workspaceId: string, input: { opportunityId: string; outcome: "won" | "lost"; reason: string | null; actorUserId: string | null }) {
+  const deal = (await db.query<{ title: string; clientName: string | null; amount: string | null; currency: string | null; closedAt: Date | null }>(
+    `SELECT opportunity.title, party.display_name AS "clientName", opportunity.amount::text AS amount, opportunity.currency_code AS currency, opportunity.closed_at AS "closedAt"
+       FROM crm_opportunities opportunity LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+      WHERE opportunity.workspace_id = $1 AND opportunity.id = $2`, [workspaceId, input.opportunityId])).rows[0];
+  if (!deal) return 0;
+  const owners = (await db.query<Recipient>(
+    `SELECT DISTINCT membership.user_id AS "userId", membership.id AS "membershipId", coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS name
+       FROM workspace_memberships membership
+       JOIN users account ON account.id = membership.user_id AND account.status = 'active'
+       JOIN effective_member_roles assigned ON assigned.workspace_id = membership.workspace_id AND assigned.membership_id = membership.id
+       JOIN roles role ON role.id = assigned.role_id AND role.code = 'owner'
+      WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows;
+  const recipients = [...await salesEscalationRecipients(db, workspaceId), ...owners].filter((person) => person.userId !== input.actorUserId);
+  // The stored decimal, formatted exactly in the workspace's language (no float arithmetic).
+  const { locale } = await workspaceClock(db, workspaceId);
+  const amount = deal.amount && deal.currency ? moneyText(deal.amount, deal.currency, locale) : "";
+  return tell(db, workspaceId, recipients, {
+    code: input.outcome === "won" ? "crm.deal_won" : "crm.deal_lost", channels: ["in_app"],
+    deepLink: `/workspace/crm/opportunities?record=${input.opportunityId}`, key: `crm:deal-${input.outcome}:${input.opportunityId}:${deal.closedAt ? new Date(deal.closedAt).getTime() : ""}`,
+    variables: { title: deal.title, clientName: deal.clientName ?? "", amount, reason: input.reason?.trim() || "" },
+  });
+}
+
 export type WorkspaceClock = { timeZone: string; locale: string };
 
 /** The workspace's own time zone and language, so every deadline in a notice reads in local time. */
