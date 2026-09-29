@@ -131,6 +131,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
         <Button size="compact" isDisabled={!detail} onPress={() => setEditing(true)}>{t("Edit details")}</Button>
         {/* Junk from a form (S-13): closed as spam, out of reports, and the contact blocked. */}
         {!live.isConverted && !live.spamAt ? <Button size="compact" variant="quiet" isDisabled={!detail} onPress={() => setAction({ title: t("Mark as spam"), path: `leads/${lead.id}/spam`, method: "POST", submit: t("Mark as spam"),
+          description: t("This closes the enquiry as spam and blocks the number, unless the client has other work with you."), submitVariant: "danger",
           fields: [], transform: () => ({ version }) })}>{t("Mark as spam")}</Button> : null}
       </div>
     </header>

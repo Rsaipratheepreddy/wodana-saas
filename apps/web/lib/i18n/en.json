@@ -11501,5 +11501,6 @@
   "Save the agreement first.": "Save the agreement first.",
   "Attach the signed agreement first.": "Attach the signed agreement first.",
   "Agreement to verify": "Agreement to verify",
-  "From {name} · Client": "From {name} · Client"
+  "From {name} · Client": "From {name} · Client",
+  "This closes the enquiry as spam and blocks the number, unless the client has other work with you.": "This closes the enquiry as spam and blocks the number, unless the client has other work with you."
 }
