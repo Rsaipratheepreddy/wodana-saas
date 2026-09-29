@@ -6,9 +6,10 @@ import { CalendarDate, parseDate, today, type DateValue } from "@internationaliz
 import { DesignSystemProvider, WorkspaceRegionProvider } from "../foundations/provider";
 import { workingCalendar } from "../foundations/working-days";
 import { ComboboxField, DateField, Form, TextAreaField, TextInput } from "./forms";
-import { FormDialog, MoreDetails, useFormDraft } from "./form-kit";
+import { FormDialog, FormNotSaved, MoreDetails, useFormDraft } from "./form-kit";
+import { ControlledModalDialog } from "./overlays";
 import { MoneyField, parseMoneyText } from "./money-field";
-import { PhoneField } from "./phone-field";
+import { PhoneField, PhoneNumberField } from "./phone-field";
 
 const wrap = (ui: React.ReactNode, locale = "en-AE") => <WorkspaceRegionProvider currency="AED" locale={locale} timeZone="UTC"><DesignSystemProvider>{ui}</DesignSystemProvider></WorkspaceRegionProvider>;
 
@@ -288,5 +289,40 @@ describe("keyboard focus", () => {
     fireEvent.submit(form);
     expect(submit).toHaveBeenCalledOnce();
     await act(async () => finish());
+  });
+});
+
+describe("dialog saves", () => {
+  it("stays open without a second message when the page already says why (FormNotSaved)", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(wrap(<FormDialog error="The quotation changed. Reload it." onClose={onClose} closeOnSuccess onSubmit={() => { throw new FormNotSaved(); }} submitLabel="Save" title="Milestone">
+      <TextInput label="Milestone" />
+    </FormDialog>));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("The quotation changed. Reload it.")).toBeInTheDocument();
+    expect(screen.queryByText("Could not save.")).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("submits the form inside any modal dialog on Cmd/Ctrl+Enter", async () => {
+    const submit = vi.fn((event: React.FormEvent) => event.preventDefault());
+    render(wrap(<ControlledModalDialog isOpen onOpenChange={() => undefined} title="Rename"><form onSubmit={submit}><TextInput label="Name" /></form></ControlledModalDialog>));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), { key: "Enter", metaKey: true });
+    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+  });
+});
+
+describe("phone number field", () => {
+  it("keeps one international number from a country and a local number", async () => {
+    const user = userEvent.setup();
+    const changes: string[] = [];
+    function Phone() {
+      const [value, setValue] = useState("");
+      return <PhoneNumberField label="Client phone" value={value} onChange={(next) => { changes.push(next); setValue(next); }} />;
+    }
+    render(wrap(<Phone />));
+    await user.type(screen.getByRole("textbox", { name: /Client phone/ }), "501234567");
+    expect(changes.at(-1)).toBe("+971501234567");
   });
 });
