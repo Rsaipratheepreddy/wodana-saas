@@ -50,8 +50,9 @@ it("submits a Won opportunity Deal File with separate commission and payment evi
   } as unknown as CommercialState;
   render(<ApprovalRelease initialView="owner" state={state} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
   fireEvent.change(screen.getByRole("textbox", {name:"Proof-of-payment link"}), {target:{value:"https://example.com/proof"}});
-  fireEvent.change(screen.getByRole("textbox", {name:"Commission recipient 1"}), {target:{value:"Sales A"}});
-  fireEvent.change(screen.getByRole("spinbutton", {name:"Commission value 1"}), {target:{value:"10"}});
+  const commission = screen.getByRole("group", {name:"Commission 1"});
+  fireEvent.change(within(commission).getByRole("textbox", {name:"Recipient"}), {target:{value:"Sales A"}});
+  fireEvent.change(within(commission).getByRole("textbox", {name:"Amount"}), {target:{value:"10"}});
   fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"Verified customer deposit"}});
   fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
   await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({paymentProofUrl:"https://example.com/proof",commissionLines:[{recipientName:"Sales A",type:"sales",basis:"amount",value:10}]})));

@@ -8,6 +8,12 @@ export function minorUnits(currency?: string | null) {
   try { return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2; } catch { return 2; }
 }
 
+/** The smallest positive amount in the currency as decimal text: "0.01", "1" (JPY), "0.001" (KWD). */
+export function smallestAmount(currency?: string | null) {
+  const places = minorUnits(currency);
+  return places ? `0.${"0".repeat(places - 1)}1` : "1";
+}
+
 /** Half away from zero, on whole numbers (no float rounding surprises). */
 function divRound(numerator: number, denominator: number) {
   const sign = Math.sign(numerator) * Math.sign(denominator) || 1;

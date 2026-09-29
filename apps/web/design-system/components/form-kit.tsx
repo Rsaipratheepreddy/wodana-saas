@@ -147,6 +147,14 @@ export function isVersionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "status" in error && (error as { status?: unknown }).status === 409;
 }
 
+/**
+ * Thrown from a FormDialog's onSubmit when the caller already shows why the save failed (its `error`
+ * prop): the dialog stays open, and no second message is added.
+ */
+export class FormNotSaved extends Error {
+  constructor() { super(""); this.name = "FormNotSaved"; }
+}
+
 export type FormConflictHandlers = {
   /** Put the latest saved record into the form (the person's changes go). */
   onReload: () => void | Promise<void>;
@@ -284,7 +292,7 @@ export function FormDialog({
       if (closeOnSuccess) onClose();
     } catch (cause) {
       if (conflict && isVersionConflict(cause)) setConflicted(true);
-      else setFailure(cause instanceof Error && cause.message ? translateKnown(t, cause.message) : t("Could not save."));
+      else if (!(cause instanceof FormNotSaved)) setFailure(cause instanceof Error && cause.message ? translateKnown(t, cause.message) : t("Could not save."));
     } finally { inFlight.current = false; setBusy(false); }
   };
 

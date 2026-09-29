@@ -130,8 +130,8 @@ export function Switch({ children, ...props }: React.ComponentProps<typeof AriaS
   return <AriaSwitch {...props} className="wd-switch" isReadOnly={props.isReadOnly || readOnly}>{(values) => <><span aria-hidden="true" className="wd-switch-track"><span /></span>{typeof children === "function" ? children(values) : children}</>}</AriaSwitch>;
 }
 
-export function RadioSet({ description, errorMessage, items, label, ...props }: RadioGroupProps & FieldChromeProps & { items: Array<{ id: string; label: ReactNode; description?: ReactNode }> }) {
-  return <RadioGroup {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><div className="wd-choice-list">{items.map((item) => <Radio className="wd-radio" id={item.id} key={item.id} value={item.id}><span aria-hidden="true" className="wd-radio-dot" /><span><strong>{item.label}</strong>{item.description ? <small>{item.description}</small> : null}</span></Radio>)}</div><FieldMeta description={description} errorMessage={errorMessage} /></RadioGroup>;
+export function RadioSet({ description, errorMessage, items, label, ...props }: RadioGroupProps & FieldChromeProps & { items: Array<{ id: string; label: ReactNode; description?: ReactNode; isDisabled?: boolean }> }) {
+  return <RadioGroup {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><div className="wd-choice-list">{items.map((item) => <Radio className="wd-radio" id={item.id} isDisabled={item.isDisabled} key={item.id} value={item.id}><span aria-hidden="true" className="wd-radio-dot" /><span><strong>{item.label}</strong>{item.description ? <small>{item.description}</small> : null}</span></Radio>)}</div><FieldMeta description={description} errorMessage={errorMessage} /></RadioGroup>;
 }
 
 export type SelectItem = { id: string; label: string; description?: string; icon?: ReactNode };

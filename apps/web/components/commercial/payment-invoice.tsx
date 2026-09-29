@@ -2,8 +2,9 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Search, RefreshCw, ExternalLink, Check, FileText } from "lucide-react";
-import { ControlledModalDialog, useDesignSystem } from "@/design-system";
+import { RefreshCw, ExternalLink, FileText } from "lucide-react";
+import { Button, Checkbox, FormDialog, InlineNotice, MoreDetails, RadioSet, SearchInput, SelectField, TextInput, useDesignSystem } from "@/design-system";
+import { toMinor } from "@/lib/money-exact";
 import { jsonRequest, money } from "@/lib/commercial/client";
 import type { Payment } from "@/lib/commercial/types";
 import s from "./commercial.module.css";
@@ -153,7 +154,7 @@ export function PaymentInvoice({
       Number.isFinite(i.balance) &&
       i.balance >= 0 &&
       i.balance <= i.total &&
-      Math.round(i.total * 100) === Math.round(payment.amount * 100) &&
+      toMinor(i.total, currency) === toMinor(payment.amount, currency) &&
       i.currency === currency,
     visible = invoices
       .filter((i) =>
@@ -162,6 +163,17 @@ export function PaymentInvoice({
           .includes(search.toLowerCase()),
       )
       .sort((a, b) => Number(matching(b)) - Number(matching(a)));
+  const shown = (value: number, code: string) => displayAmount(value, /^[A-Z]{3}$/.test(code) ? code : currency);
+  const chooseConnection = (id: string) => {
+    requestSequence.current++;
+    setConnectionId(id);
+    setInvoiceId("");
+    setChecked(false);
+    setInvoices([]);
+    const c = connections.find((c) => c.id === id);
+    if (c) void loadInvoices(c);
+  };
+  const provider = (name: string) => name === "zoho_books" ? "Zoho Books" : "QuickBooks";
   return (
     <>
       {payment.invoice?.lastError && (
@@ -172,12 +184,7 @@ export function PaymentInvoice({
       <div className={s.actions}>
         {payment.invoice && (
           <span className={s.detail}>
-            <strong>
-              {payment.invoice.provider === "zoho_books"
-                ? "Zoho Books"
-                : "QuickBooks"}{" "}
-              · {payment.invoice.number || payment.invoice.id}
-            </strong>
+            <strong>{provider(payment.invoice.provider)} · {payment.invoice.number || payment.invoice.id}</strong>
             <small className={s.detail}>
               {t("Balance")}{" "}{money(payment.invoice.balance, payment.invoice.currency)}{" "}
               {t("· Checked")}{" "}{new Date(payment.invoice.refreshedAt).toLocaleString()}
@@ -185,236 +192,83 @@ export function PaymentInvoice({
           </span>
         )}
         {canVerifyFinance && (
-          <button
-            className={s.button}
-            disabled={busy}
-            onClick={() =>
+          <Button size="compact" isDisabled={busy}
+            onPress={() =>
               payment.invoice?.accountId
-                ? void run("invoice", {
-                    paymentId: payment.id,
-                    connectionId: payment.invoice.connectionId,
-                    invoiceId: payment.invoice.id,
-                  })
+                ? void run("invoice", { paymentId: payment.id, connectionId: payment.invoice.connectionId, invoiceId: payment.invoice.id })
                 : void show()
-            }
-          >
-            {payment.invoice ? <RefreshCw size={13} /> : <FileText size={14} />}{" "}
-            {payment.invoice ? "Refresh invoice" : "Connect invoice"}
-          </button>
+            }>
+            {payment.invoice ? <RefreshCw size={13} /> : <FileText size={14} />}
+            {payment.invoice ? t("Refresh invoice") : t("Connect invoice")}
+          </Button>
         )}
         {payment.invoice?.paymentUrl && (
-          <a
-            href={payment.invoice.paymentUrl}
-            target="_blank"
-            rel="noreferrer"
-            className={s.button}
-          >
-            {t("Open payment link")}{" "}<ExternalLink size={13} />
+          <a className="wd-button" data-size="compact" href={payment.invoice.paymentUrl} rel="noreferrer" target="_blank">
+            {t("Open payment link")}<ExternalLink size={13} />
           </a>
         )}
       </div>
-      <ControlledModalDialog
+      <FormDialog
         size="lg"
         isOpen={open}
-        onOpenChange={(value) => {
-          if (!value) requestSequence.current++;
-          setOpen(value);
-        }}
+        onClose={() => { requestSequence.current++; setOpen(false); }}
         title={t("Connect accounting invoice")}
+        submitLabel={t("Verify & connect invoice")}
+        isSubmitDisabled={busy || loading || !checked || !invoiceId || !connectionId}
+        isSubmitting={busy}
+        error={error || undefined}
+        closeOnSuccess
+        secondaryAction={<Link className="wd-button" data-size="compact" data-variant="quiet" href="/workspace/integrations">{t("Accounting connections")}<ExternalLink size={13} /></Link>}
+        lead={<div className={s.invoiceTarget}>
+          <div>
+            <small>{customerName || t("Client milestone")}</small>
+            <strong>{payment.title}</strong>
+          </div>
+          <strong>{money(payment.amount, currency)}</strong>
+        </div>}
+        onSubmit={async () => {
+          if (!(await run("invoice", { paymentId: payment.id, connectionId, invoiceId, clientConfirmed: checked })))
+            throw new Error(t("The invoice could not be connected. Confirm the amount, currency and accounting company, then retry."));
+        }}
       >
-        <form
-          className={s.form}
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (
-              await run("invoice", {
-                paymentId: payment.id,
-                connectionId,
-                invoiceId,
-                clientConfirmed: checked,
-              })
-            )
-              setOpen(false);
-            else
-              setError(
-                "The invoice could not be connected. Confirm the amount, currency and accounting company, then retry.",
-              );
-          }}
-        >
-          <div className={s.invoiceTarget}>
-            <div>
-              <small>{customerName || "Client milestone"}</small>
-              <strong>{payment.title}</strong>
-            </div>
-            <strong>{money(payment.amount, currency)}</strong>
-          </div>
-          {error && (
-            <p role="alert" className={s.error}>
-              {error}
-            </p>
-          )}
-          <label>
-            {t("Accounting company")}<select
-              required
-              value={connectionId}
-              onChange={(e) => {
-                requestSequence.current++;
-                setConnectionId(e.target.value);
-                setInvoiceId("");
-                setChecked(false);
-                setInvoices([]);
-                const c = connections.find((c) => c.id === e.target.value);
-                if (c) void loadInvoices(c);
-              }}
-            >
-              <option value="">{t("Choose QuickBooks or Zoho Books…")}</option>
-              {connections.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.displayName} ·{" "}
-                  {c.provider === "zoho_books" ? "Zoho Books" : "QuickBooks"}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!loading && !connections.length && (
-            <p className={s.notice}>
-              {t("Connect an accounting company in")}{" "}
-              <Link href="/workspace/integrations">{t("Workspace integrations")}</Link>{" "}
-              {t("to load its invoices.")}</p>
-          )}
-          {connectionId && (
-            <>
-              <label className={s.invoiceSearch}>
-                <Search size={15} />
-                <input
-                  aria-label={t("Search accounting invoices")}
-                  placeholder={t("Search invoice number or customer…")}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </label>
-              <div
-                className={s.invoiceChoices}
-                role="radiogroup"
-                aria-label={t("Accounting invoices")}
-              >
-                {visible.map((i) => (
-                  <label
-                    key={i.id}
-                    className={s.invoiceChoice}
-                    data-match={matching(i)}
-                  >
-                    <input
-                      type="radio"
-                      name="invoice"
-                      value={i.id}
-                      checked={invoiceId === i.id}
-                      disabled={!matching(i) && !payment.invoice}
-                      onChange={() => {
-                        setInvoiceId(i.id);
-                        setChecked(false);
-                      }}
-                    />
-                    <span>
-                      <strong>
-                        {i.number || i.id} · {i.customer}
-                      </strong>
-                      <small>
-                        {i.date}
-                        {matching(i)
-                          ? " · Matches milestone"
-                          : " · Amount or currency differs"}
-                      </small>
-                    </span>
-                    <span>
-                      <strong>
-                        {displayAmount(
-                          i.total,
-                          /^[A-Z]{3}$/.test(i.currency) ? i.currency : currency,
-                        )}
-                      </strong>
-                      <small>
-                        {t("Open")}{" "}
-                        {displayAmount(
-                          i.balance,
-                          /^[A-Z]{3}$/.test(i.currency) ? i.currency : currency,
-                        )}
-                      </small>
-                    </span>
-                    {matching(i) && <Check size={14} />}
-                  </label>
-                ))}
-                {!loading && !visible.length && (
-                  <p className={s.muted}>
-                    {t("No matching invoices in the loaded pages.")}</p>
-                )}
-              </div>
-              {loading && (
-                <p role="status" className={s.muted}>
-                  {t("Loading invoices from your accounting company…")}</p>
-              )}
-              {hasMore && (
-                <button
-                  type="button"
-                  className={s.button}
-                  disabled={loading}
-                  onClick={() => {
-                    const c = connections.find((c) => c.id === connectionId);
-                    if (c) void loadInvoices(c, page + 1);
-                  }}
-                >
-                  {t("Load more invoices")}</button>
-              )}
-              <button
-                type="button"
-                className={s.linkButton}
-                onClick={() => setManual(!manual)}
-              >
-                {manual ? "Hide invoice ID entry" : "Find by invoice ID"}
-              </button>
-              {manual && (
-                <label>
-                  {t("Invoice ID")}<input
-                    required
-                    value={invoiceId}
-                    onChange={(e) => {
-                      setInvoiceId(e.target.value);
-                      setChecked(false);
-                    }}
-                    placeholder={t("Invoice identifier from the accounting company")}
-                  />
-                </label>
-              )}
-              <p className={s.muted}>
-                {t("The invoice total must equal this milestone in")}{" "}{currency}{t(". The provider supplies its outstanding balance and payment link.")}</p>
-            </>
-          )}
-          {invoiceId && (
-            <label className={s.check}>
-              <input
-                type="checkbox"
-                required
-                checked={checked}
-                onChange={(e) => setChecked(e.target.checked)}
-              />
-              {t("I checked that")}{" "}{selected?.number || "this invoice"} {t("belongs to")}{" "}
-              {customerName || "this client"} {t("and this milestone.")}</label>
-          )}
-          <div className={s.actions}>
-            <button
-              className={s.primary}
-              disabled={
-                busy || loading || !checked || !invoiceId || !connectionId
-              }
-            >
-              Verify & connect invoice
-            </button>
-            <Link href="/workspace/integrations" className={s.button}>
-              {t("Accounting connections")}{" "}<ExternalLink size={13} />
-            </Link>
-          </div>
-        </form>
-      </ControlledModalDialog>
+        <SelectField isRequired label={t("Accounting company")} placeholder={t("Choose QuickBooks or Zoho Books…")}
+          items={connections.map((c) => ({ id: c.id, label: `${c.displayName} · ${provider(c.provider)}` }))}
+          selectedKey={connectionId || null} onSelectionChange={(key) => chooseConnection(String(key ?? ""))} />
+        {!loading && !connections.length && (
+          <InlineNotice message={<>{t("Connect an accounting company in")}{" "}<Link href="/workspace/integrations">{t("Workspace integrations")}</Link>{" "}{t("to load its invoices.")}</>} />
+        )}
+        {connectionId && (
+          <>
+            <SearchInput label={t("Search accounting invoices")} placeholder={t("Search invoice number or customer…")} value={search} onChange={setSearch} />
+            <RadioSet isRequired={!manual} label={t("Accounting invoices")} value={invoiceId || null}
+              onChange={(id) => { setInvoiceId(id); setChecked(false); }}
+              description={t("The invoice total must equal this milestone in {currency}.", { currency })}
+              items={visible.map((i) => ({
+                id: i.id,
+                isDisabled: !matching(i) && !payment.invoice,
+                label: `${i.number || i.id} · ${i.customer}`,
+                description: `${i.date} · ${shown(i.total, i.currency)} · ${t("Open")} ${shown(i.balance, i.currency)} · ${matching(i) ? t("Matches milestone") : t("Amount or currency differs")}`,
+              }))} />
+            {!loading && !visible.length && <p className={s.muted}>{t("No matching invoices in the loaded pages.")}</p>}
+            {loading && <p role="status" className={s.muted}>{t("Loading invoices from your accounting company…")}</p>}
+            {hasMore && (
+              <Button isDisabled={loading} size="compact" variant="quiet"
+                onPress={() => { const c = connections.find((c) => c.id === connectionId); if (c) void loadInvoices(c, page + 1); }}>
+                {t("Load more invoices")}
+              </Button>
+            )}
+            <MoreDetails label={t("Find by invoice ID")} isOpen={manual} onOpenChange={setManual}>
+              <TextInput isRequired={manual} label={t("Invoice ID")} placeholder={t("Invoice identifier from the accounting company")}
+                value={invoiceId} onChange={(value) => { setInvoiceId(value); setChecked(false); }} />
+            </MoreDetails>
+          </>
+        )}
+        {invoiceId && (
+          <Checkbox isRequired isSelected={checked} onChange={setChecked}>
+            {t("I checked that {invoice} belongs to {client} and this milestone.", { invoice: selected?.number || t("this invoice"), client: customerName || t("this client") })}
+          </Checkbox>
+        )}
+      </FormDialog>
     </>
   );
 }
