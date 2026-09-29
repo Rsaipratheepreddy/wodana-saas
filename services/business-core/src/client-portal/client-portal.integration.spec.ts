@@ -955,6 +955,31 @@ integration("client portal (plan §6.22)", () => {
     });
   });
 
+  it("emails a decision-maker added with only a name and number at the client record's email (M3)", async () => {
+    await world(async (w) => {
+      await savePortalSettings(w.client, w.workspaceId, w.manager, { version: 0, enabled: true });
+      const saved = await w.admin.saveContact(actor, w.workspaceId, w.caseId, { name: "Maya", phone: APPROVER, role: "approver" });
+      expect(saved.contacts[0].email).toBeNull();
+      const tell = (recordId: string) => tellClients(w.client, { workspaceId: w.workspaceId, caseId: w.caseId, event: "quote_issued", recordId, title: "Main quote (V1)", demo: false });
+      expect(await tell("q:before")).toMatchObject({ queued: 0, reason: "no_contact" });
+      const contactPoint = (type: "phone" | "email", value: string, label: string | null) => w.client.query(
+        `INSERT INTO crm_contact_points (workspace_id, party_id, type, label, raw_value, normalized_value, is_primary) VALUES ($1, $2, $3::crm_contact_point_type, $4, $5::text, lower($5::text), true)`,
+        [w.workspaceId, w.party, type, label, value]);
+      // The client record's email belongs to the client's own number, not to someone else on the case.
+      await contactPoint("email", "maya.client@example.com", null);
+      await contactPoint("phone", "+1 555 010 0009", "mobile");
+      expect(await tell("q:other-number")).toMatchObject({ queued: 0, reason: "no_contact" });
+      await contactPoint("phone", "+1 (555) 010-0001", "mobile");
+      expect(await tell("q:1")).toMatchObject({ queued: 1, channel: "email", names: ["Maya"] });
+      expect((await w.admin.contacts(actor, w.workspaceId, w.caseId)).contacts).toEqual([expect.objectContaining({ phone: APPROVER, email: "maya.client@example.com" })]);
+      const mailer = { sendStaffNotice: vi.fn(async () => ({ status: "sent" as const, provider: "mailgun" as const, messageId: "m1" })) };
+      const notices = new CrmNotificationsService({ tenantTransaction: (_w: string, _a: string, fn: (c: PoolClient) => Promise<unknown>) => w.savepoint(() => fn(w.client)) } as never,
+        {} as never, {} as never, undefined, undefined, mailer as never);
+      await notices.dispatchStaffEmailsInternal({ workspaceId: w.workspaceId, limit: 50 });
+      expect(mailer.sendStaffNotice).toHaveBeenCalledWith(expect.objectContaining({ to: "maya.client@example.com", subject: "Main quote (V1) is ready for you" }));
+    });
+  });
+
   it("invites the project's client from the project record: one email with the portal address and a link that opens it with their number; the team hears their first sign-in; access can be taken away", async () => {
     await world(async (w) => {
       await savePortalSettings(w.client, w.workspaceId, w.manager, { version: 0, enabled: true });
