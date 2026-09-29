@@ -347,7 +347,7 @@ export function VendorOrderForm() {
                           : ["quotation", "acknowledgement"].includes(a.id),
                       )
                       .map((a) => (
-                        <button
+                        <button type="button"
                           key={a.id}
                           onClick={() => {
                             setForm((f) => ({ ...f, kind: a.id }));
