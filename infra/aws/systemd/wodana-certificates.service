@@ -1,0 +1,7 @@
+[Unit]
+Description=Wodana tenant certificates
+After=docker.service nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wodana/prod/sync-tenant-certificates.sh

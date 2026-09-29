@@ -64,6 +64,15 @@ describe("CRM data gateway", () => {
     );
   });
 
+  it("reaches the team inbox: views, labels, quick replies, templates and a chat's context", async () => {
+    for (const path of ["inbox/summary", "inbox/labels", `inbox/labels/${partyId}`, "inbox/quick-replies", "inbox/settings", `inbox/templates/${partyId}/variables`, `conversations/${partyId}/labels`, `conversations/${partyId}/context`]) {
+      await GET(request(path), { params: Promise.resolve({ path: path.split("/") }) });
+      expect(workspaceJsonResponse).toHaveBeenLastCalledWith(`/workspaces/${workspaceId}/crm/${path}`, expect.anything(), expect.any(String));
+    }
+    const wake = await POST(request("inbox/wake", "POST", {}), { params: Promise.resolve({ path: ["inbox", "wake"] }) });
+    expect(wake.status).toBe(400);
+  });
+
   it("keeps internal notification-worker controls out of the browser gateway", async () => {
     const response = await POST(request("notifications/claim", "POST", { limit: 10 }), {
       params: Promise.resolve({ path: ["notifications", "claim"] }),

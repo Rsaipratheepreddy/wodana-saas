@@ -252,15 +252,21 @@ export async function readHomeMetrics(client: Db, workspaceId: string, membershi
   }
 
   if (access.activity) {
-    // The newest audited changes, never sign-in, MFA, session or platform-operator events.
+    // The newest audited changes, never sign-in, MFA, session or platform-operator events; a record changed several
+    // times in a row shows once, with its latest change (read from a bounded window of the newest events).
     const rows = (await client.query<{ id: string; action: string; entityType: string; entityId: string | null; at: Date | string; actorName: string | null; subject: string | null }>(
-      `WITH recent AS (
+      `WITH newest AS (
          SELECT event.id, event.action, event.entity_type, event.entity_id, event.before, event.after, event.occurred_at, event.actor_user_id
          FROM audit_events event
          WHERE event.workspace_id=$1
            AND event.action !~ '^(security|auth|mfa|operator|support|platform|session)[._]'
            AND event.entity_type NOT LIKE 'auth%' AND event.entity_type NOT LIKE 'mfa%'
-         ORDER BY event.occurred_at DESC, event.id DESC LIMIT 6
+         ORDER BY event.occurred_at DESC, event.id DESC LIMIT 200
+       ), latest AS (
+         SELECT DISTINCT ON (newest.entity_type, coalesce(newest.entity_id::text, newest.id::text)) newest.*
+         FROM newest ORDER BY newest.entity_type, coalesce(newest.entity_id::text, newest.id::text), newest.occurred_at DESC, newest.id DESC
+       ), recent AS (
+         SELECT * FROM latest ORDER BY occurred_at DESC, id DESC LIMIT 6
        )
        SELECT recent.id, recent.action, recent.entity_type AS "entityType", recent.entity_id::text AS "entityId", recent.occurred_at AS at,
               app_user.display_name AS "actorName",

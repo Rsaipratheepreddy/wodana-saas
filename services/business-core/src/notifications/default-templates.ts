@@ -133,6 +133,12 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "quotation.review_requested", channel: "in_app", subject: "Review quote {{title}} · {{clientName}}", body: "{{actor}} sent it for review.", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.review_requested", channel: "email", subject: "Please review quote {{title}} ({{clientName}})", body: "{{actor}} sent quote {{title}} for {{clientName}} for your review.", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.returned", channel: "in_app", subject: "Changes needed: {{title}}", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "quotation.qs_approved", channel: "in_app", subject: "{{title}} is ready to send", body: "{{actor}} approved the estimate for {{clientName}}.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "quotation.qs_approved", channel: "email", subject: "{{title}} is ready to send · {{clientName}}", body: "{{actor}} approved the estimate for {{title}} ({{clientName}}).\n\nOpen the quote to send it to the client.", variables: ["title", "clientName", "actor", "note"] },
+  // Client payments on a planning case (commercial/commercial-notices.ts): Finance verifies, the reporter hears back.
+  { code: "commercial.receipt_reported", channel: "in_app", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}}.", variables: ["title", "clientName", "actor", "amount", "note"] },
+  { code: "commercial.receipt_reported", channel: "email", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}} ({{clientName}}).\n\nOpen it to check the receipt and verify it.", variables: ["title", "clientName", "actor", "amount", "note"] },
+  { code: "commercial.receipt_verified", channel: "in_app", subject: "Payment verified · {{clientName}}", body: "{{actor}} verified {{amount}} for {{title}}.", variables: ["title", "clientName", "actor", "amount", "note"] },
   { code: "quotation.client_accepted", channel: "in_app", subject: "{{clientName}} accepted {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.client_accepted", channel: "email", subject: "{{clientName}} accepted {{title}}", body: "{{clientName}} accepted {{title}}.\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.client_changes", channel: "in_app", subject: "{{clientName}} wants changes to {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
@@ -184,6 +190,14 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.materials_signed_off", channel: "in_app", subject: "{{title}}: material list signed off", body: "{{clientName}} signed off {{revision}}.", variables: ["title", "clientName", "actor", "revision"] },
   { code: "project.materials_changes", channel: "in_app", subject: "{{title}}: changes to the material list", body: "{{clientName}} asked for changes to {{revision}}: {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },
   { code: "project.variation_applied", channel: "in_app", subject: "{{title}}: {{variation}} applied", body: "{{actor}} applied {{variation}} ({{amount}}).", variables: ["title", "clientName", "actor", "variation", "amount"] },
+  // Delivery reminders (the daily run): the week in numbers, a stage whose checks all pass, a material list
+  // left with the client, a milestone to invoice and the drafted client update.
+  { code: "project.weekly_summary", channel: "in_app", subject: "This week on {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.weekly_summary", channel: "email", subject: "This week on {{title}}", body: "{{note}}\n\nOpen the project to see what needs you.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.stage_ready", channel: "in_app", subject: "{{stage}} can be finished · {{title}}", body: "Everything it needs is done.", variables: ["title", "clientName", "actor", "stage", "note"] },
+  { code: "project.materials_waiting", channel: "in_app", subject: "Material list waiting on the client · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.milestone_due", channel: "in_app", subject: "To invoice · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.client_update_ready", channel: "in_app", subject: "Client update to approve · {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "work.assigned", channel: "in_app", subject: "{{task}} is yours", body: "{{actor}} gave you {{task}} on {{title}}.", variables: ["title", "clientName", "actor", "task", "due"] },
   { code: "work.assigned", channel: "email", subject: "{{task}} is yours · {{title}}", body: "{{actor}} gave you {{task}} on {{title}} for {{clientName}}. {{due}}", variables: ["title", "clientName", "actor", "task", "due"] },
   { code: "work.commented", channel: "in_app", subject: "{{actor}} on {{task}}", body: "{{note}}", variables: ["title", "clientName", "actor", "task", "note"] },
@@ -263,11 +277,29 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "stock.transfer_short", channel: "in_app", subject: "Move {{transfer}} arrived short", body: "{{actor}}: {{note}}", variables: ["transfer", "from", "to", "actor", "note"] },
   { code: "stock.adjustment_needs_approval", channel: "in_app", subject: "A stock correction needs your approval", body: "{{actor}} counted {{note}} at {{to}}.", variables: ["transfer", "from", "to", "actor", "note"] },
   { code: "stock.adjusted", channel: "in_app", subject: "Stock corrected at {{to}}", body: "{{actor}}: {{note}}", variables: ["transfer", "from", "to", "actor", "note"] },
+  { code: "stock.transfer_rejected", channel: "in_app", subject: "Move {{transfer}}: goods refused at {{to}}", body: "{{actor}}: {{note}}. They're on their way back.", variables: ["transfer", "from", "to", "actor", "note"] },
+  { code: "stock.low", channel: "in_app", subject: "Stock is low: {{item}}", body: "{{note}}", variables: ["item", "place", "note"] },
+  { code: "stock.low", channel: "email", subject: "Stock is low: {{item}}", body: "{{note}}", variables: ["item", "place", "note"] },
+  { code: "purchasing.shipment_late", channel: "in_app", subject: "{{order}} arrives later", body: "{{supplier}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "purchasing.blocking_work", channel: "in_app", subject: "{{order}} is holding up work", body: "{{supplier}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "purchasing.over_ordered", channel: "in_app", subject: "{{variation}} leaves orders past what {{project}} needs", body: "{{note}}", variables: ["variation", "project", "note"] },
+  { code: "purchasing.hold_override", channel: "in_app", subject: "{{order}} goes ahead while its project is on hold", body: "{{actor}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "factory.rework", channel: "in_app", subject: "{{order}} goes back into production", body: "{{note}}", variables: ["order", "item", "project", "actor", "note"] },
+  { code: "factory.drawing_stale", channel: "in_app", subject: "{{order}}: its drawing has a newer revision", body: "{{note}}", variables: ["order", "item", "project", "actor", "note"] },
   { code: "project.off_track", channel: "in_app", subject: "{{title}} is off track", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.signed_off", channel: "in_app", subject: "Design signed off · {{clientName}}", body: "The design is approved. It's ready to quote.", variables: ["clientName"] },
   { code: "design.signed_off", channel: "email", subject: "Design signed off: {{clientName}}", body: "The design for {{clientName}} is signed off and ready to quote.\n\nOpen the case to start the quotation.", variables: ["clientName"] },
+  // Team inbox (crm/conversations/inbox/inbox-notices.ts): one notice per chat until it is read.
+  { code: "crm.inbox_message", channel: "in_app", subject: "{{clientName}} wrote", body: "{{summary}}", variables: ["clientName", "summary"] },
+  { code: "crm.inbox_woke", channel: "in_app", subject: "Chat with {{clientName}} is back", body: "You snoozed it until now.", variables: ["clientName"] },
+  { code: "crm.number_health", channel: "in_app", subject: "Your WhatsApp number is {{status}}", body: "{{reason}}", variables: ["status", "reason"] },
+  { code: "crm.template_status", channel: "in_app", subject: "Template {{name}} is {{status}}", body: "{{reason}}", variables: ["name", "status", "reason"] },
+  { code: "crm.inbox_mention", channel: "in_app", subject: "{{actor}} mentioned you", body: "{{clientName}}: {{summary}}", variables: ["actor", "clientName", "summary"] },
+  { code: "crm.inbox_unassigned", channel: "in_app", subject: "{{clientName}} is waiting", body: "Nobody could take this new chat. Assign it.", variables: ["clientName"] },
   // Client portal notices (client-portal/portal-notices.ts): to client contacts, by email.
   { code: "portal.quote_issued", channel: "email", subject: "{{title}} is ready for you", body: "{{company}} sent you {{title}} for {{project}}.\n\nOpen your project page to read it and give your decision.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "portal.payment_due", channel: "email", subject: "Payment reminder · {{title}}", body: "A reminder from {{company}}: {{title}} for {{project}} is due. {{due}}\n\nOpen your project page to see it and pay.", variables: ["company", "project", "title", "due", "note"] },
+  { code: "receivables.payment_overdue", channel: "in_app", subject: "{{client}} hasn't paid {{title}}", body: "A week past due. Reminders sent: {{count}}.", variables: ["client", "title", "count"] },
   { code: "portal.invoice_issued", channel: "email", subject: "Invoice {{title}} from {{company}}", body: "{{company}} issued invoice {{title}} for {{project}}. {{due}}\n\nOpen your project page to see it and what's left to pay.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.decision_waiting", channel: "email", subject: "{{title}} is waiting for your decision", body: "{{company}} needs your decision on {{title}} for {{project}}. {{due}}\n\nOpen your project page to review it.", variables: ["company", "project", "title", "due", "note"] },
   { code: "portal.update_published", channel: "email", subject: "New update on {{project}}", body: "{{note}}\n\nOpen your project page to see the progress.", variables: ["company", "project", "title", "due", "note"] },
@@ -296,6 +328,13 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "account.domain_ownership_lost", channel: "email", subject: "{{domain}} is not connected", body: "We could no longer find the DNS record that proves {{organization}} owns {{domain}}.\n\nSign in at {{address}} in the meantime, and restore the record to reconnect the domain.", variables: ["organization", "date", "domain", "address"] },
   { code: "account.domain_live", channel: "in_app", subject: "{{domain}} is live", body: "Sign in at {{domain}}.", variables: ["organization", "date", "domain", "address"] },
   { code: "account.domain_live", channel: "email", subject: "{{domain}} is live", body: "{{organization}} now signs in at {{domain}}.", variables: ["organization", "date", "domain", "address"] },
+  // AI credits (ai-gateway/ai-credits.ts): owners and administrators, once when credits run low and once when they run out.
+  { code: "ai.credits_low", channel: "in_app", subject: "AI credits are running low", body: "{{balance}} credits left. Contact support to top up.", variables: ["balance"] },
+  { code: "ai.credits_low", channel: "email", subject: "AI credits are running low", body: "Your workspace has {{balance}} AI credits left.\n\nContact support to top up before they run out. Woddy and AI suggestions pause when credits are used up.", variables: ["balance"] },
+  { code: "ai.credits_exhausted", channel: "in_app", subject: "AI credits are used up", body: "Woddy and AI suggestions are paused. Contact support to top up.", variables: ["balance"] },
+  { code: "ai.credits_exhausted", channel: "email", subject: "AI credits are used up", body: "Your workspace has used all of its AI credits.\n\nWoddy and AI suggestions are paused until credits are topped up. Contact support to top up.", variables: ["balance"] },
+  // View as (auth/view-as): the person an owner or administrator viewed as, once the view ends (a workspace setting, on by default).
+  { code: "workspace.viewed_as", channel: "in_app", subject: "{{viewerName}} viewed as you", body: "Read-only, {{minutes}} min from {{startedAt}}. Security lists every view.", variables: ["viewerName", "minutes", "startedAt"] },
 ];
 
 export async function seedDefaultNotificationTemplates(db: Db, workspaceId: string) {
@@ -310,7 +349,7 @@ export async function seedDefaultNotificationTemplates(db: Db, workspaceId: stri
   }
 }
 
-const render = (template: string, variables: Record<string, string>) =>
+export const renderNoticeText = (template: string, variables: Record<string, string>) =>
   template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
 
 /**
@@ -343,8 +382,8 @@ export async function notifyUserInApp(db: Db, input: {
   );
   if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
   const row = template.rows[0];
-  const subject = row.subject ? render(row.subject, input.variables) : null;
-  const body = render(row.body, input.variables);
+  const subject = row.subject ? renderNoticeText(row.subject, input.variables) : null;
+  const body = renderNoticeText(row.body, input.variables);
   const inserted = await db.query(
     `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
        subject, body, deep_link, idempotency_key, correlation_id, delivered_at)
@@ -403,7 +442,7 @@ export async function queueUserPushFromTemplate(db: Db, input: {
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
      RETURNING id, correlation_id AS "correlationId"`,
     [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
+      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
       input.deepLink ?? null, input.idempotencyKey],
   );
   const notification = inserted.rows[0] as { id: string; correlationId: string } | undefined;
@@ -455,7 +494,7 @@ export async function queueUserEmail(db: Db, input: {
      ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
      RETURNING id, correlation_id AS "correlationId"`,
     [input.workspaceId, row.id, input.recipientUserId, input.eventType,
-      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
+      row.subject ? renderNoticeText(row.subject, input.variables) : null, renderNoticeText(row.body, input.variables),
       input.deepLink ?? null, input.idempotencyKey],
   );
   const notification = inserted.rows[0];
@@ -481,13 +520,15 @@ export async function wakeDelivery(db: Db, workspaceId: string, notificationId: 
 export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "site.report_missing", "site.report_returned", "site.incident", "site.blocked",
   "work.assigned", "work.overdue", "work.snag_reopened",
-  "factory.released", "factory.check_failed", "factory.material_short",
-  "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed",
-  "stock.transfer_sent", "stock.transfer_short",
+  "factory.released", "factory.check_failed", "factory.material_short", "factory.rework",
+  "purchasing.late", "purchasing.order_late", "purchasing.inspection_needed", "purchasing.blocking_work",
+  "stock.transfer_sent", "stock.transfer_short", "stock.transfer_rejected",
   "purchasing.approval_needed", "stock.adjustment_needs_approval", "payables.run_submitted", "petty_cash.submitted",
   "hrms.leave_requested", "hrms.leave_approved", "hrms.leave_rejected", "hrms.timesheet_submitted", "hrms.crew_day_submitted", "hrms.attendance_to_review",
   "quotation.review_requested", "design.review_requested",
   "crm.lead_assigned", "crm.lead_taken_over_to", "crm.conversation_assigned",
+  // Team inbox: a client wrote in a chat that is yours (one notice per chat), or someone mentioned you in a note.
+  "crm.inbox_message", "crm.inbox_mention",
 ]);
 
 /**

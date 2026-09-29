@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
 import {
-  Avatar, Button, ControlledModalDialog, DateField, EmptyState, ErrorState, GroupedTable, IconMenuButton, InlineNotice, Kanban, MenuButton, SearchInput, SegmentedControl,
+  Avatar, Button, ControlledModalDialog, DateField, EmptyState, ErrorState, GroupedTable, IconMenuButton, InlineNotice, Kanban, MenuButton, PillTabs, SearchInput, SegmentedControl,
   SelectField, Skeleton, Switch, TextInput, type GroupedTableSection,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -23,6 +23,9 @@ import styles from "./work.module.css";
 type View = "list" | "board" | "timeline" | "sprints";
 const VIEWS: View[] = ["list", "board", "timeline", "sprints"];
 type Row = WorkRow;
+/** Quick filters: what can start today, what's held up, what's late, snags, the client's requests, mine. */
+type Filter = "all" | "ready" | "blocked" | "materials" | "late" | "snags" | "requests" | "mine";
+const FILTERS: Filter[] = ["all", "ready", "blocked", "materials", "late", "snags", "requests", "mine"];
 
 /**
  * The project's plan: every task and issue, as a list grouped by package or as a board by status.
@@ -40,24 +43,54 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [who, setWho] = useState<string>("everyone");
-  const [creating, setCreating] = useState(false);
+  // Home's "New task" opens the new-task dialog on arrival (`?new=task`).
+  const [creating, setCreating] = useState(() => params.get("new") === "task");
   const requested = params.get("view");
   const view: View = VIEWS.includes(requested as View) ? requested as View : "list";
   const [sprintFilter, setSprintFilter] = useState<string>("all");
+  const requestedFilter = params.get("filter") ?? (params.get("type") === "snag" ? "snags" : params.get("type") === "client_request" ? "requests" : null);
+  const filter: Filter = FILTERS.includes(requestedFilter as Filter) ? requestedFilter as Filter : "all";
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDue, setBulkDue] = useState(false);
   const format = useProjectFormat();
   const [baselining, setBaselining] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [critical, setCritical] = useState(false);
   const open = params.get("item");
+  const root = useRef<HTMLDivElement>(null);
+  const canCreate = Boolean(board?.canEdit);
+  // Keys on the list: j/k move between rows, Enter opens one, n adds a task, / searches (never while typing or in a dialog).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || !root.current) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']")) return;
+      if (event.key === "/") {
+        const search = root.current.querySelector<HTMLInputElement>("input");
+        if (search) { event.preventDefault(); search.focus(); }
+      } else if (event.key === "n" && canCreate) {
+        event.preventDefault(); setCreating(true);
+      } else if (event.key === "j" || event.key === "k") {
+        const rows = [...root.current.querySelectorAll<HTMLElement>("tr[data-actionable]")];
+        if (!rows.length) return;
+        const at = rows.indexOf(document.activeElement as HTMLElement);
+        const next = rows[at < 0 ? 0 : event.key === "j" ? Math.min(rows.length - 1, at + 1) : Math.max(0, at - 1)];
+        event.preventDefault(); next.focus(); next.scrollIntoView?.({ block: "nearest" });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canCreate]);
 
   const load = useCallback(async () => {
     try { setBoard(await api.work(projectId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The plan didn't load.")); }
   }, [api, projectId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
-  const navigate = useCallback((next: { view?: View; item?: string | null }) => {
+  const navigate = useCallback((next: { view?: View; item?: string | null; filter?: Filter }) => {
     const query = new URLSearchParams(params.toString());
     if (next.view) { if (next.view === "list") query.delete("view"); else query.set("view", next.view); }
+    if (next.filter) { if (next.filter === "all") query.delete("filter"); else query.set("filter", next.filter); }
     if (next.item !== undefined) { if (next.item) query.set("item", next.item); else query.delete("item"); }
     router.replace(query.size ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [params, pathname, router]);
@@ -67,11 +100,25 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
     const needle = search.trim().toLocaleLowerCase().replace(/^#/, "");
     // Subtasks go with their task's sprint.
     const sprintOf = (item: WorkItem) => (item.parentId ? board.items.find((parent) => parent.id === item.parentId)?.sprintId ?? null : item.sprintId);
-    return board.items.filter((item) => item.status !== "cancelled"
+    const today = format.today();
+    const quick = (item: WorkItem) => {
+      const open = isOpen(item.status);
+      switch (filter) {
+        case "ready": return item.status === "todo" && !item.blockedBy.length && !(board.materials[item.id]?.length) && (!item.startDate || item.startDate <= today);
+        case "blocked": return open && item.blockedBy.length > 0;
+        case "materials": return open && Boolean(board.materials[item.id]?.length);
+        case "late": return open && Boolean(item.dueDate && item.dueDate < today);
+        case "snags": return open && item.type === "snag";
+        case "requests": return open && item.type === "client_request";
+        case "mine": return item.assigneeId === board.me;
+        default: return true;
+      }
+    };
+    return board.items.filter((item) => item.status !== "cancelled" && quick(item)
       && (who === "everyone" || (who === "me" ? item.assigneeId === board.me : who === "none" ? !item.assigneeId : item.assigneeId === who))
       && (sprintFilter === "all" || (sprintFilter === "backlog" ? !sprintOf(item) : sprintOf(item) === sprintFilter))
       && (!needle || item.title.toLocaleLowerCase().includes(needle) || String(item.number) === needle));
-  }, [board, search, who, sprintFilter]);
+  }, [board, search, who, sprintFilter, filter, format]);
 
   if (error && !board) return <ErrorState description={error} onRetry={() => void load()} />;
   if (!board) return <Skeleton lines={6} shape="rows" />;
@@ -87,6 +134,28 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   };
   const openSprints = board.sprints.filter((sprint) => sprint.status !== "closed");
   const sprintLabel = sprintFilter === "all" ? t("All sprints") : sprintFilter === "backlog" ? t("Backlog") : board.sprints.find((sprint) => sprint.id === sprintFilter)?.name ?? t("All sprints");
+  /** One change to every selected item, each checked against its own version. */
+  const bulk = async (changes: Record<string, unknown>) => {
+    const items = [...selected].map((id) => board.items.find((item) => item.id === id)).filter((item): item is WorkItem => Boolean(item)).map((item) => ({ id: item.id, version: item.version }));
+    if (!items.length) return false;
+    const ok = await runWork("bulk_update", { items, changes });
+    if (ok) setSelected(new Set());
+    return ok;
+  };
+  const today = format.today();
+  const live = board.items.filter((item) => isOpen(item.status));
+  const counts: Record<Filter, number> = {
+    all: 0,
+    ready: live.filter((item) => item.status === "todo" && !item.blockedBy.length && !(board.materials[item.id]?.length) && (!item.startDate || item.startDate <= today)).length,
+    blocked: live.filter((item) => item.blockedBy.length > 0).length,
+    materials: live.filter((item) => board.materials[item.id]?.length).length,
+    late: live.filter((item) => item.dueDate && item.dueDate < today).length,
+    snags: live.filter((item) => item.type === "snag").length,
+    requests: live.filter((item) => item.type === "client_request").length,
+    mine: live.filter((item) => item.assigneeId === board.me).length,
+  };
+  const filterLabels: Record<Filter, string> = { all: t("All"), ready: t("Ready to start"), blocked: t("Blocked"), materials: t("Materials not in"), late: t("Late"),
+    snags: t("Snags"), requests: t("Client requests"), mine: t("Mine") };
   const move = async (item: WorkItem, status: WorkStatus) => {
     if (item.status === status) return;
     setNotice("");
@@ -106,7 +175,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const overrun = planEnd && board.promiseDate && planEnd > board.promiseDate
     ? Math.round((Date.parse(`${planEnd}T00:00:00Z`) - Date.parse(`${board.promiseDate}T00:00:00Z`)) / 86_400_000) : 0;
 
-  return <div className={styles.plan}>
+  return <div className={styles.plan} ref={root}>
     <div className={styles.toolbar}>
       <div className={styles.toolbarGroup}>
         {view !== "sprints" ? <>
@@ -126,6 +195,9 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
         {menu.length ? <IconMenuButton ariaLabel={t("Plan actions")} onAction={(id) => (id === "baseline" ? setBaselining(true) : setPlanning(true))} items={menu} /> : null}
       </div>
     </div>
+    {view !== "sprints" && !empty ? <PillTabs ariaLabel={t("Show")} layout="scroll" selectedKey={filter} onSelectionChange={(value) => { setSelected(new Set()); navigate({ filter: value as Filter }); }}
+      items={FILTERS.map((id) => ({ id, label: filterLabels[id], count: id === "all" ? undefined : counts[id] || undefined }))} /> : null}
+    {board.onHold ? <p className={styles.dialogText}>{t("On hold: only cancelling work and comments until it resumes.")}</p> : null}
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
     {overrun ? <p className={styles.risk}>{t("The plan ends {date}, {count} days after the handover date.", { date: format.day(planEnd!), count: overrun })}</p> : null}
 
@@ -133,14 +205,32 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
       : empty ? <EmptyState illustration={null} title={t("No work planned yet")} description={t("Break the project into tasks, give each one to someone and set when it's due.")}
         action={!board.canEdit ? undefined : unplanned.length ? <Button variant="primary" onPress={() => setPlanning(true)}>{t("Plan a package")}</Button>
           : <Button variant="primary" onPress={() => setCreating(true)}>{t("New task")}</Button>} />
-      : !filtered.length ? <EmptyState illustration={null} title={t("Nothing matches")} action={<Button onPress={() => { setSearch(""); setWho("everyone"); setSprintFilter("all"); }}>{t("Clear filters")}</Button>} />
-      : view === "list" ? <PlanList board={board} items={filtered} onOpen={(item) => navigate({ item: item.id })} />
+      : !filtered.length ? <EmptyState illustration={null} title={t("Nothing matches")} action={<Button onPress={() => { setSearch(""); setWho("everyone"); setSprintFilter("all"); navigate({ filter: "all" }); }}>{t("Clear filters")}</Button>} />
+      : view === "list" ? <PlanList board={board} items={filtered} onOpen={(item) => navigate({ item: item.id })} selected={board.canEdit ? selected : undefined} onSelect={setSelected} />
       : view === "timeline" ? <PlanTimeline board={board} items={filtered} critical={critical} onOpen={(id) => navigate({ item: id })} />
       : <Kanban<WorkItem> columns={BOARD_STATUSES.map((status) => ({ id: status, label: labels.status[status], items: filtered.filter((item) => item.status === status) }))}
           getId={(item) => item.id} getLabel={(item) => `#${item.number} ${item.title}`} onItemAction={(item) => navigate({ item: item.id })}
           onMove={board.canEdit ? (id, status) => { const item = board.items.find((entry) => entry.id === id); if (item) void move(item, status as WorkStatus); } : undefined}
           renderItem={(item) => <WorkCard item={item} parent={item.parentId ? board.items.find((entry) => entry.id === item.parentId) : undefined} />} />}
 
+    {selected.size && board.canEdit ? <div className={styles.selectionBar} role="region" aria-label={t("Selected work")}>
+      <span className={styles.muted}>{t("{count} selected", { count: selected.size })}</span>
+      <Button size="compact" variant="quiet" onPress={() => setSelected(new Set())}>{t("Clear")}</Button>
+      <span className={styles.selectionActions}>
+        <MenuButton size="compact" label={t("Assign")} onAction={(id) => void bulk({ assigneeId: id === "__nobody" ? null : id })}
+          items={[{ id: "__nobody", label: t("No one") }, ...board.people.map((person) => ({ id: person.membershipId, label: person.name }))]} />
+        <Button size="compact" onPress={() => setBulkDue(true)}>{t("Due date")}</Button>
+        {board.stages.length ? <MenuButton size="compact" label={t("Stage")} onAction={(id) => void bulk({ stageId: id })} items={board.stages.map((stage) => ({ id: stage.id, label: t(stage.name as never) }))} /> : null}
+        {board.packages.length ? <MenuButton size="compact" label={t("Package")} onAction={(id) => void bulk({ packageId: id === "__none" ? null : id })}
+          items={[{ id: "__none", label: t("No package") }, ...board.packages.map((item) => ({ id: item.id, label: item.name }))]} /> : null}
+        {openSprints.length ? <MenuButton size="compact" label={t("Sprint")} onAction={(id) => void runWork("set_sprint", { itemIds: [...selected].filter((itemId) => !board.items.find((item) => item.id === itemId)?.parentId),
+          sprintId: id === "backlog" ? null : id }).then((ok) => { if (ok) setSelected(new Set()); })}
+          items={[...openSprints.map((sprint) => ({ id: sprint.id, label: sprint.name })), { id: "backlog", label: t("Backlog") }]} /> : null}
+        <MenuButton size="compact" label={t("Status")} onAction={(id) => void bulk({ status: id })}
+          items={(["todo", "in_progress", "in_review", "done"] as const).map((id) => ({ id, label: labels.status[id] }))} />
+      </span>
+    </div> : null}
+    {bulkDue ? <BulkDueDialog count={selected.size} onClose={() => setBulkDue(false)} onSave={async (dueDate) => { if (await bulk({ dueDate })) setBulkDue(false); }} /> : null}
     {open && board.items.some((item) => item.id === open) ? <WorkSheet api={api} projectId={projectId} itemId={open} board={board} onBoard={setBoard}
       onOpenItem={(id) => navigate({ item: id })} onClose={() => navigate({ item: null })} /> : null}
     {baselining ? <ControlledModalDialog isOpen size="md" title={board.baseline ? t("Reset the baseline") : t("Set the baseline")} onOpenChange={(open) => { if (!open) setBaselining(false); }}
@@ -158,7 +248,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
         try { setBoard(await api.workCommand(projectId, "plan_package", { packageId, startDate })); return true; }
         catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
       }} /> : null}
-    {creating ? <NewWorkDialog board={board} onClose={() => setCreating(false)} onCreate={async (input) => {
+    {creating && board.canEdit ? <NewWorkDialog board={board} onClose={() => setCreating(false)} onCreate={async (input) => {
       try { setBoard(await api.workCommand(projectId, "create", input)); return true; }
       catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
     }} /> : null}
@@ -187,7 +277,7 @@ function WorkCard({ item, parent }: { item: WorkItem; parent?: WorkItem }) {
 }
 
 /** Open work grouped by package, each task followed by its subtasks; finished work last. */
-function PlanList({ board, items, onOpen }: { board: WorkBoard; items: WorkItem[]; onOpen: (item: WorkItem) => void }) {
+function PlanList({ board, items, onOpen, selected, onSelect }: { board: WorkBoard; items: WorkItem[]; onOpen: (item: WorkItem) => void; selected?: Set<string>; onSelect?: (ids: Set<string>) => void }) {
   const t = useT();
   const shown = new Set(items.map((item) => item.id));
   const withChildren = (list: WorkItem[]): Row[] => list.flatMap((item) => [
@@ -209,7 +299,9 @@ function PlanList({ board, items, onOpen }: { board: WorkBoard; items: WorkItem[
       return { ...section, label: percent === undefined ? label : t("{label} · {percent}% done", { label, percent }) };
     });
   const columns = useWorkColumns<Row>(board);
-  return <GroupedTable<Row> ariaLabel={t("Plan")} columns={columns} sections={sections} selectable={false} getRowId={(row) => row.id}
+  // Open work can be selected to change in bulk; finished work can't.
+  return <GroupedTable<Row> ariaLabel={t("Plan")} columns={columns} sections={sections} selectable={Boolean(selected && onSelect)} getRowId={(row) => row.id}
+    selectedIds={selected} onSelectionChange={(ids) => onSelect?.(new Set([...ids].filter((id) => { const item = board.items.find((row) => row.id === id); return item && isOpen(item.status); })))}
     getRowLabel={(row) => `#${row.number} ${row.title}`} onRowAction={onOpen} />;
 }
 
@@ -294,5 +386,17 @@ function PlanPackageDialog({ board, load, onClose, onSave }: {
             </li>)}
           </ol>}
     </div>
+  </ControlledModalDialog>;
+}
+
+/** A new due date for the selected work. */
+function BulkDueDialog({ count, onClose, onSave }: { count: number; onClose: () => void; onSave: (dueDate: string | null) => Promise<void> }) {
+  const t = useT();
+  const [dueDate, setDueDate] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return <ControlledModalDialog isOpen size="md" title={t("Due date for {count} items", { count })} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!dueDate} onPress={async () => { setBusy(true); await onSave(dueDate); setBusy(false); }}>{t("Save")}</Button></div>}>
+    <DateField label={t("Due")} isRequired value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
   </ControlledModalDialog>;
 }

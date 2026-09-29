@@ -203,18 +203,37 @@ export async function readMovements(db: Db, workspaceId: string, filter: { itemI
 export type TransferRow = {
   id: string; number: number; status: "in_transit" | "received" | "cancelled"; fromLocationId: string; fromName: string; toLocationId: string; toName: string; note: string;
   sentOn: string; sentBy: string; sentByName: string; receivedOn: string | null; receivedByName: string | null; cancelReason: string | null; lines: number; short: boolean;
+  /** Where it goes (a project's site names its project), and the first things on it. */
+  fromKind: string; toKind: string; toProjectId: string | null; items: string; projects: Array<{ id: string; reference: string }>;
+  /** Anything refused where it arrived (and sent back on its return trip). */
+  rejected: boolean;
+  /** A factory dispatch names its work order; a return trip names the move it brings back and is marked on it. */
+  workOrderId: string | null; workOrderNumber: number | null; returnedFromId: string | null; returnedFromNumber: number | null; returnId: string | null; returnNumber: number | null;
 };
 
 const TRANSFER_SELECT = `SELECT transfer.id, transfer.number, transfer.status, transfer.from_location_id AS "fromLocationId", origin.name AS "fromName",
   transfer.to_location_id AS "toLocationId", destination.name AS "toName", transfer.note, transfer.sent_on::text AS "sentOn", transfer.sent_by AS "sentBy",
   sender.display_name AS "sentByName", transfer.received_on::text AS "receivedOn", receiver.display_name AS "receivedByName", transfer.cancel_reason AS "cancelReason",
   (SELECT count(*)::int FROM stock_transfer_lines line WHERE line.workspace_id = transfer.workspace_id AND line.transfer_id = transfer.id) AS lines,
-  EXISTS (SELECT 1 FROM stock_transfer_lines line WHERE line.workspace_id = transfer.workspace_id AND line.transfer_id = transfer.id AND line.received < line.quantity) AS short
+  EXISTS (SELECT 1 FROM stock_transfer_lines line WHERE line.workspace_id = transfer.workspace_id AND line.transfer_id = transfer.id AND line.received < line.quantity) AS short,
+  origin.kind AS "fromKind", destination.kind AS "toKind", destination.project_id AS "toProjectId",
+  coalesce((SELECT string_agg(named.name, ', ' ORDER BY named.name) FROM (SELECT DISTINCT item.name FROM stock_transfer_lines line
+             JOIN stock_items item ON item.workspace_id = line.workspace_id AND item.id = line.item_id
+            WHERE line.workspace_id = transfer.workspace_id AND line.transfer_id = transfer.id ORDER BY item.name LIMIT 3) named), '') AS items,
+  coalesce((SELECT jsonb_agg(DISTINCT jsonb_build_object('id', project.id, 'reference', project.reference)) FROM stock_transfer_lines line
+             JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
+            WHERE line.workspace_id = transfer.workspace_id AND line.transfer_id = transfer.id), '[]'::jsonb) AS projects,
+  EXISTS (SELECT 1 FROM stock_transfer_lines line WHERE line.workspace_id = transfer.workspace_id AND line.transfer_id = transfer.id AND line.rejected > 0) AS rejected,
+  transfer.work_order_id AS "workOrderId", made.number AS "workOrderNumber", transfer.returned_from_id AS "returnedFromId", earlier.number AS "returnedFromNumber",
+  back.id AS "returnId", back.number AS "returnNumber"
   FROM stock_transfers transfer
   JOIN stock_locations origin ON origin.workspace_id = transfer.workspace_id AND origin.id = transfer.from_location_id
   JOIN stock_locations destination ON destination.workspace_id = transfer.workspace_id AND destination.id = transfer.to_location_id
   JOIN users sender ON sender.id = transfer.sent_by
-  LEFT JOIN users receiver ON receiver.id = transfer.received_by`;
+  LEFT JOIN users receiver ON receiver.id = transfer.received_by
+  LEFT JOIN work_orders made ON made.workspace_id = transfer.workspace_id AND made.id = transfer.work_order_id
+  LEFT JOIN stock_transfers earlier ON earlier.workspace_id = transfer.workspace_id AND earlier.id = transfer.returned_from_id
+  LEFT JOIN stock_transfers back ON back.workspace_id = transfer.workspace_id AND back.returned_from_id = transfer.id`;
 
 export async function readTransfers(db: Db, workspaceId: string): Promise<TransferRow[]> {
   return (await db.query<TransferRow>(`${TRANSFER_SELECT} WHERE transfer.workspace_id = $1 ORDER BY (transfer.status = 'in_transit') DESC, transfer.number DESC LIMIT 500`, [workspaceId])).rows;
@@ -223,9 +242,10 @@ export async function readTransfers(db: Db, workspaceId: string): Promise<Transf
 export async function readTransfer(db: Db, workspaceId: string, transferId: string) {
   const transfer = (await db.query<TransferRow>(`${TRANSFER_SELECT} WHERE transfer.workspace_id = $1 AND transfer.id = $2`, [workspaceId, transferId])).rows[0];
   if (!transfer) return null;
-  const lines = (await db.query<{ id: string; itemId: string; itemName: string; unit: string; projectId: string | null; projectReference: string | null; quantity: string; received: string | null; lossReason: string }>(
+  const lines = (await db.query<{ id: string; itemId: string; itemName: string; unit: string; projectId: string | null; projectReference: string | null; quantity: string; received: string | null;
+    lossReason: string; rejected: string; rejectReason: string }>(
     `SELECT line.id, item.id AS "itemId", item.name AS "itemName", item.unit, line.project_id AS "projectId", project.reference AS "projectReference",
-            line.quantity::text AS quantity, line.received::text AS received, line.loss_reason AS "lossReason"
+            line.quantity::text AS quantity, line.received::text AS received, line.loss_reason AS "lossReason", line.rejected::text AS rejected, line.reject_reason AS "rejectReason"
        FROM stock_transfer_lines line
        JOIN stock_items item ON item.workspace_id = line.workspace_id AND item.id = line.item_id
        LEFT JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
@@ -247,8 +267,9 @@ export async function stockFromReceipt(db: Db, workspaceId: string, input: { rec
   for (const line of input.lines) {
     if (Dec.of(line.accepted).cmp(0) <= 0) continue;
     const origin = (await db.query<{ projectId: string | null; name: string; unit: string; code: string; catalogItemId: string | null; supply: string | null; quantity: string; net: string;
-      workOrderId: string | null }>(
-      `SELECT ordered.project_id AS "projectId", ordered.work_order_id AS "workOrderId", coalesce(material.name, scope.title, ordered.description) AS name, ordered.unit, coalesce(material.code, '') AS code,
+      workOrderId: string | null; stockItemId: string | null }>(
+      `SELECT ordered.project_id AS "projectId", ordered.work_order_id AS "workOrderId", ordered.stock_item_id AS "stockItemId",
+              coalesce(material.name, scope.title, ordered.description) AS name, ordered.unit, coalesce(material.code, '') AS code,
               coalesce(material.catalog_item_id, scope.catalog_item_id) AS "catalogItemId", package.supply, ordered.quantity::text AS quantity, ordered.net::text AS net
          FROM goods_receipt_lines received
          JOIN purchase_order_lines ordered ON ordered.workspace_id = received.workspace_id AND ordered.id = received.order_line_id
@@ -259,7 +280,9 @@ export async function stockFromReceipt(db: Db, workspaceId: string, input: { rec
     // Services aren't stock, and work done outside on our own goods brings back what was already ours.
     if (!origin || origin.supply === "subcontract" || origin.supply === "site_work" || origin.workOrderId) continue;
     // Bought in one unit, kept in the catalog item's (boxes in, pieces kept): the quantity converts and the cost follows.
-    const { itemId, factor } = await stockItemInCatalogUnit(db, workspaceId, { catalogItemId: origin.catalogItemId, name: origin.name, unit: origin.unit, code: origin.code });
+    // A restock line names the item it refills (bought in that item's own unit).
+    const { itemId, factor } = origin.stockItemId ? { itemId: origin.stockItemId, factor: Dec.of(1) }
+      : await stockItemInCatalogUnit(db, workspaceId, { catalogItemId: origin.catalogItemId, name: origin.name, unit: origin.unit, code: origin.code });
     // The line's net price per stock unit, in the workspace's currency (at the rate on the day it arrived).
     const cost = Dec.of(origin.quantity).isZero() ? null : await inWorkspaceCurrency(db, workspaceId, Dec.of(origin.net).div(origin.quantity).div(factor), receipt.currency, receipt.receivedOn);
     const unitCost = cost ? cost.amount.round(4).toFixed(4) : null;

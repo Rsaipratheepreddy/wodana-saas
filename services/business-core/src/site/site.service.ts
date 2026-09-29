@@ -10,6 +10,8 @@ import { activeMembers, membershipOf, readProject } from "../project-core/projec
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { reworkInstallation } from "./installation-rework";
+import { readSitesToday } from "./sites-today";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -37,6 +39,15 @@ type Report = {
 export class SiteService {
   constructor(private readonly access: WorkspaceAccessService, @Optional() private readonly storage?: BrandAssetStorageService) {}
 
+  /** My sites today (the phone's Today): projects I'm on whose site work runs today, with my report, deliveries and snags. */
+  sitesToday(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      if (!(await this.access.hasPermission(client, workspaceId, user.userId, "projects.view")) && !(await this.access.hasPermission(client, workspaceId, user.userId, "projects.manage")))
+        return { today: null, hour: null, sites: [] };
+      return readSitesToday(client, workspaceId, user.userId);
+    });
+  }
+
   state(actor: RequestActor, workspaceId: string, projectId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => this.read(client, workspaceId, projectId, user.userId));
   }
@@ -50,6 +61,9 @@ export class SiteService {
       const action = String(body.action ?? "");
       let audit: Record<string, unknown> = {};
       const today = await this.today(client, workspaceId);
+      // On hold: nothing new is reported or started on site; reports already submitted can still be decided.
+      if (project.status === "on_hold" && ["save_report", "submit", "start_site"].includes(action))
+        throw new ConflictException("The project is on hold. Resume it before reporting on site.");
 
       if (action === "start_site" || action === "finish_site") {
         if (!who.manager) throw new ForbiddenException("Only the project manager starts or finishes site work.");
@@ -126,6 +140,8 @@ export class SiteService {
             throw error;
           }
         }
+        // The first report starts site work (nobody has to press "Start site work" first).
+        await client.query(`UPDATE delivery_projects SET site_started_on = $3 WHERE workspace_id = $1 AND id = $2 AND site_started_on IS NULL`, [workspaceId, projectId, reportDate]);
         for (const row of people) await client.query(`INSERT INTO site_report_workforce (id, workspace_id, report_id, trade, people) VALUES ($1, $2, $3, $4, $5)`, [randomUUID(), workspaceId, id, row.trade, row.people]);
         for (const entry of entries) await client.query(`INSERT INTO site_report_lines (id, workspace_id, report_id, boq_line_id, installed, note) VALUES ($1, $2, $3, $4, $5, $6)`,
           [randomUUID(), workspaceId, id, entry.boqLineId, entry.installed, entry.note]);
@@ -162,6 +178,19 @@ export class SiteService {
           }
         }
         audit = { reportId: id };
+      } else if (action === "reject_installation") {
+        // Installed work that isn't accepted: a snag with why, and its finished tasks open again for rework.
+        if (!who.manager) throw new ForbiddenException("Only the project manager decides what isn't accepted.");
+        const report = (await this.reports(client, workspaceId, projectId, uuid(body.reportId, "Report")))[0];
+        if (!report) throw new NotFoundException("Report not found.");
+        if (report.status !== "approved") throw new ConflictException("Only approved installation can be not accepted.");
+        const line = report.lines.find((item) => item.id === body.lineId);
+        if (!line || Dec.of(line.installed).cmp(0) <= 0) throw new BadRequestException("Choose an installed item of this report.");
+        const reason = text(body.reason, 1000);
+        if (!reason) throw new BadRequestException("Say what isn't right.");
+        const actor = (await client.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [user.userId])).rows[0]?.name ?? "";
+        audit = { reportId: report.id, lineId: line.id, ...(await reworkInstallation(client, workspaceId, { projectId, projectTitle: `${project.reference} · ${project.name}`,
+          boqLineId: line.boqLineId, title: line.title, reason, actorId: user.userId, actorName: actor })) };
       } else if (action === "share_photo") {
         // The project manager chooses which photos of an approved report the client sees.
         if (!who.manager) throw new ForbiddenException("Only the project manager shares photos with the client.");
@@ -266,7 +295,8 @@ export class SiteService {
       lines: await this.lines(client, workspaceId, projectId),
       members: await activeMembers(client, workspaceId),
       today: await this.today(client, workspaceId),
-      me: userId, canReport: who.onTeam && ["active", "on_hold"].includes(who.project.status), canApprove: who.manager, canManage: who.manager,
+      // Nothing new is reported while the project is on hold; reports already submitted can still be decided.
+      me: userId, canReport: who.onTeam && who.project.status === "active", canApprove: who.manager, canManage: who.manager && who.project.status === "active",
     };
   }
 

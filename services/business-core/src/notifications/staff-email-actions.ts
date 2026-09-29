@@ -28,6 +28,7 @@ const EVENT_ACTIONS: Record<string, string> = {
   "payables.run_submitted": "Review payment run",
   "petty_cash.submitted": "Review expense",
   "stock.adjustment_needs_approval": "Review adjustment",
+  "stock.low": "Restock",
   "receivables.overdue": "Open invoice",
   "hrms.timesheet_submitted": "Review timesheet",
   "hrms.crew_day_submitted": "Review crew day",
@@ -50,6 +51,7 @@ const MODULE_ACTIONS: Record<string, string> = {
   petty_cash: "Open expense",
   receivables: "Open invoice",
   account: "Open workspace",
+  ai: "Open AI credits",
 };
 
 export function staffEmailAction(eventType: string | null | undefined, recipientType?: string | null) {

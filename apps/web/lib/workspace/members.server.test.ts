@@ -53,4 +53,18 @@ describe("People page data", () => {
       "/workspaces/workspace/invitations",
     ]);
   });
+
+  it("offers View as to someone with the permission, with their MFA state and the notice setting", async () => {
+    vi.stubEnv("E2E_AUTH_BYPASS", "false");
+    memberGrant.permissions = ["workspace.members.manage", "workspace.view_as"];
+    const fetchMock = vi.fn(async (path: string) => new Response(path.startsWith("/security/mfa/status")
+      ? JSON.stringify({ enabled: true })
+      : path.endsWith("/view-as/settings") ? JSON.stringify({ notifySubject: false, version: 2 }) : "[]", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getMembersPageData();
+
+    expect(result.viewAs).toEqual({ canViewAs: true, mfaEnabled: true, settings: { notifySubject: false, version: 2 }, viewerIsOwner: false });
+    expect(fetchMock.mock.calls.map(([path]) => path)).toContain("/security/mfa/status?workspaceId=workspace");
+  });
 });

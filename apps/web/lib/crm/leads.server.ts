@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/auth/server";
 import { isWorkspaceAdministrator } from "@/lib/workspace/access";
 import { leadsPageFixture, type LeadsPageData } from "./leads";
+import { roleVocabularyKeys, withRoleVocabulary, type LeadOptions } from "./lead-options";
 
 export async function getLeadsPageData(): Promise<LeadsPageData> {
   const authProfile = await getAuthenticatedProfile();
@@ -56,18 +57,20 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     ? await ownersResponse.json() as { items: LeadsPageData["members"]; currentMembershipId: string | null }
     : { items: [], currentMembershipId: null };
   const currentMembership = authProfile.memberships.find((entry) => entry.workspaceId === membership.workspaceId);
+  // One role vocabulary: the member's roles and teams, lower-case, against the sources' saved limits.
+  const leadOptions = withRoleVocabulary(supporting[6] as LeadOptions | undefined);
   return {
     defaultCurrency: workspace?.workspace?.defaultCurrency,
     defaultLocale: workspace?.workspace?.defaultLocale,
     canView: true,
-    currentRoles: currentMembership?.roles ?? [],
+    currentRoles: roleVocabularyKeys(currentMembership?.roles, leadOptions?.roleKeys),
     canManagePipelines: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
     canAssign: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.leads.assign"),
     canManageSales: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
     currentMembershipId: owners.currentMembershipId
       ?? (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
     salesOwners: owners.items,
-    leadOptions: supporting[6],
+    leadOptions,
     enquiryFields: supporting[7] as LeadsPageData["enquiryFields"],
     salesSettings: supporting[8] as LeadsPageData["salesSettings"],
     items: page.data ?? page.items ?? [],

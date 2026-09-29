@@ -17,6 +17,7 @@ import { SupportSessionsService } from "./support-sessions.service";
 import { TenantLifecycleService } from "./tenant-lifecycle.service";
 import type { PlatformOperatorPermission } from "../auth/platform-operator-policy";
 import { platformOperatorPermissions } from "../auth/platform-operator-policy";
+import { ViewAsService } from "../auth/view-as/view-as.service";
 
 // Real PostgreSQL, run as the app role (forced RLS applies). Rows are committed so concurrent commands
 // really race; every row this suite creates is removed afterwards.
@@ -86,7 +87,7 @@ integration("control plane with PostgreSQL", () => {
     seatsService = new OrganizationSeatsService(db);
     const domains = new TenantDomainsService(db, notices);
     domains.lookupTxt = async () => [];
-    sweep = new ControlPlaneSweepService(db, lifecycle, support, domains);
+    sweep = new ControlPlaneSweepService(db, lifecycle, support, domains, new ViewAsService(db, identities as never));
     await owner.query(`INSERT INTO users (id, primary_email, display_name) VALUES ($1, $2, 'Operator A'), ($3, $4, 'Operator B')`,
       [operatorA, userEmails[1], operatorB, userEmails[2]]);
     await owner.query(`INSERT INTO platform_administrators (user_id, role) VALUES ($1, 'administrator'), ($2, 'administrator')`,
@@ -156,11 +157,14 @@ integration("control plane with PostgreSQL", () => {
       `SELECT role.code, role.is_system AS "isSystem", count(granted.permission_id)::int AS permissions
          FROM roles role LEFT JOIN role_permissions granted ON granted.role_id = role.id
         WHERE role.workspace_id = $1 GROUP BY role.id ORDER BY role.code`, [workspaceId]);
+    // The people who approve and pay come with the kit too, so the Owner isn't the only one who can act.
     expect(roles.rows.map((role) => role.code)).toEqual([
-      "administrator", "finance_reviewer", "member", "operations_approver", "owner", "project_manager", "quantity_surveyor", "sales", "site_supervisor", "viewer",
+      "administrator", "buyer", "factory_lead", "finance", "finance_approver", "finance_reviewer", "member", "operations_approver", "owner", "project_manager",
+      "purchasing_approver", "qc_inspector", "quantity_surveyor", "sales", "site_supervisor", "storekeeper", "viewer",
     ]);
     const byCode = Object.fromEntries(roles.rows.map((role) => [role.code, role]));
-    expect(byCode.sales).toMatchObject({ isSystem: false, permissions: 19 });
+    // Sales sends its own quotes: it names the client's decision-maker (portal.contacts.manage).
+    expect(byCode.sales).toMatchObject({ isSystem: false, permissions: 20 });
     expect(byCode.project_manager.permissions).toBeGreaterThan(byCode.site_supervisor.permissions);
     const salesPermissions = await owner.query<{ code: string }>(
       `SELECT permission.code FROM role_permissions granted JOIN roles role ON role.id = granted.role_id

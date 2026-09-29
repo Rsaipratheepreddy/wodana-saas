@@ -71,6 +71,7 @@ import { inPersonaView } from "@/lib/tours/personas";
 import { ModuleIcon as WorkspaceModuleIconTile } from "@/design-system/atoms/module-icon";
 import { productNavigation, productNavigationActive } from "./workspace-navigation";
 import styles from "./workspace.module.css";
+import { useWaitingCount } from "@/components/approvals/use-waiting-count";
 import { identityInitials, identityStyle as visualForIdentity } from "@/lib/brand/identity";
 import { useT } from "@/lib/i18n/i18n-provider";
 
@@ -127,6 +128,14 @@ export function WorkspaceModuleSwitcher({ activeModule, modules }: { activeModul
       return <Link aria-current={module.id === activeModule.id ? "page" : undefined} className={styles.moduleOption} data-selected={module.id === activeModule.id || undefined} href={module.href} key={module.id} onClick={close}><span aria-hidden="true" className={styles.moduleOptionIcon} data-module={module.id}><ModuleIcon size={17} strokeWidth={1.8} /></span><span><strong>{t(module.label as never)}</strong><small>{t(module.description as never)}</small></span></Link>;
     })}</>}</Dialog></Popover>
   </DialogTrigger>;
+}
+
+/** Home's count of what waits for this person (approvals across the modules). */
+function WaitingBadge({ workspaceId }: { workspaceId: string }) {
+  const t = useT();
+  const count = useWaitingCount(workspaceId);
+  if (!count) return null;
+  return <span className={`wd-count-chip ${styles.navigationCount}`} aria-label={t("{count} waiting", { count })}>{count}</span>;
 }
 
 export type WorkspaceSidebarProps = {
@@ -346,6 +355,7 @@ export function WorkspaceSidebar({
                             >
                               <WorkspaceModuleIconTile className={styles.navigationMark}>{item.id === "inbox" ? <MessagingMark size={28} /> : <ItemIcon aria-hidden="true" size={20} strokeWidth={1.8} />}</WorkspaceModuleIconTile>
                               <span>{t(item.label as never)}</span>
+                              {item.id === "home" && activeWorkspace?.id ? <WaitingBadge workspaceId={activeWorkspace.id} /> : null}
                             </Link>}
                           </div>
                           {item.id === "projects" && activeWorkspace?.id ? <ProjectShortcuts workspaceId={activeWorkspace.id} pathname={pathname} visible={isOpen} onNavigate={onNavigate} /> : null}

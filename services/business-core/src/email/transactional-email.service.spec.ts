@@ -168,4 +168,47 @@ describe("TransactionalEmailService", () => {
       errorCode: "MAILGUN_HTTP_401",
     });
   });
+  describe("Amazon SES", () => {
+    const message = { to: "member@example.com", subject: "Welcome", text: "Hello", html: "<p>Hello</p>", fromName: "Palm Studio, Dubai" };
+
+    it("sends through SES from the verified address with the tenant as the display name", async () => {
+      const sender = vi.fn().mockResolvedValue("ses-message-id");
+      const service = new TransactionalEmailService(new ConfigService({ SES_FROM: "Wodana <no-reply@mail.example>", SES_REGION: "ap-south-1" }), undefined, sender);
+
+      expect(service.provider()).toBe("ses");
+      expect(service.configured()).toBe(true);
+      await expect(service.send(message)).resolves.toEqual({ status: "sent", provider: "ses", messageId: "ses-message-id" });
+      expect(sender).toHaveBeenCalledWith({
+        region: "ap-south-1",
+        from: "\"Palm Studio, Dubai\" <no-reply@mail.example>",
+        to: "member@example.com",
+        subject: "Welcome",
+        text: "Hello",
+        html: "<p>Hello</p>",
+        configurationSet: undefined,
+      });
+    });
+
+    it("prefers Mailgun when both are set, unless EMAIL_PROVIDER picks SES", () => {
+      const both = { MAILGUN_API_KEY: "key", MAILGUN_DOMAIN: "mg.example", SES_FROM: "no-reply@mail.example" };
+      expect(new TransactionalEmailService(new ConfigService(both)).provider()).toBe("mailgun");
+      expect(new TransactionalEmailService(new ConfigService({ ...both, EMAIL_PROVIDER: "ses" })).provider()).toBe("ses");
+      expect(new TransactionalEmailService(new ConfigService({ EMAIL_PROVIDER: "ses" })).provider()).toBeNull();
+    });
+
+    it("reports a safe error code when SES refuses the message", async () => {
+      const refusal = Object.assign(new Error("Email address is not verified."), { name: "MessageRejected" });
+      const service = new TransactionalEmailService(new ConfigService({ SES_FROM: "no-reply@mail.example" }), undefined, vi.fn().mockRejectedValue(refusal));
+
+      await expect(service.send(message)).resolves.toEqual({ status: "failed", provider: "ses", messageId: null, errorCode: "SES_MessageRejected" });
+    });
+
+    it("still honours the delivery allowlist", async () => {
+      const sender = vi.fn();
+      const service = new TransactionalEmailService(new ConfigService({ SES_FROM: "no-reply@mail.example", DELIVERY_ALLOWLIST: "allowed@example.com" }), undefined, sender);
+
+      await expect(service.send(message)).resolves.toMatchObject({ status: "not_configured", suppressedReason: expect.any(String) });
+      expect(sender).not.toHaveBeenCalled();
+    });
+  });
 });

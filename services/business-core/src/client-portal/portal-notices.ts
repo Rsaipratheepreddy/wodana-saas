@@ -3,6 +3,9 @@ import type { PoolClient } from "pg";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { portalLink } from "./portal-site";
 import { effectiveSections, readPortalSettings, readProjectAccess, type Section } from "./portal-settings";
+import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
+import type { TemplateContext } from "../crm/conversations/inbox/template-variables";
+import type { StarterEvent } from "../crm/conversations/inbox/whatsapp-starter-pack";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -15,16 +18,22 @@ type Db = Pick<PoolClient, "query">;
  * Nothing goes out while the portal is off, the project is paused, or the section it belongs to is hidden.
  * Each email opens the portal where the thing is.
  */
-export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "team_replied" | "payment_checked" | "issue_triaged";
+export type ClientEvent = "quote_issued" | "invoice_issued" | "decision_waiting" | "update_published" | "team_replied" | "payment_checked" | "issue_triaged" | "payment_due";
 
 //   team_replied       the team answered them on the moodboard   everyone on the project
 //   payment_checked    finance checked a payment they reported   everyone on the project
 //   issue_triaged      the manager took up or declined an issue  everyone on the project
+//   payment_due        a reminder that a payment is due          everyone on the project
 const SECTION: Record<ClientEvent, Section> = { quote_issued: "decisions", invoice_issued: "payments", decision_waiting: "decisions", update_published: "progress",
-  team_replied: "moodboard", payment_checked: "payments", issue_triaged: "progress" };
+  team_replied: "moodboard", payment_checked: "payments", issue_triaged: "progress", payment_due: "payments" };
 const TEMPLATE: Record<ClientEvent, string> = {
   quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
-  team_replied: "portal.team_replied", payment_checked: "portal.payment_checked", issue_triaged: "portal.issue_triaged",
+  team_replied: "portal.team_replied", payment_checked: "portal.payment_checked", issue_triaged: "portal.issue_triaged", payment_due: "portal.payment_due",
+};
+/** The WhatsApp client message a portal event is (the others go by email only). */
+const WHATSAPP_EVENT: Partial<Record<ClientEvent, StarterEvent>> = {
+  quote_issued: "portal.quote_issued", invoice_issued: "portal.invoice_issued", decision_waiting: "portal.decision_waiting", update_published: "portal.update_published",
+  payment_due: "payments.reminder",
 };
 
 const render = (template: string, variables: Record<string, string>) => template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all, key: string) => variables[key] ?? "");
@@ -36,6 +45,8 @@ export async function caseOf(db: Db, workspaceId: string, projectId: string) {
 
 export async function tellClients(db: Db, input: {
   workspaceId: string; caseId: string; event: ClientEvent; recordId: string; title: string; due?: string | null; note?: string; demo?: boolean;
+  /** The event's own record for the WhatsApp values (e.g. a reminder's invoice and the amount still due). */
+  record?: TemplateContext["record"];
 }) {
   const settings = await readPortalSettings(db, input.workspaceId);
   if (!settings.enabled) return { queued: 0, reason: "portal_off" as const };
@@ -53,8 +64,20 @@ export async function tellClients(db: Db, input: {
   if (access?.paused) return { queued: 0, reason: "paused" as const };
   const section = SECTION[input.event];
   if (!effectiveSections(settings, access)[section]) return { queued: 0, reason: "hidden" as const };
-  const recipients = (await db.query<{ id: string }>(
-    `SELECT id FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND active AND email IS NOT NULL AND ($3::boolean = false OR test_contact)
+  // WhatsApp first when the firm has the event on and an approved template; email to the portal contacts otherwise.
+  const whatsappEvent = WHATSAPP_EVENT[input.event];
+  if (whatsappEvent) {
+    const client = await partyOfCase(db, input.workspaceId, input.caseId);
+    const whatsapp = await sendClientEvent(db, {
+      workspaceId: input.workspaceId, event: whatsappEvent, partyId: client.partyId, leadId: client.leadId, recordKey: input.recordId,
+      record: input.record ? { projectId: facts.projectId, ...input.record } : input.event === "invoice_issued" ? { invoiceId: input.recordId, projectId: facts.projectId }
+        : input.event === "quote_issued" ? { quoteId: input.recordId.split(":")[0], projectId: facts.projectId } : { projectId: facts.projectId },
+    });
+    if (whatsapp.sent) return { queued: 1, reason: null, channel: "whatsapp" as const, messageId: whatsapp.messageId };
+    await recordClientMessageSkipped(db, input.workspaceId, whatsappEvent, input.recordId, whatsapp, true);
+  }
+  const recipients = (await db.query<{ id: string; name: string }>(
+    `SELECT id, name FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND active AND email IS NOT NULL AND ($3::boolean = false OR test_contact)
        AND ($4::boolean = false OR role = 'approver') ORDER BY created_at`,
     [input.workspaceId, input.caseId, input.demo ?? (process.env.PORTAL_DEMO_OTP === "true" && process.env.NODE_ENV !== "production"), input.event === "decision_waiting"])).rows;
   if (!recipients.length) return { queued: 0, reason: "no_contact" as const };
@@ -71,6 +94,7 @@ export async function tellClients(db: Db, input: {
   const variables = { company: facts.company, project: facts.project, title: input.title, due, note: (input.note ?? "").slice(0, 480) };
   const link = await portalLink(db, input.workspaceId, settings.slug, `?project=${input.caseId}&open=${section}`);
   let queued = 0;
+  const names: string[] = [];
   for (const recipient of recipients) {
     const preference = (await db.query<{ enabled: boolean }>(
       `SELECT enabled FROM notification_preferences WHERE workspace_id = $1 AND recipient_type = 'portal_contact' AND recipient_id = $2 AND channel = 'email'
@@ -85,6 +109,7 @@ export async function tellClients(db: Db, input: {
         link, `${TEMPLATE[input.event]}:${input.recordId}:${recipient.id}`.slice(0, 160)])).rows[0];
     if (!inserted) continue;
     queued += 1;
+    names.push(recipient.name);
     // Wake the notification worker now rather than at its next poll.
     const eventId = randomUUID();
     await db.query(
@@ -92,7 +117,8 @@ export async function tellClients(db: Db, input: {
       [eventId, input.workspaceId, inserted.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: inserted.id,
         actorUserId: null, occurredAt: new Date().toISOString(), correlationId: inserted.correlationId, causationId: null, data: { channel: "email" } })]);
   }
-  return { queued, reason: null };
+  // Nothing queued with contacts in place means each one switched these emails off (or already has this one).
+  return queued ? { queued, reason: null, channel: "email" as const, names } : { queued, reason: "not_sent" as const, names };
 }
 
 /**

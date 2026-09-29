@@ -18,7 +18,9 @@ WORKDIR /workspace/services/business-core
 COPY services/business-core/drizzle.config.ts ./
 COPY services/business-core/drizzle ./drizzle
 COPY services/business-core/src/database ./src/database
-CMD ["npm", "run", "db:migrate"]
+COPY services/business-core/scripts/apply-migrations.mjs ./scripts/apply-migrations.mjs
+# Applies every migration not yet recorded (by its journal `when`), so late-merged branches still run.
+CMD ["node", "scripts/apply-migrations.mjs"]
 
 FROM dependencies AS production-dependencies
 RUN npm prune --omit=dev --workspace @wodana/business-core --include-workspace-root

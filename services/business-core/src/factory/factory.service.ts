@@ -14,7 +14,9 @@ import { outstanding, readLocations, resolvePlace } from "../purchasing/receivin
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { readWorkcenterRates } from "../project-core/labour-rates";
 import { readCalendar } from "../project-core/work-calendar";
-import { capacity, ensureFactorySettings, materialsShort, plain, readBatches, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders, type WorkOrderRow } from "./factory";
+import {
+  capacity, defaultHours, ensureFactorySettings, materialsShort, plain, readBatches, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders, workOrderNext, type WorkOrderRow,
+} from "./factory";
 import { setWorkcenterRate, workspaceDay } from "./workcenter-rates";
 
 type Db = PoolClient;
@@ -36,13 +38,32 @@ export class FactoryService {
   constructor(private readonly access: WorkspaceAccessService, private readonly orders: OrdersService, private readonly inventory: InventoryService) {}
 
   state(actor: RequestActor, workspaceId: string) {
-    return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client, user) => ({
-      toMake: await readToMake(client, workspaceId),
-      orders: await readWorkOrders(client, workspaceId),
-      workcenters: await readWorkcenters(client, workspaceId),
-      batches: await readBatches(client, workspaceId),
-      ...(await this.rights(client, workspaceId, user.userId)),
-    }));
+    return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client, user) => {
+      const rights = await this.rights(client, workspaceId, user.userId);
+      const settings = await ensureFactorySettings(client, workspaceId);
+      const orders = await readWorkOrders(client, workspaceId);
+      // What each open work order made that's still at the factory for its project (what can go to site).
+      const atFactory = new Map((await client.query<{ id: string; onHand: string }>(
+        `SELECT wo.id, coalesce((SELECT sum(balance.on_hand) FROM stock_balances balance
+                   JOIN stock_locations place ON place.workspace_id = balance.workspace_id AND place.id = balance.location_id AND place.kind = 'factory'
+                  WHERE balance.workspace_id = wo.workspace_id AND balance.project_id = wo.project_id
+                    AND balance.item_id IN (SELECT made.item_id FROM stock_movements made WHERE made.workspace_id = wo.workspace_id AND made.work_order_id = wo.id AND made.kind = 'produce')), 0)::numeric(18, 4)::text AS "onHand"
+           FROM work_orders wo WHERE wo.workspace_id = $1 AND wo.status IN ('in_production', 'ready')`, [workspaceId])).rows.map((row) => [row.id, row.onHand]));
+      // Why each planned work order can't be released yet (the needs of a project are read once).
+      const needs = new Map<string, Awaited<ReturnType<typeof readNeeds>>>();
+      const canSend = rights.canManage || rights.canIssue;
+      const rows = [];
+      for (const order of orders) {
+        const blocked = order.status === "planned" ? (await this.releaseChecks(client, workspaceId, order, settings, needs)).filter((check) => !check.passed).map((check) => ({ key: check.key, missing: check.missing })) : [];
+        const next = workOrderNext(order, { blocked: blocked.length > 0, atFactory: atFactory.get(order.id) ?? "0", requireCheck: settings.requireCheck, canManage: rights.canManage,
+          canReport: rights.canReport, canApprove: rights.canApprove, canSend });
+        rows.push({ ...order, blocked, atFactory: atFactory.get(order.id) ?? "0", next: next.step, mine: next.mine });
+      }
+      return {
+        toMake: await readToMake(client, workspaceId), orders: rows, workcenters: await readWorkcenters(client, workspaceId), batches: await readBatches(client, workspaceId),
+        requireCheck: settings.requireCheck, today: (await workspaceDay(client, workspaceId)).today, ...rights,
+      };
+    });
   }
 
   /** The next weeks on each workcenter: the hours booked each working day, and where they pass what it can do. */
@@ -137,6 +158,10 @@ export class FactoryService {
       if (Dec.of(quantity).cmp(line.left) > 0)
         throw new ConflictException(Dec.of(line.left).cmp(0) > 0 ? `Only ${plain(line.left)} ${line.unit} of ${line.title} is left to plan.`.replace("  ", " ") : `All of ${line.title} is already on work orders.`);
       const schedule = await this.dates(client, workspaceId, body, { workcenterId: null, plannedStart: line.suggestedStart, plannedEnd: line.suggestedEnd, plannedHours: null });
+      // No hours given: the workcenter's hours a day over the working days it's planned for.
+      if (!schedule.plannedHours && schedule.workcenterId)
+        schedule.plannedHours = defaultHours((await readWorkcenters(client, workspaceId)).find((center) => center.id === schedule.workcenterId)?.hoursPerDay ?? null,
+          schedule.plannedStart, schedule.plannedEnd, await readCalendar(client, workspaceId));
       await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('work-order-number:' || $1::text, 0))`, [workspaceId]);
       const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM work_orders WHERE workspace_id = $1`, [workspaceId])).rows[0].next;
       await client.query(
@@ -195,12 +220,14 @@ export class FactoryService {
       } else if (action === "revise_drawing") {
         await need("factory.manage", "You can't record drawing changes.");
         status("planned", "released", "in_production", "on_hold");
-        const reference = text(body.reference, 200);
+        const picked = body.versionId ? await this.pickDrawing(client, workspaceId, order, body.versionId) : null;
+        const reference = picked?.reference ?? text(body.reference, 200);
         const note = text(body.note, 300);
         if (!reference) throw new BadRequestException("Say which drawing it is now (its number or revision).");
         if (!note) throw new BadRequestException("Say what changed.");
         const running = ["released", "in_production", "on_hold"].includes(order.status);
-        await set(`drawing_ref = $3, drawing_approved_by = $4, drawing_approved_at = now(), drawing_revised_by = $4`, [reference, user.userId]);
+        await set(`drawing_ref = $3, drawing_approved_by = $4, drawing_approved_at = now(), drawing_revised_by = $4, drawing_design_id = $5, drawing_version_id = $6, drawing_stale_version_id = NULL`,
+          [reference, user.userId, picked?.designId ?? null, picked?.versionId ?? null]);
         // Work already going stops until someone else decides it goes on with the new drawing.
         if (running) await set(`status = 'on_hold', hold_kind = 'drawing', hold_reason = $3, held_from = CASE WHEN status = 'on_hold' THEN held_from ELSE status END`,
           [`Drawing changed to ${reference}: ${note}`.slice(0, 500)]);
@@ -217,10 +244,13 @@ export class FactoryService {
       } else if (action === "approve_drawing") {
         await need("factory.manage", "You can't record drawing approvals.");
         status("planned", "on_hold");
-        const reference = text(body.reference, 200);
+        // An approved revision of one of the project's designs, or (without one in the system) a typed reference.
+        const picked = body.versionId ? await this.pickDrawing(client, workspaceId, order, body.versionId) : null;
+        const reference = picked?.reference ?? text(body.reference, 200);
         if (!reference) throw new BadRequestException("Say which drawing was approved (its number or revision).");
-        await set(`drawing_ref = $3, drawing_approved_by = $4, drawing_approved_at = now()`, [reference, user.userId]);
-        audit = { reference };
+        await set(`drawing_ref = $3, drawing_approved_by = $4, drawing_approved_at = now(), drawing_design_id = $5, drawing_version_id = $6, drawing_stale_version_id = NULL`,
+          [reference, user.userId, picked?.designId ?? null, picked?.versionId ?? null]);
+        audit = { reference, versionId: picked?.versionId ?? null };
       } else if (action === "release") {
         await need("factory.manage", "You can't release work orders.");
         status("planned");
@@ -427,7 +457,12 @@ export class FactoryService {
   }
 
   /** What has to hold before a work order is released, each with what's missing when it doesn't. */
-  private async releaseChecks(client: Db, workspaceId: string, order: WorkOrderRow, settings: Awaited<ReturnType<typeof ensureFactorySettings>>) {
+  private async releaseChecks(client: Db, workspaceId: string, order: WorkOrderRow, settings: Awaited<ReturnType<typeof ensureFactorySettings>>,
+    needs: Map<string, Awaited<ReturnType<typeof readNeeds>>> = new Map()) {
+    const projectNeeds = async () => {
+      if (!needs.has(order.projectId)) needs.set(order.projectId, await readNeeds(client, workspaceId, false, order.projectId));
+      return needs.get(order.projectId)!;
+    };
     const project = (await client.query<{ status: string; caseId: string; quoteId: string }>(
       `SELECT status, case_id AS "caseId", quote_id AS "quoteId" FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.projectId])).rows[0];
     const drawing = (await client.query<{ at: string | null }>(`SELECT drawing_approved_at AS at FROM work_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id])).rows[0];
@@ -436,13 +471,14 @@ export class FactoryService {
       { key: "scope", passed: order.lineStatus === "active" && Dec.of(order.scopeOver).cmp(0) <= 0,
         missing: order.lineStatus === "omitted" ? "a variation removed its scope line" : `a variation reduced its scope line by ${plain(order.scopeOver)} ${order.unit}`.replace("  ", " ") },
     ];
-    if (settings.requireDrawing) checks.push({ key: "drawing", passed: Boolean(drawing?.at), missing: "the drawing isn't approved" });
+    if (settings.requireDrawing) checks.push({ key: "drawing", passed: Boolean(drawing?.at) && !order.drawingNewer,
+      missing: drawing?.at && order.drawingNewer ? `the drawing has a newer revision (R${order.drawingNewer})` : "the drawing isn't approved" });
     if (settings.requirePayment) checks.push({ key: "payment", passed: project ? await productionPaid(client, workspaceId, project.caseId, project.quoteId) : false, missing: "the payment before production isn't verified" });
     if (settings.requireMaterials) {
       // Its own materials when it lists them (issued, or covered by the project's stock); otherwise its package's.
       const materials = (await readWorkOrderMaterials(client, workspaceId, order.id)).filter((row) => row.status === "active");
       const short = materials.length ? (await materialsShort(client, workspaceId, order.id, materials)).map((row) => `${row.itemName} ${plain(row.short)} ${row.unit}`.trim())
-        : needsNotIn(await readNeeds(client, workspaceId, false, order.projectId), order.packageId).map((need) => need.title);
+        : needsNotIn(await projectNeeds(), order.packageId).map((need) => need.title);
       checks.push({ key: "materials", passed: !short.length, missing: `materials aren't in: ${short.slice(0, 5).join(", ")}${short.length > 5 ? ` and ${short.length - 5} more` : ""}`, detail: short });
     }
     checks.push({ key: "schedule", passed: Boolean(order.workcenterId && order.plannedStart && order.plannedEnd), missing: "it has no workcenter or dates" });
@@ -631,6 +667,30 @@ export class FactoryService {
   }
 
   /** Where and when from a request, keeping what it doesn't change. */
+  /** A design revision of the work order's project, approved (by the client, or internally for technical drawings), as its drawing. */
+  private async pickDrawing(client: Db, workspaceId: string, order: WorkOrderRow, value: unknown) {
+    const row = (await client.query<{ versionId: string; designId: string; title: string; number: number; status: string }>(
+      `SELECT version.id AS "versionId", design.id AS "designId", design.title, version.number, version.status
+         FROM pre_project_design_versions version
+         JOIN pre_project_designs design ON design.workspace_id = version.workspace_id AND design.id = version.design_id AND design.archived_at IS NULL
+         JOIN delivery_projects project ON project.workspace_id = design.workspace_id AND project.case_id = design.case_id AND project.id = $3
+        WHERE version.workspace_id = $1 AND version.id = $2`, [workspaceId, uuid(value, "Drawing"), order.projectId])).rows[0];
+    if (!row) throw new BadRequestException("Choose a design of this work order's project.");
+    if (!["approved", "internal_approved"].includes(row.status)) throw new ConflictException(`${row.title} R${row.number} isn't approved.`);
+    return { ...row, reference: `${row.title} R${row.number}`.slice(0, 200) };
+  }
+
+  /** The project's designs with an approved revision: the latest approved revision of each. */
+  private async approvedDesigns(client: Db, workspaceId: string, projectId: string) {
+    return (await client.query<{ designId: string; versionId: string; title: string; number: number; documentType: string }>(
+      `SELECT DISTINCT ON (design.id) design.id AS "designId", version.id AS "versionId", design.title, version.number, design.document_type AS "documentType"
+         FROM pre_project_designs design
+         JOIN pre_project_design_versions version ON version.workspace_id = design.workspace_id AND version.design_id = design.id AND version.status IN ('approved', 'internal_approved')
+         JOIN delivery_projects project ON project.workspace_id = design.workspace_id AND project.case_id = design.case_id AND project.id = $2
+        WHERE design.workspace_id = $1 AND design.archived_at IS NULL
+        ORDER BY design.id, version.number DESC`, [workspaceId, projectId])).rows.sort((a, b) => a.title.localeCompare(b.title));
+  }
+
   private async dates(client: Db, workspaceId: string, body: Record<string, unknown>,
     current: { workcenterId: string | null; plannedStart: string | null; plannedEnd: string | null; plannedHours: string | null }) {
     const workcenterId = body.workcenterId === undefined ? current.workcenterId : body.workcenterId === null || body.workcenterId === "" ? null : uuid(body.workcenterId, "Workcenter");
@@ -671,11 +731,21 @@ export class FactoryService {
     const projectMaterials = (await client.query<{ id: string; name: string; unit: string; lineOnly: boolean }>(
       `SELECT item.id, item.name, item.unit, item.boq_line_ids = ARRAY[$3::uuid] AS "lineOnly" FROM project_material_items item
         WHERE item.workspace_id = $1 AND item.project_id = $2 ORDER BY item.position`, [workspaceId, order.projectId, order.boqLineId])).rows;
-    const dispatches = (await client.query<{ id: string; number: number; status: string; sentOn: string; quantity: string; received: string | null; short: boolean }>(
+    // Trips to site, and what was refused there (with the trip that brings it back).
+    const dispatches = (await client.query<{ id: string; number: number; status: string; sentOn: string; quantity: string; received: string | null; short: boolean; rejected: string;
+      rejectReason: string; returnId: string | null; returnNumber: number | null; returnStatus: string | null }>(
       `SELECT transfer.id, transfer.number, transfer.status, transfer.sent_on::text AS "sentOn", sum(line.quantity)::text AS quantity,
-              CASE WHEN bool_and(line.received IS NOT NULL) THEN sum(line.received)::text END AS received, bool_or(line.received < line.quantity) AS short
+              CASE WHEN bool_and(line.received IS NOT NULL) THEN sum(line.received)::text END AS received, bool_or(line.received < line.quantity) AS short,
+              sum(line.rejected)::text AS rejected, string_agg(nullif(line.reject_reason, ''), '; ') AS "rejectReason",
+              back.id AS "returnId", back.number AS "returnNumber", back.status AS "returnStatus"
          FROM stock_transfers transfer JOIN stock_transfer_lines line ON line.workspace_id = transfer.workspace_id AND line.transfer_id = transfer.id
-        WHERE transfer.workspace_id = $1 AND transfer.work_order_id = $2 GROUP BY transfer.id ORDER BY transfer.number`, [workspaceId, orderId])).rows;
+         LEFT JOIN stock_transfers back ON back.workspace_id = transfer.workspace_id AND back.returned_from_id = transfer.id
+        WHERE transfer.workspace_id = $1 AND transfer.work_order_id = $2 AND transfer.returned_from_id IS NULL
+        GROUP BY transfer.id, back.id ORDER BY transfer.number`, [workspaceId, orderId])).rows.map((row) => ({ ...row, rejectReason: row.rejectReason ?? "" }));
+    const reworks = (await client.query<{ id: string; quantity: string; reason: string; source: string; at: string; byName: string }>(
+      `SELECT rework.id, rework.quantity::text AS quantity, rework.reason, rework.source, rework.created_at AS at, person.display_name AS "byName"
+         FROM work_order_reworks rework JOIN users person ON person.id = rework.created_by WHERE rework.workspace_id = $1 AND rework.work_order_id = $2 ORDER BY rework.created_at`,
+      [workspaceId, orderId])).rows;
     // What it made that's still at the factory, for the project: what can go to site.
     const atFactory = (await client.query<{ onHand: string }>(
       `SELECT coalesce(sum(balance.on_hand), 0)::numeric(18, 4)::text AS "onHand" FROM stock_balances balance
@@ -683,8 +753,15 @@ export class FactoryService {
         WHERE balance.workspace_id = $1 AND balance.project_id = $3
           AND balance.item_id IN (SELECT made.item_id FROM stock_movements made WHERE made.workspace_id = $1 AND made.work_order_id = $2 AND made.kind = 'produce')`,
       [workspaceId, orderId, order.projectId])).rows[0].onHand;
+    const releaseChecks = order.status === "planned" ? await this.releaseChecks(client, workspaceId, order, settings) : [];
+    const rights = await this.rights(client, workspaceId, userId);
+    const next = workOrderNext(order, { blocked: releaseChecks.some((check) => !check.passed), atFactory, requireCheck: settings.requireCheck, canManage: rights.canManage,
+      canReport: rights.canReport, canApprove: rights.canApprove, canSend: rights.canManage || rights.canIssue });
     return {
-      order: { ...order, ...extra }, reports, checks, events, settings, materials, dispatches, atFactory,
+      order: { ...order, ...extra }, reports, checks, events, settings, materials, dispatches, atFactory, reworks, next: next.step,
+      // The project's approved designs, to pick the drawing from.
+      designs: await this.approvedDesigns(client, workspaceId, order.projectId),
+      projectStatus: (await client.query<{ status: string }>(`SELECT status FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.projectId])).rows[0]?.status ?? "active",
       operations: await this.operations(client, workspaceId, orderId),
       // Suppliers a step can go to (not archived, approved first).
       suppliers: (await client.query<{ id: string; name: string; approved: boolean }>(
@@ -696,9 +773,9 @@ export class FactoryService {
       projectMaterials: projectMaterials.map(({ lineOnly: _lineOnly, ...row }) => row),
       canSuggest: projectMaterials.some((row) => row.lineOnly && !materials.some((material) => material.materialItemId === row.id && ["active", "pending"].includes(material.status))),
       places: await readLocations(client, workspaceId),
-      releaseChecks: order.status === "planned" ? await this.releaseChecks(client, workspaceId, order, settings) : [],
+      releaseChecks,
       workcenters: await readWorkcenters(client, workspaceId),
-      ...(await this.rights(client, workspaceId, userId)), me: userId,
+      ...rights, me: userId,
     };
   }
 

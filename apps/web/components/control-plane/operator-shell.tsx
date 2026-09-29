@@ -38,6 +38,7 @@ function ShellActions({ operator, theme, onToggleTheme }: { operator: ConsoleOpe
   const router = useRouter();
   const toast = useToast();
   return <div className={styles.shellActions}>
+    <Link className={styles.shellLink} href="/internal/ai-credits">{t("AI credits")}</Link>
     <span className={styles.operator}><Avatar name={operator.name} size="sm" /><span><strong>{operator.name}</strong><small>{operator.email}</small></span></span>
     <IconButton aria-label={theme === "dark" ? t("Use light mode") : t("Use dark mode")} onPress={onToggleTheme}>
       {theme === "dark" ? <Sun aria-hidden="true" size={16} /> : <Moon aria-hidden="true" size={16} />}

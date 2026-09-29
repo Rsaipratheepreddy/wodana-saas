@@ -142,9 +142,11 @@ export async function POST(request: Request) {
       "not-configured": t("Woddy’s AI provider is not configured. Catalog search, editing and quotation workflows remain available."),
       "no-access": t("You don't have access to Woddy in this workspace."),
       "rate-limited": t("Please wait a minute before asking again."),
+      "no-credits": t("AI credits are used up. Ask your admin to top up."),
+      "paused-today": t("AI is paused for today. Try again tomorrow."),
       unavailable: t("Woddy could not finish that answer. Please retry. No quotation changes were made."),
     };
-    return reply({ message: refusals[answer.reason] }, answer.reason === "rate-limited" ? 429 : answer.reason === "no-access" ? 403 : 503);
+    return reply({ message: refusals[answer.reason], ...(answer.reason === "no-credits" || answer.reason === "paused-today" ? { paused: true } : {}) }, answer.reason === "rate-limited" || answer.reason === "paused-today" ? 429 : answer.reason === "no-credits" ? 402 : answer.reason === "no-access" ? 403 : 503);
   }
   if (!answer.text || answer.finishReason !== "STOP")
     return reply({ message: t("Woddy could not finish that answer. Please retry. No quotation changes were made.") }, 503);

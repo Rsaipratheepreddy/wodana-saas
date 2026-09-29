@@ -228,7 +228,7 @@ export function QuotationPaymentInspector({
                 <span>{t("Amount")}</span>
                 <strong>
                   {money(
-                    paymentMilestoneAmounts(total, terms)[i],
+                    paymentMilestoneAmounts(total, terms, quote.currency)[i],
                       quote.currency,
                       locale,
                   )}

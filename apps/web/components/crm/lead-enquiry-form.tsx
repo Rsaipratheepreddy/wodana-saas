@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button, Callout, ControlledModalDialog, SelectField, TextInput, TextAreaField } from "@/design-system";
 import { salesOwnerChoices, type LeadsPageData } from "@/lib/crm/leads";
-import type { EnquiryDetails, LeadContact, LeadOptions } from "@/lib/crm/lead-options";
+import { sourceAllowedFor, type EnquiryDetails, type LeadContact, type LeadOptions } from "@/lib/crm/lead-options";
 import { countryForPhone, phoneCountry, phoneProblem, toE164 } from "@/lib/crm/phone";
 import { findContactMatches, type ClientMatch } from "@/lib/crm/client-match";
 import { CrmPhoneField } from "./crm-phone-field";
@@ -38,8 +38,10 @@ type Identity = { kind: "existing"; partyId: string; name: string } | { kind: "n
  * client is recognised while they are on the phone. The required fields come next; everything
  * else waits under More details. Also edits an enquiry's details.
  */
-export function LeadEnquiryForm({ initialData, existing, onClose, onSaved, onOpenLead }: {
+export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSaved, onOpenLead }: {
   initialData: LeadsPageData; existing?: EditableEnquiry; onClose: () => void;
+  /** A new enquiry started from somewhere else (a chat): the person, the channel and a summary. */
+  prefill?: { party: LeadContact; channel?: string; summary?: string };
   onSaved: (leadId: string, reference?: string) => Promise<void>;
   /** Opens an existing enquiry instead of creating a new one. */
   onOpenLead?: (leadId: string) => void;
@@ -53,7 +55,7 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved, onOpe
   const [customValues, setCustomValues] = useState<CustomValues>(() => ({ ...(existing?.customFields ?? {}) }));
   const [requestId] = useState(() => crypto.randomUUID());
   const [contact, setContact] = useState<LeadContact>(() => {
-    const saved = existing?.party ?? { displayName: "" };
+    const saved = existing?.party ?? prefill?.party ?? { displayName: "" };
     const fallback = phoneCountry(undefined, initialData.defaultLocale) ?? "";
     return {
       ...saved,
@@ -62,14 +64,16 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved, onOpe
     };
   });
   const [serviceType, setServiceType] = useState(existing?.serviceType ?? options?.enquiryTypes.find(item => item.id === "not_sure")?.id ?? options?.enquiryTypes[0]?.id ?? "");
-  const [summary, setSummary] = useState(existing?.summary ?? "");
+  const [summary, setSummary] = useState(existing?.summary ?? prefill?.summary ?? "");
   const [details, setDetails] = useState<EnquiryDetails>(existing?.details ?? {});
   const areaOptions = options?.areas?.[details.emirate ?? ""] ?? [];
   const [customAreaSelected, setCustomAreaSelected] = useState(() => Boolean(existing?.details?.area && !(options?.areas?.[existing.details.emirate ?? ""] ?? []).some(item => item.id === existing.details?.area)));
   const areaChoice = customAreaSelected ? "other" : details.area ?? "";
-  // No silent default: the person says where it came from.
-  const [source, setSource] = useState(existing?.source ?? "");
-  const [channel, setChannel] = useState(existing?.channel ?? "");
+  // No silent default: the person says where it came from. A chat already says it (e.g. WhatsApp), so its enquiry starts there.
+  const chatSource = prefill?.channel ? (options?.sources.find(s => s.id === "company" && options.channels[s.id]?.some(c => c.id === prefill.channel))
+    ?? options?.sources.find(s => options.channels[s.id]?.some(c => c.id === prefill.channel)))?.id : undefined;
+  const [source, setSource] = useState(existing?.source ?? chatSource ?? "");
+  const [channel, setChannel] = useState(existing?.channel ?? (chatSource ? options?.channels[chatSource]?.find(c => c.id === prefill?.channel)?.id : undefined) ?? "");
   const channelItems = options?.channels[source] ?? [];
   // Only a real correction is sent, so an older source that is no longer offered stays as it was.
   const sourceChanged = Boolean(existing) && (source !== (existing?.source ?? "") || channel !== (existing?.channel ?? ""));
@@ -80,8 +84,8 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved, onOpe
   const roles = initialData.currentRoles ?? [];
   const roleLimited = (id: string) => Boolean(options?.sources.find(item => item.id === id)?.allowedRoles?.length);
   // A source limited to roles is offered only to people holding one (owners and admins always).
-  const sourceItems = (options?.sources ?? []).filter((item) => item.id === existing?.source || (item.id !== RETURNING_SOURCE
-    && (!item.allowedRoles?.length || roles.some((role) => item.allowedRoles!.includes(role) || role === "owner" || role === "administrator"))));
+  // In one role vocabulary: any case, a role or its team (sourceAllowedFor).
+  const sourceItems = (options?.sources ?? []).filter((item) => item.id === existing?.source || (item.id !== RETURNING_SOURCE && sourceAllowedFor(item, roles)));
 
   // Owner: me for what I bring in myself, routing for the company's enquiries.
   const me = initialData.currentMembershipId;

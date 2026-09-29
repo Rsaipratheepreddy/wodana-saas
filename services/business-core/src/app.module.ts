@@ -33,6 +33,7 @@ import { JobsModule } from "./jobs/jobs.module";
 import { WorkspaceSearchModule } from "./search/workspace-search.module";
 import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
 import { AiGatewayModule } from "./ai-gateway/ai-gateway.module";
+import { AiToolsModule } from "./ai-tools/ai-tools.module";
 import { DesignModule } from "./design/design.module";
 import { QuotationModule } from "./quotation/quotation.module";
 import { GalleryModule } from "./gallery/gallery.module";
@@ -44,6 +45,7 @@ import { ReceivablesModule } from "./receivables/receivables.module";
 import { AccountingModule } from "./accounting/accounting.module";
 import { PettyCashModule } from "./petty-cash/petty-cash.module";
 import { InventoryModule } from "./inventory/inventory.module";
+import { ApprovalsModule } from "./approvals/approvals.controller";
 import { NotificationsModule } from "./notifications/notifications.module";
 
 @Module({
@@ -89,6 +91,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
     WorkspaceSearchModule,
     AiSuggestionsModule,
     AiGatewayModule,
+    AiToolsModule,
     DesignModule,
     QuotationModule,
     GalleryModule,
@@ -100,6 +103,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
     ReceivablesModule,
     AccountingModule,
     PettyCashModule,
+    ApprovalsModule,
     HrmsModule,
     NotificationsModule,
   ],

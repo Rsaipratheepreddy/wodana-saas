@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { askWoddy, type WoddyMessage } from "@/lib/crm/woddy.server";
+import { isAiPauseMessage } from "@/lib/ai/pause";
 import { UUID, invalidRequest, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 import { getServerT } from "@/lib/i18n/server";
 import { translateKnown } from "@/lib/i18n/keys";
@@ -40,7 +41,12 @@ export async function POST(request: Request) {
   // A session the context call rotated is used for the model call too (the old refresh token is spent).
   const rotatedAccess = upstream.cookies.get(ACCESS_COOKIE)?.value;
   try { response = NextResponse.json({ answer: await askWoddy(body.workspaceId, facts, messages, rotatedAccess), note: t("AI guidance · Review before acting. Nothing is sent or changed."), scope }, { headers: { "cache-control": "no-store" } }); }
-  catch (error) { response = NextResponse.json({ message: error instanceof Error && !["AbortError", "TimeoutError", "TypeError"].includes(error.name) ? translateKnown(t, error.message) : t("Woddy took too long to reply. Please try again.") }, { status: 503, headers: { "cache-control": "no-store" } }); }
+  catch (error) {
+    // Credits used up or today's AI limit: a pause the chat shows calmly, not an error to retry.
+    const paused = error instanceof Error && isAiPauseMessage(error.message);
+    response = NextResponse.json({ message: error instanceof Error && !["AbortError", "TimeoutError", "TypeError"].includes(error.name) ? translateKnown(t, error.message) : t("Woddy took too long to reply. Please try again."), ...(paused ? { paused } : {}) },
+      { status: paused ? 402 : 503, headers: { "cache-control": "no-store" } });
+  }
   for (const cookie of upstream.cookies.getAll()) response.cookies.set(cookie);
   return response;
 }

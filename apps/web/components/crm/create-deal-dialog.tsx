@@ -7,7 +7,7 @@ import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
 import { localDateTime } from "@/lib/crm/calendar";
-import type { CrmLeadListItem, CrmPipeline, LeadsPageData } from "@/lib/crm/leads";
+import { salesOwnerChoices, type CrmLeadListItem, type CrmPipeline, type LeadsPageData } from "@/lib/crm/leads";
 import { hasResolvedEnquiryType } from "@/lib/crm/lead-options";
 import { CrmDateTimeField } from "./crm-date-time-field";
 import { useCrmResource } from "./crm-workbench";
@@ -20,7 +20,7 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { le
   const pipelines = (resource.data ? rows(resource.data) as unknown as CrmPipeline[] : initialData.pipelines).filter(p => p.status === "active");
   const pipeline = pipelines.find(p => p.isDefault) ?? pipelines[0];
   // The enquiry's own owner can always keep it, even for a role that can't list the whole team.
-  const active = initialData.members.filter(m => m.status === "active");
+  const active = salesOwnerChoices(initialData);
   const members = lead.ownerMembershipId && !active.some(m => m.id === lead.ownerMembershipId)
     ? [...active, { id: lead.ownerMembershipId, displayName: lead.ownerName ?? t("Current owner") }]
     : active;
@@ -73,7 +73,7 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { le
       <p className={styles.explanation}>{t("Move this enquiry into Pipeline as a new opportunity, keeping its client, owner and follow-up connected.")}</p>
       {failure && <Callout tone={saved ? "warning" : "danger"} title={t(saved ? "Opportunity created" : "Could not continue")}>{failure}</Callout>}
       {needsEnquiryType && <Callout tone="warning" title={t("Enquiry type needed")}>{t("This enquiry is marked Not Sure Yet. Open Edit details and choose its actual type before conversion.")}</Callout>}
-      {!members.length && <Callout tone="warning" title={t("A sales owner is needed")}>{t("Ask an administrator to assign this enquiry before converting it.")}</Callout>}
+      {!members.length && <Callout tone="warning" title={t("A sales owner is needed")}>{t("Nobody here can own sales work yet. Ask whoever manages roles to give someone the Sales role.")}</Callout>}
       <fieldset disabled={busy || saved} className={styles.fields}>
         <div className={styles.identityRow}><TextInput label={t("Opportunity name")} isRequired value={title} onChange={setTitle} maxLength={240} />
         <SelectField label={t("Sales owner")} isRequired selectedKey={owner || null} items={members.map(m => ({ id: m.id, label: m.displayName }))} onSelectionChange={key => setOwner(String(key ?? ""))} /></div>

@@ -15,7 +15,39 @@ export type LeadOptions = {
   areas: Record<string, LeadOption[]>;
   referralBrokers?: LeadOption[];
   referralPartners?: LeadOption[];
+  /** The signed-in member's role and team codes, lower-case (sent with the options). */
+  roleKeys?: string[];
 };
+
+/**
+ * One role vocabulary: a member's roles and teams, lower-case, where a team role (`team_sales`) and its
+ * team (`sales`) answer to each other. A source limited to roles is compared against these keys.
+ */
+export function roleVocabularyKeys(...lists: Array<readonly string[] | null | undefined>) {
+  const keys = new Set<string>();
+  for (const code of lists.flatMap((list) => list ?? [])) {
+    const key = code.trim().toLowerCase();
+    if (!key) continue;
+    keys.add(key);
+    keys.add(key.startsWith("team_") ? key.slice(5) : `team_${key}`);
+  }
+  return [...keys].sort();
+}
+
+/** Whether a member with these roles may pick this source (no limit, or one of its roles; owners and administrators always). */
+export function sourceAllowedFor(source: LeadOption, roles: readonly string[]) {
+  if (!source.allowedRoles?.length) return true;
+  const held = new Set(roleVocabularyKeys(roles));
+  if (held.has("owner") || held.has("administrator")) return true;
+  return source.allowedRoles.some((role) => held.has(role.trim().toLowerCase()));
+}
+
+/** The options with every role limit in the same lower-case vocabulary as `roleVocabularyKeys`. */
+export function withRoleVocabulary(options: LeadOptions | undefined): LeadOptions | undefined {
+  if (!options) return options;
+  return { ...options, sources: options.sources.map((source) => source.allowedRoles?.length
+    ? { ...source, allowedRoles: [...new Set(source.allowedRoles.map((role) => role.trim().toLowerCase()))] } : source) };
+}
 export type LeadContact = {
   displayName: string; email?: string; phone?: string; mobile?: string;
   phoneCountryCode?: string; mobileCountryCode?: string;

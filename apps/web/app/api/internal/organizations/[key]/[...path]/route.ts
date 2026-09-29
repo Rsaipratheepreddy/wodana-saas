@@ -17,6 +17,9 @@ const ROUTES: Array<{ method: Method; path: RegExp; key?: boolean }> = [
   { method: "POST", path: new RegExp(`^support-sessions/${ID}/(approve|reject|start|revoke)$`, "i") },
   { method: "GET", path: /^support\/(members|activity)$/ },
   { method: "POST", path: new RegExp(`^domains/${ID}/(certificate|activate|rollback-complete)$`, "i") },
+  { method: "GET", path: /^ai-credits$/ },
+  { method: "POST", path: /^ai-credits\/(top-ups|adjustments)$/, key: true },
+  { method: "PATCH", path: /^ai-credits\/threshold$/ },
 ];
 
 async function proxy(request: Request, context: Context, method: Method) {

@@ -72,6 +72,14 @@ describe("petty cash", () => {
     expect(within(sheet).queryByRole("button", { name: "Approve" })).toBeNull();
   });
 
+  it("starts a new claim on the kind the person used last", async () => {
+    mount(() => state({ me: "u2", canApprove: false, claims: [claim({ id: "c3", number: 3, category: "tools" }), claim(), claim({ id: "c4", number: 4, category: "food", claimedBy: "u9" })] }));
+    tab();
+    await userEvent.click(await screen.findByRole("button", { name: "New claim" }));
+    const dialog = await screen.findByRole("dialog", { name: "New claim" });
+    expect(within(dialog).getByRole("button", { name: /Kind/ })).toHaveTextContent("Tools");
+  });
+
   it("lets the project manager approve a claim or reject it with why, never their own; the ones waiting come first", async () => {
     let current = state({ claims: [claim({ id: "c2", number: 2, reference: "PC-0002", description: "Sample tiles", claimedBy: "u1", claimedByName: "Omar Manager" }), claim()] });
     const fetcher = mount((url, body) => {

@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarCheck, CheckCircle2, ClipboardCheck, CloudOff, CloudUpload, Inbox, ListChecks, LogIn, LogOut, PackageCheck, PhoneCall, Users } from 'lucide-react-native';
+import { CalendarCheck, CheckCircle2, ClipboardCheck, ClipboardList, CloudOff, CloudUpload, Inbox, ListChecks, LogIn, LogOut, PackageCheck, PhoneCall, Users } from 'lucide-react-native';
 import type { HomeOverview } from '../../../../../packages/contracts/src/home';
 import { errorMessage, useApi } from '../../core/api';
 import { appRouteFor } from '../../core/deep-links';
@@ -12,12 +12,13 @@ import { useOnline } from '../../core/query';
 import { useSession } from '../../core/session';
 import { Banner, Card, Empty, ListRow, Screen, Section, Shimmer } from '../../ui/layout';
 import { Button, Row, Text } from '../../ui/primitives';
+import { StatusChip } from '../../ui/status';
 import { useTheme } from '../../ui/theme';
 import { useBootstrap, useCrewDays, useCurrentAttendance, useLeaveRequests, usePendingTime, useReviews } from '../hrms/api';
 import { minutesSince, MODE_LABEL } from '../hrms/model';
 import { useWaitingCount } from '../approvals/api';
 import { useInbox } from '../inbox/api';
-import { useOpenWork } from '../projects/api';
+import { useOpenWork, useSitesToday } from '../projects/api';
 import { WorkTrailing } from '../projects/plan-screen';
 import { useDeliveries } from '../purchasing/api';
 
@@ -46,13 +47,14 @@ export function TodayScreen() {
   const teamTime = usePendingTime(hrms && team);
   const crewDays = useCrewDays(null, hrms && !!bootstrap.data?.permissions.crews);
   const work = useOpenWork('mine');
+  const sites = useSitesToday();
   const inbox = useInbox();
   const waiting = useWaitingCount();
   const deliveries = useDeliveries(session.has('projects') && session.can('stock.receive', 'purchasing.manage'));
   const overview = useQuery({ queryKey: ['home-overview', api.workspaceId], queryFn: () => api.get<HomeOverview>('home-overview') });
   const today = format.today();
 
-  const refresh = () => { void current.refetch(); void work.refetch(); void overview.refetch(); void inbox.refetch(); void deliveries.refetch(); void teamLeave.refetch(); void teamReviews.refetch(); void waiting.refetch(); };
+  const refresh = () => { void current.refetch(); void work.refetch(); void sites.refetch(); void overview.refetch(); void inbox.refetch(); void deliveries.refetch(); void teamLeave.refetch(); void teamReviews.refetch(); void waiting.refetch(); };
   const open = current.data && !current.data.endedAt ? current.data : null;
   const segment = open?.segments[open.segments.length - 1];
   const due = (work.data?.items ?? []).filter((item) => item.dueDate && item.dueDate <= today).slice(0, 5);
@@ -63,7 +65,10 @@ export function TodayScreen() {
   const followUps = overview.data?.sales ?? [];
   const expected = (deliveries.data?.expected ?? []).filter((order) => !order.due || order.due <= today).slice(0, 3);
   const blocked = outbox.items.filter((item) => item.status === 'blocked');
-  const nothing = !due.length && !approvals && !waiting.count && !followUps.length && !expected.length && !(inbox.unread > 0);
+  // My sites first: today's report with one tap; after 19:00 a missing report turns amber.
+  const mySites = sites.data?.sites ?? [];
+  const late = (sites.data?.hour ?? 0) >= 19;
+  const nothing = !due.length && !approvals && !waiting.count && !followUps.length && !expected.length && !(inbox.unread > 0) && !mySites.length;
   const loading = work.isLoading || overview.isLoading;
   const failed = (projects ? work.error : null) ?? overview.error ?? (hrms ? current.error : null);
 
@@ -90,6 +95,14 @@ export function TodayScreen() {
 
     {approvals ? <Section>
       <ListRow first icon={Users} iconTone="warning" title={t('{count} to approve', { count: approvals })} detail={t('Leave, attendance, timesheets and crew days')} onPress={() => router.push('/hrms/team')} />
+    </Section> : null}
+
+    {mySites.length ? <Section title={t('My sites today')}>
+      {mySites.map((site, index) => <ListRow key={site.projectId} first={index === 0} icon={ClipboardList} iconTone={!site.report && late ? 'warning' : 'action'} title={site.name}
+        detail={[site.reference, site.report ? null : t('No report yet'), site.arriving ? t('{count} arriving', { count: site.arriving }) : null, site.snags ? t('{count} snags to close', { count: site.snags }) : null]
+          .filter(Boolean).join(' · ')}
+        trailing={site.report ? <StatusChip status={site.report.status} /> : <Button size="sm" label={t('Write report')} onPress={() => router.push(`/projects/${site.projectId}/report`)} />}
+        onPress={() => router.push(site.report ? `/projects/${site.projectId}/reports` : `/projects/${site.projectId}/report`)} />)}
     </Section> : null}
 
     {projects && (due.length || work.isLoading) ? <Section title={t('Due today')} action={<Button size="sm" variant="ghost" label={t('All')} onPress={() => router.push('/projects/tasks')} />}>

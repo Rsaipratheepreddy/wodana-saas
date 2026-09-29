@@ -5,6 +5,9 @@ import { DesignSystemProvider } from "@/design-system";
 import type { WarrantyClaim, WarrantyState } from "@/lib/site/types";
 import { ProjectWarranty, WarrantySettingsSection } from "./project-warranty";
 
+const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/workspace/projects/p1/handover", useSearchParams: () => new URLSearchParams() }));
+
 const PID = "0c6b0c7e-4c4d-4a9e-9d64-3b6f0f2d7a11";
 const claim = (patch: Partial<WarrantyClaim> = {}): WarrantyClaim => ({
   id: "c1", number: 1, raisedOn: "2026-12-01", raisedByName: "Maya Rahman", channel: "phone", description: "Drawer runner broken", areaId: null, lineId: "l1", lineTitle: "Kitchen cabinets",
@@ -58,6 +61,20 @@ describe("warranty", () => {
     await userEvent.type(within(form).getByRole("textbox", { name: /What's wrong/ }), "Door hinge loose");
     await userEvent.click(within(form).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(sent(fetcher).at(-1)).toMatchObject({ action: "record_claim", raisedOn: "2027-06-01", raisedByName: "Maya Rahman", channel: "phone", description: "Door hinge loose" }));
+  });
+
+  it("turns a chargeable claim into a variation of the project and opens it", async () => {
+    const chargeable = claim({ status: "chargeable", decisionNote: "Misuse", version: 2 });
+    const fetcher = mount((url, init) => {
+      if (url.startsWith("/api/commercial/cases/")) return { data: { revision: 7, quotes: [{ id: "q1", number: 1, kind: "quotation" }, { id: "v9", number: 3, kind: "variation" }] } };
+      if (init?.method === "POST") return state({ claims: [{ ...chargeable, variationId: "v9", variationNumber: 3, variationStatus: "draft", variationApplied: null }], caseId: "case1", baselineQuoteId: "q1" });
+      return state({ claims: [chargeable], caseId: "case1", baselineQuoteId: "q1" });
+    });
+    render(<DesignSystemProvider><ProjectWarranty workspaceId="w" projectId={PID} /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: "Start variation" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith(`/workspace/projects/${PID}/changes/v9`));
+    expect(sent(fetcher)).toEqual([{ action: "variation", revision: 7, quoteId: "q1" }, { action: "link_variation", claimId: "c1", quoteId: "v9", version: 2 }]);
+    expect(await screen.findByRole("link", { name: "Variation V3 · Draft" })).toHaveAttribute("href", `/workspace/projects/${PID}/changes/v9`);
   });
 
   it("sets the months of warranty for each way of delivering a package", async () => {

@@ -1,3 +1,5 @@
+import { Dec } from "../catalog-core/decimal";
+import { projectBalance } from "../project-core/project-milestones";
 import type { PoolClient } from "pg";
 import { commercialRepository } from "../commercial/commercial-repository";
 import type { CommercialData } from "../commercial/commercial.types";
@@ -264,8 +266,15 @@ async function readHandovers(db: Db, workspaceId: string, projectId: string, app
   const documents = (await db.query<{ packId: string; id: string; kind: string; title: string; mimeType: string }>(
     `SELECT pack_id AS "packId", id, kind, title, mime_type AS "mimeType" FROM handover_documents WHERE workspace_id = $1 AND pack_id = ANY($2::uuid[]) ORDER BY created_at`,
     [workspaceId, packs.map((pack) => pack.id)])).rows;
+  // Money still due, shown before the client accepts an issued pack (with where to pay it).
+  const project = packs.some((pack) => pack.status === "issued")
+    ? (await db.query<{ id: string; caseId: string; currency: string }>(`SELECT id, case_id AS "caseId", currency FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId])).rows[0]
+    : null;
+  const owed = project ? await projectBalance(db, workspaceId, project) : null;
+  const balance = owed && Dec.of(owed.due).cmp(0) > 0 ? { currency: owed.currency, due: owed.due } : null;
   return packs.map((pack) => ({
     id: pack.id, revision: pack.revision, title: pack.title, status: pack.status as "issued" | "accepted" | "refused", areas: pack.areas ?? [],
+    balance: pack.status === "issued" ? balance : null,
     issuedAt: new Date(pack.issuedAt).toISOString(), decidedOn: pack.decidedOn, decidedBy: pack.decidedBy,
     // What the client refused it for, or what they accepted with still outstanding.
     note: pack.status === "draft" ? "" : pack.note,

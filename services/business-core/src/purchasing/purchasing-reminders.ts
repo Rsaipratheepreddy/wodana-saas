@@ -5,7 +5,9 @@ import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { projectHandedOver } from "../site/handover";
 import { currencyDecimals, ensurePurchasingSettings, readNeeds, readOrderLines } from "./orders";
+import { processStockLevels } from "../inventory/stock-levels";
 import { lockSuppliers, readBillsDue } from "./payables";
+import { closeSettledBlockers, raiseLateBlockers } from "./purchasing-blockers";
 import { outstanding } from "./receiving";
 
 type Db = Pick<PoolClient, "query">;
@@ -49,13 +51,19 @@ export async function processPurchasingDeadlines(db: Db, workspaceId: string) {
       if (result.queued) sent += 1;
     }
   }
-  return { sent: sent + await chaseOrdering(db, workspaceId, today.today, today.locale) };
+  // A late line holds up the work that needs it (a blocker the buyer owns, the PM told); goods in close it.
+  const blocked = await raiseLateBlockers(db, workspaceId, today.today);
+  await closeSettledBlockers(db, workspaceId, {}, null);
+  // Free stock at or below its reorder point tells the storekeepers and buyers.
+  const low = await processStockLevels(db, workspaceId);
+  return { sent: sent + blocked + low + await chaseOrdering(db, workspaceId, today.today, today.locale) };
 }
 
 async function chaseOrdering(db: Db, workspaceId: string, today: string, locale: string) {
   const settings = await ensurePurchasingSettings(db, workspaceId);
+  // A project on hold is held: nobody is chased to order for it.
   const late = (await readNeeds(db, workspaceId, settings.requireMaterialSignoff))
-    .filter((need) => !need.blocked && need.orderBy && need.orderBy < today && need.remaining !== null && Dec.of(need.remaining).cmp(0) > 0);
+    .filter((need) => !need.blocked && need.projectStatus === "active" && need.orderBy && need.orderBy < today && need.remaining !== null && Dec.of(need.remaining).cmp(0) > 0);
   if (!late.length) return 0;
   const buyers = (await db.query<{ userId: string }>(
     `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership

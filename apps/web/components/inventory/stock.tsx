@@ -1,65 +1,117 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, MenuButton, NoResultsState, SegmentedControl, TextAreaField, type DataGridColumn } from "@/design-system";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, ListTabs, MenuButton, NoResultsState, TextAreaField, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
-import type { PendingAdjustment, StockRow, StockState, TransferState } from "@/lib/inventory/types";
-import { addExact } from "@/lib/purchasing/amounts";
+import { restockQuantity } from "@/lib/inventory/levels";
+import type { PendingAdjustment, ReorderPoint, StockRow, StockState, TransferState } from "@/lib/inventory/types";
+import { Cell, ProjectFilterChip, ProjectLinks } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
 import { MoveDialog } from "./move-dialog";
+import { ReorderPointDialog } from "./reorder-point-dialog";
 import { StockChangeDialog, type ChangeMode } from "./stock-change-dialog";
 import styles from "./inventory.module.css";
 
-type Owner = "all" | "free" | "projects";
+export type StockView = "all" | "low" | "free" | "projects";
+const unit = (value: string, of: string) => `${quantityText(value)} ${of}`.trim();
 
 /**
- * Stock: each item at each place, for a project or free, with what's on hand. A row's actions issue it,
- * reserve or release it, move it or count it; stock that isn't in the system yet is added with its origin.
+ * Stock: each item at each place, for a project (reserved or issued to it) or free, with what's on hand.
+ * Queues show what runs low against its reorder point, free stock and what's held for projects. A row's
+ * actions issue it, reserve or release it, move it, count it or set its reorder point; stock that isn't
+ * in the system yet is added with its origin.
  */
-export function Stock({ api, state, error, onReload, onChanged, onMoved, onHistory }: {
-  api: InventoryApi; state: StockState | null; error: string; onReload: () => void; onChanged: (next: StockState) => void; onMoved: (next: TransferState) => void;
-  onHistory: (itemId: string) => void;
+export function Stock({ api, workspaceId, state, error, onReload, onChanged, onMoved, onHistory, projectId = null, onProject = () => undefined, initialView = "all" }: {
+  api: InventoryApi; workspaceId: string; state: StockState | null; error: string; onReload: () => void; onChanged: (next: StockState) => void; onMoved: (next: TransferState) => void;
+  onHistory: (itemId: string) => void; projectId?: string | null; onProject?: (projectId: string | null) => void; initialView?: StockView;
 }) {
   const t = useT();
   const format = useProjectFormat();
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<StockView>(initialView);
   const [refusing, setRefusing] = useState<PendingAdjustment | null>(null);
   const [notice, setNotice] = useState("");
+  const [place, setPlace] = useState<string | null>(null);
+  const [change, setChange] = useState<{ mode: ChangeMode; row: StockRow | null } | null>(null);
+  const [moving, setMoving] = useState<{ row: StockRow | null } | null>(null);
+  const [reorder, setReorder] = useState<{ item: { itemId: string; itemName: string; unit: string; locationId: string | null }; point: ReorderPoint | null } | null>(null);
+  const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }> | null>(null);
+  // The suppliers a reorder point can name (only for someone who can see them).
+  useEffect(() => {
+    if (!reorder || suppliers) return;
+    fetch(`/api/purchasing/suppliers?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" }).then((response) => (response.ok ? response.json() : null))
+      .then((data: { suppliers?: Array<{ id: string; name: string; status: string }> } | null) => setSuppliers((data?.suppliers ?? []).filter((item) => item.status !== "archived")))
+      .catch(() => setSuppliers([]));
+  }, [reorder, suppliers, workspaceId]);
   const decide = async (request: PendingAdjustment, action: "approve" | "reject", note = "") => {
     setNotice("");
     try { onChanged(await api.decideAdjustment(request.id, action, note)); return true; } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
   };
-  const [owner, setOwner] = useState<Owner>("all");
-  const [place, setPlace] = useState<string | null>(null);
-  const [change, setChange] = useState<{ mode: ChangeMode; row: StockRow | null } | null>(null);
-  const [moving, setMoving] = useState<{ row: StockRow | null } | null>(null);
-  const rows = useMemo(() => (state?.rows ?? []).filter((row) => (owner === "all" || (owner === "free") === !row.projectId) && (!place || row.locationId === place)
-    && (!search.trim() || `${row.itemName} ${row.itemCode} ${row.projectReference ?? ""} ${row.projectName ?? ""}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))), [state, owner, place, search]);
+  const points = useMemo(() => state?.reorderPoints ?? [], [state]);
+  const low = points.filter((point) => point.low);
+  const pointFor = (row: StockRow) => points.find((point) => point.itemId === row.itemId && (point.locationId === row.locationId || point.locationId === null));
+  const needle = search.trim().toLocaleLowerCase();
+  const scoped = useMemo(() => (state?.rows ?? []).filter((row) => Number(row.onHand) !== 0 && (!place || row.locationId === place) && (!projectId || row.projectId === projectId)
+    && (!needle || `${row.itemName} ${row.itemCode} ${row.projectReference ?? ""} ${row.projectName ?? ""}`.toLocaleLowerCase().includes(needle))), [state, place, projectId, needle]);
+  const rows = scoped.filter((row) => view === "free" ? !row.projectId : view === "projects" ? Boolean(row.projectId) : true);
   const columns = useMemo<DataGridColumn<StockRow>[]>(() => [
-    { id: "item", header: t("Item"), accessorFn: (row) => row.itemName, size: 260, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
-      <span>{row.itemName}</span>{row.itemCode ? <small>{row.itemCode}</small> : null}</span> } },
+    { id: "item", header: t("Item"), accessorFn: (row) => row.itemName, size: 260, meta: { primary: true, renderCell: (row) => {
+      const point = !row.projectId ? pointFor(row) : undefined;
+      return <span className={styles.nameCell}><span>{row.itemName}</span>
+        {row.itemCode || point ? <small>{[row.itemCode, point ? t("Low at {quantity}", { quantity: unit(point.reorderAt, row.unit) }) : ""].filter(Boolean).join(" · ")}</small> : null}
+        {point?.low ? <span><Badge tone="warning">{t("Low")}</Badge></span> : null}</span>;
+    } } },
     { id: "place", header: t("Place"), accessorFn: (row) => row.locationName, size: 180 },
-    { id: "for", header: t("For"), accessorFn: (row) => row.projectReference ?? "", size: 200, meta: { renderCell: (row) => row.projectReference
-      ? <span className={styles.nameCell}><span>{row.projectReference}</span><small>{row.projectName}</small></span> : <span className={styles.muted}>{t("Free stock")}</span> } },
-    { id: "onHand", header: t("On hand"), accessorFn: (row) => Number(row.onHand), size: 130, meta: { align: "end", renderCell: (row) => <span className={styles.number}>{`${quantityText(row.onHand)} ${row.unit}`.trim()}</span> } },
+    { id: "for", header: t("For"), accessorFn: (row) => row.projectReference ?? "", size: 170, meta: { renderCell: (row) => row.projectId && row.projectReference
+      ? <ProjectLinks projects={[{ id: row.projectId, reference: row.projectReference, name: row.projectName }]} /> : <span className={styles.muted}>{t("Free stock")}</span> } },
+    { id: "onHand", header: t("On hand"), accessorFn: (row) => Number(row.onHand), size: 130, meta: { align: "end", renderCell: (row) => <span className={styles.number}>{unit(row.onHand, row.unit)}</span> } },
     { id: "value", header: t("Value"), accessorFn: (row) => Number(row.value), size: 150, meta: { align: "end", mobileHidden: true, renderCell: (row) => <span className={styles.nameCell}>
       <span className={styles.number}>{format.money(row.value, row.currency)}</span>
       {row.averageCost ? <small>{t("{price} each", { price: format.money(row.averageCost, row.currency) })}</small> : null}</span> } },
     { id: "actions", header: "", accessorFn: () => "", size: 120, meta: { align: "end", renderCell: (row) => state && (state.canManage || state.canAdjust) ? <MenuButton size="compact" label={t("Actions")}
-      onAction={(id) => (id === "history" ? onHistory(row.itemId) : id === "move" ? setMoving({ row }) : setChange({ mode: id as ChangeMode, row }))}
+      onAction={(id) => (id === "history" ? onHistory(row.itemId) : id === "move" ? setMoving({ row }) : id === "reorder"
+        ? setReorder({ item: { itemId: row.itemId, itemName: row.itemName, unit: row.unit, locationId: row.locationId }, point: pointFor(row) ?? null }) : setChange({ mode: id as ChangeMode, row }))}
       items={[
         ...(state.canManage ? [{ id: "issue", label: t("Issue to a project") }, row.projectId ? { id: "release", label: t("Release to free stock") } : { id: "allocate", label: t("Reserve for a project") },
           { id: "move", label: t("Move") }, { id: "return", label: t("Take back from a project") }] : []),
         ...(state.canAdjust ? [{ id: "count", label: t("Count") }] : []),
+        ...(!row.projectId ? [{ id: "reorder", label: pointFor(row) ? t("Change reorder point") : t("Set reorder point") }] : []),
         { id: "history", label: t("History") },
       ]} /> : null } },
-  ], [t, state, onHistory, format]);
-  const total = rows.length ? addExact(...rows.map((row) => row.value)) : "0";
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [t, state, onHistory, format, points]);
+  const lowColumns = useMemo<DataGridColumn<ReorderPoint>[]>(() => [
+    { id: "item", header: t("Item"), accessorFn: (point) => point.itemName, size: 240, meta: { primary: true, renderCell: (point) => <Cell title={point.itemName}
+      meta={[point.itemCode, point.locationName ?? t("Every place together")].filter(Boolean).join(" · ")} /> } },
+    { id: "free", header: t("Free now"), accessorFn: (point) => Number(point.free), size: 150, meta: { align: "end", renderCell: (point) => <Cell title={<span className={styles.number}>{unit(point.free, point.unit)}</span>}
+      meta={t("Low at {quantity}", { quantity: unit(point.reorderAt, point.unit) })} tone={point.low ? "danger" : undefined} /> } },
+    { id: "coming", header: t("On order"), accessorFn: (point) => Number(point.onOrder), size: 130, meta: { align: "end", renderCell: (point) => Number(point.onOrder)
+      ? <span className={styles.number}>{unit(point.onOrder, point.unit)}</span> : <span className={styles.muted}>—</span> } },
+    { id: "state", header: t("Status"), accessorFn: (point) => (point.short ? 2 : point.low ? 1 : 0), size: 150, meta: { renderCell: (point) => point.short ? <Badge tone="danger">{t("Order now")}</Badge>
+      : point.low ? <Badge tone="warning">{t("Coming")}</Badge> : <Badge tone="success">{t("Enough")}</Badge> } },
+    { id: "next", header: t("Next"), accessorFn: () => "", size: 170, meta: { align: "end", renderCell: (point) => point.short
+      ? <Link className={styles.rowLink} href="/workspace/purchasing?view=restock">{t("Order {quantity}", { quantity: unit(restockQuantity(point), point.unit) })}</Link>
+      : state?.canManage || state?.canAdjust ? <Button size="compact" variant="quiet" onPress={() => setReorder({ item: { itemId: point.itemId, itemName: point.itemName, unit: point.unit, locationId: point.locationId }, point })}>
+        {t("Change")}</Button> : null } },
+  ], [t, state]);
 
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   const placeName = state?.locations.find((location) => location.id === place)?.name;
+  const project = projectId ? state?.rows.find((row) => row.projectId === projectId) : undefined;
+  const toolbar = <div className={styles.filters}>
+    <ListTabs label={t("Stock")} value={view} onChange={setView} items={[
+      { id: "all", label: t("All") },
+      { id: "low", label: t("Low stock"), count: low.length },
+      { id: "free", label: t("Free stock") },
+      { id: "projects", label: t("For projects") },
+    ]} />
+    {view !== "low" ? <MenuButton size="compact" label={placeName ?? t("Every place")} onAction={(id) => setPlace(id === "any" ? null : id)}
+      items={[{ id: "any", label: t("Every place") }, ...(state?.locations ?? []).map((location) => ({ id: location.id, label: location.name }))]} /> : null}
+    <ProjectFilterChip project={projectId ? { id: projectId, reference: project?.projectReference ?? t("This project"), name: project?.projectName } : null} onClear={() => onProject(null)} />
+  </div>;
   return <>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
     {state?.pendingAdjustments.length ? <section className={styles.pending} aria-label={t("Corrections waiting for approval")}>
@@ -74,22 +126,21 @@ export function Stock({ api, state, error, onReload, onChanged, onMoved, onHisto
           <Button size="compact" variant="quiet" onPress={() => setRefusing(request)}>{t("Refuse")}</Button></span> : <small className={styles.muted}>{t("Someone else approves it.")}</small>}
       </li>)}</ul>
     </section> : null}
-    <DataGrid<StockRow> ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
-      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText
-      toolbarLeading={<div className={styles.filters}>
-        <SegmentedControl label={t("Show")} value={owner} onChange={(value) => setOwner(value as Owner)}
-          options={[{ id: "all", label: t("All") }, { id: "free", label: t("Free stock") }, { id: "projects", label: t("For projects") }]} />
-        <MenuButton size="compact" label={placeName ?? t("Every place")} onAction={(id) => setPlace(id === "any" ? null : id)}
-          items={[{ id: "any", label: t("Every place") }, ...(state?.locations ?? []).map((location) => ({ id: location.id, label: location.name }))]} />
-      </div>}
-      toolbarActions={<div className={styles.filters}>
-        {rows.length && state ? <span className={styles.muted}>{t("Worth {value}", { value: format.money(total, state.currency) })}</span> : null}
-        {state?.canAdjust ? <Button size="compact" onPress={() => setChange({ mode: "add", row: null })}>{t("Add stock")}</Button> : null}</div>}
-      emptyContent={search.trim() || place || owner !== "all" ? <NoResultsState onClear={() => { setSearch(""); setPlace(null); setOwner("all"); }} />
-        : <EmptyState title={t("Nothing in stock")} description={t("Deliveries add stock where they arrive.")} />} />
+    {view === "low" ? <DataGrid<ReorderPoint> ariaLabel={t("Low stock")} columns={lowColumns} data={[...points].sort((a, b) => Number(b.short) - Number(a.short) || Number(b.low) - Number(a.low))
+      .filter((point) => !needle || point.itemName.toLocaleLowerCase().includes(needle))} getRowId={(point) => point.id} isLoading={!state}
+      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar}
+      emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No reorder points yet")}
+        description={t("Set one from an item's actions to be told when free stock runs low.")} />} />
+    : <DataGrid<StockRow> ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
+      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar}
+      toolbarActions={state?.canAdjust ? <Button size="compact" onPress={() => setChange({ mode: "add", row: null })}>{t("Add stock")}</Button> : null}
+      emptyContent={needle || place || view !== "all" || projectId ? <NoResultsState onClear={() => { setSearch(""); setPlace(null); setView("all"); onProject(null); }} />
+        : <EmptyState title={t("Nothing in stock")} description={t("Deliveries add stock where they arrive.")} />} />}
     {change && state ? <StockChangeDialog api={api} state={state} mode={change.mode} row={change.row} onClose={() => setChange(null)} onDone={(next) => { setChange(null); onChanged(next); }} /> : null}
     {refusing ? <RefuseDialog onClose={() => setRefusing(null)} onSave={async (note) => { if (await decide(refusing, "reject", note)) setRefusing(null); }} /> : null}
     {moving && state ? <MoveDialog api={api} state={state} row={moving.row} onClose={() => setMoving(null)} onSent={(next) => { setMoving(null); onMoved(next); }} /> : null}
+    {reorder && state ? <ReorderPointDialog api={api} state={state} item={reorder.item} point={reorder.point} suppliers={suppliers} onClose={() => setReorder(null)}
+      onDone={(next) => { setReorder(null); onChanged(next); }} /> : null}
   </>;
 }
 

@@ -10,10 +10,8 @@ export const DELIVER_TO = ["site", "factory", "warehouse", "pickup", "other"] as
 /** Orders that count as placed: approved or further. Drafts and orders waiting for approval are "in draft". */
 export const PLACED: OrderStatus[] = ["approved", "sent", "confirmed", "partly_received", "received", "closed"];
 
-/** Minor units of a currency (AED 2, JPY 0, KWD 3). */
-export function currencyDecimals(currency: string) {
-  try { return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2; } catch { return 2; }
-}
+/** Minor units of a currency (2 for most, 0 for JPY, 3 for KWD); one shared definition. */
+export { currencyDecimals } from "../common/currency";
 
 /**
  * A line's amounts, exactly: net = quantity × price less the discount, tax on the net, each rounded to
@@ -53,7 +51,24 @@ export type Need = {
   packageIds: string[];
   /** For a material, the scope lines it's bought for (those lines aren't listed on their own). */
   scopeLines: string[];
+  /** The project is running, or on hold (nothing is ordered for it without the buyer saying why). */
+  projectStatus: "active" | "on_hold";
+  /** The latest variation that reduced or removed what it's for (VO-2), when there was one. */
+  changedBy: string | null;
 };
+
+/** When each order line's goods are needed on its project, from the plan (lines with no date are left out). */
+export async function linesNeededBy(db: Db, workspaceId: string, lines: Array<{ id: string; projectId: string | null; materialItemId: string | null; boqLineId: string | null }>) {
+  const dates: Record<string, string> = {};
+  for (const projectId of new Set(lines.map((line) => line.projectId).filter((id): id is string => Boolean(id)))) {
+    const needs = new Map((await readNeeds(db, workspaceId, false, projectId)).map((need) => [need.key, need.neededBy]));
+    for (const line of lines.filter((item) => item.projectId === projectId)) {
+      const date = line.materialItemId ? needs.get(`material:${line.materialItemId}`) : line.boqLineId ? needs.get(`line:${line.boqLineId}`) : null;
+      if (date) dates[line.id] = date;
+    }
+  }
+  return dates;
+}
 
 /**
  * What projects still need to order, across every running project: the materials on each material list
@@ -63,7 +78,7 @@ export type Need = {
 export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boolean, projectId: string | null = null): Promise<Need[]> {
   const rows = (await db.query<Omit<Need, "blocked" | "remaining" | "orderBy" | "fromStock"> & { remaining: string | null }>(
     `WITH projects AS (
-       SELECT project.id, project.reference, project.name FROM delivery_projects project
+       SELECT project.id, project.reference, project.name, project.status FROM delivery_projects project
         WHERE project.workspace_id = $1 AND project.started_at IS NOT NULL AND project.status IN ('active', 'on_hold') AND ($2::uuid IS NULL OR project.id = $2)
      ), accepted AS (
        -- What each order line has: accepted (less what went back after acceptance) and what the supplier credited instead of sending.
@@ -120,6 +135,13 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
             needs.required::text AS required, coalesce(ordered.placed, 0)::text AS placed, coalesce(ordered.drafted, 0)::text AS drafted, coalesce(ordered.received, 0)::text AS received,
             (needs.required - coalesce(ordered.placed, 0) - coalesce(ordered.drafted, 0))::text AS remaining,
             needs."catalogItemId", needs."supplierHint", needs."packageName", needs.supply, needs."clientChoice", needs."neededBy"::text AS "neededBy", needs."packageIds", needs."scopeLines",
+            (SELECT status FROM projects WHERE projects.id = needs."projectId") AS "projectStatus",
+            -- The latest variation that reduced or removed the scope it's bought for.
+            (SELECT change.detail->>'variation' FROM project_boq_events change
+              WHERE change.workspace_id = $1 AND change.kind IN ('reduced', 'omitted') AND change.detail ? 'variation'
+                AND (change.line_id = needs."sourceId" OR (needs.source = 'material' AND change.line_id = ANY(
+                     SELECT unnest(item.boq_line_ids) FROM project_material_items item WHERE item.workspace_id = $1 AND item.id = needs."sourceId")))
+              ORDER BY change.at DESC LIMIT 1) AS "changedBy",
             -- The supplier's lead time when the catalog knows it (the preferred supplier's, else the longest), else the workspace's.
             coalesce((SELECT link.lead_time_days FROM catalog_supplier_links link WHERE link.workspace_id = $1 AND link.item_id = needs."catalogItemId" AND link.lead_time_days IS NOT NULL
                        ORDER BY link.preferred DESC, link.lead_time_days DESC LIMIT 1),
@@ -185,21 +207,56 @@ async function givenFromStock(db: Db, workspaceId: string, needs: Array<{ key: s
 
 export type OrderRow = {
   id: string; number: string; status: OrderStatus; vendorId: string; supplierName: string; legalEntityId: string; companyCode: string; currency: string;
-  total: string; expectedDate: string | null; promisedDate: string | null; createdAt: string; createdByName: string; projects: Array<{ id: string; reference: string }>; lines: number;
-  revision: number; version: number;
+  total: string; expectedDate: string | null; promisedDate: string | null; createdAt: string; createdByName: string;
+  /** The projects its lines are for, and whether each is running or on hold. */
+  projects: Array<{ id: string; reference: string; status: string }>; lines: number;
+  revision: number; version: number; createdBy: string; submittedBy: string | null;
+  /**
+   * What's still to come, as the order counts it (ordered less cancelled, credited, accepted and waiting for
+   * inspection): how many lines, and when the first of them is due (its promise, else the order's promise,
+   * else when it's needed). Deliveries waiting for someone to inspect them.
+   */
+  linesLeft: number; due: string | null; inspecting: boolean;
+  /** The latest shipment the buyer is following, if any. */
+  shipment: { status: ShipmentStatus; eta: string | null; carrier: string } | null;
 };
+
+export const SHIPMENT_STATUSES = ["booked", "in_transit", "delayed", "arrived", "cancelled"] as const;
+export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number];
+
+/** What each line of an order (aliased `line`) has received, rejected, has waiting and was credited, as the order counts it. */
+export const LINE_RECEIVED = `
+  LEFT JOIN LATERAL (SELECT sum(got.accepted) AS accepted, sum(got.rejected) AS rejected, sum(got.pending) AS pending
+                       FROM goods_receipt_lines got JOIN goods_receipts receipt ON receipt.workspace_id = got.workspace_id AND receipt.id = got.receipt_id
+                      WHERE got.workspace_id = line.workspace_id AND got.order_line_id = line.id AND receipt.reversed_at IS NULL) received ON true
+  LEFT JOIN LATERAL (SELECT sum(item.quantity) FILTER (WHERE item.source = 'accepted' AND sent.status = 'sent') AS "returnedAccepted",
+                            sum(item.quantity) FILTER (WHERE sent.status = 'sent') AS returned,
+                            sum(item.quantity) FILTER (WHERE sent.outcome = 'credit' AND (sent.status = 'sent' OR (sent.status = 'open' AND item.source = 'rejected'))) AS credited
+                       FROM supplier_return_lines item JOIN supplier_returns sent ON sent.workspace_id = item.workspace_id AND sent.id = item.return_id
+                      WHERE item.workspace_id = line.workspace_id AND item.order_line_id = line.id) back ON true`;
 
 const ORDER_SELECT = `SELECT purchase.id, purchase.number, purchase.status, purchase.vendor_id AS "vendorId", vendor.display_name AS "supplierName", purchase.legal_entity_id AS "legalEntityId",
   entity.code AS "companyCode", purchase.currency, purchase.total::text AS total, purchase.expected_date::text AS "expectedDate", purchase.promised_date::text AS "promisedDate",
-  purchase.created_at AS "createdAt", creator.display_name AS "createdByName", purchase.revision, purchase.version,
-  coalesce((SELECT jsonb_agg(DISTINCT jsonb_build_object('id', project.id, 'reference', project.reference)) FROM purchase_order_lines line
+  purchase.created_at AS "createdAt", creator.display_name AS "createdByName", purchase.revision, purchase.version, purchase.created_by AS "createdBy", purchase.submitted_by AS "submittedBy",
+  coalesce((SELECT jsonb_agg(DISTINCT jsonb_build_object('id', project.id, 'reference', project.reference, 'status', project.status)) FROM purchase_order_lines line
              JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
             WHERE line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id), '[]'::jsonb) AS projects,
-  (SELECT count(*)::int FROM purchase_order_lines line WHERE line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id) AS lines
+  (SELECT count(*)::int FROM purchase_order_lines line WHERE line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id) AS lines,
+  coalesce(progress."linesLeft", 0) AS "linesLeft", progress.due::text AS due, coalesce(progress.inspecting, false) AS inspecting,
+  CASE WHEN shipment.status IS NULL THEN NULL ELSE jsonb_build_object('status', shipment.status, 'eta', shipment.eta::text, 'carrier', shipment.carrier) END AS shipment
   FROM purchase_orders purchase
   JOIN workspace_vendors vendor ON vendor.workspace_id = purchase.workspace_id AND vendor.id = purchase.vendor_id
   JOIN legal_entities entity ON entity.workspace_id = purchase.workspace_id AND entity.id = purchase.legal_entity_id
-  JOIN users creator ON creator.id = purchase.created_by`;
+  JOIN users creator ON creator.id = purchase.created_by
+  LEFT JOIN LATERAL (
+    SELECT count(*) FILTER (WHERE owed.left > 0)::int AS "linesLeft", min(owed.due) FILTER (WHERE owed.left > 0) AS due, bool_or(owed.pending > 0) AS inspecting
+      FROM (SELECT line.quantity - line.cancelled_quantity - coalesce(back.credited, 0) - (coalesce(received.accepted, 0) - coalesce(back."returnedAccepted", 0)) - coalesce(received.pending, 0) AS left,
+                   coalesce(line.promised_date, purchase.promised_date, purchase.expected_date) AS due, coalesce(received.pending, 0) AS pending
+              FROM purchase_order_lines line ${LINE_RECEIVED}
+             WHERE line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id) owed) progress ON true
+  LEFT JOIN LATERAL (SELECT tracked.status, tracked.eta, tracked.carrier FROM purchase_order_shipments tracked
+                      WHERE tracked.workspace_id = purchase.workspace_id AND tracked.order_id = purchase.id AND tracked.status <> 'cancelled'
+                      ORDER BY tracked.updated_at DESC, tracked.id LIMIT 1) shipment ON true`;
 
 export async function readOrders(db: Db, workspaceId: string): Promise<OrderRow[]> {
   return (await db.query<OrderRow>(`${ORDER_SELECT} WHERE purchase.workspace_id = $1 ORDER BY purchase.created_at DESC LIMIT 1000`, [workspaceId])).rows;
@@ -224,6 +281,8 @@ export type OrderLine = {
   /** The supplier's alternative for the line, if they offered one, and what was ordered first once one was taken. */
   alternateStatus: "offered" | "accepted" | "rejected" | null; alternateDescription: string | null; alternateSpecification: string; alternateUnitPrice: string | null;
   alternateNote: string; alternateOfferedBy: string | null; originalDescription: string | null; originalSpecification: string | null;
+  /** The stock item a restock line refills (free lines for no project only). */
+  stockItemId: string | null;
 };
 
 export type OrderDetail = OrderRow & {
@@ -236,6 +295,8 @@ export type OrderDetail = OrderRow & {
   continuedAt: string | null; continuedNote: string | null; continuedByName: string | null;
   /** Who let the order go ahead beyond its project's money in hand, and why (cleared when its lines change). */
   fundsOverrideAt: string | null; fundsOverrideReason: string | null; fundsOverrideByName: string | null;
+  /** Who said it goes ahead while one of its projects is on hold, and why. */
+  holdOverrideAt: string | null; holdOverrideReason: string | null; holdOverrideByName: string | null;
 };
 
 export async function readOrder(db: Db, workspaceId: string, orderId: string, lock = false): Promise<OrderDetail | undefined> {
@@ -243,18 +304,20 @@ export async function readOrder(db: Db, workspaceId: string, orderId: string, lo
   return (await db.query<OrderDetail>(
     `SELECT listed.*, purchase.payment_terms AS "paymentTerms", purchase.advance_percent::text AS "advancePercent", purchase.credit_days AS "creditDays", purchase.terms_note AS "termsNote",
             purchase.retention_percent::text AS "retentionPercent", purchase.deliver_to AS "deliverTo", purchase.delivery_address AS "deliveryAddress", purchase.supplier_reference AS "supplierReference", purchase.notes,
-            purchase.subtotal::text AS subtotal, purchase.discount_total::text AS "discountTotal", purchase.tax_total::text AS "taxTotal", purchase.created_by AS "createdBy",
-            purchase.submitted_by AS "submittedBy", approver.display_name AS "approvedByName", purchase.approved_at AS "approvedAt", purchase.sent_at AS "sentAt", purchase.sent_to AS "sentTo",
+            purchase.subtotal::text AS subtotal, purchase.discount_total::text AS "discountTotal", purchase.tax_total::text AS "taxTotal",
+            approver.display_name AS "approvedByName", purchase.approved_at AS "approvedAt", purchase.sent_at AS "sentAt", purchase.sent_to AS "sentTo",
             purchase.confirmed_at AS "confirmedAt", purchase.cancelled_at AS "cancelledAt", purchase.cancel_reason AS "cancelReason",
             purchase.closed_at AS "closedAt", purchase.close_reason AS "closeReason", purchase.over_reason AS "overReason",
             purchase.continue_on_hold_at AS "continuedAt", purchase.continue_on_hold_note AS "continuedNote", continuer.display_name AS "continuedByName", entity.display_name AS "companyName",
-            purchase.funds_override_at AS "fundsOverrideAt", purchase.funds_override_reason AS "fundsOverrideReason", overrider.display_name AS "fundsOverrideByName"
+            purchase.funds_override_at AS "fundsOverrideAt", purchase.funds_override_reason AS "fundsOverrideReason", overrider.display_name AS "fundsOverrideByName",
+            purchase.hold_override_at AS "holdOverrideAt", purchase.hold_override_reason AS "holdOverrideReason", holder.display_name AS "holdOverrideByName"
        FROM (${ORDER_SELECT} WHERE purchase.workspace_id = $1 AND purchase.id = $2) listed
        JOIN purchase_orders purchase ON purchase.workspace_id = $1 AND purchase.id = listed.id
        JOIN legal_entities entity ON entity.workspace_id = $1 AND entity.id = purchase.legal_entity_id
        LEFT JOIN users approver ON approver.id = purchase.approved_by
        LEFT JOIN users continuer ON continuer.id = purchase.continue_on_hold_by
-       LEFT JOIN users overrider ON overrider.id = purchase.funds_override_by`, [workspaceId, orderId])).rows[0];
+       LEFT JOIN users overrider ON overrider.id = purchase.funds_override_by
+       LEFT JOIN users holder ON holder.id = purchase.hold_override_by`, [workspaceId, orderId])).rows[0];
 }
 
 export async function readOrderLines(db: Db, workspaceId: string, orderId: string): Promise<OrderLine[]> {
@@ -270,21 +333,29 @@ export async function readOrderLines(db: Db, workspaceId: string, orderId: strin
             line.cancelled_quantity::text AS cancelled, line.cancel_reason AS "cancelReason", line.replaces_line_id AS "replacesLineId", replaced.number AS "replacesOrderNumber",
             line.alternate_status AS "alternateStatus", line.alternate_description AS "alternateDescription", line.alternate_specification AS "alternateSpecification",
             line.alternate_unit_price::text AS "alternateUnitPrice", line.alternate_note AS "alternateNote", line.alternate_offered_by AS "alternateOfferedBy",
-            line.original_description AS "originalDescription", line.original_specification AS "originalSpecification"
+            line.original_description AS "originalDescription", line.original_specification AS "originalSpecification", line.stock_item_id AS "stockItemId"
        FROM purchase_order_lines line
        JOIN purchase_orders purchase ON purchase.workspace_id = line.workspace_id AND purchase.id = line.order_id
        LEFT JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
        LEFT JOIN purchase_order_lines previous ON previous.workspace_id = line.workspace_id AND previous.id = line.replaces_line_id
        LEFT JOIN purchase_orders replaced ON replaced.workspace_id = previous.workspace_id AND replaced.id = previous.order_id
-       LEFT JOIN LATERAL (SELECT sum(got.accepted) AS accepted, sum(got.rejected) AS rejected, sum(got.pending) AS pending
-                            FROM goods_receipt_lines got JOIN goods_receipts receipt ON receipt.workspace_id = got.workspace_id AND receipt.id = got.receipt_id
-                           WHERE got.workspace_id = line.workspace_id AND got.order_line_id = line.id AND receipt.reversed_at IS NULL) received ON true
-       LEFT JOIN LATERAL (SELECT sum(item.quantity) FILTER (WHERE item.source = 'accepted' AND sent.status = 'sent') AS "returnedAccepted",
-                                 sum(item.quantity) FILTER (WHERE sent.status = 'sent') AS returned,
-                                 sum(item.quantity) FILTER (WHERE sent.outcome = 'credit' AND (sent.status = 'sent' OR (sent.status = 'open' AND item.source = 'rejected'))) AS credited
-                            FROM supplier_return_lines item JOIN supplier_returns sent ON sent.workspace_id = item.workspace_id AND sent.id = item.return_id
-                           WHERE item.workspace_id = line.workspace_id AND item.order_line_id = line.id) back ON true
+       ${LINE_RECEIVED}
       WHERE line.workspace_id = $1 AND line.order_id = $2 ORDER BY line.position, line.id`, [workspaceId, orderId])).rows;
+}
+
+export type Shipment = {
+  id: string; carrier: string; trackingRef: string; trackingUrl: string; status: ShipmentStatus; shippedOn: string | null; eta: string | null; note: string;
+  updatedAt: string; updatedByName: string; version: number;
+};
+
+/** The shipments a buyer follows on an order: the open ones first, then by when they're expected. */
+export async function readShipments(db: Db, workspaceId: string, orderId: string): Promise<Shipment[]> {
+  return (await db.query<Shipment>(
+    `SELECT shipment.id, shipment.carrier, shipment.tracking_ref AS "trackingRef", shipment.tracking_url AS "trackingUrl", shipment.status, shipment.shipped_on::text AS "shippedOn",
+            shipment.eta::text AS eta, shipment.note, shipment.updated_at AS "updatedAt", person.display_name AS "updatedByName", shipment.version
+       FROM purchase_order_shipments shipment JOIN users person ON person.id = shipment.updated_by
+      WHERE shipment.workspace_id = $1 AND shipment.order_id = $2
+      ORDER BY shipment.status IN ('arrived', 'cancelled'), shipment.eta NULLS LAST, shipment.created_at`, [workspaceId, orderId])).rows;
 }
 
 export async function orderEvent(db: Db, workspaceId: string, orderId: string, kind: string, detail: Record<string, unknown>, actorId: string | null) {

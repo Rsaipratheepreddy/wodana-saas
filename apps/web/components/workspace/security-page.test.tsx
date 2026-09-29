@@ -19,6 +19,18 @@ describe("SecurityPage", () => {
     expect(screen.getByText("This device")).toBeInTheDocument();
   });
 
+  it("lists every view of the person by someone else under Activity: who, when and how long", () => {
+    render(<SecurityPage initialData={structuredClone(securityPageFixture)} viewAsActivity={[
+      { id: "v1", viewerName: "Olivia Owner", startedAt: "2026-09-28T09:00:00.000Z", endedAt: "2026-09-28T09:12:00.000Z", minutes: 12, open: false },
+      { id: "v2", viewerName: "Adam Admin", startedAt: "2026-09-29T09:00:00.000Z", endedAt: null, minutes: null, open: true },
+    ]} />);
+    expect(screen.getByRole("heading", { name: "Activity" })).toBeInTheDocument();
+    const table = screen.getByRole("table", { name: "Viewed as you" });
+    expect(within(table).getByText("Olivia Owner")).toBeInTheDocument();
+    expect(within(table).getByText("12 min")).toBeInTheDocument();
+    expect(within(table).getByText("Now")).toBeInTheDocument();
+  });
+
   it("revokes one selected session after confirmation", async () => {
     const interaction = userEvent.setup();
     const target = securityPageFixture.sessions[1];

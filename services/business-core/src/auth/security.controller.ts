@@ -23,8 +23,11 @@ import {
   AllowDuringMfaEnrollment,
   RequireRecentMfa,
 } from "./mfa-step-up.decorator";
+import { HiddenDuringViewAs } from "./view-as/view-as.decorators";
 
 @ApiTags("security")
+// A person's security settings and sessions stay private, even from an owner viewing as them.
+@HiddenDuringViewAs()
 @Controller("security")
 export class SecurityController {
   constructor(private readonly auth: LocalAuthService) {}

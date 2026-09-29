@@ -110,3 +110,8 @@
 .snagPhotos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-4); }
 .snagPhotoGroup { display: grid; gap: var(--wd-space-2); align-content: start; justify-items: start; }
 @media (max-width: 640px) { .snagPhotos { grid-template-columns: minmax(0, 1fr); } }
+
+/* Changing several items at once */
+.selectionBar { position: sticky; inset-block-end: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3);
+  border-block-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); }
+.selectionActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin-inline-start: auto; }

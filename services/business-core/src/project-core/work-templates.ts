@@ -86,6 +86,20 @@ export function parseTemplateTasks(value: unknown, roles: ProjectRole[]): Templa
  * The template laid out from a start date on working days: each task follows the one before it, or
  * starts with it; a task takes its days from its first working day.
  */
+/**
+ * Where a package's planning starts by default: the working day after the package planned before it ends
+ * (its latest due date), otherwise the project's start, and never before today.
+ */
+export async function packageStart(db: Db, workspaceId: string, project: { id: string; startDate: string | null }, packageId: string, calendar: WorkCalendar) {
+  const { today, previous } = (await db.query<{ today: string; previous: string | null }>(
+    `SELECT (now() AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS today,
+            (SELECT max(item.due_date)::text FROM work_items item WHERE item.workspace_id = $1 AND item.project_id = $2 AND item.package_id IS NOT NULL
+                AND item.package_id <> $3 AND item.template_key IS NOT NULL AND item.status <> 'cancelled') AS previous
+       FROM workspaces workspace WHERE workspace.id = $1`, [workspaceId, project.id, packageId])).rows[0];
+  const after = previous ? workdays(calendar).next(previous) : project.startDate;
+  return after && after > today ? after : today;
+}
+
 export function schedulePackage(tasks: TemplateTask[], startDate: string, calendar: WorkCalendar) {
   const math = workdays(calendar);
   const planned: Array<TemplateTask & { startDate: string; dueDate: string }> = [];

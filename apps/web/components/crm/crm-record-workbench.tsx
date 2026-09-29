@@ -59,7 +59,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   };
   const resource = useCrmResource<RecordData>(workspaceId, `opportunities/${row.id}`);
   const pipelines = useCrmResource<unknown>(workspaceId, "pipelines");
-  const members = useCrmResource<unknown>(workspaceId, "members");
+  // The people who can own CRM work (the same list and rule the server checks), readable by Sales.
+  const members = useCrmResource<unknown>(workspaceId, "sales-owners");
   const [action, setAction] = useState<ActionSpec | null>(null);
   const live = { ...row, ...resource.data };
   const pipeline = rows(pipelines.data).find((p) => p.id === (live.pipelineId ?? live.pipeline_id));
@@ -217,7 +218,7 @@ export function CrmCreateDialog({ id, workspaceId, onClose, onSaved, initialValu
   const t = useT();
   const customers = useCrmResource<unknown>(workspaceId, ["opportunities", "activities", "conversations"].includes(id) ? "parties?limit=100" : null);
   const pipelines = useCrmResource<unknown>(workspaceId, id === "opportunities" ? "pipelines" : null);
-  const members = useCrmResource<unknown>(workspaceId, ["opportunities", "activities"].includes(id) ? "members" : null);
+  const members = useCrmResource<unknown>(workspaceId, ["opportunities", "activities"].includes(id) ? "sales-owners" : null);
   const partyField: FieldSpec = { key: "partyId", label: t("Customer"), options: options(rows(customers.data), "displayName"), required: true };
   const ownerField: FieldSpec = { key: "ownerMembershipId", label: t("Sales owner"), options: options(rows(members.data), "displayName"), required: true };
   let action: ActionSpec;

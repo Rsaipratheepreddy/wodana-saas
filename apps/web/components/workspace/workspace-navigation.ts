@@ -126,6 +126,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/language", icon: "language", id: "workspace-language", label: tKey("Workspace language") },
           { href: "/workspace/legal-entities", icon: "company", id: "business-records", label: tKey("Business records") },
           { href: "/workspace/billing", icon: "billing", id: "billing", label: tKey("Billing") },
+          { href: "/workspace/settings/ai-credits", icon: "billing", id: "ai-credits", label: tKey("AI credits") },
           { href: "/workspace/settings/audit-logs", icon: "audit", id: "audit-log", label: tKey("Audit history") },
           { href: "/workspace/organizations", icon: "companies", id: "organizations-account", label: tKey("Manage workspaces"), showInSidebar: false },
           { href: "/workspace/gallery", icon: "designs", id: "gallery", label: tKey("Gallery"), showInSidebar: false },
@@ -144,6 +145,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/factory", icon: "production", id: "factory-settings", label: tKey("Factory") },
           { href: "/workspace/settings/accounting", icon: "integrations", id: "accounting-settings", label: tKey("Accounting") },
           { href: "/workspace/settings/attendance", icon: "calendar", id: "attendance-settings", label: tKey("Attendance & leave") },
+          { href: "/workspace/settings/inbox", icon: "conversations", id: "inbox-settings", label: tKey("Inbox") },
           { href: "/workspace/settings/reminders", icon: "settings", id: "reminder-settings", label: tKey("Reminders") },
           { href: "/workspace/settings/client-portal", icon: "settings", id: "client-portal-settings", label: tKey("Client portal") },
         ],
@@ -413,7 +415,8 @@ export function homeTabs(modules: WorkspaceModuleDefinition[]): { id: string; la
   return [
     { id: "overview", label: tKey("Overview"), href: "/workspace" },
     ...(projectTasks || allowed.has("follow-ups") ? [{ id: "tasks", label: tKey("Tasks"), href: projectTasks ? "/workspace/tasks" : "/workspace/crm/follow-ups?view=activity" }] : []),
-    ...(allowed.has("projects-overview") || allowed.has("pre-projects") ? [{ id: "approvals", label: tKey("Approvals"), href: "/workspace/approvals" }] : []),
+    // Everyone has approvals waiting somewhere (quotes, payments, orders, bills, reports): the list is theirs.
+    { id: "approvals", label: tKey("Approvals"), href: "/workspace/approvals" },
   ];
 }
 export const HOME_ROUTES = ["/workspace", "/workspace/tasks", "/workspace/approvals"];

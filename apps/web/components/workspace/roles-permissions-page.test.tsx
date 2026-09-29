@@ -12,6 +12,19 @@ const rolesNav = () => within(screen.getByRole("navigation", { name: "Roles" }))
 const area = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name} \\d+ of \\d+ on$`) });
 
 describe("RolesPermissionsPage", () => {
+  it("says when only one person, or nobody, can approve orders, output, stock corrections or bills", () => {
+    const data = structuredClone(rolesPermissionsFixture);
+    const owner = data.roles.find((role) => role.code === "owner")!;
+    owner.permissions = [...new Set([...owner.permissions, "purchasing.approve", "factory.approve"])];
+    data.roles.push({ ...owner, id: "approver-role", code: "purchasing_approver", name: "Purchasing approver", isSystem: false, permissions: ["purchasing.approve"] });
+    data.members = [...(data.members ?? []), { ...(data.members ?? [])[0], id: "second", displayName: "Second approver", roles: ["purchasing_approver"] }];
+    render(<RolesPermissionsPage initialData={data} />);
+    const warning = screen.getByText(/Approvals need a second person/).closest(".wd-callout") ?? document.body;
+    expect(within(warning as HTMLElement).queryByText(/approve orders/)).not.toBeInTheDocument();
+    expect(within(warning as HTMLElement).getByText(/Only one person can approve factory output\./)).toBeInTheDocument();
+    expect(within(warning as HTMLElement).getByText(/Nobody can approve supplier bills\./)).toBeInTheDocument();
+  });
+
   it("lists roles beside the selected role and groups capabilities by area with counts", () => {
     render(<RolesPermissionsPage initialData={structuredClone(rolesPermissionsFixture)} />);
 
@@ -29,7 +42,7 @@ describe("RolesPermissionsPage", () => {
     expect(screen.getByRole("button", { name: "Quotations & finance 2 of 8 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Projects & work 4 of 7 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Supply & catalog 2 of 7 on" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Client portal 0 of 1 on" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Client portal 0 of 2 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "People 2 of 4 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "AI & platform 1 of 1 on" })).toBeInTheDocument();
     // Only the first area starts open; its rows carry no product-area column or icon.

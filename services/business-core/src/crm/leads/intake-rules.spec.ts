@@ -15,9 +15,15 @@ describe("sales intake rules", () => {
     await expect(resolveReferral(client({}), "w", "referral", "partner", { option: "odg" })).rejects.toThrow(/partner list/);
     expect(await resolveReferral(client({ "FROM crm_taxonomy_options": [{}] }), "w", "referral", "broker", { option: "acme" })).toMatchObject({ kind: "broker", option: "acme" });
   });
-  it("limits a source to its roles", async () => {
-    await expect(assertSourceAllowed(client({ "allowed_role_codes": [{ roles: ["SALES"], label: "Self Generated" }] }), "w", "u", "self_generated")).rejects.toThrow(/Only some roles can create Self Generated/);
-    await expect(assertSourceAllowed(client({ "allowed_role_codes": [{ roles: ["SALES"], label: "Self Generated" }], "effective_member_roles": [{}] }), "w", "u", "self_generated")).resolves.toBeUndefined();
+  it("limits a source to its roles, in one role vocabulary (any case, role or team)", async () => {
+    const limited = { "allowed_role_codes": [{ roles: ["SALES", "OPS_ADMIN"], label: "Self Generated" }] };
+    await expect(assertSourceAllowed(client(limited), "w", "u", "self_generated")).rejects.toThrow(/Only some roles can create Self Generated/);
+    await expect(assertSourceAllowed(client({ ...limited, "effective_member_roles": [{ key: "viewer" }] }), "w", "u", "self_generated")).rejects.toThrow(/Only some roles/);
+    // The kit role `sales`, whatever case the source was saved in.
+    await expect(assertSourceAllowed(client({ ...limited, "effective_member_roles": [{ key: "sales" }] }), "w", "u", "self_generated")).resolves.toBeUndefined();
+    // A team role (`team_sales`) or the team itself answers to `sales`.
+    await expect(assertSourceAllowed(client({ ...limited, "effective_member_roles": [{ key: "team_sales" }] }), "w", "u", "self_generated")).resolves.toBeUndefined();
+    await expect(assertSourceAllowed(client({ ...limited, "effective_member_roles": [{ key: "administrator" }] }), "w", "u", "self_generated")).resolves.toBeUndefined();
     await expect(assertSourceAllowed(client({ "allowed_role_codes": [{ roles: null, label: "Company" }] }), "w", "u", "company")).resolves.toBeUndefined();
   });
   it("requires client type only when the workspace has client types", async () => {

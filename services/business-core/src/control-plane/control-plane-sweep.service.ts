@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
+import { ViewAsService } from "../auth/view-as/view-as.service";
 import { TenantDomainsService } from "../workspaces/tenant-domains.service";
 import { DEFAULT_GRACE_DAYS, lifecycleAutomation } from "./control-plane.domain";
 import { SupportSessionsService } from "./support-sessions.service";
@@ -21,6 +22,7 @@ export class ControlPlaneSweepService {
     private readonly lifecycle: TenantLifecycleService,
     private readonly support: SupportSessionsService,
     private readonly domains: TenantDomainsService,
+    private readonly viewAs: ViewAsService,
   ) {}
 
   async run() {
@@ -47,11 +49,13 @@ export class ControlPlaneSweepService {
   /** One organization's sweep, in its own tenant transactions. */
   async runWorkspace(workspaceId: string) {
     const support = await this.support.sweep(workspaceId);
+    // A view as someone past its 30 minutes ends even when the viewer closed the browser; its subject is told.
+    const viewAs = await this.viewAs.sweep(workspaceId);
     const changed = await this.lifecycle.automate(workspaceId, async ({ state, graceEndsAt, client }) => lifecycleAutomation({
       state, graceEndsAt, paymentPastDue: await this.paymentPastDue(client, workspaceId), graceDays: await this.graceDays(client, workspaceId),
     }));
     const domains = await this.domains.sweepOwnership(workspaceId);
-    return { support, lifecycle: changed?.state ?? null, domains };
+    return { support, viewAs, lifecycle: changed?.state ?? null, domains };
   }
 
   private async paymentPastDue(client: PoolClient, workspaceId: string) {
