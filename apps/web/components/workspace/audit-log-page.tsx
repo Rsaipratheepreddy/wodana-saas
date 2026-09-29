@@ -24,7 +24,7 @@ const PRODUCT_WORDS: Array<[RegExp, string]> = [
   [/\bcrm leads\b/g, "enquiries"], [/\bcrm lead\b/g, "enquiry"], [/\bleads\b/g, "enquiries"], [/\blead\b/g, "enquiry"],
   [/\bcrm opportunit(y|ies)\b/g, "opportunit$1"], [/\bcrm parties\b/g, "customers"], [/\bcrm party\b/g, "customer"],
   [/\bworkspace invitations?\b/g, "invitation"], [/\bworkspace memberships?\b/g, "member"], [/\bworkspace members?\b/g, "member"],
-  [/\bdelivery projects?\b/g, "project"], [/\bcommercial cases?\b/g, "deal"], [/\bcrm\b/g, ""],
+  [/\bdelivery projects?\b/g, "project"], [/\bcommercial cases?\b/g, "deal"], [/\bview as sessions?\b/g, "view as"], [/\b(crm|hrms)\b/g, ""],
 ];
 
 /** An event or record name in the product's words, in sentence case ("Planning case started", "Enquiry"). */
@@ -92,7 +92,8 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
       if (source !== "all" && item.source !== source) return false;
       if (minimum && Date.parse(item.occurredAt) < minimum) return false;
       if (!normalized) return true;
-      return `${item.action} ${item.entityType} ${item.entityId ?? ""} ${item.actorName ?? ""} ${item.actorEmail ?? ""} ${item.source} ${JSON.stringify(item.before)} ${JSON.stringify(item.after)}`
+      // Found by the names shown (Leave decided, View as) as well as the stored codes.
+      return `${actionLabel(item.action)} ${productLabel(item.entityType)} ${item.action} ${item.entityType} ${item.entityId ?? ""} ${item.actorName ?? ""} ${item.actorEmail ?? ""} ${item.source} ${JSON.stringify(item.before)} ${JSON.stringify(item.after)}`
         .toLowerCase()
         .includes(normalized);
     });

@@ -41,6 +41,21 @@ describe("AuditLogPage", () => {
     expect(table.queryByText(/Crm|Pre Project|Workspace Invitation/)).toBeNull();
   });
 
+  it("finds events by the names it shows", async () => {
+    const interaction = userEvent.setup();
+    const base = structuredClone(auditLogFixture.items[0]);
+    const items: AuditEvent[] = [
+      { ...base, id: "70000000-0000-4000-8000-000000000021", action: "hrms.leave_decided.v1", entityType: "hrms_leave_request" },
+      { ...base, id: "70000000-0000-4000-8000-000000000022", action: "security.view_as_started.v1", entityType: "view_as_session" },
+    ];
+    render(<AuditLogPage initialData={{ ...structuredClone(auditLogFixture), items, nextCursor: null }} />);
+    const table = within(screen.getByRole("table", { name: "Workspace audit log" }));
+    expect(table.getByText("Leave decided")).toBeInTheDocument();
+    await interaction.type(screen.getByRole("searchbox", { name: "Search audit log" }), "View as");
+    expect(table.getByText("View as")).toBeInTheDocument();
+    expect(table.queryByText("Leave decided")).toBeNull();
+  });
+
   it("loads the next cursor page without duplicating existing events", async () => {
     const interaction = userEvent.setup();
     const nextEvent: AuditEvent = {
