@@ -46,7 +46,10 @@ describe("PublicEnquiryFormView", () => {
       revision: "revision-one",
       serviceConsent: true,
       answers: { name: "Noor Al Mansoori", type: "renovation_fit_out" },
+      // Junk checks (S-13): how long the form was open; the hidden field stays empty for a person.
+      elapsedMs: expect.any(Number),
     });
+    expect(JSON.parse(String(request.mock.calls[0][1]?.body))).not.toHaveProperty("website");
   });
 
   it("submits the country selected for a customer phone question", async () => {

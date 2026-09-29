@@ -1361,7 +1361,41 @@ export class CrmLeadsService {
   }
 
   transition(actor: RequestActor, workspaceId: string, leadId: string, input: TransitionLeadDto) {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.manage", (client, actorUser) => this.transitionWith(client, workspaceId, leadId, input, actorUser));
+  }
+
+  /**
+   * Marks an enquiry as junk (S-13): it is closed (disqualified, "Spam", which stops its response timer), kept out
+   * of Sales reports, and its contact is blocked, so the same number or email sending the form again, or writing
+   * on WhatsApp, raises nothing — unless that client already has other real work with the firm. Audited.
+   */
+  markSpam(actor: RequestActor, workspaceId: string, leadId: string, input: { version: number }) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
+      const before = await this.requireLead(client, workspaceId, leadId, true);
+      if (before.version !== input.version) throw new ConflictException("Lead changed; reload and try again");
+      if ((before as unknown as Record<string, unknown>).spam_at) return this.mapLead(before);
+      if (!["disqualified", "qualified"].includes(String(before.status)))
+        await this.transitionWith(client, workspaceId, leadId, { version: input.version, status: "disqualified", reason: "Spam" } as TransitionLeadDto, actorUser);
+      const marked = await client.query(`UPDATE crm_leads SET spam_at = now(), spam_by = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 RETURNING *`, [workspaceId, leadId, actorUser.userId]);
+      const partyId = (before as unknown as { party_id?: string | null }).party_id ?? null;
+      let blocked = false;
+      if (partyId) {
+        const otherWork = await client.query(
+          `SELECT 1 FROM crm_opportunities WHERE workspace_id = $1 AND party_id = $2
+           UNION ALL SELECT 1 FROM crm_leads WHERE workspace_id = $1 AND party_id = $2 AND id <> $3 AND spam_at IS NULL AND status <> 'duplicate' LIMIT 1`,
+          [workspaceId, partyId, leadId]);
+        if (!otherWork.rowCount)
+          blocked = Boolean((await client.query(`UPDATE crm_parties SET blocked_at = now(), blocked_by = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND blocked_at IS NULL`,
+            [workspaceId, partyId, actorUser.userId])).rowCount);
+      }
+      const response = this.mapLead(marked.rows[0] as LeadContext);
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.lead.marked_spam.v1", entityType: "crm_lead", entityId: leadId,
+        before: this.mapLead(before), after: { ...response, contactBlocked: blocked } });
+      return response;
+    });
+  }
+
+  private async transitionWith(client: PoolClient, workspaceId: string, leadId: string, input: TransitionLeadDto, actorUser: { userId: string }) {
       const before = await this.requireLead(client, workspaceId, leadId, true);
       if (before.version !== input.version) throw new ConflictException("Lead changed; reload and try again");
       if (before.status === input.status) return this.mapLead(before);
@@ -1488,7 +1522,6 @@ export class CrmLeadsService {
         before: this.mapLead(before), after: response,
       });
       return response;
-    });
   }
 
   upsertQualification(actor: RequestActor, workspaceId: string, leadId: string, input: UpsertQualificationDto) {
@@ -2045,6 +2078,7 @@ export class CrmLeadsService {
       partyId: row.party_id,
       status: row.status,
       duplicateOfLeadId: source.duplicate_of_lead_id ?? null,
+      spamAt: source.spam_at ?? null,
       ownerMembershipId: row.owner_membership_id,
       queueId: row.queue_id,
       priority: source.priority,

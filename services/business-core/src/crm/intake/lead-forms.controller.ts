@@ -20,6 +20,9 @@ class SubmitFormDto {
   serviceConsent!: boolean;
   /** Preset from the shared link or QR code; validated against the workspace options. */
   @IsOptional() @IsObject() link?: { source?: string; channel?: string; placement?: string };
+  /** Junk protection (S-13): a field people never see (bots fill it), and how long the form was open before sending. */
+  @IsOptional() @IsString() @MaxLength(500) website?: string;
+  @IsOptional() @IsInt() @Min(0) elapsedMs?: number;
 }
 @Controller("workspaces/:workspaceId/crm/lead-forms")
 export class LeadFormsController {

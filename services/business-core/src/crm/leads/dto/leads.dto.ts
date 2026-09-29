@@ -112,6 +112,10 @@ export class AssignLeadDto {
   @IsString() @IsNotEmpty() @MaxLength(500) reason!: string;
 }
 
+export class LeadVersionDto {
+  @IsInt() @Min(1) version!: number;
+}
+
 export class TransitionLeadDto {
   @IsInt() @Min(1) version!: number;
   @IsIn(["new", "attempting_contact", "connected", "nurturing", "qualified", "disqualified", "paused"])

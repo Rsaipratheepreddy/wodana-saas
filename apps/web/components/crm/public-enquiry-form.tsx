@@ -19,6 +19,9 @@ export function PublicEnquiryFormView({ form, token, preview = false, link, subm
   const [phoneCountries, setPhoneCountries] = useState<Record<string, string>>({});
   const [customAreas, setCustomAreas] = useState<Record<string, boolean>>({});
   const [requestId] = useState(() => crypto.randomUUID());
+  // Junk protection (S-13): when the form opened, and a field people never see that scripts fill in.
+  const [openedAt] = useState(() => Date.now());
+  const [website, setWebsite] = useState("");
   const [saving, setSaving] = useState(false);
   const [received, setReceived] = useState(false);
   const [serviceConsent, setServiceConsent] = useState(false);
@@ -35,7 +38,8 @@ export function PublicEnquiryFormView({ form, token, preview = false, link, subm
     setSaving(true); setError("");
     try {
       const phoneCountryCodes = Object.fromEntries(form.questions.filter(question => question.type === "tel").map(question => [question.id, phoneCountries[question.id] ?? form.defaultCountryCode ?? ""]));
-      const response = await fetch(submitTo ?? `/api/enquiry-forms/${token}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestId, revision: form.revision, answers, phoneCountryCodes, serviceConsent, ...(link ? { link } : {}), ...(extra ?? {}) }) });
+      const response = await fetch(submitTo ?? `/api/enquiry-forms/${token}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestId, revision: form.revision, answers, phoneCountryCodes, serviceConsent, ...(link ? { link } : {}), ...(extra ?? {}),
+        elapsedMs: Date.now() - openedAt, ...(website ? { website } : {}) }) });
       const result = await response.json();
       if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(". ") : result.message ?? t("Your enquiry could not be submitted. Please try again."));
       setReceived(true); onReceived?.();
@@ -64,6 +68,7 @@ export function PublicEnquiryFormView({ form, token, preview = false, link, subm
         </fieldset> : question.type === "number" ? <NumericInput label={question.title} description={question.description} isRequired={question.required} value={answers[question.id] === undefined || answers[question.id] === "" ? undefined : Number(answers[question.id])} onChange={value => update(question.id, String(value))} />
         : <TextInput label={question.title} description={question.description} isRequired={question.required} inputType={question.type === "email" || question.type === "tel" || question.type === "date" ? question.type : "text"} value={String(answers[question.id] ?? "")} onChange={value => update(question.id, value)} />}
     </section>)}
+    <div aria-hidden="true" className={styles.trap}><label>{t("Website")}<input tabIndex={-1} autoComplete="off" name="website" value={website} onChange={(event) => setWebsite(event.target.value)} /></label></div>
     {error && <Callout title={t("Enquiry not submitted")} tone="danger">{error}</Callout>}
     <div className={styles.customerConsent}><Checkbox isRequired isSelected={serviceConsent} onChange={setServiceConsent}>{form.consentLabel}</Checkbox><small>{t("Your details are used only to respond to this enquiry unless you separately choose marketing updates.")}</small></div>
     <div className={styles.customerFooter}><Button variant="primary" type="submit" isDisabled={preview} isLoading={saving}>{t("Submit enquiry")}</Button></div>

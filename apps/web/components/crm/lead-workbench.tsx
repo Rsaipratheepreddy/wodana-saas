@@ -128,6 +128,9 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
       <div className={styles.recordActions}>
         {active && !live.isConverted ? <Button size="compact" variant="primary" isDisabled={!detail} onPress={() => setContacting(true)}><PhoneCall size={14} aria-hidden="true" />{t("Log contact")}</Button> : null}
         <Button size="compact" isDisabled={!detail} onPress={() => setEditing(true)}>{t("Edit details")}</Button>
+        {/* Junk from a form (S-13): closed as spam, out of reports, and the contact blocked. */}
+        {!live.isConverted && !live.spamAt ? <Button size="compact" variant="quiet" isDisabled={!detail} onPress={() => setAction({ title: t("Mark as spam"), path: `leads/${lead.id}/spam`, method: "POST", submit: t("Mark as spam"),
+          fields: [], transform: () => ({ version }) })}>{t("Mark as spam")}</Button> : null}
       </div>
     </header>
     {clientMatches.length ? <section className={styles.stack} aria-label={t("Confirm client")}>
