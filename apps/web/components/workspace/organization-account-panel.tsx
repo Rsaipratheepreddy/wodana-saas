@@ -2,7 +2,7 @@
 
 import { Building2, CheckCircle2, Plus, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, TextInput } from "@/design-system";
+import { Badge, Button, Callout, ConfirmationDialog, FormDialog, TextInput } from "@/design-system";
 import type { CompanyProfileData } from "@/lib/workspace/company-profile";
 import type { CustomerAccount, OrganizationRequest } from "@/lib/workspace/customer-account";
 import styles from "./company-profile.module.css";
@@ -166,15 +166,14 @@ export function OrganizationAccountPanel({
       {requests.length ? <div className={styles.requestList}><h3>{t("Requests")}</h3>{requests.map((item) => <div className={styles.requestRow} key={item.id}><div><strong>{item.name}</strong><small>{item.reason || t("Additional independent organization")}</small>{item.decisionReason ? <small>{item.decisionReason}</small> : null}</div><div className={styles.requestActions}><Badge tone={requestStatusTone(item.status)}>{statusLabel(item.status)}</Badge>{item.status === "pending" ? <Button aria-label={t("Cancel {name} request", { name: item.name })} onPress={() => setCancelTarget(item)} size="compact" variant="quiet"><X aria-hidden="true" size={14} />{t("Cancel")}</Button> : null}</div></div>)}</div> : null}
     </section>
 
-    <ControlledModalDialog description={t("This creates a request only. Wodana reviews it before the new workspace is provisioned.")} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={() => setDialogOpen(false)}>{t("Cancel")}</Button><Button form="organization-request-form" isLoading={saving} type="submit" variant="primary">{t("Send request")}</Button></div>} isOpen={dialogOpen} onOpenChange={(open) => { if (!saving) setDialogOpen(open); }} title={t("Add a workspace")}>
-      <form className={styles.organizationRequestForm} id="organization-request-form" noValidate onSubmit={submit}>
+    <FormDialog description={t("This creates a request only. Wodana reviews it before the new workspace is provisioned.")} isOpen={dialogOpen} onClose={() => setDialogOpen(false)}
+      isSubmitting={saving} isDirty={Boolean(draft.name.trim() || draft.registeredName.trim())} submitLabel={t("Send request")} onSubmit={submit} formClassName={styles.organizationRequestForm} title={t("Add a workspace")}>
         {error ? <Callout title={t("Could not send request")} tone="danger">{error}</Callout> : null}
         <TextInput isRequired label={t("Company name")} onChange={updateName} value={draft.name} />
         <TextInput isRequired label={t("Registered company name")} onChange={(registeredName) => { setDraft((current) => ({ ...current, registeredName })); setError(""); }} value={draft.registeredName} />
         <TextInput description={t("Used on official documents. You can set it before approval.")} isRequired label={t("Entity code")} onChange={(entityCode) => { setDraft((current) => ({ ...current, entityCode: entityCode.toUpperCase() })); setError(""); }} value={draft.entityCode} />
-        <TextInput description={t("Regional settings will start from {name} and can be changed after approval.", { name: profile.workspace.name })} label={t("Reason (optional)")} onChange={(reason) => { setDraft((current) => ({ ...current, reason })); setError(""); }} value={draft.reason} />
-      </form>
-    </ControlledModalDialog>
+        <TextInput description={t("Regional settings will start from {name} and can be changed after approval.", { name: profile.workspace.name })} label={t("Reason")} onChange={(reason) => { setDraft((current) => ({ ...current, reason })); setError(""); }} value={draft.reason} />
+    </FormDialog>
 
     <ConfirmationDialog body={cancelTarget ? t("Cancel the request for {name}? It will not create an organization.", { name: cancelTarget.name }) : null} confirmLabel={cancelling ? t("Cancelling…") : t("Cancel request")} isOpen={Boolean(cancelTarget)} onConfirm={() => void cancelRequest()} onOpenChange={(open) => { if (!open && !cancelling) setCancelTarget(null); }} title={t("Cancel organization request?")} />
   </>;

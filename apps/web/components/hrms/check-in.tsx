@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Camera, CameraOff, MapPin } from "lucide-react";
 import type { AttendanceAction, AttendanceSession, CapturePosition, HrmsBootstrap, HrmsEmployee, WorkContext, WorkLocation, WorkMode } from "@wodana/contracts";
-import { Button, Callout, ControlledModalDialog, InlineNotice, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, emitHapticFeedback } from "@/design-system";
+import { Button, Callout, FormDialog, InlineNotice, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, emitHapticFeedback } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
 import { HrmsError } from "@/lib/hrms/client";
@@ -342,11 +342,8 @@ export function CheckInDialog({ api, employee, kind, attendance, onClose }: {
     };
     settle(await attendance.submit(input, photo?.blob ?? null));
   };
-  return <ControlledModalDialog isOpen size="md" title={title} isDismissable={!attendance.busy} onOpenChange={(open) => { if (!open && !attendance.busy) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={attendance.busy} onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={attendance.busy} isDisabled={!ready} onPress={() => void submit()}>{issues ? t("Send for review") : title}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={title} onClose={onClose} error={error || undefined} isSubmitting={attendance.busy} isSubmitDisabled={!ready}
+    submitLabel={issues ? t("Send for review") : title} onSubmit={() => submit()}>
       {choosing ? <>
         <SegmentedControl label={t("Where")} value={mode} onChange={(value) => { setMode(value as WorkMode); setChosen(null); }}
           options={(["office", "site", "field", ...(employee.remoteAllowed ? ["remote" as const] : [])] as WorkMode[]).map((id) => ({ id, label: labels.mode(id) }))} />
@@ -363,6 +360,5 @@ export function CheckInDialog({ api, employee, kind, attendance, onClose }: {
       <TextInput label={t("Note")} value={note} onChange={setNote} />
       {issues ? <InlineNotice tone="info" title={t("Needs a reason")} message={<ul className={styles.issues}>{issues.map((issue) => <li key={issue}>{labels.issue(issue)}</li>)}</ul>} /> : null}
       {needsReason ? <TextAreaField label={t("Reason for review")} isRequired value={reason} onChange={setReason} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
