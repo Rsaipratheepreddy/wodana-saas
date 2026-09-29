@@ -146,7 +146,7 @@ const deals: Source = async (db, ctx) => {
     title: deal.quoteNumber ? `${deal.title} · Q-${deal.quoteNumber}` : deal.title, subject: deal.client, project: null,
     amount: deal.amount, currency: deal.currency, since: deal.since,
     own: deal.submittedById === ctx.userId || (deal.status === "pending_approval" && deal.financeReviewedById === ctx.userId),
-    href: `/workspace/pre-projects/cases/${deal.caseId}/approvals`, decide: null,
+    href: `/workspace/pre-projects/cases/${deal.caseId}/execution-release`, decide: null,
   }));
 };
 
