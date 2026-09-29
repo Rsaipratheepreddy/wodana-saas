@@ -13,6 +13,8 @@ export type ProjectSettings = {
   requireAgreement: boolean; requirePayment: boolean; requireApproval: boolean; requireVariationPayment: boolean; referencePrefix: string; roles: ProjectRole[]; version: number;
   /** The project finishes by itself once the client accepts the handover (D-7). */
   autoFinish: boolean;
+  /** Hours after which a drafted client update nobody sent goes by itself; null keeps it manual (D-40). */
+  clientUpdateAutoSendHours: number | null;
 };
 export type SettingsState = { settings: ProjectSettings; templates: ProjectRoute[]; workTemplates: WorkTemplate[]; canManage: boolean };
 /** One step of a package's standard work: working days, the role that does it, its stage, and whether it runs with the step before. */
@@ -44,6 +46,8 @@ export type StatusUpdate = {
   id: string; health: Health; note: string; byName: string; at: string; sharedAt?: string | null;
   /** A status update, or the week's client update (drafted from approved site reports; a draft until the project manager approves it). */
   kind?: "status" | "client_update"; draft?: boolean; photoIds?: string[];
+  /** When a draft client update goes to the client by itself (the firm sends them automatically). */
+  sendsAt?: string | null;
 };
 /** Who sees what of a project's money: its costs (margin only with commercial costs), and the client side. */
 export type MoneyRights = { costs: boolean; margin: boolean; client: boolean };

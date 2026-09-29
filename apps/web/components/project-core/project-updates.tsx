@@ -68,7 +68,8 @@ function ClientUpdateDraft({ update, run, photoUrl }: { update: StatusUpdate; ru
   const [note, setNote] = useState(update.note);
   const [busy, setBusy] = useState<"send" | "discard" | null>(null);
   return <section className={styles.draft} aria-label={t("Client update to approve")}>
-    <div className={styles.draftHead}><Badge tone="warning">{t("Draft")}</Badge><strong>{t("Client update")}</strong><span className={styles.muted}>{format.when(update.at)}</span></div>
+    <div className={styles.draftHead}><Badge tone="warning">{t("Draft")}</Badge><strong>{t("Client update")}</strong><span className={styles.muted}>{update.sendsAt
+      ? t("Goes to the client by itself {when}", { when: format.when(update.sendsAt) }) : format.when(update.at)}</span></div>
     <TextAreaField label={t("What the client reads")} value={note} onChange={setNote} />
     {update.photoIds?.length && photoUrl ? <SavedPhotos photos={update.photoIds.map((id, index) => ({ id, name: t("Photo {number}", { number: index + 1 }), byName: update.byName, at: update.at }))} url={photoUrl} /> : null}
     <div className={styles.draftActions}>

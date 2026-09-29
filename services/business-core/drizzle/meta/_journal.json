@@ -820,6 +820,13 @@
       "when": 1801290000100,
       "tag": "0172_project_auto_finish",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1801290000200,
+      "tag": "0173_client_update_auto_send",
+      "breakpoints": true
     }
   ]
 }

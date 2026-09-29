@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, NotFoundException } from "@nest
 import type { PoolClient } from "pg";
 import { tellClients } from "../client-portal/portal-notices";
 import { Dec } from "../catalog-core/decimal";
+import { recordAudit } from "../audit/record-audit";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { weekEnd } from "./delivery-reminders";
 import { readCalendar } from "./work-calendar";
@@ -37,6 +38,8 @@ export async function processClientUpdateDrafts(db: Db, workspaceId: string) {
         AND NOT EXISTS (SELECT 1 FROM project_status_updates draft WHERE draft.workspace_id = project.workspace_id AND draft.project_id = project.id AND draft.draft_week = $3::date)`,
     [workspaceId, from, today])).rows;
   let drafted = 0;
+  const autoSend = (await db.query<{ hours: number | null }>(`SELECT client_update_auto_send_hours AS hours FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0]?.hours ?? null;
+  const ask = autoSend ? `Read it: it goes to the client by itself in ${autoSend} h unless you send or discard it first.` : "Read it and approve it to send.";
   for (const project of projects) {
     if (!project.lead) continue;
     const note = await draftNote(db, workspaceId, project.id, from, today);
@@ -51,11 +54,41 @@ export async function processClientUpdateDrafts(db: Db, workspaceId: string) {
     for (const [position, photo] of photos.entries())
       await db.query(`INSERT INTO project_update_photos (workspace_id, update_id, photo_id, position) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`, [workspaceId, id, photo.id, position]);
     await notifyUserInApp(db, { workspaceId, recipientUserId: project.lead, code: "project.client_update_ready", eventType: "project.client_update_ready",
-      variables: { title: project.title, clientName: "", actor: "", note: `${photos.length} photo${photos.length === 1 ? "" : "s"}. Read it and approve it to send.` },
+      variables: { title: project.title, clientName: "", actor: "", note: `${photos.length} photo${photos.length === 1 ? "" : "s"}. ${ask}` },
       deepLink: `/workspace/projects/${project.id}/updates`, idempotencyKey: `project.client_update_ready:${project.id}:${today}` });
     drafted += 1;
   }
   return { drafted };
+}
+
+/**
+ * D-40: with Settings → Projects → Client updates → "Send by itself" on, a drafted client update that nobody sent
+ * or discarded goes to the client after the chosen hours, with its drafted words and photos, shared on behalf of the
+ * project manager it was drafted for. Only for running projects (a project on hold holds its updates too). Audited
+ * as internal and automatic; the project manager hears it went. Runs in the reminders pass (every 15 minutes).
+ */
+export async function processClientUpdateAutoSend(db: Db, workspaceId: string) {
+  const hours = (await db.query<{ hours: number | null }>(`SELECT client_update_auto_send_hours AS hours FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0]?.hours;
+  if (!hours) return { sent: 0 };
+  const due = (await db.query<{ id: string; projectId: string; caseId: string; name: string; title: string; draftedFor: string }>(
+    `SELECT update.id, project.id AS "projectId", project.case_id AS "caseId", project.name, project.reference || ' · ' || project.name AS title, update.created_by AS "draftedFor"
+       FROM project_status_updates update JOIN delivery_projects project ON project.workspace_id = update.workspace_id AND project.id = update.project_id
+      WHERE update.workspace_id = $1 AND update.kind = 'client_update' AND update.approved_at IS NULL AND project.status = 'active'
+        AND update.created_at <= now() - make_interval(hours => $2::int)
+      ORDER BY update.created_at LIMIT 100`, [workspaceId, hours])).rows;
+  let sent = 0;
+  for (const update of due) {
+    const result = await decideClientUpdate(db, { workspaceId, projectId: update.projectId, caseId: update.caseId, title: update.name, updateId: update.id, note: undefined, approve: true,
+      userId: update.draftedFor });
+    await recordAudit(db, { workspaceId, actorUserId: null, source: "internal", action: "project.approve_client_update", entityType: "project", entityId: update.projectId,
+      after: { ...result, shared: true, automatic: true, afterHours: hours, onBehalfOf: update.draftedFor } });
+    await db.query(`UPDATE delivery_projects SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, update.projectId]);
+    await notifyUserInApp(db, { workspaceId, recipientUserId: update.draftedFor, code: "project.client_update_auto_sent", eventType: "project.client_update_auto_sent",
+      variables: { title: update.title, clientName: "", actor: "", note: `${hours} h` }, deepLink: `/workspace/projects/${update.projectId}/updates`,
+      idempotencyKey: `project.client_update_auto_sent:${update.id}` });
+    sent += 1;
+  }
+  return { sent };
 }
 
 /** The words of a week's update: what was installed (approved), the stage, and the work due next week. */

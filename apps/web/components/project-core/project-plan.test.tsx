@@ -383,7 +383,7 @@ describe("standard tasks", () => {
 
   it("edits the standard tasks for a way of delivering a package", async () => {
     const state: SettingsState = {
-      settings: { requireAgreement: true, requirePayment: true, requireApproval: false, requireVariationPayment: false, autoFinish: false, referencePrefix: "PRJ", version: 2,
+      settings: { requireAgreement: true, requirePayment: true, requireApproval: false, requireVariationPayment: false, autoFinish: false, clientUpdateAutoSendHours: null, referencePrefix: "PRJ", version: 2,
         roles: [{ key: "project_manager", label: "Project manager" }, { key: "factory_lead", label: "Factory lead" }] },
       templates: [{ id: "r1", name: "Standard", isDefault: true, version: 1, stages: [{ key: "production", name: "Production", ownerRole: "factory_lead", checks: [] }] }],
       workTemplates: [{ supply: "make", version: 3, tasks: [{ title: "Production", days: 15, role: "factory_lead", stage: "production", withPrevious: false }] },
@@ -407,5 +407,22 @@ describe("standard tasks", () => {
     expect(JSON.parse(String(put[1]!.body))).toEqual({ version: 3, tasks: [
       { title: "Production", days: 12, role: "factory_lead", stage: "production", withPrevious: false },
       { title: "Quality check", days: 1, role: null, stage: null, withPrevious: false }] });
+  });
+
+  it("turns on finishing by itself and sending client updates by themselves after 24 hours (D-7, D-40)", async () => {
+    const state: SettingsState = {
+      settings: { requireAgreement: true, requirePayment: true, requireApproval: false, requireVariationPayment: false, autoFinish: false, clientUpdateAutoSendHours: null, referencePrefix: "PRJ", version: 2,
+        roles: [{ key: "project_manager", label: "Project manager" }] },
+      templates: [], workTemplates: [], canManage: true,
+    };
+    const fetcher = mount(() => state);
+    render(<DesignSystemProvider><ProjectSettingsPage workspaceId="w" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("switch", { name: "Finish by itself" }));
+    await userEvent.click(screen.getByRole("switch", { name: "Send by itself" }));
+    expect(screen.getByRole("button", { name: /After/ })).toHaveTextContent("24 hours");
+    await userEvent.click(screen.getByRole("button", { name: /^Save/ }));
+    await waitFor(() => expect(fetcher.mock.calls.find(([url, init]) => String(url).includes("/settings") && init?.method === "PUT")).toBeTruthy());
+    const put = fetcher.mock.calls.find(([url, init]) => String(url).includes("/settings") && init?.method === "PUT")!;
+    expect(JSON.parse(String(put[1]!.body))).toMatchObject({ version: 2, autoFinish: true, clientUpdateAutoSendHours: 24 });
   });
 });

@@ -96,10 +96,13 @@ export class ProjectCoreService {
       const prefix = body.referencePrefix === undefined ? current.referencePrefix : String(body.referencePrefix).trim().toUpperCase();
       if (!/^[A-Z][A-Z0-9]{0,11}$/.test(prefix)) throw new BadRequestException("Use up to 12 letters or digits for the project number, starting with a letter.");
       const flag = (key: "requireAgreement" | "requirePayment" | "requireApproval" | "requireVariationPayment" | "autoFinish") => (body[key] === undefined ? current[key] : body[key] === true);
+      const autoSend = body.clientUpdateAutoSendHours === undefined ? current.clientUpdateAutoSendHours : body.clientUpdateAutoSendHours;
+      if (autoSend !== null && !(Number.isInteger(autoSend) && Number(autoSend) >= 1 && Number(autoSend) <= 168))
+        throw new BadRequestException("Send client updates by themselves after 1 to 168 hours, or keep them manual.");
       await client.query(
         `UPDATE workspace_project_settings SET require_agreement = $2, require_payment = $3, require_approval = $4, reference_prefix = $5, roles = $6::jsonb,
-                require_variation_payment = $8, auto_finish = $9, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
-        [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment"), flag("autoFinish")]);
+                require_variation_payment = $8, auto_finish = $9, client_update_auto_send_hours = $10, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
+        [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment"), flag("autoFinish"), autoSend]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.settings_changed", entityType: "workspace_project_settings", entityId: workspaceId, before: current, after: { ...body, roles } });
       const saved = await ensureSettings(client, workspaceId);
       return { settings: saved, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, saved.roles), canManage: true };
@@ -542,12 +545,14 @@ export class ProjectCoreService {
     const stages = await evaluateStages(client, workspaceId, project, await readStages(client, workspaceId, [projectId]), team);
     const manager = all || team.some((member) => member.membershipId === membershipId && member.lead);
     // Status updates and the weekly client updates (a draft only for the people who manage the project).
-    const updates = (await client.query<{ id: string; health: string; note: string; byName: string; at: string; sharedAt: string | null; kind: string; draft: boolean; photoIds: string[] }>(
+    // A draft client update says when it goes to the client by itself, when the firm sends them automatically (D-40).
+    const updates = (await client.query<{ id: string; health: string; note: string; byName: string; at: string; sharedAt: string | null; kind: string; draft: boolean; photoIds: string[]; sendsAt: string | null }>(
       `SELECT update.id, update.health, update.note, person.display_name AS "byName", update.created_at AS at, update.shared_at AS "sharedAt", update.kind,
               (update.kind = 'client_update' AND update.approved_at IS NULL) AS draft,
-              ARRAY(SELECT chosen.photo_id FROM project_update_photos chosen WHERE chosen.workspace_id = update.workspace_id AND chosen.update_id = update.id ORDER BY chosen.position) AS "photoIds"
+              ARRAY(SELECT chosen.photo_id FROM project_update_photos chosen WHERE chosen.workspace_id = update.workspace_id AND chosen.update_id = update.id ORDER BY chosen.position) AS "photoIds",
+              CASE WHEN update.kind = 'client_update' AND update.approved_at IS NULL AND $3::int IS NOT NULL THEN update.created_at + make_interval(hours => $3::int) END AS "sendsAt"
          FROM project_status_updates update JOIN users person ON person.id = update.created_by
-        WHERE update.workspace_id = $1 AND update.project_id = $2 ORDER BY update.created_at DESC LIMIT 20`, [workspaceId, projectId])).rows
+        WHERE update.workspace_id = $1 AND update.project_id = $2 ORDER BY update.created_at DESC LIMIT 20`, [workspaceId, projectId, settings.clientUpdateAutoSendHours])).rows
       .filter((update) => !update.draft || manager);
     const seal = (await client.query<{ revisionLabel: string; quoteNumber: number; acceptedAt: string; acceptedBy: string; method: string | null; contentHash: string; sealedAt: string }>(
       `SELECT revision_label AS "revisionLabel", quote_number AS "quoteNumber", accepted_at AS "acceptedAt", accepted_by_name AS "acceptedBy",

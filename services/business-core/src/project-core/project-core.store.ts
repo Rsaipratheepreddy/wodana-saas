@@ -15,6 +15,8 @@ export type ProjectSettings = {
   requireAgreement: boolean; requirePayment: boolean; requireApproval: boolean; requireVariationPayment: boolean; referencePrefix: string; roles: ProjectRole[]; version: number;
   /** D-7: the project finishes by itself once the client accepts the handover and its last stage's checks pass. */
   autoFinish: boolean;
+  /** D-40: hours after which a drafted client update nobody sent or discarded goes to the client by itself; null keeps it manual. */
+  clientUpdateAutoSendHours: number | null;
 };
 
 /** The workspace's project settings, created with the defaults the first time they're read. */
@@ -23,7 +25,8 @@ export async function ensureSettings(db: Db, workspaceId: string): Promise<Proje
     [workspaceId, JSON.stringify(DEFAULT_ROLES)]);
   return (await db.query<ProjectSettings>(
     `SELECT require_agreement AS "requireAgreement", require_payment AS "requirePayment", require_approval AS "requireApproval",
-            require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version, auto_finish AS "autoFinish" FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+            require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version, auto_finish AS "autoFinish",
+            client_update_auto_send_hours AS "clientUpdateAutoSendHours" FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 
 export type TemplateRow = { id: string; name: string; isDefault: boolean; version: number; stages: TemplateStage[] };

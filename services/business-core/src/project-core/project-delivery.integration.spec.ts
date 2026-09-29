@@ -11,7 +11,7 @@ import { SiteService } from "../site/site.service";
 import { WarrantyService } from "../site/warranty.service";
 import { readSitesToday } from "../site/sites-today";
 import { readHomeOverview } from "../workspaces/home-overview";
-import { decideClientUpdate, processClientUpdateDrafts } from "./client-updates";
+import { decideClientUpdate, processClientUpdateAutoSend, processClientUpdateDrafts } from "./client-updates";
 import { processMaterialsWaiting, processMilestonesDue, processWeeklySummaries } from "./delivery-reminders";
 import { ProjectCoreService } from "./project-core.service";
 import { ProjectMoneyService } from "./project-money.service";
@@ -417,6 +417,38 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
       expect((await w.client.query("SELECT shared_at IS NOT NULL AS shared FROM site_report_photos WHERE id=$1", [photo])).rows[0].shared).toBe(true);
       await expect(decideClientUpdate(w.client, { workspaceId: w.workspaceId, projectId: w.projectId, caseId: w.caseId, title: "Villa 12", updateId: draft.id, note: "", approve: true, userId: w.manager }))
         .rejects.toThrow(/already sent/);
+    });
+  });
+
+  it("D-40: with 'Send by itself', a client update nobody sent or discarded goes out after the chosen hours, audited as automatic", async () => {
+    await world(async (w) => {
+      const core = w.core(w.manager);
+      const settings = (await w.client.query<{ version: number }>("SELECT version FROM workspace_project_settings WHERE workspace_id = $1", [w.workspaceId])).rows[0];
+      // Off by default: nothing goes by itself.
+      const stale = randomUUID(), fresh = randomUUID();
+      await w.client.query(`INSERT INTO project_status_updates(id,workspace_id,project_id,health,note,created_by,kind,draft_week,created_at)
+        VALUES($1,$3,$4,'on_track','This week: cabinets.',$5,'client_update',$6::date,now() - interval '25 hours'),($2,$3,$4,'on_track','This week: worktop.',$5,'client_update',NULL,now() - interval '2 hours')`,
+        [stale, fresh, w.workspaceId, w.projectId, w.manager, day(w.today, -1)]);
+      expect(await processClientUpdateAutoSend(w.client, w.workspaceId)).toEqual({ sent: 0 });
+      await expect(core.saveSettings(actor, w.workspaceId, { version: settings.version, clientUpdateAutoSendHours: 0 })).rejects.toThrow(/1 to 168 hours/);
+      expect((await core.saveSettings(actor, w.workspaceId, { version: settings.version, clientUpdateAutoSendHours: 24 })).settings.clientUpdateAutoSendHours).toBe(24);
+      // The draft says when it will go.
+      const before = await core.get(actor, w.workspaceId, w.projectId);
+      const freshDraft = before.updates.find((update) => update.id === fresh)!;
+      expect(Date.parse(String(freshDraft.sendsAt)) - Date.parse(String(freshDraft.at))).toBe(24 * 3_600_000);
+      expect(await processClientUpdateAutoSend(w.client, w.workspaceId)).toEqual({ sent: 1 });
+      expect(await processClientUpdateAutoSend(w.client, w.workspaceId)).toEqual({ sent: 0 });
+      const rows = (await w.client.query<{ id: string; shared: boolean; approvedBy: string | null }>(
+        `SELECT id, shared_at IS NOT NULL AS shared, approved_by AS "approvedBy" FROM project_status_updates WHERE id = ANY($1::uuid[]) ORDER BY created_at`, [[stale, fresh]])).rows;
+      expect(rows).toEqual([{ id: stale, shared: true, approvedBy: w.manager }, { id: fresh, shared: false, approvedBy: null }]);
+      const audit = (await w.client.query(`SELECT actor_user_id AS actor, source, after->>'automatic' AS automatic, after->>'afterHours' AS hours FROM audit_events
+        WHERE workspace_id = $1 AND action = 'project.approve_client_update'`, [w.workspaceId])).rows;
+      expect(audit).toEqual([{ actor: null, source: "internal", automatic: "true", hours: "24" }]);
+      expect((await w.notices("project.client_update_auto_sent")).map((row) => row.recipient)).toEqual([w.manager]);
+      // A project on hold holds its updates too.
+      await w.client.query("UPDATE project_status_updates SET created_at = now() - interval '30 hours' WHERE id = $1", [fresh]);
+      await core.command(actor, w.workspaceId, w.projectId, { action: "hold", reason: "Client travelling", version: await w.version() });
+      expect(await processClientUpdateAutoSend(w.client, w.workspaceId)).toEqual({ sent: 0 });
     });
   });
 });
