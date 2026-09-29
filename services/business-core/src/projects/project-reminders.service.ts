@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
 import { processClientDecisions } from "../commercial/client-decision-reminders";
+import { processQuoteExpiry } from "../commercial/quote-expiry";
 import { processDesignDeadlines } from "../design/design-journey.store";
 import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { processHrmsCheckouts, processHrmsDocuments } from "../hrms/hrms-reminders";
@@ -32,7 +33,7 @@ export class ProjectRemindersService {
     const workspaces = await this.db.query<{ workspace_id: string }>(
       "SELECT workspace_id FROM list_reminder_workspaces()",
     );
-    const totals = { created: 0, decisionReminders: 0, clientDecisions: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
+    const totals = { created: 0, decisionReminders: 0, clientDecisions: 0, quotesExpiring: 0, quotesExpired: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
       workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, payablesDue: 0, retentionReleased: 0, overBudget: 0,
       receivablesOverdue: 0, checkoutReminders: 0, documentReminders: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
@@ -40,6 +41,8 @@ export class ProjectRemindersService {
         const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => ({
           decisions: await this.createDecisionReminders(client),
           // Quotes and designs waiting on the client: they and the case owner are reminded on the firm's days (Q-8).
+          // Quotes running out are flagged, and those that ran out are Expired, before the client is chased (Q-6).
+          quotes: await processQuoteExpiry(client, workspaceId),
           clientDecisions: await processClientDecisions(client, workspaceId),
           design: await processDesignDeadlines(client, workspaceId),
           work: await processWorkDeadlines(client, workspaceId),
@@ -65,6 +68,8 @@ export class ProjectRemindersService {
         }));
         totals.decisionReminders += run.decisions;
         totals.clientDecisions += run.clientDecisions?.sent ?? 0;
+        totals.quotesExpiring += run.quotes?.warned ?? 0;
+        totals.quotesExpired += run.quotes?.expired ?? 0;
         totals.weeklySummaries += run.weekly.sent;
         totals.stagesReady += run.stages.sent;
         totals.materialsWaiting += run.materials.sent;

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { Button, Checkbox, ControlledModalDialog, EmptyState, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem } from "@/design-system";
+import { type CalendarDate, parseDate, today } from "@internationalized/date";
+import { Button, Checkbox, ControlledModalDialog, DateField, EmptyState, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { StartProjectDialog } from "@/components/project-core/start-project-dialog";
@@ -32,6 +33,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   const [deciding, setDeciding] = useState(false);
   const [starting, setStarting] = useState(false);
   const [returning, setReturning] = useState(false);
+  const [extending, setExtending] = useState(false);
   const { status } = state.quote;
   const { flow } = state;
   const { confirmationDialog } = useConfirmationDialog();
@@ -71,9 +73,12 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
       {flow.canReview ? <Button size="compact" isLoading={busy === "return"} onPress={() => setReturning(true)}>{t("Return")}</Button> : null}
       <Button size="compact" variant="primary" isLoading={busy === "issue"} onPress={() => confirmSend("issue", [["issue"]])}>{t("Send to client")}</Button>
     </>;
-  } else if (status === "issued") {
-    actions = <>
+  } else if (status === "issued" || status === "expired") {
+    // A sent quote can be kept open longer; an expired one sent again with the same content (Q-7).
+    const extend = state.canEditValidity ? <Button size="compact" variant={status === "expired" ? "primary" : "secondary"} onPress={() => setExtending(true)}>{t("Extend validity")}</Button> : null;
+    actions = status === "expired" ? <>{newRevision}{extend}</> : <>
       {newRevision}
+      {extend}
       {flow.canRecordDecision ? <Button size="compact" variant="primary" onPress={() => setDeciding(true)}>{t("Record client decision")}</Button> : <span className={styles.waiting}>{t("Waiting for the client")}</span>}
     </>;
   } else if (["changes_requested", "declined", "withdrawn", "superseded"].includes(status)) {
@@ -109,6 +114,8 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
     {starting ? <StartProjectDialog workspaceId={workspaceId} caseId={caseId} onClose={() => setStarting(false)} /> : null}
     {returning ? <ReturnDialog busy={busy === "return"} onClose={() => setReturning(false)}
       onSave={async (note) => { await run("return", [["return", { note }]]); setReturning(false); }} /> : null}
+    {extending ? <ExtendValidityDialog current={state.quote.validUntil} busy={busy === "extend"} onClose={() => setExtending(false)}
+      onSave={async (validUntil) => { await run("extend", [["extend_validity", { validUntil }]]); setExtending(false); }} /> : null}
     {deciding ? <DecisionDialog state={state} workspaceId={workspaceId} caseId={caseId} onClose={() => setDeciding(false)}
       onSave={async (input) => { await run("decide", [["record_decision", input]]); setDeciding(false); }} busy={busy === "decide"} /> : null}
   </>;
@@ -123,6 +130,23 @@ function ReturnDialog({ onClose, onSave, busy }: { onClose: () => void; onSave: 
       <Button size="compact" variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={() => void onSave(note.trim())}>{t("Return")}</Button></div>}>
     <div className={styles.dialogForm}>
       <TextAreaField label={t("What needs to change")} isRequired value={note} onChange={setNote} maxLength={3000} />
+    </div>
+  </ControlledModalDialog>;
+}
+
+/** Same content, a new date: the client is told it's open again (Q-7). */
+function ExtendValidityDialog({ current, onClose, onSave, busy }: { current: string | null; onClose: () => void; onSave: (validUntil: string) => Promise<void>; busy: boolean }) {
+  const t = useT();
+  const { timeZone } = useDesignSystem();
+  const minimum = today(timeZone).add({ days: 1 });
+  const start = current ? parseDate(current) : null;
+  const [value, setValue] = useState<CalendarDate | null>(start && start.compare(minimum) >= 0 ? start.add({ days: 14 }) : minimum.add({ days: 13 }));
+  const valid = Boolean(value && value.compare(minimum) >= 0);
+  return <ControlledModalDialog isOpen size="md" title={t("Extend validity")} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
+    footer={<div className={styles.formActions}><span className={styles.spacer} /><Button size="compact" onPress={onClose}>{t("Cancel")}</Button>
+      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!valid} onPress={() => value && void onSave(value.toString())}>{t("Extend")}</Button></div>}>
+    <div className={styles.dialogForm}>
+      <DateField label={t("Valid until")} isRequired minValue={minimum} value={value} onChange={(next) => setValue(next as CalendarDate | null)} />
     </div>
   </ControlledModalDialog>;
 }

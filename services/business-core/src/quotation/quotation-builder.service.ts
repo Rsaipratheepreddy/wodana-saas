@@ -32,11 +32,13 @@ export type QuotationSettings = {
   defaultMarkupPercent: string; marginFloorPercent: string | null; discountApprovalPercent: string | null;
   validityDays: number; internalReview: boolean; priceBookId: string | null;
   /** Days after a quote or design reaches the client when they and the case owner are reminded (Q-8). */
-  decisionReminderDays: number[]; version: number;
+  decisionReminderDays: number[];
+  /** Days before a sent quote's validity ends when Sales and the client hear it; 0 for none (Q-6). */
+  expiryWarningDays: number; version: number;
 };
 const DEFAULT_SETTINGS: QuotationSettings = {
   defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null,
-  discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], version: 0,
+  discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], expiryWarningDays: 3, version: 0,
 };
 
 type LineRow = {
@@ -106,6 +108,11 @@ export class QuotationBuilderService {
           throw new BadRequestException("Reminder days are up to five whole days between 1 and 60.");
         next.decisionReminderDays = reminderDays(days);
       }
+      if (input.expiryWarningDays !== undefined) {
+        const days = Number(input.expiryWarningDays);
+        if (!Number.isInteger(days) || days < 0 || days > 30) throw new BadRequestException("Warn 0 to 30 days before a quote expires.");
+        next.expiryWarningDays = days;
+      }
       if (input.priceBookId !== undefined) {
         next.priceBookId = input.priceBookId === null ? null : uuid(input.priceBookId, "Price book");
         if (next.priceBookId && !(await client.query(`SELECT 1 FROM price_books WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.priceBookId])).rowCount)
@@ -113,15 +120,15 @@ export class QuotationBuilderService {
       }
       await client.query(
         `INSERT INTO workspace_quotation_settings (workspace_id, default_view, prices_include_tax, rounding, default_markup_percent, margin_floor_percent,
-           discount_approval_percent, validity_days, internal_review, price_book_id, decision_reminder_days, version, updated_by, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], 1, $11, now())
+           discount_approval_percent, validity_days, internal_review, price_book_id, decision_reminder_days, expiry_warning_days, version, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], $13, 1, $11, now())
          ON CONFLICT (workspace_id) DO UPDATE SET default_view = excluded.default_view, prices_include_tax = excluded.prices_include_tax,
            rounding = excluded.rounding, default_markup_percent = excluded.default_markup_percent, margin_floor_percent = excluded.margin_floor_percent,
            discount_approval_percent = excluded.discount_approval_percent, validity_days = excluded.validity_days, internal_review = excluded.internal_review,
-           price_book_id = excluded.price_book_id, decision_reminder_days = excluded.decision_reminder_days,
+           price_book_id = excluded.price_book_id, decision_reminder_days = excluded.decision_reminder_days, expiry_warning_days = excluded.expiry_warning_days,
            version = workspace_quotation_settings.version + 1, updated_by = excluded.updated_by, updated_at = now()`,
         [workspaceId, next.defaultView, next.pricesIncludeTax, next.rounding, next.defaultMarkupPercent, next.marginFloorPercent,
-          next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays]);
+          next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays, next.expiryWarningDays]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.settings_changed.v1", entityType: "workspace", entityId: workspaceId, before: current, after: next });
       return readSettings(client, workspaceId);
     });
@@ -738,6 +745,8 @@ export class QuotationBuilderService {
            LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
           WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0] ?? { name: "", project: "", address: null },
       canEdit, canEditCosts, canViewCosts,
+      // Extending a sent or expired quote's validity is the sender's step (Q-7).
+      canEditValidity: ["issued", "expired"].includes(quote.status) && await this.access.hasPermission(client, workspaceId, userId, EDIT),
       requirements: await caseRequirements(client, workspaceId, caseId),
       // The project this quote belongs to (once started), and the sealed name a variation got when applied.
       project: (await client.query<{ id: string; reference: string; appliedAs: string | null }>(
@@ -758,7 +767,7 @@ async function readSettings(db: Db, workspaceId: string): Promise<QuotationSetti
   const row = (await db.query<QuotationSettings>(
     `SELECT default_view AS "defaultView", prices_include_tax AS "pricesIncludeTax", rounding, default_markup_percent::text AS "defaultMarkupPercent",
             margin_floor_percent::text AS "marginFloorPercent", discount_approval_percent::text AS "discountApprovalPercent", validity_days AS "validityDays",
-            internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", version
+            internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", expiry_warning_days AS "expiryWarningDays", version
        FROM workspace_quotation_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   return row ? { ...row, decisionReminderDays: reminderDays(row.decisionReminderDays), defaultMarkupPercent: Dec.of(row.defaultMarkupPercent).toString(), marginFloorPercent: row.marginFloorPercent === null ? null : Dec.of(row.marginFloorPercent).toString(), discountApprovalPercent: row.discountApprovalPercent === null ? null : Dec.of(row.discountApprovalPercent).toString() } : { ...DEFAULT_SETTINGS };
 }

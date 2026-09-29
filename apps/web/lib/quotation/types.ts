@@ -5,7 +5,7 @@ export type QuoteView = "area" | "trade" | "area_trade";
 export type QuotationSettings = {
   defaultView: QuoteView; pricesIncludeTax: boolean; rounding: "line" | "document"; defaultMarkupPercent: string;
   marginFloorPercent: string | null; discountApprovalPercent: string | null; validityDays: number; internalReview: boolean;
-  priceBookId: string | null; decisionReminderDays: number[]; version: number;
+  priceBookId: string | null; decisionReminderDays: number[]; expiryWarningDays: number; version: number;
 };
 
 export type BuildUpRow = {
@@ -63,6 +63,8 @@ export type BuilderState = {
     clientDecision: { decision: string; decidedBy: string; decidedAt: string; note: string; method: string | null; recordedBy: string | null; evidence?: { id: string; name: string } | null } | null;
   };
   family: Array<{ id: string; number: number; status: string; total: string; createdAt: string | null }>;
+  /** Whether this person may extend a sent or expired quote's validity (Q-7). */
+  canEditValidity?: boolean;
   flow: { internalReview: boolean; reviewAction: "approve" | "qs_approve"; canReview: boolean; canRecordDecision: boolean; decisionEvidenceRequired?: boolean };
   paymentTemplates: Array<{ id: string; name: string; milestones: PaymentMilestone[] }>;
   settings: QuotationSettings;

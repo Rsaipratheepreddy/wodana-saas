@@ -228,7 +228,9 @@ export type QuoteStatus =
   | "changes_requested"
   | "declined"
   | "superseded"
-  | "withdrawn";
+  | "withdrawn"
+  /** Its validity ended before the client decided (set by the daily run, Q-6); "Extend validity" sends it again. */
+  | "expired";
 export type QuoteDecisionEvidence = {
   decision: "accept" | "changes" | "decline";
   /** Hash of the immutable, issued quotation the client reviewed. */
@@ -303,6 +305,8 @@ export type Quote = {
   decidedAt?: string;
   decidedBy?: string;
   clientDecision?: QuoteDecisionEvidence;
+  /** Each time its validity was extended without a new review (Q-7). */
+  validityExtensions?: Array<{ from: string; to: string; at: string; by: string; byId: string }>;
   hash?: string;
   total: number;
   brand?: PortalBrand;

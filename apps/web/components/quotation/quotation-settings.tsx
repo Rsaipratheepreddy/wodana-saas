@@ -101,6 +101,9 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       <SettingsRow label={t("Valid for (days)")}>
         <TextInput aria-label={t("Valid for (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.validityDays)} onChange={(value) => set("validityDays", Number(value.replace(/\D/g, "") || 0))} />
       </SettingsRow>
+      <SettingsRow label={t("Warn before a quote expires (days)")} hint={t("The case owner and the client hear it this many days before. 0 for none.")}>
+        <TextInput aria-label={t("Warn before a quote expires (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.expiryWarningDays ?? 0)} onChange={(value) => set("expiryWarningDays", Number(value.replace(/\D/g, "") || 0))} />
+      </SettingsRow>
       <SettingsRow label={t("Remind the client after (days)")} hint={t("While a quote or design waits, the client and the case owner hear on each of these days. Leave empty for none.")}>
         <TextInput aria-label={t("Remind the client after (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={days}
           onChange={(value) => { const clean = value.replace(/[^\d,\s]/g, ""); setDays(clean); set("decisionReminderDays", clean.split(/[,\s]+/).map(Number).filter((day) => Number.isInteger(day) && day > 0)); }} />

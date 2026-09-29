@@ -11067,5 +11067,9 @@
   "Apps & delivery": "Apps & delivery",
   "Reconnect WhatsApp in Connections.": "Reconnect WhatsApp in Connections.",
   "Connect WhatsApp in Connections.": "Connect WhatsApp in Connections.",
-  "Check the WhatsApp connection and its templates in Connections.": "Check the WhatsApp connection and its templates in Connections."
+  "Check the WhatsApp connection and its templates in Connections.": "Check the WhatsApp connection and its templates in Connections.",
+  "Warn before a quote expires (days)": "Warn before a quote expires (days)",
+  "The case owner and the client hear it this many days before. 0 for none.": "The case owner and the client hear it this many days before. 0 for none.",
+  "Extend validity": "Extend validity",
+  "Extend": "Extend"
 }

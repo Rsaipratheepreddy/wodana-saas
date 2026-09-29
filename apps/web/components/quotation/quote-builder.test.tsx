@@ -18,7 +18,7 @@ const state = (lines: BuilderLine[]): BuilderState => ({
   family: [{ id: "q1", number: 2, status: "draft", total: "420.00", createdAt: null }],
   flow: { internalReview: true, reviewAction: "approve", canReview: true, canRecordDecision: true },
   paymentTemplates: [],
-  settings: { defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null, discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [2, 5], version: 0 },
+  settings: { defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null, discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [2, 5], expiryWarningDays: 3, version: 0 },
   areas: [{ id: KITCHEN, name: "Kitchen" }], workPackages: [{ id: JOINERY, name: "Joinery" }], taxCodes: [], lines, discounts: [],
   pricing: { lines: lines.map((item) => ({ id: item.id, included: true, gross: "400.00", lineDiscount: "0.00", sectionDiscount: "0.00", quoteDiscount: "0.00", net: "400.00", tax: "20.00", total: "420.00", cost: "240.00" })),
     areas: [{ key: KITCHEN, gross: "400.00", discount: "0.00", net: "400.00" }], trades: [{ key: JOINERY, gross: "400.00", discount: "0.00", net: "400.00" }], subtotal: "400.00",
@@ -221,6 +221,16 @@ describe("quotation builder", () => {
     expect(await within(dialog).findByText("signed.pdf")).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posted(fetcher)).toContainEqual(expect.objectContaining({ action: "record_decision", evidenceAssetId: asset.id })));
+  });
+
+  it("sends an expired quote again with a new validity date (Q-7)", async () => {
+    const base = state([line({})]);
+    const initial = { ...base, quote: { ...base.quote, status: "expired", validUntil: "2026-01-10" }, canEdit: false, canEditValidity: true };
+    const fetcher = mount(initial, (url) => url.includes("/api/commercial/") ? { data: { revision: 2, quotes: [] } } : initial);
+    await userEvent.click(screen.getByRole("button", { name: "Extend validity" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Extend" }));
+    await waitFor(() => expect(posted(fetcher)).toContainEqual(expect.objectContaining({ action: "extend_validity", validUntil: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) })));
   });
 
   it("only saves payment milestones that add up to 100%", async () => {

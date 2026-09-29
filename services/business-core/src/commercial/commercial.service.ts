@@ -4,6 +4,7 @@ import { copyBuilderData } from "../quotation/quote-revision";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { releasePhaseOnDealApproval, winOpportunityOnAcceptance } from "./quote-acceptance";
 import { decisionEvidenceFile, decisionRecorder } from "./quote-decision-access";
+import { extendQuoteValidity } from "./quote-expiry";
 import { recordAudit } from "../audit/record-audit";
 import { noticeReceiptStep, permissionHolderNames } from "./commercial-notices";
 import { effectivePortalBrand } from "./effective-brand";
@@ -3262,6 +3263,16 @@ export class CommercialService {
         } else if (action === "release") {
           // Projects start from the accepted quotation (Start project), never from this old release step.
           throw new ConflictException("Start the project from the accepted quotation.");
+        } else if (action === "extend_validity") {
+          // Same content, a new date: no new review round (Q-7). The client is told it's open again.
+          if (!q) throw new NotFoundException("Quotation not found.");
+          const today = await this.workspaceDate(client, workspaceId);
+          const change = extendQuoteValidity(q, text(b.validUntil, 10, true), today);
+          q.validityExtensions = [...(q.validityExtensions ?? []), { ...change, at: now, by: user.displayName, byId: user.userId }];
+          await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "commercial.quote_validity_extended.v1", entityType: "pre_project_case", entityId: caseId,
+            before: { quoteId: q.id, validUntil: change.from }, after: { quoteId: q.id, validUntil: change.to } });
+          await tellClients(client, { workspaceId, caseId, event: "quote_issued", recordId: `${q.id}:${q.hash}:valid:${change.to}`, title: `${q.title} (V${q.number})`,
+            due: q.validUntil, demo: this.testMode });
         } else if (action === "record_decision") {
           // Staff record the client's decision on the sent quote (a signed copy, an email, in person).
           if (!q) throw new NotFoundException("Quotation not found.");
@@ -3285,8 +3296,8 @@ export class CommercialService {
           q.decidedBy = clientName;
           q.clientDecision = { ...quoteDecisionEvidence(q, typed, b.selectedOptionLineIds ?? [], clientName, now, note), recordedBy: user.displayName, recordedById: user.userId,
             method: method as NonNullable<QuoteDecisionEvidence["method"]>, ...(evidence ? { evidence } : {}) };
-          await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "commercial.quote_decision_recorded.v1", entityType: "commercial_quote", entityId: q.id,
-            before: { status: "issued" }, after: { decision, method, clientName, recorder, evidenceAssetId: evidence?.id ?? null, caseId } });
+          await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "commercial.quote_decision_recorded.v1", entityType: "pre_project_case", entityId: caseId,
+            before: { quoteId: q.id, status: "issued" }, after: { quoteId: q.id, decision, method, clientName, recorder, evidenceAssetId: evidence?.id ?? null } });
           if (typed === "accept") validateDeduction(data, q);
           q.status = typed === "accept" ? "accepted" : typed === "changes" ? "changes_requested" : "declined";
           if (typed === "changes") newRequest(data, `Changes to quotation V${q.number}`, note, q.id);
