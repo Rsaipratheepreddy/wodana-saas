@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, ControlledModalDialog, DateField, EmptyState, ErrorState, GroupedTable, InlineNotice, ListTabs, NoResultsState, SearchInput, SelectField, Skeleton, TextAreaField, TextInput,
-  type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Button, DateField, EmptyState, ErrorState, GroupedTable, InlineNotice, ListTabs, NoResultsState, SearchInput, SelectField, Skeleton, TextAreaField, TextInput,
+  type GroupedTableColumn, type GroupedTableSection, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
 import type { FactoryState, MakeLine } from "@/lib/factory/types";
@@ -102,19 +102,13 @@ function PlanDialog({ api, line, state, onClose, onPlanned }: { api: FactoryApi;
   const [notes, setNotes] = useState("");
   const [hours, setHours] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   const over = Number(quantity) > Number(line.left);
   const valid = Number(quantity) > 0 && !over && (!start || !end || end >= start);
-  return <ControlledModalDialog isOpen size="md" title={t("Plan work order")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={t("Plan work order")} onClose={onClose} error={error || undefined} isSubmitDisabled={!valid} submitLabel={t("Plan work order")} onSubmit={async () => { setError("");
         try { const saved = await api.plan({ id, lineId: line.lineId, quantity, workcenterId: workcenterId || null, plannedStart: start, plannedEnd: end, plannedHours: hours || null, notes: notes.trim() });
           onPlanned(saved.order.id); }
-        catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
-      }}>{t("Plan work order")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+        catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+      }}>
       <p className={styles.muted}>{`${line.projectReference} · ${line.title}`}</p>
       {line.projectStatus === "on_hold" ? <InlineNotice tone="info" message={t("{project} is on hold: it can be planned, not released.", { project: line.projectReference })} /> : null}
       <div className={styles.pair}>
@@ -131,8 +125,7 @@ function PlanDialog({ api, line, state, onClose, onPlanned }: { api: FactoryApi;
       <TextInput label={t("Hours it takes")} inputMode="decimal" suffix={t("h")} value={hours} onChange={(value) => setHours(numeric(value))}
         description={workcenterId ? t("Left empty: the workcenter's hours a day over its working days.") : undefined} />
       <TextAreaField label={t("Notes")} value={notes} onChange={setNotes} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /**
@@ -145,20 +138,14 @@ function PlanManyDialog({ api, lines, state, onClose, onPlanned }: { api: Factor
   const [ids] = useState(() => Object.fromEntries(lines.map((line) => [line.lineId, crypto.randomUUID()])));
   const [workcenterId, setWorkcenterId] = useState(state.workcenters.length === 1 ? state.workcenters[0].id : "");
   const [failed, setFailed] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Plan work orders ({count})", { count: lines.length })} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} onPress={async () => {
-        setBusy(true); setFailed([]);
+  return <FormDialog size="md" title={t("Plan work orders ({count})", { count: lines.length })} onClose={onClose} submitLabel={t("Plan work orders ({count})", { count: lines.length })} onSubmit={async () => { setFailed([]);
         const missed: string[] = [];
         for (const line of lines) {
           try { await api.plan({ id: ids[line.lineId], lineId: line.lineId, quantity: line.left, workcenterId: workcenterId || null, plannedStart: line.suggestedStart, plannedEnd: line.suggestedEnd }); }
           catch (cause) { missed.push(`${line.title}: ${cause instanceof Error ? cause.message : t("Could not save.")}`); }
         }
-        setBusy(false);
         if (missed.length) setFailed(missed); else onPlanned();
-      }}>{t("Plan work orders ({count})", { count: lines.length })}</Button></div>}>
-    <div className={styles.dialogBody}>
+      }}>
       {failed.length ? <InlineNotice tone="error" message={t("Not planned: {lines}", { lines: failed.join("; ") })} /> : null}
       <ul className={ops.list}>{lines.map((line) => <li key={line.lineId}>
         <span className={styles.nameCell}><span>{line.title}</span>
@@ -167,6 +154,5 @@ function PlanManyDialog({ api, lines, state, onClose, onPlanned }: { api: Factor
       </li>)}</ul>
       <SelectField label={t("Workcenter")} placeholder={t("Choose")} selectedKey={workcenterId} onSelectionChange={(key) => setWorkcenterId(key ? String(key) : "")}
         items={state.workcenters.map((center) => ({ id: center.id, label: center.name }))} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

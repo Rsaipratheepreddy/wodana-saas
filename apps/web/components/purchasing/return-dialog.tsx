@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, ControlledModalDialog, InlineNotice, SegmentedControl, Switch, TextAreaField, TextInput } from "@/design-system";
+import { EmailInput, FormDialog, InlineNotice, SegmentedControl, Switch, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
@@ -33,24 +33,16 @@ export function ReturnDialog({ api, receipt, onClose, onCreated }: { api: Purcha
   const [note, setNote] = useState("");
   const [send, setSend] = useState(false);
   const [to, setTo] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   useEffect(() => { api.order(receipt.receipt.orderId).then((order) => { if (order.supplier?.email) { setTo(order.supplier.email); setSend(true); } }).catch(() => undefined); }, [api, receipt.receipt.orderId]);
   const chosen = rows.filter((row) => Number(row.quantity) > 0);
   const invalid = useMemo(() => chosen.find((row) => Number(row.quantity) > Number(row.left) || !row.kind || !row.reason.trim()), [chosen]);
   const setRow = (key: string, patch: Partial<Row>) => setRows(rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   const save = async () => {
-    setBusy(true); setError("");
-    try {
-      onCreated(await api.createReturn({ id, receiptId: receipt.receipt.id, outcome, note: note.trim(), send, to: send ? to.trim() : null,
-        lines: chosen.map((row) => ({ receiptLineId: row.line.id, source: row.source, quantity: row.quantity, reasonKind: row.kind, reason: row.reason.trim() })) }));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
+    onCreated(await api.createReturn({ id, receiptId: receipt.receipt.id, outcome, note: note.trim(), send, to: send ? to.trim() : null,
+      lines: chosen.map((row) => ({ receiptLineId: row.line.id, source: row.source, quantity: row.quantity, reasonKind: row.kind, reason: row.reason.trim() })) }));
   };
-  return <ControlledModalDialog isOpen size="lg" title={t("Return to supplier")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!chosen.length || Boolean(invalid) || (send && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim()))} onPress={() => void save()}>{t("Raise return")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="lg" title={t("Return to supplier")} onClose={onClose} isDirty={Boolean(chosen.length || note.trim())} submitLabel={t("Raise return")}
+    isSubmitDisabled={!chosen.length || Boolean(invalid) || (send && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim()))} onSubmit={save}>
       <SegmentedControl label={t("The supplier")} value={outcome} onChange={(value) => setOutcome(value as "replace" | "credit")}
         options={[{ id: "replace", label: t("Replaces them") }, { id: "credit", label: t("Credits them") }]} />
       <div className={styles.receiveLines} role="table" aria-label={t("What goes back")} data-columns="3">
@@ -66,7 +58,6 @@ export function ReturnDialog({ api, receipt, onClose, onCreated }: { api: Purcha
       {invalid && Number(invalid.quantity) > Number(invalid.left) ? <InlineNotice tone="error" message={t("At most {quantity} of {item} can go back.", { quantity: `${quantityText(invalid.left)} ${invalid.line.unit}`.trim(), item: invalid.line.description })} /> : null}
       <TextAreaField label={t("Note for the supplier")} value={note} onChange={setNote} />
       <Switch isSelected={send} onChange={setSend}>{t("Email the supplier the return note")}</Switch>
-      {send ? <TextInput label={t("Email")} inputType="email" isRequired value={to} onChange={setTo} /> : null}
-    </div>
-  </ControlledModalDialog>;
+      {send ? <EmailInput label={t("Email")} isRequired maxLength={254} value={to} onChange={setTo} /> : null}
+  </FormDialog>;
 }

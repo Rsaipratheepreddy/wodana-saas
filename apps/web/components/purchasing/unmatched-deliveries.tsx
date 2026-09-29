@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
 import { Badge,
-  Button, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoResultsState, SelectField, Skeleton, TextAreaField, TextInput,
+  Button, DataGrid, DateField, FormDialog, FormRow, VisuallyHidden, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoResultsState, SelectField, Skeleton, TextAreaField, TextInput,
   type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -59,8 +59,6 @@ export function RecordUnmatchedDialog({ api, locations, onClose, onRecorded }: {
   const [lines, setLines] = useState<Line[]>([{ description: "", quantity: "", unit: "" }]);
   const [photos, setPhotos] = useState<File[]>([]);
   const photoIds = useMemo(() => photos.map(() => crypto.randomUUID()), [photos]);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     api.suppliers().then((state) => setSuppliers(state.suppliers.filter((item) => item.status !== "archived").sort((a, b) => a.name.localeCompare(b.name))
       .map((item) => ({ id: item.id, label: item.name })))).catch(() => undefined);
@@ -70,43 +68,35 @@ export function RecordUnmatchedDialog({ api, locations, onClose, onRecorded }: {
   const ready = Boolean(place) && filled.length > 0 && (known || supplierName.trim());
   const setLine = (index: number, patch: Partial<Line>) => setLines(lines.map((line, item) => (item === index ? { ...line, ...patch } : line)));
   const save = async () => {
-    setBusy(true); setError("");
-    try {
-      let saved = await api.recordUnmatched({ id, vendorId: known ? vendorId : null, supplierName: known ? "" : supplierName.trim(), place, receivedOn, deliveryNote: note.trim(),
-        handedOverBy: handedOverBy.trim(), lines: filled.map((line) => ({ description: line.description.trim(), quantity: line.quantity, unit: line.unit.trim() })) });
-      for (const [index, file] of photos.entries()) saved = await api.uploadPhoto({ kind: "unmatched", id }, photoIds[index], file);
-      onRecorded(saved);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
+    let saved = await api.recordUnmatched({ id, vendorId: known ? vendorId : null, supplierName: known ? "" : supplierName.trim(), place, receivedOn, deliveryNote: note.trim(),
+      handedOverBy: handedOverBy.trim(), lines: filled.map((line) => ({ description: line.description.trim(), quantity: line.quantity, unit: line.unit.trim() })) });
+    for (const [index, file] of photos.entries()) saved = await api.uploadPhoto({ kind: "unmatched", id }, photoIds[index], file);
+    onRecorded(saved);
   };
-  return <ControlledModalDialog isOpen size="lg" title={t("Goods without an order")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!ready} onPress={() => void save()}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-      <div className={styles.pair}>
+  return <FormDialog size="lg" title={t("Goods without an order")} onClose={onClose} isDirty={Boolean(filled.length || note.trim() || photos.length)} isSubmitDisabled={!ready} submitLabel={t("Save")} onSubmit={save}>
+      <FormRow>
         <SelectField label={t("From")} isRequired selectedKey={vendorId} placeholder={t("Choose the supplier")} onSelectionChange={(key) => setVendorId(key === null ? null : String(key))}
           items={[...suppliers, { id: OTHER, label: t("Not in the list") }]} />
-        {vendorId === OTHER ? <TextInput label={t("Who delivered")} isRequired value={supplierName} onChange={setSupplierName} /> : <span />}
-      </div>
-      <div className={styles.pair}>
+        {vendorId === OTHER ? <TextInput label={t("Who delivered")} isRequired maxLength={160} value={supplierName} onChange={setSupplierName} /> : <span />}
+      </FormRow>
+      <FormRow>
         <SelectField label={t("Arrived at")} isRequired selectedKey={place} onSelectionChange={(key) => setPlace(key === null ? null : String(key))} items={places} />
         <DateField label={t("Received on")} isRequired value={parseDate(receivedOn)} onChange={(value) => value && setReceivedOn(value.toString())} />
-      </div>
-      <div className={styles.pair}>
-        <TextInput label={t("Delivery note")} value={note} onChange={setNote} />
-        <TextInput label={t("Handed over by")} value={handedOverBy} onChange={setHandedOverBy} />
-      </div>
+      </FormRow>
+      <FormRow>
+        <TextInput label={t("Delivery note")} maxLength={120} value={note} onChange={setNote} />
+        <TextInput label={t("Handed over by")} maxLength={160} value={handedOverBy} onChange={setHandedOverBy} />
+      </FormRow>
       <ul className={styles.draftLines} aria-label={t("What arrived")}>{lines.map((line, index) => <li key={index}>
-        <TextInput aria-label={t("What arrived, line {number}", { number: index + 1 })} label={null} placeholder={t("What arrived")} value={line.description} onChange={(description) => setLine(index, { description })} />
-        <TextInput aria-label={t("Quantity, line {number}", { number: index + 1 })} label={null} placeholder={t("Quantity")} inputMode="decimal" value={line.quantity} onChange={(value) => setLine(index, { quantity: numeric(value) })} />
-        <TextInput aria-label={t("Unit, line {number}", { number: index + 1 })} label={null} placeholder={t("Unit")} value={line.unit} onChange={(unit) => setLine(index, { unit })} />
+        <TextInput label={<VisuallyHidden>{t("What arrived, line {number}", { number: index + 1 })}</VisuallyHidden>} maxLength={240} placeholder={t("What arrived")} value={line.description} onChange={(description) => setLine(index, { description })} />
+        <TextInput label={<VisuallyHidden>{t("Quantity, line {number}", { number: index + 1 })}</VisuallyHidden>} placeholder={t("Quantity")} inputMode="decimal" value={line.quantity} onChange={(value) => setLine(index, { quantity: numeric(value) })} />
+        <TextInput label={<VisuallyHidden>{t("Unit, line {number}", { number: index + 1 })}</VisuallyHidden>} maxLength={20} placeholder={t("Unit")} value={line.unit} onChange={(unit) => setLine(index, { unit })} />
         {lines.length > 1 ? <IconButton aria-label={t("Remove line {number}", { number: index + 1 })} size="compact" variant="quiet" onPress={() => setLines(lines.filter((_, item) => item !== index))}>
           <X aria-hidden="true" size={14} /></IconButton> : <span />}
       </li>)}</ul>
       <Button size="compact" variant="quiet" onPress={() => setLines([...lines, { description: "", quantity: "", unit: "" }])}><Plus aria-hidden="true" size={14} />{t("Add line")}</Button>
       <PhotoPicker files={photos} onChange={setPhotos} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** Goods that came without an order: what, from whom, where, photos — matched to an order by a buyer, or sent back. */
@@ -126,8 +116,7 @@ export function UnmatchedSheet({ api, deliveryId, onChanged, onClose, onOpenRece
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const resolve = async (input: Record<string, unknown>) => {
     setNotice("");
-    try { setState(await api.resolveUnmatched(deliveryId, input)); onChanged(); return true; }
-    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
+    setState(await api.resolveUnmatched(deliveryId, input)); onChanged();
   };
   const addPhotos = async (files: File[]) => {
     setAdding(files);
@@ -163,20 +152,17 @@ export function UnmatchedSheet({ api, deliveryId, onChanged, onClose, onOpenRece
         {open && state.canReceive ? <PhotoPicker files={adding} onChange={(files) => void addPhotos(files)} /> : null}
       </section>
     </div>}
-    {dialog === "return" ? <SendBackDialog onClose={() => setDialog(null)} onSave={async (note) => { if (await resolve({ action: "return", note })) setDialog(null); }} /> : null}
-    {dialog === "match" && state ? <MatchDialog state={state} onClose={() => setDialog(null)} onSave={async (input) => { if (await resolve({ action: "match", ...input })) setDialog(null); }} /> : null}
+    {dialog === "return" ? <SendBackDialog onClose={() => setDialog(null)} onSave={async (note) => { await resolve({ action: "return", note }); setDialog(null); }} /> : null}
+    {dialog === "match" && state ? <MatchDialog state={state} onClose={() => setDialog(null)} onSave={async (input) => { await resolve({ action: "match", ...input }); setDialog(null); }} /> : null}
   </InspectorSheet>;
 }
 
 function SendBackDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
   const t = useT();
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Sent back")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim()); setBusy(false); }}>{t("Save")}</Button></div>}>
+  return <FormDialog size="md" title={t("Sent back")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(note.trim())} isSubmitDisabled={!note.trim()} submitLabel={t("Save")} onSubmit={() => onSave(note.trim())}>
     <TextAreaField label={t("Why the goods went back")} isRequired value={note} onChange={setNote} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** Which order these goods belong to, and which of its lines each one is. */
@@ -185,20 +171,15 @@ function MatchDialog({ state, onClose, onSave }: { state: UnmatchedState; onClos
   const [orderId, setOrderId] = useState<string | null>(state.candidates.length === 1 ? state.candidates[0].id : null);
   const [picks, setPicks] = useState<Record<string, string | null>>({});
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
   const order = state.candidates.find((candidate) => candidate.id === orderId);
   const complete = Boolean(order) && state.lines.every((line) => picks[line.id]);
-  return <ControlledModalDialog isOpen size="lg" title={t("Match to an order")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!complete} onPress={async () => { setBusy(true);
-        await onSave({ orderId, note: note.trim(), lines: state.lines.map((line) => ({ unmatchedLineId: line.id, orderLineId: picks[line.id] })) }); setBusy(false); }}>{t("Match")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="lg" title={t("Match to an order")} onClose={onClose} isSubmitDisabled={!complete} submitLabel={t("Match")}
+    onSubmit={() => onSave({ orderId, note: note.trim(), lines: state.lines.map((line) => ({ unmatchedLineId: line.id, orderLineId: picks[line.id] })) })}>
       <SelectField label={t("Order")} isRequired selectedKey={orderId} onSelectionChange={(key) => { setOrderId(key === null ? null : String(key)); setPicks({}); }}
         items={state.candidates.map((candidate) => ({ id: candidate.id, label: `${candidate.number} · ${candidate.supplierName}` }))} />
       {order ? state.lines.map((line) => <SelectField key={line.id} label={t("{item} is", { item: `${line.description} (${quantityText(line.quantity)} ${line.unit})`.trim() })} isRequired
         selectedKey={picks[line.id] ?? null} onSelectionChange={(key) => setPicks({ ...picks, [line.id]: key === null ? null : String(key) })}
         items={order.lines.map((item) => ({ id: item.id, label: [item.description, item.projectReference, t("{quantity} to come", { quantity: `${quantityText(item.outstanding)} ${item.unit}`.trim() })].filter(Boolean).join(" · ") }))} />) : null}
-      <TextInput label={t("Note")} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+      <TextInput label={t("Note")} maxLength={500} value={note} onChange={setNote} />
+  </FormDialog>;
 }

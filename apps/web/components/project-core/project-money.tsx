@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, MenuButton, NoResultsState, Skeleton, TextInput, type DataGridColumn } from "@/design-system";
+import { DataGrid, EmptyState, ErrorState, FormDialog, InlineNotice, MenuButton, MoneyField, NoResultsState, Skeleton, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { CostEntry, CostSource, PackageMoney, ProjectMoney as Money } from "@/lib/project-core/types";
@@ -11,7 +11,6 @@ import { useProjectFormat } from "./format";
 import styles from "./project-money.module.css";
 
 type View = "packages" | "entries" | "hours";
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const plain = (value: string) => (value.includes(".") ? value.replace(/\.?0+$/, "") : value) || "0";
 
 /**
@@ -98,18 +97,9 @@ function BudgetDialog({ row, currency, name, onClose, onSave }: { row: PackageMo
   const t = useT();
   const [amount, setAmount] = useState(row.budget === null ? "" : plain(row.budget));
   const [note, setNote] = useState(row.budgetNote);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Budget for {package}", { package: name })} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!amount} onPress={async () => {
-        setBusy(true); setError("");
-        try { await onSave(amount, note.trim()); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-      <TextInput label={t("Budget")} isRequired inputMode="decimal" suffix={currency} value={amount} onChange={(value) => setAmount(numeric(value))} />
-      <TextInput label={t("Note")} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog size="md" title={t("Budget for {package}", { package: name })} onClose={onClose} isDirty={amount !== (row.budget === null ? "" : plain(row.budget)) || note !== row.budgetNote}
+    isSubmitDisabled={!amount} submitLabel={t("Save")} onSubmit={() => onSave(amount, note.trim())}>
+    <MoneyField label={t("Budget")} isRequired currency={currency} value={amount} onChange={setAmount} />
+    <TextInput label={t("Note")} maxLength={500} value={note} onChange={setNote} />
+  </FormDialog>;
 }

@@ -17,7 +17,7 @@ import { ProjectMaterials } from "./project-materials";
 import { SealedDocument } from "./sealed-document";
 import styles from "./project-core.module.css";
 
-type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
+type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
 type View = "items" | "materials" | "changes" | "sealed";
 const VIEWS: View[] = ["items", "materials", "changes", "sealed"];
 type Group = "package" | "area";

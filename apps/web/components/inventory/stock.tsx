@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, ListTabs, MenuButton, NoResultsState, TextAreaField, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, EmptyState, ErrorState, InlineNotice, ListTabs, MenuButton, NoResultsState, TextAreaField, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import { restockQuantity } from "@/lib/inventory/levels";
@@ -147,10 +147,7 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
 function RefuseDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
   const t = useT();
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Refuse the correction")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim()); setBusy(false); }}>{t("Refuse")}</Button></div>}>
+  return <FormDialog size="md" title={t("Refuse the correction")} onClose={onClose} cancelLabel={t("Back")} isSubmitDisabled={!note.trim()} submitLabel={t("Refuse")} onSubmit={async () => { await onSave(note.trim()); }}>
     <TextAreaField label={t("Why it's refused")} isRequired value={note} onChange={setNote} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

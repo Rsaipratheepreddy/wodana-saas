@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
-import { Button, ControlledModalDialog, DateField, EmptyState, ErrorState, InlineNotice, SegmentedControl, SelectField, SettingsSection, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Button, DateField, EmptyState, ErrorState, InlineNotice, SegmentedControl, SelectField, SettingsSection, Skeleton, TextAreaField, TextInput, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { createVariation } from "@/lib/project-core/variations";
 import { siteApi, warrantySettingsApi } from "@/lib/site/client";
@@ -115,13 +115,8 @@ function ClaimDialog({ state, channels, onClose, onSave }: {
   const [description, setDescription] = useState("");
   const [lineId, setLineId] = useState("");
   const [areaId, setAreaId] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Record a claim")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!name.trim() || !description.trim()} onPress={async () => {
-        setBusy(true); await onSave({ raisedOn, raisedByName: name.trim(), channel, description: description.trim(), boqLineId: lineId || null, areaId: areaId || null }); setBusy(false);
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="md" title={t("Record a claim")} onClose={onClose} isSubmitDisabled={!name.trim() || !description.trim()} submitLabel={t("Save")} onSubmit={async () => { await onSave({ raisedOn, raisedByName: name.trim(), channel, description: description.trim(), boqLineId: lineId || null, areaId: areaId || null });
+      }}>
       <div className={styles.pair}>
         <DateField label={t("Day")} isRequired value={parseDate(raisedOn)} onChange={(value) => setRaisedOn(value ? value.toString() : state.today)} />
         <SelectField label={t("How it came in")} selectedKey={channel} onSelectionChange={(key) => setChannel((key ?? "phone") as WarrantyClaim["channel"])}
@@ -135,8 +130,7 @@ function ClaimDialog({ state, channels, onClose, onSave }: {
         {state.areas.length ? <SelectField label={t("Area")} placeholder={t("Choose")} selectedKey={areaId} onSelectionChange={(key) => setAreaId(key ? String(key) : "")}
           items={state.areas.map((area) => ({ id: area.id, label: area.name }))} /> : <span />}
       </div>
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** Covered becomes a warranty snag (outside its item's cover only with why); not covered or chargeable say why. */
@@ -147,12 +141,8 @@ function DecideDialog({ claim, item, onClose, onSave }: { claim: WarrantyClaim; 
   const [decision, setDecision] = useState<Decision>(inside ? "covered" : "not_covered");
   const [severity, setSeverity] = useState<"minor" | "major" | "critical">("major");
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
   const needsNote = decision !== "covered" || !inside;
-  return <ControlledModalDialog isOpen size="md" title={t("Claim {number}", { number: claim.number })} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={needsNote && !note.trim()} onPress={async () => { setBusy(true); await onSave({ decision, note: note.trim(), severity }); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="md" title={t("Claim {number}", { number: claim.number })} onClose={onClose} isSubmitDisabled={needsNote && !note.trim()} submitLabel={t("Save")} onSubmit={async () => { await onSave({ decision, note: note.trim(), severity }); }}>
       <span className={styles.muted}>{item ? item.months === 0 ? t("{item} isn't covered.", { item: item.title })
         : t("{item} is covered from {from} to {to}.", { item: item.title, from: format.day(item.startsOn), to: format.day(item.endsOn) }) : t("No item chosen.")}</span>
       <SegmentedControl label={t("Decision")} value={decision} onChange={(value) => setDecision(value as Decision)}
@@ -161,24 +151,18 @@ function DecideDialog({ claim, item, onClose, onSave }: { claim: WarrantyClaim; 
         items={[{ id: "minor", label: t("Minor") }, { id: "major", label: t("Major") }, { id: "critical", label: t("Critical") }]} /> : null}
       <TextAreaField label={decision === "covered" ? (inside ? t("Note") : t("Why it's covered anyway")) : decision === "chargeable" ? t("What the client will be charged for") : t("Why it isn't covered")}
         isRequired={needsNote} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function MonthsDialog({ item, onClose, onSave }: { item: WarrantyItem; onClose: () => void; onSave: (months: number, reason: string) => Promise<void> }) {
   const t = useT();
   const [months, setMonths] = useState(String(item.months));
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
   const valid = /^\d{1,3}$/.test(months) && Number(months) <= 600 && reason.trim();
-  return <ControlledModalDialog isOpen size="md" title={item.title} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => { setBusy(true); await onSave(Number(months), reason.trim()); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="md" title={item.title} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={async () => { await onSave(Number(months), reason.trim()); }}>
       <TextInput label={t("Months of warranty")} isRequired inputMode="numeric" value={months} onChange={(value) => setMonths(value.replace(/\D/g, "").slice(0, 3))} />
       <TextAreaField label={t("Why it changes")} isRequired value={reason} onChange={setReason} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** Settings → Projects → Warranty: months for each way of delivering a package; applies to handovers from now on. */

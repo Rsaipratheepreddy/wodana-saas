@@ -7,10 +7,9 @@ import type { PayablesApi } from "@/lib/payables/client";
 import type { PayablesState, SupplierPayment } from "@/lib/payables/types";
 import { addExact, subtractExact } from "@/lib/purchasing/amounts";
 import { useProjectFormat } from "../project-core/format";
-import { plain, useMethodLabels } from "./finance-labels";
+import { useMethodLabels } from "./finance-labels";
 import styles from "./finance.module.css";
 
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 
 /** Payments made to suppliers, newest first, each with what it paid and what's still to allocate. */
 export function Payments({ api, state, error, openId, onReload, onOpen, onOpenBill }: {

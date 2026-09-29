@@ -11,7 +11,7 @@ import { useProjectFormat } from "./format";
 import { ProjectStages } from "./project-stages";
 import styles from "./project-overview.module.css";
 
-type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
+type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
 
 /**
  * A project at a glance: what's next and who acts, what holds it up (each blocker opens its filtered list),

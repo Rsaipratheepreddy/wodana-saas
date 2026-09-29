@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, ErrorState, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MenuButton, MoneyField, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Button, ErrorState, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MenuButton, MoneyField, SelectField, Skeleton, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { BillState, PayablesState } from "@/lib/payables/types";
@@ -13,7 +13,6 @@ import { PaymentDialog } from "./payment-dialog";
 import styles from "./finance.module.css";
 
 type Dialog = "edit" | "approve" | "cancel" | "pay" | "release" | null;
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 
 /**
  * One supplier invoice: its lines against their orders, why it's held (if it is), who approved it, the

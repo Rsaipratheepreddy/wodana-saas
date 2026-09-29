@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Badge,
-  Button, ControlledModalDialog, DateField, EmptyState, FileUploader, InlineNotice, SelectField, Skeleton, Switch, Tabs, TextAreaField, TextInput,
+  Button, DateField, EmptyState, FileUploader, FormDialog, FormRow, InlineNotice, MoneyField, SelectField, Skeleton, Switch, Tabs, TextAreaField, TextInput, VisuallyHidden,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
@@ -80,30 +80,21 @@ function DocumentDialog({ api, supplierId, onClose, onSaved }: { api: Purchasing
   const [expiresOn, setExpiresOn] = useState<string | null>(null);
   const [required, setRequired] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   const save = async () => {
-    setBusy(true); setError("");
-    try {
-      let next = await api.addDocument(supplierId, { id, kind, label: label.trim(), number: number.trim(), expiresOn, required });
-      if (file) next = await api.uploadDocument(supplierId, id, file);
-      onSaved(next);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
+    let next = await api.addDocument(supplierId, { id, kind, label: label.trim(), number: number.trim(), expiresOn, required });
+    if (file) next = await api.uploadDocument(supplierId, id, file);
+    onSaved(next);
   };
-  return <ControlledModalDialog isOpen size="md" title={t("Add document")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={(kind === "other" && !label.trim()) || (required && !expiresOn)} onPress={() => void save()}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-      <div className={styles.pair}>
-        <SelectField label={t("Document")} selectedKey={kind} onSelectionChange={(key) => setKind(key as DocumentKind)} items={KINDS.map((item) => ({ id: item, label: labels.kind[item] }))} />
-        {kind === "other" ? <TextInput label={t("Name")} isRequired value={label} onChange={setLabel} /> : <TextInput label={t("Number")} value={number} onChange={setNumber} />}
-      </div>
+  return <FormDialog size="md" title={t("Add document")} onClose={onClose} isDirty={Boolean(label.trim() || number.trim() || file)}
+    isSubmitDisabled={(kind === "other" && !label.trim()) || (required && !expiresOn)} submitLabel={t("Save")} onSubmit={save}>
+      <FormRow>
+        <SelectField label={t("Document")} isRequired selectedKey={kind} onSelectionChange={(key) => setKind(key as DocumentKind)} items={KINDS.map((item) => ({ id: item, label: labels.kind[item] }))} />
+        {kind === "other" ? <TextInput label={t("Name")} isRequired maxLength={160} value={label} onChange={setLabel} /> : <TextInput label={t("Number")} maxLength={120} value={number} onChange={setNumber} />}
+      </FormRow>
       <DateField label={t("Expires on")} isRequired={required} value={expiresOn ? parseDate(expiresOn) : null} onChange={(value) => setExpiresOn(value ? value.toString() : null)} />
       <Switch isSelected={required} onChange={setRequired}>{t("Required: the supplier goes on hold when it expires")}</Switch>
       <FileUploader appearance="button" accept="application/pdf,image/*" label={file ? file.name : t("Attach the file")} multiple={false} onFiles={(files) => setFile(files[0] ?? null)} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function Bank({ api, state, onState }: { api: PurchasingApi; state: SupplierControlsState; onState: (next: SupplierControlsState) => void }) {
@@ -113,9 +104,10 @@ function Bank({ api, state, onState }: { api: PurchasingApi; state: SupplierCont
   const [requesting, setRequesting] = useState(false);
   const [dialog, setDialog] = useState<{ account: BankAccount; action: "callback" | "reject" } | null>(null);
   const [notice, setNotice] = useState("");
-  const run = async (account: BankAccount, input: Record<string, unknown>) => {
+  const run = async (account: BankAccount, input: Record<string, unknown>, inDialog = false) => {
     setNotice("");
-    try { onState(await api.bankAccountCommand(state.supplier.id, account.id, input)); return true; } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
+    try { onState(await api.bankAccountCommand(state.supplier.id, account.id, input)); return true; }
+    catch (cause) { if (inDialog) throw cause; setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
   };
   return <div className={styles.stack}>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
@@ -137,12 +129,11 @@ function Bank({ api, state, onState }: { api: PurchasingApi; state: SupplierCont
     })}</ul>}
     {state.canManage && !state.bankAccounts.some((account) => account.status === "pending") ? <div><Button size="compact" onPress={() => setRequesting(true)}>{t("New bank details")}</Button></div> : null}
     {requesting ? <BankDialog onClose={() => setRequesting(false)} onSave={async (input) => {
-      try { onState(await api.requestBankAccount(state.supplier.id, { id: crypto.randomUUID(), ...input })); setRequesting(false); }
-      catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); setRequesting(false); }
+      onState(await api.requestBankAccount(state.supplier.id, { id: crypto.randomUUID(), ...input })); setRequesting(false);
     }} /> : null}
     {dialog ? <NoteDialog title={dialog.action === "callback" ? t("Record the call-back") : t("Refuse the bank details")}
       label={dialog.action === "callback" ? t("Who you called, on which number the firm already had") : t("Why they're refused")}
-      onClose={() => setDialog(null)} onSave={async (note) => { if (await run(dialog.account, dialog.action === "callback" ? { action: "callback", note } : { action: "reject", reason: note })) setDialog(null); }} /> : null}
+      onClose={() => setDialog(null)} onSave={async (note) => { await run(dialog.account, dialog.action === "callback" ? { action: "callback", note } : { action: "reject", reason: note }, true); setDialog(null); }} /> : null}
   </div>;
 }
 
@@ -150,33 +141,25 @@ function BankDialog({ onClose, onSave }: { onClose: () => void; onSave: (input: 
   const t = useT();
   const labels = useControlLabels();
   const [form, setForm] = useState({ accountName: "", bankName: "", accountNumber: "", swift: "", source: "supplier_letter" as BankSource });
-  const [busy, setBusy] = useState(false);
   const set = (key: keyof typeof form) => (value: string) => setForm({ ...form, [key]: value });
-  return <ControlledModalDialog isOpen size="md" title={t("New bank details")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!form.accountName.trim() || !form.bankName.trim() || !form.accountNumber.trim()}
-        onPress={async () => { setBusy(true); await onSave(form); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <TextInput label={t("Account name")} isRequired value={form.accountName} onChange={set("accountName")} />
-      <div className={styles.pair}>
-        <TextInput label={t("Bank")} isRequired value={form.bankName} onChange={set("bankName")} />
-        <TextInput label={t("SWIFT")} value={form.swift} onChange={set("swift")} />
-      </div>
-      <TextInput label={t("Account number or IBAN")} isRequired value={form.accountNumber} onChange={set("accountNumber")} />
-      <SelectField label={t("How the details came")} selectedKey={form.source} onSelectionChange={(key) => set("source")(String(key))} items={SOURCES.map((item) => ({ id: item, label: labels.source[item] }))} />
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog size="md" title={t("New bank details")} onClose={onClose} isDirty={Boolean(form.accountName.trim() || form.bankName.trim() || form.accountNumber.trim())}
+    isSubmitDisabled={!form.accountName.trim() || !form.bankName.trim() || !form.accountNumber.trim()} submitLabel={t("Save")} onSubmit={() => onSave(form)}>
+    <TextInput label={t("Account name")} isRequired maxLength={160} value={form.accountName} onChange={set("accountName")} />
+    <FormRow>
+      <TextInput label={t("Bank")} isRequired maxLength={160} value={form.bankName} onChange={set("bankName")} />
+      <TextInput label={t("SWIFT")} maxLength={11} value={form.swift} onChange={set("swift")} />
+    </FormRow>
+    <TextInput label={t("Account number or IBAN")} isRequired maxLength={34} value={form.accountNumber} onChange={set("accountNumber")} />
+    <SelectField label={t("How the details came")} isRequired selectedKey={form.source} onSelectionChange={(key) => set("source")(String(key))} items={SOURCES.map((item) => ({ id: item, label: labels.source[item] }))} />
+  </FormDialog>;
 }
 
 function NoteDialog({ title, label, onClose, onSave }: { title: string; label: string; onClose: () => void; onSave: (note: string) => Promise<void> }) {
   const t = useT();
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim()); setBusy(false); }}>{t("Save")}</Button></div>}>
+  return <FormDialog size="md" title={title} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(note.trim())} isSubmitDisabled={!note.trim()} submitLabel={t("Save")} onSubmit={() => onSave(note.trim())}>
     <TextAreaField label={label} isRequired value={note} onChange={setNote} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function Contracts({ api, state, onState }: { api: PurchasingApi; state: SupplierControlsState; onState: (next: SupplierControlsState) => void }) {
@@ -184,10 +167,8 @@ function Contracts({ api, state, onState }: { api: PurchasingApi; state: Supplie
   const format = useProjectFormat();
   const [adding, setAdding] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
-  const [notice, setNotice] = useState("");
   const stateLabel = { upcoming: t("Starts later"), valid: t("Valid"), expired: t("Expired"), cancelled: t("Cancelled") };
   return <div className={styles.stack}>
-    {notice ? <InlineNotice tone="error" message={notice} /> : null}
     {!state.contracts.length ? <EmptyState illustration={null} title={t("No rate contracts")} /> : <ul className={styles.bankAccounts} aria-label={t("Rate contracts")}>{state.contracts.map((contract) => <li key={contract.id}>
       <span className={styles.nameCell}><span>{contract.reference}</span>
         <small>{`${format.day(contract.validFrom)} – ${format.day(contract.validTo)} · ${contract.currency}`}</small>
@@ -199,55 +180,48 @@ function Contracts({ api, state, onState }: { api: PurchasingApi; state: Supplie
     </li>)}</ul>}
     {state.canManage ? <div><Button size="compact" onPress={() => setAdding(true)}>{t("Add rate contract")}</Button></div> : null}
     {adding ? <ContractDialog state={state} onClose={() => setAdding(false)} onSave={async (input) => {
-      try { onState(await api.saveContract(state.supplier.id, { id: crypto.randomUUID(), ...input })); setAdding(false); return true; }
-      catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
+      onState(await api.saveContract(state.supplier.id, { id: crypto.randomUUID(), ...input })); setAdding(false);
     }} /> : null}
     {cancelling ? <NoteDialog title={t("Cancel the rate contract")} label={t("Why it's cancelled")} onClose={() => setCancelling(null)} onSave={async (reason) => {
-      try { onState(await api.cancelContract(state.supplier.id, cancelling, reason)); } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); }
-      setCancelling(null);
+      onState(await api.cancelContract(state.supplier.id, cancelling, reason)); setCancelling(null);
     }} /> : null}
   </div>;
 }
 
 type ContractLine = { catalogItemId: string | null; unitPrice: string; packSize: string; minimum: string };
 
-function ContractDialog({ state, onClose, onSave }: { state: SupplierControlsState; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<boolean> }) {
+function ContractDialog({ state, onClose, onSave }: { state: SupplierControlsState; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
   const t = useT();
   const [reference, setReference] = useState("");
   const [currency, setCurrency] = useState(state.supplier.currency ?? "");
   const [validFrom, setValidFrom] = useState<string | null>(null);
   const [validTo, setValidTo] = useState<string | null>(null);
   const [lines, setLines] = useState<ContractLine[]>([{ catalogItemId: null, unitPrice: "", packSize: "", minimum: "" }]);
-  const [busy, setBusy] = useState(false);
   const setLine = (index: number, patch: Partial<ContractLine>) => setLines(lines.map((line, item) => (item === index ? { ...line, ...patch } : line)));
   const filled = lines.filter((line) => line.catalogItemId && line.unitPrice !== "");
   const ready = reference.trim() && /^[A-Za-z]{3}$/.test(currency.trim()) && validFrom && validTo && validTo >= validFrom && filled.length > 0;
   const numeric = (value: string) => value.replace(/[^\d.]/g, "");
-  return <ControlledModalDialog isOpen size="lg" title={t("Add rate contract")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!ready} onPress={async () => { setBusy(true);
-        await onSave({ reference: reference.trim(), currency: currency.trim().toUpperCase(), validFrom, validTo,
-          lines: filled.map((line) => ({ catalogItemId: line.catalogItemId, unitPrice: line.unitPrice, packSize: line.packSize || null, minimum: line.minimum || null })) }); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <div className={styles.pair}>
-        <TextInput label={t("Reference")} isRequired value={reference} onChange={setReference} />
+  return <FormDialog size="lg" title={t("Add rate contract")} onClose={onClose} isDirty={Boolean(reference.trim() || filled.length)} isSubmitDisabled={!ready} submitLabel={t("Save")}
+    onSubmit={() => onSave({ reference: reference.trim(), currency: currency.trim().toUpperCase(), validFrom, validTo,
+      lines: filled.map((line) => ({ catalogItemId: line.catalogItemId, unitPrice: line.unitPrice, packSize: line.packSize || null, minimum: line.minimum || null })) })}>
+      <FormRow>
+        <TextInput label={t("Reference")} isRequired maxLength={120} value={reference} onChange={setReference} />
         <TextInput label={t("Currency")} isRequired value={currency} onChange={(value) => setCurrency(value.toUpperCase().slice(0, 3))} />
-      </div>
-      <div className={styles.pair}>
+      </FormRow>
+      <FormRow>
         <DateField label={t("Valid from")} isRequired value={validFrom ? parseDate(validFrom) : null} onChange={(value) => setValidFrom(value ? value.toString() : null)} />
-        <DateField label={t("Valid to")} isRequired value={validTo ? parseDate(validTo) : null} onChange={(value) => setValidTo(value ? value.toString() : null)} />
-      </div>
+        <DateField label={t("Valid to")} isRequired minValue={validFrom ? parseDate(validFrom) : undefined} value={validTo ? parseDate(validTo) : null} onChange={(value) => setValidTo(value ? value.toString() : null)} />
+      </FormRow>
       <ul className={styles.draftLines} aria-label={t("Prices")}>{lines.map((line, index) => <li key={index}>
-        <SelectField aria-label={t("Item, line {number}", { number: index + 1 })} label={null} placeholder={t("Choose an item")} selectedKey={line.catalogItemId}
+        <SelectField label={<VisuallyHidden>{t("Item, line {number}", { number: index + 1 })}</VisuallyHidden>} placeholder={t("Choose an item")} selectedKey={line.catalogItemId}
           onSelectionChange={(key) => setLine(index, { catalogItemId: key === null ? null : String(key) })} items={state.catalogItems.map((item) => ({ id: item.id, label: `${item.name} (${item.unit})` }))} />
-        <TextInput aria-label={t("Price, line {number}", { number: index + 1 })} label={null} placeholder={t("Price")} inputMode="decimal" value={line.unitPrice} onChange={(value) => setLine(index, { unitPrice: numeric(value) })} />
+        <MoneyField label={<VisuallyHidden>{t("Price, line {number}", { number: index + 1 })}</VisuallyHidden>} currency={/^[A-Z]{3}$/.test(currency) ? currency : undefined} value={line.unitPrice} onChange={(unitPrice) => setLine(index, { unitPrice })} />
         <TextInput aria-label={t("Pack size, line {number}", { number: index + 1 })} label={null} placeholder={t("Pack size")} inputMode="decimal" value={line.packSize} onChange={(value) => setLine(index, { packSize: numeric(value) })} />
         <TextInput aria-label={t("Minimum, line {number}", { number: index + 1 })} label={null} placeholder={t("Minimum")} inputMode="decimal" value={line.minimum} onChange={(value) => setLine(index, { minimum: numeric(value) })} />
         <span />
       </li>)}</ul>
       <div><Button size="compact" variant="quiet" onPress={() => setLines([...lines, { catalogItemId: null, unitPrice: "", packSize: "", minimum: "" }])}>{t("Add line")}</Button></div>
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function Performance({ state }: { state: SupplierControlsState }) {

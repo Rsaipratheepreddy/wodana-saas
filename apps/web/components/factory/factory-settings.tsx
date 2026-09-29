@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, ControlledModalDialog, DateField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
+import { Button, DateField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState, FormDialog, MoneyField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { factoryApi } from "@/lib/factory/client";
 import type { FactorySettings, FactorySettingsState, Workcenter, WorkcenterRate } from "@/lib/factory/types";
@@ -87,27 +87,20 @@ function WorkcenterDialog({ draft, currency, current, onClose, onSave }: { draft
   const t = useT();
   const [value, setValue] = useState(draft);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   // A new rate applies from a date (today unless said); the days before keep the rate they had.
   const changed = Boolean(value.rate) && (!current || addExact(value.rate) !== addExact(current.rate));
-  return <ControlledModalDialog isOpen size="md" title={draft.isNew ? t("Add workcenter") : draft.name} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!value.name.trim() || (Boolean(current) && !value.rate) || (changed && !value.rateFrom)} onPress={async () => {
-        setBusy(true); setError("");
-        try { await onSave(value); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={draft.isNew ? t("Add workcenter") : draft.name} onClose={onClose} error={error || undefined} isSubmitDisabled={!value.name.trim() || (Boolean(current) && !value.rate) || (changed && !value.rateFrom)} submitLabel={t("Save")} onSubmit={async () => { setError("");
+        try { await onSave(value); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+      }}>
       <div className={styles.pair}>
         <TextInput label={t("Name")} isRequired value={value.name} onChange={(name) => setValue({ ...value, name })} />
         <TextInput label={t("Hours a day")} inputMode="decimal" value={value.hours} onChange={(hours) => setValue({ ...value, hours: hours.replace(/[^\d.]/g, "") })} />
       </div>
       <div className={styles.pair}>
-        <TextInput label={t("Hourly rate")} inputMode="decimal" suffix={currency} value={value.rate} onChange={(rate) => setValue({ ...value, rate: rate.replace(/[^\d.]/g, "") })} />
+        <MoneyField label={t("Hourly rate")} currency={currency} value={value.rate} onChange={(rate) => setValue({ ...value, rate })} />
         {changed ? <DateField label={t("From")} isRequired value={value.rateFrom ? parseDate(value.rateFrom) : null} onChange={(day) => setValue({ ...value, rateFrom: day ? day.toString() : null })} />
           : <span />}
       </div>
       {!draft.isNew ? <Switch isSelected={value.active} onChange={(active) => setValue({ ...value, active })}>{t("In use")}</Switch> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

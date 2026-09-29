@@ -73,13 +73,15 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
   useLiveInvalidate(workspaceId, [`project:${projectId}`], () => { if (!dialog) void load(); });
 
   /** Runs one change; a clash with someone else's change reloads the project and says so. */
-  const run = useCallback(async (action: string, input: Record<string, unknown> = {}) => {
+  /** A project command; from a dialog (`inDialog`) a refusal is thrown so the dialog shows it and keeps the typing. */
+  const run = useCallback(async (action: string, input: Record<string, unknown> = {}, options: { inDialog?: boolean } = {}) => {
     if (!detail) return false;
     setNotice("");
     try { setDetail(await api.command(projectId, detail.project.version, action, input)); setRefresh((value) => value + 1); return true; }
     catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : t("Could not save."));
       if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
+      if (options.inDialog) throw cause;
+      setNotice(cause instanceof Error ? cause.message : t("Could not save."));
       return false;
     }
   }, [api, detail, load, projectId, t]);
@@ -121,13 +123,13 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
     {!panel.inline ? <InspectorSheet isOpen={panel.open} title={t("Details")} size="sm" onOpenChange={(open) => { if (!open) panel.close(); }}>{details}</InspectorSheet> : null}
 
     {dialog === "team" ? <ProjectTeam detail={detail} run={run} onClose={() => setDialog(null)} /> : null}
-    {dialog === "hold" ? <HoldDialog onClose={() => setDialog(null)} onSave={async (reason, reviewOn) => { if (await run("hold", { reason, reviewOn })) setDialog(null); }} /> : null}
-    {dialog === "resume" ? <ResumeDialog hold={detail.hold ?? null} onClose={() => setDialog(null)} onSave={async (shiftDates) => { if (await run("resume", { shiftDates })) setDialog(null); }} /> : null}
+    {dialog === "hold" ? <HoldDialog onClose={() => setDialog(null)} onSave={async (reason, reviewOn) => { await save("hold", { reason, reviewOn }); setDialog(null); }} /> : null}
+    {dialog === "resume" ? <ResumeDialog hold={detail.hold ?? null} onClose={() => setDialog(null)} onSave={async (shiftDates) => { await save("resume", { shiftDates }); setDialog(null); }} /> : null}
     {dialog === "dates" ? <DatesDialog startDate={project.startDate} promiseDate={project.promiseDate} onClose={() => setDialog(null)}
-      onSave={async (startDate, promiseDate) => { if (await run("set_dates", { startDate, promiseDate })) setDialog(null); }} /> : null}
+      onSave={async (startDate, promiseDate) => { await save("set_dates", { startDate, promiseDate }); setDialog(null); }} /> : null}
     {dialog === "cancel" ? <CancelProjectDialog api={api} projectId={projectId} onClose={() => setDialog(null)}
-      onSave={async (reason) => { if (await run("cancel", { reason })) setDialog(null); }} /> : null}
-    {dialog === "reopen" ? <ReopenProjectDialog onClose={() => setDialog(null)} onSave={async (reason) => { if (await run("reopen", { reason })) setDialog(null); }} /> : null}
+      onSave={async (reason) => { await save("cancel", { reason }); setDialog(null); }} /> : null}
+    {dialog === "reopen" ? <ReopenProjectDialog onClose={() => setDialog(null)} onSave={async (reason) => { await save("reopen", { reason }); setDialog(null); }} /> : null}
   </div>;
 }
 

@@ -1,10 +1,10 @@
 .vendor {
-  max-width: 1100px;
+  max-inline-size: 1100px;
   margin: 0 auto;
   padding: var(--wd-space-6) var(--wd-space-5) var(--wd-space-12);
   background: var(--wd-color-surface);
   color: var(--wd-color-text);
-  min-height: 100dvh;
+  min-block-size: 100dvh;
   --vendor-tint: var(--wd-brand-lilac);
 }
 .brandHeader {
@@ -12,7 +12,7 @@
   justify-content: space-between;
   align-items: center;
   gap: var(--wd-space-4);
-  padding-bottom: var(--wd-space-6);
+  padding-block-end: var(--wd-space-6);
 }
 .brandHeader > div {
   display: flex;
@@ -21,8 +21,8 @@
   font-size: var(--wd-text-lg);
 }
 .brandHeader img {
-  max-width: 100px;
-  height: 36px;
+  max-inline-size: 100px;
+  block-size: 36px;
   object-fit: contain;
 }
 .brandHeader > span {
@@ -34,8 +34,8 @@
 }
 .brandMark {
   background: var(--wd-brand-gradient);
-  width: 2.2rem;
-  height: 2.2rem;
+  inline-size: 2.2rem;
+  block-size: 2.2rem;
   border-radius: var(--wd-radius-sm);
   display: grid;
   place-items: center;
@@ -71,7 +71,7 @@
   display: grid;
   grid-template-columns: 285px minmax(0, 1fr);
   gap: var(--wd-space-6);
-  margin-top: var(--wd-space-6);
+  margin-block-start: var(--wd-space-6);
 }
 .vendor h2 {
   font-size: var(--wd-text-lg);
@@ -117,9 +117,9 @@
   font-weight: 550;
 }
 .orderSummary section {
-  margin-top: var(--wd-space-4);
-  padding-top: var(--wd-space-4);
-  border-top: 1px solid var(--wd-color-structural-divider);
+  margin-block-start: var(--wd-space-4);
+  padding-block-start: var(--wd-space-4);
+  border-block-start: 1px solid var(--wd-color-structural-divider);
 }
 .orderSummary p {
   font-size: var(--wd-text-2xs);
@@ -139,10 +139,10 @@
   display: block;
   font-size: var(--wd-text-xl);
   color: var(--wd-color-text);
-  margin-bottom: var(--wd-space-1);
+  margin-block-end: var(--wd-space-1);
 }
 .content {
-  min-width: 0;
+  min-inline-size: 0;
   display: grid;
   align-content: start;
   gap: var(--wd-space-6);
@@ -161,7 +161,7 @@
   letter-spacing: 0.1em;
   color: var(--crm-accent);
   display: block;
-  margin-bottom: var(--wd-space-2);
+  margin-block-end: var(--wd-space-2);
 }
 .actionChoices {
   display: grid;
@@ -171,8 +171,8 @@
   display: flex;
   align-items: center;
   gap: var(--wd-space-3);
-  width: 100%;
-  text-align: left;
+  inline-size: 100%;
+  text-align: start;
   padding: var(--wd-space-4);
   background: var(--wd-color-surface);
   border: 1px solid var(--wd-color-structural-divider);
@@ -193,7 +193,7 @@
 .actionChoices strong {
   font-size: var(--wd-text-sm);
   display: block;
-  margin-bottom: var(--wd-space-1);
+  margin-block-end: var(--wd-space-1);
 }
 .updates h2 {
   display: flex;
@@ -221,12 +221,12 @@
   display: flex;
   align-items: flex-start;
   gap: var(--wd-space-3);
-  padding-bottom: var(--wd-space-4);
-  border-bottom: 1px solid var(--wd-color-structural-divider);
+  padding-block-end: var(--wd-space-4);
+  border-block-end: 1px solid var(--wd-color-structural-divider);
 }
 .updates li > div {
   flex: 1;
-  min-width: 0;
+  min-inline-size: 0;
 }
 .updates li strong {
   display: flex;
@@ -243,24 +243,21 @@
   overflow-wrap: anywhere;
 }
 .dot {
-  margin-top: var(--wd-space-1-5);
-  width: 0.5rem;
-  height: 0.5rem;
+  margin-block-start: var(--wd-space-1-5);
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
   background: var(--wd-brand-gradient);
   border-radius: 50%;
   flex-shrink: 0;
 }
-.back {
+form.actionPanel {
+  display: grid;
+  gap: var(--wd-space-4);
+}
+form.actionPanel > h2, form.actionPanel > p { margin: 0; }
+.formActions {
   display: flex;
-  align-items: center;
-  gap: var(--wd-space-1);
-  border: 0;
-  background: none;
-  color: var(--crm-accent);
-  font: inherit;
-  font-size: var(--wd-text-2xs);
-  padding: 0;
-  cursor: pointer;
+  justify-content: flex-end;
 }
 .offerTotal {
   display: flex;
@@ -287,14 +284,14 @@
   gap: var(--wd-space-1-5);
   font-size: var(--wd-text-2xs);
   color: var(--wd-color-text-secondary);
-  margin-top: var(--wd-space-10);
+  margin-block-start: var(--wd-space-10);
 }
 @media (max-width: 700px) {
   .vendor {
     padding: var(--wd-space-4) var(--wd-space-3) var(--wd-space-8);
   }
   .brandHeader > span {
-    max-width: 90px;
+    max-inline-size: 90px;
     font-size: var(--wd-text-2xs);
   }
   .hero {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, ControlledModalDialog, MenuButton, SegmentedControl, SelectField, TextAreaField, TextInput } from "@/design-system";
+import { Button, MenuButton, SegmentedControl, SelectField, TextAreaField, TextInput, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkOrderMaterial, WorkOrderState } from "@/lib/factory/types";
 import { useProjectFormat } from "../project-core/format";
@@ -84,17 +84,11 @@ function MaterialDialog({ title, state, action, withReason = false, onClose, onS
   const [unit, setUnit] = useState("");
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
   const listed = state.projectMaterials.find((item) => item.id === materialItemId);
   const valid = Number(quantity) > 0 && (listed || name.trim()) && (!withReason || reason.trim());
-  return <ControlledModalDialog isOpen size="md" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true);
+  return <FormDialog size="md" title={title} onClose={onClose} isSubmitDisabled={!valid} submitLabel={action} onSubmit={async () => {
         await onSave({ ...(listed ? { materialItemId: listed.id } : { name: name.trim(), unit: unit.trim() }), quantity, ...(withReason ? { reason: reason.trim() } : {}) });
-        setBusy(false);
-      }}>{action}</Button></div>}>
-    <div className={styles.dialogBody}>
+      }}>
       <SelectField label={t("Material")} selectedKey={materialItemId} onSelectionChange={(key) => setMaterialItemId(key ? String(key) : other)}
         items={[...state.projectMaterials.map((item) => ({ id: item.id, label: item.unit ? `${item.name} (${item.unit})` : item.name })), { id: other, label: t("Another material") }]} />
       {!listed ? <div className={styles.pair}>
@@ -103,8 +97,7 @@ function MaterialDialog({ title, state, action, withReason = false, onClose, onS
       </div> : null}
       <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={(listed?.unit ?? unit) || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
       {withReason ? <TextAreaField label={t("Why it's swapped")} isRequired value={reason} onChange={setReason} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** Issue stock to the work order (from the project's own or free stock at a place), or send some back to the project's stock. */
@@ -119,18 +112,12 @@ function StockDialog({ state, material, mode, onClose, onSave }: {
   const [from, setFrom] = useState<"project" | "free">(Number(material.projectOnHand) > 0 || !Number(material.freeOnHand) ? "project" : "free");
   const [quantity, setQuantity] = useState(mode === "issue" ? quantityText(left) : "");
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
   const over = mode === "issue" ? Number(quantity) > Number(left) : Number(quantity) > Number(material.issued);
   const needsReason = mode === "return" || over;
   const valid = Number(quantity) > 0 && locationId && (!needsReason || reason.trim()) && !(mode === "return" && over);
   const unit = material.unit;
-  return <ControlledModalDialog isOpen size="md" title={mode === "issue" ? t("Issue {item}", { item: material.itemName }) : t("Return {item}", { item: material.itemName })}
-    onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); await onSave({ locationId, quantity, reason: reason.trim(), ...(mode === "issue" ? { from } : {}) }); setBusy(false);
-      }}>{mode === "issue" ? t("Issue") : t("Return")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="md" title={mode === "issue" ? t("Issue {item}", { item: material.itemName }) : t("Return {item}", { item: material.itemName })} onClose={onClose} isSubmitDisabled={!valid} submitLabel={mode === "issue" ? t("Issue") : t("Return")} onSubmit={async () => { await onSave({ locationId, quantity, reason: reason.trim(), ...(mode === "issue" ? { from } : {}) });
+      }}>
       <SelectField label={mode === "issue" ? t("From") : t("Back to")} selectedKey={locationId} onSelectionChange={(key) => setLocationId(key ? String(key) : "")}
         items={places.map((place) => ({ id: place.id, label: place.name }))} />
       {mode === "issue" ? <SegmentedControl label={t("Whose stock")} value={from} onChange={(value) => setFrom(value as "project" | "free")}
@@ -139,30 +126,23 @@ function StockDialog({ state, material, mode, onClose, onSave }: {
         isInvalid={mode === "return" && over} errorMessage={mode === "return" && over ? t("Only {quantity} was issued.", { quantity: `${quantityText(material.issued)} ${unit}`.trim() }) : undefined}
         description={mode === "issue" && over ? t("More than it still needs ({quantity}).", { quantity: `${quantityText(left) || "0"} ${unit}`.trim() }) : undefined} />
       {needsReason ? <TextInput label={mode === "issue" ? t("Why more") : t("Why it's coming back")} isRequired value={reason} onChange={setReason} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function QuantityDialog({ material, onClose, onSave }: { material: WorkOrderMaterial; onClose: () => void; onSave: (quantity: string) => Promise<void> }) {
   const t = useT();
   const [quantity, setQuantity] = useState(quantityText(material.quantity));
-  const [busy, setBusy] = useState(false);
   const under = Number(quantity) < Number(material.issued);
-  return <ControlledModalDialog isOpen size="md" title={material.itemName} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!(Number(quantity) > 0) || under} onPress={async () => { setBusy(true); await onSave(quantity); setBusy(false); }}>{t("Save")}</Button></div>}>
+  return <FormDialog size="md" title={material.itemName} onClose={onClose} isSubmitDisabled={!(Number(quantity) > 0) || under} submitLabel={t("Save")} onSubmit={async () => { await onSave(quantity); }}>
     <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={material.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
       isInvalid={under} errorMessage={under ? t("{quantity} is already issued.", { quantity: `${quantityText(material.issued)} ${material.unit}`.trim() }) : undefined} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function RefuseDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
   const t = useT();
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Refuse the swap")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim()); setBusy(false); }}>{t("Refuse")}</Button></div>}>
+  return <FormDialog size="md" title={t("Refuse the swap")} onClose={onClose} cancelLabel={t("Back")} isSubmitDisabled={!note.trim()} submitLabel={t("Refuse")} onSubmit={async () => { await onSave(note.trim()); }}>
     <TextAreaField label={t("Why it's refused")} isRequired value={note} onChange={setNote} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

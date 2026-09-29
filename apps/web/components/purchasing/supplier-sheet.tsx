@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Badge,
-  Button, ControlledModalDialog, EditableField, EditableFieldList, FactRow, FillWithWoddy, FormDialog, FormRow, InlineNotice, InspectorSheet, MoreDetails, MultiSelectField, PhoneField, SegmentedControl, SelectField, TagsField, TextAreaField, TextInput, useDesignSystem, useFormDraft,
+  Button, EditableField, EditableFieldList, FactRow, FillWithWoddy, FormDialog, FormRow, InlineNotice, InspectorSheet, MoreDetails, MultiSelectField, PhoneField, SegmentedControl, SelectField, TagsField, TextAreaField, TextInput, useDesignSystem, useFormDraft,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { joinPhone, phoneCountry, splitPhone } from "@/lib/phone";
@@ -38,9 +38,9 @@ function SupplierRecord({ api, state, supplier, onState, onClose }: SheetProps &
   const [notice, setNotice] = useState("");
   const [dialog, setDialog] = useState<"approval" | "archive" | "terms" | "deal" | null>(null);
   const edit = state.canManage && supplier.status !== "archived";
-  const run = async (work: () => Promise<SupplierState>) => {
+  const run = async (work: () => Promise<SupplierState>, inDialog = false) => {
     setNotice("");
-    try { onState(await work()); return true; } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
+    try { onState(await work()); return true; } catch (cause) { if (inDialog) throw cause; setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
   };
   /** The supplier as saved, with one change and its version (its currency is kept). A clash loads the latest. */
   const save = async (patch: Record<string, unknown>) => {
@@ -100,9 +100,9 @@ function SupplierRecord({ api, state, supplier, onState, onClose }: SheetProps &
     {dialog === "terms" ? <TermsDialog supplier={supplier} onClose={() => setDialog(null)} onSave={async (input) => { await save(input); setDialog(null); }} onReload={reload} /> : null}
     {dialog === "deal" ? <DealDialog supplier={supplier} onClose={() => setDialog(null)} onSave={async (input) => { await save(input); setDialog(null); }} onReload={reload} /> : null}
     {dialog === "approval" ? <ApprovalDialog supplier={supplier} onClose={() => setDialog(null)}
-      onSave={async (input) => { if (await run(() => api.approveSupplier(supplier.id, { version: supplier.version, ...input }))) setDialog(null); }} /> : null}
+      onSave={async (input) => { await run(() => api.approveSupplier(supplier.id, { version: supplier.version, ...input }), true); setDialog(null); }} /> : null}
     {dialog === "archive" ? <ArchiveDialog onClose={() => setDialog(null)}
-      onSave={async (reason) => { if (await run(() => api.archiveSupplier(supplier.id, { version: supplier.version, reason }))) { setDialog(null); onClose(); } }} /> : null}
+      onSave={async (reason) => { await run(() => api.archiveSupplier(supplier.id, { version: supplier.version, reason }), true); setDialog(null); onClose(); }} /> : null}
   </InspectorSheet>;
 }
 
@@ -230,30 +230,22 @@ function ApprovalDialog({ supplier, onClose, onSave }: { supplier: Supplier; onC
   const [approval, setApproval] = useState<Approval>(supplier.approval === "pending" ? "approved" : supplier.approval);
   const [preferred, setPreferred] = useState<Set<string>>(new Set(supplier.preferredFor));
   const [note, setNote] = useState(supplier.approvalNote);
-  const [busy, setBusy] = useState(false);
   const needsNote = approval === "on_hold" || approval === "not_approved";
-  return <ControlledModalDialog isOpen size="md" title={t("Approval")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={needsNote && !note.trim()} onPress={async () => {
-        setBusy(true); await onSave({ approval, preferredFor: approval === "approved" ? [...preferred] : [], note: note.trim() }); setBusy(false);
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="md" title={t("Approval")} onClose={onClose} isDirty={note !== supplier.approvalNote} isSubmitDisabled={needsNote && !note.trim()} submitLabel={t("Save")}
+    onSubmit={() => onSave({ approval, preferredFor: approval === "approved" ? [...preferred] : [], note: note.trim() })}>
       <SegmentedControl label={t("Approval")} value={approval} onChange={(value) => setApproval(value as Approval)}
         options={(["approved", "on_hold", "not_approved", "pending"] as const).map((id) => ({ id, label: labels.approval[id] }))} />
       {approval === "approved" && supplier.categories.length ? <MultiSelectField label={t("Preferred supplier for")} selectedKeys={preferred}
         onSelectionChange={(keys) => setPreferred(new Set([...keys].map(String)))} items={supplier.categories.map((item) => ({ id: item, label: item }))} /> : null}
       <TextAreaField label={needsNote ? t("Why") : t("Note")} isRequired={needsNote} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function ArchiveDialog({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Archive")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Archive")}</Button></div>}>
+  return <FormDialog size="md" title={t("Archive")} onClose={onClose} cancelLabel={t("Cancel")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()}
+    submitLabel={t("Archive")} submitVariant={"danger"} onSubmit={() => onSave(reason.trim())}>
     <TextAreaField label={t("Why you no longer use it")} isRequired value={reason} onChange={setReason} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

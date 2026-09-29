@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
 import {
-  BurndownChart, Button, ControlledModalDialog, DateField, GroupedTable, InspectorSheet, MenuButton, SelectField, Skeleton, TextAreaField, TextInput,
+  BurndownChart, Button, DateField, FormDialog, FormRow, VisuallyHidden, GroupedTable, InspectorSheet, MenuButton, SelectField, Skeleton, TextAreaField, TextInput,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
@@ -14,7 +14,7 @@ import { isOpen } from "./work-labels";
 import { useWorkColumns, type WorkRow } from "./work-columns";
 import styles from "./work.module.css";
 
-type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
+type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
 const REASONS: MissReason[] = ["blocked", "waiting_on_client", "materials_late", "underestimated", "people_unavailable", "reprioritised", "other"];
 
 export function useMissReasons() {
@@ -123,32 +123,23 @@ function SprintDialog({ sprint, last, run, onClose }: { sprint: Sprint | null; l
   const [goal, setGoal] = useState(sprint?.goal ?? "");
   const [start, setStart] = useState(sprint?.startDate ?? suggested.start);
   const [end, setEnd] = useState(sprint?.endDate ?? suggested.end);
-  const [busy, setBusy] = useState(false);
   const valid = start && end && end >= start && (!sprint || name.trim());
   const save = async () => {
-    setBusy(true);
-    const done = sprint ? await run("update_sprint", { sprintId: sprint.id, version: sprint.version, name: name.trim(), goal: goal.trim(), startDate: start, endDate: end })
-      : await run("create_sprint", { id, name: name.trim(), goal: goal.trim(), startDate: start, endDate: end });
-    setBusy(false);
-    if (done) onClose();
+    if (sprint) await run("update_sprint", { sprintId: sprint.id, version: sprint.version, name: name.trim(), goal: goal.trim(), startDate: start, endDate: end }, { inDialog: true });
+    else await run("create_sprint", { id, name: name.trim(), goal: goal.trim(), startDate: start, endDate: end }, { inDialog: true });
+    onClose();
   };
-  return <ControlledModalDialog isOpen size="md" title={sprint ? sprint.name : t("New sprint")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions">
-      {sprint?.status === "planned" ? <Button variant="quiet" onPress={async () => { if (await run("delete_sprint", { sprintId: sprint.id, version: sprint.version })) onClose(); }}>{t("Delete")}</Button> : null}
-      <span className={styles.spacer} />
-      <Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={() => void save()}>{t("Save")}</Button>
-    </div>}>
-    <div className={styles.dialogBody}>
-      <TextInput label={t("Name")} placeholder={sprint ? undefined : t("Next sprint number")} value={name} onChange={setName} />
-      <div className={styles.pair}>
+  return <FormDialog size="md" title={sprint ? sprint.name : t("New sprint")} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={save}
+    isDirty={name !== (sprint?.name ?? "") || goal !== (sprint?.goal ?? "")}
+    secondaryAction={sprint?.status === "planned" ? <Button variant="quiet" onPress={async () => { if (await run("delete_sprint", { sprintId: sprint.id, version: sprint.version })) onClose(); }}>{t("Delete")}</Button> : undefined}>
+      <TextInput label={t("Name")} isRequired={Boolean(sprint)} maxLength={120} placeholder={sprint ? undefined : t("Next sprint number")} value={name} onChange={setName} />
+      <FormRow>
         <DateField label={t("Start")} isDisabled={sprint?.status === "active"} value={start ? parseDate(start) : null} onChange={(value) => setStart(value ? value.toString() : "")} />
         <DateField label={t("End")} value={end ? parseDate(end) : null} onChange={(value) => setEnd(value ? value.toString() : "")}
           isInvalid={Boolean(start && end && end < start)} errorMessage={t("The sprint can't end before it starts.")} />
-      </div>
+      </FormRow>
       <TextAreaField label={t("Goal")} value={goal} onChange={setGoal} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** Closing asks why each unfinished commitment wasn't done, and where the unfinished work goes. */
@@ -158,31 +149,23 @@ function CloseSprintDialog({ sprint, detail, planned, run, onClose }: { sprint: 
   const [given, setGiven] = useState<Record<string, { reason: MissReason | null; note: string }>>(
     () => Object.fromEntries(detail.unfinished.map((item) => [item.itemId, { reason: null, note: "" }])));
   const [moveTo, setMoveTo] = useState<string>(planned[0]?.id ?? "backlog");
-  const [busy, setBusy] = useState(false);
   const valid = Object.values(given).every((entry) => entry.reason);
-  return <ControlledModalDialog isOpen size="lg" title={t("Close {name}", { name: sprint.name })} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true);
-        if (await run("close_sprint", { sprintId: sprint.id, version: sprint.version, moveTo: moveTo === "backlog" ? null : moveTo, reasons: given })) onClose();
-        setBusy(false);
-      }}>{t("Close sprint")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="lg" title={t("Close {name}", { name: sprint.name })} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Close sprint")}
+    onSubmit={async () => { await run("close_sprint", { sprintId: sprint.id, version: sprint.version, moveTo: moveTo === "backlog" ? null : moveTo, reasons: given }, { inDialog: true }); onClose(); }}>
       <p className={styles.dialogText}>{t("{done} of {count} committed done", { done: sprint.committedDone, count: sprint.committed })}</p>
       {detail.unfinished.length ? <ul className={styles.missList} aria-label={t("Not finished")}>
         {detail.unfinished.map((item) => <li key={item.itemId}>
           <span><span className={styles.number}>#{item.number}</span> {item.title}</span>
-          <SelectField aria-label={t("Why #{number} wasn't finished", { number: item.number })} label={null} placeholder={t("Why")} selectedKey={given[item.itemId]?.reason ?? null}
+          <SelectField label={<VisuallyHidden>{t("Why #{number} wasn't finished", { number: item.number })}</VisuallyHidden>} isRequired placeholder={t("Why")} selectedKey={given[item.itemId]?.reason ?? null}
             onSelectionChange={(key) => setGiven({ ...given, [item.itemId]: { ...given[item.itemId], reason: key as MissReason } })}
             items={REASONS.map((reason) => ({ id: reason, label: reasons[reason] }))} />
-          <TextInput aria-label={t("Note for #{number}", { number: item.number })} label={null} placeholder={t("Note")} value={given[item.itemId]?.note ?? ""}
+          <TextInput label={<VisuallyHidden>{t("Note for #{number}", { number: item.number })}</VisuallyHidden>} placeholder={t("Note")} maxLength={500} value={given[item.itemId]?.note ?? ""}
             onChange={(note) => setGiven({ ...given, [item.itemId]: { ...given[item.itemId], note } })} />
         </li>)}
       </ul> : null}
-      <SelectField label={t("Move unfinished work to")} selectedKey={moveTo} onSelectionChange={(key) => setMoveTo(String(key))}
+      <SelectField label={t("Move unfinished work to")} isRequired selectedKey={moveTo} onSelectionChange={(key) => setMoveTo(String(key))}
         items={[...planned.map((item) => ({ id: item.id, label: item.name })), { id: "backlog", label: t("Backlog") }]} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** A closed sprint: how the commitment burned down and what was missed and why. */

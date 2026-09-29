@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, ControlledModalDialog, EmptyState, InlineNotice, SelectField, TextInput } from "@/design-system";
+import { EmptyState, InlineNotice, SelectField, TextInput, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { StockRow, StockState, TransferState } from "@/lib/inventory/types";
@@ -32,11 +32,7 @@ export function MoveDialog({ api, state, row, onClose, onSent }: { api: Inventor
       onSent(await api.send({ id, fromLocationId: from, toLocationId: to, note: note.trim(), lines: chosen.map((item) => ({ itemId: item.itemId, projectId: item.projectId, quantity: amounts[keyOf(item)] })) }));
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
   };
-  return <ControlledModalDialog isOpen size="lg" title={t("Move stock")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!from || !to || from === to || !chosen.length || Boolean(over) || Boolean(wrongSite)} onPress={() => void send()}>{t("Move")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="lg" title={t("Move stock")} onClose={onClose} error={error || undefined} isSubmitting={busy} isSubmitDisabled={!from || !to || from === to || !chosen.length || Boolean(over) || Boolean(wrongSite)} submitLabel={t("Move")} onSubmit={() => send()}>
       <div className={styles.pair}>
         <SelectField label={t("From")} isRequired selectedKey={from} onSelectionChange={(key) => { setFrom(key === null ? null : String(key)); setAmounts({}); }}
           items={state.locations.filter((location) => state.rows.some((item) => item.locationId === location.id)).map((location) => ({ id: location.id, label: location.name }))} />
@@ -55,6 +51,5 @@ export function MoveDialog({ api, state, row, onClose, onSent }: { api: Inventor
       {over ? <InlineNotice tone="error" message={t("Only {quantity} of {item} here.", { quantity: `${quantityText(over.onHand)} ${over.unit}`.trim(), item: over.itemName })} /> : null}
       {wrongSite ? <InlineNotice tone="error" message={t("{item} is for {project}; it can't go to another project's site.", { item: wrongSite.itemName, project: wrongSite.projectReference ?? "" })} /> : null}
       <TextInput label={t("Note")} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

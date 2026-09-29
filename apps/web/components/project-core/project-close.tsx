@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Button, ControlledModalDialog, ErrorState, Skeleton, TextAreaField } from "@/design-system";
+import { ErrorState, FormDialog, Skeleton, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
 import type { CloseOut, CloseOutDraft } from "@/lib/project-core/types";
@@ -20,7 +20,6 @@ export function CancelProjectDialog({ api, projectId, onClose, onSave }: { api: 
   const [closeOut, setCloseOut] = useState<CloseOut | null>(null);
   const [error, setError] = useState("");
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
@@ -32,11 +31,9 @@ export function CancelProjectDialog({ api, projectId, onClose, onSave }: { api: 
   const blocked = Boolean(closeOut?.blockers.length);
   const automatic = closeOut ? closeOut.drafts.length + closeOut.heldStock.length + (closeOut.openWork ? 1 : 0) : 0;
 
-  return <ControlledModalDialog isOpen size="md" title={t("Cancel the project")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="danger" isLoading={busy} isDisabled={!closeOut || blocked || !reason.trim()}
-        onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Cancel the project")}</Button></div>}>
-    {error ? <ErrorState description={error} onRetry={() => setAttempt((value) => value + 1)} /> : !closeOut ? <Skeleton lines={4} shape="facts" /> : <div className={styles.dialogBody}>
+  return <FormDialog size="md" title={t("Cancel the project")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())}
+    isSubmitDisabled={!closeOut || blocked || !reason.trim()} submitLabel={t("Cancel the project")} submitVariant="danger" onSubmit={() => onSave(reason.trim())}>
+    {error ? <ErrorState description={error} onRetry={() => setAttempt((value) => value + 1)} /> : !closeOut ? <Skeleton lines={4} shape="facts" /> : <>
       {blocked ? <section className={styles.closeGroup} aria-label={t("Settle these first")}>
         <h3>{t("Settle these first")}</h3>
         <ul className={styles.closeList}>
@@ -61,18 +58,16 @@ export function CancelProjectDialog({ api, projectId, onClose, onSave }: { api: 
         </ul>
       </section> : null}
       <TextAreaField label={t("Why it's cancelled")} isRequired isDisabled={blocked} value={reason} onChange={setReason} />
-    </div>}
-  </ControlledModalDialog>;
+    </>}
+  </FormDialog>;
 }
 
 /** Reopening a completed project, with why: its last stage is current again. */
 export function ReopenProjectDialog({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Reopen the project")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Reopen")}</Button></div>}>
+  return <FormDialog size="md" title={t("Reopen the project")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())}
+    isSubmitDisabled={!reason.trim()} submitLabel={t("Reopen")} onSubmit={() => onSave(reason.trim())}>
     <TextAreaField label={t("Why it's reopened")} isRequired value={reason} onChange={setReason} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

@@ -46,7 +46,8 @@ describe("petty cash", () => {
     await userEvent.click(screen.getByRole("button", { name: "New claim" }));
     const dialog = await screen.findByRole("dialog", { name: "New claim" });
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Amount" }), "45.505");
-    expect(within(dialog).getByText("AED has 2 decimals.")).toBeInTheDocument();
+    // The money field keeps the currency's own decimals: a third one is never taken.
+    expect(within(dialog).getByRole("textbox", { name: "Amount" })).toHaveValue("45.50");
     await userEvent.clear(within(dialog).getByRole("textbox", { name: "Amount" }));
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Amount" }), "45.5");
     await userEvent.type(within(dialog).getByRole("textbox", { name: /What for/ }), "Taxi to the tile supplier");
