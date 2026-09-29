@@ -4,7 +4,7 @@ import { CrmDateTimeField } from "./crm-date-time-field";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CalendarDays, Check, StickyNote } from "lucide-react";
-import { Button, Callout, ComboboxField, ControlledModalDialog, InspectorSheet, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, useWorkspaceZoneLabel } from "@/design-system";
+import { Button, Callout, ComboboxField, ControlledModalDialog, InspectorSheet, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, useRememberedChoice, useWorkingCalendar, useWorkspaceZoneLabel } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, CrmRequestError, label, rows, type RecordData } from "@/lib/crm/client";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
@@ -177,10 +177,16 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
   const [created, setCreated] = useState(false);
   const [relation, setRelation] = useState(initialRelation);
   const [targetSearch, setTargetSearch] = useState(initialLead ? `${String(initialLead.partyName ?? t("Customer"))} · ${String(initialLead.title ?? t("Enquiry"))}` : "");
+  // Smart defaults: the next working day of the workspace's week, the enquiry's owner (else me), and the
+  // length this person last used.
+  const calendar = useWorkingCalendar();
+  const lastDuration = useRememberedChoice("crm.follow-up.duration", (value) => /^\d{1,4}$/.test(value));
   const [type, setType] = useState<string>(initialType);
+  const me = (members.data as { currentMembershipId?: string | null } | null)?.currentMembershipId ?? null;
+  const [chosenOwner, setOwner] = useState<string | null>(initialLead?.ownerMembershipId ? String(initialLead.ownerMembershipId) : null);
   const initialOwner = String(initialLead?.ownerMembershipId ?? "unassigned");
-  const [owner, setOwner] = useState(initialOwner);
-  const [initial] = useState(() => { const date = new Date(); date.setDate(date.getDate() + 1); return { title: "", notes: "", date: initialSchedule?.date ?? localDateTime(date.toISOString()).slice(0, 10), time: initialSchedule?.time ?? "10:00", duration: "30" }; });
+  const owner = chosenOwner ?? (me && rows(members.data).some((item) => item.id === me) ? me : "unassigned");
+  const [initial] = useState(() => ({ title: "", notes: "", date: initialSchedule?.date ?? calendar.nextWorkingDayFromToday().toString(), time: initialSchedule?.time ?? "10:00", duration: lastDuration.read() ?? "30" }));
   const [draft, setDraft] = useState<Draft>(initial);
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
@@ -189,7 +195,7 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
   const availableLeads = initialLead && !leads.items.some(item => item.id === initialLead.id) ? [initialLead, ...leads.items] : leads.items;
   const leadParties = new Set(availableLeads.map((item) => item.partyId));
   const targets = [...availableLeads.map((item) => ({ id: `lead:${item.id}`, label: `${String(item.partyName ?? t("Customer"))} · ${String(item.title ?? t("Enquiry"))}`, record: item })), ...parties.items.filter((item) => !leadParties.has(item.id)).map((item) => ({ id: `party:${item.id}`, label: String(item.displayName ?? t("Customer")), record: item }))];
-  const dirty = Boolean(relation !== initialRelation || type !== initialType || owner !== initialOwner || JSON.stringify(draft) !== JSON.stringify(initial));
+  const dirty = Boolean(relation !== initialRelation || type !== initialType || (chosenOwner !== null && chosenOwner !== initialOwner) || JSON.stringify(draft) !== JSON.stringify(initial));
   useEffect(() => {
     if (!dirty) return;
     const preventLoss = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
@@ -209,6 +215,7 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
       const title = draft.title.trim() || t("{type} follow-up · {name}", { type: translateKnown(t, label(type)), name });
       const body = { durationMinutes: Number(draft.duration), title, description: draft.notes.trim() || undefined, type, dueAt: reminderTimestamp(draft.date, draft.time, true), priority: "normal", customerVisible: false, ...(owner !== "unassigned" ? { ownerMembershipId: owner } : {}), ...(kind === "lead" ? { leadId: id, isNextAction: !target.record.isConverted && !["qualified", "disqualified", "paused"].includes(String(target.record.status)) } : { partyId: id, isNextAction: false }) };
       const record = await crmRequest<RecordData>(workspaceId, "activities", "POST", body);
+      lastDuration.remember(draft.duration);
       setCreated(true);
       try { await onCreated({ ...body, status: "pending", partyName: name, ...(kind === "lead" ? { leadTitle: target.record.title } : {}), ownerName: rows(members.data).find((item) => item.id === owner)?.displayName, ...record }); } catch { setFailure(t("Follow-up saved. Close and refresh to see it. Do not create it again.")); }
     } catch (error) { setFailure(translateKnown(t, (error as Error).message)); }

@@ -4,9 +4,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import { leadsPageFixture } from "@/lib/crm/leads";
 import type { ClientMatch } from "@/lib/crm/client-match";
+import { forgetAiReady } from "@/lib/workspace/ai-settings";
 import { LeadEnquiryForm, type EditableEnquiry } from "./lead-enquiry-form";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); forgetAiReady(); });
 type Data = ReturnType<typeof structuredClone<typeof leadsPageFixture>>;
 function setup(existing?: EditableEnquiry, tweak?: (data: Data) => void, matches: ClientMatch[] = []) {
   const data = structuredClone(leadsPageFixture);
@@ -27,7 +28,7 @@ function setup(existing?: EditableEnquiry, tweak?: (data: Data) => void, matches
   const onOpenLead = vi.fn();
   const saved = existing ? { ...existing, party: { mobile: "+971501234567", ...existing.party }, details: { emirate: "dubai", ...existing.details } } : undefined;
   render(<DesignSystemProvider><LeadEnquiryForm initialData={data} existing={saved} onClose={vi.fn()} onSaved={onSaved} onOpenLead={onOpenLead} /></DesignSystemProvider>);
-  const saves = () => fetchMock.mock.calls.filter(([url]) => !String(url).includes("contact-match"));
+  const saves = () => fetchMock.mock.calls.filter(([url]) => !String(url).includes("contact-match") && !String(url).includes("ai-settings"));
   return { user: userEvent.setup(), fetchMock, onSaved, onOpenLead, saves, body: (index = 0) => JSON.parse((saves()[index] as unknown as [string, { body: string }])[1].body) };
 }
 async function choose(user: ReturnType<typeof userEvent.setup>, label: RegExp, option: string) {
@@ -252,4 +253,26 @@ it("owns it yourself when no routing is set up, and offers others only to people
 it("doesn't preselect someone who can't own enquiries", async () => {
   setup(undefined, (data) => { salesperson(data); data.currentMembershipId = "20000000-0000-4000-8000-000000000009"; data.assignmentPolicies = []; data.queues = []; });
   expect(screen.getByRole("button", { name: /Owner/ })).not.toHaveTextContent(/Sara|Zaid/);
+});
+
+it("fills a new enquiry from a pasted message with Woddy, for the person to check before saving", async () => {
+  const { user, fetchMock } = setup();
+  fetchMock.mockImplementation(async (url: string) => ({ ok: true, json: async () => String(url).includes("ai-settings") ? { enabled: true, available: true, version: 1 }
+    : String(url).includes("form-fill") ? { fields: { customerName: "Sara Khan", mobile: "+971 50 123 4567", company: "Palm Holdings", summary: "Kitchen and majlis" } }
+    : String(url).includes("contact-match") ? { valid: true, message: null, matches: [] } : { leadId: "saved", reference: "E-0042" } }));
+  cleanup();
+  forgetAiReady();
+  render(<DesignSystemProvider><LeadEnquiryForm initialData={{ ...structuredClone(leadsPageFixture), defaultLocale: "en-AE" }} onClose={vi.fn()} onSaved={vi.fn()} /></DesignSystemProvider>);
+  await user.click(await screen.findByRole("button", { name: "Fill with Woddy" }));
+  await user.type(screen.getByRole("textbox", { name: "Paste a message, email or card" }), "Hi, Sara Khan from Palm Holdings, +971 50 123 4567. Kitchen and majlis.");
+  await user.click(screen.getByRole("button", { name: "Read it" }));
+  await user.click(await screen.findByRole("button", { name: "Use 4 values" }));
+  expect(screen.getByLabelText(/Customer name/)).toHaveValue("Sara Khan");
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "Mobile" })).toHaveValue("501234567"));
+  expect(screen.getByRole("button", { name: "Mobile country code" })).toHaveTextContent("+971");
+  // What went under More details is open to check.
+  expect(screen.getByRole("textbox", { name: "Company" })).toHaveValue("Palm Holdings");
+  const [, init] = fetchMock.mock.calls.find(([url]) => String(url).includes("form-fill")) as unknown as [string, RequestInit];
+  expect(JSON.parse(String(init.body))).toMatchObject({ form: "enquiry", text: expect.stringContaining("Sara Khan") });
+  expect(fetchMock.mock.calls.some(([url]) => String(url) === "/api/workspace/crm/leads")).toBe(false);
 });

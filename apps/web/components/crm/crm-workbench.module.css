@@ -329,3 +329,8 @@
 @media (max-width: 40rem) { .editRow { grid-template-columns: 1fr; } }
 /* The client's profile, edited in place: one compact column of facts under the name. */
 .customerFacts { max-inline-size: 40rem; }
+.plainFieldset { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+/* Someone already has this phone or email: a warning under the field that doesn't block the save. */
+.matchNotice { display: flex; align-items: flex-start; gap: var(--wd-space-1-5); margin-block-start: var(--wd-space-1-5); color: var(--wd-color-warning); font-size: var(--wd-text-xs); }
+.matchNotice > svg { flex: none; margin-block-start: var(--wd-space-0-5); }
+.matchNotice a { color: var(--wd-color-link); }
