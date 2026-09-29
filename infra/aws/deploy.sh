@@ -34,8 +34,10 @@ systemctl daemon-reload
 systemctl enable --now wodana-certificates.timer wodana-backup.timer
 "$P/render-nginx.sh"
 
-curl -fsS -o /dev/null -w "web %{http_code}\n" -H "Host: admin.wodana.ai" http://127.0.0.1/login
-curl -fsS -o /dev/null -w "core %{http_code}\n" -H "Host: admin.wodana.ai" http://127.0.0.1/api/v1/health/ready
+# The web can take a few seconds after the reload; retry for up to a minute before calling it a failure.
+check() { for _ in $(seq 1 12); do curl -fsS -o /dev/null -w "$1 %{http_code}\n" -H "Host: admin.wodana.ai" "http://127.0.0.1$2" && return 0; sleep 5; done; return 1; }
+check web /
+check core /api/v1/health/ready
 # Keep the disk small: the three newest source trees and packages, and no image another release left behind.
 ls -dt "$P"/src/*/ | tail -n +4 | xargs -r rm -rf
 ls -t "$P"/src/*.tgz 2>/dev/null | tail -n +4 | xargs -r rm -f
