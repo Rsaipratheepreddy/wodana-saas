@@ -11,8 +11,8 @@ vi.mock("@/components/workspace/workspace-focus", () => ({
 vi.mock("@/components/pre-project/pre-project-context", () => ({
   usePreProject: () => ({ setSelected: vi.fn() }),
 }));
-vi.mock("./quotation-studio", () => ({
-  QuotationStudio: ({ quote }: { quote: Quote }) => (
+vi.mock("./quotation-editor", () => ({
+  QuotationEditor: ({ quote }: { quote: Quote }) => (
     <div>Builder for {quote.title}</div>
   ),
 }));

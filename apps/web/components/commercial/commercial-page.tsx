@@ -43,7 +43,6 @@ import { PreExecutionFlow } from "./pre-execution-flow";
 import { QuotationBuilderPreview } from "./quotation-builder-preview";
 import s from "./commercial.module.css";
 import colors from "../crm/crm-workspace-colors.module.css";
-const QuotationStudio = dynamic(() => import('./quotation-studio').then(module => module.QuotationStudio), { loading: PreProjectSectionLoading });
 const labels: Record<string, string> = {
   "client-portal": "Client portal",
   boq: "Design Quote",
@@ -468,7 +467,6 @@ export function CommercialPage({
                   onImportScope={() => setDialog("scope")}
                   state={state}
                   customerName={record.customerName}
-                  studio={section === "quotations"}
                   workspaceId={state.workspaceId}
                   caseId={state.caseId}
                   canOverridePrice={Boolean(state.canOverridePrice)}
@@ -639,16 +637,11 @@ function QuotationsChangeSummary({
 
 function Editor(
   props: React.ComponentProps<typeof QuotationEditor> & {
-    studio: boolean;
     onSave: () => Promise<boolean>;
     onImportScope: () => void;
     state: CommercialState;
     customerName: string;
   },
 ) {
-  return props.studio ? (
-    <QuotationStudio key={props.quote.id} {...props} initialMode="design" />
-  ) : (
-    <QuotationEditor {...props} />
-  );
+  return <QuotationEditor {...props} />;
 }
