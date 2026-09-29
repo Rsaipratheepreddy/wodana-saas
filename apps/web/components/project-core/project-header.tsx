@@ -22,7 +22,8 @@ export function useNextAction(detail: ProjectDetail, run: Run, open: (dialog: Pr
   if (project.status !== "active") return null;
   const current = detail.stages.find((stage) => stage.status === "current");
   if (!current) return null;
-  if (current.ready && current.canWork) return { label: t("Finish stage"), press: () => void run("complete_stage", { stageId: current.id }) };
+  // The same words as the stage's own button on the Overview, so one action never has two names.
+  if (current.ready && current.canWork) return { label: t("Finish {stage}", { stage: t(current.name as never) }), press: () => void run("complete_stage", { stageId: current.id }) };
   const check = current.checks.find((item) => !item.passed);
   if (!check) return null;
   switch (check.kind) {

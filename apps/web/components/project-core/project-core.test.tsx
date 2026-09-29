@@ -83,8 +83,12 @@ describe("projects", () => {
     // Read from the records, never ticked by hand.
     expect(screen.getByText("Project manager named")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox", { name: "Kickoff meeting held" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Finish Kickoff" })).toBeEnabled());
-    await userEvent.click(screen.getByRole("button", { name: "Finish Kickoff" }));
+    // Ready: the stage's own button and the header's next step read the same.
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Finish Kickoff" })).toHaveLength(2));
+    const [header, stage] = screen.getAllByRole("button", { name: "Finish Kickoff" });
+    expect(header).toBeEnabled();
+    expect(stage).toBeEnabled();
+    await userEvent.click(stage);
     await waitFor(() => expect(posts(fetcher).map((post) => [post.action, post.version])).toEqual([["confirm_check", 4], ["complete_stage", 5]]));
     expect(posts(fetcher)[0]).toMatchObject({ stageId: "s0", checkKey: "meeting" });
   });
