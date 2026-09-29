@@ -12,6 +12,13 @@ import { zonedDateTime, zonedDateTimeToIso, zonedToday } from "@/lib/crm/zoned-t
 import { useCrmResource } from "./crm-workbench";
 import styles from "./follow-up-editor.module.css";
 
+/** "Aisha Karim · Jumeirah, Dubai": an enquiry titled after its customer doesn't repeat the name. */
+export function leadTargetLabel(name: string, title: string): string {
+  const trimmed = title.trim();
+  const rest = trimmed.toLocaleLowerCase().startsWith(name.trim().toLocaleLowerCase()) ? trimmed.slice(name.trim().length).replace(/^[\s·—–:,-]+/, "") : trimmed;
+  return rest ? `${name} · ${rest}` : name;
+}
+
 export function suggestedFollowUpTime(text: string): string | null {
   const match = text.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
   if (!match) return null;
@@ -208,7 +215,7 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const availableLeads = initialLead && !leads.items.some(item => item.id === initialLead.id) ? [initialLead, ...leads.items] : leads.items;
   const leadParties = new Set(availableLeads.map((item) => item.partyId));
-  const targets = [...availableLeads.map((item) => ({ id: `lead:${item.id}`, label: `${String(item.partyName ?? t("Customer"))} · ${String(item.title ?? t("Enquiry"))}`, record: item })), ...parties.items.filter((item) => !leadParties.has(item.id)).map((item) => ({ id: `party:${item.id}`, label: String(item.displayName ?? t("Customer")), record: item }))];
+  const targets = [...availableLeads.map((item) => ({ id: `lead:${item.id}`, label: leadTargetLabel(String(item.partyName ?? t("Customer")), String(item.title ?? t("Enquiry"))), record: item })), ...parties.items.filter((item) => !leadParties.has(item.id)).map((item) => ({ id: `party:${item.id}`, label: String(item.displayName ?? t("Customer")), record: item }))];
   const dirty = Boolean(relation !== initialRelation || type !== initialType || (chosenOwner !== null && chosenOwner !== initialOwner) || JSON.stringify(draft) !== JSON.stringify(initial));
   useEffect(() => {
     if (!dirty) return;
@@ -241,7 +248,7 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
   const fields = <>
     {leads.failure || parties.failure ? <Callout title={t("Some customers could not load")} tone="warning">{translateKnown(t, leads.failure || parties.failure)}<Button size="compact" onPress={() => { leads.retry(); parties.retry(); }}>{t("Retry")}</Button></Callout> : null}
     <fieldset className={styles.fields} disabled={busy || created}>
-      <ComboboxField label={t("Enquiry or customer")} isRequired placeholder={t(leads.loading || parties.loading ? "Loading customers…" : "Search customers and enquiries…")} items={targets.filter((item) => item.label.toLocaleLowerCase().includes(targetSearch.toLocaleLowerCase()))} inputValue={targetSearch} onInputChange={setTargetSearch} selectedKey={relation || null} onSelectionChange={(key) => { const selected = targets.find(item => item.id === String(key)); setRelation(selected?.id ?? ""); if (selected) setTargetSearch(selected.label); }} isDisabled={!targets.length} />
+      <ComboboxField label={t("Enquiry or customer")} isRequired menuTrigger="input" placeholder={t(leads.loading || parties.loading ? "Loading customers…" : "Search customers and enquiries…")} items={targets.filter((item) => item.label.toLocaleLowerCase().includes(targetSearch.toLocaleLowerCase()))} inputValue={targetSearch} onInputChange={setTargetSearch} selectedKey={relation || null} onSelectionChange={(key) => { const selected = targets.find(item => item.id === String(key)); setRelation(selected?.id ?? ""); if (selected) setTargetSearch(selected.label); }} isDisabled={!targets.length} />
       {!leads.loading && !parties.loading && !targets.length ? <p className={styles.hint}>{t("Add an enquiry before creating a follow-up.")} <Link href="/workspace/crm/leads">{t("Open enquiries")}</Link></p> : null}
       <TextInput label={t("Follow-up title")} placeholder={t("e.g. Call about the quotation")} value={draft.title} maxLength={240} onChange={(title) => change({ title })} />
       {suggestedFollowUpTime(`${draft.title} ${draft.notes}`) ? <div className={styles.timeSuggestion}><span>{t("Suggested time: {time}", { time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`) ?? "" })}</span><Button size="compact" onPress={() => change({ time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`)! })}>{t("Apply time")}</Button></div> : /\bat\s+\d/i.test(`${draft.title} ${draft.notes}`) ? <p className={styles.hint}>{t("Include AM or PM, or choose the exact time below.")}</p> : null}
