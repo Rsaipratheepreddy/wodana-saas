@@ -30,8 +30,9 @@ export function completeLeadForm(schema: LeadFormSchema, choices: Awaited<Return
   const used = new Set(schema.questions.map(question => question.id));
   const nextId = (field: string) => { let id = `core_${field}`, index = 2; while (used.has(id)) id = `core_${field}_${index++}`; used.add(id); return id; };
   const alreadyHasArea = schema.questions.some(question => question.field === "area");
+  // S-35: an older free-text location question becomes the area question, keeping the author's label and required flag.
   const questions = schema.questions.filter(question => question.field !== "location" || !alreadyHasArea).map(question => question.field === "location"
-    ? { ...question, field: "area", title: "Area", type: "dropdown", required: false, options: [] }
+    ? { ...question, field: "area", title: question.title || "Area", type: "dropdown", required: question.required === true, options: [] }
     : { ...question });
   const required: Array<[string, string, string, FormQuestion["options"]]> = [
     ["displayName", "Your name", "text", []], ["mobile", "Mobile number", "tel", []],
