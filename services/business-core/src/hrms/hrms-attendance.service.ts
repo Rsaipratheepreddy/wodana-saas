@@ -616,8 +616,9 @@ export class HrmsAttendanceService {
             day.place = segment.context.location?.name ?? segment.context.name;
         }
         const key = `${segment.mode}:${segment.locationId ?? ""}:${segment.projectId ?? segment.caseId ?? ""}`;
+        // General work (no project or case) is named by its place; with no place the reader shows the way of working.
         day.breakdown[key] ??= {
-          name: segment.context.location?.name ?? segment.context.name,
+          name: segment.context.location?.name ?? (segment.projectId || segment.caseId ? segment.context.name : ""),
           mode: segment.mode,
           milliseconds: 0,
         };

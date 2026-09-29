@@ -14,8 +14,9 @@ import { DayStatus, dayState, useHrmsLabels } from "./hrms-labels";
 import styles from "./hrms.module.css";
 
 /** Where a day was spent: the places worked, the leave taken, or where the person is now. */
-export function dayWhere(day: AttendanceDay) {
-  const places = [...new Set(day.breakdown.map((item) => item.name).filter(Boolean))];
+/** Where a day was worked: each place by name, or the way of working ("Office") when it was general work there. */
+export function dayWhere(day: AttendanceDay, modeName: (mode: string) => string = (mode) => mode) {
+  const places = [...new Set(day.breakdown.map((item) => item.name || modeName(item.mode)).filter(Boolean))];
   return places.length ? places.join(", ") : day.place ?? day.leaveType ?? "";
 }
 
@@ -24,6 +25,7 @@ export function AttendanceTab({ api, employee, attendance, openDay, onOpenDay }:
   api: HrmsApi; employee: HrmsEmployee; attendance: Attendance; openDay: string | null; onOpenDay: (day: string | null) => void;
 }) {
   const t = useT();
+  const { mode: modeName } = useHrmsLabels();
   const format = useHrmsFormat();
   const { locale } = useDesignSystem();
   const zone = employee.calendar.timezone;
@@ -52,7 +54,7 @@ export function AttendanceTab({ api, employee, attendance, openDay, onOpenDay }:
     { id: "in", header: t("In"), accessorFn: (row) => row.firstIn ?? "", size: 100, meta: { renderCell: (row) => <span className={styles.number}>{format.time(row.firstIn, row.timezone)}</span> } },
     { id: "out", header: t("Out"), accessorFn: (row) => row.lastOut ?? "", size: 100, meta: { renderCell: (row) => <span className={styles.number}>{format.time(row.lastOut, row.timezone)}</span> } },
     { id: "hours", header: t("Hours"), accessorFn: (row) => row.elapsedMinutes, size: 100, meta: { renderCell: (row) => <span className={styles.number}>{format.duration(row.elapsedMinutes)}</span> } },
-    { id: "where", header: t("Where"), accessorFn: (row) => dayWhere(row), size: 220, meta: { mobileHidden: true } },
+    { id: "where", header: t("Where"), accessorFn: (row) => dayWhere(row, modeName), size: 220, meta: { mobileHidden: true } },
     { id: "status", header: t("Status"), accessorFn: (row) => dayState(row), size: 160, meta: { renderCell: (row) => <DayStatus state={dayState(row)} /> } },
   ], [t, format]);
   const open = openDay ? loaded?.days.find((day) => day.date === openDay) ?? null : null;

@@ -55,6 +55,7 @@ export function TeamTab({ api, boot, open, onOpen }: { api: HrmsApi; boot: HrmsB
 /** Everyone in my scope today: in or not, where or on what leave, since when and for how long. */
 function TeamToday({ api, boot, switcher }: { api: HrmsApi; boot: HrmsBootstrap; switcher: ReactNode }) {
   const t = useT();
+  const { mode: modeName } = useHrmsLabels();
   const format = useHrmsFormat();
   const today = format.today(boot.workspace.timezone);
   const [days, setDays] = useState<AttendanceDay[] | null>(null);
@@ -66,7 +67,7 @@ function TeamToday({ api, boot, switcher }: { api: HrmsApi; boot: HrmsBootstrap;
   const columns = useMemo<DataGridColumn<AttendanceDay>[]>(() => [
     { id: "person", header: t("Person"), accessorFn: (row) => row.name, size: 220 },
     { id: "status", header: t("Status"), accessorFn: (row) => dayState(row), size: 160, meta: { renderCell: (row) => <DayStatus state={dayState(row)} /> } },
-    { id: "where", header: t("Where"), accessorFn: (row) => dayWhere(row), size: 220, meta: { mobileHidden: true } },
+    { id: "where", header: t("Where"), accessorFn: (row) => dayWhere(row, modeName), size: 220, meta: { mobileHidden: true } },
     { id: "in", header: t("In"), accessorFn: (row) => row.firstIn ?? "", size: 100, meta: { renderCell: (row) => <span className={styles.number}>{format.time(row.firstIn, row.timezone)}</span> } },
     { id: "hours", header: t("Hours"), accessorFn: (row) => row.elapsedMinutes, size: 100, meta: { renderCell: (row) => <span className={styles.number}>{format.duration(row.elapsedMinutes)}</span> } },
   ], [t, format]);
@@ -197,6 +198,7 @@ function ApprovalSheet({ api, boot, item, onClose, onDecided }: { api: HrmsApi; 
 /** Everyone's days for a period, one person or all, and the same as a CSV. */
 function TeamDays({ api, boot, switcher }: { api: HrmsApi; boot: HrmsBootstrap; switcher: ReactNode }) {
   const t = useT();
+  const { mode: modeName } = useHrmsLabels();
   const format = useHrmsFormat();
   const today = format.today(boot.workspace.timezone);
   const [range, setRange] = useState({ from: `${today.slice(0, 7)}-01`, to: today });
@@ -218,7 +220,7 @@ function TeamDays({ api, boot, switcher }: { api: HrmsApi; boot: HrmsBootstrap; 
     { id: "in", header: t("In"), accessorFn: (row) => row.firstIn ?? "", size: 100, meta: { renderCell: (row) => <span className={styles.number}>{format.time(row.firstIn, row.timezone)}</span> } },
     { id: "out", header: t("Out"), accessorFn: (row) => row.lastOut ?? "", size: 100, meta: { renderCell: (row) => <span className={styles.number}>{format.time(row.lastOut, row.timezone)}</span> } },
     { id: "hours", header: t("Hours"), accessorFn: (row) => row.elapsedMinutes, size: 100, meta: { renderCell: (row) => <span className={styles.number}>{format.duration(row.elapsedMinutes)}</span> } },
-    { id: "where", header: t("Where"), accessorFn: (row) => dayWhere(row), size: 200, meta: { mobileHidden: true } },
+    { id: "where", header: t("Where"), accessorFn: (row) => dayWhere(row, modeName), size: 200, meta: { mobileHidden: true } },
     { id: "status", header: t("Status"), accessorFn: (row) => dayState(row), size: 160, meta: { renderCell: (row) => <DayStatus state={dayState(row)} /> } },
   ], [t, format]);
   const tools = <div className={styles.toolbar}>

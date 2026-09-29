@@ -41,7 +41,7 @@ export function DaySheet({ api, day, history, today, onClose, onChanged }: {
   };
   // A session left open on an earlier day is closed by asking for its check-out time.
   const missing = open && day.date !== today && !reviews.some((review) => review.kind === "missing_checkout" && review.status === "pending" && review.sessionId === open.id) ? open : null;
-  const where = day.breakdown.length ? day.breakdown.map((item) => [item.name, format.duration(item.minutes)].filter(Boolean).join(" · ")).join(", ") : day.place ?? "";
+  const where = day.breakdown.length ? day.breakdown.map((item) => [item.name || labels.mode(item.mode), format.duration(item.minutes)].filter(Boolean).join(" · ")).join(", ") : day.place ?? "";
   return <InspectorSheet isOpen size="md" title={format.longDay(day.date)} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={events.length || missing ? <div className="wd-dialog-actions"><span className={styles.spacer} />
       {missing ? <Button onPress={() => setAsking("missing_checkout")}>{t("Missing check-out")}</Button> : null}
