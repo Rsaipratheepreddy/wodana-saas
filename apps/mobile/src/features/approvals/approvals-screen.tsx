@@ -15,6 +15,9 @@ import { useTheme } from '../../ui/theme';
 import { useToast } from '../../ui/toast';
 import { APPROVAL_GROUPS, approveLabel, GROUP_LABEL, KIND_LABEL, needsNote, otherLabel, useDecide, useWaitingForYou, type ApprovalGroup, type ApprovalRow, type Decision } from './api';
 
+/** The client, supplier or item, unless the title already names it ("PO-0042 · Al Noor Timber"). */
+const subjectOf = (row: ApprovalRow) => (row.subject && !row.title.includes(row.subject) ? row.subject : null);
+
 /** Everything waiting for my decision across modules, oldest first; decide in the sheet or open the record. */
 export function ApprovalsScreen() {
   const t = useT();
@@ -38,7 +41,7 @@ export function ApprovalsScreen() {
     onRefresh={() => void list.refetch()} refreshing={list.isRefetching}
     empty={<Empty icon={CheckCircle2} title={t('Nothing waiting for you')} />}
     renderItem={(row, _, first) => <ListRow first={first} icon={ClipboardCheck} iconTone={row.canDecide ? 'warning' : 'neutral'} title={row.title}
-      detail={[t(KIND_LABEL[row.kind] ?? row.kind), row.subject, row.project?.name].filter(Boolean).join(' · ')}
+      detail={[t(KIND_LABEL[row.kind] ?? row.kind), subjectOf(row), row.project?.name].filter(Boolean).join(' · ')}
       meta={<Text variant="caption" tone="tertiary">{[row.amount !== null ? format.money(row.amount, row.currency ?? undefined) : null, format.ago(row.since)].filter(Boolean).join(' · ')}</Text>}
       trailing={row.canDecide ? undefined : <Chip label={t('Your own')} />}
       onPress={() => setOpen(row)} />} />
@@ -76,7 +79,7 @@ function DecisionSheet({ row, onClose }: { row: ApprovalRow | null; onClose: () 
     {row ? <View style={{ gap: theme.space(3) }}>
       <Section>
         <Fact first label={t('Waiting for you')} value={t(KIND_LABEL[row.kind] ?? row.kind)} />
-        {row.subject ? <Fact label={t('For')} value={row.subject} /> : null}
+        {subjectOf(row) ? <Fact label={t('For')} value={subjectOf(row)!} /> : null}
         {row.project ? <Fact label={t('Project')} value={[row.project.reference, row.project.name].filter(Boolean).join(' · ')} /> : null}
         {row.amount !== null ? <Fact label={t('Amount')} value={format.money(row.amount, row.currency ?? undefined)} /> : null}
         <Fact label={t('Since')} value={format.ago(row.since)} />

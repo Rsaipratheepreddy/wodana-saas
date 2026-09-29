@@ -3,7 +3,7 @@ import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { CalendarCheck, CheckCircle2, ClipboardCheck, CloudOff, CloudUpload, Inbox, ListChecks, LogIn, LogOut, PackageCheck, PhoneCall, Users } from 'lucide-react-native';
 import type { HomeOverview } from '../../../../../packages/contracts/src/home';
-import { useApi } from '../../core/api';
+import { errorMessage, useApi } from '../../core/api';
 import { appRouteFor } from '../../core/deep-links';
 import { useFormat } from '../../core/format';
 import { key, useT } from '../../core/i18n';
@@ -12,6 +12,7 @@ import { useOnline } from '../../core/query';
 import { useSession } from '../../core/session';
 import { Banner, Card, Empty, ListRow, Screen, Section, Shimmer } from '../../ui/layout';
 import { Button, Row, Text } from '../../ui/primitives';
+import { useTheme } from '../../ui/theme';
 import { useBootstrap, useCrewDays, useCurrentAttendance, useLeaveRequests, usePendingTime, useReviews } from '../hrms/api';
 import { minutesSince, MODE_LABEL } from '../hrms/model';
 import { useWaitingCount } from '../approvals/api';
@@ -28,6 +29,7 @@ const OVERDUE = key('Overdue follow-up');
  */
 export function TodayScreen() {
   const t = useT();
+  const theme = useTheme();
   const router = useRouter();
   const format = useFormat();
   const api = useApi();
@@ -63,6 +65,7 @@ export function TodayScreen() {
   const blocked = outbox.items.filter((item) => item.status === 'blocked');
   const nothing = !due.length && !approvals && !waiting.count && !followUps.length && !expected.length && !(inbox.unread > 0);
   const loading = work.isLoading || overview.isLoading;
+  const failed = (projects ? work.error : null) ?? overview.error ?? (hrms ? current.error : null);
 
   return <Screen large title={t('Today')} subtitle={format.longDay(today)} onRefresh={refresh} refreshing={current.isRefetching || work.isRefetching}>
     {!online ? <Banner tone="neutral" icon={CloudOff} title={t('No connection')} detail={t('Captures are saved on this phone and sent later.')} /> : null}
@@ -90,7 +93,7 @@ export function TodayScreen() {
     </Section> : null}
 
     {projects && (due.length || work.isLoading) ? <Section title={t('Due today')} action={<Button size="sm" variant="ghost" label={t('All')} onPress={() => router.push('/projects/tasks')} />}>
-      {work.isLoading ? <ListRow first title="…" /> : due.map((item, index) => <ListRow key={item.id} first={index === 0} icon={ListChecks} title={item.title}
+      {work.isLoading ? <View style={{ padding: theme.space(4), gap: theme.space(2) }}><Shimmer width="60%" height={12} /><Shimmer width="40%" height={9} /></View> : due.map((item, index) => <ListRow key={item.id} first={index === 0} icon={ListChecks} title={item.title}
         detail={`${item.projectReference} · #${item.number}${item.dueDate && item.dueDate < today ? ` · ${t('due {day}', { day: format.day(item.dueDate) })}` : ''}`}
         trailing={<WorkTrailing item={item} />} onPress={() => router.push(`/projects/${item.projectId}/task/${item.id}`)} />)}
     </Section> : null}
@@ -110,6 +113,8 @@ export function TodayScreen() {
       <ListRow first icon={Inbox} title={t('{count} unread in your inbox', { count: inbox.unread })} onPress={() => router.push('/inbox')} />
     </Section> : null}
 
-    {!loading && nothing ? <Empty icon={CheckCircle2} title={t('You’re all caught up')} /> : null}
+    {/* A failed load never reads as "all caught up". */}
+    {failed && online ? <Banner tone="warning" title={t('Something went wrong')} detail={errorMessage(failed, t('Try again'))} action={{ label: t('Try again'), onPress: refresh }} /> : null}
+    {!loading && !failed && nothing ? <Empty icon={CheckCircle2} title={t('You’re all caught up')} /> : null}
   </Screen>;
 }
