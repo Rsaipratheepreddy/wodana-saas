@@ -32,6 +32,7 @@ import { decideClientUpdate } from "./client-updates";
 import { holdLength, shiftForHold } from "./project-hold";
 import { noticeStageReady } from "./project-stage-watch";
 import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
+import { thankForHandover } from "../crm/conversations/inbox/client-followups";
 
 type Db = PoolClient;
 const SETTINGS = ["workspace.settings.manage"];
@@ -536,6 +537,8 @@ export class ProjectCoreService {
         today: await this.today(client, workspaceId) });
       await client.query(`UPDATE delivery_projects SET status = 'completed', completed_at = now(), completed_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, project.id, userId]);
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "project.completed", entityType: "project", entityId: project.id, after: settled });
+      // Unless the handover already thanked them, the client is thanked now (once per project).
+      await thankForHandover(client, workspaceId, project.id, { actorUserId: userId });
       notices.push({ key: `completed:${project.version}`, notice: { code: "project.completed", note: "", memberships: team.map((member) => member.membershipId) } });
     }
   }

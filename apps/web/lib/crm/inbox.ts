@@ -42,6 +42,7 @@ export type ChatContext = {
 export const TEMPLATE_SOURCES = [
   "contact.first_name", "contact.name", "enquiry.reference", "opportunity.reference", "project.name", "project.stage",
   "quote.number", "invoice.number", "invoice.total", "invoice.due_date", "payment.amount", "portal.link", "staff.first_name", "business.name", "today.date",
+  "meeting.time", "meeting.place", "review.link",
 ] as const;
 export type TemplateSource = (typeof TEMPLATE_SOURCES)[number];
 /** What each source is called in the mapping and in a blocked send (i18n keys). */
@@ -51,6 +52,7 @@ export const TEMPLATE_SOURCE_LABELS: Record<TemplateSource, MessageKey> = {
   "invoice.number": tKey("Invoice number"), "invoice.total": tKey("Invoice amount"), "portal.link": tKey("Client portal link"),
   "project.stage": tKey("Project stage"), "invoice.due_date": tKey("Invoice due date"), "payment.amount": tKey("Payment amount"),
   "staff.first_name": tKey("Your first name"), "business.name": tKey("Business name"), "today.date": tKey("Today's date"),
+  "meeting.time": tKey("Appointment date and time"), "meeting.place": tKey("Appointment address"), "review.link": tKey("Review link"),
 };
 
 /** Meta's review state of a WhatsApp template, as the inbox shows it (only approved ones can be sent). */
@@ -67,7 +69,13 @@ export const CLIENT_EVENT_LABELS: Record<string, MessageKey> = {
   "crm.enquiry.created": tKey("Welcome on a new enquiry"), "portal.quote_issued": tKey("Quotation ready"), "portal.invoice_issued": tKey("Invoice issued"),
   "receivables.payment_received": tKey("Payment received"), "portal.decision_waiting": tKey("Decision waiting"), "portal.update_published": tKey("Progress update shared"),
   "project.stage_started": tKey("Stage started"), "payments.reminder": tKey("Payment reminder"),
+  "crm.meeting.booked": tKey("Visit or meeting confirmed"), "crm.meeting.reminder": tKey("Visit reminder the day before"),
+  "crm.enquiry.quiet": tKey("Follow-up on a quiet enquiry"), "commercial.quote_follow_up": tKey("Quotation follow-up"),
+  "crm.opportunity.won": tKey("Thank you for choosing us"), "project.handover_thanks": tKey("Thank you after handover"),
 };
+/** Client messages with timing or a link to set (Settings → Inbox → Client messages → Timing). */
+export const FOLLOW_UP_EVENTS = new Set(["crm.enquiry.quiet", "commercial.quote_follow_up", "project.handover_thanks"]);
+export type FollowUpTiming = { quietDays: number; quietSecondDays: number | null; quoteDays: number; reviewUrl: string | null; version: number };
 /** Enquiry states a chat can be filtered by. */
 export const ENQUIRY_STAGE_LABELS: Record<string, MessageKey> = {
   new: tKey("New"), attempting_contact: tKey("Contacting"), connected: tKey("Connected"), nurturing: tKey("Nurturing"),

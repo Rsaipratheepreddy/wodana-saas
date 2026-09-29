@@ -328,6 +328,12 @@ class BusinessCoreClient:
             json=payload,
         )
 
+    async def run_client_follow_ups(self, workspace_id: str) -> dict[str, Any]:
+        """Visit reminders, quiet-enquiry nudges and quotation follow-ups that are due."""
+        return await self._internal_request(
+            "POST", f"/internal/crm/workspaces/{workspace_id}/client-follow-ups/run", json={}
+        )
+
     async def send_due_scheduled_messages(self, workspace_id: str) -> dict[str, Any]:
         """Chat messages someone scheduled ("Send later") whose time has come go out now."""
         return await self._internal_request(

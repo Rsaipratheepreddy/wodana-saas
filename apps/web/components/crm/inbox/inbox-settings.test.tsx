@@ -18,7 +18,9 @@ function setup(canManage = true) {
     "inbox/client-messages": { connected: true, events: [
       { event: "crm.enquiry.created", enabled: true, templateCode: "wd_enquiry_welcome", version: 0, emailFallback: false, channel: "none", template: { body: "Hello {{1}}, thank you.", providerStatus: "rejected", approved: false } },
       { event: "portal.invoice_issued", enabled: true, templateCode: "quote_ready", version: 2, emailFallback: true, channel: "whatsapp", template: { body: "Hi {{1}}, quote {{2}} is ready.", providerStatus: "approved", approved: true } },
-    ] },
+      { event: "crm.enquiry.quiet", enabled: true, templateCode: "wd_enquiry_follow_up", version: 0, emailFallback: false, channel: "whatsapp", template: { body: "Hello {{1}}, we are following up on your enquiry {{2}}.", providerStatus: "approved", approved: true } },
+      { event: "project.handover_thanks", enabled: true, templateCode: "wd_handover_review", version: 0, emailFallback: false, channel: "whatsapp", template: { body: "Hello {{1}}, {{2}} is complete.", providerStatus: "approved", approved: true } },
+    ], timing: { quietDays: 3, quietSecondDays: null, quoteDays: 3, reviewUrl: null, version: 1 } },
     "inbox/auto-replies": {
       canManage, businessName: "Palm Studio",
       workspace: { connectionId: null, greeting: { enabled: false, text: "Hi {{contact.first_name}}, thanks for contacting {{business.name}}.", silenceDays: 14 },
@@ -121,9 +123,25 @@ describe("Settings → Inbox", () => {
     const grid = await screen.findByRole("grid", { name: "Client messages" }).catch(() => screen.findByRole("table", { name: "Client messages" }));
     expect(within(grid).getByText("Welcome on a new enquiry")).toBeInTheDocument();
     expect(within(grid).getByText("Template rejected by Meta")).toBeInTheDocument();
-    expect(within(grid).getByText("WhatsApp")).toBeInTheDocument();
+    expect(within(grid).getAllByText("WhatsApp")).toHaveLength(3);
     await user.click(within(grid).getByRole("switch", { name: "Invoice issued" }));
     await waitFor(() => expect(sent("inbox/client-messages/portal.invoice_issued", "PUT")).toEqual([{ version: 2, enabled: false }]));
+  });
+
+  it("sets when the follow-ups go and the review link the handover thank-you carries", async () => {
+    const user = userEvent.setup(), { sent } = setup(); render(<InboxSettingsPage workspaceId={WORKSPACE} />);
+    const section = await screen.findByRole("region", { name: "Client messages" });
+    expect(await within(section).findByText("Follow-up on a quiet enquiry")).toBeInTheDocument();
+    await user.click(within(section).getByRole("button", { name: "Review link" }));
+    const dialog = await screen.findByRole("dialog", { name: "Follow-up timing" });
+    const link = within(dialog).getByRole("textbox", { name: "Review link" });
+    await user.type(link, "http://not-secure");
+    await user.click(within(dialog).getByRole("button", { name: "Save timing" }));
+    expect(await within(dialog).findByText("Use a full https:// link")).toBeInTheDocument();
+    await user.clear(link);
+    await user.type(link, "https://reviews.example.com/studio");
+    await user.click(within(dialog).getByRole("button", { name: "Save timing" }));
+    await waitFor(() => expect(sent("inbox/follow-ups", "PUT")).toEqual([{ version: 1, quietDays: 3, quietSecondDays: null, quoteDays: 3, reviewUrl: "https://reviews.example.com/studio" }]));
   });
 
   it("lets everyone read the settings but only managers change them", async () => {

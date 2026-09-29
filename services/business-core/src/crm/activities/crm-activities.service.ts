@@ -6,6 +6,7 @@ import { CrmEventsService } from "../shared/crm-events.service";
 import { decodeCursor, encodeCursor } from "../shared/crm-types";
 import { CompleteActivityDto, CreateActivityDto, CreateAppointmentDto, ListActivitiesQueryDto, UpdateActivityDto, UpdateAppointmentDto } from "./dto/activities.dto";
 import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
+import { confirmAppointment } from "../conversations/inbox/client-followups";
 
 @Injectable()
 export class CrmActivitiesService {
@@ -268,6 +269,8 @@ export class CrmActivitiesService {
       if (version !== undefined) {
         const updated = await client.query(`UPDATE crm_appointments SET starts_at = $1, ends_at = $2, timezone = $3, location = $4, version = version + 1 WHERE workspace_id = $5 AND activity_id = $6 AND version = $7 RETURNING id, starts_at AS "startsAt", ends_at AS "endsAt", timezone, location, version`, [startsAt, endsAt, input.timezone, input.location ?? {}, workspaceId, activityId, version]);
         if (!updated.rowCount) throw new ConflictException("Appointment changed; reload before rescheduling");
+        // A meeting moved: the client gets the new time.
+        await confirmAppointment(client, workspaceId, activityId);
         return updated.rows[0] as Record<string, unknown>;
       }
       const result = await client.query(
@@ -289,6 +292,8 @@ export class CrmActivitiesService {
           JSON.stringify(input.attendeeMembershipIds ?? []),
         ],
       );
+      // A meeting with a client: they get its confirmation on WhatsApp (when the firm has it on).
+      await confirmAppointment(client, workspaceId, activityId);
       return result.rows[0] as Record<string, unknown>;
   }
 

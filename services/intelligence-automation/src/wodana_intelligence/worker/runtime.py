@@ -510,10 +510,14 @@ class CrmWorker:
         await self.business_core.run_payment_reminders(workspace_id)
         await self.whatsapp_templates(workspace_id)
         await self.fetch_chat_files(workspace_id)
-        # Scheduled chat messages become ordinary queued replies, sent by the drain just below.
+        # Scheduled chat messages and due client follow-ups become queued messages, sent by the
+        # drain just below.
         send_scheduled = getattr(self.business_core, "send_due_scheduled_messages", None)
         if send_scheduled is not None:
             await send_scheduled(workspace_id)
+        follow_ups = getattr(self.business_core, "run_client_follow_ups", None)
+        if follow_ups is not None:
+            await follow_ups(workspace_id)
         await self.drain_notifications(workspace_id)
         await self.business_core.dispatch_staff_emails(workspace_id)
         waits = await self.business_core.claim_automation_waits(workspace_id)

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, ControlledModalDialog, DataGrid, InlineNotice, SelectField, SettingsSection, Skeleton, Switch, ToggleButton, type DataGridColumn } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, DataGrid, InlineNotice, SelectField, SettingsSection, Skeleton, Switch, TextInput, ToggleButton, type DataGridColumn } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
-import { CLIENT_EVENT_LABELS, type ClientMessageRow, type InboxTemplate } from "@/lib/crm/inbox";
+import { CLIENT_EVENT_LABELS, FOLLOW_UP_EVENTS, type ClientMessageRow, type FollowUpTiming, type InboxTemplate } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
 import styles from "./inbox-parts.module.css";
 
@@ -13,11 +13,12 @@ import styles from "./inbox-parts.module.css";
  */
 export function ClientMessagesSection({ workspaceId, canManage, templates }: { workspaceId: string; canManage: boolean; templates: InboxTemplate[] }) {
   const t = useT();
-  const [data, setData] = useState<{ connected: boolean; events: ClientMessageRow[] } | null>(null);
+  const [data, setData] = useState<{ connected: boolean; events: ClientMessageRow[]; timing?: FollowUpTiming } | null>(null);
   const [failure, setFailure] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const [scheduling, setScheduling] = useState(false);
-  const load = useCallback(() => crmRequest<{ connected: boolean; events: ClientMessageRow[] }>(workspaceId, "inbox/client-messages").then(setData).catch((error: Error) => setFailure(error.message)), [workspaceId]);
+  const [timing, setTiming] = useState(false);
+  const load = useCallback(() => crmRequest<{ connected: boolean; events: ClientMessageRow[]; timing?: FollowUpTiming }>(workspaceId, "inbox/client-messages").then(setData).catch((error: Error) => setFailure(error.message)), [workspaceId]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
   const save = async (row: ClientMessageRow, change: { enabled?: boolean; templateCode?: string | null }) => {
     setSaving(row.event); setFailure("");
@@ -28,7 +29,8 @@ export function ClientMessagesSection({ workspaceId, canManage, templates }: { w
   const codes = [...new Set(templates.map((template) => template.code))].sort();
   const columns: DataGridColumn<ClientMessageRow>[] = [
     { accessorKey: "event", header: t("Message"), size: 240, cell: ({ row: { original } }) => <span className={styles.name}><strong>{t(CLIENT_EVENT_LABELS[original.event] ?? "Client message")}</strong>{original.template ? <small dir="auto">{original.template.body}</small> : null}
-      {original.event === "payments.reminder" ? <Button size="compact" variant="quiet" onPress={() => setScheduling(true)}>{t("Schedule")}</Button> : null}</span> },
+      {original.event === "payments.reminder" ? <Button size="compact" variant="quiet" onPress={() => setScheduling(true)}>{t("Schedule")}</Button> : null}
+      {FOLLOW_UP_EVENTS.has(original.event) && data?.timing ? <Button size="compact" variant="quiet" onPress={() => setTiming(true)}>{original.event === "project.handover_thanks" ? t("Review link") : t("Timing")}</Button> : null}</span> },
     { accessorKey: "templateCode", header: t("Template"), size: 220, enableSorting: false, cell: ({ row: { original } }) => canManage
       ? <SelectField aria-label={t("Template")} label={null} isDisabled={saving === original.event} placeholder={t("Choose a template")}
         items={codes.map((code) => ({ id: code, label: code }))} selectedKey={original.templateCode} onSelectionChange={(key) => key && key !== original.templateCode && void save(original, { templateCode: String(key) })} />
@@ -45,7 +47,45 @@ export function ClientMessagesSection({ workspaceId, canManage, templates }: { w
     {data ? <div data-sales-grid><DataGrid ariaLabel={t("Client messages")} columns={columns} data={data.events} getRowId={(row) => row.event} rowNumbers={false} selectable={false} showToolbar={false}
       emptyTitle={t("No client messages")} emptyDescription={t("Connect WhatsApp first.")} /></div> : null}
     {scheduling ? <ReminderSchedule workspaceId={workspaceId} canManage={canManage} onClose={() => setScheduling(false)} /> : null}
+    {timing && data?.timing ? <FollowUpTimingDialog workspaceId={workspaceId} canManage={canManage} timing={data.timing} onClose={() => setTiming(false)} onSaved={() => { setTiming(false); void load(); }} /> : null}
   </SettingsSection>;
+}
+
+const DAY_CHOICES = [1, 2, 3, 4, 5, 7, 10, 14];
+
+/**
+ * When the follow-ups go: a quiet enquiry's nudge (and an optional, later second one) after our last message, the
+ * quotation follow-up after it was issued, and the review link the handover thank-you carries (left out when empty).
+ */
+function FollowUpTimingDialog({ workspaceId, canManage, timing, onClose, onSaved }: { workspaceId: string; canManage: boolean; timing: FollowUpTiming; onClose: () => void; onSaved: () => void }) {
+  const t = useT();
+  const [draft, setDraft] = useState({ quietDays: timing.quietDays, quietSecondDays: timing.quietSecondDays, quoteDays: timing.quoteDays, reviewUrl: timing.reviewUrl ?? "" });
+  const [saving, setSaving] = useState(false), [error, setError] = useState("");
+  const days = (count: number) => t("{count} days", { count });
+  const seconds = [...new Set([...DAY_CHOICES, 21, 30].filter((count) => count > draft.quietDays))];
+  const save = async () => {
+    const reviewUrl = draft.reviewUrl.trim();
+    if (reviewUrl && !/^https:\/\/\S{3,}$/.test(reviewUrl)) { setError(t("Use a full https:// link")); return; }
+    setSaving(true); setError("");
+    try {
+      await crmRequest(workspaceId, "inbox/follow-ups", "PUT", { version: timing.version, quietDays: draft.quietDays, quietSecondDays: draft.quietSecondDays && draft.quietSecondDays > draft.quietDays ? draft.quietSecondDays : null, quoteDays: draft.quoteDays, reviewUrl: reviewUrl || null });
+      onSaved();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t("The timing could not be saved.")); }
+    finally { setSaving(false); }
+  };
+  return <ControlledModalDialog isOpen title={t("Follow-up timing")} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button>{canManage ? <Button variant="primary" isLoading={saving} onPress={() => void save()}>{t("Save timing")}</Button> : null}</div>}>
+    <div className={styles.fields}>
+      <SelectField label={t("Quiet enquiry: first follow-up after")} isDisabled={!canManage} items={DAY_CHOICES.map((count) => ({ id: String(count), label: days(count) }))} selectedKey={String(draft.quietDays)}
+        onSelectionChange={(key) => key && setDraft((current) => ({ ...current, quietDays: Number(key) }))} />
+      <SelectField label={t("Second follow-up")} isDisabled={!canManage} items={[{ id: "", label: t("No second follow-up") }, ...seconds.map((count) => ({ id: String(count), label: t("{count} days after the first", { count }) }))]}
+        selectedKey={draft.quietSecondDays && draft.quietSecondDays > draft.quietDays ? String(draft.quietSecondDays) : ""} onSelectionChange={(key) => setDraft((current) => ({ ...current, quietSecondDays: key ? Number(key) : null }))} />
+      <SelectField label={t("Quotation follow-up after")} isDisabled={!canManage} items={DAY_CHOICES.map((count) => ({ id: String(count), label: days(count) }))} selectedKey={String(draft.quoteDays)}
+        onSelectionChange={(key) => key && setDraft((current) => ({ ...current, quoteDays: Number(key) }))} />
+      <TextInput label={t("Review link")} inputType="url" maxLength={500} isDisabled={!canManage} value={draft.reviewUrl} placeholder="https://" onChange={(value) => setDraft((current) => ({ ...current, reviewUrl: value }))} />
+    </div>
+    {error ? <InlineNotice tone="error" message={error} /> : null}
+  </ControlledModalDialog>;
 }
 
 const OFFSET_CHOICES = [-7, -3, -1, 0, 1, 3, 7, 14, 30];

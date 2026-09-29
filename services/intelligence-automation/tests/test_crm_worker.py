@@ -177,6 +177,10 @@ class FakeDueWorkCore:
         self.calls.append("scheduled")
         return {"processed": 0}
 
+    async def run_client_follow_ups(self, _workspace: str) -> dict[str, Any]:
+        self.calls.append("follow-ups")
+        return {"reminders": 0, "quiet": 0, "quotes": 0}
+
     async def claim_notification_jobs(self, _workspace: str) -> list[dict[str, Any]]:
         self.calls.append("notifications")
         return []
@@ -258,6 +262,7 @@ async def test_due_work_polls_sequences_before_notification_delivery(
 
     assert core.calls == [
         "slas", "takeovers", "sequences", "snoozed", "reminders", "files", "scheduled",
+        "follow-ups",
         "notifications", "staff-emails", "waits"
     ]
 
@@ -428,6 +433,7 @@ async def test_one_workspace_failing_never_stops_the_others_or_the_timer_loop(
     # Scheduled chat messages are queued before the drain that sends them.
     assert core.calls == [
         "slas", "takeovers", "sequences", "snoozed", "reminders", "files", "scheduled",
+        "follow-ups",
         "notifications", "staff-emails", "waits",
     ]
 

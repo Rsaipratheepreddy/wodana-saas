@@ -4,6 +4,7 @@ import { RequestActor } from "../../auth/actor";
 import { recordAudit } from "../../audit/record-audit";
 import { notifyUserInApp, queueUserEmail } from "../../notifications/default-templates";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
+import { confirmAppointment } from "../conversations/inbox/client-followups";
 import { assertMemberFree } from "../shared/calendar-clash";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { assignDesignerToCase } from "./dedicated-designer";
@@ -70,6 +71,8 @@ export class IntroMeetingService {
         [workspaceId, activity.id, input.startsAt, input.endsAt, input.timezone, location, JSON.stringify([opportunity.partyId]), JSON.stringify(attendees)])).rows[0];
 
       await this.setDesigner(client, workspaceId, opportunityId, current, designer.membershipId, activity.id, user.userId, changing ? input.changeReason ?? null : null);
+      // The client gets the meeting's confirmation on WhatsApp (when the firm has it on).
+      await confirmAppointment(client, workspaceId, activity.id, { actorUserId: user.userId });
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.appointment.changed.v1", entityType: "crm_activity", entityId: activity.id, after: { ...appointment, purpose: "intro", opportunityId } });
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "crm.opportunity.intro_booked.v1", entityType: "crm_opportunity", entityId: opportunityId,
         before: current ? { designerMembershipId: current.membershipId } : null, after: { activityId: activity.id, designerMembershipId: designer.membershipId, startsAt: input.startsAt, endsAt: input.endsAt, timezone: input.timezone, mode: input.mode } });

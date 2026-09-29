@@ -14,7 +14,7 @@ import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSeque
 import { applyConversationChange, mapConversation, recordChatEvent } from "./inbox/inbox-commands";
 import { INBOX_MEMBERS_SQL, inboxQueue, selectInboxOwner } from "./inbox/inbox-assignment";
 import { inboxLink, noticeChat, readChatNotices, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
-import { inboundSummary, normalizeTemplateParameter, renderTemplate, stageFilterSql, templateParametersProblem, templatePlaceholders, withSignature, type TemplateVariableSource } from "./inbox/inbox-rules";
+import { inboundSummary, normalizeTemplateParameter, renderTemplate, stageFilterSql, TEMPLATE_SOURCE_NAMES, templateParametersProblem, templatePlaceholders, withSignature, type TemplateVariableSource } from "./inbox/inbox-rules";
 import { resolveTemplateSources } from "./inbox/template-variables";
 import { sendAutoReply } from "./inbox/auto-replies";
 import { kindOf, safeFileName, sendableProblem, WHATSAPP_MEDIA, type SendableKind } from "./inbox/attachment-rules";
@@ -42,13 +42,7 @@ export const CONVERSATION_LABELS_SQL = `COALESCE((SELECT jsonb_agg(jsonb_build_o
    WHERE link.workspace_id = conversation.workspace_id AND link.conversation_id = conversation.id), '[]'::jsonb)`;
 const MEMBER_NAME = (alias: string) => `coalesce(nullif(btrim(${alias}.display_name), ''), ${alias}.primary_email)`;
 /** A template's variable names, for a blocked send: "Fill in {{2}} (Enquiry reference)". */
-const SOURCE_NAMES: Record<TemplateVariableSource, string> = {
-  "contact.first_name": "Client first name", "contact.name": "Client name", "enquiry.reference": "Enquiry reference",
-  "opportunity.reference": "Opportunity reference", "project.name": "Project name", "quote.number": "Quote number",
-  "invoice.number": "Invoice number", "invoice.total": "Invoice amount", "portal.link": "Client portal link",
-  "staff.first_name": "Your first name", "business.name": "Business name", "today.date": "Today's date",
-  "project.stage": "Project stage", "invoice.due_date": "Invoice due date", "payment.amount": "Payment amount",
-};
+const SOURCE_NAMES = TEMPLATE_SOURCE_NAMES;
 
 @Injectable()
 export class CrmConversationsService {
