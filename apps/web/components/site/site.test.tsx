@@ -135,6 +135,24 @@ describe("daily progress", () => {
       next: [{ workItemId: "t2", title: "Template the worktop" }] });
   });
 
+  it("puts the cursor in the new Tomorrow line, and Enter starts the next one (m17)", async () => {
+    mount(() => state({ reports: [] }));
+    site();
+    await userEvent.click(await screen.findByRole("button", { name: "Today's report" }));
+    const dialog = await screen.findByRole("dialog", { name: "Today's report" });
+    const tomorrow = within(dialog).getByRole("group", { name: "Tomorrow" });
+    const before = within(tomorrow).queryAllByRole("textbox", { name: "Planned for tomorrow" }).length;
+    await userEvent.click(within(tomorrow).getByRole("button", { name: "Add" }));
+    const added = within(tomorrow).getAllByRole("textbox", { name: "Planned for tomorrow" });
+    expect(added).toHaveLength(before + 1);
+    expect(added.at(-1)).toHaveFocus();
+    await userEvent.keyboard("Fit the worktop{Enter}");
+    expect(added.at(-1)).toHaveValue("Fit the worktop");
+    const lines = within(tomorrow).getAllByRole("textbox", { name: "Planned for tomorrow" });
+    expect(lines).toHaveLength(before + 2);
+    expect(lines.at(-1)).toHaveFocus();
+  });
+
   it("asks who recovers a blocked day and by when, and what happened in an incident", async () => {
     mount(() => state({ reports: [] }));
     site();

@@ -95,11 +95,14 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
   const lastSent = useRef(JSON.stringify(payloadOf(initial)));
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [problem, setProblem] = useState("");
+  // The row Add (or Enter) just made under Tomorrow takes the cursor, so what's typed next lands in it.
+  const [nextFocus, setNextFocus] = useState<number | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [raising, setRaising] = useState<string | null>(null);
   const drafts = useFormDraft(`site-report:${workspaceId}:${projectId}:${reportId}`, draft, { isDirty: JSON.stringify(draft) !== JSON.stringify(initial), restore: setDraft });
   const set = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
+  const addNext = () => { setNextFocus(draft.next.length); set({ next: [...draft.next, { workItemId: null, title: "" }] }); };
   const saving = useRef<Promise<boolean> | null>(null);
 
   /** Saves the draft now if it changed (one save at a time); true when the server has it. */
@@ -320,11 +323,13 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
     <FormSection title={t("Tomorrow")}>
       {draft.next.length ? <ul className={styles.next}>{draft.next.map((item, index) => <li key={`${item.workItemId ?? "text"}-${index}`}>
         {item.workItemId ? <span>{item.title}</span>
-          : <TextInput aria-label={t("Planned for tomorrow")} label={null} placeholder={t("Planned for tomorrow")} value={item.title}
-            onChange={(title) => set({ next: draft.next.map((entry, at) => (at === index ? { ...entry, title } : entry)) })} />}
+          : <TextInput aria-label={t("Planned for tomorrow")} label={null} placeholder={t("Planned for tomorrow")} value={item.title} autoFocus={nextFocus === index}
+            onChange={(title) => set({ next: draft.next.map((entry, at) => (at === index ? { ...entry, title } : entry)) })}
+            // Enter starts the next line (it never submits the report); on an empty line it does nothing.
+            onKeyDown={(event) => { if (event.key !== "Enter") return; event.preventDefault(); if (item.title.trim()) addNext(); }} />}
         <IconButton aria-label={t("Remove")} size="compact" variant="quiet" onPress={() => set({ next: draft.next.filter((_, at) => at !== index) })}><X aria-hidden="true" size={13} /></IconButton>
       </li>)}</ul> : null}
-      <Button size="compact" variant="quiet" onPress={() => set({ next: [...draft.next, { workItemId: null, title: "" }] })}><Plus aria-hidden="true" size={14} />{t("Add")}</Button>
+      <Button size="compact" variant="quiet" onPress={addNext}><Plus aria-hidden="true" size={14} />{t("Add")}</Button>
     </FormSection>
 
     <Switch isSelected={draft.noWork} onChange={(noWork) => set({ noWork })}>{t("No work today")}</Switch>
