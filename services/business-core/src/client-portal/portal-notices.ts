@@ -88,12 +88,14 @@ export async function tellClients(db: Db, input: {
     else await recordClientMessageSkipped(db, input.workspaceId, whatsappEvent, input.recordId, whatsapp, true);
   }
   const whatsappOnly = () => ({ queued: 1, reason: null, channel: "whatsapp" as const, messageId: whatsappSent!, names: [] as string[] });
-  const recipients = (await db.query<{ id: string; name: string }>(
-    `SELECT grant_row.id, grant_row.name FROM client_portal_grants grant_row WHERE grant_row.workspace_id = $1 AND grant_row.case_id = $2 AND grant_row.active
-       AND ${contactEmailSql("grant_row")} IS NOT NULL AND ($3::boolean = false OR grant_row.test_contact)
-       AND ($4::boolean = false OR grant_row.role = 'approver') ORDER BY grant_row.created_at`,
-    [input.workspaceId, input.caseId, input.demo ?? (process.env.PORTAL_DEMO_OTP === "true" && process.env.NODE_ENV !== "production"), input.event === "decision_waiting"])).rows;
-  if (!recipients.length) return whatsappSent ? whatsappOnly() : { queued: 0, reason: "no_contact" as const };
+  const demo = input.demo ?? (process.env.PORTAL_DEMO_OTP === "true" && process.env.NODE_ENV !== "production");
+  const reachable = (await db.query<{ id: string; name: string; testContact: boolean }>(
+    `SELECT grant_row.id, grant_row.name, grant_row.test_contact AS "testContact" FROM client_portal_grants grant_row WHERE grant_row.workspace_id = $1 AND grant_row.case_id = $2 AND grant_row.active
+       AND ${contactEmailSql("grant_row")} IS NOT NULL AND ($3::boolean = false OR grant_row.role = 'approver') ORDER BY grant_row.created_at`,
+    [input.workspaceId, input.caseId, input.event === "decision_waiting"])).rows;
+  // A demonstration environment only ever emails its test contacts; it says so rather than "nobody has an email".
+  const recipients = demo ? reachable.filter((recipient) => recipient.testContact) : reachable;
+  if (!recipients.length) return whatsappSent ? whatsappOnly() : { queued: 0, reason: reachable.length ? "demo_test_contacts_only" as const : "no_contact" as const };
   const template = (await db.query<{ id: string; subject: string | null; body: string }>(
     `SELECT id, subject_template AS subject, body_template AS body FROM notification_templates
       WHERE workspace_id = $1 AND code = $2 AND channel = 'email' AND status = 'approved' AND locale = 'en' ORDER BY version_number DESC LIMIT 1`,

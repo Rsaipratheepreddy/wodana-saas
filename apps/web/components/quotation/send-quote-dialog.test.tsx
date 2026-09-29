@@ -14,5 +14,6 @@ describe("what the sender is told after Send to client (M3)", () => {
     expect(deliveryMessage({ ...sent, reason: "portal_off" }, t).message).toContain("the client portal is turned off");
     expect(deliveryMessage({ ...sent, reason: "paused" }, t).message).toContain("paused");
     expect(deliveryMessage({ ...sent, reason: "not_sent" }, t).message).toContain("they turned these emails off");
+    expect(deliveryMessage({ ...sent, reason: "demo_test_contacts_only" }, t).message).toContain("only emails test contacts");
   });
 });

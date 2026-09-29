@@ -1004,6 +1004,9 @@ integration("client portal (plan §6.22)", () => {
       await contactPoint("phone", "+1 555 010 0009", "mobile");
       expect(await tell("q:other-number")).toMatchObject({ queued: 0, reason: "no_contact" });
       await contactPoint("phone", "+1 (555) 010-0001", "mobile");
+      // A demonstration environment emails only its test contacts, and says so.
+      expect(await tellClients(w.client, { workspaceId: w.workspaceId, caseId: w.caseId, event: "quote_issued", recordId: "q:demo", title: "Main quote (V1)", demo: true }))
+        .toMatchObject({ queued: 0, reason: "demo_test_contacts_only" });
       expect(await tell("q:1")).toMatchObject({ queued: 1, channel: "email", names: ["Maya"] });
       expect((await w.admin.contacts(actor, w.workspaceId, w.caseId)).contacts).toEqual([expect.objectContaining({ phone: APPROVER, email: "maya.client@example.com" })]);
       const mailer = { sendStaffNotice: vi.fn(async () => ({ status: "sent" as const, provider: "mailgun" as const, messageId: "m1" })) };

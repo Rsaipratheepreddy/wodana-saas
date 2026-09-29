@@ -83,6 +83,7 @@ export function deliveryMessage(sent: IssueDelivery, t: ReturnType<typeof useT>)
       : sent.reason === "template_missing" ? t("the email template is missing")
         : sent.reason === "portal_off" ? t("the client portal is turned off")
           : sent.reason === "paused" ? t("the client's portal is paused for this project")
-            : t("nobody on the case has an email address");
+            : sent.reason === "demo_test_contacts_only" ? t("this is a demonstration workspace, which only emails test contacts")
+              : t("nobody on the case has an email address");
   return { tone: "info", message: t("In {name}'s portal. No message went out: {why}. Share the portal link with them.", { name: sent.decider, why }) };
 }

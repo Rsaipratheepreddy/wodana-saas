@@ -11530,5 +11530,6 @@
   "Paid before work starts": "Paid before work starts",
   "{name} refused.": "{name} refused.",
   "{name} verified.": "{name} verified.",
-  "{count} chosen · up to {limit}": "{count} chosen · up to {limit}"
+  "{count} chosen · up to {limit}": "{count} chosen · up to {limit}",
+  "this is a demonstration workspace, which only emails test contacts": "this is a demonstration workspace, which only emails test contacts"
 }
