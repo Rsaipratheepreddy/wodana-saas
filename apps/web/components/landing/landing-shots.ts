@@ -5,15 +5,17 @@ import { join } from "node:path";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 
 /**
- * Product screenshots on the public pages (public/landing): real screens of a demo workspace, each in the
+ * Product screenshots on the public pages (public/landing): real screens of a fictional demo workspace, each in the
  * light theme and, when captured, the dark one (`<name>-dark.webp`). The pixel size is known so nothing shifts.
+ * App screens are 390×844 at 3×, captured with a blank strip at the top and bottom for the drawn status bar and home
+ * indicator (see devices.tsx); the same files feed the store images (apps/mobile/scripts/store-images.mjs).
  */
 export type Shot = { src: string; dark: string; width: number; height: number; alt: MessageKey };
 
 const desktop = (name: string, alt: MessageKey): Shot =>
   ({ src: `/landing/${name}.webp`, dark: `/landing/${name}-dark.webp`, width: 2880, height: 1800, alt });
 const phone = (name: string, alt: MessageKey): Shot =>
-  ({ src: `/landing/${name}.webp`, dark: `/landing/${name}-dark.webp`, width: 1170, height: 2532, alt });
+  ({ src: `/landing/app-${name}.webp`, dark: `/landing/app-${name}-dark.webp`, width: 1170, height: 2532, alt });
 
 export const SHOTS = {
   home: desktop("home", tKey("Wodana home with the day's work across sales and projects")),
@@ -23,9 +25,11 @@ export const SHOTS = {
   purchasing: desktop("purchasing", tKey("Purchase orders with suppliers and delivery")),
   factory: desktop("factory", tKey("Factory work orders by project")),
   portal: desktop("client-portal", tKey("The client portal for one project")),
-  mobileTasks: phone("mobile-tasks", tKey("The mobile app: today's tasks")),
-  mobileReport: phone("mobile-daily-report", tKey("The mobile app: daily site report")),
-  mobileMe: phone("mobile-me", tKey("The mobile app: profile and attendance")),
+  appToday: phone("today", tKey("The mobile app: today's sites, tasks and deliveries")),
+  appApprovals: phone("approvals", tKey("The mobile app: leave and check-ins to approve")),
+  appReport: phone("daily-report", tKey("The mobile app: daily site report")),
+  appInbox: phone("inbox", tKey("The mobile app: client chats in the inbox")),
+  appMe: phone("me", tKey("The mobile app: profile and attendance")),
 } satisfies Record<string, Shot>;
 
 const present = new Map<string, boolean>();

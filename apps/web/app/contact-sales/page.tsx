@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
-import { notFound, redirect } from "next/navigation";
 import { ContactSection, MarketingFrame } from "@/components/landing/landing-page";
-import { classifyTenantHost } from "@/lib/auth/tenant-host";
+import { requirePublicHost } from "@/components/landing/public-host";
 import { businessApiUrl } from "@/lib/auth/server";
 import { getServerT } from "@/lib/i18n/server";
 import { loadPublicSalesForm } from "@/lib/sales/contact-form";
@@ -14,11 +12,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
 /** The "Contact sales" form on its own page, for links from emails, ads and the footer. */
 export default async function ContactSalesPage() {
-  const route = classifyTenantHost((await headers()).get("host"));
-  if (route.kind === "invalid") notFound();
-  if (route.kind !== "generic") redirect("/login");
+  await requirePublicHost();
   const form = await loadPublicSalesForm(businessApiUrl("/public/sales/contact-form"));
-  return <MarketingFrame onLanding={false}>
+  return <MarketingFrame>
     <ContactSection form={form} headingLevel={1} source="contact_sales" />
   </MarketingFrame>;
 }
