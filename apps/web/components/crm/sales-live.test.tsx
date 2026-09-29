@@ -70,13 +70,25 @@ describe("Log contact (S-16)", () => {
     render(<DesignSystemProvider timeZone="Asia/Dubai"><LogContactDialog workspaceId={leadsPageFixture.workspaceId} lead={{ id: "lead-1", version: 3, name: "Asha" }} slaPolicies={policies} onClose={vi.fn()} onLogged={onLogged} /></DesignSystemProvider>);
     await user.click(screen.getByRole("radio", { name: "No answer" }));
     expect(screen.getByRole("textbox", { name: /Note/ })).not.toBeRequired();
-    // In 2 h would be after hours, so it becomes Sunday 09:00.
-    expect(screen.getByRole("button", { name: /In 2 h · Sun 09:00/ })).toHaveAttribute("aria-pressed", "true");
+    // In 2 h would be after hours: the next working morning, which the Next working day chip already offers (m8).
+    expect(screen.getByRole("button", { name: /Next working day · Sun 09:00/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: /In 2 h/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /In 3 days/ }));
     await user.click(screen.getByRole("button", { name: "Log contact" }));
     await waitFor(() => expect(onLogged).toHaveBeenCalledWith(expect.objectContaining({ contactAttempts: 3 }), "no_answer"));
     const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body);
     expect(body).toMatchObject({ outcome: "no_answer", note: "", nextActionAt: "2026-10-06T05:00:00.000Z" });
+  });
+
+  it("offers In 2 h only when it really is two hours from now (m8)", async () => {
+    vi.useFakeTimers({ now: new Date("2026-10-03T07:00:00.000Z"), toFake: ["Date"] }); // Sat 11:00 in Dubai
+    vi.stubGlobal("fetch", vi.fn());
+    const user = userEvent.setup();
+    render(<DesignSystemProvider timeZone="Asia/Dubai"><LogContactDialog workspaceId={leadsPageFixture.workspaceId} lead={{ id: "lead-1", version: 3, name: "Asha" }} slaPolicies={policies} onClose={vi.fn()} onLogged={vi.fn()} /></DesignSystemProvider>);
+    await user.click(screen.getByRole("radio", { name: "No answer" }));
+    expect(screen.getByRole("button", { name: /In 2 h · 13:00/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Next working day · Sun 09:00/ })).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("still needs a note when the client was reached", async () => {

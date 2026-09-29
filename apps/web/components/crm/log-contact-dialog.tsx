@@ -54,9 +54,14 @@ export function LogContactDialog({ workspaceId, lead, slaPolicies = [], onClose,
   const unanswered = outcome !== null && UNANSWERED_OUTCOMES.includes(outcome);
   const needsFollowUp = outcome === "come_back_later";
   const showFollowUp = outcome !== null && outcome !== "not_interested" && outcome !== "unreachable";
+  // "In 2 h" only when it is two hours from now; outside working hours it moves to the next working moment,
+  // and when that is the next working morning the "Next working day" chip already says so.
+  const inTwoHours = (at: Date) => Math.abs(at.getTime() - (now.getTime() + 2 * 3_600_000)) < 60_000;
+  const chips = suggestions.filter(({ id, at }) => id !== "two_hours" || !suggestions.some((other) => other.id !== id && other.at.getTime() === at.getTime()));
   const chipLabel = (id: (typeof suggestions)[number]["id"], at: Date) => {
     const when = deadlineText(at.toISOString(), { locale, timeZone }, now);
-    return id === "two_hours" ? t("In 2 h · {when}", { when }) : id === "next_day" ? t("Next working day · {when}", { when }) : t("In 3 days · {when}", { when });
+    return id === "two_hours" ? (inTwoHours(at) ? t("In 2 h · {when}", { when }) : t("Next working hour · {when}", { when }))
+      : id === "next_day" ? t("Next working day · {when}", { when }) : t("In 3 days · {when}", { when });
   };
 
   const choose = (next: ContactOutcome) => {
@@ -101,7 +106,7 @@ export function LogContactDialog({ workspaceId, lead, slaPolicies = [], onClose,
       {outcome === "not_interested" ? <TextInput errorMessage={t("Add the reason the client is not interested.")} isRequired label={t("Reason")} maxLength={160} onChange={setReason} value={reason} /> : null}
       {showFollowUp ? <div className={styles.group}>
         <div className="wd-quick-picks" role="group" aria-label={t("Suggested times")}>
-          {suggestions.map(({ id, at }) => {
+          {chips.map(({ id, at }) => {
             const value = wallClock(at, timeZone);
             return <button key={id} type="button" className="wd-chip" aria-pressed={followUp === value} onClick={() => setFollowUp(value)}>{chipLabel(id, at)}</button>;
           })}

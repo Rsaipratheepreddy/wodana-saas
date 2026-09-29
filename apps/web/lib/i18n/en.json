@@ -11512,5 +11512,6 @@
   "Close 1 enquiry": "Close 1 enquiry",
   "1 enquiry updated.": "1 enquiry updated.",
   "1 enquiry needs an owner": "1 enquiry needs an owner",
-  "1 enquiry assigned": "1 enquiry assigned"
+  "1 enquiry assigned": "1 enquiry assigned",
+  "Next working hour · {when}": "Next working hour · {when}"
 }
