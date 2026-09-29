@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, InlineNotice, SelectField, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { parseDate } from "@internationalized/date";
+import { Button, DateField, InlineNotice, SelectField, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest } from "@/lib/crm/client";
 import { loadDesignSettings, quoteDesignFee, type DesignPackage } from "@/lib/design/packages";
@@ -144,6 +145,6 @@ function QuestionInput({ question, value, onChange }: { question: Question; valu
   if (question.options?.length) return <SelectField aria-label={question.label} items={question.options} label={null} onSelectionChange={(key) => onChange(key === null ? null : String(key))} placeholder={t("Choose")} selectedKey={typeof value === "string" ? value : null} />;
   if (question.dataType === "boolean") return <Switch aria-label={question.label} isSelected={value === true} onChange={onChange}>{value === true ? t("Yes") : t("No")}</Switch>;
   if (question.dataType === "number") return <TextInput aria-label={question.label} inputMode="decimal" label={null} onChange={(next) => onChange(next === "" ? null : decimal(next))} value={value === null || value === undefined ? "" : String(value)} />;
-  if (question.dataType === "date") return <TextInput aria-label={question.label} inputType="date" label={null} onChange={(next) => onChange(next || null)} value={typeof value === "string" ? value : ""} />;
+  if (question.dataType === "date") return <DateField aria-label={question.label} label={null} onChange={(next) => onChange(next ? next.toString() : null)} value={typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? parseDate(value.slice(0, 10)) : null} />;
   return <TextInput aria-label={question.label} label={null} onChange={onChange} value={typeof value === "string" ? value : ""} />;
 }

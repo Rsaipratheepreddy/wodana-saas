@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
-import { Badge, Button, Callout, ControlledModalDialog, DesignSystemProvider, IconButton, InspectorSheet, isNoAccessError, NoAccessState, SearchInput, SelectField, useDesignSystem, useWorkspaceZoneLabel, Skeleton } from "@/design-system";
+import { Badge, Button, Callout, DesignSystemProvider, FormDialog, IconButton, InspectorSheet, isNoAccessError, MoreDetails, NoAccessState, SearchInput, SelectField, TextAreaField, TextInput, useDesignSystem, useWorkspaceZoneLabel, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows, dateText, label, type RecordData } from "@/lib/crm/client";
 import { calendarDayKey, calendarRange, localDateTime, moveCalendar, type CalendarMode, type CalendarEvent } from "@/lib/crm/calendar";
@@ -14,6 +14,7 @@ import { CalendarTimeGrid } from "./calendar-time-grid";
 import styles from "./crm-calendar.module.css";
 import workspaceColors from "./crm-workspace-colors.module.css";
 import { FollowUpSheet } from "./follow-up-editor";
+import { CrmDateTimeField } from "./crm-date-time-field";
 
 function safeGoogleLink(value: unknown) { try { const url = new URL(String(value)); return url.protocol === "https:" && ["calendar.google.com", "www.google.com"].includes(url.hostname) ? url.href : undefined; } catch { return undefined; } }
 
@@ -194,7 +195,6 @@ function GoogleEventDialog({ workspaceId, connections, date, onClose, onSaved }:
   const [attendees, setAttendees] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   useEffect(() => {
     const controller = new AbortController();
@@ -212,35 +212,30 @@ function GoogleEventDialog({ workspaceId, connections, date, onClose, onSaved }:
     })();
     return () => controller.abort();
   }, [workspaceId, connections, t]);
-  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const submit = async () => {
     const selectedCalendar = calendars[Number(calendarIndex)];
     const from = new Date(start), to = new Date(end);
-    if (!selectedCalendar) { setError(t("Choose a writable Google calendar in Integrations.")); return; }
-    if (!title.trim() || !Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || to <= from) { setError(t("Enter a title and an end time after the start.")); return; }
+    if (!selectedCalendar) throw new Error(t("Choose a writable Google calendar in Integrations."));
+    if (!title.trim() || !Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || to <= from) throw new Error(t("Enter a title and an end time after the start."));
     const attendeeEmails = attendees.split(/[\s,;]+/).map(email => email.trim()).filter(Boolean);
-    setSaving(true); setError("");
-    try {
-      const response = await fetch(`/api/workspace/integration-connections/${selectedCalendar.connectionId}/tools`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, action: "calendar.create", idempotencyKey, payload: { calendarId: selectedCalendar.calendarId, summary: title.trim(), description: description.trim() || undefined, location: location.trim() || undefined, start: from.toISOString(), end: to.toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, attendeeEmails, sendUpdates: attendeeEmails.length ? "all" : "none" } }) });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? t("Google event could not be created."));
-      onSaved();
-    } catch (failure) { setError((failure as Error).message); }
-    finally { setSaving(false); }
+    const response = await fetch(`/api/workspace/integration-connections/${selectedCalendar.connectionId}/tools`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, action: "calendar.create", idempotencyKey, payload: { calendarId: selectedCalendar.calendarId, summary: title.trim(), description: description.trim() || undefined, location: location.trim() || undefined, start: from.toISOString(), end: to.toISOString(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, attendeeEmails, sendUpdates: attendeeEmails.length ? "all" : "none" } }) });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message ?? t("Google event could not be created."));
+    onSaved();
   };
-  return <ControlledModalDialog isOpen title={t("Add Google event")} isDismissable={!saving} onOpenChange={open => { if (!open && !saving) onClose(); }} footer={<div className={styles.formActions}><Button size="compact" isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button size="compact" variant="primary" type="submit" form="google-calendar-event" isDisabled={loading || !calendars.length} isLoading={saving}>{t("Add event")}</Button></div>}>
-    <form id="google-calendar-event" className={styles.eventForm} onSubmit={event => void submit(event)}>
-      {error ? <Callout title={t("Google event needs attention")} tone="warning">{error}</Callout> : null}
-      {loading ? <p role="status">{t("Loading writable calendars…")}</p> : !calendars.length ? <p>{t("No writable calendar is selected.")} <Link href="/workspace/integrations?connect=google_workspace">{t("Connect or choose a Google calendar")}</Link>.</p> : null}
-      <label>{t("Calendar")}<select required value={calendarIndex} onChange={event => setCalendarIndex(event.target.value)}>{calendars.map((calendar, index) => <option key={`${calendar.connectionId}/${calendar.calendarId}`} value={index}>{calendar.label}</option>)}</select></label>
-      <label>{t("Event title")}<input required maxLength={300} value={title} onChange={event => setTitle(event.target.value)} /></label>
-      <div className={styles.formColumns}><label>{t("Starts")}<input required type="datetime-local" value={start} onChange={event => setStart(event.target.value)} /></label><label>{t("Ends")}<input required type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} /></label></div>
-      <label>{t("Location")}<input maxLength={500} value={location} onChange={event => setLocation(event.target.value)} /></label>
-      <label>{t("Guests, separated by commas")}<input type="text" value={attendees} onChange={event => setAttendees(event.target.value)} placeholder={t("Optional email addresses")} /></label>
-      <label>{t("Notes")}<textarea value={description} onChange={event => setDescription(event.target.value)} /></label>
-      <small>{t("Guests receive a Google invitation when you add their email addresses. The event is created in the selected Google calendar.")}</small>
-    </form>
-  </ControlledModalDialog>;
+  return <FormDialog error={error || undefined} errorTitle={t("Google event needs attention")} isDirty={Boolean(title.trim() || location.trim() || attendees.trim() || description.trim())}
+    isSubmitDisabled={loading || !calendars.length} onClose={onClose} onSubmit={submit} submitLabel={t("Add event")} title={t("Add Google event")}
+    lead={loading ? <p role="status">{t("Loading writable calendars…")}</p> : !calendars.length ? <p>{t("No writable calendar is selected.")} <Link href="/workspace/integrations?connect=google_workspace">{t("Connect or choose a Google calendar")}</Link>.</p> : null}>
+    <SelectField isRequired label={t("Calendar")} items={calendars.map((calendar, index) => ({ id: String(index), label: calendar.label }))} selectedKey={calendarIndex} onSelectionChange={(key) => setCalendarIndex(String(key ?? "0"))} />
+    <TextInput isRequired label={t("Event title")} maxLength={300} value={title} onChange={setTitle} />
+    <CrmDateTimeField isRequired label={t("Starts")} value={start} onChange={setStart} />
+    <CrmDateTimeField isRequired label={t("Ends")} value={end} onChange={setEnd} />
+    <MoreDetails filled={[location, attendees, description].filter((value) => value.trim()).length}>
+      <TextInput label={t("Location")} maxLength={500} value={location} onChange={setLocation} />
+      <TextInput description={t("Guests receive a Google invitation.")} label={t("Guests, separated by commas")} value={attendees} onChange={setAttendees} />
+      <TextAreaField label={t("Notes")} value={description} onChange={setDescription} />
+    </MoreDetails>
+  </FormDialog>;
 }
 
 function CalendarDetails({ workspaceId, event, onChanged }: { workspaceId: string; event: CalendarEvent; onChanged: () => void }) {

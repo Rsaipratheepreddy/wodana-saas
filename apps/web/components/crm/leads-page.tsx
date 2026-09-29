@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, CalendarDays, CheckCircle2, BriefcaseBusiness, ContactRound, Globe, ListFilter, PhoneCall, Plus, RefreshCw, Timer, Type, UserRoundPlus, UsersRound } from "lucide-react";
 import {
   Badge,
@@ -18,6 +18,7 @@ import {
   NoAccessState,
   type DataGridColumn,
   DesignSystemProvider,
+  FormDialog,
   TextAreaField,
   formatDate,
   useConfirmationDialog,
@@ -461,24 +462,17 @@ function MoveLeadDialog({ lead, move, saving, onClose, onSave }: { lead: CrmLead
   const t = useT();
   const [reason, setReason] = useState("");
   const [date, setDate] = useState("");
-  const [error, setError] = useState("");
   const needsReason = move.status === "disqualified";
   const needsDate = ACTIVE_STATUSES.has(move.status) && !lead.ownerMembershipId && !lead.nextActionAt;
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError("");
-    if (needsReason && !reason.trim()) { setError(t("Add a short reason for this change.")); return; }
-    if (needsDate && (!date || Number.isNaN(Date.parse(date)))) { setError(t("Choose the next follow-up date and time.")); return; }
-    try { await onSave({ ...(needsReason ? { reason: reason.trim() } : {}), ...(needsDate ? { nextActionAt: new Date(date).toISOString() } : {}) }); }
-    catch (error) { setError(error instanceof Error ? error.message : t("The lead could not be moved.")); }
+  const submit = async () => {
+    if (needsReason && !reason.trim()) throw new Error(t("Add a short reason for this change."));
+    if (needsDate && (!date || Number.isNaN(Date.parse(date)))) throw new Error(t("Choose the next follow-up date and time."));
+    await onSave({ ...(needsReason ? { reason: reason.trim() } : {}), ...(needsDate ? { nextActionAt: new Date(date).toISOString() } : {}) });
   };
-  return <InspectorSheet isOpen onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={t("Move to {stage}", { stage: t(stageLabel(move.status)) })} size="md">
-    <form className={styles.leadForm} onSubmit={submit}>
-      <p className={styles.muted}>{customerDisplayName(lead.partyName)} · {lead.title}</p>
-      {needsReason ? <TextAreaField label={t("Reason")} isRequired maxLength={160} value={reason} onChange={setReason} placeholder={t("Briefly explain this stage change…")} /> : null}
-      {needsDate ? <div className={styles.followUpField}><CrmDateTimeField label={t("Next follow-up")} isRequired isDisabled={saving} value={date} onChange={setDate} /><small>{t("An unassigned active enquiry needs a follow-up date.")}</small></div> : null}
-      {error ? <Callout title={t("Stage not saved")} tone="danger">{error}</Callout> : null}
-      <div className={styles.dialogActions}><Button onPress={onClose} isDisabled={saving}>{t("Cancel")}</Button><Button type="submit" variant="primary" isLoading={saving}>{t("Save stage")}</Button></div>
-    </form>
-  </InspectorSheet>;
+  return <FormDialog description={`${customerDisplayName(lead.partyName)} · ${lead.title}`} errorTitle={t("Stage not saved")} isDirty={Boolean(reason.trim() || date)} isSubmitting={saving}
+    onClose={onClose} onSubmit={submit} submitLabel={t("Save stage")} title={t("Move to {stage}", { stage: t(stageLabel(move.status)) })}>
+    {needsReason ? <TextAreaField label={t("Reason")} isRequired maxLength={160} value={reason} onChange={setReason} placeholder={t("Briefly explain this stage change…")} /> : null}
+    {needsDate ? <CrmDateTimeField label={t("Next follow-up")} isRequired isDisabled={saving} value={date} onChange={setDate} /> : null}
+    {!needsReason && !needsDate ? <p className={styles.muted}>{t("Move this enquiry to {stage}?", { stage: t(stageLabel(move.status)) })}</p> : null}
+  </FormDialog>;
 }

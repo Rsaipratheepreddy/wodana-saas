@@ -19,7 +19,10 @@ it("prepares the standard sales flow only when converting an enquiry, without se
   expect(screen.queryByRole("button", { name: /Sales pipeline/ })).not.toBeInTheDocument();
   expect(fetchMock.mock.calls.filter(([, init]) => init.method === "POST")).toHaveLength(0);
   expect(screen.queryByRole("textbox", { name: "Currency" })).not.toBeInTheDocument();
-  await userEvent.setup().type(screen.getByRole("textbox", { name: "Estimated value (AED)" }), "45000");
+  // The value waits under More details, in the workspace's currency.
+  await userEvent.setup().click(screen.getByRole("button", { name: "More details" }));
+  expect(screen.getByText("AED")).toBeInTheDocument();
+  await userEvent.setup().type(screen.getByRole("textbox", { name: "Estimated value" }), "45000");
   await userEvent.setup().click(screen.getByRole("button", { name: "Convert to opportunity" }));
   await waitFor(() => expect(onCreated).toHaveBeenCalledOnce());
   const writes = fetchMock.mock.calls.filter(([, init]) => init.method === "POST");
@@ -68,7 +71,8 @@ it("lets the enquiry's own owner convert it when the team list is hidden from th
   data.defaultCurrency = undefined;
   render(<WorkspaceRegionProvider currency="AED"><CreateDealDialog lead={lead} initialData={data} onClose={vi.fn()} onCreated={onCreated} /></WorkspaceRegionProvider>);
   expect(screen.queryByText("A sales owner is needed")).not.toBeInTheDocument();
-  expect(screen.getByRole("textbox", { name: "Estimated value (AED)" })).toBeInTheDocument();
+  await userEvent.setup().click(screen.getByRole("button", { name: "More details" }));
+  expect(screen.getByRole("textbox", { name: "Estimated value" }).closest(".wd-field")).toHaveTextContent("AED");
   expect(screen.getAllByText("Sara Sales").length).toBeGreaterThan(0);
   await userEvent.setup().click(screen.getByRole("button", { name: "Convert to opportunity" }));
   await waitFor(() => expect(onCreated).toHaveBeenCalledOnce());

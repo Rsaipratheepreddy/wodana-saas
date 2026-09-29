@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, CalendarDays, ChevronDown, CircleDot, Globe, Mail, MessageCircle, Phone, PhoneCall, UserRound } from "lucide-react";
-import { Button, Callout, EditableField, EditableFieldList, Tabs, SelectField, TextInput } from "@/design-system";
+import { Button, Callout, EditableField, EditableFieldList, Form, Tabs, SelectField, TextInput } from "@/design-system";
 import { leadStageLabel, leadStageOptions, salesOwnerChoices, type CrmLeadListItem, type LeadsPageData } from "@/lib/crm/leads";
 import { CrmRequestError, crmRequest, dateText, label, type RecordData } from "@/lib/crm/client";
 import { CrmDateTimeField } from "./crm-date-time-field";
@@ -246,7 +246,7 @@ function InlineStageEditor({ initialStage = "", lead, workspaceId, onCancel, onS
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
-  return <form className={styles.inlineStageEditor} aria-label={t("Update enquiry stage")} onSubmit={async event => {
+  return <Form className={styles.inlineStageEditor} aria-label={t("Update enquiry stage")} fieldMarkers="none" onSubmit={async event => {
     event.preventDefault(); if (inFlight.current || persisted || !stage) return;
     inFlight.current = true;
     setBusy(true); setFailure("");
@@ -263,7 +263,7 @@ function InlineStageEditor({ initialStage = "", lead, workspaceId, onCancel, onS
     {stage && !["disqualified", "paused"].includes(stage) && !lead.ownerMembershipId && !lead.nextActionAt && <CrmDateTimeField label={t("Next follow-up")} isRequired value={nextDate} isDisabled={busy} onChange={setNextDate} />}
     {stage === "disqualified" && <TextInput label={t("Reason")} value={reason} onChange={setReason} isRequired isDisabled={busy} />}
     <div className={styles.actions}><Button size="compact" isDisabled={busy} onPress={onCancel}>{t("Cancel")}</Button><Button size="compact" type="submit" variant="primary" isDisabled={!stage || persisted} isLoading={busy}>{t("Save stage")}</Button></div>
-  </form>;
+  </Form>;
 }
 
 type Referral = { kind?: string; name?: string | null; contact?: string | null; memberName?: string | null; option?: string | null };

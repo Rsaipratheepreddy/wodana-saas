@@ -4,7 +4,7 @@ import { CrmDateTimeField } from "./crm-date-time-field";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CalendarDays, Check, StickyNote } from "lucide-react";
-import { Button, Callout, ComboboxField, ControlledModalDialog, InspectorSheet, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, useRememberedChoice, useWorkingCalendar, useWorkspaceZoneLabel } from "@/design-system";
+import { Button, Callout, ComboboxField, Form, FormDialog, InspectorSheet, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, useRememberedChoice, useWorkingCalendar, useWorkspaceZoneLabel } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, CrmRequestError, label, rows, type RecordData } from "@/lib/crm/client";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
@@ -204,35 +204,43 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
   }, [dirty]);
   const close = () => { if (busy) return; if (created) { onClose(); return; } if (dirty) { requestConfirmation({ title: t("Discard this unsaved follow-up?"), body: t("The reminder has not been saved and will be lost."), confirmLabel: t("Discard follow-up"), onConfirm: onClose }); return; } onClose(); };
   const change = (value: Partial<Draft>) => setDraft((old) => ({ ...old, ...value }));
+  /** Creates the reminder; throws the reason (the dialog keeps it open with it). */
+  const create = async () => {
+    if (created) return;
+    const target = targets.find((item) => item.id === relation);
+    if (!target) throw new Error(t("Choose an enquiry or customer from the list."));
+    const [kind, id] = relation.split(":");
+    const name = String(target.record.partyName ?? target.record.displayName ?? t("Client"));
+    const title = draft.title.trim() || t("{type} follow-up · {name}", { type: translateKnown(t, label(type)), name });
+    const body = { durationMinutes: Number(draft.duration), title, description: draft.notes.trim() || undefined, type, dueAt: reminderTimestamp(draft.date, draft.time, true), priority: "normal", customerVisible: false, ...(owner !== "unassigned" ? { ownerMembershipId: owner } : {}), ...(kind === "lead" ? { leadId: id, isNextAction: !target.record.isConverted && !["qualified", "disqualified", "paused"].includes(String(target.record.status)) } : { partyId: id, isNextAction: false }) };
+    const record = await crmRequest<RecordData>(workspaceId, "activities", "POST", body);
+    lastDuration.remember(draft.duration);
+    setCreated(true);
+    try { await onCreated({ ...body, status: "pending", partyName: name, ...(kind === "lead" ? { leadTitle: target.record.title } : {}), ownerName: rows(members.data).find((item) => item.id === owner)?.displayName, ...record }); } catch { setFailure(t("Follow-up saved. Close and refresh to see it. Do not create it again.")); }
+  };
   const save = async () => {
     if (saving.current || created) return;
     saving.current = true; setBusy(true); setFailure("");
-    try {
-      const target = targets.find((item) => item.id === relation);
-      if (!target) throw new Error(t("Choose an enquiry or customer from the list."));
-      const [kind, id] = relation.split(":");
-      const name = String(target.record.partyName ?? target.record.displayName ?? t("Client"));
-      const title = draft.title.trim() || t("{type} follow-up · {name}", { type: translateKnown(t, label(type)), name });
-      const body = { durationMinutes: Number(draft.duration), title, description: draft.notes.trim() || undefined, type, dueAt: reminderTimestamp(draft.date, draft.time, true), priority: "normal", customerVisible: false, ...(owner !== "unassigned" ? { ownerMembershipId: owner } : {}), ...(kind === "lead" ? { leadId: id, isNextAction: !target.record.isConverted && !["qualified", "disqualified", "paused"].includes(String(target.record.status)) } : { partyId: id, isNextAction: false }) };
-      const record = await crmRequest<RecordData>(workspaceId, "activities", "POST", body);
-      lastDuration.remember(draft.duration);
-      setCreated(true);
-      try { await onCreated({ ...body, status: "pending", partyName: name, ...(kind === "lead" ? { leadTitle: target.record.title } : {}), ownerName: rows(members.data).find((item) => item.id === owner)?.displayName, ...record }); } catch { setFailure(t("Follow-up saved. Close and refresh to see it. Do not create it again.")); }
-    } catch (error) { setFailure(translateKnown(t, (error as Error).message)); }
+    try { await create(); } catch (error) { setFailure(translateKnown(t, (error as Error).message)); }
     finally { saving.current = false; setBusy(false); }
   };
-  const content = <form className={styles.editor} onSubmit={(event) => { event.preventDefault(); void save(); }}>
+  const fields = <>
+    {leads.failure || parties.failure ? <Callout title={t("Some customers could not load")} tone="warning">{translateKnown(t, leads.failure || parties.failure)}<Button size="compact" onPress={() => { leads.retry(); parties.retry(); }}>{t("Retry")}</Button></Callout> : null}
+    <fieldset className={styles.fields} disabled={busy || created}>
+      <ComboboxField label={t("Enquiry or customer")} isRequired placeholder={t(leads.loading || parties.loading ? "Loading customers…" : "Search customers and enquiries…")} items={targets.filter((item) => item.label.toLocaleLowerCase().includes(targetSearch.toLocaleLowerCase()))} inputValue={targetSearch} onInputChange={setTargetSearch} selectedKey={relation || null} onSelectionChange={(key) => { const selected = targets.find(item => item.id === String(key)); setRelation(selected?.id ?? ""); if (selected) setTargetSearch(selected.label); }} isDisabled={!targets.length} />
+      {!leads.loading && !parties.loading && !targets.length ? <p className={styles.hint}>{t("Add an enquiry before creating a follow-up.")} <Link href="/workspace/crm/leads">{t("Open enquiries")}</Link></p> : null}
+      <TextInput label={t("Follow-up title")} placeholder={t("e.g. Call about the quotation")} value={draft.title} maxLength={240} onChange={(title) => change({ title })} />
+      {suggestedFollowUpTime(`${draft.title} ${draft.notes}`) ? <div className={styles.timeSuggestion}><span>{t("Suggested time: {time}", { time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`) ?? "" })}</span><Button size="compact" onPress={() => change({ time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`)! })}>{t("Apply time")}</Button></div> : /\bat\s+\d/i.test(`${draft.title} ${draft.notes}`) ? <p className={styles.hint}>{t("Include AM or PM, or choose the exact time below.")}</p> : null}
+      <ScheduleFields date={draft.date} time={draft.time} onChange={change} required /><DurationField draft={draft} onChange={duration => change({ duration })} />
+      <TextAreaField label={t("Notes")} placeholder={t("Client asked me to call tomorrow…")} value={draft.notes} maxLength={10000} onChange={(notes) => change({ notes })} />
+      <div className={styles.assignmentFields}><SelectField label={t("Type")} items={[{ id: "call", label: t("Call") }, { id: "task", label: t("Task") }, { id: "meeting", label: t("Meeting") }]} selectedKey={type} onSelectionChange={(key) => setType(String(key))} /><SelectField label={t("Assigned to")} items={[{ id: "unassigned", label: t("Unassigned") }, ...rows(members.data).map((item) => ({ id: item.id, label: String(item.displayName ?? item.name ?? t("Team member")) }))]} selectedKey={owner} onSelectionChange={(key) => setOwner(String(key))} />{members.failure ? <p className={styles.hint}>{t("Assignees are unavailable. You can still save an unassigned reminder.")}</p> : null}</div>
+    </fieldset>
+  </>;
+  if (!inline) return <FormDialog cancelLabel={created ? t("Close") : undefined} error={failure || undefined} errorTitle={t("Saved — refresh needed")} hideSubmit={created} isDirty={dirty && !created}
+    isSubmitDisabled={!relation} onClose={onClose} onSubmit={create} submitLabel={t("Save reminder")} title={t("Add follow-up")}>{fields}</FormDialog>;
+  const content = <Form className={styles.editor} onSubmit={(event) => { event.preventDefault(); void save(); }}>
       {failure ? <Callout title={t(created ? "Saved — refresh needed" : "Could not save follow-up")} tone={created ? "warning" : "danger"}>{failure}</Callout> : null}
-      {leads.failure || parties.failure ? <Callout title={t("Some customers could not load")} tone="warning">{translateKnown(t, leads.failure || parties.failure)}<Button size="compact" onPress={() => { leads.retry(); parties.retry(); }}>{t("Retry")}</Button></Callout> : null}
-      <fieldset className={styles.fields} disabled={busy || created}>
-        <ComboboxField label={t("Enquiry or customer")} isRequired placeholder={t(leads.loading || parties.loading ? "Loading customers…" : "Search customers and enquiries…")} items={targets.filter((item) => item.label.toLocaleLowerCase().includes(targetSearch.toLocaleLowerCase()))} inputValue={targetSearch} onInputChange={setTargetSearch} selectedKey={relation || null} onSelectionChange={(key) => { const selected = targets.find(item => item.id === String(key)); setRelation(selected?.id ?? ""); if (selected) setTargetSearch(selected.label); }} isDisabled={!targets.length} />
-        {!leads.loading && !parties.loading && !targets.length ? <p className={styles.hint}>{t("Add an enquiry before creating a follow-up.")} <Link href="/workspace/crm/leads">{t("Open enquiries")}</Link></p> : null}
-        <TextInput label={t("Follow-up title")} placeholder={t("e.g. Call about the quotation")} value={draft.title} maxLength={240} onChange={(title) => change({ title })} />
-        {suggestedFollowUpTime(`${draft.title} ${draft.notes}`) ? <div className={styles.timeSuggestion}><span>{t("Suggested time: {time}", { time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`) ?? "" })}</span><Button size="compact" onPress={() => change({ time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`)! })}>{t("Apply time")}</Button></div> : /\bat\s+\d/i.test(`${draft.title} ${draft.notes}`) ? <p className={styles.hint}>{t("Include AM or PM, or choose the exact time below.")}</p> : null}
-        <ScheduleFields date={draft.date} time={draft.time} onChange={change} required /><DurationField draft={draft} onChange={duration => change({ duration })} />
-        <TextAreaField label={t("Notes")} placeholder={t("Client asked me to call tomorrow…")} value={draft.notes} maxLength={10000} onChange={(notes) => change({ notes })} />
-        <div className={styles.assignmentFields}><SelectField label={t("Type")} items={[{ id: "call", label: t("Call") }, { id: "task", label: t("Task") }, { id: "meeting", label: t("Meeting") }]} selectedKey={type} onSelectionChange={(key) => setType(String(key))} /><SelectField label={t("Assigned to")} items={[{ id: "unassigned", label: t("Unassigned") }, ...rows(members.data).map((item) => ({ id: item.id, label: String(item.displayName ?? item.name ?? t("Team member")) }))]} selectedKey={owner} onSelectionChange={(key) => setOwner(String(key))} />{members.failure ? <p className={styles.hint}>{t("Assignees are unavailable. You can still save an unassigned reminder.")}</p> : null}</div>
-      </fieldset><div className={styles.actions}><Button size="compact" isDisabled={busy} onPress={close}>{t(created ? "Close" : "Cancel")}</Button><Button size="compact" type="submit" variant="primary" isLoading={busy} isDisabled={!relation || created}>{t("Save reminder")}</Button></div>
-    </form>;
-  return <>{inline ? <EditorPage title={t("New follow-up")} onClose={close}>{content}</EditorPage> : <ControlledModalDialog isOpen title={t("Add follow-up")} description={t("Choose a client, add a note, and set your next reminder.")} onOpenChange={(open) => { if (!open) close(); }} isDismissable={!busy}>{content}</ControlledModalDialog>}{confirmationDialog}</>;
+      {fields}<div className={styles.actions}><Button size="compact" isDisabled={busy} onPress={close}>{t(created ? "Close" : "Cancel")}</Button><Button size="compact" type="submit" variant="primary" isLoading={busy} isDisabled={!relation || created}>{t("Save reminder")}</Button></div>
+    </Form>;
+  return <><EditorPage title={t("New follow-up")} onClose={close}>{content}</EditorPage>{confirmationDialog}</>;
 }

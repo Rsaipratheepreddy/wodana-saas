@@ -10892,5 +10892,11 @@
   "Use {count} values": "Use {count} values",
   "Already a client:": "Already a client:",
   "Already clients:": "Already clients:",
-  "Go to {field}": "Go to {field}"
+  "Go to {field}": "Go to {field}",
+  "Guests receive a Google invitation.": "Guests receive a Google invitation.",
+  "Move this enquiry to {stage}?": "Move this enquiry to {stage}?",
+  "Per sq m": "Per sq m",
+  "Per sq ft": "Per sq ft",
+  "Default source": "Default source",
+  "Default channel": "Default channel"
 }

@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { ArrowLeft, Eye, FileText, Palette, Plus, QrCode, Search, Upload } from "lucide-react";
-import { Badge, Button, Callout, ControlledModalDialog, DataGrid, IconButton, isNoAccessError, NoAccessNotice, SelectField, Tabs, TextInput, formatDate, useConfirmationDialog, useDesignSystem } from "@/design-system";
+import { ArrowLeft, Eye, FileText, Palette, Plus, QrCode, Upload } from "lucide-react";
+import { Badge, Button, Callout, ControlledModalDialog, DataGrid, IconButton, isNoAccessError, NoAccessNotice, SearchInput, SelectField, Tabs, TextInput, formatDate, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import type { LeadsPageData } from "@/lib/crm/leads";
 import { type LeadFormRecord } from "@/lib/crm/lead-forms";
 import { crmRequest } from "@/lib/crm/client";
@@ -155,7 +155,7 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
     {error && (isNoAccessError(error) ? <NoAccessNotice area={t("Forms")} /> : <Callout title={t("Forms")} tone="danger">{error}{!record && !loading && <Button size="compact" onPress={() => { setLoading(true); setError(""); setReload(value => value + 1); }}>{t("Retry loading forms")}</Button>}</Callout>)}
     {notice && <p role="status" className={styles.notice}>{notice}</p>}
     {!record || !draft ? <>
-      <div className={styles.formListToolbar}><label className={styles.formSearch}><Search size={17} aria-hidden="true" /><input aria-label={t("Search forms")} placeholder={t("Search forms")} value={search} onChange={event => setSearch(event.target.value)} /></label><Button variant="primary" size="compact" onPress={() => void create()} isLoading={busy}><Plus size={15} />{t("New form")}</Button></div>
+      <div className={styles.formListToolbar}><SearchInput label={t("Search forms")} value={search} onChange={setSearch} /><Button variant="primary" size="compact" onPress={() => void create()} isLoading={busy}><Plus size={15} />{t("New form")}</Button></div>
       {loading ? <p role="status">{t("Loading forms…")}</p> : <div className={styles.formGallery} aria-label={t("Enquiry forms")}>
         {forms.filter(form => form.draft.title.toLowerCase().includes(search.trim().toLowerCase())).map(form => <button type="button" className={styles.formTile} key={form.id} onClick={() => open(form)} aria-label={t("Edit form {title}", { title: form.draft.title })}>
           <span className={styles.formTilePreview}>{branding?.logoUrl && <Image src={branding.logoUrl} alt="" width={96} height={36} unoptimized />}<span>{form.draft.title}</span><i /><i /><i /></span>

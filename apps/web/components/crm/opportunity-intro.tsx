@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { CalendarPlus, UserRoundPen } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, InlineNotice, SelectField, SettingsRow, SettingsSection, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { parseDate, parseTime } from "@internationalized/date";
+import { Badge, Button, DateField, FormDialog, FormRow, InlineNotice, SelectField, SettingsRow, SettingsSection, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows } from "@/lib/crm/client";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -70,65 +71,51 @@ export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved }
 
 function BookIntroDialog({ workspaceId, opportunityId, people, view, onClose, onBooked }: { workspaceId: string; opportunityId: string; people: Array<{ id: string; label: string }>; view: IntroView; onClose: () => void; onBooked: () => void }) {
   const t = useT();
-  const [value, setValue] = useState({ designer: view.designer?.membershipId ?? "", date: "", time: "10:00", minutes: "60", mode: "in_person", place: "", note: "", reason: "" });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  // The meeting starts on the next working day at 10:00, the usual length, in person.
+  const calendar = useWorkingCalendar();
+  const [start] = useState(() => ({ designer: view.designer?.membershipId ?? "", date: calendar.nextWorkingDayFromToday().toString(), time: "10:00", minutes: "60", mode: "in_person", place: "", note: "", reason: "" }));
+  const [value, setValue] = useState(start);
   const set = (key: keyof typeof value) => (next: string) => setValue((current) => ({ ...current, [key]: next }));
   const changing = Boolean(view.designer && value.designer && value.designer !== view.designer.membershipId);
   const book = async () => {
     const startsAt = zonedToUtc(value.date, value.time, view.timezone);
-    if (!value.designer) { setError(t("Choose the designer.")); return; }
-    if (!startsAt) { setError(t("Choose the date and time.")); return; }
-    if (changing && !value.reason.trim()) { setError(t("Give a reason for changing the designer.")); return; }
-    setSaving(true); setError("");
-    try {
-      await crmRequest(workspaceId, `opportunities/${opportunityId}/intro`, "POST", {
-        designerMembershipId: value.designer, startsAt, endsAt: new Date(Date.parse(startsAt) + Number(value.minutes) * 60000).toISOString(), timezone: view.timezone,
-        mode: value.mode, place: value.place.trim() || null, note: value.note.trim() || null, changeReason: changing ? value.reason.trim() : null,
-      });
-      onBooked();
-    } catch (failure) { setError(failure instanceof Error ? failure.message : t("The meeting could not be booked.")); setSaving(false); }
+    if (!value.designer) throw new Error(t("Choose the designer."));
+    if (!startsAt) throw new Error(t("Choose the date and time."));
+    if (changing && !value.reason.trim()) throw new Error(t("Give a reason for changing the designer."));
+    await crmRequest(workspaceId, `opportunities/${opportunityId}/intro`, "POST", {
+      designerMembershipId: value.designer, startsAt, endsAt: new Date(Date.parse(startsAt) + Number(value.minutes) * 60000).toISOString(), timezone: view.timezone,
+      mode: value.mode, place: value.place.trim() || null, note: value.note.trim() || null, changeReason: changing ? value.reason.trim() : null,
+    });
+    onBooked();
   };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button isLoading={saving} onPress={() => void book()} variant="primary">{t("Book")}</Button></div>}
-    isOpen onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={t("Book intro meeting")}>
-    <form className={styles.form} onSubmit={(event) => { event.preventDefault(); void book(); }}>
-      {error ? <InlineNotice message={error} tone="error" /> : null}
-      <SelectField isRequired items={people} label={t("Designer")} onSelectionChange={(key) => set("designer")(String(key ?? ""))} placeholder={t("Choose the designer")} selectedKey={value.designer || null} />
-      {changing ? <TextInput isRequired label={t("Reason for changing the designer")} maxLength={500} onChange={set("reason")} value={value.reason} /> : null}
-      <div className={styles.row}>
-        <TextInput inputType="date" isRequired label={t("Date")} onChange={set("date")} value={value.date} />
-        <TextInput inputType="time" isRequired label={t("Start")} onChange={set("time")} value={value.time} />
-        <SelectField items={DURATIONS.map((minutes) => ({ id: String(minutes), label: t("{count} min", { count: minutes }) }))} label={t("Length")} onSelectionChange={(key) => set("minutes")(String(key))} selectedKey={value.minutes} />
-      </div>
-      <small className={styles.zone}>{t("Times are in {zone}", { zone: view.timezone })}</small>
-      <SelectField items={[{ id: "in_person", label: t("In person") }, { id: "online", label: t("Online") }]} label={t("Where")} onSelectionChange={(key) => set("mode")(String(key))} selectedKey={value.mode} />
-      <TextInput label={value.mode === "online" ? t("Meeting link") : t("Address")} maxLength={500} onChange={set("place")} placeholder={value.mode === "online" ? "https://" : undefined} value={value.place} />
-      <TextAreaField label={t("Note for the designer")} maxLength={2000} onChange={set("note")} value={value.note} />
-    </form>
-  </ControlledModalDialog>;
+  return <FormDialog isDirty={JSON.stringify(value) !== JSON.stringify(start)} onClose={onClose} onSubmit={book} submitLabel={t("Book")} title={t("Book intro meeting")}>
+    <SelectField isRequired items={people} label={t("Designer")} onSelectionChange={(key) => set("designer")(String(key ?? ""))} placeholder={t("Choose the designer")} selectedKey={value.designer || null} />
+    {changing ? <TextInput isRequired label={t("Reason for changing the designer")} maxLength={500} onChange={set("reason")} value={value.reason} /> : null}
+    <DateField isRequired label={t("Date")} onChange={(next) => set("date")(next?.toString() ?? "")} quickPicks="inline" value={value.date ? parseDate(value.date) : null} />
+    <FormRow>
+      <TimeField description={t("Times are in {zone}", { zone: view.timezone })} granularity="minute" isRequired label={t("Start")} onChange={(next) => set("time")(next ? next.toString().slice(0, 5) : "")} value={value.time ? parseTime(value.time) : null} />
+      <SelectField items={DURATIONS.map((minutes) => ({ id: String(minutes), label: t("{count} min", { count: minutes }) }))} label={t("Length")} onSelectionChange={(key) => set("minutes")(String(key))} selectedKey={value.minutes} />
+    </FormRow>
+    <SelectField items={[{ id: "in_person", label: t("In person") }, { id: "online", label: t("Online") }]} label={t("Where")} onSelectionChange={(key) => set("mode")(String(key))} selectedKey={value.mode} />
+    <TextInput label={value.mode === "online" ? t("Meeting link") : t("Address")} maxLength={500} onChange={set("place")} placeholder={value.mode === "online" ? "https://" : undefined} value={value.place} />
+    <TextAreaField label={t("Note for the designer")} maxLength={2000} onChange={set("note")} value={value.note} />
+  </FormDialog>;
 }
 
 function ChangeDesignerDialog({ workspaceId, opportunityId, people, version, onClose, onChanged }: { workspaceId: string; opportunityId: string; people: Array<{ id: string; label: string }>; version: number; onClose: () => void; onChanged: () => void }) {
   const t = useT();
   const [designer, setDesigner] = useState("");
   const [reason, setReason] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const save = async () => {
-    if (!designer) { setError(t("Choose the designer.")); return; }
-    if (!reason.trim()) { setError(t("Give a reason for changing the designer.")); return; }
-    setSaving(true); setError("");
-    try { await crmRequest(workspaceId, `opportunities/${opportunityId}/designer`, "PUT", { membershipId: designer, reason: reason.trim(), version }); onChanged(); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : t("The designer could not be changed.")); setSaving(false); }
+    if (!designer) throw new Error(t("Choose the designer."));
+    if (!reason.trim()) throw new Error(t("Give a reason for changing the designer."));
+    await crmRequest(workspaceId, `opportunities/${opportunityId}/designer`, "PUT", { membershipId: designer, reason: reason.trim(), version });
+    onChanged();
   };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button isLoading={saving} onPress={() => void save()} variant="primary">{t("Change designer")}</Button></div>}
-    isOpen onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={t("Change designer")}>
-    <form className={styles.form} onSubmit={(event) => { event.preventDefault(); void save(); }}>
-      {error ? <InlineNotice message={error} tone="error" /> : null}
-      <SelectField isRequired items={people} label={t("New designer")} onSelectionChange={(key) => setDesigner(String(key ?? ""))} placeholder={t("Choose the designer")} selectedKey={designer || null} />
-      <TextAreaField isRequired label={t("Reason")} maxLength={500} onChange={setReason} value={reason} />
-    </form>
-  </ControlledModalDialog>;
+  return <FormDialog isDirty={Boolean(designer || reason.trim())} onClose={onClose} onSubmit={save} submitLabel={t("Change designer")} title={t("Change designer")}>
+    <SelectField isRequired items={people} label={t("New designer")} onSelectionChange={(key) => setDesigner(String(key ?? ""))} placeholder={t("Choose the designer")} selectedKey={designer || null} />
+    <TextAreaField isRequired label={t("Reason")} maxLength={500} onChange={setReason} value={reason} />
+  </FormDialog>;
 }
 
 function when(startsAt: string, endsAt: string, timeZone: string, locale?: string) {

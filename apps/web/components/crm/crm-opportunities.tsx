@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Plus, RefreshCw, Columns3, List, Search } from "lucide-react";
-import { Avatar, Badge, Button, Callout, DataGrid, ControlledModalDialog, personDisplayName, SelectField, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { CalendarClock, Plus, RefreshCw, Columns3, List } from "lucide-react";
+import { Avatar, Badge, Button, Callout, DataGrid, ControlledModalDialog, FormDialog, personDisplayName, SearchInput, SelectField, TextAreaField, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import type { CrmRecord, CrmScreenPageData } from "@/lib/crm/screens";
@@ -152,7 +152,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
   return <CrmProductShell title={t("Pipeline")} description="" canView={initialData.canView} useWorkspaceColors compact pageClassName={styles.boardPage}>
     <div className={styles.boardSurface}>
     <div className={styles.boardToolbar}>
-      <label className={styles.search}><Search size={15} aria-hidden="true" /><input aria-label={t("Search opportunities")} placeholder={t("Search opportunities")} value={search} onChange={(e) => setSearch(e.target.value)} /></label>
+      <SearchInput label={t("Search opportunities")} value={search} onChange={setSearch} />
       <SelectField label={null} aria-label={t("Filter by assignee")} placeholder={t("All assignees")} selectedKey={assignee || "all"} onSelectionChange={key => setAssignee(key === "all" ? "" : String(key))} items={[{id:"all",label:t("All assignees")},{id:"unassigned",label:t("Unassigned")}, ...[...new Map(items.filter(item => item.ownerMembershipId).map(item => [String(item.ownerMembershipId), personDisplayName(item.ownerName as string | null) || t("Assigned person")])).entries()].map(([id,label]) => ({id,label}))]} />
       <SelectField label={null} aria-label={t("Opportunity status")} selectedKey={view} onSelectionChange={key => setView(key as "all" | "open" | "closed")} items={[{id:"all",label:t("All opportunities")},{id:"open",label:t("Open")},{id:"closed",label:t("Closed")}]} />
       {pipelines.length > 1 && <SelectField label={null} aria-label={t("Pipeline")} selectedKey={pipelineFilter} onSelectionChange={key => setPipelineFilter(String(key))} items={[{id:"all",label:t("All pipelines")},...pipelines.map(p => ({id:p.id,label:String(p.name)}))]} />}
@@ -224,7 +224,12 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
       showToolbar={false}
     />}
     {selectedRecord ? <ControlledModalDialog isOpen title={t("Opportunity details")} hideTitle size="xl" className={styles.opportunityModal} onOpenChange={(open) => { if (!open) setSelectedRecord(undefined); }}><LinkedRecordWorkbench id="opportunities" workspaceId={initialData.workspaceId} recordId={selectedRecord} onChanged={reload} /></ControlledModalDialog> : null}
-    {pendingOutcome ? <ControlledModalDialog isOpen title={pendingOutcome.status === "won" ? t("Mark opportunity Won") : t("Mark opportunity Lost")} size="md" isDismissable={!moving} onOpenChange={open => { if (!open && !moving) setPendingOutcome(null); }} footer={<div className={styles.outcomeActions}><Button size="compact" isDisabled={Boolean(moving)} onPress={() => setPendingOutcome(null)}>{t("Cancel")}</Button><Button size="compact" variant="primary" isLoading={Boolean(moving)} isDisabled={!outcomeReason.trim()} type="submit" form="pipeline-outcome-form">{pendingOutcome.status === "won" ? t("Confirm win") : t("Confirm loss")}</Button></div>}><form id="pipeline-outcome-form" className={styles.outcomeForm} onSubmit={event => { event.preventDefault(); if (outcomeReason.trim()) void moveDeal(pendingOutcome.recordId, pendingOutcome.stageId, outcomeReason.trim()); }}><label htmlFor="pipeline-outcome-reason">{t("Reason")}</label><textarea id="pipeline-outcome-reason" required value={outcomeReason} onChange={event => setOutcomeReason(event.target.value)} placeholder={pendingOutcome.status === "won" ? t("What confirms this win?") : t("Why was this opportunity lost?")} /></form></ControlledModalDialog> : null}
+    {pendingOutcome ? <FormDialog error={failure || undefined} isDirty={Boolean(outcomeReason.trim())} isSubmitDisabled={!outcomeReason.trim()} isSubmitting={Boolean(moving)}
+      onClose={() => setPendingOutcome(null)} onSubmit={() => { if (outcomeReason.trim()) void moveDeal(pendingOutcome.recordId, pendingOutcome.stageId, outcomeReason.trim()); }}
+      submitLabel={pendingOutcome.status === "won" ? t("Confirm win") : t("Confirm loss")} title={pendingOutcome.status === "won" ? t("Mark opportunity Won") : t("Mark opportunity Lost")}>
+      <TextAreaField autoFocus isRequired label={t("Reason")} value={outcomeReason} onChange={setOutcomeReason} maxLength={2000}
+        placeholder={pendingOutcome.status === "won" ? t("What confirms this win?") : t("Why was this opportunity lost?")} />
+    </FormDialog> : null}
     </div>
   </CrmProductShell>;
 }

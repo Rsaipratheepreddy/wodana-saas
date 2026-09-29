@@ -312,7 +312,8 @@ export function Form({ children, className, errorSummary = true, fieldMarkers = 
       data-wd-error-summary={errorSummary ? "" : undefined} ref={ref}
       onBlurCapture={errorSummary ? summary.recheck : undefined} onChangeCapture={errorSummary ? summary.recheck : undefined}
       onInvalidCapture={errorSummary ? summary.onInvalidCapture : undefined}
-      onSubmit={readOnlyReason ? (event) => event.preventDefault() : (event) => { summary.clear(); onSubmit?.(event); }}>
+      // A form in a dialog sits inside its page's React tree: its submit stops here, not at a form around it.
+      onSubmit={readOnlyReason ? (event) => { event.preventDefault(); event.stopPropagation(); } : (event) => { event.stopPropagation(); summary.clear(); onSubmit?.(event); }}>
       {errorSummary ? summary.node : null}{children}
     </form>
   </FormFieldContext.Provider>;

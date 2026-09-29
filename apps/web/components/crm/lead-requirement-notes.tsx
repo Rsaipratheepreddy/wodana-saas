@@ -2,7 +2,7 @@
 
 import { useId, useState } from 'react';
 import { Archive, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
-import { Button, Checkbox, IconButton, SearchInput, useDesignSystem } from '@/design-system';
+import { Button, Checkbox, Form, IconButton, SearchInput, TextAreaField, TextInput, useDesignSystem } from '@/design-system';
 import { plainNoteDraft, requirementNoteLinks, safeNoteLink, type RequirementNote } from '@/lib/crm/note-document';
 import type { CaseAsset, ScopeEntry } from '@/lib/pre-project/content';
 import { AssetFiles, AssetUpload, CaseModal } from '../pre-project/case-controls';
@@ -69,12 +69,12 @@ export function LeadRequirementNoteForm({ note, workspaceId, leadId, canEdit, on
   };
   return <CaseModal size="md" title={note.title ? t('Requirement note') : t('Add requirement note')} dirty={dirty} busy={busy} onClose={onClose}
     footer={<>{canEdit && note.title && <Button size="compact" variant="quiet" isDisabled={busy} onPress={() => void save(!draft.archived)}>{note.archived ? <RotateCcw size={14}/> : <Archive size={14}/>} {note.archived ? t('Restore note') : t('Archive note')}</Button>}{writable && <Button size="compact" variant="primary" form={formId} type="submit" isLoading={saving} isDisabled={busy || (!dirty && note.version > 0)}>{t("Save note")}</Button>}</>}>
-    <form id={formId} className={styles.noteForm} noValidate onSubmit={event => { event.preventDefault(); void save(); }}>
+    <Form id={formId} className={styles.noteForm} noValidate onSubmit={event => { event.preventDefault(); void save(); }}>
       {error && <p className={styles.error} role="alert">{error}</p>}
       {!writable && <p className={styles.message}>{note.archived ? t('Archived · restore this note to edit it.') : t('Read only')}</p>}
       <fieldset disabled={busy} className={styles.fields}>
-        <label>{t("Title")}<input value={draft.title} readOnly={!writable} required maxLength={240} placeholder={t("e.g. Kitchen storage requirements")} onChange={event => setDraft(previous => ({ ...previous, title: event.target.value }))}/></label>
-        <label>{t("Requirement notes")}<textarea value={draft.note} readOnly={!writable} rows={6} maxLength={60000} placeholder={t("Capture what the client needs, in their words…")} onChange={event => setDraft(previous => ({ ...previous, note: event.target.value }))}/></label>
+        <TextInput isReadOnly={!writable} isRequired label={t("Title")} maxLength={240} onChange={title => setDraft(previous => ({ ...previous, title }))} placeholder={t("e.g. Kitchen storage requirements")} value={draft.title} />
+        <TextAreaField isReadOnly={!writable} label={t("Requirement notes")} maxLength={60000} onChange={note => setDraft(previous => ({ ...previous, note }))} placeholder={t("Capture what the client needs, in their words…")} value={draft.note} />
         <div className={styles.pin}><Checkbox isSelected={Boolean(draft.pinned)} isDisabled={!writable || busy} onChange={pinned => setDraft(previous => ({ ...previous, pinned }))}>{t("Pin this note")}</Checkbox></div>
       </fieldset>
       <section className={styles.references} aria-label={t("Photos and files")}><h3>{t("Photos & files")}</h3>
@@ -82,9 +82,9 @@ export function LeadRequirementNoteForm({ note, workspaceId, leadId, canEdit, on
         {writable ? <AssetUpload workspaceId={workspaceId} caseId={leadId} uploadFile={onUpload} currentCount={draft.assets?.length ?? 0} disabled={busy} onBusy={setUploading} onError={setError} onUploaded={asset => setDraft(previous => ({ ...previous, assets: [...previous.assets ?? [], asset] }))}/> : !draft.assets?.length && <p className={styles.message}>{t("No files attached.")}</p>}
       </section>
       <section className={styles.references} aria-label={t("Reference links")}><div className={styles.referenceHeading}><h3>{t("Reference links")}</h3>{writable && <Button size="compact" variant="quiet" isDisabled={busy || draft.links.length >= 20} onPress={() => setDraft(previous => ({ ...previous, links: [...previous.links, ''] }))}><Plus size={14}/>{t("Add link")}</Button>}</div>
-        {draft.links.map((link, index) => <div key={index} className={styles.linkRow}>{writable ? <><label>{t("Link {number}", { number: index + 1 })}<input type="url" maxLength={2000} disabled={busy} placeholder="https://…" value={link} onChange={event => setDraft(previous => ({ ...previous, links: previous.links.map((value, i) => i === index ? event.target.value : value) }))}/></label><IconButton aria-label={t("Remove link {number}", { number: index + 1 })} isDisabled={busy} onPress={() => setDraft(previous => ({ ...previous, links: previous.links.filter((_, i) => i !== index) }))}><Trash2 size={15}/></IconButton></> : <a href={link} target="_blank" rel="noopener noreferrer">{link}</a>}</div>)}
+        {draft.links.map((link, index) => <div key={index} className={styles.linkRow}>{writable ? <><TextInput inputType="url" isDisabled={busy} label={t("Link {number}", { number: index + 1 })} maxLength={2000} onChange={next => setDraft(previous => ({ ...previous, links: previous.links.map((value, i) => i === index ? next : value) }))} placeholder="https://…" value={link} /><IconButton aria-label={t("Remove link {number}", { number: index + 1 })} isDisabled={busy} onPress={() => setDraft(previous => ({ ...previous, links: previous.links.filter((_, i) => i !== index) }))}><Trash2 size={15}/></IconButton></> : <a href={link} target="_blank" rel="noopener noreferrer">{link}</a>}</div>)}
         {!draft.links.length && <p className={styles.message}>{t("No reference links.")}</p>}
       </section>
-    </form>
+    </Form>
   </CaseModal>;
 }

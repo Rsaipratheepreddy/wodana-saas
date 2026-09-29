@@ -2,8 +2,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
-import { Archive, ArrowLeft, Check, FileText, Pin, Plus, RefreshCw, Search, Undo2 } from 'lucide-react';
-import { Button, IconButton, useConfirmationDialog, useDesignSystem } from '@/design-system';
+import { Archive, ArrowLeft, Check, FileText, Pin, Plus, RefreshCw, Undo2 } from 'lucide-react';
+import { Button, IconButton, SearchInput, useConfirmationDialog, useDesignSystem } from '@/design-system';
 import { crmRequest } from '@/lib/crm/client';
 import { useT } from '@/lib/i18n/i18n-provider';
 import { translateKnown } from '@/lib/i18n/keys';
@@ -102,7 +102,7 @@ export function RequirementNotesWorkspace({ notes, renderContext, newLabel: newL
   return <section className={styles.workspace} aria-label={listTitle} data-mobile-editor={mobileEditor || undefined} data-simple={simple || undefined}>
     <aside className={styles.noteSidebar} aria-label={t('Notes list')}>
       <div className={styles.listHeader}><strong>{archived ? t('Archived {list}', { list: listTitle.toLowerCase() }) : listTitle} <span>{items.length}</span></strong>{notes.canEdit && <Button variant="primary" size="compact" isDisabled={busy || notes.loading} onPress={add}><Plus size={14}/>{newLabel}</Button>}</div>
-      <div className={styles.noteSearch}><Search size={15}/><input aria-label={t('Search notes')} placeholder={t('Search notes…')} value={search} onChange={e => setSearch(e.target.value)}/>{search && <button type="button" aria-label={t('Clear search')} onClick={() => setSearch('')}>×</button>}</div>
+      <SearchInput label={t('Search notes')} placeholder={t('Search notes…')} value={search} onChange={setSearch} />
       {sidebarTools}
       {notes.failure && <p className={styles.error} role="alert">{translateKnown(t, notes.failure)}<Button size="compact" onPress={notes.refresh}>{t('Retry')}</Button></p>}
       <div className={styles.noteList}>

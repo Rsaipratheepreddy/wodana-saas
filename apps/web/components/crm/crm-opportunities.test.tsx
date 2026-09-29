@@ -25,7 +25,7 @@ describe("CrmOpportunities", () => {
     expect(push).toHaveBeenCalledWith("/workspace/crm/leads");
     await userEvent.click(screen.getByRole("button", { name: "List" }));
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("textbox", { name: "Search opportunities" })).toHaveLength(1);
+    expect(screen.getAllByRole("searchbox", { name: "Search opportunities" })).toHaveLength(1);
   });
 
   it("persists a dropped opportunity with the latest version and leaves it in place on failure", async () => {

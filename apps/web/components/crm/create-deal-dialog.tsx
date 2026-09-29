@@ -1,11 +1,10 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, Callout, ControlledModalDialog, DateField, NumericInput, SelectField, TextInput, useDesignSystem } from "@/design-system";
+import { Callout, DateField, FormDialog, MoneyField, MoreDetails, SelectField, TextInput, useDesignSystem, useWorkingCalendar } from "@/design-system";
 import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { translateKnown } from "@/lib/i18n/keys";
 import { localDateTime } from "@/lib/crm/calendar";
 import { salesOwnerChoices, type CrmLeadListItem, type CrmPipeline, type LeadsPageData } from "@/lib/crm/leads";
 import { hasResolvedEnquiryType } from "@/lib/crm/lead-options";
@@ -15,7 +14,6 @@ import styles from "./create-deal-dialog.module.css";
 
 export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { lead: CrmLeadListItem; initialData: LeadsPageData; onClose: () => void; onCreated: (record: RecordData) => Promise<void> }) {
   const t = useT();
-  const id = useId(), saving = useRef(false);
   const resource = useCrmResource<unknown>(initialData.workspaceId, "pipelines");
   const pipelines = (resource.data ? rows(resource.data) as unknown as CrmPipeline[] : initialData.pipelines).filter(p => p.status === "active");
   const pipeline = pipelines.find(p => p.isDefault) ?? pipelines[0];
@@ -27,13 +25,17 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { le
   const needsEnquiryType = !hasResolvedEnquiryType(lead.serviceType);
   const [owner, setOwner] = useState(lead.ownerMembershipId ?? (members.length === 1 ? members[0].id : ""));
   const [title, setTitle] = useState(lead.title);
-  const [nextAction, setNextAction] = useState(localDateTime(lead.nextActionAt));
+  // No follow-up yet: the next working day at 10:00 in the workspace's week.
+  const calendar = useWorkingCalendar();
+  const [nextAction, setNextAction] = useState(() => lead.nextActionAt ? localDateTime(lead.nextActionAt) : `${calendar.nextWorkingDayFromToday().toString()}T10:00`);
   const [closeDate, setCloseDate] = useState("");
-  const [amount, setAmount] = useState<number | undefined>();
+  const [amount, setAmount] = useState("");
   // Every member's session carries the workspace region; the page data may not (roles without settings access).
   const region = useDesignSystem();
   const currency = initialData.defaultCurrency ?? region.currency ?? "";
-  const [busy, setBusy] = useState(false), [saved, setSaved] = useState(false), [failure, setFailure] = useState("");
+  const [saved, setSaved] = useState(false), [failure, setFailure] = useState("");
+  const [start] = useState(() => JSON.stringify({ owner, title, nextAction, closeDate, amount }));
+  const dirty = !saved && JSON.stringify({ owner, title, nextAction, closeDate, amount }) !== start;
   // Every workspace is provisioned with a Sales pipeline. Only someone who may manage CRM settings
   // recreates a missing one here; a salesperson is told who to ask instead of hitting a 403.
   const ensurePipeline = async () => {
@@ -49,37 +51,36 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { le
       { code: "lost", name: "Lost", position: 5, probability: 0, forecastCategory: "closed", entryRequirements: {} },
     ] });
   };
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault(); if (saving.current || saved) return;
-    saving.current = true; setBusy(true); setFailure("");
-    try {
-      if (needsEnquiryType) throw new Error(t("Choose a specific enquiry type in Edit details before converting this enquiry."));
-      if (!title.trim() || !owner) throw new Error(t("Enter an opportunity name and choose a sales owner."));
-      if (!nextAction || !Number.isFinite(Date.parse(nextAction))) throw new Error(t("Choose the next follow-up date and time."));
-      if (amount !== undefined && !/^[A-Z]{3}$/.test(currency)) throw new Error(t("Set your workspace currency in Company settings before adding a value."));
-      const salesPipeline = pipeline ?? await ensurePipeline();
-      const result = await crmRequest(initialData.workspaceId, `leads/${lead.id}/qualify`, "POST", {
-        partyId: lead.partyId, leadVersion: lead.version, pipelineId: salesPipeline.id, ownerMembershipId: owner, title: title.trim(),
-        nextActionAt: new Date(nextAction).toISOString(), ...(closeDate ? { expectedCloseAt: new Date(`${closeDate}T12:00`).toISOString() } : {}),
-        ...(amount !== undefined ? { amount, currencyCode: currency.trim().toUpperCase() } : {}),
-      });
-      setSaved(true);
-      try { await onCreated(result); } catch { setFailure(t("Opportunity created. Close this window and open Pipeline to find it. Do not submit again.")); }
-    } catch (error) { setFailure(error instanceof Error ? translateKnown(t, error.message) : t("Could not convert the enquiry.")); }
-    finally { saving.current = false; setBusy(false); }
+  const submit = async () => {
+    if (saved) return;
+    setFailure("");
+    if (needsEnquiryType) throw new Error(t("Choose a specific enquiry type in Edit details before converting this enquiry."));
+    if (!title.trim() || !owner) throw new Error(t("Enter an opportunity name and choose a sales owner."));
+    if (!nextAction || !Number.isFinite(Date.parse(nextAction))) throw new Error(t("Choose the next follow-up date and time."));
+    if (amount && !/^[A-Z]{3}$/.test(currency)) throw new Error(t("Set your workspace currency in Company settings before adding a value."));
+    const salesPipeline = pipeline ?? await ensurePipeline();
+    const result = await crmRequest(initialData.workspaceId, `leads/${lead.id}/qualify`, "POST", {
+      partyId: lead.partyId, leadVersion: lead.version, pipelineId: salesPipeline.id, ownerMembershipId: owner, title: title.trim(),
+      nextActionAt: new Date(nextAction).toISOString(), ...(closeDate ? { expectedCloseAt: new Date(`${closeDate}T12:00`).toISOString() } : {}),
+      ...(amount ? { amount: Number(amount), currencyCode: currency.trim().toUpperCase() } : {}),
+    });
+    setSaved(true);
+    try { await onCreated(result); } catch { setFailure(t("Opportunity created. Close this window and open Pipeline to find it. Do not submit again.")); }
   };
-  return <ControlledModalDialog isOpen title={t("Convert to opportunity")} description={lead.partyName} size="md" isDismissable={!busy} onOpenChange={open => { if (!open && !busy) onClose(); }} footer={<div className={styles.actions}><Button size="compact" style={{ flex: "0 0 auto", minWidth: 88 }} isDisabled={busy} onPress={onClose}>{t(saved ? "Close" : "Cancel")}</Button><Button size="compact" style={{ flex: "0 0 auto", minWidth: 112 }} variant="primary" type="submit" form={id} isLoading={busy} isDisabled={saved || !members.length || needsEnquiryType}>{t("Convert to opportunity")}</Button></div>}>
-    <form id={id} className={styles.form} data-tour="convert-form" onSubmit={submit}>
-      <p className={styles.explanation}>{t("Move this enquiry into Pipeline as a new opportunity, keeping its client, owner and follow-up connected.")}</p>
-      {failure && <Callout tone={saved ? "warning" : "danger"} title={t(saved ? "Opportunity created" : "Could not continue")}>{failure}</Callout>}
+  return <FormDialog cancelLabel={saved ? t("Close") : undefined} description={lead.partyName} error={failure || undefined} errorTitle={t("Opportunity created")} hideSubmit={saved}
+    isDirty={dirty} isSubmitDisabled={!members.length || needsEnquiryType} onClose={onClose} onSubmit={submit} submitLabel={t("Convert to opportunity")} title={t("Convert to opportunity")}
+    lead={<>
       {needsEnquiryType && <Callout tone="warning" title={t("Enquiry type needed")}>{t("This enquiry is marked Not Sure Yet. Open Edit details and choose its actual type before conversion.")}</Callout>}
       {!members.length && <Callout tone="warning" title={t("A sales owner is needed")}>{t("Nobody here can own sales work yet. Ask whoever manages roles to give someone the Sales role.")}</Callout>}
-      <fieldset disabled={busy || saved} className={styles.fields}>
-        <div className={styles.identityRow}><TextInput label={t("Opportunity name")} isRequired value={title} onChange={setTitle} maxLength={240} />
-        <SelectField label={t("Sales owner")} isRequired selectedKey={owner || null} items={members.map(m => ({ id: m.id, label: m.displayName }))} onSelectionChange={key => setOwner(String(key ?? ""))} /></div>
-        <CrmDateTimeField label={t("Next follow-up")} isRequired value={nextAction} onChange={setNextAction} />
-        <div className={styles.optional}><span>{t("Optional details")}</span><DateField label={t("Expected close date")} value={closeDate ? parseDate(closeDate) : null} onChange={value => setCloseDate(value?.toString() ?? "")} /><NumericInput label={currency ? t("Estimated value ({currency})", { currency }) : t("Estimated value")} minValue={0} value={amount} onChange={setAmount} /></div>
-      </fieldset>
-    </form>
-  </ControlledModalDialog>;
+    </>}>
+    <fieldset className={styles.fields} data-tour="convert-form" disabled={saved}>
+      <TextInput label={t("Opportunity name")} isRequired value={title} onChange={setTitle} maxLength={240} />
+      <SelectField label={t("Sales owner")} isRequired selectedKey={owner || null} items={members.map(m => ({ id: m.id, label: m.displayName }))} onSelectionChange={key => setOwner(String(key ?? ""))} />
+      <CrmDateTimeField label={t("Next follow-up")} isRequired value={nextAction} onChange={setNextAction} />
+      <MoreDetails filled={[closeDate, amount].filter(Boolean).length}>
+        <DateField label={t("Expected close date")} value={closeDate ? parseDate(closeDate) : null} onChange={value => setCloseDate(value?.toString() ?? "")} />
+        <MoneyField label={t("Estimated value")} currency={currency || undefined} min="0" value={amount} onChange={setAmount} />
+      </MoreDetails>
+    </fieldset>
+  </FormDialog>;
 }

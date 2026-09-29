@@ -1,16 +1,2 @@
-.form, .fields { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
-.fields { border: 0; padding: 0; margin: 0; }
-.explanation { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: 1.5; }
-.identityRow, .optional { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: start; }
-.optional { border-block-start: 1px solid var(--wd-color-structural-divider); padding-block-start: var(--wd-space-4); }
-.optional > span { grid-column: 1 / -1; font-size: var(--wd-text-xs); font-weight: 600; line-height: 18px; color: var(--wd-color-text-secondary); }
-.valueRow { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--wd-space-3); align-items: start; }
-.actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
-.form.form :global(.wd-field) { gap: var(--wd-space-1-5); }
-.form.form :global(.wd-field-label), .form.form label { font-size: var(--wd-text-xs); font-weight: 500; line-height: 18px; }
-.form.form :global(.wd-input-group), .form.form :global(.wd-date-group), .form.form :global(.wd-select-button), .form.form input[type="time"] { box-sizing: border-box; block-size: 36px; min-block-size: 36px; border-radius: var(--wd-radius-xs); }
-.form.form :global(.wd-date-group) > button { min-block-size: 34px; block-size: 34px; inline-size: 34px; }
-.form.form :global(.wd-input) { min-block-size: 0; }
-.form.form > .fields > div:has(> label > input[type="time"]) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
-.form.form label:has(> input[type="time"]) { gap: var(--wd-space-1-5); }
-@media(max-width:480px) { .identityRow, .optional { grid-template-columns: minmax(0, 1fr); } }
+/* The convert form uses the shared form rhythm; only its fieldset is reset. */
+.fields { display: grid; gap: var(--wd-space-5); min-inline-size: 0; margin: 0; padding: 0; border: 0; }

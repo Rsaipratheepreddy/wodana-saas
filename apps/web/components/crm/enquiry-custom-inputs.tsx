@@ -1,6 +1,7 @@
 "use client";
 
-import { MultiSelectField, NumericInput, SelectField, TextAreaField, TextInput } from "@/design-system";
+import { parseDate } from "@internationalized/date";
+import { DateField, MultiSelectField, NumericInput, SelectField, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest } from "@/lib/crm/client";
 import type { EnquiryField } from "@/lib/crm/enquiry-fields";
@@ -19,10 +20,14 @@ export function EnquiryCustomInputs({ fields, values, onChange, className }: { f
     if (field.type === "select") return <SelectField key={id} label={field.label} items={[{ id: "", label: t("Not set") }, ...choices]} selectedKey={typeof value === "string" ? value : ""} onSelectionChange={(key) => onChange(id, String(key ?? ""))} />;
     if (field.type === "multi_select") return <MultiSelectField key={id} label={field.label} items={choices} selectedKeys={new Set(Array.isArray(value) ? value as string[] : [])} onSelectionChange={(keys) => onChange(id, [...keys].map(String))} />;
     if (field.type === "number") return <NumericInput key={id} label={field.label} value={value === undefined || value === null || value === "" ? Number.NaN : Number(value)} onChange={(next) => onChange(id, Number.isFinite(next) ? next : "")} />;
-    if (field.type === "date") return <TextInput key={id} label={field.label} inputType="date" value={typeof value === "string" ? value : ""} onChange={(next) => onChange(id, next)} />;
+    if (field.type === "date") return <DateField key={id} label={field.label} value={safeDate(value)} onChange={(next) => onChange(id, next?.toString() ?? "")} />;
     if (field.type === "paragraph") return <TextAreaField key={id} label={field.label} value={typeof value === "string" ? value : ""} onChange={(next) => onChange(id, next)} />;
     return <TextInput key={id} label={field.label} maxLength={10000} value={value === undefined || value === null ? "" : String(value)} onChange={(next) => onChange(id, next)} />;
   })}</div>;
+}
+
+function safeDate(value: unknown) {
+  try { return typeof value === "string" && value ? parseDate(value.slice(0, 10)) : null; } catch { return null; }
 }
 
 /** Only the values that changed; blank means clear. */

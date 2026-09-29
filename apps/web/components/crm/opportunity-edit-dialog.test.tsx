@@ -15,7 +15,8 @@ it("edits with names, the workspace's number format and one close date, and send
   render(<WorkspaceRegionProvider locale="en-AE" currency="AED"><DesignSystemProvider><OpportunityEditDialog workspaceId="ws" onClose={onClose} onSaved={onSaved}
     members={[{ id: "m1", label: "Sara Sales" }, { id: "m2", label: "Omar" }]}
     opportunity={{ id: "o1", version: 3, title: "Villa", amount: 385000, currencyCode: "AED", ownerMembershipId: "m1" }} /></DesignSystemProvider></WorkspaceRegionProvider>);
-  expect(screen.getByRole("textbox", { name: "Value (AED)" })).toHaveValue("385,000");
+  expect(screen.getByRole("textbox", { name: "Value" })).toHaveValue("385,000");
+  expect(screen.getByRole("textbox", { name: "Value" }).closest(".wd-field")).toHaveTextContent("AED");
   expect(screen.getByRole("button", { name: /Sara Sales/ })).toBeInTheDocument();
   await user.clear(screen.getByRole("textbox", { name: "Title" }));
   expect(screen.getByRole("textbox", { name: "Title" })).toBeRequired();
