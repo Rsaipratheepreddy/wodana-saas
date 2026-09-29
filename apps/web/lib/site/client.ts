@@ -27,6 +27,8 @@ export function siteApi(workspaceId: string, projectId: string) {
     /** The client's card for a day: as it would go now, or as it went. */
     clientView: (reportId: string) => send<{ view: ClientView; sent: boolean }>(at(`reports/${reportId}/client-view`), {}, "The client's view didn't load."),
     photoUrl: (photoId: string, preview = true) => `${at(`photos/${photoId}`)}${preview ? "&preview=1" : ""}`,
+    /** The day's printout (the client's card on A4), to print or save as PDF. */
+    printUrl: (reportId: string) => `/print/daily/${encodeURIComponent(reportId)}?${new URLSearchParams({ workspaceId, projectId })}`,
     handover: () => send<HandoverState>(at("handover"), {}, "The handover didn't load."),
     handoverCommand: (action: string, input: Record<string, unknown> = {}) =>
       send<HandoverState>(at("handover"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, action }) }, "Could not save."),

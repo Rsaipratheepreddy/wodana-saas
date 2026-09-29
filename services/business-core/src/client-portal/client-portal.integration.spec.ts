@@ -56,7 +56,8 @@ projects[].progress.cards[].hero.pairId projects[].progress.cards[].photos proje
 projects[].progress.cards[].photos[].phase projects[].progress.cards[].photos[].pairId projects[].progress.cards[].completed projects[].progress.cards[].advanced
 projects[].progress.cards[].advanced[].title projects[].progress.cards[].advanced[].progress projects[].progress.cards[].next projects[].progress.cards[].notes
 projects[].progress.cards[].reactions projects[].progress.cards[].reactions.like projects[].progress.cards[].reactions.love projects[].progress.cards[].mine
-projects[].progress.cards[].mine.like projects[].progress.cards[].mine.love
+projects[].progress.cards[].mine.like projects[].progress.cards[].mine.love projects[].progress.cards[].stage projects[].progress.cards[].stage.number
+projects[].progress.cards[].stage.total projects[].progress.cards[].stage.name projects[].progress.cards[].percent
 projects[].decisions projects[].decisions.quotes projects[].decisions.quotes[] projects[].decisions.quotes[].id projects[].decisions.quotes[].number
 projects[].decisions.quotes[].kind projects[].decisions.quotes[].direction projects[].decisions.quotes[].status projects[].decisions.quotes[].title
 projects[].decisions.quotes[].currency projects[].decisions.quotes[].validUntil projects[].decisions.quotes[].issuedAt projects[].decisions.quotes[].total

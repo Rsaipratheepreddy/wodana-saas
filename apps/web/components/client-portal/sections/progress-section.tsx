@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageCircleQuestion } from "lucide-react";
+import { Download, MessageCircleQuestion } from "lucide-react";
 import { Button, EmptyState, MoreDetails, ToggleButton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId } from "@/lib/client-portal/client";
+import { portalDayPrintHref, portalWeekPrintHref } from "@/lib/client-portal/progress-print";
 import { stageName } from "@/lib/client-portal/stage-names";
 import type { PortalDayCard } from "@/lib/client-portal/types";
 import { ProgressCard } from "../../site/progress-card";
@@ -31,7 +32,7 @@ function linkedCard() {
  * card with its photos (full size on a tap), what was finished and what's next — with 👍 or ❤️ and a question for
  * the team — beside written updates and the week's roll-ups; and the issues the client reported while the work is on.
  */
-export function ProgressSection({ project, api, format, open, reload }: SectionProps) {
+export function ProgressSection({ project, site, api, format, open, reload }: SectionProps) {
   const t = useT();
   const progress = project.progress;
   const [highlight] = useState(linkedCard);
@@ -52,6 +53,8 @@ export function ProgressSection({ project, api, format, open, reload }: SectionP
   const nothing = !progress.stages.length && !feed.length && !progress.issues.length;
   if (nothing) return <EmptyState illustration="calendar" title={t("Nothing to show yet")} description={t("Your team's updates and photos will appear here.")} action={report} />;
   const photoUrl = (id: string, preview: boolean) => api.file("photo", id, preview);
+  const pdf = (href: string) => <a className="wd-button wd-icon-button" data-size="compact" data-variant="quiet" href={href} target="_blank" rel="noopener"
+    aria-label={t("Download PDF")} title={t("Download PDF")}><Download aria-hidden="true" size={15} /></a>;
   const react = async (card: PortalDayCard, reaction: "like" | "love") => {
     setReacting(`${card.id}:${reaction}`);
     try { await api.command(commandId(), { action: "progress_react", caseId: project.id, reportId: card.id, reaction, on: !card.mine[reaction] }); await reload(); }
@@ -73,13 +76,14 @@ export function ProgressSection({ project, api, format, open, reload }: SectionP
                 <ToggleButton size="compact" variant="quiet" isSelected={card.mine.love} isDisabled={Boolean(reacting)} onPress={() => void react(card, "love")}
                   aria-label={t("Love ({count})", { count: card.reactions.love })}><span aria-hidden="true">❤️</span>{card.reactions.love || null}</ToggleButton>
                 <span className={styles.spacer} />
+                {pdf(portalDayPrintHref(site.slug, card.id))}
                 <Button size="compact" variant="quiet" onPress={() => open({ kind: "question", id: card.id })}><MessageCircleQuestion aria-hidden="true" size={15} />{t("Ask a question")}</Button>
               </>} />
           </li>;
         }
         if (item.kind === "week") return <li key={`week-${item.id}`}>
           <ProgressCard card={{ date: item.on, summary: item.digest, hero: null, photos: [], completed: [], advanced: [], next: [] }} photoUrl={photoUrl}
-            formatDay={(day) => t("Week ending {date}", { date: format.date(day) })} />
+            formatDay={(day) => t("Week ending {date}", { date: format.date(day) })} footer={<><span className={styles.spacer} />{pdf(portalWeekPrintHref(site.slug, item.id))}</>} />
         </li>;
         if (item.kind === "update") return <li key={`update-${item.id}`}>
           <ProgressCard card={{ date: item.on, summary: item.text, hero: null, photos: [], completed: [], advanced: [], next: [] }} photoUrl={photoUrl} formatDay={format.date} />

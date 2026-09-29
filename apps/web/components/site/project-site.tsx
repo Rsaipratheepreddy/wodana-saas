@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import { Badge, Button, ControlledModalDialog, EmptyState, ErrorState, InlineNotice, SegmentedControl, Skeleton, TextAreaField, type StatusTone } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { siteApi } from "@/lib/site/client";
@@ -120,7 +120,11 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
         </span>
         {report.status === "returned" && report.decisionNote ? <span className={styles.entryReturned}>{t("Sent back by {name}: {note}", { name: report.decidedByName ?? "", note: report.decisionNote })}</span> : null}
       </button>
-      <Button size="compact" variant={reviewable(report) ? "primary" : "secondary"} onPress={() => open(report)}>{action(report)}</Button>
+      <span className={styles.entryActions}>
+        {report.status === "approved" ? <a className="wd-button wd-icon-button" data-size="compact" data-variant="quiet" href={api.printUrl(report.id)} target="_blank" rel="noopener"
+          aria-label={t("Download PDF")} title={t("Download PDF")}><Download aria-hidden="true" size={15} /></a> : null}
+        <Button size="compact" variant={reviewable(report) ? "primary" : "secondary"} onPress={() => open(report)}>{action(report)}</Button>
+      </span>
     </li>;
   };
 

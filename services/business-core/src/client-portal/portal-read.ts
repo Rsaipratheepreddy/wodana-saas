@@ -242,7 +242,7 @@ async function readProgress(db: Db, workspaceId: string, row: CaseRow, settings:
 
 type CardPhoto = { id: string; area: string | null; phase: "before" | "after" | null; pairId: string | null };
 type StoredView = { date: string; summary: string; noWork?: boolean; hero: CardPhoto | null; photos: CardPhoto[]; completed: string[]; advanced: Array<{ title: string; progress: number }>;
-  next: string[]; notes?: string[] };
+  next: string[]; notes?: string[]; project?: { stage?: string | null; stageNumber?: number | null; stageCount?: number | null; progress?: number | null } };
 
 /**
  * The daily cards: each day the team sent, exactly as it went (the report's frozen client view), newest first, with
@@ -273,6 +273,10 @@ async function readDailyCards(db: Db, workspaceId: string, projectId: string, gr
       hero: pictures[0] ?? null, photos: pictures.slice(1),
       completed: settings.progress.updates ? view.completed ?? [] : [], advanced: settings.progress.updates ? view.advanced ?? [] : [],
       next: settings.progress.updates ? view.next ?? [] : [], notes: settings.progress.updates ? view.notes ?? [] : [],
+      // Where the project stood that day (for the day's printout), as the project's own stage and percent are shown.
+      stage: view.project?.stageNumber && view.project.stageCount
+        ? { number: view.project.stageNumber, total: view.project.stageCount, name: settings.progress.stageNames ? view.project.stage ?? null : null } : null,
+      percent: settings.progress.stageNames ? view.project?.progress ?? null : null,
       reactions: { like: count("like")?.count ?? 0, love: count("love")?.count ?? 0 },
       mine: { like: Boolean(count("like")?.mine), love: Boolean(count("love")?.mine) },
     };

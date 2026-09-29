@@ -59,6 +59,9 @@ describe("daily progress", () => {
     expect(within(timeline).getByText("Sent back by Omar Haddad: Add the kitchen photo")).toBeInTheDocument();
     expect(within(timeline).getByText("No report")).toBeInTheDocument();
     expect(within(timeline).getByRole("button", { name: "Continue" })).toBeInTheDocument();
+    // Only an approved day prints: its client's card as a PDF.
+    expect(within(timeline).getAllByRole("link", { name: "Download PDF" }).map((link) => link.getAttribute("href"))).toEqual([`/print/daily/r2?workspaceId=w&projectId=${PID}`]);
+    expect(within(waiting).queryByRole("link", { name: "Download PDF" })).not.toBeInTheDocument();
   });
 
   it("reviews a day beside the client's card and approves & sends it, or returns it with what to change", async () => {
