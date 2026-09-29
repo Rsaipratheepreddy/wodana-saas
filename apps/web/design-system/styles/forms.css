@@ -86,10 +86,15 @@
 /* ── Editable in place (record details) ─────────────────────────────────────────────────────────────── */
 .wd-editable-list { display: grid; gap: var(--wd-space-1); margin: 0; min-inline-size: 0; }
 .wd-editable { display: grid; grid-template-columns: minmax(6rem, 36%) minmax(0, 1fr); align-items: start; gap: var(--wd-space-3); min-inline-size: 0; }
-.wd-editable-list[data-layout="stacked"] .wd-editable, .wd-editable[data-layout="stacked"] { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-0-5); }
-.wd-editable > dt { padding-block: var(--wd-space-1-5); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
-.wd-editable > dd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); min-inline-size: 0; margin: 0; }
-.wd-editable[data-readonly] > dd { padding-block: var(--wd-space-1-5); color: var(--wd-color-text); overflow-wrap: anywhere; }
+/* Stacked (label above value) inside a narrow panel: the list or its host says data-layout="stacked". */
+[data-layout="stacked"] > .wd-editable, .wd-editable-list[data-layout="stacked"] .wd-editable { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-1); }
+/* Typography yields to the host's fact list (:where has no weight); layout does not. */
+:where(.wd-editable > .wd-editable-label) { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.wd-editable > dt.wd-editable-label { padding-block: var(--wd-space-1-5); overflow-wrap: anywhere; }
+[data-layout="stacked"] > .wd-editable > dt.wd-editable-label { padding-block: 0; }
+.wd-editable > dd.wd-editable-cell { display: flex; flex-wrap: wrap; align-items: center; justify-items: start; gap: var(--wd-space-1); min-inline-size: 0; margin: 0; }
+.wd-editable[data-readonly] > dd.wd-editable-cell { padding-block: var(--wd-space-1-5); color: var(--wd-color-text); overflow-wrap: anywhere; }
+[data-layout="stacked"] > .wd-editable[data-readonly] > dd.wd-editable-cell { padding-block: 0; }
 .wd-editable-value {
   display: inline-flex; align-items: center; gap: var(--wd-space-1-5); max-inline-size: 100%; min-block-size: var(--wd-control-sm);
   margin-inline-start: calc(var(--wd-space-2) * -1); padding: var(--wd-space-1) var(--wd-space-2); border: 1px solid transparent; border-radius: var(--wd-radius-xs);
@@ -111,6 +116,15 @@
 .wd-editable-editor .wd-field-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .wd-editable-problem { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
 .wd-editable-problem > svg { flex: none; }
+/* A record's title edited in place keeps the host's heading type. */
+.wd-editable[data-variant="title"] { display: block; min-inline-size: 0; }
+.wd-editable[data-variant="title"] > .wd-editable-cell { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); min-inline-size: 0; }
+.wd-editable-title-hit { position: relative; display: inline-flex; max-inline-size: 100%; min-inline-size: 0; }
+.wd-editable-heading { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; margin-inline-start: calc(var(--wd-space-2) * -1); padding-inline: var(--wd-space-2); border-radius: var(--wd-radius-xs); transition: background var(--wd-duration-fast) var(--wd-ease-standard); }
+.wd-editable-cover { position: absolute; inset: 0; margin: 0; padding: 0; border: 0; border-radius: var(--wd-radius-xs); background: transparent; cursor: text; }
+.wd-editable-cover:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.wd-editable-title-hit:has(> .wd-editable-cover:hover) > .wd-editable-heading { background: var(--wd-color-surface-hover); }
+.wd-editable-title-hit:has(> .wd-editable-cover:hover, > .wd-editable-cover:focus-visible) .wd-editable-pen { opacity: 1; }
 @keyframes wd-tick-in { from { opacity: 0; transform: scale(0.5); } }
 
 @media (prefers-reduced-motion: reduce) {

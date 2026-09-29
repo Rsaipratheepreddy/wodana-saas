@@ -18,6 +18,7 @@ export * from "./components/form-context";
 export * from "./components/form-summary";
 export * from "./components/form-kit";
 export * from "./components/money-field";
+export * from "./components/editable-field";
 export * from "./components/date-picks";
 export * from "./foundations/working-days";
 export * from "./components/navigation";

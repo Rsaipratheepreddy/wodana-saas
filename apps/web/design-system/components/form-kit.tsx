@@ -163,8 +163,10 @@ export function FormConflictBanner({ onKeepMine, onReload }: { onKeepMine?: () =
 /* ── Footer and keyboard ───────────────────────────────────────────────────────────────────────────── */
 
 /** ⌘/Ctrl+Enter submits the form from any field, including a multi-line one. */
-export function submitOnModEnter(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "defaultPrevented" | "preventDefault">, form: HTMLFormElement | null) {
+export function submitOnModEnter(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "defaultPrevented" | "preventDefault" | "target">, form: HTMLFormElement | null) {
   if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey) || event.defaultPrevented || !form) return;
+  // A part of the form with its own ⌘Enter (an assistant reading pasted text) keeps it.
+  if (event.target instanceof Element && event.target.closest("[data-wd-own-enter]")) return;
   event.preventDefault();
   form.requestSubmit();
 }

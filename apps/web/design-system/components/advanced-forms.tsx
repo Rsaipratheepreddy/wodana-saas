@@ -3,7 +3,7 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 /* eslint-disable @next/next/no-img-element -- crop previews intentionally use local object/data URLs */
-import { Eye, EyeOff, File, Link2, PenLine, Plus, X } from "lucide-react";
+import { Eye, EyeOff, File, Link2, Plus, X } from "lucide-react";
 import { Button, IconButton } from "./actions";
 import { ComboboxField, FieldStack, NumericInput, SelectField, TextInput, type SelectItem, type TextInputProps } from "./forms";
 import { useDesignSystem } from "../foundations/provider";
@@ -43,7 +43,6 @@ export const MaterialPicker = (props: React.ComponentProps<typeof ComboboxField>
 
 export function CharacterCount({ max, value }: { max: number; value: string }) { return <span aria-live="polite" className="wd-character-count" data-over={value.length > max || undefined}>{value.length}/{max}</span>; }
 
-export function InlineEdit({ ariaLabel, onCommit, value }: { ariaLabel: string; onCommit?: (value: string) => void; value: string }) { const [editing, setEditing] = useState(false); const [draft, setDraft] = useState(value); if (!editing) return <button className="wd-inline-edit" onClick={() => { setDraft(value); setEditing(true); }} type="button">{value}<PenLine size={13} /></button>; return <input aria-label={ariaLabel} autoFocus className="wd-inline-edit-input" onBlur={() => { onCommit?.(draft); setEditing(false); }} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { onCommit?.(draft); setEditing(false); } if (event.key === "Escape") { setDraft(value); setEditing(false); } }} value={draft} />; }
 
 export function RichTextEditor({ label, onChange, value = "" }: { label: string; onChange?: (value: string) => void; value?: string }) {
   const t = useT(); const ref = useRef<HTMLDivElement>(null); useEffect(() => { if (ref.current && ref.current.innerHTML !== value) ref.current.innerHTML = value; }, [value]); const command = (name: string) => { document.execCommand(name); ref.current?.focus(); }; return <div className="wd-rich-text"><span className="wd-field-label">{label}</span><div className="wd-rich-toolbar"><button aria-label={t("Bold")} onClick={() => command("bold")} type="button"><strong>B</strong></button><button aria-label={t("Italic")} onClick={() => command("italic")} type="button"><em>I</em></button><button aria-label={t("Bulleted list")} onClick={() => command("insertUnorderedList")} type="button">• {t("List")}</button></div><div aria-label={label} contentEditable ref={ref} role="textbox" onInput={(event) => onChange?.(event.currentTarget.innerHTML)} suppressContentEditableWarning /></div>; }
