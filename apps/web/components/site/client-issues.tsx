@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Button, ControlledModalDialog, EmptyState, InlineNotice, SegmentedControl, SelectField, TextAreaField } from "@/design-system";
+import { Button, EmptyState, SegmentedControl, SelectField, TextAreaField, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { PortalError, staffPortalApi } from "@/lib/client-portal/client";
 import type { StaffIssue } from "@/lib/client-portal/types";
@@ -90,17 +90,12 @@ function TriageDialog({ issue, onClose, onSave }: {
     try { await onSave(decision === "accept" ? { decision, severity, note: note.trim() } : { decision, note: note.trim() }); }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
   };
-  return <ControlledModalDialog isOpen size="md" title={t("Issue {number}", { number: issue.number })} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={decision === "decline" && !note.trim()} onPress={() => void save()}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={t("Issue {number}", { number: issue.number })} onClose={onClose} error={error || undefined} isSubmitting={busy} isSubmitDisabled={decision === "decline" && !note.trim()} submitLabel={t("Save")} onSubmit={() => save()}>
       <p className={styles.body}>{issue.description}</p>
       <SegmentedControl label={t("Decision")} value={decision} onChange={(value) => setDecision(value as "accept" | "decline")}
         options={[{ id: "accept", label: t("Accept as a snag") }, { id: "decline", label: t("Decline") }]} />
       {decision === "accept" ? <SelectField label={t("Severity")} selectedKey={severity} onSelectionChange={(key) => setSeverity((key ?? "major") as Severity)}
         items={[{ id: "minor", label: t("Minor") }, { id: "major", label: t("Major") }, { id: "critical", label: t("Critical") }]} /> : null}
       <TextAreaField label={decision === "accept" ? t("Note") : t("Why it's declined")} isRequired={decision === "decline"} maxLength={1000} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

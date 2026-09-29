@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { ArrowRight, Plus, X } from "lucide-react";
 import {
-  ActivityFeed, Avatar, Button, Checkbox, ControlledModalDialog, DateField, FormDialog, ErrorState, IconButton, InlineNotice, InspectorSheet, MenuButton, SegmentedControl, SelectField, Skeleton,
+  ActivityFeed, Avatar, Button, Checkbox, DateField, FormDialog, ErrorState, IconButton, InlineNotice, InspectorSheet, MenuButton, SegmentedControl, SelectField, Skeleton,
   FileUploader, Switch, TextAreaField, TextInput, type ActivityItem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -214,11 +214,7 @@ function RippleDialog({ moves, onClose, onSave }: { moves: WorkMove[]; onClose: 
   const [busy, setBusy] = useState<"one" | "all" | null>(null);
   const save = async (ripple: boolean) => { setBusy(ripple ? "all" : "one"); await onSave(ripple); setBusy(null); };
   const when = (start: string | null, due: string | null) => [format.short(start), format.short(due)].filter(Boolean).join(" – ");
-  return <ControlledModalDialog isOpen size="md" title={moves.length === 1 ? t("This pushes 1 item later") : t("This pushes {count} items later", { count: moves.length })}
-    onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button isLoading={busy === "one"} isDisabled={Boolean(busy)} onPress={() => void save(false)}>{t("Only this one")}</Button>
-      <Button variant="primary" isLoading={busy === "all"} isDisabled={Boolean(busy)} onPress={() => void save(true)}>{t("Move them too")}</Button></div>}>
+  return <FormDialog size="md" title={moves.length === 1 ? t("This pushes 1 item later") : t("This pushes {count} items later", { count: moves.length })} onClose={onClose} isSubmitting={busy === "all"} isSubmitDisabled={Boolean(busy)} submitLabel={t("Move them too")} onSubmit={() => save(true)} secondaryAction={<><Button isLoading={busy === "one"} isDisabled={Boolean(busy)} onPress={() => void save(false)}>{t("Only this one")}</Button></>}>
     <ul className={styles.moves} aria-label={t("Items that move")}>
       {moves.map((move) => <li key={move.id}>
         <span><span className={styles.number}>#{move.number}</span> {move.title}</span>
@@ -227,7 +223,7 @@ function RippleDialog({ moves, onClose, onSave }: { moves: WorkMove[]; onClose: 
         <span>{when(move.startDate, move.dueDate)}</span>
       </li>)}
     </ul>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function Subtasks({ detail, board, run, onOpenItem }: { detail: WorkDetail; board: WorkBoard; run: Run; onOpenItem: (id: string) => void }) {

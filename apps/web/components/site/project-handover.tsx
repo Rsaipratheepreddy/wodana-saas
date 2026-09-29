@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
-import { Button, Checkbox, ControlledModalDialog, DateField, EmptyState, ErrorState, FileUploader, IconButton, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Button, Checkbox, DateField, EmptyState, ErrorState, FileUploader, IconButton, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { siteApi } from "@/lib/site/client";
 import type { HandoverKind, HandoverMethod, HandoverPack, HandoverState } from "@/lib/site/types";
@@ -117,18 +117,14 @@ function PackDialog({ areas, onClose, onSave }: { areas: Array<{ id: string; nam
   const [title, setTitle] = useState(t("Handover"));
   const [chosen, setChosen] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("New pack")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!title.trim()} onPress={async () => { setBusy(true); await onSave(title.trim(), chosen); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="md" title={t("New pack")} onClose={onClose} isSubmitDisabled={!title.trim()} submitLabel={t("Save")} onSubmit={async () => { await onSave(title.trim(), chosen); }}>
       <TextInput label={t("Title")} isRequired value={title} onChange={setTitle} />
       {areas.length ? <fieldset className={styles.group}>
         <legend>{t("Areas (none: the whole project)")}</legend>
         {areas.map((area) => <Checkbox key={area.id} isSelected={chosen.includes(area.id)}
           onChange={(on) => setChosen(on ? [...chosen, area.id] : chosen.filter((id) => id !== area.id))}>{area.name}</Checkbox>)}
       </fieldset> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** The client's decision on an issued revision: accepted (with anything outstanding) or refused with why. */
@@ -148,14 +144,10 @@ function OpenWorkDialog({ open, onClose, onSave }: { open: HandoverState["open"]
   const t = useT();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Issue with work still open")} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Issue anyway")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="md" title={t("Issue with work still open")} onClose={onClose} isSubmitDisabled={!reason.trim()} submitLabel={t("Issue anyway")} onSubmit={async () => { await onSave(reason.trim()); }}>
       <OpenWorkList open={open} />
       <TextAreaField label={t("Why hand over with work still open")} isRequired value={reason} onChange={setReason} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function DecisionDialog({ mode, methods, today, open, balance, onClose, onSave }: {
@@ -175,15 +167,10 @@ function DecisionDialog({ mode, methods, today, open, balance, onClose, onSave }
   const [busy, setBusy] = useState(false);
   const confirmOpen = mode === "accept" && hasOpenWork(open);
   const valid = name.trim() && (mode === "accept" || reason.trim()) && (!confirmOpen || openReason.trim()) && (!balance || (balance.allowed && balanceReason.trim()));
-  return <ControlledModalDialog isOpen size="md" title={mode === "accept" ? t("Record acceptance") : t("Record refusal")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true);
+  return <FormDialog size="md" title={mode === "accept" ? t("Record acceptance") : t("Record refusal")} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={async () => {
         await onSave({ decidedOn, decidedByName: name.trim(), method, ...(mode === "accept" ? { outstanding: items.map((item) => item.trim()).filter(Boolean) } : { reason: reason.trim() }),
           ...(confirmOpen ? { confirmOpen: true, openReason: openReason.trim() } : {}), ...(balance ? { balanceReason: balanceReason.trim() } : {}) });
-        setBusy(false);
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+      }}>
       <div className={styles.pair}>
         <DateField label={t("Day")} isRequired value={parseDate(decidedOn)} onChange={(value) => setDecidedOn(value ? value.toString() : today)} />
         <SelectField label={t("How")} selectedKey={method} onSelectionChange={(key) => setMethod((key ?? "signed_document") as HandoverMethod)}
@@ -203,6 +190,5 @@ function DecisionDialog({ mode, methods, today, open, balance, onClose, onSave }
         ? <><InlineNotice tone="info" message={t("Balance due {amount}", { amount: balance.text })} />
             <TextAreaField label={t("Why accept before it's paid")} isRequired value={balanceReason} onChange={setBalanceReason} /></>
         : <InlineNotice tone="error" message={t("{amount} is still due. Someone who manages projects accepts a handover with a balance.", { amount: balance.text })} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
