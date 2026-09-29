@@ -274,6 +274,22 @@ integration("Home metrics with PostgreSQL", () => {
     });
   });
 
+  it("names a leave decision by whose leave it is", async () => {
+    await scenario(async (client, { workspaceId, membershipId }) => {
+      const leave = randomUUID();
+      await client.query("RESET ROLE");
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query(`INSERT INTO hrms_leave_requests(id,workspace_id,membership_id,leave_type_id,action_id,request_hash,start_date,end_date,day_part,units,calendar_snapshot,reason)
+        VALUES($1,$2,$3,$4,$5,'h','2026-10-15','2026-10-16','full','[]','{}','Family')`, [leave, workspaceId, membershipId, randomUUID(), randomUUID()]);
+      await client.query(`INSERT INTO audit_events(workspace_id,actor_user_id,source,action,entity_type,entity_id,after,correlation_id,occurred_at)
+        SELECT $1, user_id, 'user', 'hrms.leave_decided.v1', 'hrms', $2, '{"status":"approved"}'::jsonb, $3, '2026-09-15T06:00:00Z' FROM workspace_memberships WHERE id = $4`, [workspaceId, leave, randomUUID(), membershipId]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      await client.query("SET LOCAL ROLE wodana_app");
+      const { activity } = await readHomeMetrics(client, workspaceId, membershipId, { ...all, enquiries: false, quotes: false, payments: false, projects: false, storage: false }, now);
+      expect(activity?.[0]).toMatchObject({ action: "hrms.leave_decided.v1", subject: "Sara Admin" });
+    });
+  });
+
   it("reports storage by area against the quota", async () => {
     await scenario(async (client, { workspaceId, membershipId }) => {
       const only = { ...all, enquiries: false, quotes: false, payments: false, projects: false, activity: false };

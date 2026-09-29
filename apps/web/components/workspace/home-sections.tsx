@@ -317,9 +317,14 @@ export function JumpBackIn({ summary, empty }: { summary: Load<HomeSummary>; emp
 
 // ---------------------------------------------------------------- Recent activity
 
+/** What an HR record is (leave, a crew day), named before the verb since its subject is the person or crew. */
+function activityKind(action: string, t: T) {
+  return action.startsWith("hrms.leave") ? t("Leave") : action.startsWith("hrms.crew_day") ? t("Crew day") : null;
+}
+
 function activityVerb(action: string, t: T) {
   const verb = action.split(/[._]/).at(-1) ?? "";
-  const verbs: Record<string, string> = { created: t("Created"), updated: t("Updated"), sent: t("Sent"), approved: t("Approved"), accepted: t("Accepted"), rejected: t("Declined"), archived: t("Archived"), deleted: t("Removed"), verified: t("Verified"), assigned: t("Assigned"), completed: t("Completed"), converted: t("Converted"), published: t("Published"), joined: t("Joined"), recorded: t("Recorded") };
+  const verbs: Record<string, string> = { created: t("Created"), updated: t("Updated"), sent: t("Sent"), approved: t("Approved"), accepted: t("Accepted"), rejected: t("Declined"), archived: t("Archived"), deleted: t("Removed"), verified: t("Verified"), assigned: t("Assigned"), completed: t("Completed"), converted: t("Converted"), published: t("Published"), joined: t("Joined"), recorded: t("Recorded"), decided: t("Decided"), requested: t("Requested"), submitted: t("Submitted"), marked: t("Marked") };
   return verbs[verb] ?? t("Updated");
 }
 
@@ -334,7 +339,7 @@ export function RecentActivity({ metrics }: { metrics: Load<HomeMetrics> }) {
     : !data ? <InlineError retry={metrics.retry} />
     : !events.length ? <div className={s.state}><EmptyState illustration={null} icon={<History size={18} aria-hidden="true" />} title={t("No recent activity")} /></div>
     : <ul className={s.activity}>{events.map((event) => {
-      const line = <><span className={s.copy}><strong>{event.subject || t("Workspace")}</strong><small>{[activityVerb(event.action, t), event.actorName].filter(Boolean).join(" · ")}</small></span>
+      const line = <><span className={s.copy}><strong>{event.subject || t("Workspace")}</strong><small>{[activityKind(event.action, t), activityVerb(event.action, t), event.actorName].filter(Boolean).join(" · ")}</small></span>
         <time dateTime={event.at}>{relativeTime(event.at, locale)}</time></>;
       return <li key={event.id}>{event.href ? <Link className={s.activityRow} href={event.href}>{line}</Link> : <span className={s.activityRow}>{line}</span>}</li>;
     })}</ul>;

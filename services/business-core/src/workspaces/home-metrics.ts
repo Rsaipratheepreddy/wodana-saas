@@ -270,7 +270,8 @@ export async function readHomeMetrics(client: Db, workspaceId: string, membershi
        )
        SELECT recent.id, recent.action, recent.entity_type AS "entityType", recent.entity_id::text AS "entityId", recent.occurred_at AS at,
               app_user.display_name AS "actorName",
-              left(coalesce(project.name, opportunity.title, lead_party.display_name,
+              -- Leave is named by whose it is, a crew day by its crew.
+              left(coalesce(project.name, opportunity.title, lead_party.display_name, leave_user.display_name, crew.name,
                 nullif(recent.after->>'name',''), nullif(recent.after->>'title',''), nullif(recent.after->>'number',''),
                 nullif(recent.before->>'name',''), nullif(recent.before->>'title',''), ''), 160) AS subject
        FROM recent
@@ -281,6 +282,11 @@ export async function readHomeMetrics(client: Db, workspaceId: string, membershi
        LEFT JOIN crm_opportunities opportunity ON opportunity.workspace_id=$1 AND opportunity.id=pre_case.opportunity_id
        LEFT JOIN crm_leads lead ON recent.entity_type='crm_lead' AND lead.workspace_id=$1 AND lead.id=recent.entity_id
        LEFT JOIN crm_parties lead_party ON lead_party.workspace_id=$1 AND lead_party.id=lead.party_id
+       LEFT JOIN hrms_leave_requests leave_request ON recent.entity_type='hrms' AND recent.action LIKE 'hrms.leave%' AND leave_request.workspace_id=$1 AND leave_request.id=recent.entity_id
+       LEFT JOIN workspace_memberships leave_member ON leave_member.workspace_id=$1 AND leave_member.id=leave_request.membership_id
+       LEFT JOIN users leave_user ON leave_user.id=leave_member.user_id
+       LEFT JOIN hrms_crew_days crew_day ON recent.entity_type='hrms' AND recent.action LIKE 'hrms.crew_day%' AND crew_day.workspace_id=$1 AND crew_day.id=recent.entity_id
+       LEFT JOIN hrms_crews crew ON crew.workspace_id=$1 AND crew.id=crew_day.crew_id
        ORDER BY recent.occurred_at DESC, recent.id DESC`,
       [workspaceId],
     )).rows;
