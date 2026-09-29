@@ -107,6 +107,27 @@ describe("suppliers", () => {
     expect(body).toMatchObject({ version: 0, name: "Casabella", categories: ["Curtains"], paymentTerms: "split", advancePercent: "40", deal: "commission", dealPercent: "5", contactName: "Antony", entityIds: [] });
   });
 
+  it("edits a supplier in place, saving it whole with its version and keeping its currency", async () => {
+    const fetcher = mount(withControls(() => state({ suppliers: state().suppliers.map((item) => item.id === "s2" ? { ...item, currency: "USD" } : item) })));
+    page();
+    await userEvent.click(await screen.findByText("Ritver Paints"));
+    const sheet = await screen.findByRole("dialog", { name: "Ritver Paints" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Edit Contact" }));
+    await userEvent.type(within(sheet).getByRole("textbox", { name: "Contact" }), "Anil{Enter}");
+    await waitFor(() => expect(posts(fetcher)).toHaveLength(1));
+    const [{ url, body }] = posts(fetcher);
+    expect(url).toContain("/api/purchasing/suppliers?");
+    expect(body).toMatchObject({ id: "s2", version: 3, name: "Ritver Paints", contactName: "Anil", paymentTerms: "credit", creditDays: 30, deal: "on_request", entityIds: ["f", "i"], currency: "USD" });
+    // Terms change together: credit needs its days.
+    await userEvent.click(within(sheet).getAllByRole("button", { name: "Change" })[0]);
+    const dialog = await screen.findByRole("dialog", { name: "Payment terms" });
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: "Days" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Days" }), "45");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher)).toHaveLength(2));
+    expect(posts(fetcher)[1].body).toMatchObject({ id: "s2", paymentTerms: "credit", creditDays: 45 });
+  });
+
   it("approves a supplier as the preferred one for a category, and asks why when putting one on hold", async () => {
     const fetcher = mount(withControls(() => state()));
     page();
@@ -457,6 +478,19 @@ describe("ordering", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Match" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "match", orderId: "o1", note: "", lines: [{ unmatchedLineId: "ul1", orderLineId: "a" }] }));
     expect(await within(sheet).findByText("Matched by Omar; now delivery 5.")).toBeInTheDocument();
+  });
+
+  it("corrects a confirmed order's supplier reference in place, keeping its promised date", async () => {
+    nav.query = "order=o1";
+    const confirmedOrder = orderState({ status: "confirmed", sentAt: "2026-09-27T11:00:00Z", confirmedAt: "2026-09-28T09:00:00Z", promisedDate: "2099-10-10", supplierReference: "SO-77", version: 6 } as never);
+    const fetcher = mount((url, body) => (url.includes("/orders/o1") ? (body ? { ...confirmedOrder, order: { ...confirmedOrder.order, supplierReference: String(body.supplierReference), version: 7 } } : confirmedOrder) : ordersList));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Edit Supplier reference" }));
+    const reference = within(sheet).getByRole("textbox", { name: "Supplier reference" });
+    await userEvent.clear(reference);
+    await userEvent.type(reference, "SO-78{Enter}");
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "confirm", version: 6, supplierReference: "SO-78", promisedDate: "2099-10-10" }));
   });
 
   it("records the supplier's confirmation per line: less than ordered, and each line's date", async () => {
