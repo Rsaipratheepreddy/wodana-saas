@@ -254,6 +254,8 @@ function ReportDialog({ state, report, onClose, onSave }: {
           <DateField label={t("By")} isRequired value={draft.recoveryOn ? parseDate(draft.recoveryOn) : null} onChange={(value) => set({ recoveryOn: value ? value.toString() : null })} />
         </div>
       </> : null}
+      {/* Submit stays off until there's a photo or a reason: say so, or it looks broken. */}
+      {!evidence ? <InlineNotice tone="info" message={t("Add a photo, or say why no work was done, to submit.")} /> : null}
       <PhotoPicker files={photos} onChange={setPhotos} />
       {!photos.length && !report?.photos.length ? <TextInput label={t("If no work was done, why")} value={draft.noWorkReason} onChange={(noWorkReason) => set({ noWorkReason })} /> : null}
       <TextAreaField label={t("Notes")} value={draft.notes} onChange={(notes) => set({ notes })} />
