@@ -20,14 +20,14 @@ import styles from "./inbox-parts.module.css";
 export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
   const t = useT();
   const { labels, quickReplies, settings, templates, failure: loadFailure, reload } = useInboxLookups(workspaceId);
-  const [draft, setDraft] = useState<{ autoAssign: boolean; queueId: string | null; signatureEnabled: boolean } | null>(null);
+  const [draft, setDraft] = useState<{ autoAssign: boolean; queueId: string | null; signatureEnabled: boolean; autoResolveDays: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState(""), [notice, setNotice] = useState("");
   const [editingLabel, setEditingLabel] = useState<Partial<InboxLabel> | null>(null);
   const [editingReply, setEditingReply] = useState<Partial<QuickReply> | null>(null);
   const [mapping, setMapping] = useState<InboxTemplate | null>(null);
   const [starting, setStarting] = useState(false);
-  useEffect(() => { if (settings) setDraft({ autoAssign: settings.autoAssign, queueId: settings.queueId, signatureEnabled: settings.signatureEnabled }); }, [settings]);
+  useEffect(() => { if (settings) setDraft({ autoAssign: settings.autoAssign, queueId: settings.queueId, signatureEnabled: settings.signatureEnabled, autoResolveDays: settings.autoResolveDays ?? 7 }); }, [settings]);
   // "New quick reply" from a chat lands here with the dialog open.
   const openedFromChat = useRef(false);
   useEffect(() => {
@@ -45,7 +45,8 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
     try { await work(); setNotice(success); await reload(); return true; }
     catch (error) { setFailure(error instanceof Error ? error.message : t("Inbox settings could not be saved.")); return false; }
   };
-  const changed = draft && (draft.autoAssign !== settings.autoAssign || draft.queueId !== settings.queueId || draft.signatureEnabled !== settings.signatureEnabled);
+  const changed = draft && (draft.autoAssign !== settings.autoAssign || draft.queueId !== settings.queueId || draft.signatureEnabled !== settings.signatureEnabled
+    || draft.autoResolveDays !== (settings.autoResolveDays ?? 7));
 
   const labelColumns: DataGridColumn<InboxLabel>[] = [
     { accessorKey: "name", header: t("Label"), size: 240, cell: ({ row: { original } }) => <LabelChip label={original} /> },
@@ -103,6 +104,10 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
           <span className={styles.inline}><SelectField aria-label={t("Queue")} label={null} isDisabled={!canManage || !draft?.autoAssign}
             items={[{ id: "", label: t("Sales fallback queue") }, ...settings.queues.map((queue) => ({ id: queue.id, label: queue.name }))]}
             selectedKey={draft?.queueId ?? ""} onSelectionChange={(key) => setDraft((current) => current && { ...current, queueId: key ? String(key) : null })} /></span>
+        </SettingsRow>
+        <SettingsRow label={t("Resolve quiet chats after (days)")} hint={t("When our message had no reply and nothing is pending. A reply reopens the chat. 0 for never.")}>
+          <span className={styles.inline}><TextInput aria-label={t("Resolve quiet chats after (days)")} label={null} inputMode="numeric" isReadOnly={!canManage || !draft}
+            value={String(draft?.autoResolveDays ?? 7)} onChange={(value) => setDraft((current) => current && { ...current, autoResolveDays: Math.min(60, Number(value.replace(/\D/g, "") || 0)) })} /></span>
         </SettingsRow>
       </SettingsSection>
       <AutoRepliesSection workspaceId={workspaceId} />

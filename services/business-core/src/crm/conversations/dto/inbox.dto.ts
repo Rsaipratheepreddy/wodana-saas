@@ -57,6 +57,8 @@ export class UpdateInboxSettingsDto {
   @IsBoolean() autoAssign!: boolean;
   @IsOptional() @IsUUID() queueId?: string | null;
   @IsBoolean() signatureEnabled!: boolean;
+  /** Days a chat stays quiet after our last message before it resolves itself; 0 for never (AU-2). */
+  @IsOptional() @IsInt() @Min(0) @Max(60) autoResolveDays?: number;
 }
 
 export class TemplateVariableDto {

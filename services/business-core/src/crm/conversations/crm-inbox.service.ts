@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional, UnprocessableEntityException } from "@nestjs/common";
+import { DEFAULT_AUTO_RESOLVE_DAYS } from "./inbox/quiet-chats";
 import { ConfigService } from "@nestjs/config";
 import type { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
@@ -289,22 +290,23 @@ export class CrmInboxService {
 
   updateSettings(actor: RequestActor, workspaceId: string, input: UpdateInboxSettingsDto) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
-      const before = await client.query<Row>(`SELECT auto_assign AS "autoAssign", queue_id AS "queueId", signature_enabled AS "signatureEnabled", version FROM crm_inbox_settings WHERE workspace_id = $1 FOR UPDATE`, [workspaceId]);
-      const current = before.rows[0] ?? { autoAssign: true, queueId: null, signatureEnabled: false, version: 0 };
+      const before = await client.query<Row>(`SELECT auto_assign AS "autoAssign", queue_id AS "queueId", signature_enabled AS "signatureEnabled", auto_resolve_days AS "autoResolveDays", version FROM crm_inbox_settings WHERE workspace_id = $1 FOR UPDATE`, [workspaceId]);
+      const current = before.rows[0] ?? { autoAssign: true, queueId: null, signatureEnabled: false, autoResolveDays: DEFAULT_AUTO_RESOLVE_DAYS, version: 0 };
       const queueId = input.queueId ?? null;
-      if (current.autoAssign === input.autoAssign && (current.queueId ?? null) === queueId && current.signatureEnabled === input.signatureEnabled) return this.readSettings(client, workspaceId, actorUser.userId);
+      const autoResolveDays = input.autoResolveDays ?? Number(current.autoResolveDays);
+      if (current.autoAssign === input.autoAssign && (current.queueId ?? null) === queueId && current.signatureEnabled === input.signatureEnabled && Number(current.autoResolveDays) === autoResolveDays) return this.readSettings(client, workspaceId, actorUser.userId);
       if (Number(current.version) !== input.version) throw new ConflictException("Inbox settings changed; reload and try again");
       if (queueId) {
         const queue = await client.query(`SELECT 1 FROM crm_queues WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, queueId]);
         if (!queue.rowCount) throw new UnprocessableEntityException("Choose an active sales queue");
       }
       await client.query(
-        `INSERT INTO crm_inbox_settings (workspace_id, auto_assign, queue_id, signature_enabled, updated_by) VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO crm_inbox_settings (workspace_id, auto_assign, queue_id, signature_enabled, auto_resolve_days, updated_by) VALUES ($1, $2, $3, $4, $6, $5)
          ON CONFLICT (workspace_id) DO UPDATE SET auto_assign = EXCLUDED.auto_assign, queue_id = EXCLUDED.queue_id,
-           signature_enabled = EXCLUDED.signature_enabled, updated_by = EXCLUDED.updated_by, updated_at = now(), version = crm_inbox_settings.version + 1`,
-        [workspaceId, input.autoAssign, queueId, input.signatureEnabled, actorUser.userId]);
+           signature_enabled = EXCLUDED.signature_enabled, auto_resolve_days = EXCLUDED.auto_resolve_days, updated_by = EXCLUDED.updated_by, updated_at = now(), version = crm_inbox_settings.version + 1`,
+        [workspaceId, input.autoAssign, queueId, input.signatureEnabled, actorUser.userId, autoResolveDays]);
       const after = await this.readSettings(client, workspaceId, actorUser.userId);
-      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.inbox.settings.updated.v1", entityType: "crm_inbox_settings", entityId: workspaceId, before: current, after: { autoAssign: after.autoAssign, queueId: after.queueId, signatureEnabled: after.signatureEnabled, version: after.version } });
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.inbox.settings.updated.v1", entityType: "crm_inbox_settings", entityId: workspaceId, before: current, after: { autoAssign: after.autoAssign, queueId: after.queueId, signatureEnabled: after.signatureEnabled, autoResolveDays: after.autoResolveDays, version: after.version } });
       return after;
     });
   }
@@ -503,7 +505,7 @@ export class CrmInboxService {
   }
 
   private async readSettings(client: PoolClient, workspaceId: string, userId: string) {
-    const row = (await client.query<Row>(`SELECT auto_assign AS "autoAssign", queue_id AS "queueId", signature_enabled AS "signatureEnabled", version FROM crm_inbox_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+    const row = (await client.query<Row>(`SELECT auto_assign AS "autoAssign", queue_id AS "queueId", signature_enabled AS "signatureEnabled", auto_resolve_days AS "autoResolveDays", version FROM crm_inbox_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
     const queues = await client.query(`SELECT id, name, is_fallback AS "isFallback" FROM crm_queues WHERE workspace_id = $1 AND status = 'active' ORDER BY is_fallback DESC, lower(name)`, [workspaceId]);
     const number = await client.query<{ number: string | null; accountName: string | null; health: string | null; quality: string | null; limit: string | null }>(
       `SELECT configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName", configuration->'health'->>'state' AS health, configuration->'health'->>'quality' AS quality, configuration->'health'->>'limit' AS "limit"
@@ -518,6 +520,7 @@ export class CrmInboxService {
     const calendar = await client.query<{ dayStart: string; workingDays: number[] }>(`SELECT to_char(day_start, 'HH24:MI') AS "dayStart", working_days AS "workingDays" FROM hrms_calendars WHERE workspace_id = $1 ORDER BY created_at LIMIT 1`, [workspaceId]);
     return {
       autoAssign: row ? row.autoAssign === true : true, queueId: (row?.queueId as string | null) ?? null, signatureEnabled: row?.signatureEnabled === true,
+      autoResolveDays: row ? Number(row.autoResolveDays) : DEFAULT_AUTO_RESOLVE_DAYS,
       version: Number(row?.version ?? 0), canManage: await this.access.hasPermission(client, workspaceId, userId, "crm.settings.manage"),
       queues: queues.rows, whatsapp: { connected: Boolean(number.rowCount), number: number.rows[0]?.number ?? null, accountName: number.rows[0]?.accountName ?? null, health: number.rows[0]?.health ?? null, quality: number.rows[0]?.quality ?? null, limit: number.rows[0]?.limit ?? null },
       seats: seats.rows[0]?.seats ?? 0, businessName: business.rows[0]?.name ?? null,

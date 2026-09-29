@@ -29,6 +29,8 @@ export type InboxTemplate = {
 };
 export type InboxSettings = {
   autoAssign: boolean; queueId: string | null; signatureEnabled: boolean; version: number; canManage: boolean;
+  /** Days a chat stays quiet after our last message before it resolves itself; 0 for never (AU-2). */
+  autoResolveDays?: number;
   queues: Array<{ id: string; name: string; isFallback: boolean }>;
   whatsapp: { connected: boolean; number: string | null; accountName: string | null; health?: "connected" | "limited" | "blocked" | null; quality?: string | null; limit?: string | null };
   seats: number; businessName: string | null;
