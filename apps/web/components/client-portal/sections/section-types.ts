@@ -11,7 +11,9 @@ export type PortalTarget =
   | { kind: "board" | "pin"; id: string }
   | { kind: "idea" }
   | { kind: "paid"; id: string }
-  | { kind: "issue" };
+  | { kind: "issue" }
+  /** A question about one of the team's days (the report's id). */
+  | { kind: "question"; id: string };
 
 export type SectionProps = {
   project: PortalProject;

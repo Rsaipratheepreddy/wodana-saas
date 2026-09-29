@@ -17,6 +17,7 @@ import { BoardDetail, IdeaForm, PinDetail } from "./forms/idea-forms";
 import { IssueForm } from "./forms/issue-form";
 import { NewMessage, Thread } from "./forms/message-forms";
 import { PaidForm } from "./forms/paid-form";
+import { QuestionForm } from "./forms/question-form";
 import { isolate, usePortalFormat, type PortalFormat } from "./portal-format";
 import { usePortalLabels } from "./portal-labels";
 import styles from "./portal.module.css";
@@ -38,7 +39,7 @@ const DECISION_STEPS = ["quote", "design", "definition", "materials", "handover"
 /** A section is a tab when it's shared and has something in it (or something the client can do there). */
 function hasContent(project: PortalProject, section: PortalSection) {
   if (!project.sections[section] || project[section] === null) return false;
-  if (section === "progress") { const p = project.progress!; return Boolean(p.stages.length || p.updates.length || p.photoDays.length || p.issues.length || p.canReportIssue); }
+  if (section === "progress") { const p = project.progress!; return Boolean(p.stages.length || p.updates.length || p.photoDays.length || p.cards?.length || p.issues.length || p.canReportIssue); }
   if (section === "moodboard") { const m = project.moodboard!; return Boolean(m.boards.length || m.pins.length || m.canAdd); }
   if (section === "payments") return project.payments!.milestones.length > 0;
   if (section === "documents") return project.documents!.length > 0;
@@ -147,5 +148,10 @@ function dialogFor(target: PortalTarget, project: PortalProject, { site, custome
   }
   if (target.kind === "issue" && project.progress)
     return { title: t("Report an issue"), body: <IssueForm project={project} api={api} onDone={done(t("Thank you. Your project manager will look at it."))} /> };
+  if (target.kind === "question" && project.progress) {
+    const card = project.progress.cards?.find((item) => item.id === target.id);
+    return card ? { title: t("Ask about {date}", { date: format.date(card.date) }), body: <QuestionForm project={project} reportId={card.id} api={api}
+      onDone={done(t("Thank you. Your project manager will answer under Messages."))} /> } : null;
+  }
   return null;
 }

@@ -102,6 +102,14 @@ export type PortalMoodboard = {
 export type PortalIssue = { id: string; number: number; raisedOn: string; description: string; area: string | null; status: "to_triage" | "accepted" | "declined" | "fixed";
   reason: string; files: PortalFile[] };
 
+export type PortalCardPhoto = { id: string; area: string | null; phase: "before" | "after" | null; pairId: string | null };
+/** A day on site as the team sent it to the client. */
+export type PortalDayCard = {
+  id: string; date: string; sentAt: string; summary: string; noWork: boolean; hero: PortalCardPhoto | null; photos: PortalCardPhoto[];
+  completed: string[]; advanced: Array<{ title: string; progress: number }>; next: string[]; notes: string[];
+  reactions: { like: number; love: number }; mine: { like: boolean; love: boolean };
+};
+
 export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice"; id: string; title: string; due: string | null };
 
 export type PortalProject = {
@@ -120,6 +128,12 @@ export type PortalProject = {
     stages: Array<{ name: string | null; state: "done" | "current" | "upcoming"; startedOn: string | null; finishedOn: string | null }>;
     updates: Array<{ id: string; at: string; text: string }>;
     photoDays: Array<{ on: string; photos: Array<{ id: string }> }>;
+    /** The days the team sent, each as it went: words, photos, what was finished and what's next, and the reactions. */
+    cards?: PortalDayCard[];
+    /** The week's days in one digest (the firm's weekly roll-up). */
+    weeks?: Array<{ id: string; weekEnding: string; digest: string }>;
+    /** How far the whole project is, in percent (with stage names shown). */
+    percent?: number | null;
     issues: PortalIssue[]; canReportIssue: boolean;
   };
   moodboard: PortalMoodboard | null;
