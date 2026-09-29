@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus } from "lucide-react";
-import { Button, EmptyState, Form, InlineNotice, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Plus, X } from "lucide-react";
+import { Button, Checkbox, EmptyState, Form, FormDialog, FormNotSaved, IconButton, InlineNotice, PercentageInput, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { commercialPath } from "@/lib/commercial/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { quotationPath } from "@/lib/quotation/client";
 import { VIEW_LABEL } from "@/lib/quotation/format";
@@ -32,6 +33,7 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [trade, setTrade] = useState("");
+  const [creatingPlan, setCreatingPlan] = useState(false);
   const [days, setDays] = useState("");
   const load = useCallback(async () => {
     try { const next = await call<Loaded>(quotationPath(workspaceId, "settings")); setData(next); setForm(next.settings); setDays(dayList(next.settings)); setError(""); }
@@ -102,10 +104,12 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       <SettingsRow label={t("Valid for (days)")}>
         <TextInput aria-label={t("Valid for (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.validityDays)} onChange={(value) => set("validityDays", Number(value.replace(/\D/g, "") || 0))} />
       </SettingsRow>
-      {data.paymentTemplates?.length ? <SettingsRow label={t("Default payment plan")} hint={t("A new quote starts with these milestones; change them on the quote.")}>
-        <SelectField aria-label={t("Default payment plan")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.defaultPaymentTemplateId ?? ""} onSelectionChange={(key) => set("defaultPaymentTemplateId", key ? String(key) : null)}
+      <SettingsRow label={t("Default payment plan")} hint={t("A new quote starts with these milestones; change them on the quote.")}>
+        {data.paymentTemplates?.length ? <SelectField aria-label={t("Default payment plan")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.defaultPaymentTemplateId ?? ""} onSelectionChange={(key) => set("defaultPaymentTemplateId", key ? String(key) : null)}
           items={[{ id: "", label: t("None") }, ...data.paymentTemplates.map((template) => ({ id: template.id, label: template.name }))]} />
-      </SettingsRow> : null}
+          : readOnly ? <span className={styles.muted}>{t("None")}</span>
+            : <Button size="compact" onPress={() => setCreatingPlan(true)}><Plus aria-hidden="true" size={14} />{t("Create payment plan")}</Button>}
+      </SettingsRow>
       <SettingsRow label={t("Warn before a quote expires (days)")} hint={t("The case owner and the client hear it this many days before. 0 for none.")}>
         <TextInput aria-label={t("Warn before a quote expires (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.expiryWarningDays ?? 0)} onChange={(value) => set("expiryWarningDays", Number(value.replace(/\D/g, "") || 0))} />
       </SettingsRow>
@@ -117,6 +121,12 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
         <Switch aria-label={t("Review before sending")} isDisabled={readOnly} isSelected={form.internalReview} onChange={(value) => set("internalReview", value)} />
       </SettingsRow>
     </SettingsSection>
+    {creatingPlan ? <PaymentPlanDialog workspaceId={workspaceId} onClose={() => setCreatingPlan(false)} onCreated={async (templateId) => {
+      // The new plan becomes the default straight away (the rest of the form keeps its unsaved edits).
+      const next = await call<Settings>(quotationPath(workspaceId, "settings"), "PUT", { ...data.settings, defaultPaymentTemplateId: templateId });
+      const fresh = await call<Loaded>(quotationPath(workspaceId, "settings"));
+      setData(fresh); setForm({ ...form, defaultPaymentTemplateId: templateId, version: next.version }); setCreatingPlan(false);
+    }} /> : null}
     {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} saved={saved} onDiscard={() => { setForm(data.settings); setDays(dayList(data.settings)); setError(""); }} onSave={() => void save()} />}
 
     <ProposalKitSettings workspaceId={workspaceId} />
@@ -135,6 +145,48 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
 }
 
 const dayList = (settings: Settings) => (settings.decisionReminderDays ?? []).join(", ");
+
+type Milestone = { id: string; title: string; percent: number; trigger: string; requiredForRelease: boolean };
+
+/**
+ * The firm's first payment plan, made here: named milestones that add up to 100%, at least one of them paid before
+ * work starts. It starts as a common three-step plan to change.
+ */
+function PaymentPlanDialog({ workspaceId, onClose, onCreated }: { workspaceId: string; onClose: () => void; onCreated: (templateId: string) => Promise<void> }) {
+  const t = useT();
+  const [name, setName] = useState(() => t("Standard payment plan"));
+  const [rows, setRows] = useState<Milestone[]>(() => [
+    { id: crypto.randomUUID(), title: t("Advance"), percent: 50, trigger: t("On signing"), requiredForRelease: true },
+    { id: crypto.randomUUID(), title: t("Before installation"), percent: 40, trigger: t("Before installation starts"), requiredForRelease: false },
+    { id: crypto.randomUUID(), title: t("On handover"), percent: 10, trigger: t("At handover"), requiredForRelease: false },
+  ]);
+  const [error, setError] = useState("");
+  const total = rows.reduce((sum, row) => sum + (Number.isFinite(row.percent) ? row.percent : 0), 0);
+  const update = (id: string, patch: Partial<Milestone>) => setRows(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  const problem = !name.trim() ? t("Name the plan.") : rows.some((row) => !row.title.trim() || !row.trigger.trim() || !(row.percent > 0)) ? t("Give every milestone a name, a share and when it's due.")
+    : Math.abs(total - 100) > 0.001 ? t("The milestones add up to {total}%, not 100%.", { total: Math.round(total * 100) / 100 })
+      : !rows.some((row) => row.requiredForRelease) ? t("Mark at least one milestone as paid before work starts.") : "";
+  return <FormDialog title={t("Create payment plan")} size="lg" onClose={onClose} submitLabel={t("Create and use")} isSubmitDisabled={Boolean(problem)} error={error || undefined}
+    onSubmit={async () => {
+      setError("");
+      try {
+        const created = await call<{ id: string }>(commercialPath(workspaceId, "payment-templates"), "POST", { name: name.trim(), milestones: rows.map((row) => ({ ...row, title: row.title.trim(), trigger: row.trigger.trim() })) });
+        await onCreated(created.id);
+      } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); throw new FormNotSaved(); }
+    }}>
+    <TextInput label={t("Name")} isRequired maxLength={160} value={name} onChange={setName} />
+    <ul className={styles.milestones}>{rows.map((row, index) => <li key={row.id}>
+      <TextInput label={t("Milestone")} isRequired maxLength={160} value={row.title} onChange={(title) => update(row.id, { title })} />
+      <PercentageInput label={t("Share")} isRequired minValue={0.01} value={row.percent} onChange={(percent) => update(row.id, { percent })} />
+      <TextInput label={t("When")} isRequired maxLength={300} value={row.trigger} onChange={(trigger) => update(row.id, { trigger })} />
+      <Checkbox isSelected={row.requiredForRelease} onChange={(requiredForRelease) => update(row.id, { requiredForRelease })}>{t("Paid before work starts")}</Checkbox>
+      {rows.length > 1 ? <IconButton aria-label={t("Remove milestone {number}", { number: index + 1 })} size="compact" variant="quiet" onPress={() => setRows(rows.filter((item) => item.id !== row.id))}><X aria-hidden="true" size={14} /></IconButton> : null}
+    </li>)}</ul>
+    {rows.length < 20 ? <Button size="compact" variant="quiet" onPress={() => setRows([...rows, { id: crypto.randomUUID(), title: "", percent: Math.max(0, Math.round((100 - total) * 100) / 100), trigger: "", requiredForRelease: false }])}>
+      <Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button> : null}
+    {problem ? <p className={styles.muted} role="status">{problem}</p> : null}
+  </FormDialog>;
+}
 
 function TradeName({ name, readOnly, onRename }: { name: string; readOnly: boolean; onRename: (name: string) => void }) {
   const t = useT();
