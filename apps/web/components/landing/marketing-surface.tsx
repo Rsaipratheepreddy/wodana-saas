@@ -14,12 +14,12 @@ function subscribe(onChange: () => void) {
 }
 
 /**
- * Sets the theme before the page paints, so a dark system never flashes the light page (React then keeps
- * the same value once it hydrates).
+ * Sets the surface's theme before the page paints, so a dark system never flashes the light page (React then
+ * keeps the same value once it hydrates). The document element is left to the effect below: it is the root
+ * layout's, and changing it before hydration would not match the server's HTML.
  */
 const BEFORE_PAINT = `(function(){try{var d=window.matchMedia(${JSON.stringify(DARK)}).matches?"dark":"light";`
-  + `var e=document.currentScript&&document.currentScript.parentElement;if(e)e.setAttribute("data-wd-theme",d);`
-  + `document.documentElement.setAttribute("data-theme",d)}catch(_){}})();`;
+  + `var e=document.currentScript&&document.currentScript.parentElement;if(e)e.setAttribute("data-wd-theme",d)}catch(_){}})();`;
 
 /**
  * The public pages' surface: the design-system provider in the visitor's system theme (light or dark) and

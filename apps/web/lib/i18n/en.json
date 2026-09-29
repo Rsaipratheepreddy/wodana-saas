@@ -10868,7 +10868,6 @@
   "Win the work.": "Win the work.",
   "Every enquiry on one board, and priced proposals clients can accept online.": "Every enquiry on one board, and priced proposals clients can accept online.",
   "Plan every stage.": "Plan every stage.",
-  "Turn the signed scope into tasks, owners and dates on one shared timeline.": "Turn the signed scope into tasks, owners and dates on one shared timeline.",
   "Purchasing and factory": "Purchasing and factory",
   "Order, make, deliver.": "Order, make, deliver.",
   "Buy from suppliers, receive into stock and follow factory work for each project.": "Buy from suppliers, receive into stock and follow factory work for each project.",
@@ -10881,7 +10880,6 @@
   "Wodana home with the day's work across sales and projects": "Wodana home with the day's work across sales and projects",
   "Enquiries on a sales board, by stage": "Enquiries on a sales board, by stage",
   "A priced quotation with rooms and items": "A priced quotation with rooms and items",
-  "A project plan with tasks on a timeline": "A project plan with tasks on a timeline",
   "Purchase orders with suppliers and delivery": "Purchase orders with suppliers and delivery",
   "Factory work orders by project": "Factory work orders by project",
   "The client portal for one project": "The client portal for one project",
@@ -10950,5 +10948,7 @@
   "Status changed": "Status changed",
   "Assignee changed": "Assignee changed",
   "New sales enquiry": "New sales enquiry",
-  "Notification": "Notification"
+  "Notification": "Notification",
+  "Turn the signed scope into tasks, owners and dates everyone shares.": "Turn the signed scope into tasks, owners and dates everyone shares.",
+  "A project's tasks on a board, by status": "A project's tasks on a board, by status"
 }

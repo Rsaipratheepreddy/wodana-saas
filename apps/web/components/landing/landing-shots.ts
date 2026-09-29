@@ -19,7 +19,7 @@ export const SHOTS = {
   home: desktop("home", tKey("Wodana home with the day's work across sales and projects")),
   pipeline: desktop("pipeline", tKey("Enquiries on a sales board, by stage")),
   quotation: desktop("quotation", tKey("A priced quotation with rooms and items")),
-  plan: desktop("project-plan", tKey("A project plan with tasks on a timeline")),
+  plan: desktop("project-plan", tKey("A project's tasks on a board, by status")),
   purchasing: desktop("purchasing", tKey("Purchase orders with suppliers and delivery")),
   factory: desktop("factory", tKey("Factory work orders by project")),
   portal: desktop("client-portal", tKey("The client portal for one project")),

@@ -128,7 +128,7 @@ export async function LandingPage({ form }: { form: PublicSalesForm }) {
         copy={t("Every enquiry on one board, and priced proposals clients can accept online.")}
         visual={<Visual front={SHOTS.quotation} main={SHOTS.pipeline} t={t} />} />
       <Feature flip id="projects" tag={t("Projects")} title={t("Plan every stage.")}
-        copy={t("Turn the signed scope into tasks, owners and dates on one shared timeline.")}
+        copy={t("Turn the signed scope into tasks, owners and dates everyone shares.")}
         visual={<Visual main={SHOTS.plan} t={t} />} />
       <Feature id="operations" tag={t("Purchasing and factory")} title={t("Order, make, deliver.")}
         copy={t("Buy from suppliers, receive into stock and follow factory work for each project.")}
