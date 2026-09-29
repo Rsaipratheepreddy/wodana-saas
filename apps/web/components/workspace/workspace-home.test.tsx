@@ -193,6 +193,8 @@ it("reads Home only from the person's workspace-scoped sources", async () => {
   await screen.findByText("Shop drawings");
   const urls = request.mock.calls.map(([url]) => String(url)).sort();
   expect(urls).toEqual([
+    // Daily reports to review and sites without today's report (projects are on).
+    `/api/site/attention?workspaceId=${base.workspaceId}`,
     `/api/workspace/home-metrics?workspaceId=${base.workspaceId}`,
     `/api/workspace/home-summary?workspaceId=${base.workspaceId}`,
   ]);

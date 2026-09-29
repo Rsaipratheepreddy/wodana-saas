@@ -15,6 +15,7 @@ import { WorkSheet } from "@/components/project-core/work-sheet";
 import { HomeAttendance } from "./home-attendance";
 import { DeliveryAttention } from "./delivery-attention";
 import { JumpBackIn, KeyNumbers, Pipeline, RecentActivity, TodayList, UpcomingList, type Load, type NumbersLens } from "./home-sections";
+import { SiteProgressAttention } from "./site-progress-attention";
 import { greetingPart } from "./home-format";
 import { WorkspaceUniversalSearch } from "./workspace-universal-search";
 import s from "./workspace-home.module.css";
@@ -164,6 +165,7 @@ function HomeContent({ workspaceId, modules, canManage, firstName, permissions }
     <Pipeline summary={summary} />
     <div className={s.layout}>
       <div className={s.main}>
+        {projectsOn ? <SiteProgressAttention workspaceId={workspaceId} /> : null}
         <TodayList summary={summary} open={(item) => void open(item)} allClear={nextStep} />
         <UpcomingList summary={summary} empty={nextStep} />
       </div>

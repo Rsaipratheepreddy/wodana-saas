@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, InspectorSheet, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
+import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, InspectorSheet, Skeleton, Switch, TextInput, TimeField, isNoAccessError, NoAccessState } from "@/design-system";
+import { parseTime } from "@internationalized/date";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { CheckKind, ProjectRole, ProjectRoute, RouteStage, SettingsState, StageCheck, TemplateTask, WorkTemplate } from "@/lib/project-core/types";
@@ -105,18 +106,32 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
       </SettingsRow>
     </SettingsSection>
     <SettingsSection id="client-updates" title={t("Client updates")}>
-      <SettingsRow label={t("Send by itself")} hint={t("The week's drafted update goes to the client when nobody sent or discarded it in time.")}>
-        <Switch aria-label={t("Send by itself")} isDisabled={readOnly} isSelected={form.clientUpdateAutoSendHours !== null}
-          onChange={(value) => setForm({ ...form, clientUpdateAutoSendHours: value ? 24 : null })} />
+      <SettingsRow label={t("Daily report due")} hint={t("The supervisor is reminded then if there's no report, and the project manager an hour later.")}>
+        <TimeField aria-label={t("Daily report due")} label={undefined} hourCycle={24} isDisabled={readOnly} value={parseTime(form.reportDueTime ?? "18:00")}
+          onChange={(value) => { if (value) setForm({ ...form, reportDueTime: value.toString().slice(0, 5) }); }} />
       </SettingsRow>
-      {form.clientUpdateAutoSendHours !== null ? <SettingsRow label={t("After")}>
-        <SelectField aria-label={t("After")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={String(form.clientUpdateAutoSendHours)}
-          items={[...new Set([12, 24, 48, 72, form.clientUpdateAutoSendHours])].sort((a, b) => a - b).map((hours) => ({ id: String(hours), label: t("{count} hours", { count: hours }) }))}
-          onSelectionChange={(key) => setForm({ ...form, clientUpdateAutoSendHours: Number(key) })} />
-      </SettingsRow> : null}
+      <SettingsRow label={t("Send by itself")} hint={t("A daily report approved but not sent, and the week's drafted update, go to the client if nobody sends them in time. Reports kept internal never do.")}>
+        <Switch aria-label={t("Send by itself")} isDisabled={readOnly} isSelected={form.clientUpdateAutoSendHours !== null}
+          onChange={(value) => setForm({ ...form, clientUpdateAutoSendHours: value ? 24 : null, autoSendPendingReports: value ? form.autoSendPendingReports : false })} />
+      </SettingsRow>
+      {form.clientUpdateAutoSendHours !== null ? <>
+        <SettingsRow label={t("After")}>
+          <SelectField aria-label={t("After")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={String(form.clientUpdateAutoSendHours)}
+            items={[...new Set([12, 24, 48, 72, form.clientUpdateAutoSendHours])].sort((a, b) => a - b).map((hours) => ({ id: String(hours), label: t("{count} hours", { count: hours }) }))}
+            onSelectionChange={(key) => setForm({ ...form, clientUpdateAutoSendHours: Number(key) })} />
+        </SettingsRow>
+        <SettingsRow label={t("Also reports nobody reviewed")} hint={t("A submitted daily report goes as written after the same hours; it still waits for the project manager's approval.")}>
+          <Switch aria-label={t("Also reports nobody reviewed")} isDisabled={readOnly} isSelected={Boolean(form.autoSendPendingReports)}
+            onChange={(value) => setForm({ ...form, autoSendPendingReports: value })} />
+        </SettingsRow>
+      </> : null}
+      <SettingsRow label={t("Weekly roll-up")} hint={t("On the last working day of the week, the days sent to the client that week go as one digest. It replaces the week's drafted update.")}>
+        <Switch aria-label={t("Weekly roll-up")} isDisabled={readOnly} isSelected={Boolean(form.weeklyRollup)} onChange={(value) => setForm({ ...form, weeklyRollup: value })} />
+      </SettingsRow>
     </SettingsSection>
     {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} isDisabled={!/^[A-Z]/.test(form.referencePrefix)} onDiscard={() => setForm(data.settings)}
-      onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment, autoFinish: form.autoFinish, clientUpdateAutoSendHours: form.clientUpdateAutoSendHours, referencePrefix: form.referencePrefix }); setBusy(false); }} />}
+      onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment, autoFinish: form.autoFinish, clientUpdateAutoSendHours: form.clientUpdateAutoSendHours, referencePrefix: form.referencePrefix,
+        reportDueTime: form.reportDueTime ?? "18:00", autoSendPendingReports: Boolean(form.autoSendPendingReports), weeklyRollup: Boolean(form.weeklyRollup) }); setBusy(false); }} />}
   </>;
 }
 
