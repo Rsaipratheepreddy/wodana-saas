@@ -1,0 +1,19 @@
+.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; }
+.nameCell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.nameCell a { color: var(--wd-color-text); font-weight: var(--wd-weight-medium); text-decoration: none; overflow-wrap: anywhere; }
+.nameCell a:hover { text-decoration: underline; }
+.nameCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.openButton { padding: 0; border: 0; background: none; color: var(--wd-color-text); font: inherit; font-weight: var(--wd-weight-medium); text-align: start; cursor: pointer; }
+.openButton:hover { text-decoration: underline; }
+.openButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: var(--wd-space-0-5); border-radius: var(--wd-radius-2xs); }
+.openButton:disabled { color: var(--wd-color-text-secondary); cursor: default; text-decoration: none; }
+.muted { color: var(--wd-color-text-tertiary); }
+.candidateSearch { display: flex; align-items: end; gap: var(--wd-space-2); margin-block: var(--wd-space-4); }
+.candidateSearch > :first-child { flex: 1; min-inline-size: 0; }
+.hint { margin-block: var(--wd-space-2) 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.startLinks { display: flex; flex-wrap: wrap; gap: var(--wd-space-3); margin-block-start: var(--wd-space-3); font-size: var(--wd-text-sm); }
+.startLinks a { color: var(--wd-color-link); text-underline-offset: 3px; }
+@media (max-width: 600px) {
+  .page { padding: var(--wd-space-3); }
+  .candidateSearch { align-items: stretch; flex-direction: column; }
+}
