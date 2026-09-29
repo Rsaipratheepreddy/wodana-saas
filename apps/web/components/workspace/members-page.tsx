@@ -4,7 +4,9 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { Copy, Download } from "lucide-react";
-import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, SettingsRow, SettingsSection, Switch, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import type { ViewAsSettings, ViewAsTarget } from "@/lib/workspace/view-as";
+import { ViewAsDialog } from "./view-as-dialog";
 import type { Translate } from "@/lib/i18n/keys";
 import {
   readableRole,
@@ -108,6 +110,34 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const [editFailure, setEditFailure] = useState("");
   const [isSavingMember, setIsSavingMember] = useState(false);
   const [memberReviewOpen, setMemberReviewOpen] = useState(false);
+
+  // View as: an owner or administrator reads the workspace as an active team member (never an owner, unless
+  // an owner; never themselves). The server checks the same rules.
+  const viewAs = initialData.viewAs;
+  const [viewAsTarget, setViewAsTarget] = useState<ViewAsTarget | null>(null);
+  const [viewAsSettings, setViewAsSettings] = useState(viewAs?.settings ?? null);
+  const [isSavingViewAsSetting, setIsSavingViewAsSetting] = useState(false);
+  const canViewAsMember = (member: WorkspaceMember) => Boolean(viewAs?.canViewAs) && member.status === "active"
+    && member.userId !== initialData.currentUserId
+    && (viewAs?.viewerIsOwner || ![...member.roles, ...(member.inheritedRoles ?? [])].includes("owner"));
+  const saveViewAsNotice = async (notifySubject: boolean) => {
+    if (!viewAsSettings) return;
+    setIsSavingViewAsSetting(true);
+    setActionFailure("");
+    try {
+      const response = await fetch("/api/workspace/view-as/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: initialData.workspaceId, notifySubject, version: viewAsSettings.version }),
+      });
+      if (!response.ok) throw new Error(await responseMessage(response, t("This setting could not be saved. Refresh and try again.")));
+      setViewAsSettings(await response.json() as ViewAsSettings);
+    } catch (error) {
+      setActionFailure(error instanceof Error ? error.message : t("This setting could not be saved. Refresh and try again."));
+    } finally {
+      setIsSavingViewAsSetting(false);
+    }
+  };
 
   const [cancellingInvitation, setCancellingInvitation] = useState<WorkspaceInvitation | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -536,8 +566,13 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       width: "3rem",
       render: (item) => {
         if (item.kind === "member") {
-          if (!canEdit || !canChangeAssignment([...item.member.roles, ...(item.member.inheritedRoles ?? [])], item.member.teams ?? [])) return null;
-          return <IconMenuButton ariaLabel={t("Actions for {name}", { name: item.member.displayName })} items={[{ id: "edit", label: t("Edit access") }]} onAction={() => openMemberEditor(item.member)} />;
+          const memberActions = [
+            ...(canEdit && canChangeAssignment([...item.member.roles, ...(item.member.inheritedRoles ?? [])], item.member.teams ?? []) ? [{ id: "edit", label: t("Edit access") }] : []),
+            ...(canViewAsMember(item.member) ? [{ id: "view-as", label: t("View as") }] : []),
+          ];
+          if (!memberActions.length) return null;
+          return <IconMenuButton ariaLabel={t("Actions for {name}", { name: item.member.displayName })} items={memberActions}
+            onAction={(action) => action === "view-as" ? setViewAsTarget({ kind: "person", membershipId: item.member.id, name: item.member.displayName }) : openMemberEditor(item.member)} />;
         }
         if (!canChangeAssignment(item.invitation.roles, item.invitation.teams ?? [])) return null;
         const actions = [
@@ -619,7 +654,14 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           </div>
         </section>
         {!canInvite && !canEdit && !canCancelInvitations ? <p className={styles.permissionNote}>{t("Your access is read-only. Ask a workspace administrator to change people or invitations.")}</p> : null}
+        {viewAs?.canViewAs && viewAsSettings ? <SettingsSection id="view-as" title={t("View as")}>
+          <SettingsRow label={t("Tell people after someone viewed as them")}>
+            <Switch aria-label={t("Tell people after someone viewed as them")} isDisabled={isSavingViewAsSetting} isSelected={viewAsSettings.notifySubject} onChange={(value) => void saveViewAsNotice(value)} />
+          </SettingsRow>
+        </SettingsSection> : null}
       </SettingsPage>
+
+      <ViewAsDialog mfaEnabled={Boolean(viewAs?.mfaEnabled)} onClose={() => setViewAsTarget(null)} target={viewAsTarget} workspaceId={initialData.workspaceId} />
 
       <ControlledModalDialog
         description={invitationResult

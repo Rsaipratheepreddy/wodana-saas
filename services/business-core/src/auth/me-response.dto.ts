@@ -63,6 +63,17 @@ export class PendingInvitationSummaryResponseDto {
   @ApiProperty({ format: "date-time" }) expiresAt!: string;
 }
 
+export class ViewAsSummaryResponseDto {
+  @ApiProperty({ format: "uuid" }) sessionId!: string;
+  @ApiProperty({ enum: ["person", "role"] }) kind!: string;
+  @ApiProperty({ format: "uuid" }) workspaceId!: string;
+  @ApiProperty() subjectName!: string;
+  @ApiPropertyOptional({ type: String, nullable: true }) subjectRoleLabel!: string | null;
+  @ApiProperty({ format: "date-time" }) startedAt!: string;
+  @ApiProperty({ format: "date-time" }) expiresAt!: string;
+  @ApiPropertyOptional({ type: String, nullable: true }) returnPath!: string | null;
+}
+
 export class MeResponseDto {
   @ApiProperty({ format: "uuid" }) id!: string;
   @ApiProperty({ format: "email" }) primaryEmail!: string;
@@ -83,4 +94,7 @@ export class MeResponseDto {
     enum: ["accept_invitation", "start_onboarding", "resume_onboarding", "enter_workspace", "await_invitation"],
   })
   nextAction!: string;
+  @ApiPropertyOptional({ type: () => ViewAsSummaryResponseDto, nullable: true,
+    description: "Set while this sign-in session views the workspace as someone, read-only; the profile is then theirs" })
+  viewAs!: ViewAsSummaryResponseDto | null;
 }

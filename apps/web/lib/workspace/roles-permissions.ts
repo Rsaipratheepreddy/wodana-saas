@@ -108,6 +108,7 @@ const EXACT_LABELS: Record<string, MessageKey> = {
   "pre_projects.review_designs": tKey("Review design revisions"),
   "pre_projects.verify_measurements": tKey("Verify site measurements"),
   "portal.contacts.manage": tKey("Add client contacts and decision-makers"),
+  "workspace.view_as": tKey("View as a team member or role, read-only"),
   "projects.schedule.override": tKey("Override project schedule conflicts"),
 };
 
@@ -203,6 +204,8 @@ export type RolesPermissionsPageData = {
   permissions: WorkspacePermissionDefinition[];
   roles: WorkspaceRole[];
   workspaceId: string;
+  /** "Preview as {role}" (owners and administrators): whether it is offered, and whether MFA is on for the code. */
+  viewAs?: { canViewAs: boolean; mfaEnabled: boolean; viewerIsOwner: boolean };
 };
 
 export function roleMutationCapabilities(allowedPermissions: readonly string[] | undefined, roles: readonly string[]) {

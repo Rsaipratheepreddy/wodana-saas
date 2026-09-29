@@ -5,7 +5,8 @@ import { cookies } from "next/headers";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 import { getMyProfile } from "@/lib/workspace/profile.server";
 import { I18nProvider, LanguagePreferenceProvider } from "@/lib/i18n/i18n-provider";
-import { Callout, WorkspaceRegionProvider } from "@/design-system";
+import { Callout, ReadOnlyProvider, WorkspaceRegionProvider } from "@/design-system";
+import { ViewAsBanner } from "@/components/workspace/view-as-banner";
 import { translator } from "@/lib/i18n/messages";
 import { getWorkspaceRegion, type WorkspaceRegion } from "@/lib/workspace/region.server";
 import { LANGUAGE_COOKIE, chooseLanguage, supportedLanguage } from "@/lib/i18n/languages";
@@ -52,11 +53,14 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
   const language = chooseLanguage(chosen, { preferredLocale: profile.preferredLocale, workspaceLocale: region.locale ?? activeMembership?.workspaceLocale });
   const t = translator(language);
   const readOnly = activeMembership?.workspaceStatus === "suspended";
+  // Viewing as someone: the sidebar, Home and tabs above come from their profile; every change is off.
+  const viewAs = profile.viewAs ?? null;
   const persist = activeMembership ? { workspaceId: activeMembership.workspaceId, workspaceLocale: region.locale ?? activeMembership.workspaceLocale } : null;
   const content = (
     <LanguagePreferenceProvider persist={persist} resolved={chosen ? undefined : language}>
     <WorkspaceRegionProvider {...region}>
     <WorkspaceShell
+      banner={viewAs ? <ViewAsBanner viewAs={viewAs} /> : undefined}
       canManageWorkspace={ownerAccess}
       modules={scopeWorkspaceNavigation(
         visibleWorkspaceModules(workspaceModules, activeMembership?.workspaceSlug ?? "", allowedModules),
@@ -68,7 +72,7 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
       workspaces={workspaces.map(({ accountName, ...workspace }) => ({ ...workspace, description: `${accountName ?? t("Organization")} · ${t("Active")}` }))}>
       {!(process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") ? <SessionMonitor /> : null}
       {readOnly ? <Callout tone="warning" title={t("Read-only")}>{t("Changes are paused. You can still read and export your records.")}</Callout> : null}
-      {children}
+      <ReadOnlyProvider reason={viewAs ? t("Read-only while viewing as {name}", { name: viewAs.subjectName }) : null}>{children}</ReadOnlyProvider>
     </WorkspaceShell>
     </WorkspaceRegionProvider>
     </LanguagePreferenceProvider>

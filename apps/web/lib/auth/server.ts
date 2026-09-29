@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import type { ViewAsSummary } from "@/lib/workspace/view-as";
 
 export const ACCESS_COOKIE = "wodana_access";
 export const REFRESH_COOKIE = "wodana_refresh";
@@ -53,6 +54,8 @@ export type AuthProfile = {
     accountName: string | null;
   }>;
   nextAction: string;
+  /** Set while this sign-in session views the workspace as someone, read-only: the profile is then theirs. */
+  viewAs?: ViewAsSummary | null;
 };
 
 export function businessApiUrl(path: string) {

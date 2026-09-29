@@ -17,6 +17,7 @@ import { SupportSessionsService } from "./support-sessions.service";
 import { TenantLifecycleService } from "./tenant-lifecycle.service";
 import type { PlatformOperatorPermission } from "../auth/platform-operator-policy";
 import { platformOperatorPermissions } from "../auth/platform-operator-policy";
+import { ViewAsService } from "../auth/view-as/view-as.service";
 
 // Real PostgreSQL, run as the app role (forced RLS applies). Rows are committed so concurrent commands
 // really race; every row this suite creates is removed afterwards.
@@ -86,7 +87,7 @@ integration("control plane with PostgreSQL", () => {
     seatsService = new OrganizationSeatsService(db);
     const domains = new TenantDomainsService(db, notices);
     domains.lookupTxt = async () => [];
-    sweep = new ControlPlaneSweepService(db, lifecycle, support, domains);
+    sweep = new ControlPlaneSweepService(db, lifecycle, support, domains, new ViewAsService(db, identities as never));
     await owner.query(`INSERT INTO users (id, primary_email, display_name) VALUES ($1, $2, 'Operator A'), ($3, $4, 'Operator B')`,
       [operatorA, userEmails[1], operatorB, userEmails[2]]);
     await owner.query(`INSERT INTO platform_administrators (user_id, role) VALUES ($1, 'administrator'), ($2, 'administrator')`,

@@ -10,6 +10,7 @@ import {
   type RolesPermissionsPageData,
   type WorkspacePermissionDefinition,
 } from "./roles-permissions";
+import { getViewAsReadiness } from "./view-as.server";
 
 export async function getRolesPermissionsPageData(): Promise<RolesPermissionsPageData> {
   const authProfile = await getAuthenticatedProfile();
@@ -50,8 +51,10 @@ export async function getRolesPermissionsPageData(): Promise<RolesPermissionsPag
 
   const permissions = await permissionsResponse.json() as WorkspacePermissionDefinition[];
   const members = membersResponse ? await membersResponse.json() as WorkspaceMember[] : null;
+  const viewAs = await getViewAsReadiness(authProfile);
   return {
     ...capabilities,
+    viewAs: { canViewAs: viewAs.canViewAs, mfaEnabled: viewAs.mfaEnabled, viewerIsOwner: membership.roles.includes("owner") },
     delegablePermissions: canDelegateAll ? null : membership.allowedPermissions ?? [],
     memberCount: members?.length ?? null,
     members: members?.map((member) => ({

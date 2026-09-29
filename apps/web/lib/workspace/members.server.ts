@@ -11,6 +11,7 @@ import {
   type WorkspaceMember,
   type WorkspaceRole,
 } from "./members";
+import { getViewAsReadiness } from "./view-as.server";
 
 export async function getMembersPageData(): Promise<MembersPageData> {
   const authProfile = await getAuthenticatedProfile();
@@ -60,8 +61,10 @@ export async function getMembersPageData(): Promise<MembersPageData> {
 
   const roles = await rolesResponse.json() as WorkspaceRole[];
   const capabilities = memberAccessCapabilities(membership.allowedPermissions, membership.roles, roles);
+  const viewAs = await getViewAsReadiness(authProfile);
   return {
     ...capabilities,
+    viewAs: { ...viewAs, viewerIsOwner: membership.roles.includes("owner") },
     currentUserId: authProfile.id,
     currentUserName: authProfile.displayName,
     workspaceId: membership.workspaceId,
