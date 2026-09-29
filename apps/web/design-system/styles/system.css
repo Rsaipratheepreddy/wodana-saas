@@ -134,6 +134,8 @@
 .wd-button-group[data-attached="true"] { gap: 0; }
 .wd-button-group[data-attached="true"] > :first-child { border-start-end-radius: 0; border-end-end-radius: 0; }
 .wd-button-group[data-attached="true"] > :last-child { border-start-start-radius: 0; border-end-start-radius: 0; margin-inline-start: -1px; }
+/* A change that is off while the page is read-only (view as): the wrapper adds no box, only the reason as a tooltip. */
+.wd-read-only-action { display: contents; }
 .wd-spin { animation: wd-spin 700ms linear infinite; }
 @keyframes wd-spin { to { transform: rotate(360deg); } }
 

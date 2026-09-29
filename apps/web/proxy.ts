@@ -76,7 +76,8 @@ export async function proxy(request: NextRequest) {
   const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
   if (accessToken) {
     const current = await fetch(apiUrl("/me"), {
-      headers: { authorization: `Bearer ${accessToken}` },
+      // The page being opened: while viewing as someone, the audit keeps the pages the viewer went to.
+      headers: { authorization: `Bearer ${accessToken}`, "x-wodana-page": request.nextUrl.pathname },
       cache: "no-store",
       signal: AbortSignal.timeout(12_000),
     }).catch(() => null);
@@ -106,7 +107,7 @@ export async function proxy(request: NextRequest) {
       request.cookies.set(ACCESS_COOKIE, session.accessToken);
       request.cookies.set(REFRESH_COOKIE, session.refreshToken);
       const current = await fetch(apiUrl("/me"), {
-        headers: { authorization: `Bearer ${session.accessToken}` },
+        headers: { authorization: `Bearer ${session.accessToken}`, "x-wodana-page": request.nextUrl.pathname },
         cache: "no-store",
         signal: AbortSignal.timeout(12_000),
       }).catch(() => null);

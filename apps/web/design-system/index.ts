@@ -4,6 +4,7 @@ export * from "./foundations/haptics";
 export * from "./foundations/media";
 export * from "./foundations/time-zone";
 export * from "./foundations/access";
+export * from "./foundations/read-only";
 export * from "./atoms/module-icon";
 export * from "./primitives/layout";
 export * from "./primitives/typography";

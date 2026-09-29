@@ -1,3 +1,5 @@
+import type { ViewAsSettings } from "./view-as";
+
 export type WorkspaceRole = {
   id: string;
   code: string;
@@ -54,6 +56,8 @@ export type MembersPageData = {
   roles: WorkspaceRole[];
   teams: Array<{ id: string; name: string; roleIds?: string[] }>;
   workspaceId: string;
+  /** "View as" a person (owners and administrators): whether it is offered, and its notice setting. */
+  viewAs?: { canViewAs: boolean; mfaEnabled: boolean; settings: ViewAsSettings | null; viewerIsOwner: boolean };
 };
 
 export function memberAccessCapabilities(

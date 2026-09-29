@@ -18,6 +18,8 @@ import {
   type WorkspacePermissionDefinition,
 } from "@/lib/workspace/roles-permissions";
 import styles from "./roles-permissions-page.module.css";
+import type { ViewAsTarget } from "@/lib/workspace/view-as";
+import { ViewAsDialog } from "./view-as-dialog";
 
 const SYSTEM_ROLE_ORDER: Record<string, number> = { owner: 0, administrator: 1, member: 2, viewer: 3 };
 const PEOPLE_HREF = "/workspace/members";
@@ -64,6 +66,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   const t = useT();
   const baseId = useId();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<ViewAsTarget | null>(null);
   const initialRoles = useMemo(() => sortRoles(initialData.roles), [initialData.roles]);
   const sections = useMemo(() => permissionSections(initialData.permissions, t), [initialData.permissions, t]);
   const membersByRole = useMemo(() => {
@@ -238,12 +241,16 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
     </AvatarGroup>;
   };
 
+  // Preview a role before inviting someone to it: read-only, 15 minutes, audited. Only an owner previews Owner.
+  const canPreview = Boolean(initialData.viewAs?.canViewAs) && (initialData.viewAs?.viewerIsOwner || selectedRole.code !== "owner");
   const roleActions = [
     ...(isEditable ? [{ id: "edit", label: t("Edit details") }] : []),
     ...(initialData.canCreate ? [{ id: "duplicate", label: t("Duplicate") }] : []),
+    ...(canPreview ? [{ id: "preview", label: t("Preview as {role}", { role: selectedRole.name }) }] : []),
     ...(canDelete ? [{ id: "delete", label: t("Delete"), tone: "danger" as const }] : []),
   ];
   const onRoleAction = (action: string) => {
+    if (action === "preview") setPreviewTarget({ kind: "role", roleId: selectedRole.id, name: selectedRole.name });
     if (action === "edit") setDialog({ mode: "edit", role: selectedRole });
     if (action === "duplicate") setDialog({ mode: "duplicate", role: selectedRole });
     if (action === "delete") { if (assignedCount > 0) setBlockedRole(selectedRole); else setDeletingRole(selectedRole); }
@@ -392,6 +399,8 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
         {isEditable ? <SaveBar isDirty={changeCount > 0} isSaving={saving} message={changeCount === 1 ? t("1 change") : t("{count} changes", { count: changeCount })}
           onDiscard={resetChanges} onSave={() => void saveChanges()} /> : null}
       </SettingsPage>
+
+      <ViewAsDialog mfaEnabled={Boolean(initialData.viewAs?.mfaEnabled)} onClose={() => setPreviewTarget(null)} target={previewTarget} workspaceId={initialData.workspaceId} />
 
       <RoleDialog
         initialData={initialData}

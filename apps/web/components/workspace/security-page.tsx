@@ -7,6 +7,7 @@ import { Copy, KeyRound, ShieldCheck } from "lucide-react";
 import { Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DataGrid, DesignSystemProvider, OtpInput, SettingsPage, SettingsRow, SettingsSection, TextInput, formatDate, useDesignSystem, type DataGridColumn } from "@/design-system";
 import type { Translate } from "@/lib/i18n/keys";
 import type { MfaSecurityStatus, SecurityPageData, SecuritySession } from "@/lib/workspace/security";
+import type { ViewAsActivity } from "@/lib/workspace/view-as";
 import { deviceDetails } from "@/lib/auth/device-details";
 import styles from "./security-page.module.css";
 
@@ -38,7 +39,7 @@ async function mfaRequest(t: Translate, action: string, workspaceId: string, cod
   return payload ?? {};
 }
 
-export function SecurityPage({ initialData }: { initialData: SecurityPageData }) {
+export function SecurityPage({ initialData, viewAsActivity = [] }: { initialData: SecurityPageData; viewAsActivity?: ViewAsActivity[] }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const dateFormat = { locale, timeZone };
@@ -215,6 +216,12 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
     { id: "action", header: t("Status / action"), size: 145, enableSorting: false, cell: ({ row }) => row.original.current ? <Badge tone="success">{t("This device")}</Badge> : <Button aria-label={t("Sign out {session}", { session: sessionLabel(row.original, t) })} isDisabled={working} onPress={() => setSelectedSession(row.original)} size="compact" variant="quiet">{t("Sign out")}</Button> },
   ];
 
+  const activityColumns: DataGridColumn<ViewAsActivity>[] = [
+    { accessorKey: "viewerName", header: t("Who"), size: 220, meta: { primary: true } },
+    { id: "when", accessorFn: (view) => view.startedAt, header: t("When"), size: 185, cell: ({ row }) => <time dateTime={row.original.startedAt}>{formatDate(row.original.startedAt, dateFormat, { dateStyle: "medium", timeStyle: "short" })}</time> },
+    { id: "length", accessorFn: (view) => view.minutes ?? 0, header: t("How long"), size: 130, cell: ({ row }) => row.original.open ? <Badge tone="warning">{t("Now")}</Badge> : t("{count} min", { count: row.original.minutes ?? 1 }) },
+  ];
+
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
     <SettingsPage aria-label={t("Account security")} title={t("Sign-in security")}>
       {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
@@ -234,6 +241,11 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
 
       <SettingsSection id="sessions" title={t("Active sessions")}>
         <DataGrid ariaLabel={t("Active sessions")} gridLines columns={sessionColumns} data={sessions} getRowId={(session) => session.familyId} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} emptyTitle={t("No active sessions")} emptyDescription={t("Signed-in browsers and devices will appear here.")} />
+      </SettingsSection>
+
+      {/* Every time an owner or administrator viewed the workspace as you. Always on. */}
+      <SettingsSection id="activity" title={t("Activity")}>
+        <DataGrid ariaLabel={t("Viewed as you")} gridLines columns={activityColumns} data={viewAsActivity} getRowId={(view) => view.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} emptyTitle={t("Nobody has viewed as you")} />
       </SettingsSection>
     </SettingsPage>
 
