@@ -28,6 +28,7 @@ import {
   financeGatePaymentsReady,
   materialApprovalsComplete,
   palmMaterialListSignedOff,
+  requestBlocksRelease,
 } from "@/lib/commercial/release";
 import type { CommercialState, ChangeRequest, ControlledChangeKind, MaterialApproval } from "@/lib/commercial/types";
 import { availableContractLines, changeKinds } from "@/lib/commercial/change-cases";
@@ -817,9 +818,7 @@ export function ApprovalRelease({
     },
     {
       label: "Change requests resolved",
-      done: d.requests.every((r) =>
-        ["resolved", "declined", "withdrawn"].includes(r.status),
-      ),
+      done: !d.requests.some(requestBlocksRelease),
       href: "variations",
     },
   ];
