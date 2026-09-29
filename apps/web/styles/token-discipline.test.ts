@@ -13,9 +13,8 @@ const files = execSync("git ls-files 'app/**/*.css' 'components/**/*.css' 'desig
 // Raw hex colours bypass themes (dark mode, tenant brand). Lower this number as modules are rebuilt; never raise it.
 const RAW_HEX_CEILING = 386;
 
-// Native checkboxes and radios miss the shared box, hit area, focus ring and indeterminate state
-// (Checkbox, RadioSet, Switch). Lower this number as modules are rebuilt; never raise it.
-const RAW_CHOICE_CEILING = 28;
+// Native checkboxes and radios miss the shared box, hit area, focus ring and indeterminate state:
+// every choice is a Checkbox, RadioSet or Switch.
 const views = execSync("git ls-files 'app/**/*.tsx' 'components/**/*.tsx' 'design-system/**/*.tsx'", { encoding: "utf8" })
   .split("\n").filter((file) => file && !/\.(test|stories)\.tsx$/.test(file) && existsSync(file));
 
@@ -33,8 +32,8 @@ describe("design token discipline", () => {
     expect(count).toBeLessThanOrEqual(RAW_HEX_CEILING);
   });
 
-  it("does not add native checkboxes or radios", () => {
-    const count = views.reduce((sum, file) => sum + (readFileSync(file, "utf8").match(/type=["'](?:checkbox|radio)["']/g)?.length ?? 0), 0);
-    expect(count, "use Checkbox, RadioSet or Switch from @/design-system").toBeLessThanOrEqual(RAW_CHOICE_CEILING);
+  it("has no native checkboxes or radios", () => {
+    const offenders = views.filter((file) => /type=["'](?:checkbox|radio)["']/.test(readFileSync(file, "utf8")));
+    expect(offenders, "use Checkbox, RadioSet or Switch from @/design-system").toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useState } from "react";
+import { Checkbox } from "@/design-system";
 import { QuotationItemMaterials } from "./quotation-item-materials";
 import { Check, Link2, Package, Pencil, Plus, X } from "lucide-react";
 import {
@@ -379,15 +380,14 @@ export function QuotationMaterialsEditor(props: {
                 }
               />
             </label>
-            <label className={q.check}>
-              <input
-                type="checkbox"
-                checked={custom.suppliedByClient}
-                onChange={(e) =>
-                  setCustom({ ...custom, suppliedByClient: e.target.checked })
-                }
-              />
-              {t("Supplied by the client")}</label>
+            <Checkbox
+              isSelected={custom.suppliedByClient}
+              onChange={(suppliedByClient) =>
+                setCustom({ ...custom, suppliedByClient })
+              }
+            >
+              {t("Supplied by the client")}
+            </Checkbox>
             <div className={q.sourceOptions}>
               <button
                 type="button"

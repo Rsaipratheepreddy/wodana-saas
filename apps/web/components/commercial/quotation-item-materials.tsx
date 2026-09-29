@@ -1,6 +1,7 @@
 "use client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useState } from "react";
+import { Checkbox } from "@/design-system";
 import { Pencil, Plus, X } from "lucide-react";
 import type { QuoteLine, QuotationMaterial } from "@/lib/commercial/types";
 import {
@@ -340,18 +341,14 @@ export function QuotationItemMaterials({
                     }
                   />
                 </label>
-                <label className={d.check}>
-                  <input
-                    type="checkbox"
-                    checked={custom.suppliedByClient}
-                    onChange={(e) =>
-                      setCustom({
-                        ...custom,
-                        suppliedByClient: e.target.checked,
-                      })
-                    }
-                  />
-                  {t("Supplied by the client")}</label>
+                <Checkbox
+                  isSelected={custom.suppliedByClient}
+                  onChange={(suppliedByClient) =>
+                    setCustom({ ...custom, suppliedByClient })
+                  }
+                >
+                  {t("Supplied by the client")}
+                </Checkbox>
               </section>
               <p className={d.hint}>{t("Saved in this quotation only.")}</p>
               <button
