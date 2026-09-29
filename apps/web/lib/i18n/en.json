@@ -11687,5 +11687,6 @@
   "Delete draft": "Delete draft",
   "Draft deleted.": "Draft deleted.",
   "The draft could not be deleted.": "The draft could not be deleted.",
-  "Delete the draft {title}": "Delete the draft {title}"
+  "Delete the draft {title}": "Delete the draft {title}",
+  "Not the workspace week": "Not the workspace week"
 }
