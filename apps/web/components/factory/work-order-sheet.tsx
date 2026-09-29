@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Badge, Button, ErrorState, InlineNotice, InspectorSheet, MenuButton, Skeleton, StageTracker, Tabs, type WorkflowStage } from "@/design-system";
+import { Badge, Button, EditableField, ErrorState, InlineNotice, InspectorSheet, MenuButton, Skeleton, StageTracker, Tabs, type WorkflowStage } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
 import type { ReleaseCheck, WorkOrderState } from "@/lib/factory/types";
@@ -58,8 +58,18 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
       return false;
     } finally { setBusy(false); }
   };
+  /** One in-place edit of where and when: the new work order comes back, or the reason goes to the field. */
+  const update = async (input: Record<string, unknown>) => {
+    if (!state) return;
+    try { setState(await api.command(orderId, "update", { version: state.order.version, ...input })); onChanged(); }
+    catch (cause) {
+      if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
+      throw cause;
+    }
+  };
   const order = state?.order;
-  const unit = (value: string | null | undefined) => `${quantityText(value ?? "0") || "0"} ${order?.unit ?? ""}`.trim();
+  const schedulable = Boolean(state?.canManage && order && ["planned", "released", "on_hold"].includes(order.status));
+  const unit =(value: string | null | undefined) => `${quantityText(value ?? "0") || "0"} ${order?.unit ?? ""}`.trim();
   const open = order ? ["planned", "released", "in_production", "on_hold"].includes(order.status) : false;
   const failing = state?.releaseChecks.filter((check) => !check.passed) ?? [];
   const pendingReports = state?.reports.filter((report) => report.status === "pending") ?? [];
@@ -171,12 +181,15 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
     </Section> : null}
     <dl className={styles.facts}>
       <div><dt>{t("Makes")}</dt><dd>{[unit(order.quantity), order.packageName, order.specification].filter(Boolean).join(" · ")}</dd></div>
-      <div><dt>{t("Where and when")}</dt><dd>
-        <span>{[order.workcenterName, [format.day(order.plannedStart), format.day(order.plannedEnd)].filter(Boolean).join(" – "),
-          order.plannedHours ? t("{hours} h", { hours: Number(order.plannedHours) }) : "", order.batchName ? t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName }) : ""]
-          .filter(Boolean).join(" · ") || "—"}</span>
-        {state.canManage && ["planned", "released", "on_hold"].includes(order.status) ? <Button size="compact" variant="quiet" onPress={() => setDialog("schedule")}>{t("Change")}</Button> : null}
-      </dd></div>
+      <EditableField canEdit={schedulable} display={order.workcenterName || undefined} items={state.workcenters.filter((center) => center.active || center.id === order.workcenterId).map((center) => ({ id: center.id, label: center.name }))}
+        kind="select" label={t("Workcenter")} onReload={() => void load()} onSave={(workcenterId) => update({ workcenterId: workcenterId || null })} value={order.workcenterId ?? ""} />
+      <EditableField canEdit={schedulable} display={order.plannedStart ? format.day(order.plannedStart) : undefined} kind="date" label={t("Start")} onReload={() => void load()}
+        onSave={(plannedStart) => update({ plannedStart: plannedStart || null })} validate={(start) => start && order.plannedEnd && order.plannedEnd < start ? t("The finish can't be before the start.") : null} value={order.plannedStart ?? ""} />
+      <EditableField canEdit={schedulable} display={order.plannedEnd ? format.day(order.plannedEnd) : undefined} kind="date" label={t("Finish")} onReload={() => void load()}
+        onSave={(plannedEnd) => update({ plannedEnd: plannedEnd || null })} validate={(end) => end && order.plannedStart && end < order.plannedStart ? t("The finish can't be before the start.") : null} value={order.plannedEnd ?? ""} />
+      <EditableField canEdit={schedulable} display={order.plannedHours ? t("{hours} h", { hours: Number(order.plannedHours) }) : undefined} label={t("Hours it takes")} onReload={() => void load()}
+        onSave={(hours) => update({ plannedHours: hours || null })} validate={(hours) => hours && (!/^\d+(\.\d{1,2})?$/.test(hours) || Number(hours) <= 0) ? t("Enter the hours as a number, like 6 or 7.5.") : null} value={order.plannedHours ? quantityText(order.plannedHours) : ""} />
+      {order.batchName ? <div><dt>{t("Batch")}</dt><dd>{t("Batch {number}: {name}", { number: order.batchNumber ?? 0, name: order.batchName })}</dd></div> : null}
       <div><dt>{t("Drawing")}</dt><dd>
         <span>{order.drawingApprovedAt ? t("{reference}, approved by {name} on {date}", { reference: order.drawingRef, name: order.drawingApprovedByName ?? "", date: format.when(order.drawingApprovedAt) })
           : t("Not approved yet")}</span>
@@ -184,7 +197,8 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
         {state.canManage && ["planned", "on_hold"].includes(order.status) && !failing.some((check) => check.key === "drawing") ? <Button size="compact" variant="quiet" onPress={() => setDialog(order.status === "on_hold" && order.drawingApprovedAt ? "revise" : "drawing")}>
           {order.drawingApprovedAt ? t("Change") : t("Record approval")}</Button> : null}
       </dd></div>
-      {order.notes ? <div><dt>{t("Notes")}</dt><dd>{order.notes}</dd></div> : null}
+      {schedulable || order.notes ? <EditableField canEdit={schedulable} kind="multiline" label={t("Notes")} maxLength={2000} onReload={() => void load()}
+        onSave={(notes) => update({ notes })} value={order.notes ?? ""} /> : null}
     </dl>
     <WorkOrderMaterials state={state} run={run} busy={busy} />
     {state.operations.length ? <Section title={t("Done outside")}>

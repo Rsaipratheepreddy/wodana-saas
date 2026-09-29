@@ -30,6 +30,10 @@ export class MembershipSummaryResponseDto {
   @ApiPropertyOptional({ example: "en-AE", type: String, nullable: true }) workspaceLocale!: string | null;
   @ApiPropertyOptional({ example: "AED", type: String, nullable: true }) workspaceCurrency!: string | null;
   @ApiPropertyOptional({ example: "Asia/Dubai", type: String, nullable: true }) workspaceTimezone!: string | null;
+  @ApiProperty({ type: [Number], example: [1, 2, 3, 4, 5], description: "Worked days of the week (0 = Sunday): the work calendar, else the region pack" })
+  workspaceWorkingDays!: number[];
+  @ApiProperty({ type: [String], example: ["2026-12-02"], description: "Days off (YYYY-MM-DD) from yesterday to about a year ahead" })
+  workspaceHolidays!: string[];
   @ApiPropertyOptional({ type: String, format: "uuid", nullable: true }) accountId!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) accountName!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true, enum: ["owner", "administrator", "member"] })

@@ -272,6 +272,8 @@ export type LeadsPageData = {
   canManagePipelines?: boolean;
   /** Whether the signed-in member may give enquiries to other people (routing and owning one's own need no more). */
   canAssign?: boolean;
+  /** May change an enquiry's details (crm.leads.manage); unknown (older pages) counts as yes, the server decides. */
+  canEdit?: boolean;
   /** Whether the signed-in member manages Sales settings (the Sales admin and escalation rules). */
   canManageSales?: boolean;
   leadOptions?: LeadOptions;

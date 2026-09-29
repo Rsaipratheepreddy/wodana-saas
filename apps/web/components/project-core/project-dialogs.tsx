@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, Checkbox, ControlledModalDialog, DateField, TextAreaField, TextInput } from "@/design-system";
+import { Button, Checkbox, ControlledModalDialog, DateField, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import styles from "./project-core.module.css";
 
@@ -56,13 +56,3 @@ export function DatesDialog({ startDate, promiseDate, onClose, onSave }: { start
   </ControlledModalDialog>;
 }
 
-export function RenameDialog({ name, onClose, onSave }: { name: string; onClose: () => void; onSave: (name: string) => Promise<void> }) {
-  const t = useT();
-  const [value, setValue] = useState(name);
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Rename")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!value.trim()} onPress={async () => { setBusy(true); await onSave(value.trim()); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <TextInput label={t("Project name")} value={value} onChange={setValue} isRequired autoFocus />
-  </ControlledModalDialog>;
-}

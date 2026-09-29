@@ -995,12 +995,6 @@
 .wd-native-field > input:focus-visible { outline: 0; border-color: var(--wd-brand-600); box-shadow: var(--wd-focus); }
 .wd-character-count { color: var(--wd-muted); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
 .wd-character-count[data-over="true"] { color: var(--wd-danger); }
-.wd-inline-edit { min-block-size: 2rem; display: inline-flex; align-items: center; gap: var(--wd-space-2); border: 0; border-radius: var(--wd-radius-xs); padding-inline: var(--wd-space-2); background: transparent; color: inherit; font: inherit; cursor: text; }
-.wd-inline-edit:hover { background: var(--wd-surface-hover); }
-.wd-inline-edit svg { opacity: 0; color: var(--wd-muted); transition: opacity var(--wd-duration-fast) var(--wd-ease-standard); }
-.wd-inline-edit:hover svg, .wd-inline-edit:focus-visible svg { opacity: 1; }
-.wd-inline-edit-input { min-block-size: 2rem; border: 1px solid var(--wd-brand-600); border-radius: var(--wd-radius-xs); padding-inline: var(--wd-space-2); background: var(--wd-surface); color: var(--wd-ink); font: inherit; box-shadow: var(--wd-focus); }
-.wd-inline-edit-input:focus { outline: 0; }
 .wd-rich-text { border: 1px solid var(--wd-line-strong); border-radius: var(--wd-radius-sm); background: var(--wd-surface); overflow: hidden; }
 .wd-rich-text > .wd-field-label { padding: var(--wd-space-2) var(--wd-space-3) 0; }
 .wd-rich-toolbar { min-block-size: 2.25rem; display: flex; align-items: center; gap: 1px; border-block: 1px solid var(--wd-line); padding-inline: var(--wd-space-2); background: var(--wd-surface-soft); }

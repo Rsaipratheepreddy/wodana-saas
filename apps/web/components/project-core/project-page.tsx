@@ -10,7 +10,7 @@ import type { ProjectSection } from "@/lib/project-core/sections";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CancelProjectDialog, ReopenProjectDialog } from "./project-close";
-import { DatesDialog, HoldDialog, RenameDialog, ResumeDialog } from "./project-dialogs";
+import { DatesDialog, HoldDialog, ResumeDialog } from "./project-dialogs";
 import { ProjectDetails } from "./project-details";
 import { ProjectHeader, useNextAction, type ProjectDialog } from "./project-header";
 import { ProjectOverview } from "./project-overview";
@@ -83,6 +83,15 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
       return false;
     }
   }, [api, detail, load, projectId, t]);
+  /** One in-place edit: the new project comes back, or the reason is thrown to the field (a clash also reloads). */
+  const save = useCallback(async (action: string, input: Record<string, unknown>) => {
+    if (!detail) return;
+    try { setDetail(await api.command(projectId, detail.project.version, action, input)); setRefresh((value) => value + 1); }
+    catch (cause) {
+      if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
+      throw cause;
+    }
+  }, [api, detail, load, projectId]);
   const next = useNextAction(detail ?? placeholder, run, (value) => setDialog(value));
 
   if (error && !detail) return <div className={styles.page}><ErrorState description={error} onRetry={() => void load()} /></div>;
@@ -90,10 +99,10 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
   const { project } = detail;
   const rights = detail.money ?? { costs: detail.canSeeMoney, margin: detail.canSeeMoney, client: detail.canSeeMoney };
   const go = (value: ProjectSection) => move(value, `/workspace/projects/${projectId}${value === "overview" ? "" : `/${value}`}`);
-  const details = <ProjectDetails detail={detail} run={run} onDialog={setDialog} />;
+  const details = <ProjectDetails detail={detail} save={save} onReload={() => void load()} onDialog={setDialog} />;
 
   return <div className={styles.page} data-details={panel.open && panel.inline ? "open" : undefined}>
-    <ProjectHeader detail={detail} next={next} detailsOpen={panel.open && panel.inline} onToggleDetails={panel.toggle} onDialog={setDialog} />
+    <ProjectHeader detail={detail} next={next} detailsOpen={panel.open && panel.inline} onToggleDetails={panel.toggle} onDialog={setDialog} onRename={(name) => save("rename", { name })} onReload={() => void load()} />
     <div className={styles.layout}>
       <div className={styles.work}>
         {notice ? <InlineNotice tone="error" message={notice} /> : null}
@@ -119,7 +128,6 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
     {dialog === "cancel" ? <CancelProjectDialog api={api} projectId={projectId} onClose={() => setDialog(null)}
       onSave={async (reason) => { if (await run("cancel", { reason })) setDialog(null); }} /> : null}
     {dialog === "reopen" ? <ReopenProjectDialog onClose={() => setDialog(null)} onSave={async (reason) => { if (await run("reopen", { reason })) setDialog(null); }} /> : null}
-    {dialog === "rename" ? <RenameDialog name={project.name} onClose={() => setDialog(null)} onSave={async (name) => { if (await run("rename", { name })) setDialog(null); }} /> : null}
   </div>;
 }
 

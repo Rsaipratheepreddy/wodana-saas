@@ -6,9 +6,11 @@ import { CircleAlert, X } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-provider";
 
 type Blocked = { fields: string[]; key: number };
-type Control = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+export type FormControl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+type Control = FormControl;
 
-const fieldName = (control: Control) => {
+/** The name a person sees for a form control: its field label, else its own label. */
+export const fieldName = (control: Control) => {
   const field = control.closest(".wd-field");
   const label = field?.querySelector(".wd-field-label")?.textContent
     ?? control.labels?.[0]?.textContent
@@ -16,6 +18,17 @@ const fieldName = (control: Control) => {
     ?? control.name;
   return (label ?? "").replace(/\s*\*\s*$/, "").replace(/\s*·\s*optional$/i, "").trim();
 };
+
+/** Takes the person to a control: the visible part of its field (a dropdown's button, not its hidden select). */
+export function focusField(control: Control) {
+  const field = control.closest(".wd-field");
+  const focusable = field?.querySelector<HTMLElement>("input:not([type=hidden]):not([aria-hidden=true]), textarea, button, [tabindex]:not([tabindex='-1'])") ?? control;
+  focusable.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  focusable.focus?.({ preventScroll: true });
+}
+
+/** Controls in document order. */
+export const inDocumentOrder = <T extends Node>(nodes: T[]) => [...nodes].sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
 
 /**
  * When the browser blocks a save because required fields are empty, tell the person which ones
@@ -31,18 +44,17 @@ export function useBlockedSaveAlert() {
     const control = event.target as Control;
     if (!("validity" in control)) return;
     event.preventDefault(); // replace the browser bubble, which is invisible on hidden dropdown inputs
+    // A shared Form names the fields to fix at its own top; it needs no second alert.
+    if (control.closest("[data-wd-error-summary]")) return;
     if (!pending.current) {
       pending.current = [];
       // A blocked submit fires one invalid event per field; collect them all before reporting.
       window.setTimeout(() => {
-        const controls = (pending.current ?? []).sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+        const controls = inDocumentOrder(pending.current ?? []);
         pending.current = null;
         if (!controls.length) return;
         setBlocked({ fields: [...new Set(controls.map(fieldName))].filter(Boolean), key: Date.now() });
-        const field = controls[0].closest(".wd-field");
-        const focusable = field?.querySelector<HTMLElement>("input:not([type=hidden]):not([aria-hidden=true]), textarea, button, [tabindex]:not([tabindex='-1'])") ?? controls[0];
-        focusable.scrollIntoView?.({ block: "center", behavior: "smooth" });
-        focusable.focus?.({ preventScroll: true });
+        focusField(controls[0]);
       }, 0);
     }
     pending.current.push(control);

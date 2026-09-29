@@ -608,7 +608,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       <SettingsPage aria-label={t("People")} title={t("People")} width="wide">
 
         {canInvite && (assignableRoles.length > 0 || assignableTeams.length > 0) ? <section aria-label={t("Invite people")} className={styles.inviteComposer}>
-          <Form className={styles.quickInviteForm} onSubmit={createQuickInvitation}>
+          <Form className={styles.quickInviteForm} fieldMarkers="none" onSubmit={createQuickInvitation}>
             <TextInput autoComplete="off" label={t("Work emails")} onChange={setQuickEmail} placeholder={t("name@company.com")} value={quickEmail} />
             <SelectField
               items={[

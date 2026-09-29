@@ -5,6 +5,14 @@ import { DatabaseService } from "../database/database.service";
 import { allowedTenantModules, MEMBER_PERMISSIONS } from "./module-access";
 import { deriveBillingAccessPolicy, effectiveEntitledModules } from "../workspaces/tenant-operations.domain";
 import { effectiveTenantPermissionCodes } from "../workspaces/tenant-access.domain";
+import { readCalendar } from "../project-core/work-calendar";
+
+/** Days off from yesterday to about a year ahead: enough for any date picked today, small enough for every request. */
+export function upcomingHolidays(holidays: string[], now = new Date()) {
+  const from = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+  const to = new Date(now.getTime() + 400 * 86_400_000).toISOString().slice(0, 10);
+  return holidays.filter((day) => day >= from && day <= to).sort();
+}
 
 export type AuthBootstrapNextAction =
   | "accept_invitation"
@@ -244,9 +252,11 @@ export class IdentityService {
              WHERE linked.workspace_id=$1`,
             [membership.workspaceId],
           );
+          // The working week for dates people pick (the next working day): the work calendar, else the region pack.
+          const calendar = await readCalendar(client, membership.workspaceId);
           return { roles: roles.rows, permissions: permissions.rows, onboarding: onboarding.rows[0],
             entitlements: entitlements.rows[0] ?? null,
-            billingAccess: deriveBillingAccessPolicy(billing.rows[0] ?? {}) };
+            billingAccess: deriveBillingAccessPolicy(billing.rows[0] ?? {}), calendar };
         },
       );
       withRoles.push({
@@ -264,6 +274,8 @@ export class IdentityService {
         workspaceLocale: membership.workspaceLocale,
         workspaceCurrency: membership.workspaceCurrency,
         workspaceTimezone: membership.workspaceTimezone,
+        workspaceWorkingDays: tenantAccess.calendar.workingDays,
+        workspaceHolidays: upcomingHolidays(tenantAccess.calendar.holidays),
         accountId: membership.accountId,
         accountName: membership.accountName,
         accountRole: membership.accountRole,

@@ -3,16 +3,16 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, CalendarDays, ChevronDown, CircleDot, Globe, Mail, MessageCircle, Phone, PhoneCall, UserRound } from "lucide-react";
-import { Button, Callout, Tabs, SelectField, TextInput } from "@/design-system";
+import { Button, Callout, EditableField, EditableFieldList, Tabs, SelectField, TextInput } from "@/design-system";
 import { leadStageLabel, leadStageOptions, salesOwnerChoices, type CrmLeadListItem, type LeadsPageData } from "@/lib/crm/leads";
-import { crmRequest, dateText, label, type RecordData } from "@/lib/crm/client";
+import { CrmRequestError, crmRequest, dateText, label, type RecordData } from "@/lib/crm/client";
 import { CrmDateTimeField } from "./crm-date-time-field";
 import { NewFollowUpDialog } from "./follow-up-editor";
 import { ActionDialog, ActivityPanel, FactList, ResourceState, useCrmResource, type ActionSpec } from "./crm-workbench";
 import { initialQualificationValues, qualificationAnswerText, qualificationFields, qualificationValues, type QualificationQuestion } from "@/lib/crm/qualification-fields";
 import { LeadAssignmentDialog } from "./lead-assignment-dialog";
 import { LeadEnquiryForm } from "./lead-enquiry-form";
-import { hasResolvedEnquiryType, leadOptionLabel, type EnquiryDetails } from "@/lib/crm/lead-options";
+import { hasResolvedEnquiryType, leadOptionLabel, type EnquiryDetails, type LeadContact } from "@/lib/crm/lead-options";
 import { formatPhoneForDisplay, phoneCountry, whatsappUrl } from "@/lib/crm/phone";
 import { customerDisplayName } from "@/lib/crm/customer-name";
 import { RecordAttachments } from "./record-attachments";
@@ -94,13 +94,36 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
     } catch (error) { setConfirmFailure(error instanceof Error ? error.message : t("The client could not be confirmed.")); }
     finally { setConfirming(""); }
   };
+  // In place: each change sends the enquiry's details whole (as Edit details does) with the newest version this view saw.
+  const [savedVersion, setSavedVersion] = useState(0);
+  const canEdit = Boolean(detail) && initialData.canEdit !== false;
+  const text = (value: unknown) => typeof value === "string" ? value : value === null || value === undefined ? "" : String(value);
+  const saveDetails = async (change: { serviceType?: string; summary?: string; party?: Partial<LeadContact>; details?: Partial<EnquiryDetails> }) => {
+    const party = { ...contact, displayName: text(enquiry?.partyName ?? lead.partyName), email: text(enquiry?.primaryEmail ?? contact.email), phone: text(enquiry?.primaryPhone ?? contact.phone), mobile: text(enquiry?.primaryMobile ?? contact.mobile), ...change.party };
+    const details = Object.fromEntries((["emirate", "area", "location", "customerType", "budgetRange", "campaign", "internalNotes"] as const).map((key) => [key, text(change.details && key in change.details ? change.details[key] : enquiryDetails[key])]));
+    try {
+      const result = await crmRequest<RecordData>(workspaceId, `leads/${lead.id}/details`, "PATCH", {
+        version: Math.max(Number(version ?? 0), savedVersion), serviceType: change.serviceType ?? text(enquiry?.serviceType ?? lead.serviceType), summary: change.summary ?? text(enquiry?.summary), party, details });
+      if (result?.version) setSavedVersion(Number(result.version));
+      await saved();
+    } catch (cause) {
+      if (cause instanceof CrmRequestError && cause.status === 409) resource.refresh();
+      throw cause;
+    }
+  };
+  const options = initialData.leadOptions;
+  const areaOptions = options?.areas?.[enquiryDetails.emirate ?? ""] ?? [];
+  const regionLabel = t(administrativeAreaLabel(countryFromLocale(initialData.defaultLocale)) as never);
+  const withCurrent = (items: Array<{ id: string; label: string }> | undefined, current: string | undefined) => items?.some((item) => item.id === current) || !current ? items ?? [] : [...(items ?? []), { id: current, label: current.replaceAll("_", " ") }];
+  const phoneText = (value: unknown, country?: string) => text(value) ? formatPhoneForDisplay(text(value), phoneCountry(country ?? contact.phoneCountryCode, initialData.defaultLocale)) : undefined;
   const enquiryReference = String(enquiry?.reference ?? lead.reference ?? "").trim();
   const enquiryTitle = String(enquiry?.title ?? lead.title ?? "").trim();
   const showEnquiryTitle = Boolean(enquiryTitle && enquiryTitle !== enquiryReference && enquiryTitle.toLowerCase() !== "enquiry");
   return <div className={`${styles.workbench} ${styles.enquiryDetail}`} data-tour="enquiry-detail">
     <ResourceState {...resource} retry={resource.refresh} />
     <header className={styles.recordHeader}>
-      <div className={styles.enquiryIdentity}>{enquiryReference && <span className={styles.enquiryReference}>{enquiryReference}</span>}<h2>{customerDisplayName(lead.partyName)}</h2>{showEnquiryTitle && <p>{enquiryTitle}</p>}<RespondByChip lead={live as { slaStatus?: string | null; slaDueAt?: string | null; slaWarningAt?: string | null }} now={now} /></div>
+      <div className={styles.enquiryIdentity}>{enquiryReference && <span className={styles.enquiryReference}>{enquiryReference}</span>}<EditableField canEdit={canEdit} display={customerDisplayName(text(enquiry?.partyName ?? lead.partyName))} heading="h2" isRequired label={t("Customer name")} maxLength={240} onReload={resource.refresh}
+        onSave={(displayName) => saveDetails({ party: { displayName } })} value={text(enquiry?.partyName ?? lead.partyName)} />{showEnquiryTitle && <p>{enquiryTitle}</p>}<RespondByChip lead={live as { slaStatus?: string | null; slaDueAt?: string | null; slaWarningAt?: string | null }} now={now} /></div>
       <div className={styles.recordActions}>
         {active && !live.isConverted ? <Button size="compact" variant="primary" isDisabled={!detail} onPress={() => setContacting(true)}><PhoneCall size={14} aria-hidden="true" />{t("Log contact")}</Button> : null}
         <Button size="compact" isDisabled={!detail} onPress={() => setEditing(true)}>{t("Edit details")}</Button>
@@ -120,26 +143,41 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
       <div><dt><Globe size={14} aria-hidden="true" />{t("Source")}</dt><dd>{leadOptionLabel(initialData.leadOptions?.sources, String(enquiry?.source ?? lead.source))}</dd></div>
     </dl>
     {stageEditing && <InlineStageEditor key={`${lead.id}-${version}-${selectedStage}`} initialStage={selectedStage} lead={live} workspaceId={workspaceId} onCancel={() => { setStageEditing(false); setSelectedStage(""); }} onSaved={async () => { await onChanged(); resource.refresh(); setActivityRevision(value => value + 1); setStageEditing(false); setSelectedStage(""); }} />}
-    {enquiry?.summary ? <section className={styles.requestSummary}><small>{t("Project description")}</small><p>{String(enquiry.summary)}</p></section> : null}
+    {enquiry?.summary || canEdit ? <section className={styles.requestSummary}><EditableFieldList layout="stacked"><EditableField canEdit={canEdit} kind="multiline" label={t("Project description")} maxLength={10000} onReload={resource.refresh}
+      onSave={(summary) => saveDetails({ summary })} placeholder={t("What would the customer like to do?")} value={text(enquiry?.summary)} /></EditableFieldList></section> : null}
     <div className={styles.enquiryColumns}><main><Tabs defaultSelectedKey="details" items={[
       { id: "details", label: t("Details"), panel: <div className={styles.stack}>
-        <FactList facts={[
-          [t("Enquiry type"), leadOptionLabel(initialData.leadOptions?.enquiryTypes, String(enquiry?.serviceType ?? lead.serviceType ?? ""))],
-          [t("Sales team"), initialData.queues.find(q => q.id === live.queueId)?.name ?? t("Not assigned")],
-          ...(live.ownershipDueAt ? [[t("Reassign if no call or note"), dateText(live.ownershipDueAt)] as [string, string]] : []),
-          [t("Mobile"), formatPhoneForDisplay(String(enquiry?.primaryMobile ?? contact.mobile ?? ""), phoneCountry(contact.mobileCountryCode ?? contact.phoneCountryCode, initialData.defaultLocale))],
-          [t("Phone"), formatPhoneForDisplay(String(enquiry?.primaryPhone ?? contact.phone ?? ""), defaultCountry)],
-          ...(shownField("email") ? [[t("Email"), String(enquiry?.primaryEmail ?? contact.email ?? t("Not provided"))] as [string, string]] : []),
-          ...(initialData.leadOptions?.emirates.length || enquiryDetails.emirate ? [[t(administrativeAreaLabel(countryFromLocale(initialData.defaultLocale)) as never), leadOptionLabel(initialData.leadOptions?.emirates, enquiryDetails.emirate)] as [string, string]] : []),
-          ...(shownField("area") ? [[t("Area"), initialData.leadOptions?.areas?.[enquiryDetails.emirate ?? ""]?.find(item => item.id === enquiryDetails.area)?.label ?? enquiryDetails.area ?? enquiryDetails.location ?? t("Not provided")] as [string, string]] : []),
-          ...(shownField("budgetRange") ? [[t("Budget range"), leadOptionLabel(initialData.leadOptions?.budgetRanges, enquiryDetails.budgetRange)] as [string, string]] : []),
-          ...(shownField("customerType") && enquiryDetails.customerType ? [[t("Customer type"), leadOptionLabel(initialData.leadOptions?.customerTypes, enquiryDetails.customerType)] as [string,string]] : []),
-          ...ownFields.map((field) => [field.label, customValueText(lead.customFields?.[field.custom!.id])] as [string, string]),
-          ...([[t("Company"), contact.company], [t("Job position"), contact.jobPosition], [t("Website"), contact.website], [t("Address"), contact.address], [t("Campaign"), enquiryDetails.campaign]] as [string,string | undefined][]).filter((pair): pair is [string,string] => Boolean(pair[1])),
-          [t("Created"), dateText(live.createdAt)], [t("Last updated"), dateText(live.updatedAt)],
-          ...configuredFields.filter(field => answers[field.key] !== undefined).map(field => [field.label, qualificationAnswerText(answers[field.key])] as [string,string]),
-        ]} />
-        {enquiryDetails.internalNotes ? <div><h4>{t("Internal notes")}</h4><p style={{ whiteSpace: "pre-wrap" }}>{enquiryDetails.internalNotes}</p></div> : null}
+        <dl aria-label={t("Record details")} className={styles.properties}>
+          <EditableField canEdit={canEdit} display={leadOptionLabel(options?.enquiryTypes, text(enquiry?.serviceType ?? lead.serviceType))} items={withCurrent(options?.enquiryTypes, text(enquiry?.serviceType ?? lead.serviceType))} kind="select" label={t("Enquiry type")}
+            onReload={resource.refresh} onSave={(serviceType) => saveDetails({ serviceType })} value={text(enquiry?.serviceType ?? lead.serviceType)} />
+          <div><dt>{t("Sales team")}</dt><dd>{initialData.queues.find(q => q.id === live.queueId)?.name ?? t("Not assigned")}</dd></div>
+          {live.ownershipDueAt ? <div><dt>{t("Reassign if no call or note")}</dt><dd>{dateText(live.ownershipDueAt)}</dd></div> : null}
+          <EditableField canEdit={canEdit} countryCode={text(contact.mobileCountryCode ?? contact.phoneCountryCode)} display={phoneText(enquiry?.primaryMobile ?? contact.mobile, contact.mobileCountryCode ?? contact.phoneCountryCode)} isRequired kind="phone" label={t("Mobile")}
+            onReload={resource.refresh} onSave={(mobile, { countryCode }) => saveDetails({ party: { mobile, ...(countryCode ? { mobileCountryCode: countryCode } : {}) } })} value={text(enquiry?.primaryMobile ?? contact.mobile)} />
+          <EditableField canEdit={canEdit} countryCode={text(contact.phoneCountryCode)} display={phoneText(enquiry?.primaryPhone ?? contact.phone)} kind="phone" label={t("Phone")} placeholder={t("Not provided")}
+            onReload={resource.refresh} onSave={(phone, { countryCode }) => saveDetails({ party: { phone, ...(countryCode ? { phoneCountryCode: countryCode } : {}) } })} value={text(enquiry?.primaryPhone ?? contact.phone)} />
+          {shownField("email") ? <EditableField canEdit={canEdit} kind="email" label={t("Email")} maxLength={320} onReload={resource.refresh} onSave={(email) => saveDetails({ party: { email } })} placeholder={t("Not provided")} value={text(enquiry?.primaryEmail ?? contact.email)} /> : null}
+          {options?.emirates.length || enquiryDetails.emirate ? <EditableField canEdit={canEdit && Boolean(options?.emirates.length)} display={leadOptionLabel(options?.emirates, enquiryDetails.emirate)} isRequired items={withCurrent(options?.emirates, enquiryDetails.emirate)} kind="select" label={regionLabel}
+            onReload={resource.refresh} onSave={(emirate) => saveDetails({ details: { emirate, area: "" } })} value={text(enquiryDetails.emirate)} /> : null}
+          {shownField("area") ? areaOptions.length
+            ? <EditableField canEdit={canEdit} display={areaOptions.find(item => item.id === enquiryDetails.area)?.label ?? enquiryDetails.area ?? enquiryDetails.location} items={[{ id: "", label: t("Not specified") }, ...withCurrent(areaOptions, enquiryDetails.area)]} kind="select" label={t("Area")}
+              onReload={resource.refresh} onSave={(area) => saveDetails({ details: { area } })} placeholder={t("Not provided")} value={text(enquiryDetails.area)} />
+            : <EditableField canEdit={canEdit} display={enquiryDetails.area || enquiryDetails.location || undefined} label={t("Area")} maxLength={240} onReload={resource.refresh} onSave={(area) => saveDetails({ details: { area } })} placeholder={t("Not provided")} value={text(enquiryDetails.area)} /> : null}
+          {shownField("budgetRange") ? <EditableField canEdit={canEdit} display={enquiryDetails.budgetRange ? leadOptionLabel(options?.budgetRanges, enquiryDetails.budgetRange) : undefined} items={[{ id: "", label: t("Not provided") }, ...withCurrent(options?.budgetRanges, enquiryDetails.budgetRange)]} kind="select" label={t("Budget range")}
+            onReload={resource.refresh} onSave={(budgetRange) => saveDetails({ details: { budgetRange } })} placeholder={t("Not provided")} value={text(enquiryDetails.budgetRange)} /> : null}
+          {shownField("customerType") && (options?.customerTypes.length || enquiryDetails.customerType) ? <EditableField canEdit={canEdit && Boolean(options?.customerTypes.length)} display={enquiryDetails.customerType ? leadOptionLabel(options?.customerTypes, enquiryDetails.customerType) : undefined} items={withCurrent(options?.customerTypes, enquiryDetails.customerType)} kind="select" label={t("Customer type")}
+            onReload={resource.refresh} onSave={(customerType) => saveDetails({ details: { customerType } })} value={text(enquiryDetails.customerType)} /> : null}
+          {ownFields.map((field) => <div key={field.custom!.id}><dt>{field.label}</dt><dd>{customValueText(lead.customFields?.[field.custom!.id])}</dd></div>)}
+          <EditableField canEdit={canEdit} label={t("Company")} maxLength={240} onReload={resource.refresh} onSave={(company) => saveDetails({ party: { company } })} placeholder={t("Not provided")} value={text(contact.company)} />
+          <EditableField canEdit={canEdit} label={t("Job position")} maxLength={160} onReload={resource.refresh} onSave={(jobPosition) => saveDetails({ party: { jobPosition } })} placeholder={t("Not provided")} value={text(contact.jobPosition)} />
+          <EditableField canEdit={canEdit} kind="url" label={t("Website")} maxLength={255} onReload={resource.refresh} onSave={(website) => saveDetails({ party: { website } })} placeholder={t("Not provided")} value={text(contact.website)} />
+          <EditableField canEdit={canEdit} label={t("Address")} maxLength={500} onReload={resource.refresh} onSave={(address) => saveDetails({ party: { address } })} placeholder={t("Not provided")} value={text(contact.address)} />
+          <EditableField canEdit={canEdit} label={t("Campaign")} maxLength={160} onReload={resource.refresh} onSave={(campaign) => saveDetails({ details: { campaign } })} placeholder={t("Not provided")} value={text(enquiryDetails.campaign)} />
+          <div><dt>{t("Created")}</dt><dd>{dateText(live.createdAt)}</dd></div>
+          <div><dt>{t("Last updated")}</dt><dd>{dateText(live.updatedAt)}</dd></div>
+          {configuredFields.filter(field => answers[field.key] !== undefined).map(field => <div key={field.key}><dt>{field.label}</dt><dd>{qualificationAnswerText(answers[field.key])}</dd></div>)}
+          <EditableField canEdit={canEdit} kind="multiline" label={t("Internal notes")} maxLength={10000} onReload={resource.refresh} onSave={(internalNotes) => saveDetails({ details: { internalNotes } })} placeholder={t("Not provided")} value={text(enquiryDetails.internalNotes)} />
+        </dl>
         {live.disqualificationReason ? <p className={styles.notice}>{String(live.disqualificationReason)}</p> : null}
       </div> },
       { id: "response", label: t("Activity"), panel: <div className={styles.stack}>

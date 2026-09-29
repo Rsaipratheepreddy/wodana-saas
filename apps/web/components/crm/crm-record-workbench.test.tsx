@@ -71,4 +71,24 @@ describe("CRM opportunity workbench", () => {
       version: 4, stageId: "won", reason: "Signed agreement", status: "won",
     }));
   });
+  it("edits the value, owner and expected close in place with the opportunity's version", async () => {
+    const record = { id: "opportunity-4", title: "Villa renovation", version: 7, status: "open", amount: "250000.00", currencyCode: "AED", ownerMembershipId: "m1", ownerName: "Dana", partyName: "Client" };
+    vi.mocked(crmRequest).mockImplementation(async (_workspace, path, method) => {
+      if (method === "PATCH") return { ...record, version: 8 };
+      if (path === "sales-owners") return { data: [{ id: "m1", displayName: "Dana" }, { id: "m2", displayName: "Omar" }] };
+      if (path === `opportunities/${record.id}`) return record;
+      return { data: [] };
+    });
+    const user = userEvent.setup();
+    render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
+    await user.click(await screen.findByRole("button", { name: "Edit Value" }));
+    const value = screen.getByRole("textbox", { name: "Value" });
+    await user.clear(value);
+    await user.type(value, "275000{Enter}");
+    await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", `opportunities/${record.id}`, "PATCH", { version: 7, amount: 275000, currencyCode: "AED" }));
+    await user.click(await screen.findByRole("button", { name: "Edit Sales owner" }));
+    await user.click(await screen.findByRole("option", { name: "Omar" }));
+    // The next change carries the version the last save returned.
+    await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", `opportunities/${record.id}`, "PATCH", { version: 8, ownerMembershipId: "m2" }));
+  });
 });

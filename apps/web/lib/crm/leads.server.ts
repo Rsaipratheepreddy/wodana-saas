@@ -66,6 +66,7 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     currentRoles: roleVocabularyKeys(currentMembership?.roles, leadOptions?.roleKeys),
     canManagePipelines: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
     canAssign: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.leads.assign"),
+    canEdit: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.leads.manage"),
     canManageSales: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
     currentMembershipId: owners.currentMembershipId
       ?? (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,

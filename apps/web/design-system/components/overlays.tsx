@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import {
   Dialog,
   DialogTrigger,
@@ -48,7 +48,17 @@ type ControlledModalDialogProps = {
   onOpenChange: (open: boolean) => void;
   size?: "md" | "lg" | "xl";
   title: string;
+  /** Unsaved changes: Esc, the close button, a click outside and `useDialogClose()` ask before closing. */
+  isDirty?: boolean;
+  /** The changes are kept as a draft, so closing only confirms that (nothing is lost). */
+  keepsDraft?: boolean;
+  /** Keys pressed anywhere in the dialog (a shortcut that submits its form). */
+  onKeyDown?: (event: globalThis.KeyboardEvent) => void;
 };
+
+/** Closes the enclosing dialog the way its close button does (asking first when it has unsaved changes). */
+const DialogCloseContext = createContext<() => void>(() => undefined);
+export function useDialogClose() { return useContext(DialogCloseContext); }
 
 export function ModalDialog({ children, description, footer, title, trigger, ...props }: ModalDialogProps) {
   const t = useT();
@@ -76,16 +86,33 @@ function unlockPageScroll() {
   document.documentElement.style.overflow = "";
 }
 
-export function ControlledModalDialog({ children, className, description, footer, hideTitle = false, isDismissable = true, isOpen, onOpenChange, size = "md", title }: ControlledModalDialogProps) {
+export function ControlledModalDialog({ children, className, description, footer, hideTitle = false, isDirty = false, isDismissable = true, isOpen, keepsDraft = false, onKeyDown, onOpenChange, size = "md", title }: ControlledModalDialogProps) {
   const t = useT();
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
+  const [confirming, setConfirming] = useState(false);
   useEffect(() => {
     if (!isOpen) return;
     lockPageScroll();
     return unlockPageScroll;
   }, [isOpen]);
-  return <ModalOverlay {...portalTheme} dir={direction} className="wd-modal-overlay" isDismissable={isDismissable} isOpen={isOpen} onOpenChange={onOpenChange} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className={["wd-modal", className].filter(Boolean).join(" ")} data-size={size}><Dialog className="wd-dialog" aria-label={title}>{() => <><header className={hideTitle ? "wd-dialog-minimal-header" : undefined}>{hideTitle ? null : <div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div>}<IconButton aria-label={t("Close dialog")} onPress={() => onOpenChange(false)}><X size={17} /></IconButton></header><div className="wd-dialog-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay>;
+  const requestClose = useCallback(() => { if (isDirty) setConfirming(true); else onOpenChange(false); }, [isDirty, onOpenChange]);
+  const dialog = useRef<HTMLElement>(null);
+  const keyDown = useEffectEvent((event: globalThis.KeyboardEvent) => onKeyDown?.(event));
+  useEffect(() => {
+    const element = dialog.current;
+    if (!isOpen || !element) return;
+    element.addEventListener("keydown", keyDown);
+    return () => element.removeEventListener("keydown", keyDown);
+  }, [isOpen]);
+  return <DialogCloseContext.Provider value={requestClose}>
+    <ModalOverlay {...portalTheme} dir={direction} className="wd-modal-overlay" isDismissable={isDismissable} isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className={["wd-modal", className].filter(Boolean).join(" ")} data-size={size}><Dialog className="wd-dialog" aria-label={title} ref={dialog}>{() => <><header className={hideTitle ? "wd-dialog-minimal-header" : undefined}>{hideTitle ? null : <div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div>}<IconButton aria-label={t("Close dialog")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-dialog-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay>
+    {isDirty || confirming ? <ConfirmationDialog isOpen={confirming} onOpenChange={setConfirming}
+      title={keepsDraft ? t("Close this form?") : t("Discard unsaved changes?")}
+      body={keepsDraft ? t("Your changes stay here as a draft until you save or discard them.") : t("Your saved records will stay as they are. Unsaved changes will be discarded.")}
+      confirmLabel={keepsDraft ? t("Close") : t("Discard changes")} confirmVariant={keepsDraft ? "primary" : "danger"}
+      onConfirm={() => { setConfirming(false); onOpenChange(false); }} /> : null}
+  </DialogCloseContext.Provider>;
 }
 
 export function ConfirmationDialog({ body, confirmLabel, confirmVariant = "danger", isConfirming = false, isOpen, onConfirm, onOpenChange, title }: { body: ReactNode; confirmLabel: string; confirmVariant?: "primary" | "danger"; isConfirming?: boolean; isOpen: boolean; onConfirm: () => void; onOpenChange: (open: boolean) => void; title: string }) {

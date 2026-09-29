@@ -60,7 +60,7 @@ export function CommentBox({ target, api, onSent }: { target: Target; api: Porta
   };
   return <Form className={styles.form} onSubmit={(event) => { event.preventDefault(); void send(); }}>
     {error ? <InlineNotice tone="error" message={error} /> : null}
-    <TextAreaField label={t("Comment")} value={text} onChange={setText} maxLength={2000} />
+    <TextAreaField label={t("Comment")} value={text} onChange={setText} maxLength={2000} isRequired />
     <div className={styles.choices}><Button type="submit" variant="primary" isLoading={busy} isDisabled={!text.trim()}>{t("Send")}</Button></div>
   </Form>;
 }

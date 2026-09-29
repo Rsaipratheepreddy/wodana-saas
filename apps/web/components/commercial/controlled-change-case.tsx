@@ -68,7 +68,7 @@ function ChangeCaseBody({ request, state, busy, run }: {
       <p className={styles.muted}>{impact.targets.length === 1 ? t("1 affected delivery record") : impact.targets.length ? t("{count} affected delivery records", { count: impact.targets.length }) : t("No delivery records affected yet")}
         {impact.hasReportedOrCompletedWork ? ` · ${t("Reported or completed work needs explicit treatment")}` : ""}
         {impact.bookingCount ? ` · ${impact.bookingCount === 1 ? t("1 project booking to review") : t("{count} project bookings to review", { count: impact.bookingCount })}` : ""}</p>
-      {impact.targets.length > 0 && <Form className={styles.targets} onSubmit={(event) => event.preventDefault()}>{impact.targets.map((target) => {
+      {impact.targets.length > 0 && <Form className={styles.targets} fieldMarkers="none" onSubmit={(event) => event.preventDefault()}>{impact.targets.map((target) => {
         const value = dispositions.find((item) => item.targetKind === target.kind && item.targetId === target.id);
         return <div className={styles.target} key={`${target.kind}:${target.id}`}>
           <div><strong>{target.title}</strong><small>{target.kind.replaceAll("_", " ")} · {target.status}</small></div>

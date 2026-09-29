@@ -14,13 +14,18 @@ export type ImportPlan = {
   summary: { create: number; update: number; skip: number; error: number; newUnits: string[]; newCategories: string[]; newAttributes: string[] };
 };
 
+/** A refused catalog request, with its HTTP status (409: someone else changed the item first). */
+export class CatalogRequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message); this.name = "CatalogRequestError"; }
+}
+
 export async function catalogApi<T>(workspaceId: string, path: string, init?: { method?: string; body?: unknown }): Promise<T> {
   const url = `/api/workspace/catalogs/${path}${path.includes("?") ? "&" : "?"}workspaceId=${workspaceId}`;
   const response = await fetch(url, init?.body === undefined ? { method: init?.method ?? "GET" } : {
     method: init?.method ?? "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(init.body),
   });
   const payload = await response.json().catch(() => null) as { message?: string | string[] } | null;
-  if (!response.ok) throw new Error(Array.isArray(payload?.message) ? payload.message.join(". ") : payload?.message ?? "Something went wrong. Try again.");
+  if (!response.ok) throw new CatalogRequestError(Array.isArray(payload?.message) ? payload.message.join(". ") : payload?.message ?? "Something went wrong. Try again.", response.status);
   return payload as T;
 }
 

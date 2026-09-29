@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
-import { useId, useRef, useState, type ChangeEvent, type FormHTMLAttributes, type ReactNode, type Ref } from "react";
+import { useId, useMemo, useRef, useState, type ChangeEvent, type FormHTMLAttributes, type ReactNode, type Ref } from "react";
 import {
   Button as AriaButton,
   Calendar,
@@ -46,10 +46,13 @@ import {
   type SelectProps,
   type TextFieldProps,
 } from "react-aria-components";
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Minus, Paperclip, Search, Upload, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Minus, Paperclip, Plus, Search, Upload, X } from "lucide-react";
 import type { DateValue } from "@internationalized/date";
 import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provider";
 import { useReadOnlyReason } from "../foundations/read-only";
+import { DateQuickPicks } from "./date-picks";
+import { FormFieldContext, useFormFieldContext, type FormFieldMarkers } from "./form-context";
+import { useErrorSummary } from "./form-summary";
 import { Tag } from "./status";
 import { Button, IconButton } from "./actions";
 
@@ -60,8 +63,25 @@ type FieldChromeProps = {
   label: ReactNode;
 };
 
+/**
+ * Labels sit above their field. Required fields carry no asterisk: inside a `Form` the others say "Optional"
+ * (drawn by CSS from `data-optional`, so the label's text and accessible name stay the label itself).
+ */
 function FieldLabel({ label, required }: { label: ReactNode; required?: boolean }) {
-  return <Label className="wd-field-label">{label}{required ? <span aria-hidden="true"> *</span> : null}</Label>;
+  const optional = useOptionalMarker(required);
+  return <Label className="wd-field-label" data-optional={optional}>{label}</Label>;
+}
+
+function useOptionalMarker(required?: boolean) {
+  const t = useT();
+  const form = useFormFieldContext();
+  return form?.markers === "optional" && !required ? t("Optional") : undefined;
+}
+
+/** The label of a control that is not a React Aria field (a group of checkboxes, tags, a custom picker). */
+export function FieldCaption({ children, id, isRequired }: { children: ReactNode; id?: string; isRequired?: boolean }) {
+  const optional = useOptionalMarker(isRequired);
+  return <span className="wd-field-label" data-optional={optional} id={id}>{children}</span>;
 }
 
 // The error slot is always present: React Aria shows it only while the field is invalid, so a
@@ -136,19 +156,36 @@ function SelectList({ accent = "brand", description, errorMessage, items, label,
   return <Select {...props} className="wd-field" data-accent={accent} placeholder={placeholder}><FieldLabel label={label} required={props.isRequired} /><AriaButton className="wd-select-button wd-focus-frame">{prefix ? <span className="wd-select-prefix" aria-hidden="true">{prefix}</span> : null}<SelectValue className="wd-select-value">{({ isPlaceholder, selectedText }) => isPlaceholder ? placeholder : selectedText}</SelectValue><span aria-hidden="true" className="wd-select-indicator"><ChevronDown size={15} /></span></AriaButton><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" data-accent={accent} dir={direction}><ListBox items={items}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}><span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></Select>;
 }
 
-export function ComboboxField({ description, errorMessage, items, label, placeholder, prefix, ...props }: ComboBoxProps<object> & FieldChromeProps & { items: SelectItem[]; placeholder?: string; prefix?: ReactNode }) {
+const CREATE_OPTION = "__wd_create__";
+
+export type ComboboxFieldProps = ComboBoxProps<object> & FieldChromeProps & {
+  items: SelectItem[]; placeholder?: string; prefix?: ReactNode;
+  /** Where the module allows it: typed text that matches no option offers "Create '…'", which calls this. */
+  onCreate?: (text: string) => void;
+};
+
+export function ComboboxField({ description, errorMessage, items, label, onCreate, placeholder, prefix, ...props }: ComboboxFieldProps) {
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   const t = useT();
+  const [typed, setTyped] = useState(props.defaultInputValue ?? "");
+  const text = (props.inputValue ?? typed).replace(/\s+/g, " ").trim();
+  const known = items.some((item) => item.label.toLocaleLowerCase() === text.toLocaleLowerCase());
+  const options: Array<SelectItem & { create?: true }> = onCreate && text && !known ? [...items, { id: CREATE_OPTION, label: text, create: true }] : items;
   // Opens on click with the whole list; typing filters. Focus selects the current text so typing replaces it.
   // "No matches" shows only when a real list is filtered to nothing; an empty source (still loading) stays closed.
-  return <ComboBox allowsEmptyCollection={items.length > 0} menuTrigger="focus" {...props} className="wd-field wd-combobox"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-input-group wd-focus-frame">{prefix ? <span className="wd-input-affix" data-side="start" aria-hidden="true">{prefix}</span> : null}<Input className="wd-input" onFocus={(event) => event.currentTarget.select()} placeholder={placeholder ?? t("Type to search")} /><AriaButton aria-label={t("Show options")} className="wd-input-icon-button"><ChevronDown size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" dir={direction}><ListBox items={items} renderEmptyState={() => <p className="wd-picker-empty">{t("No matches")}</p>}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}>{item.icon ? <span className="wd-option-icon" aria-hidden="true">{item.icon}</span> : null}<span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></ComboBox>;
+  return <ComboBox allowsEmptyCollection={items.length > 0} menuTrigger="focus" {...props} className="wd-field wd-combobox"
+    onInputChange={(value) => { setTyped(value); props.onInputChange?.(value); }}
+    onSelectionChange={(key) => { if (key === CREATE_OPTION) { if (text) onCreate?.(text); return; } props.onSelectionChange?.(key); }}>
+    <FieldLabel label={label} required={props.isRequired} /><Group className="wd-input-group wd-focus-frame">{prefix ? <span className="wd-input-affix" data-side="start" aria-hidden="true">{prefix}</span> : null}<Input className="wd-input" onFocus={(event) => event.currentTarget.select()} placeholder={placeholder ?? t("Type to search")} /><AriaButton aria-label={t("Show options")} className="wd-input-icon-button"><ChevronDown size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" dir={direction}><ListBox items={options} renderEmptyState={() => <p className="wd-picker-empty">{t("No matches")}</p>}>{(item) => item.create
+      ? <ListBoxItem className="wd-picker-item wd-picker-create" id={item.id} textValue={item.label}><Plus aria-hidden="true" size={14} /><span>{t("Create “{name}”", { name: item.label })}</span></ListBoxItem>
+      : <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}>{item.icon ? <span className="wd-option-icon" aria-hidden="true">{item.icon}</span> : null}<span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></ComboBox>;
 }
 
-export function MultiSelectField({ label, items, selectedKeys, onSelectionChange }: { label: string; items: SelectItem[]; selectedKeys: Set<Key>; onSelectionChange: (keys: Set<Key>) => void }) {
+export function MultiSelectField({ isDisabled, isRequired, label, items, selectedKeys, onSelectionChange }: { isDisabled?: boolean; isRequired?: boolean; label: string; items: SelectItem[]; selectedKeys: Set<Key>; onSelectionChange: (keys: Set<Key>) => void }) {
   const t = useT();
   const available = items.filter((item) => !selectedKeys.has(item.id));
-  return <div aria-label={label} className="wd-field" role="group"><span className="wd-field-label">{label}</span><div className="wd-multi-select">{items.filter((item) => selectedKeys.has(item.id)).map((item) => <Tag key={item.id} onRemove={() => { const next = new Set(selectedKeys); next.delete(item.id); onSelectionChange(next); }}>{item.label}</Tag>)}<ComboboxField aria-label={t("Add {name}", { name: label })} items={available} label={<span className="wd-visually-hidden">{t("Add {name}", { name: label })}</span>} onSelectionChange={(key) => { if (key) onSelectionChange(new Set([...selectedKeys, key])); }} placeholder={t("Add…")} /></div></div>;
+  return <div aria-label={label} className="wd-field" role="group"><FieldCaption isRequired={isRequired}>{label}</FieldCaption><div className="wd-multi-select">{items.filter((item) => selectedKeys.has(item.id)).map((item) => <Tag key={item.id} onRemove={isDisabled ? undefined : () => { const next = new Set(selectedKeys); next.delete(item.id); onSelectionChange(next); }}>{item.label}</Tag>)}{isDisabled ? null : <FormFieldContext.Provider value={null}><ComboboxField aria-label={t("Add {name}", { name: label })} items={available} label={<span className="wd-visually-hidden">{t("Add {name}", { name: label })}</span>} onSelectionChange={(key) => { if (key) onSelectionChange(new Set([...selectedKeys, key])); }} placeholder={t("Add…")} /></FormFieldContext.Provider>}</div></div>;
 }
 
 function CalendarHeader() { const t = useT(); return <header className="wd-calendar-header"><AriaButton aria-label={t("Previous month")} slot="previous"><ChevronLeft data-directional="true" size={15} /></AriaButton><Heading /><AriaButton aria-label={t("Next month")} slot="next"><ChevronRight data-directional="true" size={15} /></AriaButton></header>; }
@@ -156,18 +193,30 @@ type CalendarStart={firstDayOfWeek?:CalendarProps<DateValue>['firstDayOfWeek']};
 function CalendarBody({firstDayOfWeek}:CalendarStart) { return <Calendar firstDayOfWeek={firstDayOfWeek} className="wd-calendar"><CalendarHeader /><CalendarGrid>{(date) => <CalendarCell className="wd-calendar-cell" date={date} />}</CalendarGrid></Calendar>; }
 function RangeCalendarBody() { return <RangeCalendar className="wd-calendar"><CalendarHeader /><CalendarGrid>{(date) => <CalendarCell className="wd-calendar-cell" date={date} />}</CalendarGrid></RangeCalendar>; }
 
-export function DateField({ description, errorMessage, label, firstDayOfWeek, ...props }: DatePickerProps<DateValue> & FieldChromeProps & CalendarStart) {
+export type DateFieldProps = DatePickerProps<DateValue> & FieldChromeProps & CalendarStart & {
+  /**
+   * One-tap dates (Today, Tomorrow, the next working day). "popover" (default) puts them above the calendar;
+   * "inline" also shows them under the field, for forms where a date is usually soon (a follow-up); false hides them.
+   */
+  quickPicks?: boolean | "popover" | "inline";
+};
+
+export function DateField({ description, errorMessage, label, firstDayOfWeek, quickPicks = "popover", ...props }: DateFieldProps) {
   const t = useT();
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
-  return <DatePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label={t("Open calendar")}><CalendarDays size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover" dir={direction}><DialogCalendar firstDayOfWeek={firstDayOfWeek}/></Popover></DatePicker>;
+  const limits = { minValue: props.minValue, maxValue: props.maxValue, isDateUnavailable: props.isDateUnavailable };
+  const picks = quickPicks && !props.isReadOnly ? <DateQuickPicks isDisabled={props.isDisabled} limits={limits} /> : null;
+  return <DatePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label={t("Open calendar")}><CalendarDays size={15} /></AriaButton></Group>{quickPicks === "inline" ? picks : null}<FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover" dir={direction}><DialogCalendar firstDayOfWeek={firstDayOfWeek} picks={picks} /></Popover></DatePicker>;
 }
 
 export function TimeField({ description, errorMessage, label, ...props }: TimeFieldProps<TimeValue> & FieldChromeProps) {
   return <AriaTimeField {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><DateInput className="wd-date-group wd-date-input wd-time-input wd-focus-frame">{segment => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><FieldMeta description={description} errorMessage={errorMessage} /></AriaTimeField>;
 }
 
-function DialogCalendar({firstDayOfWeek}:CalendarStart) { return <div role="dialog"><CalendarBody firstDayOfWeek={firstDayOfWeek}/></div>; }
+function DialogCalendar({ firstDayOfWeek, picks }: CalendarStart & { picks?: ReactNode }) {
+  return <div role="dialog">{picks}<CalendarBody firstDayOfWeek={firstDayOfWeek} /></div>;
+}
 
 export function DateRangeField({ description, errorMessage, label, ...props }: DateRangePickerProps<DateValue> & FieldChromeProps) {
   const t = useT();
@@ -185,6 +234,7 @@ export function TagsField({ description, isReadOnly = false, label, onChange, pl
 }) {
   const [draft, setDraft] = useState("");
   const listId = useId();
+  const optional = useOptionalMarker(false);
   const has = (value: string) => values.some((item) => item.toLocaleLowerCase() === value.toLocaleLowerCase());
   const add = (value: string) => {
     const text = value.replace(/\s+/g, " ").trim();
@@ -194,7 +244,7 @@ export function TagsField({ description, isReadOnly = false, label, onChange, pl
   };
   const options = suggestions.filter((item) => !has(item)).slice(0, 50);
   return <div className="wd-field wd-tags-field">
-    <span className="wd-field-label" aria-hidden="true">{label}</span>
+    <span className="wd-field-label" aria-hidden="true" data-optional={optional}>{label}</span>
     <div className="wd-tags-input wd-focus-frame" data-readonly={isReadOnly || undefined}>
       {values.map((value) => <Tag key={value} onRemove={isReadOnly ? undefined : () => onChange(values.filter((item) => item !== value))}>{value}</Tag>)}
       {isReadOnly ? null : <input aria-label={label} className="wd-tags-draft" list={listId} placeholder={values.length ? undefined : placeholder} value={draft}
@@ -240,10 +290,32 @@ export function SegmentedControl({ label, onChange, options, value, tour }: { la
 
 export function RepeatableFields<T>({ addLabel, items, onAdd, onRemove, renderItem }: { addLabel?: string; items: T[]; onAdd: () => void; onRemove: (index: number) => void; renderItem: (item: T, index: number) => ReactNode }) { const t = useT(); return <div className="wd-repeatable"><div>{items.map((item, index) => <div className="wd-repeatable-row" key={index}><div>{renderItem(item, index)}</div><IconButton aria-label={t("Remove item {number}", { number: index + 1 })} onPress={() => onRemove(index)}><X size={14} /></IconButton></div>)}</div><Button onPress={onAdd}>{addLabel ?? t("Add item")}</Button></div>; }
 
-export function Form({ children, className, onSubmit, ...props }: FormHTMLAttributes<HTMLFormElement>) {
-  // A read-only page never submits: Enter in a field does nothing, like the disabled Save beside it.
+export type FormProps = FormHTMLAttributes<HTMLFormElement> & {
+  /** "optional" (default) marks the fields a person may skip; "none" leaves every label bare. */
+  fieldMarkers?: FormFieldMarkers;
+  /** A blocked save names the fields to fix at the top of the form and takes focus to the first (default on). */
+  errorSummary?: boolean;
+  ref?: Ref<HTMLFormElement>;
+};
+
+/**
+ * The shared form: one column of fields, "Optional" on the ones a person may skip and, when a save is blocked,
+ * a summary at the top naming the fields to fix (focus goes to the first). A read-only page never submits:
+ * Enter in a field does nothing, like the disabled Save beside it.
+ */
+export function Form({ children, className, errorSummary = true, fieldMarkers = "optional", onSubmit, ref, ...props }: FormProps) {
   const readOnlyReason = useReadOnlyReason();
-  return <form {...props} data-read-only={readOnlyReason ? "" : undefined} className={["wd-form", className].filter(Boolean).join(" ")} onSubmit={readOnlyReason ? (event) => event.preventDefault() : onSubmit}>{children}</form>;
+  const summary = useErrorSummary();
+  const markers = useMemo(() => ({ markers: fieldMarkers }), [fieldMarkers]);
+  return <FormFieldContext.Provider value={markers}>
+    <form {...props} className={["wd-form", className].filter(Boolean).join(" ")} data-read-only={readOnlyReason ? "" : undefined}
+      data-wd-error-summary={errorSummary ? "" : undefined} ref={ref}
+      onBlurCapture={errorSummary ? summary.recheck : undefined} onChangeCapture={errorSummary ? summary.recheck : undefined}
+      onInvalidCapture={errorSummary ? summary.onInvalidCapture : undefined}
+      onSubmit={readOnlyReason ? (event) => event.preventDefault() : (event) => { summary.clear(); onSubmit?.(event); }}>
+      {errorSummary ? summary.node : null}{children}
+    </form>
+  </FormFieldContext.Provider>;
 }
 export function Fieldset({ children, description, legend }: { children: ReactNode; description?: ReactNode; legend: ReactNode }) { return <fieldset className="wd-fieldset"><legend>{legend}</legend>{description ? <p>{description}</p> : null}{children}</fieldset>; }
 export function ValidationSummary({ errors }: { errors: string[] }) { const t = useT(); if (!errors.length) return null; return <div className="wd-validation-summary" role="alert"><strong>{t("Check the highlighted fields")}</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div>; }

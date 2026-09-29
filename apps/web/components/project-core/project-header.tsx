@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Info } from "lucide-react";
-import { Badge, Button, IconButton, IconMenuButton } from "@/design-system";
+import { Badge, Button, EditableField, IconButton, IconMenuButton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import { useProjectFormat, useStatusLabel } from "./format";
@@ -44,8 +44,10 @@ export function useNextAction(detail: ProjectDetail, run: Run, open: (dialog: Pr
  * closed, its client, project manager and agreed value. One primary action (what's next for this person),
  * the details toggle and the project's other actions in ⋯. A second line only when it's on hold or closed.
  */
-export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDialog, onAction }: {
+export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDialog, onAction, onRename, onReload }: {
   detail: ProjectDetail; next: NextAction | null; detailsOpen: boolean; onToggleDetails: () => void; onDialog: (dialog: ProjectDialog) => void; onAction?: () => void;
+  /** Renames the project in place (the name is its title); throws the reason back to the title. */
+  onRename?: (name: string) => Promise<void>; onReload?: () => void;
 }) {
   const t = useT();
   const format = useProjectFormat();
@@ -59,7 +61,6 @@ export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDi
   const open = project.status === "active" || project.status === "on_hold";
   const manage = detail.canManage;
   const actions = [
-    ...(open && manage ? [{ id: "rename", label: t("Rename") }] : []),
     ...(open && manage ? [{ id: "dates", label: t("Change dates") }] : []),
     ...(project.status === "active" && manage ? [{ id: "hold", label: t("Put on hold") }] : []),
     ...(project.status === "on_hold" && manage ? [{ id: "resume", label: t("Resume") }] : []),
@@ -86,7 +87,7 @@ export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDi
   return <header className={styles.head} data-tour="project-properties">
     <div className={styles.headLine}>
       <div className={styles.headTitle}>
-        <h1>{project.name}</h1>
+        <EditableField canEdit={Boolean(onRename) && open && manage} heading="h1" isRequired label={t("Project name")} maxLength={240} onReload={onReload} onSave={(name) => onRename?.(name)} value={project.name} />
         <span className={styles.reference}>{project.reference}</span>
         <Badge tone={tone}>{status.label}</Badge>
         {priority ? <Badge tone={project.priority === "critical" ? "danger" : "warning"}>{priority}</Badge> : null}

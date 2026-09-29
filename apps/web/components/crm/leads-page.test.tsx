@@ -185,6 +185,38 @@ describe("LeadsPage", () => {
     expect(convertAction).toBeVisible();
   });
 
+  it("edits an enquiry's details in place, sending the whole details with the enquiry's version", async () => {
+    const data = structuredClone(leadsPageFixture);
+    const lead = { ...data.items[0], version: 5 };
+    data.items = [lead];
+    const enquiry = { serviceType: lead.serviceType, partyName: lead.partyName, title: lead.title, summary: "Kitchen and majlis", primaryMobile: "0501234567",
+      details: { emirate: "dubai", campaign: "", contact: { displayName: lead.partyName, mobile: "0501234567", mobileCountryCode: "AE", company: "" } } };
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200, json: async () => init?.method === "PATCH" ? { id: lead.id, version: 6 } : url.includes(`/leads/${lead.id}`) ? { ...lead, enquiry } : { data: [lead], nextCursor: null } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<LeadsPage initialData={data} />);
+    await user.click(screen.getByRole("button", { name: `Open ${lead.partyName}` }));
+    const dialog = await screen.findByRole("dialog", { name: "Enquiry details" });
+    await user.click(await within(dialog).findByRole("button", { name: "Edit Company" }));
+    await user.type(within(dialog).getByRole("textbox", { name: "Company" }), "Palm Holdings{Enter}");
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(true));
+    const [url, init] = fetchMock.mock.calls.find(([, call]) => call?.method === "PATCH")!;
+    expect(url).toContain(`/leads/${lead.id}/details`);
+    const body = JSON.parse(String(init!.body));
+    expect(body).toMatchObject({ version: 5, serviceType: lead.serviceType, summary: "Kitchen and majlis", details: { emirate: "dubai" } });
+    expect(body.party).toMatchObject({ displayName: lead.partyName, mobile: "0501234567", company: "Palm Holdings" });
+  }, 10_000);
+
+  it("shows an enquiry's details as plain text to people who can't change enquiries", async () => {
+    const data = { ...structuredClone(leadsPageFixture), canEdit: false };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => data.items[0] }));
+    render(<LeadsPage initialData={data} />);
+    await userEvent.click(screen.getByRole("button", { name: `Open ${data.items[0].partyName}` }));
+    const dialog = await screen.findByRole("dialog", { name: "Enquiry details" });
+    expect(await within(dialog).findByText("Company")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Edit Company" })).not.toBeInTheDocument();
+  });
+
   it.each(["table action"])("routes a Not Sure Yet enquiry from %s to editing instead of deal creation", async entry => {
     const data = structuredClone(leadsPageFixture);
     const lead = { ...data.items[0], serviceType: "not_sure" };

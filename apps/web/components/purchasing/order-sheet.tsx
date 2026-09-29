@@ -5,7 +5,7 @@ import Link from "next/link";
 import { parseDate } from "@internationalized/date";
 import { Ban, Plus, Replace, X } from "lucide-react";
 import {
-  Badge, Button, DateField, ErrorState, IconButton, InlineNotice, InspectorSheet, SelectField, Skeleton, StageTracker, Tabs, TextAreaField, TextInput, type WorkflowStage,
+  Badge, Button, DateField, EditableField, ErrorState, IconButton, InlineNotice, InspectorSheet, SelectField, Skeleton, StageTracker, Tabs, TextAreaField, TextInput, type WorkflowStage,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { addExact, currencyDecimals, orderTotals, priceLine, subtractExact } from "@/lib/purchasing/amounts";
@@ -119,6 +119,18 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
     lines: form.lines.map((line) => ({ id: line.id, source: line.source, materialItemId: line.materialItemId, boqLineId: line.boqLineId, projectId: line.projectId, description: line.description,
       specification: line.specification, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, discountPercent: line.discountPercent, taxRate: line.taxRate,
       ...(line.stockItemId ? { stockItemId: line.stockItemId } : {}) })) } : {};
+  // Once the supplier has confirmed, their date and reference correct in place: the confirmation is recorded again.
+  const confirmed = Boolean(order && ["confirmed", "partly_received"].includes(order.status) && state?.canBuy);
+  const reconfirm = async (patch: { promisedDate?: string | null; supplierReference?: string }) => {
+    if (!state) return;
+    try {
+      accept(await api.orderCommand(orderId, state.order.version, "confirm", { promisedDate: state.order.promisedDate, supplierReference: state.order.supplierReference ?? "", ...patch }));
+      onChanged();
+    } catch (cause) {
+      if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
+      throw cause;
+    }
+  };
   const submit = async () => {
     const saved = dirty ? await run("save", saveInput()) : state;
     if (saved) await run("submit", { ...(overReason.trim() ? { overReason: overReason.trim() } : {}), ...holdInput }, saved.order.version);
@@ -245,7 +257,11 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
       <div><dt>{t("Needed by")}</dt><dd>{format.day(order.expectedDate) || "—"}</dd></div>
       <div><dt>{t("Deliver to")}</dt><dd>{[labels.deliverTo[order.deliverTo], order.deliveryAddress].filter(Boolean).join(" · ")}</dd></div>
       <div><dt>{t("Payment")}</dt><dd>{supplierLabels.termsText(order)}</dd></div>
-      {order.promisedDate || order.supplierReference ? <div><dt>{t("Promised")}</dt><dd>{[format.day(order.promisedDate), order.supplierReference].filter(Boolean).join(" · ")}</dd></div> : null}
+      {confirmed ? <>
+        <EditableField display={order.promisedDate ? format.day(order.promisedDate) : undefined} kind="date" label={t("Promised")} onReload={() => void load()}
+          onSave={(promisedDate) => reconfirm({ promisedDate: promisedDate || null })} placeholder={t("Not set")} value={order.promisedDate ?? ""} />
+        <EditableField label={t("Supplier reference")} maxLength={120} onReload={() => void load()} onSave={(supplierReference) => reconfirm({ supplierReference })} placeholder={t("Not set")} value={order.supplierReference ?? ""} />
+      </> : order.promisedDate || order.supplierReference ? <div><dt>{t("Promised")}</dt><dd>{[format.day(order.promisedDate), order.supplierReference].filter(Boolean).join(" · ")}</dd></div> : null}
     </dl>}
 
     <section className={styles.part} aria-label={t("Lines")}>

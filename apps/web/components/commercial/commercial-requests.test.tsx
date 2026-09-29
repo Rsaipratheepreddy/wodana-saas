@@ -55,11 +55,11 @@ it("sends a client decision request pinned to an assigned exact revision", async
   render(<CommercialRequests state={state} run={run} busy={false} />);
 
   await user.click(screen.getByRole("button", { name: "Request client decision" }));
-  await user.type(screen.getByLabelText("Question *"), "Confirm final finish");
-  await user.type(screen.getByLabelText("What does the client need to decide? *"), "Choose the approved finish for this exact quotation.");
+  await user.type(screen.getByLabelText("Question"), "Confirm final finish");
+  await user.type(screen.getByLabelText("What does the client need to decide?"), "Choose the approved finish for this exact quotation.");
   await user.click(screen.getByRole("button", { name: /Select an option Exact revision/ }));
   await user.click(screen.getByRole("option", { name: "Quotation V2" }));
-  fireEvent.change(screen.getByLabelText("Due date *"), { target: { value: "2099-01-02" } });
+  fireEvent.change(screen.getByLabelText("Due date"), { target: { value: "2099-01-02" } });
   await user.click(screen.getByRole("button", { name: "Send decision request" }));
 
   await waitFor(() => expect(run).toHaveBeenCalledWith("request", expect.objectContaining({

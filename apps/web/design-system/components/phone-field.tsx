@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button as AriaButton, Dialog, DialogTrigger, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { ChevronDown } from "lucide-react";
 import { getExampleNumber, isSupportedCountry, type CountryCode } from "libphonenumber-js/max";
 import mobileExamples from "libphonenumber-js/examples.mobile.json";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { phoneCountryOptions, phoneProblem, splitPhone } from "@/lib/phone";
+import { countryFromLocale } from "@/lib/workspace/region-labels";
 import { useDesignSystem } from "../foundations/provider";
 import { SearchInput, TextInput } from "./forms";
 
@@ -22,16 +23,24 @@ export type PhoneFieldProps = {
   /** Check that the number is a mobile (default), or accept any valid number. */
   kind?: "mobile" | "any";
   description?: string;
+  isDisabled?: boolean;
+  isReadOnly?: boolean;
+  autoFocus?: boolean;
+  /** Warns under the field without blocking the save (an existing client with this number). */
+  notice?: ReactNode;
 };
 
 /**
  * One phone control for every form: the country code sits inside the field, the number is checked
- * against that country, and a pasted or stored international number never repeats the code.
+ * against that country, and a pasted or stored international number never repeats the code. Until a
+ * country is chosen, the workspace region's country is used (and kept once a number is typed).
  */
-export function PhoneField({ label, value, onChange, countryCode, onCountryChange, locale: localeProp, isRequired, kind = "mobile", description }: PhoneFieldProps) {
+export function PhoneField({ label, value, onChange, countryCode: chosenCountry, onCountryChange, locale: localeProp, isRequired, kind = "mobile", description, isDisabled, isReadOnly, autoFocus, notice }: PhoneFieldProps) {
   const t = useT();
-  const { portalContainer, locale: regionLocale } = useDesignSystem();
+  const { portalContainer, locale: regionLocale, regionLocale: workspaceLocale } = useDesignSystem();
   const locale = localeProp ?? regionLocale;
+  const regionCountry = countryFromLocale(localeProp ?? workspaceLocale);
+  const countryCode = chosenCountry || (regionCountry && isSupportedCountry(regionCountry) ? regionCountry : "");
   const countries = useMemo(() => phoneCountryOptions(locale), [locale]);
   const selected = countries.find((country) => country.id === countryCode);
   const [open, setOpen] = useState(false);
@@ -44,13 +53,13 @@ export function PhoneField({ label, value, onChange, countryCode, onCountryChang
   useEffect(() => {
     if (!/^\s*(\+|00)/.test(value)) return;
     const next = splitPhone(value, countryCode);
-    if (next.country !== countryCode) onCountryChange(next.country);
+    if (next.country !== chosenCountry) onCountryChange(next.country);
     if (next.national !== value) onChange(next.national);
-  }, [value, countryCode, onChange, onCountryChange]);
+  }, [value, countryCode, chosenCountry, onChange, onCountryChange]);
 
   const type = (raw: string) => {
     const next = splitPhone(raw, countryCode);
-    if (next.country && next.country !== countryCode) onCountryChange(next.country);
+    if (next.country && next.country !== chosenCountry) onCountryChange(next.country);
     onChange(/^\s*(\+|00)/.test(raw) ? next.national : raw);
   };
   const tidy = () => {
@@ -88,6 +97,7 @@ export function PhoneField({ label, value, onChange, countryCode, onCountryChang
     </Popover>
   </DialogTrigger>;
 
-  return <TextInput description={description} inputType="tel" isRequired={isRequired} label={label} onBlur={tidy} onChange={type}
+  const field = <TextInput autoFocus={autoFocus} description={description} inputType="tel" isDisabled={isDisabled} isReadOnly={isReadOnly} isRequired={isRequired} label={label} onBlur={tidy} onChange={type}
     placeholder={example ? example.formatNational() : undefined} prefix={picker} validate={validate} value={value} />;
+  return notice ? <div className="wd-field-with-notice">{field}<div aria-live="polite" className="wd-field-notice">{notice}</div></div> : field;
 }
