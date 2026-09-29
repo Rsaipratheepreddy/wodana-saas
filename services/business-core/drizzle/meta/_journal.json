@@ -778,6 +778,20 @@
       "when": 1801230000000,
       "tag": "0163_woddy_for_staff",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1801240000000,
+      "tag": "0164_mcp_server",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1801240000001,
+      "tag": "0165_mcp_notices",
+      "breakpoints": true
     }
   ]
 }

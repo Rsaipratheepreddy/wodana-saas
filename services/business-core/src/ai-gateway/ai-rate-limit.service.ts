@@ -46,6 +46,18 @@ export class AiRateLimitService implements OnModuleDestroy {
     if (count > limit) throw new AiRateLimitedError();
   }
 
+  /**
+   * One more hit on a shared counter that lives `windowSeconds` (e.g. an AI app's calls this minute), or null
+   * when Redis is not there: the caller then counts another way (in the database, or in this process).
+   */
+  async hit(key: string, windowSeconds: number): Promise<number | null> {
+    const redis = await this.redis();
+    if (!redis) return null;
+    const count = await redis.incr(`wodana:${key}`);
+    if (count === 1) await redis.expire(`wodana:${key}`, windowSeconds + 30);
+    return count;
+  }
+
   async onModuleDestroy() {
     if (this.client?.isOpen) await this.client.quit().catch(() => this.client?.destroy());
     this.client = null;
