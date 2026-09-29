@@ -1,0 +1,25 @@
+/* The manager's review: the controls beside exactly what the client gets (one column on a phone). */
+.review { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 26rem); gap: var(--wd-space-6); align-items: start; }
+.controls { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.preview { position: sticky; inset-block-start: 0; display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
+.previewTitle { margin: 0; font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
+.status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin: 0; font-size: var(--wd-text-sm); color: var(--wd-color-text-secondary); }
+.muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-regular); }
+.summary { display: grid; gap: var(--wd-space-1); justify-items: start; }
+.summary > :first-child { justify-self: stretch; }
+.group { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; border: 0; min-inline-size: 0; }
+.group legend { margin-block-end: var(--wd-space-1); padding: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.photos li { display: grid; gap: var(--wd-space-1); }
+.photos img { display: block; inline-size: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); opacity: 0.55; }
+.photos li[data-picked] img { opacity: 1; }
+.photoBar { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-1); }
+.lead { color: var(--wd-color-warning); }
+.items { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-sm); }
+.fact { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); }
+.footer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); inline-size: 100%; }
+.spacer { flex: 1; }
+@media (max-width: 900px) {
+  .review { grid-template-columns: minmax(0, 1fr); }
+  .preview { position: static; order: -1; }
+}

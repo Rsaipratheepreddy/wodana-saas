@@ -9,7 +9,9 @@ import { useT } from '../../core/i18n';
 import { useOnline } from '../../core/query';
 import { FilterChips, TextField } from '../../ui/fields';
 import { Banner, Empty, Fact, ListRow, ListScreen, Section } from '../../ui/layout';
+import { AuthImage } from '../../ui/photos';
 import { Button, Chip, Text } from '../../ui/primitives';
+import { sitePhotoPath } from '../projects/api';
 import { Sheet } from '../../ui/sheet';
 import { useTheme } from '../../ui/theme';
 import { useToast } from '../../ui/toast';
@@ -84,6 +86,12 @@ function DecisionSheet({ row, onClose }: { row: ApprovalRow | null; onClose: () 
         {row.amount !== null ? <Fact label={t('Amount')} value={format.money(row.amount, row.currency ?? undefined)} /> : null}
         <Fact label={t('Since')} value={format.ago(row.since)} />
       </Section>
+      {/* A daily report: its lead photo and the words the client will read. */}
+      {row.preview ? <View style={{ gap: theme.space(2) }}>
+        {row.preview.photoId && row.parentId ? <AuthImage path={sitePhotoPath(row.parentId, row.preview.photoId)} accessibilityLabel={t('Lead photo')}
+          style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: theme.radius.md }} /> : null}
+        {row.preview.text ? <Text variant="body">{row.preview.text}</Text> : null}
+      </View> : null}
       {!row.canDecide ? <Banner tone="neutral" title={t('It’s your own; someone else decides.')} /> : null}
       {row.canDecide && !row.decide ? <Banner tone="info" title={t('Open it to decide.')} /> : null}
       {row.canDecide && row.decide && route ? <Button label={t('Open')} variant="secondary" full onPress={() => { close(); router.push(route as Href); }} /> : null}

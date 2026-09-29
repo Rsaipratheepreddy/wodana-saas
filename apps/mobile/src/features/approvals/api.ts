@@ -28,6 +28,8 @@ export type ApprovalRow = {
   decide: { approve: string; other: 'return' | 'reject' | null; approveNeedsNote: boolean } | null;
   version: number | null;
   parentId: string | null;
+  /** A daily report's words for the client, its lead photo and how many photos it has. */
+  preview?: { text: string; photoId: string | null; photos: number } | null;
 };
 export type WaitingForYou = { rows: ApprovalRow[]; count: number; counts: Record<ApprovalGroup, number> };
 export type Decision = 'approve' | 'return' | 'reject';
@@ -39,11 +41,12 @@ export const GROUP_LABEL: Record<ApprovalGroup, string> = {
 /** What the row asks for, in a word or two (the web's words). */
 export const KIND_LABEL: Record<ApprovalKind, string> = {
   quote_review: key('Quote to review'), receipt: key('Payment to verify'), deal_finance: key('Deal to check'), deal_approval: key('Deal to approve'),
-  order: key('Order to approve'), output: key('Output to approve'), material_swap: key('Material swap'), site_report: key('Site report'),
+  order: key('Order to approve'), output: key('Output to approve'), material_swap: key('Material swap'), site_report: key('Daily progress'),
   petty_cash: key('Petty cash'), snag: key('Snag to close'), warranty: key('Warranty claim'), stock_correction: key('Stock correction'),
   bill: key('Held bill'), payment_run: key('Payment run'), reimbursement: key('To reimburse'),
 };
-export const approveLabel = (kind: ApprovalKind) => (kind === 'receipt' ? key('Verify') : key('Approve'));
+/** A daily report approved here goes to the client as reviewed. */
+export const approveLabel = (kind: ApprovalKind) => (kind === 'receipt' ? key('Verify') : kind === 'site_report' ? key('Approve & send') : key('Approve'));
 export const otherLabel = (other: 'return' | 'reject') => (other === 'return' ? key('Return') : key('Refuse'));
 /** A return or refusal always says why; some approvals do too. */
 export const needsNote = (row: ApprovalRow, decision: Decision) => decision !== 'approve' || !!row.decide?.approveNeedsNote;

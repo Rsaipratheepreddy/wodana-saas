@@ -25,6 +25,8 @@ export function appRouteFor(link: string | null | undefined): string | null {
       if (section === 'plan' && q('item')) return `/projects/${projectId}/task/${q('item')}`;
       if (section === 'plan' || section === 'plan-teams') return record ? `/projects/${projectId}/task/${record}` : `/projects/${projectId}/plan`;
       if (section === 'snagging') return record ? `/projects/${projectId}/task/${record}` : `/projects/${projectId}/snags`;
+      // A day to review (a notice, Approvals) opens that day.
+      if (section === 'site' && q('report')) return `/projects/${projectId}/reports?report=${q('report')}`;
       if (section === 'site' || section === 'daily-progress' || section === 'site-work') return `/projects/${projectId}/reports`;
       if (section === 'handover' || section === 'warranty') return `/projects/${projectId}/handover`;
       if (section === 'petty-cash') return `/projects/${projectId}/expenses`;
