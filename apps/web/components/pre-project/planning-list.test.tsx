@@ -24,6 +24,12 @@ describe("Planning rows (D-31)", () => {
     expect(planningRows([{ ...project, phase: "planning" }], [planning])).toEqual([expect.objectContaining({ stage: "Execution planning", href: "/workspace/pre-projects/cases/case-1/overview", amount: "48000.00" })]);
   });
 
+  it("opens the planning case, never the project, when a project in planning has one; otherwise its plan", () => {
+    const inPlanning = { ...project, phase: "planning" as const };
+    expect(planningRows([inPlanning], [planning], {}, true)[0].href).toBe("/workspace/pre-projects/cases/case-1/overview");
+    expect(planningRows([{ ...inPlanning, caseId: undefined } as typeof inPlanning], [], {}, true)[0].href).toMatch(/^\/workspace\/projects\/[^/]+\/plan\?/);
+  });
+
   it("reads a project's stage from its workflow template, not a list of stage keys", () => {
     const paid = { ...project, workflow: { templateCode: "design_build_deal_first", currentStageKey: "site_visit", currentStageName: "Site visit & scope" }, nextAction: "Book the site visit" };
     expect(planningRows([paid], [planning], workflow, true)).toEqual([expect.objectContaining({ group: "in_design", stage: "Site visit & scope", next: "Book the site visit", reference: "PRJ-0007" })]);

@@ -65,9 +65,9 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
       id: `project-${item.id}`, title: item.name, reference: item.reference, description: item.description?.trim() || origin?.description?.trim() || undefined, customer: item.customer,
       group: "in_design" as const, stage: phase ? item.workflow!.currentStageName : tKey("Execution planning"), next: item.nextAction || item.workflow?.currentStageName || tKey("Execution planning"),
       owner: personDisplayName(item.manager) || null, amount: origin?.amount ?? null, currency: origin?.currencyCode ?? null, onHold: item.onHold,
-      // A deal-first project is designed inside the project; otherwise its planning case is where the work is.
-      caseId: item.caseId, projectId: item.id, href: servicePathEnabled || !item.caseId
-        ? `/workspace/projects/${item.id}/overview?${new URLSearchParams({ projectName: projectDisplayName(item.name) })}` : `/workspace/pre-projects/cases/${item.caseId}/overview`,
+      // Planning opens the planning case; a project without one opens its plan.
+      caseId: item.caseId, projectId: item.id, href: item.caseId
+        ? `/workspace/pre-projects/cases/${item.caseId}/overview` : `/workspace/projects/${item.id}/plan?${new URLSearchParams({ projectName: projectDisplayName(item.name) })}`,
     }];
   });
   return [...caseRows, ...projectRows];
@@ -115,17 +115,17 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
   }
 
   const columns = useMemo<DataGridColumn<PlanningRow>[]>(() => [
-    { id: "case", header: t("Case"), accessorFn: (row) => `${row.title} ${row.reference ?? ""}`, size: 260, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
+    { id: "case", header: t("Case"), accessorFn: (row) => `${row.title} ${row.reference ?? ""}`, size: 280, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
       {row.href ? <Link data-tour="case-open" href={row.href}>{projectDisplayName(row.title)}</Link>
         : <button type="button" className={styles.openButton} disabled={Boolean(busy) || !(row.source?.opportunityId ? planning.canCreate : planning.canStartLead)}
             onClick={(event) => { event.stopPropagation(); void open(row); }}>{busy === row.id ? t("Opening…") : projectDisplayName(row.title)}</button>}
       {row.reference || row.description ? <small>{[row.reference, row.description].filter(Boolean).join(" · ")}</small> : null}</span> } },
-    { id: "client", header: t("Client"), accessorFn: (row) => row.customer, size: 170 },
-    { id: "stage", header: t("Stage"), accessorFn: (row) => translateKnown(t, row.stage), size: 170 },
-    { id: "owner", header: t("Owner"), accessorFn: (row) => row.owner ?? "", size: 160, meta: { mobileHidden: true, renderCell: (row) => row.owner ?? <span className={styles.muted}>{t("Unassigned")}</span> } },
-    { id: "value", header: t("Value"), accessorFn: (row) => Number(row.amount ?? 0), size: 140, meta: { align: "end", renderCell: (row) => row.amount && row.currency
+    { id: "client", header: t("Client"), accessorFn: (row) => row.customer, size: 150 },
+    { id: "stage", header: t("Stage"), accessorFn: (row) => translateKnown(t, row.stage), size: 150, meta: { renderCell: (row) => <Badge tone={row.group === "in_design" ? "info" : "neutral"}>{translateKnown(t, row.stage)}</Badge> } },
+    { id: "owner", header: t("Owner"), accessorFn: (row) => row.owner ?? "", size: 150, meta: { mobileHidden: true, renderCell: (row) => row.owner ?? <span className={styles.muted}>{t("Unassigned")}</span> } },
+    { id: "value", header: t("Value"), accessorFn: (row) => Number(row.amount ?? 0), size: 120, meta: { align: "end", renderCell: (row) => row.amount && row.currency
       ? format.money(row.amount, row.currency) : <span className={styles.muted}>—</span> } },
-    { id: "next", header: t("Next step"), accessorFn: (row) => (row.onHold ? t("On hold") : translateKnown(t, row.next)), size: 220, meta: { renderCell: (row) => row.onHold
+    { id: "next", header: t("Next step"), accessorFn: (row) => (row.onHold ? t("On hold") : translateKnown(t, row.next)), size: 180, meta: { renderCell: (row) => row.onHold
       ? <Badge tone="warning">{t("On hold")}</Badge> : <span>{translateKnown(t, row.next)}</span> } },
   // `open` reads the latest state through `busy`; the columns only need rebuilding when that changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
