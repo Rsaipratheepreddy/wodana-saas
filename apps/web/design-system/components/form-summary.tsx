@@ -19,7 +19,7 @@ export function FormErrorSummary({ problems }: { problems: Problem[] }) {
     <CircleAlert aria-hidden="true" size={16} />
     <div>
       <strong>{unique.length === 1 ? t("Check 1 field") : t("Check {count} fields", { count: unique.length })}</strong>
-      <ul>{unique.map((problem) => <li key={problem.name}><button onClick={() => focusField(problem.control)} type="button">{problem.name || t("Unnamed field")}</button></li>)}</ul>
+      <ul>{unique.map((problem) => <li key={problem.name}><button aria-label={t("Go to {field}", { field: problem.name || t("Unnamed field") })} onClick={() => focusField(problem.control)} type="button">{problem.name || t("Unnamed field")}</button></li>)}</ul>
     </div>
   </div>;
 }

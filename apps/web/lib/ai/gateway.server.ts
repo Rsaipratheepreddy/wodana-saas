@@ -9,7 +9,7 @@ import { aiPauseOf } from "./pause";
  * workspace's AI switch, the person's `ai.suggestions.use`, a per-workspace limit shared by every
  * instance, and the usage log. The web holds no model key.
  */
-export type AiFeature = "crm.chat" | "crm.assist" | "commercial.assist" | "quotation.plan";
+export type AiFeature = "crm.chat" | "crm.assist" | "commercial.assist" | "quotation.plan" | "form.fill";
 
 /** The provider request without the model: the gateway accepts systemInstruction, contents and generationConfig only. */
 export type AiRequest = {

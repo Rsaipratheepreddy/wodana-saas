@@ -53,6 +53,7 @@ const FEATURE_LABELS: Record<string, MessageKey> = {
   "quotation.edit": tKey("Quote changes"),
   "catalog.import_clean": tKey("Catalog import"),
   "catalog.suggest_components": tKey("Catalog components"),
+  "form.fill": tKey("Fill with Woddy"),
 };
 export const featureLabel = (feature: string): MessageKey => FEATURE_LABELS[feature] ?? tKey("Other AI");
 

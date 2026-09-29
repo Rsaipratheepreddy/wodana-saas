@@ -40,10 +40,10 @@ describe("form layout", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     const summary = await screen.findByRole("alert");
     expect(summary).toHaveTextContent("Check 2 fields");
-    expect(within(summary).getByRole("button", { name: "Customer name" })).toBeInTheDocument();
+    expect(within(summary).getByRole("button", { name: "Go to Customer name" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("textbox", { name: "Customer name" })).toHaveFocus());
     expect(submit).not.toHaveBeenCalled();
-    await user.click(within(summary).getByRole("button", { name: "Mobile" }));
+    await user.click(within(summary).getByRole("button", { name: "Go to Mobile" }));
     expect(screen.getByRole("textbox", { name: "Mobile" })).toHaveFocus();
     await user.type(screen.getByRole("textbox", { name: "Customer name" }), "Sara");
     await user.type(screen.getByRole("textbox", { name: "Mobile" }), "0501234567");

@@ -10,6 +10,7 @@ import { TourProvider } from "@/components/tours/tour-provider";
 import { WoddyMenu } from "@/components/tours/woddy-menu";
 import { TourPersonaBadge } from "@/components/tours/tour-persona-badge";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
+import { RememberProvider } from "@/design-system";
 import {
   findWorkspaceModule,
   homeTabs,
@@ -52,7 +53,7 @@ export type WorkspaceShellProps = {
 
 export function WorkspaceShell({ banner, children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace }: WorkspaceShellProps) {
   const identity = workspaces[0] ? { name: workspaces[0].name, logoUrl: workspaces[0].imageUrl ?? null } : null;
-  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={workspacePrimaryColorStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name} workspaceId={workspaces[0]?.id}><WorkspaceShellContent banner={banner} canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces}>{children}</WorkspaceShellContent></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
+  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={workspacePrimaryColorStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name} workspaceId={workspaces[0]?.id}><RememberProvider scope={workspaces[0]?.id && (user.id ?? user.email) ? `${user.id ?? user.email}:${workspaces[0].id}` : null}><WorkspaceShellContent banner={banner} canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces}>{children}</WorkspaceShellContent></RememberProvider></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
 }
 
 function WorkspaceShellContent({ banner, children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace }: WorkspaceShellProps) {

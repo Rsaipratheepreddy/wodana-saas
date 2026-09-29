@@ -10,6 +10,8 @@ export const AI_FEATURE_LIMITS: Record<string, number> = {
   "quotation.plan": 5,
   // Woddy's tool runs (W-1): one run counts once, however many turns it takes.
   "woddy.agent": 10,
+  // Fill with Woddy: a pasted message or a card photo read into a form's fields, reviewed before anything is saved.
+  "form.fill": 12,
 };
 const DEFAULT_LIMIT = 10;
 
