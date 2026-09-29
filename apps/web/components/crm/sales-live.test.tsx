@@ -30,8 +30,11 @@ describe("Sales in real time", () => {
     act(() => { within(lists).getByRole("button", { name: /^New/ }).click(); });
     const rows = within(screen.getByRole("table", { name: "CRM enquiries" })).getAllByRole("row").slice(1);
     expect(rows.map((row) => row.textContent)).toEqual([expect.stringContaining("Late Lina"), expect.stringContaining("Soon Sami"), expect.stringContaining("Calm Carla")]);
-    expect(rows[0]).toHaveTextContent(/Respond by .* 30 min overdue/);
-    expect(rows[1]).toHaveTextContent(/Respond by .* 42 min/);
+    // Under the "Respond by" column the chip shows the time left; the full deadline is its tooltip.
+    expect(rows[0]).toHaveTextContent("30 min overdue");
+    expect(rows[0].querySelector("[data-chip][title]")).toHaveAttribute("title", expect.stringMatching(/^Respond by .* 30 min overdue$/));
+    expect(rows[1]).toHaveTextContent("42 min");
+    expect(rows[1].querySelector("[data-chip][title]")).toHaveAttribute("title", expect.stringMatching(/^Respond by .* 42 min$/));
     expect(rows[1]).toHaveTextContent("Attempt 2");
     expect(rows[1]).toHaveTextContent("Confirm client");
     expect(within(lists).getByRole("button", { name: /Needs review/ })).toBeInTheDocument();
