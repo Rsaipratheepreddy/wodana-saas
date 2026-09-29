@@ -57,6 +57,10 @@ integration("platform integration credentials with PostgreSQL", () => {
     vi.unstubAllGlobals();
     await db?.onModuleDestroy();
     if (!owner) return;
+    // Other suites notify every active operator (a new sales enquiry): stop being one first, and let any
+    // notice already on its way land before the users go, so their inserts never meet a missing user.
+    await owner.query(`DELETE FROM platform_administrators WHERE user_id = ANY($1::uuid[])`, [[operatorA, operatorB]]);
+    await new Promise((resolve) => setTimeout(resolve, 500));
     const client = await owner.connect();
     try {
       await client.query("BEGIN");
