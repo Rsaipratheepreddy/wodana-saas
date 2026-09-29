@@ -115,6 +115,8 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
         </div>}
         {tooMuch ? <InlineNotice tone="error" message={t("At most {quantity} of {item} can arrive.", { quantity: `${quantityText(tooMuch.receivable)} ${tooMuch.unit}`.trim(), item: tooMuch.description })} /> : null}
         {overRejected ? <InlineNotice tone="error" message={t("More of {item} is rejected than arrived.", { item: overRejected.description })} /> : null}
+        {/* Receive stays off until the site photo is added: say so, or the button looks broken. */}
+        {photoNeeded ? <InlineNotice tone="info" message={t("A photo is needed for deliveries to site.")} /> : null}
         <PhotoPicker files={photos} onChange={setPhotos} label={atSite && form.requireSitePhoto ? t("Add a photo of the delivery") : undefined} />
       </> : null}
     </div>}

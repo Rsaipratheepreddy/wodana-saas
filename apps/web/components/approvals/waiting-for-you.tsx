@@ -4,7 +4,7 @@ import { useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { APPROVAL_FILTERS, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
+import { APPROVAL_FILTERS, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
 import styles from "./waiting-for-you.module.css";
 import { APPROVALS_CHANGED, WAITING_SCOPES } from "./use-waiting-count";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -47,7 +47,7 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     try {
       setState(await api.decide(row, decision, note));
       window.dispatchEvent(new Event(APPROVALS_CHANGED));
-      setDone(decision === "approve" ? t("{name} approved.", { name: row.title }) : t("{name} sent back.", { name: row.title }));
+      setDone(decision === "approve" ? t("{name} approved.", { name: approvalTitle(row, locale) }) : t("{name} sent back.", { name: approvalTitle(row, locale) }));
       setPending(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("The decision could not be saved.")); }
     finally { setBusy(null); }
@@ -61,7 +61,7 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     try { return new Intl.NumberFormat(locale, { style: "currency", currency: row.currency }).format(Number(row.amount)); } catch { return `${row.currency} ${row.amount}`; }
   };
   // A row whose title is a sentence (an AI app's change) reads in the person's language.
-  const title = (row: ApprovalRow) => row.phrase?.key ? cardTitle(t, { title: row.phrase, summary: row.title }) : row.title;
+  const title = (row: ApprovalRow) => row.phrase?.key ? cardTitle(t, { title: row.phrase, summary: row.title }) : approvalTitle(row, locale);
   const columns: DataGridColumn<ApprovalRow>[] = [
     { id: "what", header: t("Waiting"), size: 300, accessorFn: (row) => title(row), meta: { primary: true, renderCell: (row) => <span className={styles.what}>
       <span className={styles.kind}>{t(KIND_LABEL[row.kind])}</span>
@@ -98,10 +98,11 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
 /** A return, a refusal or an approval that needs its reason: one note, then the decision. */
 function DecisionNote({ pending, busy, onClose, onSave }: { pending: Pending; busy: boolean; onClose: () => void; onSave: (note: string) => void }) {
   const t = useT();
+  const { locale } = useDesignSystem();
   const [note, setNote] = useState("");
   const approve = pending.decision === "approve";
   const label = approve ? t("Approve") : t(OTHER_LABEL[pending.decision as "return" | "reject"]);
-  return <ControlledModalDialog isOpen size="md" title={`${label} · ${pending.row.title}`} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
+  return <ControlledModalDialog isOpen size="md" title={`${label} · ${approvalTitle(pending.row, locale)}`} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
     footer={<div className="wd-dialog-actions">
       <Button onPress={onClose}>{t("Cancel")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={() => onSave(note.trim())}>{label}</Button>
