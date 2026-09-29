@@ -35,8 +35,12 @@ export const KIND_LABEL: Record<ApprovalKind, MessageKey> = {
   bill: tKey("Held bill"),
   payment_run: tKey("Payment run"),
   reimbursement: tKey("To reimburse"),
+  invoice: tKey("To invoice"),
   ai_action: tKey("AI app change"),
 };
+
+/** The title of a milestone to invoice (D-14), sent by the server as a phrase to translate. */
+export const INVOICE_PHRASE = tKey("Issue invoice · {milestone}");
 
 /** The button for the in-row approval, in the words of the record. */
 export function approveLabel(kind: ApprovalKind): MessageKey {

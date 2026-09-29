@@ -3,6 +3,11 @@
 .inviteComposer { display: grid; gap: var(--wd-flow-3); padding-block-end: var(--wd-flow-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .quickInviteForm { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, var(--wd-inspector-sm)) auto; align-items: end; gap: var(--wd-flow-3); }
 .quickInviteForm :global(.wd-button) { min-block-size: var(--wd-control-lg); }
+.offboard { display: flex; flex-direction: column; gap: var(--wd-space-4); }
+.offboardCounts { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-sm); }
+.offboardCounts strong { font-variant-numeric: tabular-nums; }
+.seatMeter { font-variant-numeric: tabular-nums; }
+.seatMeter[data-full] { color: var(--wd-color-warning); font-weight: var(--wd-weight-semibold); }
 .inviteComposerFooter { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wd-flow-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .inviteComposerActions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-flow-2); }
 .composerError { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-sm); }

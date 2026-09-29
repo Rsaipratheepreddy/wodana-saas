@@ -70,6 +70,7 @@ import { ConfigurationRevisionsService } from "./configuration-revisions.service
 import { invitationGreetingName, placeholderDisplayName } from "./invitation-recipient";
 import { parseRoleTemplateCodes, roleTemplatesFor } from "./role-templates";
 import { parseSalesPipelineTemplate, seedDefaultSalesPipeline } from "../crm/default-sales-pipeline";
+import { seedKitPaymentPlan } from "../commercial/default-payment-plan";
 import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
 
 interface WorkspaceRow {
@@ -405,6 +406,8 @@ export class WorkspacesService {
         // The kit's Sales pipeline, so a salesperson's first conversion needs no CRM-settings permission.
         await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(setup?.firmKit.configuration.salesPipeline));
         if (setup) {
+          // The kit's payment plan becomes the workspace's default for new quotes (Q-34).
+          await seedKitPaymentPlan(client, workspaceId, (setup.firmKit.configuration as Record<string, unknown>).paymentTemplate);
           const workflow = parseProjectWorkflowTemplate(setup.firmKit.configuration.projectWorkflow);
           await client.query(
             `INSERT INTO project_workflow_templates
@@ -3114,6 +3117,26 @@ export class WorkspacesService {
           after: response,
         });
         return response;
+      },
+    );
+  }
+
+  /**
+   * The workspace's seats as People shows them before anyone invites (SP-3): the limit, members using a seat,
+   * pending invitations reserving one, and what's free. Null limit when no subscription is set up.
+   */
+  async seats(actor: RequestActor, workspaceId: string) {
+    return this.access.withAnyPermission(
+      actor,
+      workspaceId,
+      ["module.members.read", "module.members.write", "module.members.delete", "workspace.members.manage"],
+      async (client) => {
+        const row = (await client.query<{ seatLimit: number; activeMembers: number; pendingInvitations: number; reservedSeats: number }>(
+          `SELECT seat_limit AS "seatLimit", active_members AS "activeMembers", pending_invitations AS "pendingInvitations", reserved_seats AS "reservedSeats"
+             FROM workspace_seat_capacity($1, NULL)`, [workspaceId])).rows[0];
+        if (!row) return { limit: null, used: 0, reserved: 0, available: null };
+        return { limit: Number(row.seatLimit), used: Number(row.activeMembers), reserved: Number(row.pendingInvitations),
+          available: Math.max(0, Number(row.seatLimit) - Number(row.reservedSeats)) };
       },
     );
   }

@@ -51,6 +51,7 @@ describe("People page data", () => {
       "/workspaces/workspace/members",
       "/workspaces/workspace/roles",
       "/workspaces/workspace/invitations",
+      "/workspaces/workspace/seats",
     ]);
   });
 

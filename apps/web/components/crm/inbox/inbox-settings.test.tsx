@@ -53,7 +53,17 @@ describe("Settings → Inbox", () => {
     expect(screen.getByText(/All 4 seats reply from this number/)).toBeInTheDocument();
     await user.click(screen.getByRole("switch", { name: "Sign replies" }));
     await user.click(within(screen.getByRole("region", { name: "New chats" })).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(sent("inbox/settings", "PUT")).toEqual([{ version: 2, autoAssign: true, queueId: null, signatureEnabled: true }]));
+    await waitFor(() => expect(sent("inbox/settings", "PUT")).toEqual([{ version: 2, autoAssign: true, queueId: null, signatureEnabled: true, autoResolveDays: 7 }]));
+  });
+
+  it("sets how many quiet days resolve a chat (AU-2)", async () => {
+    const user = userEvent.setup(), { sent } = setup(); render(<InboxSettingsPage workspaceId={WORKSPACE} />);
+    const field = await screen.findByRole("textbox", { name: "Resolve quiet chats after (days)" });
+    expect(field).toHaveValue("7");
+    await user.clear(field);
+    await user.type(field, "3");
+    await user.click(within(screen.getByRole("region", { name: "New chats" })).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent("inbox/settings", "PUT")).toEqual([expect.objectContaining({ autoResolveDays: 3 })]));
   });
 
   it("turns the greeting on with a preview as the client reads it, and saves it with its version", async () => {

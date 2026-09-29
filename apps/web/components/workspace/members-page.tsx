@@ -7,6 +7,7 @@ import { Copy, Download } from "lucide-react";
 import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, SettingsRow, SettingsSection, Switch, TextInput, ValidationSummary, formatDate, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import type { ViewAsSettings, ViewAsTarget } from "@/lib/workspace/view-as";
 import { ViewAsDialog } from "./view-as-dialog";
+import { OffboardDialog } from "./offboard-dialog";
 import type { Translate } from "@/lib/i18n/keys";
 import {
   readableRole,
@@ -66,11 +67,15 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const { locale, timeZone } = useDesignSystem();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [members, setMembers] = useState(initialData.members);
+  const [offboarding, setOffboarding] = useState<WorkspaceMember | null>(null);
   const [invitations, setInvitations] = useState(initialData.invitations);
   const [status, setStatus] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const canInvite = initialData.canInvite ?? initialData.canManage;
+  // Seats before inviting (SP-3): the limit, who uses one, what invitations reserve; full means no new invitations.
+  const seats = initialData.seats ?? null;
+  const seatsFull = Boolean(seats?.limit && seats.available === 0);
   const canEdit = initialData.canEdit ?? initialData.canManage;
   const canCancelInvitations = initialData.canCancelInvitations ?? initialData.canManage;
   const scopedAssignments = initialData.assignableRoleCodes !== undefined && !initialData.canManage;
@@ -569,10 +574,13 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           const memberActions = [
             ...(canEdit && canChangeAssignment([...item.member.roles, ...(item.member.inheritedRoles ?? [])], item.member.teams ?? []) ? [{ id: "edit", label: t("Edit access") }] : []),
             ...(canViewAsMember(item.member) ? [{ id: "view-as", label: t("View as") }] : []),
+            // Someone leaving: their open work goes to a successor, then they're signed out and suspended (SP-4).
+            ...(canEdit && item.member.status === "active" && item.member.userId !== initialData.currentUserId ? [{ id: "offboard", label: t("Offboard"), tone: "danger" as const }] : []),
           ];
           if (!memberActions.length) return null;
           return <IconMenuButton ariaLabel={t("Actions for {name}", { name: item.member.displayName })} items={memberActions}
-            onAction={(action) => action === "view-as" ? setViewAsTarget({ kind: "person", membershipId: item.member.id, name: item.member.displayName }) : openMemberEditor(item.member)} />;
+            onAction={(action) => action === "view-as" ? setViewAsTarget({ kind: "person", membershipId: item.member.id, name: item.member.displayName })
+              : action === "offboard" ? setOffboarding(item.member) : openMemberEditor(item.member)} />;
         }
         if (!canChangeAssignment(item.invitation.roles, item.invitation.teams ?? [])) return null;
         const actions = [
@@ -619,15 +627,21 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
               onSelectionChange={(key) => key && setQuickAccess(String(key))}
               selectedKey={quickAccess}
             />
-            <Button variant="primary" isLoading={isQuickInviting} type="submit">{quickInviteEmails.length ? t("Invite ({count})", { count: quickInviteEmails.length }) : t("Invite")}</Button>
+            <Button variant="primary" isDisabled={seatsFull} isLoading={isQuickInviting} type="submit">{quickInviteEmails.length ? t("Invite ({count})", { count: quickInviteEmails.length }) : t("Invite")}</Button>
           </Form>
           <div className={styles.inviteComposerFooter}>
             <div className={styles.inviteComposerActions}>
-              <Button onPress={openInvite} size="compact" variant="quiet">{t("Invite with details")}</Button>
-              <FileUploader accept=".csv,text/csv" appearance="button" label={t("Upload CSV")} multiple={false} onFiles={(files) => void loadInvitationCsv(files)} />
+              <Button isDisabled={seatsFull} onPress={openInvite} size="compact" variant="quiet">{t("Invite with details")}</Button>
+              {seatsFull ? null : <FileUploader accept=".csv,text/csv" appearance="button" label={t("Upload CSV")} multiple={false} onFiles={(files) => void loadInvitationCsv(files)} />}
             </div>
-            <span>{t("Activation links expire automatically after 7 days.")}</span>
+            {seats?.limit ? <span className={styles.seatMeter} data-full={seatsFull || undefined}>
+              {seats.reserved ? t("{used} of {limit} seats · {reserved} reserved by invitations", { used: seats.used, limit: seats.limit, reserved: seats.reserved })
+                : t("{used} of {limit} seats", { used: seats.used, limit: seats.limit })}
+            </span> : <span>{t("Activation links expire automatically after 7 days.")}</span>}
           </div>
+          {seatsFull ? <Callout title={t("Every seat is taken")} tone="warning">
+            {t("Invitations wait for a free seat.")} <Link href="/workspace/billing">{t("Add seats in Billing")}</Link>
+          </Callout> : null}
           {quickFailure ? <p className={styles.composerError} role="alert">{quickFailure}</p> : null}
         </section> : null}
 
@@ -755,6 +769,8 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       >
         {cancellingInvitation ? t("The activation link for {email} will stop working immediately.", { email: cancellingInvitation.email }) : null}
       </ControlledModalDialog>
+      {offboarding ? <OffboardDialog workspaceId={initialData.workspaceId} membershipId={offboarding.id} name={offboarding.displayName} onClose={() => setOffboarding(null)}
+        onDone={(message) => { setMembers((current) => current.map((member) => member.id === offboarding.id ? { ...member, status: "suspended" } : member)); setOffboarding(null); setStatus(message); }} /> : null}
     </DesignSystemProvider>
   );
 }

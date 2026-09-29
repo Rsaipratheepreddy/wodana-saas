@@ -10,7 +10,7 @@ export const APPROVAL_GROUPS = ['quotes', 'payments', 'deals', 'orders', 'factor
 export type ApprovalGroup = (typeof APPROVAL_GROUPS)[number];
 export type ApprovalKind =
   | 'quote_review' | 'receipt' | 'deal_finance' | 'deal_approval' | 'order' | 'output' | 'material_swap'
-  | 'site_report' | 'petty_cash' | 'snag' | 'warranty' | 'stock_correction' | 'bill' | 'payment_run' | 'reimbursement';
+  | 'site_report' | 'petty_cash' | 'snag' | 'warranty' | 'stock_correction' | 'bill' | 'payment_run' | 'reimbursement' | 'invoice';
 export type ApprovalRow = {
   kind: ApprovalKind;
   group: ApprovalGroup;
@@ -41,7 +41,7 @@ export const KIND_LABEL: Record<ApprovalKind, string> = {
   quote_review: key('Quote to review'), receipt: key('Payment to verify'), deal_finance: key('Deal to check'), deal_approval: key('Deal to approve'),
   order: key('Order to approve'), output: key('Output to approve'), material_swap: key('Material swap'), site_report: key('Site report'),
   petty_cash: key('Petty cash'), snag: key('Snag to close'), warranty: key('Warranty claim'), stock_correction: key('Stock correction'),
-  bill: key('Held bill'), payment_run: key('Payment run'), reimbursement: key('To reimburse'),
+  bill: key('Held bill'), payment_run: key('Payment run'), reimbursement: key('To reimburse'), invoice: key('To invoice'),
 };
 export const approveLabel = (kind: ApprovalKind) => (kind === 'receipt' ? key('Verify') : key('Approve'));
 export const otherLabel = (other: 'return' | 'reject') => (other === 'return' ? key('Return') : key('Refuse'));

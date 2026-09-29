@@ -71,6 +71,32 @@ integration("waiting for you, across modules", () => {
     });
   });
 
+  it("lists a milestone falling due without an invoice as Issue invoice, for those who invoice clients (D-14)", async () => {
+    await world(async (client, ids) => {
+      const caseId = (await client.query<{ case_id: string }>("SELECT case_id FROM delivery_projects WHERE id = $1", [ids.projectId])).rows[0].case_id;
+      const opportunityId = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,pipeline_id,stage_id,title,reference) VALUES($1,$2,$3,$3,$3,'Villa 12 fit-out','OP-1')`, [opportunityId, ids.workspaceId, randomUUID()]);
+      await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, ids.workspaceId, opportunityId, ids.approver]);
+      await client.query(`INSERT INTO project_scope_seals(id,workspace_id,project_id,quote_id,quote_number,revision_label,quote_hash,snapshot,content_hash,currency,total,accepted_at,accepted_by_name,sealed_by)
+        VALUES($1,$2,$3,'q1',1,'R1','h','{}'::jsonb,$4,'AED',9000,now(),'Client',$5)`, [randomUUID(), ids.workspaceId, ids.projectId, "0".repeat(64), ids.approver]);
+      await client.query(`INSERT INTO commercial_payments(workspace_id,case_id,id,sort_order,title,amount,currency,due_date,status,source_quote_id) VALUES
+        ($1,$2,'due',0,'Advance',3000,'AED',current_date + 2,'pending','q1'),
+        ($1,$2,'later',1,'Carpentry',3000,'AED',current_date + 20,'pending','q1'),
+        ($1,$2,'invoiced',2,'Tiles',3000,'AED',current_date - 1,'pending','q1')`, [ids.workspaceId, caseId]);
+      await client.query(`INSERT INTO client_invoices(id,workspace_id,case_id,payment_id,project_id,legal_entity_id,quote_id,number,issue_date,due_date,currency,net,tax,total,
+          prices_include_tax,milestone_title,customer_name,company_name,issued_by,status)
+        VALUES($1,$2,$3,'invoiced',$4,$5,'q1','INV-1',current_date,current_date,'AED',3000,0,3000,false,'Tiles','Client','Firm',$6,'issued')`,
+        [randomUUID(), ids.workspaceId, caseId, ids.projectId, randomUUID(), ids.approver]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      const finance = await waitingFor(client, context(ids, ids.approver, ["receivables.manage"]));
+      expect(finance.rows).toEqual([expect.objectContaining({ kind: "invoice", group: "payments", id: "due", title: "Advance", canDecide: true, decide: null,
+        phrase: { key: "Issue invoice · {milestone}", values: { milestone: "Advance" } }, href: `/workspace/projects/${ids.projectId}/money?view=client`,
+        project: expect.objectContaining({ reference: "P-12" }) })]);
+      expect((await waitingFor(client, context(ids, ids.approver, []))).rows.some((row) => row.kind === "invoice")).toBe(false);
+    });
+  });
+
   it("names the project a reported client payment belongs to", async () => {
     await world(async (client, ids) => {
       const caseId = (await client.query<{ case_id: string }>("SELECT case_id FROM delivery_projects WHERE id = $1", [ids.projectId])).rows[0].case_id;

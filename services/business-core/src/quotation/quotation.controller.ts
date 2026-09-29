@@ -5,13 +5,26 @@ import { CurrentActor } from "../auth/current-actor.decorator";
 import { QuotationAiService } from "./quotation-ai.service";
 import { QuotationCollabService } from "./quotation-collab.service";
 import { QuotationBuilderService } from "./quotation-builder.service";
+import { QuoteShareService } from "./quote-share.service";
 
 /** The quotation builder, its settings and the firm's work packages (plan §6.8). Bodies are validated in the service. */
 @ApiTags("quotation")
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/quotation")
 export class QuotationController {
-  constructor(private readonly builder: QuotationBuilderService, private readonly assistant: QuotationAiService, private readonly collab: QuotationCollabService) {}
+  constructor(private readonly builder: QuotationBuilderService, private readonly assistant: QuotationAiService, private readonly collab: QuotationCollabService,
+    private readonly sharing: QuoteShareService) {}
+
+  /** Sharing a sent quote: its portal link, WhatsApp links to its client contacts, and sending it again (Q-9). */
+  @Get("cases/:caseId/quotes/:quoteId/share")
+  share(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string) {
+    return this.sharing.share(actor, workspaceId, caseId, quoteId);
+  }
+
+  @Post("cases/:caseId/quotes/:quoteId/resend")
+  resend(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string) {
+    return this.sharing.resend(actor, workspaceId, caseId, quoteId);
+  }
 
   @Get("settings")
   settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.builder.settings(actor, workspaceId); }
