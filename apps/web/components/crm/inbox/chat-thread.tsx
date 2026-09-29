@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
 import { Avatar, Badge, Button, ControlledModalDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
@@ -12,6 +12,8 @@ import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CrmDateTimeField } from "../crm-date-time-field";
 import { ChatContextPanel } from "./chat-context";
 import { InboxComposer } from "./inbox-composer";
+import { useWoddy, useWoddyComposer, useWoddyRecord } from "../woddy-chat";
+import { useWoddyPrivateAsk, WoddyPrivateReplies } from "@/components/woddy/woddy-private-replies";
 import { LabelChip, useNow } from "./inbox-parts";
 import styles from "../crm-inbox.module.css";
 
@@ -34,6 +36,12 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
   const { locale, timeZone } = useDesignSystem();
   const now = useNow(15_000);
   const { thread, failure: loadFailure, refresh } = useLiveConversation(workspaceId, id);
+  // Woddy: this chat is its context, the chats picked in the list are "these", and a reply it drafts goes
+  // into this reply box (W-3). "@Woddy …" in the reply box is answered here, privately.
+  useWoddyRecord("conversation", id, String(thread?.partyName ?? t("Chat")));
+  useWoddyComposer(id, onDraftChange);
+  const picked = useWoddy()?.selection ?? null;
+  const woddy = useWoddyPrivateAsk(workspaceId, { surface: "inbox", context: { type: "conversation", id }, selection: picked?.type === "conversation" ? picked : null }, onDraftChange);
   const [context, setContext] = useState<ChatContext | null>(null);
   const [busy, setBusy] = useState(false), [failure, setFailure] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -129,10 +137,12 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     {loadFailure || failure ? <p className={styles.error} role="alert">{failure || loadFailure} {loadFailure ? <Button size="compact" variant="quiet" onPress={() => void refresh()}>{t("Retry")}</Button> : null}</p> : null}
     {thread.blockedAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{thread.spamAt ? t("Blocked as spam: messages are kept, nobody is told.") : t("Blocked: messages are kept, nobody is told.")}</p> : null}
     {status === "snoozed" && thread.snoozedUntil ? <p className={styles.stateBar}><Clock3 aria-hidden="true" size={14} />{t("Snoozed until {time}", { time: new Intl.DateTimeFormat(locale, { timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(String(thread.snoozedUntil))) })}</p> : null}
-    <MessageHistory workspaceId={workspaceId} thread={thread} onHide={thread.canSend ? hide : undefined} canShowHidden={Boolean(thread.canManage)} />
+    <MessageHistory workspaceId={workspaceId} thread={thread} onHide={thread.canSend ? hide : undefined} canShowHidden={Boolean(thread.canManage)}
+      revision={woddy.turns.map((turn) => `${turn.id}:${turn.state}`).join(",")}
+      after={<WoddyPrivateReplies workspaceId={workspaceId} turns={woddy.turns} onDismiss={woddy.dismiss} draftPlaced />} />
     <InboxComposer workspaceId={workspaceId} thread={thread} now={now} blocked={blocked} draft={draft} onDraftChange={onDraftChange} variables={context?.variables ?? {}}
       lookups={{ quickReplies: lookups.quickReplies, templates: lookups.templates, owners, canManage: Boolean(lookups.settings?.canManage) }}
-      onSent={async () => { await refresh(); await onChanged(); }} />
+      onSent={async () => { await refresh(); await onChanged(); }} onAskWoddy={woddy.ask} woddyBusy={woddy.asking} />
   </section>
     {detailsOpen ? <InspectorSheet isOpen title={t("Contact details")} onOpenChange={setDetailsOpen} size="sm"><ChatContextPanel workspaceId={workspaceId} thread={thread} context={context} owners={owners} membershipId={lookups.membershipId} onLinked={async () => { await refresh(); await loadContext(); await onChanged(); }} /></InspectorSheet> : null}
     {customSnooze ? <CustomSnooze timeZone={timeZone} onClose={() => setCustomSnooze(false)} onSnooze={async (until) => { setCustomSnooze(false); await change({ status: "snoozed", snoozedUntil: until }, true); }} /> : null}
@@ -196,7 +206,11 @@ function groupPhotos(entries: Entry[]): Entry[] {
 }
 
 /** Messages and the chat's own history (who resolved, snoozed, assigned or labelled it) in one timeline. */
-function MessageHistory({ workspaceId, thread, onHide, canShowHidden }: { workspaceId: string; thread: RecordData; onHide?: (messageId: string, hidden: boolean) => void; canShowHidden: boolean }) {
+function MessageHistory({ workspaceId, thread, onHide, canShowHidden, after, revision = "" }: {
+  workspaceId: string; thread: RecordData; onHide?: (messageId: string, hidden: boolean) => void; canShowHidden: boolean;
+  /** Shown after the last message (Woddy's private replies); `revision` changes when it does. */
+  after?: ReactNode; revision?: string;
+}) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const dateOf = (value: unknown) => inboxDate(value, locale, timeZone, t("New"));
@@ -213,6 +227,7 @@ function MessageHistory({ workspaceId, thread, onHide, canShowHidden }: { worksp
       .sort((a, b) => Date.parse(a.at) - Date.parse(b.at)));
   }, [olderMessages, thread.messages, thread.events]);
   useLayoutEffect(() => { const element = scroller.current; if (!element) return; const anchor = olderAnchor.current; if (anchor) element.scrollTop = anchor.top + element.scrollHeight - anchor.height; else if (stayAtBottom.current) element.scrollTop = element.scrollHeight; olderAnchor.current = null; }, [entries]);
+  useLayoutEffect(() => { const element = scroller.current; if (element && revision) element.scrollTop = element.scrollHeight; }, [revision]);
   const partyName = String(thread.partyName ?? t("Contact"));
   return <div className={styles.messages} ref={scroller} tabIndex={0} role="log" aria-label={t("Message history")} onScroll={() => { const element = scroller.current; if (element) stayAtBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}>
     {cursor ? <Button size="compact" isLoading={busy} onPress={async () => { setBusy(true); setFailure(""); try { const result = await crmRequest<ChatPage>(workspaceId, `conversations/${thread.id}/messages?limit=100&cursor=${encodeURIComponent(cursor)}`, "GET", undefined, timeout()); if (scroller.current) olderAnchor.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; setOlderMessages((old) => [...result.data.filter((item) => !old.some((value) => value.id === item.id)), ...old]); setOlderCursor(result.nextCursor ?? ""); } catch (error) { setFailure((error as Error).message); } finally { setBusy(false); } }}>{t("Load earlier messages")}</Button> : null}
@@ -224,6 +239,7 @@ function MessageHistory({ workspaceId, thread, onHide, canShowHidden }: { worksp
         : <MessageBubble message={entry.message} partyName={partyName} workspaceId={workspaceId} time={inboxTime(entry.at, locale, timeZone)} onHide={onHide} canShowHidden={canShowHidden} />}
     </Fragment>)}
     {!entries.length ? <div className={styles.empty}><MessageCircle size={30} /><p>{t("No messages yet.")}</p></div> : null}
+    {after}
   </div>;
 }
 

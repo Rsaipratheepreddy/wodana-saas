@@ -138,6 +138,29 @@ describe("CRM inbox", () => {
     await user.keyboard("{Enter}");
     await waitFor(() => expect(input).toHaveValue("Hi Noura, our studio is on Beach Road."));
   });
+  it("treats an @Woddy line as an instruction: never sent, answered privately in the thread, a drafted reply put in the reply box", async () => {
+    const user = userEvent.setup(), { data, record, fetcher, posted } = setup();
+    const href = `/workspace/crm/conversations?record=${record.id}`;
+    const answer = { runId: "r-1", answer: "Their quote is with them [S1].", sources: [{ key: "S1", type: "conversation", id: record.id, label: "Everyday contact · whatsapp", href }], cited: ["S1"],
+      proposals: [], draft: { text: "Hi Noura, your quote is ready to review.", conversationId: record.id }, stopped: null };
+    const base = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (url: string, init?: RequestInit) => url === "/api/workspace/woddy" ? { ok: true, status: 200, json: async () => answer } : base(url, init));
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    const input = await screen.findByRole("textbox", { name: "Message" });
+    await user.type(input, "@Woddy draft the quote reply");
+    expect(screen.getByText("Only Woddy reads this line. It is never sent.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ask Woddy" }));
+    const reply = await screen.findByRole("article", { name: "Woddy's private reply" });
+    expect(reply).toHaveTextContent("Their quote is with them");
+    expect(within(reply).getAllByRole("link", { name: "Everyday contact · whatsapp" })[0]).toHaveAttribute("href", href);
+    expect(within(reply).getByText("Only you see this")).toBeInTheDocument();
+    // Nothing reached the client, not even as a note; the draft waits in the reply box for the person to send.
+    expect(posted("/messages")).toEqual([]);
+    await waitFor(() => expect(input).toHaveValue("Hi Noura, your quote is ready to review."));
+    const ask = JSON.parse(String(fetcher.mock.calls.find(([url]) => url === "/api/workspace/woddy")![1]!.body));
+    expect(ask).toMatchObject({ message: "draft the quote reply", surface: "inbox", context: { type: "conversation", id: record.id } });
+  });
+
   it("adds an internal note that mentions a teammate and is never sent", async () => {
     const user = userEvent.setup(), { data, record, posted } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     await user.click(await screen.findByRole("radio", { name: "Note" }));

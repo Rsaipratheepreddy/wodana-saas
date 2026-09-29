@@ -216,7 +216,8 @@ describe("the agent loop", () => {
     expect(setup.services.activities.create).not.toHaveBeenCalled();
     expect(answer.proposals).toHaveLength(1);
     expect(answer.proposals[0]).toMatchObject({ tool: "schedule_follow_up", status: "proposed", summary: expect.stringContaining("Follow up with Maya Rao"), version: 1 });
-    expect(answer.proposals[0].preview).toMatchObject({ kind: "fields", fields: expect.arrayContaining([{ label: "When", after: "2026-09-30 10:00, Wednesday (Europe/Lisbon)" }]) });
+    expect(answer.proposals[0].preview).toMatchObject({ kind: "fields", fields: expect.arrayContaining([{ label: "When", after: "2026-09-30T09:00:00.000Z", format: "datetime" }]) });
+    expect(answer.proposals[0].title).toEqual({ key: "Follow up with {client}", values: { client: "Maya Rao" } });
     expect(new Date(answer.proposals[0].expiresAt).getTime() - Date.parse("2026-09-29T08:00:00Z")).toBe(PROPOSAL_TTL_MS);
     expect(responsesOf({ sent }, 1)[0].response).toMatchObject({ status: "waiting_for_confirmation", note: expect.stringMatching(/Nothing has changed yet/) });
     const stored = setup.state.calls.get(answer.proposals[0].id)!;

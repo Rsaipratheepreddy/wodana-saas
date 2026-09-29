@@ -10,6 +10,8 @@ import {
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
 import type { WorkActivity, WorkBoard, WorkDetail, WorkItem, WorkMove, WorkStatus, WorkType } from "@/lib/project-core/types";
+import { woddyInstruction } from "@/lib/woddy/agent";
+import { useWoddyPrivateAsk, WoddyPrivateReplies } from "@/components/woddy/woddy-private-replies";
 import { SavedPhotos } from "../purchasing/delivery-photos";
 import { useProjectFormat } from "./format";
 import { ALL_STATUSES, AwayChip, PRIORITIES, StatusIcon, StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
@@ -53,7 +55,7 @@ export function WorkSheet({ api, projectId, itemId, board, onBoard, onOpenItem, 
   return <InspectorSheet isOpen size="md" title={detail ? `#${detail.number} ${detail.title}` : t("Loading")} hideTitle onOpenChange={(open) => { if (!open) onClose(); }}>
     {error && !detail ? <ErrorState description={error} onRetry={() => void load()} />
       : !detail ? <Skeleton lines={8} shape="facts" />
-      : <WorkBody key={`${detail.id}:${detail.version}`} detail={detail} board={board} run={run} notice={notice} onOpenItem={onOpenItem}
+      : <WorkBody key={`${detail.id}:${detail.version}`} workspaceId={api.workspaceId} detail={detail} board={board} run={run} notice={notice} onOpenItem={onOpenItem}
           preview={async (dates) => (await api.workRipple(projectId, itemId, dates)).moves}
           photos={{ url: (photoId, small) => api.photoUrl(projectId, photoId, small), upload: async (kind, files) => {
             setNotice("");
@@ -68,8 +70,8 @@ export function WorkSheet({ api, projectId, itemId, board, onBoard, onOpenItem, 
 
 type Photos = { url: (photoId: string, preview?: boolean) => string; upload: (kind: "before" | "after", files: File[]) => Promise<void> };
 
-function WorkBody({ detail, board, run, notice, onOpenItem, preview, photos }: {
-  detail: WorkDetail; board: WorkBoard; run: Run; notice: string; onOpenItem: (id: string) => void; preview: Preview; photos: Photos;
+function WorkBody({ workspaceId, detail, board, run, notice, onOpenItem, preview, photos }: {
+  workspaceId: string; detail: WorkDetail; board: WorkBoard; run: Run; notice: string; onOpenItem: (id: string) => void; preview: Preview; photos: Photos;
 }) {
   const t = useT();
   const labels = useWorkLabels();
@@ -198,7 +200,7 @@ function WorkBody({ detail, board, run, notice, onOpenItem, preview, photos }: {
 
     {!detail.parentId ? <Subtasks detail={detail} board={board} run={run} onOpenItem={onOpenItem} /> : null}
     <WaitsOn detail={detail} board={board} run={run} onOpenItem={onOpenItem} />
-    <Activity detail={detail} board={board} run={run} />
+    <Activity workspaceId={workspaceId} detail={detail} board={board} run={run} />
     {pending ? <RippleDialog moves={pending.moves} onClose={() => setPending(null)}
       onSave={async (ripple) => { if (await update({ ...pending.dates, ripple })) setPending(null); }} /> : null}
   </div>;
@@ -302,12 +304,15 @@ function WaitsOn({ detail, board, run, onOpenItem }: { detail: WorkDetail; board
   </section>;
 }
 
-function Activity({ detail, board, run }: { detail: WorkDetail; board: WorkBoard; run: Run }) {
+function Activity({ workspaceId, detail, board, run }: { workspaceId: string; detail: WorkDetail; board: WorkBoard; run: Run }) {
   const t = useT();
   const format = useProjectFormat();
   const describe = useActivityText();
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
+  // "@Woddy …" in the comment box asks Woddy about this task; the answer is private and nothing is posted.
+  const woddy = useWoddyPrivateAsk(workspaceId, { surface: "comment", context: { type: "work_item", id: detail.id } });
+  const instruction = woddyInstruction(comment);
   const items: ActivityItem[] = [...detail.activity].reverse().map((entry) => ({
     id: entry.id, actor: entry.by, occurredAt: format.when(entry.at),
     ...(entry.kind === "comment" ? { kind: "comment" as const, action: t("commented"), detail: (entry as { body: string }).body } : { kind: "change" as const, action: describe(entry) }),
@@ -316,13 +321,19 @@ function Activity({ detail, board, run }: { detail: WorkDetail; board: WorkBoard
     <h3>{t("Activity")}</h3>
     {board.canEdit ? <form className={styles.commentBox} onSubmit={async (event) => {
       event.preventDefault();
+      if (instruction !== null) {
+        if (instruction && !woddy.asking) { setComment(""); await woddy.ask(instruction); }
+        return;
+      }
       setBusy(true);
       if (await run("comment", { id: crypto.randomUUID(), body: comment })) setComment("");
       setBusy(false);
     }}>
-      <TextAreaField label={null} aria-label={t("Comment")} placeholder={t("Write a comment")} value={comment} onChange={setComment} />
-      <Button size="compact" type="submit" isLoading={busy} isDisabled={!comment.trim()}>{t("Comment")}</Button>
+      <TextAreaField label={null} aria-label={t("Comment")} placeholder={t("Write a comment")} value={comment} onChange={setComment}
+        description={instruction !== null ? t("Only Woddy reads this line. It is never posted.") : undefined} />
+      <Button size="compact" type="submit" isLoading={busy || woddy.asking} isDisabled={!comment.trim() || (instruction !== null && !instruction)}>{instruction !== null ? t("Ask Woddy") : t("Comment")}</Button>
     </form> : null}
+    <WoddyPrivateReplies workspaceId={workspaceId} turns={woddy.turns} onDismiss={woddy.dismiss} />
     <ActivityFeed items={items} />
   </section>;
 }

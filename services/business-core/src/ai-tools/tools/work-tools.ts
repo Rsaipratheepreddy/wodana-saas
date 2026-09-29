@@ -1,13 +1,15 @@
 import { NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { CompleteActivityDto, CreateActivityDto, UpdateActivityDto } from "../../crm/activities/dto/activities.dto";
-import { ToolInputError, type AiTool, type AiToolContext, type PreviewField, type Proposal } from "../ai-tool";
-import { clip, ref, uuidArg, zonedArg, zonedWallTime } from "../tool-kit";
+import { phrase, ToolInputError, type AiTool, type AiToolContext, type PreviewField, type Proposal } from "../ai-tool";
+import { clip, ref, uuidArg, zonedArg } from "../tool-kit";
 import { commandInput, num, str, type Row, type ToolServices } from "../tool-services";
-import { crmToolHelpers } from "./crm-write-tools";
+import { crmToolHelpers, titled } from "./crm-write-tools";
 
 const PRIORITIES = ["low", "normal", "high", "urgent"];
 const WORK_STATUSES = ["todo", "in_progress", "in_review", "done"];
+const PRIORITY_LABELS: Record<string, string> = { low: "Low", normal: "Normal", high: "High", urgent: "Urgent" };
+const STATUS_LABELS: Record<string, string> = { todo: "To do", in_progress: "In progress", in_review: "In review", done: "Done", cancelled: "Cancelled" };
 
 /** A project task and its project, read through the project module (its own access rules). */
 async function workItem(services: ToolServices, context: AiToolContext, itemId: string) {
@@ -64,11 +66,11 @@ export function workTools(services: ToolServices): AiTool[] {
         const dueDate = input.due ? dayArg(input.due, context.timeZone, "due") : undefined;
         const label = `${project.reference} · ${project.name}`;
         return {
-          summary: `Add "${title}" to ${project.reference}`,
+          ...titled(phrase("Add the task {title} to {record}", { title, record: project.reference })),
           target: { ...ref("project", projectId, label), version: null },
           preview: { kind: "fields", fields: [
-            { label: "Task", after: title }, { label: "Project", after: label }, ...(dueDate ? [{ label: "Due", after: dueDate }] : []),
-            { label: "Assignee", after: await memberName(services, context, assigneeId) }, ...(input.priority ? [{ label: "Priority", after: String(input.priority) }] : []),
+            { label: "Task", after: title }, { label: "Project", after: label }, ...(dueDate ? [{ label: "Due", after: dueDate, format: "date" as const }] : []),
+            { label: "Assignee", after: await memberName(services, context, assigneeId) }, ...(input.priority ? [{ label: "Priority", after: PRIORITY_LABELS[String(input.priority)] }] : []),
             ...(input.notes ? [{ label: "Notes", after: clip(input.notes, 400) }] : []),
           ] },
           // The item's id is chosen now: confirming twice creates it once.
@@ -79,12 +81,12 @@ export function workTools(services: ToolServices): AiTool[] {
       crmToolHelpers.assertMayAssign(context, assigneeId);
       const dueAt = input.due ? zonedArg(String(input.due).length === 10 ? `${String(input.due)}T09:00` : input.due, context.timeZone, "due") : undefined;
       return {
-        summary: `Add the task "${title}" on ${record.label}`,
+        ...titled(phrase("Add the task {title} to {record}", { title, record: record.label })),
         target: { ...record, version: null },
         preview: { kind: "fields", fields: [
           { label: "Task", after: title }, { label: "On", after: `${record.label}${record.client ? ` · ${record.client}` : ""}` },
-          ...(dueAt ? [{ label: "Due", after: `${zonedWallTime(new Date(dueAt), context.timeZone)} (${context.timeZone})` }] : []),
-          { label: "Owner", after: await memberName(services, context, assigneeId) }, ...(input.priority ? [{ label: "Priority", after: String(input.priority) }] : []),
+          ...(dueAt ? [{ label: "Due", after: dueAt, format: "datetime" as const }] : []),
+          { label: "Owner", after: await memberName(services, context, assigneeId) }, ...(input.priority ? [{ label: "Priority", after: PRIORITY_LABELS[String(input.priority)] }] : []),
           ...(input.notes ? [{ label: "Notes", after: clip(input.notes, 400) }] : []),
         ] },
         command: { activity: { type: "task", title, [crmToolHelpers.targetKey(record.type)]: record.id, ownerMembershipId: assigneeId, ...(dueAt ? { dueAt } : {}), ...(input.priority ? { priority: input.priority } : {}), ...(input.notes ? { description: input.notes } : {}) } },
@@ -132,13 +134,13 @@ export function workTools(services: ToolServices): AiTool[] {
         const { projectId, item, label } = await workItem(services, context, taskId);
         const change: Row = { action: "update", itemId: taskId, version: num(item.version) };
         if (input.title && input.title !== item.title) { fields.push({ label: "Title", before: str(item.title), after: String(input.title) }); change.title = input.title; }
-        if (input.due) { const dueDate = dayArg(input.due, context.timeZone, "due"); if (dueDate !== item.dueDate) { fields.push({ label: "Due", before: str(item.dueDate), after: dueDate }); change.dueDate = dueDate; } }
+        if (input.due) { const dueDate = dayArg(input.due, context.timeZone, "due"); if (dueDate !== item.dueDate) { fields.push({ label: "Due", before: str(item.dueDate), after: dueDate, format: "date" }); change.dueDate = dueDate; } }
         if (input.assigneeId) { const assigneeId = uuidArg(input.assigneeId, "assigneeId"); if (assigneeId !== item.assigneeId) { fields.push({ label: "Assignee", before: str(item.assigneeName) ?? "Unassigned", after: await memberName(services, context, assigneeId) }); change.assigneeId = assigneeId; } }
-        if (input.priority && input.priority !== item.priority) { fields.push({ label: "Priority", before: str(item.priority), after: String(input.priority) }); change.priority = input.priority; }
-        if (input.status && input.status !== item.status) { fields.push({ label: "Status", before: str(item.status), after: String(input.status) }); change.status = input.status; }
+        if (input.priority && input.priority !== item.priority) { fields.push({ label: "Priority", before: PRIORITY_LABELS[String(item.priority)] ?? null, after: PRIORITY_LABELS[String(input.priority)] }); change.priority = input.priority; }
+        if (input.status && input.status !== item.status) { fields.push({ label: "Status", before: STATUS_LABELS[String(item.status)] ?? null, after: STATUS_LABELS[String(input.status)] }); change.status = input.status; }
         if (!fields.length) throw new ToolInputError("Nothing would change");
         return {
-          summary: `Update ${label}`,
+          ...titled(phrase("Update {record}", { record: label })),
           target: { ...ref("work_item", taskId, label, { projectId }), version: num(item.version) },
           preview: { kind: "fields", fields },
           command: { projectId, work: change },
@@ -152,7 +154,7 @@ export function workTools(services: ToolServices): AiTool[] {
       if (input.title && input.title !== task.title) { fields.push({ label: "Title", before: str(task.title), after: String(input.title) }); change.title = input.title; }
       if (input.due) {
         const dueAt = zonedArg(String(input.due).length === 10 ? `${String(input.due)}T09:00` : input.due, context.timeZone, "due");
-        fields.push({ label: "Due", before: task.dueAt ? zonedWallTime(new Date(String(task.dueAt)), context.timeZone) : null, after: zonedWallTime(new Date(dueAt), context.timeZone) });
+        fields.push({ label: "Due", before: task.dueAt ? new Date(String(task.dueAt)).toISOString() : null, after: dueAt, format: "datetime" });
         change.dueAt = dueAt;
       }
       if (input.assigneeId) {
@@ -161,13 +163,13 @@ export function workTools(services: ToolServices): AiTool[] {
         fields.push({ label: "Owner", before: str(task.ownerName), after: await memberName(services, context, ownerId) });
         change.ownerMembershipId = ownerId;
       }
-      if (input.priority && input.priority !== task.priority) { fields.push({ label: "Priority", before: str(task.priority), after: String(input.priority) }); change.priority = input.priority; }
+      if (input.priority && input.priority !== task.priority) { fields.push({ label: "Priority", before: PRIORITY_LABELS[String(task.priority)] ?? null, after: PRIORITY_LABELS[String(input.priority)] }); change.priority = input.priority; }
       const complete = input.status === "done";
       if (complete && fields.length) throw new ToolInputError("Mark it done on its own, or change its details: not both at once");
       if (complete) fields.push({ label: "Status", before: "Pending", after: "Done" });
       if (!fields.length) throw new ToolInputError("Nothing would change");
       return {
-        summary: complete ? `Mark "${label}" done` : `Update "${label}"`,
+        ...titled(phrase(complete ? "Mark {record} done" : "Update {record}", { record: label })),
         target: { type: "crm_task", id: taskId, label, href: null, version: num(task.version) },
         preview: { kind: "fields", fields },
         command: complete ? { activityId: taskId, complete: { version: num(task.version) } } : { activityId: taskId, update: change },
@@ -214,7 +216,7 @@ export function workTools(services: ToolServices): AiTool[] {
         const itemId = uuidArg(input.recordId, "recordId");
         const { projectId, label } = await workItem(services, context, itemId);
         return {
-          summary: `Comment on ${label}`,
+          ...titled(phrase("Comment on {record}", { record: label })),
           target: { ...ref("work_item", itemId, label, { projectId }), version: null },
           preview: { kind: "text", text, fields: [{ label: "On", after: label }] },
           command: { projectId, work: { action: "comment", itemId, id: randomUUID(), body: text } },
@@ -231,7 +233,7 @@ export function workTools(services: ToolServices): AiTool[] {
       if (!quote) throw new NotFoundException("Quotation not found");
       const label = `${quote.reference ?? quote.title} R${quote.number}`;
       return {
-        summary: `Comment on ${label}`,
+        ...titled(phrase("Comment on {record}", { record: label })),
         target: { ...ref("quotation", `${caseId}/${quoteId}`, label, { caseId }), version: null },
         preview: { kind: "text", text, fields: [{ label: "On", after: label }] },
         command: { caseId, quoteId, comment: { id: randomUUID(), body: text, anchorKind: "total" } },

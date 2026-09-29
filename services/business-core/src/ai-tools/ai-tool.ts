@@ -56,9 +56,14 @@ export type AiToolContext = {
 
 export type ReadResult = { data: unknown };
 
-/** One line of a proposal: a field and its value before (when it changes) and after. */
-export type PreviewField = { label: string; before?: string | null; after: string | null };
-export type ProposalTarget = RecordRef & { detail?: string | null };
+/**
+ * One line of a proposal: a field and its value before (when it changes) and after. Labels and fixed values
+ * are English keys the web translates; `format` marks an ISO instant or date the web shows in the
+ * workspace's locale and time zone.
+ */
+export type PreviewField = { label: string; before?: string | null; after: string | null; format?: "datetime" | "date" };
+/** A record a change applies to; `now` is its current value of what changes (owner, state, labels). */
+export type ProposalTarget = RecordRef & { detail?: string | null; now?: string | null };
 /**
  * What the person sees before confirming: the fields a create sets or an update changes (a diff), the
  * records a change applies to (each can be unticked when `selectable`), or the exact text.
@@ -68,8 +73,16 @@ export type ProposalPreview =
   | { kind: "targets"; items: ProposalTarget[]; selectable: boolean; fields: PreviewField[] }
   | { kind: "text"; text: string; fields: PreviewField[] };
 
+/** A sentence the web translates: an English key with {placeholders}, and their values. */
+export type Phrase = { key: string; values?: Record<string, string | number> };
+export function phrase(key: string, values: Record<string, string | number> = {}): Phrase & { text: string } {
+  return { key, values, text: key.replace(/\{(\w+)\}/g, (token, name: string) => String(values[name] ?? token)) };
+}
+
 export type Proposal = {
-  /** One plain line: what confirming does. */
+  /** What confirming does, as the card's title. */
+  title: Phrase;
+  /** The same in plain English, for the model and the audit trail. */
   summary: string;
   /** The record it changes (and the version the proposal was made against), when there is one. */
   target: (RecordRef & { version: number | null }) | null;

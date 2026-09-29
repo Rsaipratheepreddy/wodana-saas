@@ -5,7 +5,7 @@ import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { runWithCommandOrigin } from "../database/command-origin";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { ItemsFailedError, type Proposal, type ProposalPreview, type RecordRef, type StoredProposal } from "./ai-tool";
+import { ItemsFailedError, type Phrase, type Proposal, type ProposalPreview, type RecordRef, type StoredProposal } from "./ai-tool";
 import { AI_USE, readAsker, toolContext } from "./ai-tool-context";
 import { AiToolRegistry } from "./ai-tools.registry";
 import { moduleMessage } from "./tool-kit";
@@ -16,7 +16,7 @@ export const PROPOSAL_TTL_MS = 15 * 60_000;
 export type ToolCallStatus = "proposed" | "confirmed" | "executed" | "rejected" | "failed" | "expired";
 /** What the web shows as a confirmation card. */
 export type ToolCallCard = {
-  id: string; runId: string; tool: string; status: ToolCallStatus; summary: string; preview: ProposalPreview;
+  id: string; runId: string; tool: string; status: ToolCallStatus; title: Phrase; summary: string; preview: ProposalPreview;
   target: RecordRef | null; expiresAt: string; version: number; selection: string[] | null;
   record: RecordRef | null; failures: Array<{ id: string; label: string; message: string }>; error: string | null;
 };
@@ -33,7 +33,7 @@ const COLUMNS = `id, run_id AS "runId", tool, status, requested_by AS "requested
 const cardOf = (row: CallRow): ToolCallCard => {
   const result = row.result ?? {};
   return {
-    id: row.id, runId: row.runId, tool: row.tool, status: row.expired ? "expired" : row.status, summary: row.summary, preview: row.preview,
+    id: row.id, runId: row.runId, tool: row.tool, status: row.expired ? "expired" : row.status, title: (row.preview as { title?: Phrase }).title ?? { key: row.summary }, summary: row.summary, preview: row.preview,
     target: row.targetType && row.targetId ? { type: row.targetType, id: row.targetId, label: String((row.preview as { targetLabel?: string }).targetLabel ?? row.summary), href: (row.preview as { targetHref?: string | null }).targetHref ?? null } : null,
     expiresAt: new Date(row.expiresAt).toISOString(), version: row.version, selection: row.selection,
     record: (result.record as RecordRef | undefined) ?? null, failures: (result.failures as ToolCallCard["failures"] | undefined) ?? [], error: row.errorMessage,
@@ -56,7 +56,7 @@ export class AiToolCallsService {
     const { proposal } = input;
     const expiresAt = new Date((input.now ?? new Date()).getTime() + PROPOSAL_TTL_MS);
     // The card shows the target as the tool named it; the snapshot keeps it with the preview.
-    const preview = { ...proposal.preview, ...(proposal.target ? { targetLabel: proposal.target.label, targetHref: proposal.target.href ?? null } : {}) };
+    const preview = { ...proposal.preview, title: proposal.title, ...(proposal.target ? { targetLabel: proposal.target.label, targetHref: proposal.target.href ?? null } : {}) };
     return this.access.withPermission(actor, workspaceId, AI_USE, async (client, user) => {
       const row = (await client.query<CallRow>(
         `INSERT INTO ai_tool_calls (workspace_id, run_id, tool, requested_by, target_type, target_id, target_version, summary, preview, command, idempotency_key, expires_at)

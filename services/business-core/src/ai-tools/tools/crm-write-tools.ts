@@ -6,7 +6,7 @@ import { CreateIntakeEventDto, UpdateLeadDetailsDto } from "../../crm/intake/dto
 import { hasResolvedEnquiryType } from "../../crm/leads/lead-options";
 import { AssignLeadDto, ListLeadsQueryDto } from "../../crm/leads/dto/leads.dto";
 import { ListOpportunitiesQueryDto, QualifyLeadDto, TransitionOpportunityDto } from "../../crm/opportunities/dto/opportunities.dto";
-import { ItemsFailedError, ToolInputError, ToolQuestion, type AiTool, type AiToolContext, type Execution, type PreviewField, type Proposal, type ProposalTarget, type StoredProposal } from "../ai-tool";
+import { ItemsFailedError, phrase, ToolInputError, ToolQuestion, type AiTool, type AiToolContext, type Execution, type PreviewField, type Proposal, type ProposalTarget, type StoredProposal } from "../ai-tool";
 import { clip, moduleMessage, ref, uuidArg, zonedArg, zonedWallTime } from "../tool-kit";
 import { commandInput, num, queryInput, rowsOf, str, type Row, type ToolServices } from "../tool-services";
 
@@ -121,6 +121,11 @@ async function describeSalesRecord(services: ToolServices, context: AiToolContex
   return { type: "enquiry", id, label: record.label, client: str(enquiry.partyName), href: record.href ?? null };
 }
 
+/** A card's title, and the same sentence in English for the model and the audit trail. */
+export const titled = (title: ReturnType<typeof phrase>, extra = "") => ({ title: { key: title.key, values: title.values }, summary: `${title.text}${extra}` });
+export const KIND_LABELS: Record<string, string> = { note: "Note", call: "Call", meeting: "Meeting", email: "Email", whatsapp: "WhatsApp", sms: "SMS", other: "Other", task: "Task" };
+const STATE_LABELS: Record<string, string> = { open: "Open", snoozed: "Snoozed", closed: "Resolved" };
+
 const targetKey = (type: string) => (type === "enquiry" ? "leadId" : type === "opportunity" ? "opportunityId" : "partyId");
 
 /** Runs one module command per ticked item; the module's own refusal is kept per item. */
@@ -185,6 +190,8 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
       if (!party.mobile) throw new ToolQuestion("Ask for the client's mobile number.");
       const enquiryType = choose(options.enquiryTypes, input.enquiryType, "enquiry type");
       const region = options.emirates.length ? choose(options.emirates, input.region, "region") : null;
+      // Every enquiry has a region: the workspace's list when it has one, else as the person says it.
+      if (!region && !str(input.region)) throw new ToolQuestion("Ask which region the client is in.");
       // The chat's channel decides the source, as the enquiry form does: the company's own channel first.
       let source: Option;
       if (input.source) source = choose(options.sources, input.source, "source");
@@ -225,19 +232,21 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
         assignment: owner, originalPayload: { origin: "woddy", runId: context.runId }, ...identity,
       };
       const fields: PreviewField[] = [
-        { label: "Client", after: String(party.displayName) + (identity.identity === "existing" ? " (existing client)" : "") },
+        { label: identity.identity === "existing" ? "Existing client" : "Client", after: String(party.displayName) },
         { label: "Mobile", after: String(party.mobile) },
         ...(party.email ? [{ label: "Email", after: String(party.email) }] : []),
         { label: "Enquiry type", after: enquiryType.label },
-        ...(region ? [{ label: "Region", after: region.label }] : []),
+        { label: "Region", after: region?.label ?? String(input.region) },
         ...(input.area ? [{ label: "Area", after: String(input.area) }] : []),
         { label: "Source", after: `${source.label} · ${channel.label}` },
         { label: "Owner", after: ownerName },
         ...(summary ? [{ label: "Summary", after: clip(summary, 400) }] : []),
         ...(conversationId ? [{ label: "Chat", after: "Linked to this chat" }] : []),
       ];
+      // The intake's own input rules, checked now so a card never promises what the module would refuse.
+      await commandInput(CreateIntakeEventDto, intake);
       return {
-        summary: `Create an enquiry for ${String(party.displayName)}`,
+        ...titled(phrase("Create an enquiry for {name}", { name: String(party.displayName) })),
         target: null,
         preview: { kind: "fields", fields },
         command: { intake, conversationId, conversationVersion: chatVersion },
@@ -310,11 +319,13 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
       if (input.summary) { change("Summary", clip(summary, 400), clip(input.summary, 400)); summary = String(input.summary); }
       if (!fields.length) throw new ToolInputError("Nothing would change: every value is already the same");
       const label = str(enquiry.reference) ?? str(enquiry.title) ?? "Enquiry";
+      const updated = { version: num(lead.version), serviceType, ...(summary ? { summary } : {}), party: pick(party, PARTY_KEYS), details: nextDetails };
+      await commandInput(UpdateLeadDetailsDto, updated);
       return {
-        summary: `Update ${label}`,
+        ...titled(phrase("Update {record}", { record: label })),
         target: { ...ref("enquiry", leadId, label), version: num(lead.version) },
         preview: { kind: "fields", fields },
-        command: { leadId, details: { version: num(lead.version), serviceType, ...(summary ? { summary } : {}), party: pick(party, PARTY_KEYS), details: nextDetails } },
+        command: { leadId, details: updated },
       } satisfies Proposal;
     },
     async execute(context, proposal) {
@@ -347,10 +358,10 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
       const record = await resolveSalesRecord(services, context, input);
       const kind = String(input.kind);
       return {
-        summary: `Log a ${kind} on ${record.label}`,
+        ...titled(phrase("Log {kind} on {record}", { kind: KIND_LABELS[kind] ?? kind, record: record.label })),
         target: { ...record, version: null },
         preview: { kind: "fields", fields: [
-          { label: "On", after: `${record.label}${record.client ? ` · ${record.client}` : ""}` }, { label: "Type", after: kind }, { label: "Title", after: String(input.title) },
+          { label: "On", after: `${record.label}${record.client ? ` · ${record.client}` : ""}` }, { label: "Type", after: KIND_LABELS[kind] ?? kind }, { label: "Title", after: String(input.title) },
           ...(input.details ? [{ label: "Details", after: clip(input.details, 600) }] : []), ...(input.outcome ? [{ label: "Outcome", after: String(input.outcome) }] : []),
         ] },
         command: {
@@ -397,11 +408,11 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
       const kind = String(input.kind ?? "call");
       const title = str(input.title) ?? `Follow up with ${record.client ?? record.label}`;
       return {
-        summary: `${title} · ${zonedWallTime(new Date(dueAt), context.timeZone)}`,
+        ...titled(phrase("Follow up with {client}", { client: record.client ?? record.label }), ` at ${zonedWallTime(new Date(dueAt), context.timeZone)}`),
         target: { ...record, version: null },
         preview: { kind: "fields", fields: [
-          { label: "With", after: `${record.client ?? record.label} · ${record.label}` }, { label: "When", after: `${zonedWallTime(new Date(dueAt), context.timeZone)} (${context.timeZone})` },
-          { label: "Type", after: kind }, { label: "Title", after: title }, { label: "Owner", after: owner.name },
+          { label: "With", after: `${record.client ?? record.label} · ${record.label}` }, { label: "When", after: dueAt, format: "datetime" },
+          { label: "Type", after: KIND_LABELS[kind] ?? kind }, { label: "Title", after: title }, { label: "Owner", after: owner.name },
         ] },
         command: { activity: { type: kind, title, [targetKey(record.type)]: record.id, dueAt, isNextAction: true, ownerMembershipId: ownerId } },
       } satisfies Proposal;
@@ -445,7 +456,7 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
           const label = `${str(chat.partyName) ?? "Chat"} · ${str(chat.channel) ?? "chat"}`;
           if (chat.ownerMembershipId === member.id) continue;
           items.push({ id, version: Number(chat.version), label });
-          targets.push({ ...ref("conversation", id, label), detail: `Now: ${str(chat.ownerName) ?? "Unassigned"}` });
+          targets.push({ ...ref("conversation", id, label), now: str(chat.ownerName) ?? "Unassigned" });
         }
       } else {
         if (!context.permissions.has("crm.leads.assign")) throw new ForbiddenException("Assigning enquiries needs the lead assignment permission.");
@@ -459,12 +470,12 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
           const label = `${str(enquiry.reference) ?? "Enquiry"} · ${str(enquiry.partyName) ?? ""}`.replace(/ · $/, "");
           if (lead.ownerMembershipId === member.id) continue;
           items.push({ id, version: Number(lead.version), label });
-          targets.push({ ...ref("enquiry", id, label), detail: `Now: ${str(lead.ownerName) ?? "Unassigned"}` });
+          targets.push({ ...ref("enquiry", id, label), now: str(lead.ownerName) ?? "Unassigned" });
         }
       }
       if (!items.length) throw new ToolInputError(`Everything listed is already with ${member.name}`);
       return {
-        summary: `Assign ${items.length} ${type === "conversation" ? (items.length === 1 ? "chat" : "chats") : (items.length === 1 ? "enquiry" : "enquiries")} to ${member.name}`,
+        ...titled(phrase(type === "conversation" ? (items.length === 1 ? "Assign 1 chat to {name}" : "Assign {count} chats to {name}") : (items.length === 1 ? "Assign 1 enquiry to {name}" : "Assign {count} enquiries to {name}"), { count: items.length, name: member.name })),
         target: null,
         preview: { kind: "targets", items: targets, selectable: items.length > 1, fields: [{ label: "Assign to", after: member.name }] },
         command: { type, memberId: member.id, reason: str(input.reason) ?? "Reassigned", items },
@@ -505,14 +516,13 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
         if (chat.status === state && state !== "snoozed") continue;
         const label = `${str(chat.partyName) ?? "Chat"} · ${str(chat.channel) ?? "chat"}`;
         items.push({ id, version: Number(chat.version), label });
-        targets.push({ ...ref("conversation", id, label), detail: `Now: ${chat.status === "closed" ? "Resolved" : str(chat.status)}` });
+        targets.push({ ...ref("conversation", id, label), now: STATE_LABELS[String(chat.status)] ?? str(chat.status) });
       }
       if (!items.length) throw new ToolInputError("Every chat listed is already in that state");
-      const stateLabel = state === "closed" ? "Resolved" : state === "open" ? "Open" : `Snoozed until ${zonedWallTime(new Date(snoozedUntil!), context.timeZone)}`;
       return {
-        summary: `${state === "closed" ? "Resolve" : state === "open" ? "Reopen" : "Snooze"} ${items.length} ${items.length === 1 ? "chat" : "chats"}`,
+        ...titled(phrase(`${state === "closed" ? "Resolve" : state === "open" ? "Reopen" : "Snooze"} ${items.length === 1 ? "1 chat" : "{count} chats"}`, { count: items.length })),
         target: null,
-        preview: { kind: "targets", items: targets, selectable: items.length > 1, fields: [{ label: "State", after: stateLabel }] },
+        preview: { kind: "targets", items: targets, selectable: items.length > 1, fields: [{ label: "State", after: STATE_LABELS[state] }, ...(snoozedUntil ? [{ label: "Until", after: snoozedUntil, format: "datetime" as const }] : [])] },
         command: { state, snoozedUntil, items },
       } satisfies Proposal;
     },
@@ -553,10 +563,10 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
         const chat = await services.conversations.get(context.actor, context.workspaceId, id) as unknown as Row;
         const label = `${str(chat.partyName) ?? "Chat"} · ${str(chat.channel) ?? "chat"}`;
         items.push({ id, version: Number(chat.version), label });
-        targets.push({ ...ref("conversation", id, label), detail: rowsOf(chat.labels).map((item) => str(item.name)).filter(Boolean).join(", ") || null });
+        targets.push({ ...ref("conversation", id, label), now: rowsOf(chat.labels).map((item) => str(item.name)).filter(Boolean).join(", ") || null });
       }
       return {
-        summary: `Label ${items.length} ${items.length === 1 ? "chat" : "chats"}`,
+        ...titled(phrase(items.length === 1 ? "Label 1 chat" : "Label {count} chats", { count: items.length })),
         target: null,
         preview: { kind: "targets", items: targets, selectable: items.length > 1, fields: [
           ...(add.length ? [{ label: "Add", after: add.map((item) => item.name).join(", ") }] : []), ...(remove.length ? [{ label: "Remove", after: remove.map((item) => item.name).join(", ") }] : []),
@@ -612,11 +622,11 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
       if (!owner.canOwnEnquiries) throw new ToolInputError(`${owner.name} can't own sales work`);
       const title = str(input.title) ?? str(enquiry.title) ?? `${str(enquiry.partyName) ?? "Client"} opportunity`;
       return {
-        summary: `Convert ${label} to an opportunity`,
+        ...titled(phrase("Convert {record} to an opportunity", { record: label })),
         target: { ...ref("enquiry", leadId, label), version: num(lead.version) },
         preview: { kind: "fields", fields: [
           { label: "Enquiry", after: `${label} · ${str(enquiry.partyName) ?? ""}` }, { label: "Opportunity", after: title }, { label: "Pipeline", after: str(pipeline.name) },
-          { label: "Owner", after: owner.name }, { label: "Next follow-up", after: `${zonedWallTime(new Date(nextActionAt), context.timeZone)} (${context.timeZone})` },
+          { label: "Owner", after: owner.name }, { label: "Next follow-up", after: nextActionAt, format: "datetime" },
         ] },
         command: { leadId, qualify: { partyId: str(lead.partyId), leadVersion: num(lead.version), pipelineId: str(pipeline.id), ownerMembershipId: ownerId, title, nextActionAt } },
       } satisfies Proposal;
@@ -657,11 +667,11 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
       if (stage.id === opportunity.stageId) throw new ToolInputError(`${label} is already in ${String(stage.name)}`);
       const nextActionAt = input.nextFollowUp ? zonedArg(input.nextFollowUp, context.timeZone, "nextFollowUp", context.now, { future: true }) : null;
       return {
-        summary: `Move ${label} to ${String(stage.name)}`,
+        ...titled(phrase("Move {record} to {stage}", { record: label, stage: String(stage.name) })),
         target: { ...ref("opportunity", opportunityId, label), version: num(opportunity.version) },
         preview: { kind: "fields", fields: [
           { label: "Stage", before: str(opportunity.stageName), after: String(stage.name) },
-          ...(nextActionAt ? [{ label: "Next follow-up", after: `${zonedWallTime(new Date(nextActionAt), context.timeZone)} (${context.timeZone})` }] : []),
+          ...(nextActionAt ? [{ label: "Next follow-up", after: nextActionAt, format: "datetime" as const }] : []),
         ] },
         command: { opportunityId, transition: { version: num(opportunity.version), stageId: String(stage.id), ...(nextActionAt ? { nextActionAt } : {}) } },
       } satisfies Proposal;

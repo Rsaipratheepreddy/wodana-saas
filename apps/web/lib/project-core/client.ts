@@ -26,6 +26,7 @@ async function request<T>(url: string, method = "GET", body?: unknown): Promise<
 export function projectApi(workspaceId: string) {
   const path = (value: string) => projectPath(workspaceId, value);
   return {
+    workspaceId,
     list: () => request<{ projects: ProjectRow[]; canStart: boolean }>(path("projects")),
     ready: () => request<{ cases: ReadyCase[] }>(path("ready")),
     get: (projectId: string) => request<ProjectDetail>(path(`projects/${projectId}`)),

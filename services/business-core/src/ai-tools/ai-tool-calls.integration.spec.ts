@@ -116,13 +116,13 @@ integration("Woddy's proposed actions in PostgreSQL", () => {
       };
       const note: AiTool = {
         name: "log_activity", description: "", kind: "write", confirmation: "confirm", calls: "", permissions: [], parameters: { type: "object", properties: {} },
-        propose: async () => ({ summary: "Log a call", target: null, preview: { kind: "fields", fields: [] }, command: {} }),
+        propose: async () => ({ title: { key: "Log a call" }, summary: "Log a call", target: null, preview: { kind: "fields", fields: [] }, command: {} }),
         // Stands in for a module command: it writes its audit row in its own tenant transaction.
         execute: async () => inTransaction(async (c) => { await recordAudit(c, { workspaceId: a, actorUserId: owner, action: "crm.activity.created.v1", entityType: "crm_activity", entityId: randomUUID() }); return { result: { ok: true }, record: null }; }),
       };
       const calls = new AiToolCallsService(access as never, new AiToolRegistry([note]));
       const actor = { subject: "s", email: "e", displayName: "d", provider: "local" };
-      const proposal = { summary: "Log a call", target: null, preview: { kind: "fields" as const, fields: [] }, command: {} };
+      const proposal = { title: { key: "Log a call" }, summary: "Log a call", target: null, preview: { kind: "fields" as const, fields: [] }, command: {} };
 
       const card = await calls.propose(actor, a, { runId, tool: "log_activity", proposal });
       expect(card).toMatchObject({ status: "proposed", version: 1 });
