@@ -76,7 +76,9 @@ it("shows one customer heading and compact tab-specific actions", async () => {
   await user.click(screen.getByRole("button", { name: new RegExp(String(customer.displayName)) }));
   const dialog = await screen.findByRole("dialog", { name: "Customer details" });
   expect(await within(dialog).findByRole("heading", { name: String(customer.displayName) })).toBeInTheDocument();
-  expect(within(dialog).getByRole("button", { name: "Edit profile" }).querySelector("svg")).toBeInTheDocument();
+  // The profile edits in place: the name from its heading, the rest from its facts.
+  expect(within(dialog).getByRole("button", { name: "Edit Display name" })).toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: "Edit Lifecycle" })).toBeInTheDocument();
 
   await user.click(within(dialog).getByRole("tab", { name: "Activity" }));
   expect(within(dialog).queryByRole("heading", { name: "Activities & follow-ups" })).not.toBeInTheDocument();
@@ -91,4 +93,31 @@ it("shows one customer heading and compact tab-specific actions", async () => {
   const erase = within(dialog).getByRole("button", { name: "Privacy erasure" });
   expect(erase).toHaveAttribute("data-variant", "danger");
   expect(erase.querySelector("svg")).toBeInTheDocument();
+});
+
+it("edits a customer's profile and primary contact in place, each with its own version", async () => {
+  const data = structuredClone(crmScreenFixture("customers"));
+  const customer = data.items[0];
+  const party = { ...customer, type: "person", status: "active", version: 3, lifecycle: "prospect", givenName: "Amira", relationships: [], addresses: [], consents: [],
+    contacts: [{ id: "cp1", type: "email", rawValue: "amira@old.ae", isPrimary: true, status: "active", version: 2 }] };
+  vi.mocked(crmRequest).mockImplementation(async (_workspaceId, path, method) => {
+    if (method === "PATCH") return path === `parties/${customer.id}` ? { ...party, version: 4 } : { id: "cp1", version: 3 };
+    return path === `parties/${customer.id}` ? party : { data: [] };
+  });
+  const user = userEvent.setup();
+  render(<CrmCustomers initialData={data} />);
+  await user.click(screen.getByRole("button", { name: new RegExp(String(customer.displayName)) }));
+  const dialog = await screen.findByRole("dialog", { name: "Customer details" });
+  await user.click(await within(dialog).findByRole("button", { name: "Edit Lifecycle" }));
+  await user.click(await screen.findByRole("option", { name: "Customer" }));
+  await waitFor(() => expect(crmRequest).toHaveBeenCalledWith(expect.anything(), `parties/${customer.id}`, "PATCH", { version: 3, lifecycle: "customer" }));
+  await user.click(await within(dialog).findByRole("button", { name: "Edit Email" }));
+  const email = within(dialog).getByRole("textbox", { name: "Email" });
+  await user.clear(email);
+  await user.type(email, "amira@palm.ae{Enter}");
+  await waitFor(() => expect(crmRequest).toHaveBeenCalledWith(expect.anything(), `parties/${customer.id}/contact-points/cp1`, "PATCH", { version: 2, value: "amira@palm.ae" }));
+  await user.click(await within(dialog).findByRole("button", { name: "Edit Given name" }));
+  await user.type(within(dialog).getByRole("textbox", { name: "Given name" }), "h{Enter}");
+  // The party's next change carries the version its last save returned.
+  await waitFor(() => expect(crmRequest).toHaveBeenCalledWith(expect.anything(), `parties/${customer.id}`, "PATCH", { version: 4, givenName: "Amirah" }));
 });

@@ -17,7 +17,7 @@ function localDateTime(value: unknown) {
   const date = new Date(value);
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
-const localDate = (value: unknown) => localDateTime(value).slice(0, 10);
+export const localDate = (value: unknown) => localDateTime(value).slice(0, 10);
 
 /**
  * Edit an opportunity: its name, value, owner and the two dates people plan by. The owner list shows

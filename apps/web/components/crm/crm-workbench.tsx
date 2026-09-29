@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Archive, CalendarClock, Check, GitMerge, Pencil, Plus, ShieldCheck, Trash2, UserRound } from "lucide-react";
-import { ActivityFeed, Badge, Button, Callout, ControlledModalDialog, EmptyState, NumericInput, SelectField, TextInput, TextAreaField, Checkbox, Tabs, Skeleton } from "@/design-system";
-import { crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
+import { ActivityFeed, Badge, Button, Callout, ControlledModalDialog, EditableField, EditableFieldList, EmptyState, NumericInput, SelectField, TextInput, TextAreaField, Checkbox, Tabs, Skeleton } from "@/design-system";
+import { CrmRequestError, crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import { clientTimelineItems } from "@/lib/crm/client-timeline";
 import type { ClientTimelineEvent } from "@wodana/contracts";
 import styles from "./crm-workbench.module.css";
@@ -81,7 +81,9 @@ export function useCrmResource<T>(workspaceId: string, path: string | null) {
     return () => controller.abort();
   }, [workspaceId, path, key, revision]);
   const current = result?.key === key && result.revision === revision ? result : null;
-  return { data: current?.data ?? null, failure: current?.failure ?? "", loading: Boolean(path && !current), refresh };
+  // A refresh keeps showing what was there (an in-place edit doesn't blank the record while it reloads).
+  const previous = result?.key === key && result.data ? result.data : null;
+  return { data: current?.data ?? (current?.failure ? null : previous), failure: current?.failure ?? "", loading: Boolean(path && !current && !previous), refresh };
 }
 
 export function ResourceState({ loading, failure, retry }: { loading: boolean; failure: string; retry: () => void }) {
@@ -141,6 +143,12 @@ function RelatedRecords({ workspaceId, partyId, collection }: { workspaceId: str
   return <div className={styles.stack}><ResourceState {...resource} retry={resource.refresh} />{resource.data?.data.map((item) => <div className={styles.row} key={item.id}><div><strong>{String(item.title ?? item.subject ?? label(item.channel))}</strong><small>{label(item.status)}</small></div><a className={styles.link} href={`/workspace/crm/${collection}?record=${item.id}`}>{collection === "opportunities" ? t("Open opportunity") : t("Open conversation")}</a></div>)}{resource.data && !resource.data.data.length ? <p>{collection === "opportunities" ? t("No linked opportunities yet.") : t("No linked conversations yet.")}</p> : null}<div className={styles.actions}>{cursor ? <Button size="compact" onPress={() => setCursor("")}>{t("Back to first page")}</Button> : null}{resource.data?.nextCursor ? <Button size="compact" onPress={() => setCursor(resource.data?.nextCursor ?? "")}>{t("Next page")}</Button> : null}</div></div>;
 }
 
+/** Every time zone, with one already chosen kept even if the runtime doesn't list it. */
+function timeZoneItems(current: string) {
+  const zones = (Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
+  return [...new Set([...(current ? [current] : []), ...zones])].map((id) => ({ id, label: id.replaceAll("_", " ") }));
+}
+
 export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId: string; partyId: string; onChanged?: () => Promise<void> | void }) {
   const t = useT();
   useWoddyRecord("customer", partyId, t("Customer profile"));
@@ -154,8 +162,46 @@ export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId
   const timeline = clientTimelineItems((party?.clientTimeline ?? []) as ClientTimelineEvent[], String(party?.displayName ?? t("Client")));
   const timelineAccess = party?.clientTimelineAccess as { communications?: boolean; activities?: boolean } | undefined;
   const saved = async () => { resource.refresh(); enquiries.refresh(); relatedParties.refresh(); await onChanged?.(); };
+  // In-place edits go through the party's own update with its version (the newest this view saw); a contact through its own.
+  const [savedVersion, setSavedVersion] = useState(0);
+  const editable = party?.status === "active";
+  const update = async (path: string, body: Record<string, unknown>, remember = false) => {
+    try {
+      const result = await crmRequest<RecordData>(workspaceId, path, "PATCH", body);
+      if (remember && result?.version) setSavedVersion(Number(result.version));
+      await saved();
+    } catch (cause) {
+      if (cause instanceof CrmRequestError && cause.status === 409) resource.refresh();
+      throw cause;
+    }
+  };
+  const updateParty = (body: Record<string, unknown>) => update(`parties/${partyId}`, { version: Math.max(Number(party?.version ?? 0), savedVersion), ...body }, true);
+  const primary = (type: string) => contacts.find((contact) => contact.type === type && contact.isPrimary && contact.status !== "archived") ?? contacts.find((contact) => contact.type === type && contact.status !== "archived");
+  const email = primary("email");
+  const phone = primary("phone");
+  const text = (value: unknown) => typeof value === "string" ? value : "";
+  const profile = !party ? null : <EditableFieldList className={styles.customerFacts}>
+    <EditableField canEdit={editable} display={label(party.lifecycle)} items={["prospect", "customer", "partner", "vendor", "other"].map((id) => ({ id, label: label(id) }))} kind="select" label={t("Lifecycle")}
+      onReload={resource.refresh} onSave={(lifecycle) => updateParty({ lifecycle })} value={text(party.lifecycle)} />
+    {party.type === "person" ? <>
+      <EditableField canEdit={editable} label={t("Given name")} maxLength={120} onReload={resource.refresh} onSave={(givenName) => updateParty({ givenName: givenName || null })} value={text(party.givenName)} />
+      <EditableField canEdit={editable} label={t("Family name")} maxLength={120} onReload={resource.refresh} onSave={(familyName) => updateParty({ familyName: familyName || null })} value={text(party.familyName)} />
+      <EditableField canEdit={editable} label={t("Job title")} maxLength={160} onReload={resource.refresh} onSave={(jobTitle) => updateParty({ jobTitle: jobTitle || null })} value={text(party.jobTitle)} />
+    </> : <>
+      <EditableField canEdit={editable} label={t("Legal name")} maxLength={240} onReload={resource.refresh} onSave={(legalName) => updateParty({ legalName: legalName || null })} value={text(party.legalName)} />
+      <EditableField canEdit={editable} label={t("Website domain")} maxLength={255} onReload={resource.refresh} onSave={(websiteDomain) => updateParty({ websiteDomain: websiteDomain || null })} value={text(party.websiteDomain)} />
+      <EditableField canEdit={editable} label={t("Industry")} maxLength={120} onReload={resource.refresh} onSave={(industry) => updateParty({ industry: industry || null })} value={text(party.industry)} />
+    </>}
+    {phone ? <EditableField canEdit={editable} countryCode={text(phone.countryCode)} display={text(phone.rawValue ?? phone.value)} isRequired kind="phone" label={t("Phone")} onReload={resource.refresh}
+      onSave={(value, { countryCode }) => update(`parties/${partyId}/contact-points/${phone.id}`, { version: phone.version, value, ...(countryCode ? { countryCode } : {}) })} value={text(phone.rawValue ?? phone.value)} /> : null}
+    {email ? <EditableField canEdit={editable} isRequired kind="email" label={t("Email")} onReload={resource.refresh}
+      onSave={(value) => update(`parties/${partyId}/contact-points/${email.id}`, { version: email.version, value })} value={text(email.rawValue ?? email.value)} /> : null}
+    <EditableField canEdit={editable} label={t("Preferred language / locale")} maxLength={35} onReload={resource.refresh} onSave={(preferredLocale) => updateParty({ preferredLocale: preferredLocale || null })} value={text(party.preferredLocale)} />
+    <EditableField canEdit={editable} items={timeZoneItems(text(party.preferredTimezone))} kind="select" label={t("Preferred timezone")} onReload={resource.refresh} onSave={(preferredTimezone) => updateParty({ preferredTimezone: preferredTimezone || null })} value={text(party.preferredTimezone)} />
+  </EditableFieldList>;
   return <div className={`${styles.workbench} ${styles.customerDetail}`}><ResourceState {...resource} retry={resource.refresh} />{party ? <>
-    <div className={styles.toolbar}><div><h3>{String(party.displayName)}</h3><small>{label(party.type)} · {label(party.lifecycle)} · {label(party.status)}</small></div><Button size="compact" onPress={() => setAction({ title: t("Edit customer profile"), path: `parties/${partyId}`, method: "PATCH", initial: { version: party.version, displayName: party.displayName, lifecycle: party.lifecycle, preferredLocale: party.preferredLocale, preferredTimezone: party.preferredTimezone, ...(party.type === "person" ? { givenName: party.givenName, familyName: party.familyName, jobTitle: party.jobTitle } : { legalName: party.legalName, websiteDomain: party.websiteDomain, industry: party.industry }) }, fields: [{ key: "displayName", label: t("Display name"), required: true }, { key: "lifecycle", label: t("Lifecycle"), options: choice(["prospect", "customer", "partner", "vendor", "other"]), required: true }, ...(party.type === "person" ? [{ key: "givenName", label: t("Given name") }, { key: "familyName", label: t("Family name") }, { key: "jobTitle", label: t("Job title") }] as FieldSpec[] : [{ key: "legalName", label: t("Legal name") }, { key: "websiteDomain", label: t("Website domain") }, { key: "industry", label: t("Industry") }] as FieldSpec[]), { key: "preferredLocale", label: t("Preferred language / locale") }, { key: "preferredTimezone", label: t("Preferred timezone") }] })}><Pencil aria-hidden="true" size={14} />{t("Edit profile")}</Button></div>
+    <div className={styles.toolbar}><div><EditableField canEdit={editable} heading="h3" isRequired label={t("Display name")} maxLength={240} onReload={resource.refresh} onSave={(displayName) => updateParty({ displayName })} value={String(party.displayName)} /><small>{label(party.type)} · {label(party.lifecycle)} · {label(party.status)}</small></div></div>
+    {profile}
     <Tabs defaultSelectedKey="timeline" items={[
       { id: "timeline", label: t("Timeline"), panel: <div className={styles.stack}>{timelineAccess && (!timelineAccess.communications || !timelineAccess.activities) ? <Callout title={t("Timeline access is limited")} tone="warning">{t("Some communication or activity records are hidden by your role.")}</Callout> : null}{timeline.length ? <ActivityFeed items={timeline} /> : <EmptyState description={t("Messages, portal decisions and completed client interactions will appear here.")} title={t("No client communication yet")} />}</div> },
       { id: "activity", label: t("Activity"), panel: <ActivityPanel workspaceId={workspaceId} partyId={partyId} /> },

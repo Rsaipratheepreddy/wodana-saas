@@ -6,15 +6,15 @@ import { useRouter } from "next/navigation";
 import { caseHref } from "@/lib/pre-project/types";
 import { OpportunityDiscovery } from "./opportunity-discovery";
 import { OpportunityIntro } from "./opportunity-intro";
-import { OpportunityEditDialog } from "./opportunity-edit-dialog";
+import { OpportunityEditDialog, localDate } from "./opportunity-edit-dialog";
 import { RecordAttachments } from "./record-attachments";
 import { SequenceEditor } from "./sequence-editor";
 import { useWoddyRecord } from "./woddy-chat";
-import { Badge, Button, Callout, EmptyState, Tabs, useDesignSystem } from "@/design-system";
+import { Badge, Button, Callout, EditableField, EmptyState, Tabs, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { CrmScreenId } from "@/lib/crm/screens";
-import { crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
+import { CrmRequestError, crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import { ActionDialog, ActivityPanel, CustomerPanel, FactList, ResourceState, choice, options, useCrmResource, type ActionSpec, type FieldSpec } from "./crm-workbench";
 import styles from "./crm-workbench.module.css";
 
@@ -42,7 +42,7 @@ export function CrmRecordWorkbench({ id, row, workspaceId, onChanged }: { id: Cr
 
 function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: string; row: RecordData; onChanged: () => Promise<void> }) {
   const t = useT();
-  const { locale } = useDesignSystem();
+  const { locale, currency: regionCurrency } = useDesignSystem();
   useWoddyRecord("opportunity", row.id, String(row.title ?? t("Opportunity")));
   const router = useRouter();
   const [openingCase, setOpeningCase] = useState(false);
@@ -109,6 +109,22 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     });
   };
   const saved = async () => { resource.refresh(); await onChanged(); };
+  // In-place edits: each goes through the opportunity's update with its version (the newest one this view saw).
+  const [savedVersion, setSavedVersion] = useState(0);
+  const patch = async (body: Record<string, unknown>) => {
+    try {
+      const result = await crmRequest<RecordData>(workspaceId, `opportunities/${row.id}`, "PATCH", { version: Math.max(Number(live.version ?? 0), savedVersion), ...body });
+      if (result?.version) setSavedVersion(Number(result.version));
+      await saved();
+    } catch (cause) {
+      if (cause instanceof CrmRequestError && cause.status === 409) resource.refresh();
+      throw cause;
+    }
+  };
+  const owners = rows(members.data).filter((member) => member.status === undefined || member.status === "active")
+    .map((member) => ({ id: String(member.id), label: String(member.displayName || member.name || member.email || "") })).filter((member) => member.label);
+  const closeDate = localDate(live.expectedCloseAt ?? live.expected_close_at);
+  const valueCurrency = /^[A-Z]{3}$/.test(currency) ? currency : regionCurrency;
   const [tab, setTab] = useState("progress");
   const [step, setStep] = useState<FunnelStep["key"] | null>(null);
   const [editing, setEditing] = useState(false);
@@ -144,14 +160,19 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
         <h2>{String(live.title ?? t("Opportunity"))}</h2>
         {partyId ? <Link className={styles.opportunityClient} href={`/workspace/crm/customers?record=${partyId}`}>{String(live.partyName ?? t("Customer"))}</Link> : <p>{String(live.partyName ?? t("Customer not set"))}</p>}
       </div>
-      <div className={styles.opportunityValue} data-empty={!hasValue || undefined}><small>{t("Value")}</small><strong>{value}</strong></div>
+      {live.amount === undefined || !resource.data ? <div className={styles.opportunityValue} data-empty={!hasValue || undefined}><small>{t("Value")}</small><strong>{value}</strong></div>
+        : <dl className={styles.opportunityValue} data-empty={!hasValue || undefined} data-layout="stacked"><EditableField currency={valueCurrency} display={hasValue ? value : undefined} kind="money" label={t("Value")} onReload={resource.refresh}
+          onSave={(next) => patch(next ? { amount: Number(next), currencyCode: valueCurrency } : { amount: null, currencyCode: null })} placeholder={t("Not set")}
+          value={live.amount === null || live.amount === undefined ? "" : String(live.amount)} /></dl>}
     </header>
     <section className={styles.opportunityOverview} aria-label={t("Opportunity summary")}>
-      <dl className={styles.opportunitySummary}>
+      <dl className={styles.opportunitySummary} data-layout="stacked">
         <div><dt>{t("Stage")}</dt><dd>{String(live.stageName ?? t("Not set"))}</dd></div>
-        <div><dt>{t("Sales owner")}</dt><dd>{String(live.ownerName ?? t("Unassigned"))}</dd></div>
+        <EditableField canEdit={Boolean(resource.data)} display={String(live.ownerName ?? t("Unassigned"))} items={owners} kind="select" label={t("Sales owner")} onReload={resource.refresh}
+          onSave={(ownerMembershipId) => patch({ ownerMembershipId: ownerMembershipId || null })} value={ownerId} />
         <div><dt>{t("Next follow-up")}</dt><dd>{dateText(live.nextActionAt ?? live.next_action_at)}</dd></div>
-        <div><dt>{t("Expected close")}</dt><dd>{dateText(live.expectedCloseAt ?? live.expected_close_at)}</dd></div>
+        <EditableField canEdit={Boolean(resource.data)} display={closeDate ? dateText(live.expectedCloseAt ?? live.expected_close_at) : undefined} kind="date" label={t("Expected close")} onReload={resource.refresh}
+          onSave={(date) => patch({ expectedCloseAt: date ? new Date(`${date}T12:00:00`).toISOString() : null })} placeholder={t("Not set")} value={closeDate} />
       </dl>
       {outcomeMismatch ? <p className={styles.opportunityWarning} role="status">{t("This record is in the {stage} stage but its status is {status}. Review and confirm the outcome.", { stage: String(currentStage?.name), status: label(status) })}</p> : null}
       {caseError ? <Callout title={t("Could not open Planning")} tone="warning">{caseError}</Callout> : null}
@@ -174,7 +195,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       { id: "activity", label: t("Activity"), panel: <ActivityPanel workspaceId={workspaceId} opportunityId={row.id} partyId={partyId || undefined} ownerMembershipId={ownerId || undefined} onChanged={saved} /> },
       { id: "files", label: t("Files"), panel: leadId ? <RecordAttachments workspaceId={workspaceId} leadId={String(leadId)} /> : <EmptyState illustration="upload" title={t("No enquiry files")} description={t("Project files live in Planning.")} /> },
     ]} />{action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={saved} /> : null}
-    {editing ? <OpportunityEditDialog workspaceId={workspaceId} opportunity={live} members={rows(members.data).filter((member) => member.status === undefined || member.status === "active").map((member) => ({ id: String(member.id), label: String(member.displayName || member.name || member.email || "") })).filter((member) => member.label)} onClose={() => setEditing(false)} onSaved={saved} /> : null}</div>;
+    {editing ? <OpportunityEditDialog workspaceId={workspaceId} opportunity={{ ...live, version: Math.max(Number(live.version ?? 0), savedVersion) }} members={owners} onClose={() => setEditing(false)} onSaved={saved} /> : null}</div>;
 }
 
 type FunnelStep = { key: "enquiry" | "discovery" | "intro" | "design" | "quote" | "deal"; state: "done" | "current" | "active" | "upcoming"; detail: string | null; at: string | null };
