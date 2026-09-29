@@ -16,7 +16,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function WorkspaceNotifications({ workspaceId }: { workspaceId: string }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
-  const notices = useWorkspaceNotices(workspaceId);
+  const notices = useWorkspaceNotices(workspaceId, { announce: true });
   const { items, unread, failure, marking } = notices;
   const wrapper = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);

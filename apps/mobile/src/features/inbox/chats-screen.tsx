@@ -71,7 +71,7 @@ export function ChatScreen({ id }: { id: string }) {
     const body = text.trim();
     if (!body || send.isPending) return;
     send.mutate({ text: body, internal: note }, {
-      onSuccess: () => { setText(''); toast.success(note ? t('Note added') : t('Sent')); },
+      onSuccess: () => { setText(''); toast.success(note ? t('Note added') : t('Sent'), note ? undefined : 'send'); },
       onError: (error) => toast.error(isOffline(error) ? t('Replies need a connection.') : errorMessage(error, t('Something went wrong'))),
     });
   };

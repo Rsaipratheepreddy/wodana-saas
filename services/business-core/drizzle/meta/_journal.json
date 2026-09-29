@@ -827,6 +827,13 @@
       "when": 1801290000200,
       "tag": "0173_client_update_auto_send",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1801290000300,
+      "tag": "0174_user_feedback_setting",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { AlertTriangle, ChevronLeft, ChevronRight, Info, type LucideIcon } from 'lucide-react-native';
 import { useT } from '../core/i18n';
+import { haptic } from '../core/haptics';
 import { Button, IconBadge, IconButton, Row, Text } from './primitives';
 import { useTheme } from './theme';
 
@@ -61,7 +62,7 @@ export function Screen({ children, onRefresh, refreshing = false, scroll = true,
   const content = scroll
     ? <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" style={{ flex: 1 }}
       contentContainerStyle={{ paddingTop: insets.top + theme.space(header.back ? 1 : 4) }}
-      refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.textTertiary} colors={[theme.colors.actionPrimary]} progressViewOffset={insets.top} /> : undefined}>
+      refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={() => { haptic.refresh(); onRefresh(); }} tintColor={theme.colors.textTertiary} colors={[theme.colors.actionPrimary]} progressViewOffset={insets.top} /> : undefined}>
       {body}
     </ScrollView>
     : <View style={{ flex: 1, paddingTop: insets.top + theme.space(header.back ? 1 : 4) }}>{body}</View>;
@@ -124,7 +125,7 @@ export function ListScreen<T>({ items, renderItem, keyExtractor, toolbar, empty,
       ListEmptyComponent={state}
       onEndReached={onEndReached}
       onEndReachedThreshold={0.4}
-      refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.textTertiary} colors={[theme.colors.actionPrimary]} progressViewOffset={insets.top} /> : undefined}
+      refreshControl={onRefresh ? <RefreshControl refreshing={refreshing} onRefresh={() => { haptic.refresh(); onRefresh(); }} tintColor={theme.colors.textTertiary} colors={[theme.colors.actionPrimary]} progressViewOffset={insets.top} /> : undefined}
     />
     {footer ? <View style={{ paddingHorizontal: theme.space(4), paddingTop: theme.space(3), paddingBottom: Math.max(insets.bottom, theme.space(3)), borderTopWidth: 1, borderTopColor: theme.colors.structuralDivider, backgroundColor: theme.colors.surface }}>{footer}</View> : null}
   </View>;

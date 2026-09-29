@@ -64,7 +64,7 @@ function DecisionSheet({ row, onClose }: { row: ApprovalRow | null; onClose: () 
     if (!row || busy) return;
     setBusy(decision);
     decide.mutate({ row, decision, note }, {
-      onSuccess: () => { toast.success(decision === 'approve' ? t(row.kind === 'receipt' ? 'Verified' : 'Approved') : decision === 'return' ? t('Returned') : t('Refused')); close(); },
+      onSuccess: () => { toast.success(decision === 'approve' ? t(row.kind === 'receipt' ? 'Verified' : 'Approved') : decision === 'return' ? t('Returned') : t('Refused'), decision === 'approve' ? 'approve' : undefined); close(); },
       onError: (error) => toast.error(isOffline(error) ? t('Approvals need a connection.') : errorMessage(error, t('Something went wrong'))),
       onSettled: () => setBusy(null),
     });

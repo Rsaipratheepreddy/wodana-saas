@@ -5,11 +5,12 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Check, Trash2 } from "lucide-react";
 import { AVATAR_KEYS, AVATAR_ROLES, avatarPath, chosenAvatarKey, roleAvatarKey, type AvatarRole } from "@wodana/contracts/brand";
-import { Avatar, Button, InlineNotice, SettingsPage, SettingsRow, SettingsSection } from "@/design-system";
+import { Avatar, Button, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Switch } from "@/design-system";
 import { LanguageSelect } from "@/components/i18n/language-select";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey } from "@/lib/i18n/keys";
-import { removeMyPhoto, saveMyAvatar, uploadMyPhoto, type MyProfile } from "@/lib/workspace/profile";
+import { removeMyPhoto, saveMyAvatar, saveMyFeedback, uploadMyPhoto, type MyProfile } from "@/lib/workspace/profile";
+import { configureFeedback } from "@/lib/feedback/sounds";
 import styles from "./profile-appearance.module.css";
 
 const PHOTO_TYPES = ["image/png", "image/jpeg", "image/webp"];
@@ -23,10 +24,18 @@ const roleLabels: Record<AvatarRole, ReturnType<typeof tKey>> = {
 };
 
 /** Your photo; without one, your role's avatar, or any picture from the set if you pick one. */
-export function ProfileAppearance({ workspaceId, userId, name, email, roles, initial }: { workspaceId: string; userId: string; name: string; email: string; roles?: ReadonlyArray<string>; initial: MyProfile }) {
+export function ProfileAppearance({ workspaceId, userId, name, email, roles, initial, feedbackEnabled = true }: { workspaceId: string; userId: string; name: string; email: string; roles?: ReadonlyArray<string>; initial: MyProfile; feedbackEnabled?: boolean }) {
   const t = useT();
   const router = useRouter();
   const [profile, setProfile] = useState(initial);
+  const [feedback, setFeedback] = useState(feedbackEnabled);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const changeFeedback = async (enabled: boolean) => {
+    setFeedbackBusy(true); setMessage(null); setFeedback(enabled);
+    try { await saveMyFeedback(workspaceId, enabled); configureFeedback({ enabled }); router.refresh(); }
+    catch (reason) { setFeedback(!enabled); setMessage({ tone: "error", text: reason instanceof Error ? reason.message : t("Your profile could not be saved.") }); }
+    finally { setFeedbackBusy(false); }
+  };
   const [busy, setBusy] = useState<"photo" | "avatar" | null>(null);
   const [message, setMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -59,6 +68,12 @@ export function ProfileAppearance({ workspaceId, userId, name, email, roles, ini
     <SettingsSection id="language" title={t("Language")}>
       <SettingsRow label={t("Interface language")}>
         <LanguageSelect className={styles.language} label={null} />
+      </SettingsRow>
+    </SettingsSection>
+
+    <SettingsSection id="feedback" title={t("Sound & haptics")}>
+      <SettingsRow label={t("Sound & haptics")} hint={t("Soft sounds here and taps on your phone for replies, approvals, sends and new notices.")}>
+        <Switch aria-label={t("Sound & haptics")} isDisabled={feedbackBusy} isSelected={feedback} onChange={(value) => void changeFeedback(value)} />
       </SettingsRow>
     </SettingsSection>
 

@@ -13,3 +13,6 @@ export const saveMyAvatar = (workspaceId: string, avatarPreset: string | null, v
 export const uploadMyPhoto = (workspaceId: string, file: File) =>
   call<MyProfile>(`/api/workspace/profile/photo?workspaceId=${workspaceId}`, { method: "POST", headers: { "content-type": file.type }, body: file });
 export const removeMyPhoto = (workspaceId: string) => call<MyProfile>(`/api/workspace/profile/photo?workspaceId=${workspaceId}`, { method: "DELETE" });
+/** Turns sound and haptics on or off on every device the person uses. */
+export const saveMyFeedback = (workspaceId: string, enabled: boolean) =>
+  call<{ feedbackEnabled: boolean }>("/api/workspace/profile/feedback", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, enabled }) });

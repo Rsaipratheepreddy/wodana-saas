@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { Bell, BriefcaseBusiness, Factory, FolderKanban, LayoutGrid, Ruler, Users, Wallet, type LucideIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
+import { playFeedback } from "@/lib/feedback/sounds";
 import { DAY_GROUP_LABELS, NOTIFICATION_MODULES, dayGroup, notificationModule, type DayGroup, type NotificationModule } from "@/lib/workspace/notification-modules";
 import styles from "./workspace-notifications.module.css";
 
@@ -27,7 +28,9 @@ export const MODULE_ICONS: Record<NotificationModule, LucideIcon> = {
 };
 
 /** The signed-in person's notices (newest 200), refreshed every 30 seconds while the page is visible. */
-export function useWorkspaceNotices(workspaceId: string) {
+/** `announce`: a soft sound when a new unread notice arrives after the first load (the bell, not the full page). */
+export function useWorkspaceNotices(workspaceId: string, { announce = false }: { announce?: boolean } = {}) {
+  const seen = useRef<Set<string> | null>(null);
   const [items, setItems] = useState<WorkspaceNotice[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [failure, setFailure] = useState(false);
@@ -38,12 +41,15 @@ export function useWorkspaceNotices(workspaceId: string) {
       const response = await fetch(`/api/workspace/crm/data/notifications?workspaceId=${workspaceId}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Notifications unavailable");
       const data: unknown = await response.json();
-      setItems(Array.isArray(data) ? data as WorkspaceNotice[] : []);
+      const rows = Array.isArray(data) ? data as WorkspaceNotice[] : [];
+      if (announce && seen.current && rows.some((row) => !row.readAt && !seen.current!.has(row.id))) playFeedback("notice");
+      seen.current = new Set(rows.map((row) => row.id));
+      setItems(rows);
       setFailure(false);
     } catch {
       setFailure(true);
     } finally { setLoaded(true); }
-  }, [workspaceId]);
+  }, [workspaceId, announce]);
   // A new notice arrives with the change that caused it, so any workspace change re-reads the list; polling
   // stays as a fallback (every 30 seconds without the live stream, every minute with it).
   const live = useLiveInvalidate(workspaceId, LIVE_SCOPES, () => void load(), 2_000);

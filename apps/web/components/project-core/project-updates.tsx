@@ -8,6 +8,7 @@ import type { Health, ProjectDetail, StatusUpdate } from "@/lib/project-core/typ
 import { siteApi } from "@/lib/site/client";
 import { SavedPhotos } from "../purchasing/delivery-photos";
 import { useProjectFormat } from "./format";
+import { playFeedback } from "@/lib/feedback/sounds";
 import styles from "./project-core.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
@@ -75,7 +76,7 @@ function ClientUpdateDraft({ update, run, photoUrl }: { update: StatusUpdate; ru
     <div className={styles.draftActions}>
       <Button size="compact" variant="quiet" isLoading={busy === "discard"} onPress={async () => { setBusy("discard"); await run("discard_client_update", { updateId: update.id }); setBusy(null); }}>{t("Discard")}</Button>
       <Button size="compact" variant="primary" isLoading={busy === "send"} isDisabled={!note.trim()}
-        onPress={async () => { setBusy("send"); await run("approve_client_update", { updateId: update.id, note: note.trim() }); setBusy(null); }}>{t("Send to client")}</Button>
+        onPress={async () => { setBusy("send"); if (await run("approve_client_update", { updateId: update.id, note: note.trim() })) playFeedback("send"); setBusy(null); }}>{t("Send to client")}</Button>
     </div>
   </section>;
 }

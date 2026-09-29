@@ -16,6 +16,7 @@ import { SessionGate } from '../features/auth/session-gate';
 import { ThemeProvider, useTheme } from '../ui/theme';
 import { ToastProvider } from '../ui/toast';
 import { RootCrash } from '../ui/crash';
+import { setHapticsEnabled } from '../core/haptics';
 import '../features/outbox-handlers';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -56,6 +57,9 @@ function Branded({ children }: { children: React.ReactNode }) {
     : remembered ? { primaryColor: remembered.primaryColor, secondaryColor: remembered.secondaryColor } : null;
   const profileLanguage = (preferred && preferred.toLowerCase() !== 'en' ? supportedLanguage(preferred) : null) ?? supportedLanguage(membership?.workspaceLocale);
   useEffect(() => { if (ready && profileLanguage) adopt(profileLanguage); }, [ready, profileLanguage, adopt]);
+  // Sound & haptics follow the choice saved on the person's profile (on unless they turned it off).
+  const feedback = state.status === 'signedIn' ? state.profile.feedbackEnabled !== false : true;
+  useEffect(() => { setHapticsEnabled(feedback); }, [feedback]);
   return <ThemeProvider brand={brand} script={direction === 'rtl' ? 'arabic' : 'latin'}><ToastProvider>{children}</ToastProvider></ThemeProvider>;
 }
 

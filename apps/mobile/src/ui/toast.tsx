@@ -10,7 +10,8 @@ type Tone = 'success' | 'error' | 'info' | 'queued';
 type Toast = { id: number; message: string; tone: Tone; action?: { label: string; onPress: () => void } };
 type ToastApi = {
   show: (message: string, tone?: Tone, action?: Toast['action']) => void;
-  success: (message: string) => void;
+  /** A success; `touch` picks the approve or send haptic instead of the plain success one. */
+  success: (message: string, touch?: 'approve' | 'send') => void;
   error: (message: string) => void;
   /** Saved on the phone, to send when there's a connection. */
   queued: (message: string) => void;
@@ -25,8 +26,8 @@ export function ToastProvider({ children }: PropsWithChildren) {
   const queue = useRef<Toast[]>([]);
   const counter = useRef(0);
   const next = useCallback(() => { setCurrent(queue.current.shift() ?? null); }, []);
-  const show = useCallback((message: string, tone: Tone = 'info', action?: Toast['action']) => {
-    if (tone === 'success') haptic.success();
+  const show = useCallback((message: string, tone: Tone = 'info', action?: Toast['action'], touch?: 'approve' | 'send') => {
+    if (tone === 'success') (touch ? haptic[touch] : haptic.success)();
     if (tone === 'error') haptic.error();
     const toast = { id: ++counter.current, message, tone, action };
     setCurrent((visible) => {
@@ -35,7 +36,7 @@ export function ToastProvider({ children }: PropsWithChildren) {
     });
   }, []);
   const api = useMemo<ToastApi>(() => ({
-    show, success: (message) => show(message, 'success'), error: (message) => show(message, 'error'), queued: (message) => show(message, 'queued'),
+    show, success: (message, touch) => show(message, 'success', undefined, touch), error: (message) => show(message, 'error'), queued: (message) => show(message, 'queued'),
   }), [show]);
   return <ToastContext.Provider value={api}>
     {children}

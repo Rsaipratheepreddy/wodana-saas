@@ -13,6 +13,7 @@ import { WoddyAnswerView } from "@/components/woddy/woddy-answer";
 import { submitChatOnEnter } from "./chat-composer";
 import workspaceColors from "./crm-workspace-colors.module.css";
 import styles from "./woddy-chat.module.css";
+import { playFeedback } from "@/lib/feedback/sounds";
 
 type RecordContext = { type: "lead" | "opportunity" | "customer" | "conversation" | "commercial" | "pre-project" | "project"; id: string; label: string };
 type Selection = { type: "conversation" | "enquiry"; ids: string[] };
@@ -129,7 +130,7 @@ function ChatPanel({ workspaceId, context, selection, putDraft, isOpen, onOpenCh
             message: question.trim(), surface: "panel", context: tools, selection,
             history: previous.filter((message) => message.text.trim()).slice(-10).map((message) => ({ role: message.role, text: message.text.slice(0, 3000) })),
           }, controller.signal);
-          if (!controller.signal.aborted) setMessages([...next, { role: "assistant", text: answer.answer, answer }]);
+          if (!controller.signal.aborted) { setMessages([...next, { role: "assistant", text: answer.answer, answer }]); playFeedback("reply"); }
         } catch (failure) {
           if (failure instanceof WoddyAskError && failure.paused) { setMessages(previous); setDraft(question); setPaused(failure.message); return; }
           throw failure;
@@ -141,7 +142,7 @@ function ChatPanel({ workspaceId, context, selection, putDraft, isOpen, onOpenCh
       if (controller.signal.aborted) throw new Error("Reply stopped");
       if (!response.ok && payload?.paused) { setMessages(previous); setDraft(question); setPaused(payload.message ?? t("AI credits are used up. Ask your admin to top up.")); return; }
       if (!response.ok || !payload?.answer) throw new Error(payload?.message ?? t("Woddy could not reply. Please try again."));
-      if (!controller.signal.aborted) setMessages([...next, { role: "assistant", text: payload.answer }]);
+      if (!controller.signal.aborted) { setMessages([...next, { role: "assistant", text: payload.answer }]); playFeedback("reply"); }
     } catch (failure) {
       setMessages(previous); setDraft(question);
       if (!controller.signal.aborted) setError(failure instanceof Error ? translateKnown(t, failure.message) : t("Woddy could not reply."));

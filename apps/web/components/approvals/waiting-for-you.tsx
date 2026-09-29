@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { APPROVAL_FILTERS, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
+import { playFeedback } from "@/lib/feedback/sounds";
 import styles from "./waiting-for-you.module.css";
 import { APPROVALS_CHANGED, WAITING_SCOPES } from "./use-waiting-count";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -48,6 +49,7 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
       setState(await api.decide(row, decision, note));
       window.dispatchEvent(new Event(APPROVALS_CHANGED));
       setDone(decision === "approve" ? t("{name} approved.", { name: approvalTitle(row, locale) }) : t("{name} sent back.", { name: approvalTitle(row, locale) }));
+      if (decision === "approve") playFeedback("approve");
       setPending(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("The decision could not be saved.")); }
     finally { setBusy(null); }

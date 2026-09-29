@@ -10862,5 +10862,11 @@
   "Client updates": "Client updates",
   "Send by itself": "Send by itself",
   "The week's drafted update goes to the client when nobody sent or discarded it in time.": "The week's drafted update goes to the client when nobody sent or discarded it in time.",
-  "Goes to the client by itself {when}": "Goes to the client by itself {when}"
+  "Goes to the client by itself {when}": "Goes to the client by itself {when}",
+  "Choose on or off.": "Choose on or off.",
+  "Your sound setting could not be saved.": "Your sound setting could not be saved.",
+  "Sound & haptics": "Sound & haptics",
+  "Soft sounds here and taps on your phone for replies, approvals, sends and new notices.": "Soft sounds here and taps on your phone for replies, approvals, sends and new notices.",
+  "A light touch when you approve, send, refresh or finish something.": "A light touch when you approve, send, refresh or finish something.",
+  "Saved on this phone only. It will follow you once you are back online.": "Saved on this phone only. It will follow you once you are back online."
 }

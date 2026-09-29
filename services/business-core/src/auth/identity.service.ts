@@ -102,10 +102,11 @@ export class IdentityService {
       preferredLocale: string;
       preferredTimezone: string;
       status: string;
+      feedbackEnabled: boolean;
     }>(
       `SELECT id, primary_email AS "primaryEmail", display_name AS "displayName",
               preferred_locale AS "preferredLocale",
-              preferred_timezone AS "preferredTimezone", status
+              preferred_timezone AS "preferredTimezone", status, feedback_enabled AS "feedbackEnabled"
        FROM users WHERE id = $1`,
       [actorUser.userId],
     );

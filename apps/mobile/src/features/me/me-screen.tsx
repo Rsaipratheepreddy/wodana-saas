@@ -8,6 +8,7 @@ import { errorMessage, useApi } from '../../core/api';
 import { openSettings } from '../../core/media';
 import { ToggleRow } from '../../ui/fields';
 import { useToast } from '../../ui/toast';
+import { setHapticsEnabled } from '../../core/haptics';
 import { releaseThisPhone, usePushState, useSetPush } from '../shell/push-registration';
 import { useFormat } from '../../core/format';
 import { languages, preferenceLocale, useLanguage, useT, type AppLanguage } from '../../core/i18n';
@@ -61,6 +62,12 @@ export function MeScreen() {
   const upcoming = (myRequests.data ?? []).filter((item) => ['pending', 'approved'].includes(item.status) && item.endDate >= format.today()).length;
   const waiting = outbox.items.length;
   const employee = bootstrap.data?.employee;
+  const [feedback, setFeedback] = useState(session.profile.feedbackEnabled !== false);
+  const chooseFeedback = async (enabled: boolean) => {
+    // Saved on the profile so the web and other phones follow; this phone switches at once.
+    setFeedback(enabled); setHapticsEnabled(enabled);
+    await api.send('me/feedback', 'PUT', { enabled }).catch(() => toast.show(t('Saved on this phone only. It will follow you once you are back online.'), 'info'));
+  };
   const chooseLanguage = async (next: AppLanguage) => {
     setChoosingLanguage(false);
     if (next === language.language) return;
@@ -113,6 +120,11 @@ export function MeScreen() {
         : <ListRow first icon={Bell} title={t('Notifications on this phone')}
           detail={push.state === 'blocked' ? t('Not allowed in the phone’s settings') : t('Not available on this device')}
           onPress={push.state === 'blocked' ? openSettings : undefined} />}
+    </Section>
+
+    <Section>
+      <ToggleRow first label={t('Sound & haptics')} value={feedback}
+        detail={t('A light touch when you approve, send, refresh or finish something.')} onChange={(enabled) => void chooseFeedback(enabled)} />
     </Section>
 
     <Section>
