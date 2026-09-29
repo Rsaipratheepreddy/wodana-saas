@@ -7,11 +7,6 @@
 .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--wd-space-1) var(--wd-space-4); margin: 0; font-size: var(--wd-text-md); }
 .facts dt { color: var(--wd-color-text-secondary); }
 .facts dd { margin: 0; white-space: pre-line; }
-.lines { inline-size: 100%; border-collapse: collapse; font-size: var(--wd-text-sm); }
-.lines th { padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-medium); text-align: end; }
-.lines td { padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-variant-numeric: tabular-nums; text-align: end; vertical-align: top; }
-.lines th:first-child, .lines td:first-child { text-align: start; }
-.lines td small { display: block; color: var(--wd-color-text-tertiary); }
 .totals { display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: var(--wd-space-1) var(--wd-space-6); justify-self: end; margin: 0; font-variant-numeric: tabular-nums; }
 .totals dt { color: var(--wd-color-text-secondary); text-align: end; }
 .totals dd { margin: 0; text-align: end; }

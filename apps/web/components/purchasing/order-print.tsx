@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, ErrorState, NoAccessState, Skeleton } from "@/design-system";
+import { Button, DocumentTable, ErrorState, NoAccessState, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { isDenied, purchasingApi } from "@/lib/purchasing/client";
 import type { OrderState } from "@/lib/purchasing/types";
@@ -50,22 +50,17 @@ export function OrderPrint({ workspaceId, orderId }: { workspaceId: string; orde
         {order.projects.length ? <div><dt>{t("Projects")}</dt><dd>{order.projects.map((project) => project.reference).join(", ")}</dd></div> : null}
         {order.supplierReference ? <div><dt>{t("Supplier reference")}</dt><dd>{order.supplierReference}</dd></div> : null}
       </dl>
-      <table className={styles.table}>
-        <thead><tr><th scope="col">{t("Item")}</th><th scope="col" className={styles.end}>{t("Quantity")}</th><th scope="col" className={styles.end}>{t("Unit price")}</th>
-          <th scope="col" className={styles.end}>{t("Total")}</th></tr></thead>
-        <tbody>{lines.map((line) => <tr key={line.id}>
-          <td><span dir="auto">{line.description}</span>{line.specification ? <small dir="auto">{line.specification}</small> : null}{line.projectReference ? <small>{line.projectReference}</small> : null}</td>
-          <td className={styles.end}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</td>
-          <td className={styles.end}>{money(line.unitPrice)}</td>
-          <td className={styles.end}>{money(line.total)}</td>
-        </tr>)}</tbody>
-      </table>
-      <dl className={styles.totals}>
-        <div><dt>{t("Subtotal")}</dt><dd>{money(order.subtotal)}</dd></div>
-        {Number(order.discountTotal) ? <div><dt>{t("Discount")}</dt><dd>{money(`-${order.discountTotal}`)}</dd></div> : null}
-        <div><dt>{t("Tax")}</dt><dd>{money(order.taxTotal)}</dd></div>
-        <div><dt><strong>{t("Total")}</strong></dt><dd><strong>{money(order.total)}</strong></dd></div>
-      </dl>
+      <DocumentTable label={t("Lines")} rows={lines} getRowKey={(line) => line.id} columns={[
+        { id: "item", header: t("Item"), cell: (line) => <><span dir="auto">{line.description}</span>{line.specification ? <small dir="auto">{line.specification}</small> : null}{line.projectReference ? <small>{line.projectReference}</small> : null}</> },
+        { id: "quantity", header: t("Quantity"), align: "end", cell: (line) => `${quantityText(line.quantity)} ${line.unit}`.trim() },
+        { id: "price", header: t("Unit price"), align: "end", cell: (line) => money(line.unitPrice) },
+        { id: "total", header: t("Total"), align: "end", cell: (line) => money(line.total) },
+      ]} summary={[
+        { key: "subtotal", label: t("Subtotal"), value: money(order.subtotal) },
+        ...(Number(order.discountTotal) ? [{ key: "discount", label: t("Discount"), value: money(`-${order.discountTotal}`) }] : []),
+        { key: "tax", label: t("Tax"), value: money(order.taxTotal) },
+        { key: "total", label: t("Total"), value: money(order.total), emphasis: true },
+      ]} />
       {order.notes ? <p className={styles.note} dir="auto">{order.notes}</p> : null}
     </article>
   </main>;

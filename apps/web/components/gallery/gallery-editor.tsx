@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Copy, ExternalLink, ImagePlus, Plus, Trash2 } from "lucide-react";
-import { Badge, Button, Checkbox, ControlledModalDialog, EmptyState, IconButton, InlineNotice, PageHeader, PillTabs, SearchInput, SelectField, Skeleton, Switch, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { Badge, Button, Checkbox, ControlledModalDialog, EmptyState, IconButton, InlineNotice, PageHeader, PillTabs, SearchInput, SelectField, Skeleton, Switch, TextAreaField, TextInput, useDesignSystem, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { DEFAULT_DISPLAY, type GalleryEditorData, type GalleryItem, type GalleryKind, type GallerySectionKey, type GallerySettings } from "@/lib/gallery/types";
 import { catalogImageUrl } from "@/lib/quotation/client";
@@ -306,9 +306,7 @@ function CatalogImport({ workspaceId, onClose, onDone, onError }: { workspaceId:
     try { onDone((await call<{ items: GalleryItem[] }>(workspaceId, "/items/from-catalog", "POST", { itemIds: picked })).items); } catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not save.")); }
     finally { setBusy(false); }
   };
-  return <ControlledModalDialog isOpen size="lg" title={t("Add from catalog")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className={styles.dialogActions}><span className={styles.spacer} /><Button size="compact" onPress={onClose}>{t("Cancel")}</Button>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!picked.length} onPress={() => void add()}>{picked.length === 1 ? t("Add 1 product") : t("Add {count} products", { count: picked.length })}</Button></div>}>
+  return <FormDialog size="lg" title={t("Add from catalog")} onClose={onClose} isSubmitting={busy} isSubmitDisabled={!picked.length} submitLabel={picked.length === 1 ? t("Add 1 product") : t("Add {count} products", { count: picked.length })} onSubmit={() => add()}>
     <div className={styles.form}>
       <SearchInput label={t("Search the catalog")} value={search} onChange={setSearch} />
       {rows === null ? <Skeleton lines={4} shape="rows" /> : rows.length ? <ul className={styles.catalog}>{rows.map((row) => <li key={row.id}>
@@ -320,5 +318,5 @@ function CatalogImport({ workspaceId, onClose, onDone, onError }: { workspaceId:
         </Checkbox>
       </li>)}</ul> : <p className={styles.muted}>{t("No catalog items left to add.")}</p>}
     </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

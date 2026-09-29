@@ -106,10 +106,11 @@ describe("Settings → Inbox", () => {
     await user.click((await screen.findAllByRole("button", { name: "Map variables" }))[0]);
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Save variables" }));
-    expect(await within(dialog).findByText("Choose a field for {{1}}.")).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: /\{\{1\}\}/ }));
+    // Each variable is required: the save names the ones still to choose.
+    expect(await within(dialog).findByText("Check 2 fields")).toBeInTheDocument();
+    // The first one to choose takes focus and offers its fields.
     await user.click(await screen.findByRole("option", { name: "Client first name" }));
-    await user.click(within(dialog).getByRole("button", { name: /\{\{2\}\}/ }));
+    await user.click(within(dialog).getByRole("combobox", { name: "{{2}}" }));
     await user.click(await screen.findByRole("option", { name: "Quote number" }));
     expect(within(dialog).getByText("Hi [Client first name], quote [Quote number] is ready.")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Save variables" }));

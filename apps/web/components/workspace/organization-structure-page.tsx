@@ -3,29 +3,7 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState, type FormEvent } from "react";
 import { Building2, Network, Pencil, Plus, RotateCcw, Users } from "lucide-react";
-import {
-  Avatar,
-  Badge,
-  Button,
-  Callout,
-  Checkbox,
-  ConfirmationDialog,
-  ControlledModalDialog,
-  DesignSystemProvider,
-  EmptyState,
-  Form,
-  IconButton,
-  IconMenuButton,
-  InspectorSheet,
-  MultiSelectField,
-  SelectField,
-  SettingsPage,
-  Surface,
-  Tabs,
-  TextAreaField,
-  TextInput,
-  useDesignSystem,
-} from "@/design-system";
+import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, DesignSystemProvider, EmptyState, IconButton, IconMenuButton, InspectorSheet, MultiSelectField, SelectField, SettingsPage, Surface, Tabs, TextAreaField, TextInput, useDesignSystem, FormDialog } from "@/design-system";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { BusinessUnitRecord } from "@/lib/workspace/company-profile";
 import type { WorkspaceConfigurationRevision } from "@/lib/workspace/company-profile";
@@ -250,9 +228,10 @@ function UnitDialog({ initialData, item, onClose, onSaved, units }: { initialDat
   const [timezone, setTimezone] = useState(existing?.timezone ?? initialData.legalEntities.find((entity) => entity.id === defaultEntity)?.timezone ?? timeZone);
   const [failure, setFailure] = useState("");
   const [saving, setSaving] = useState(false);
-  const formId = `business-unit-${existing?.id ?? "new"}`;
   const save = async (event: FormEvent) => { event.preventDefault(); setSaving(true); setFailure(""); try { const response = await fetch(existing ? `/api/workspace/business-units/${existing.id}` : "/api/workspace/business-units", { method: existing ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: initialData.workspaceId, ...(existing ? { version: existing.version } : { code }), legalEntityId, parentBusinessUnitId: parentId === "none" ? null : parentId, name, type, timezone }) }); if (!response.ok) throw new Error(await responseMessage(response, t("The business unit could not be saved."))); onSaved(await response.json() as BusinessUnitRecord); } catch (error) { setFailure(error instanceof Error ? error.message : t("The business unit could not be saved.")); } finally { setSaving(false); } };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">{t("Save business unit")}</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? t("Edit business unit") : t("Create business unit")}><Form className={styles.form} id={formId} onSubmit={save}>{failure ? <Callout title={t("Could not save business unit")} tone="danger">{failure}</Callout> : null}<div className={styles.formColumns}><TextInput isRequired label={t("Name")} onChange={setName} placeholder={t("Design Studio")} value={name} /><TextInput isDisabled={Boolean(existing)} isRequired label={t("Code")} onChange={setCode} placeholder={t("DESIGN")} value={code} /></div><div className={styles.formColumns}><SelectField items={initialData.legalEntities.map((entity) => ({ id: entity.id, label: entity.displayName }))} label={t("Legal entity")} onSelectionChange={(key) => key && setLegalEntityId(String(key))} selectedKey={legalEntityId} /><SelectField items={Object.entries(UNIT_TYPES).map(([id, label]) => ({ id, label: t(label) }))} label={t("Unit type")} onSelectionChange={(key) => key && setType(String(key))} selectedKey={type} /></div><SelectField items={[{ id: "none", label: t("Top level") }, ...units.filter((unit) => unit.id !== existing?.id && unit.legalEntityId === legalEntityId).map((unit) => ({ id: unit.id, label: unit.name }))]} label={t("Parent business unit")} onSelectionChange={(key) => key && setParentId(String(key))} selectedKey={parentId} /><TextInput isRequired label={t("Time zone")} onChange={setTimezone} value={timezone} /></Form></ControlledModalDialog>;
+  return <FormDialog isOpen={Boolean(item)} title={existing ? t("Edit business unit") : t("Create business unit")} onClose={onClose} isSubmitting={saving} submitLabel={t("Save business unit")} onSubmit={save} formClassName={styles.form}>
+{failure ? <Callout title={t("Could not save business unit")} tone="danger">{failure}</Callout> : null}<div className={styles.formColumns}><TextInput isRequired label={t("Name")} onChange={setName} placeholder={t("Design Studio")} value={name} /><TextInput isDisabled={Boolean(existing)} isRequired label={t("Code")} onChange={setCode} placeholder={t("DESIGN")} value={code} /></div><div className={styles.formColumns}><SelectField items={initialData.legalEntities.map((entity) => ({ id: entity.id, label: entity.displayName }))} label={t("Legal entity")} onSelectionChange={(key) => key && setLegalEntityId(String(key))} selectedKey={legalEntityId} /><SelectField items={Object.entries(UNIT_TYPES).map(([id, label]) => ({ id, label: t(label) }))} label={t("Unit type")} onSelectionChange={(key) => key && setType(String(key))} selectedKey={type} /></div><SelectField items={[{ id: "none", label: t("Top level") }, ...units.filter((unit) => unit.id !== existing?.id && unit.legalEntityId === legalEntityId).map((unit) => ({ id: unit.id, label: unit.name }))]} label={t("Parent business unit")} onSelectionChange={(key) => key && setParentId(String(key))} selectedKey={parentId} /><TextInput isRequired label={t("Time zone")} onChange={setTimezone} value={timezone} />
+</FormDialog>;
 }
 
 function TeamDialog({ initialData, item, onClose, onSaved, units }: { initialData: OrganizationStructurePageData; item: WorkspaceTeamRecord | "new" | null; onClose: () => void; onSaved: (team: WorkspaceTeamRecord) => void; units: BusinessUnitRecord[] }) {
@@ -268,10 +247,9 @@ function TeamDialog({ initialData, item, onClose, onSaved, units }: { initialDat
   const [queueIds, setQueueIds] = useState(() => new Set(existing?.queueIds ?? []));
   const [failure, setFailure] = useState("");
   const [saving, setSaving] = useState(false);
-  const formId = `team-${existing?.id ?? "new"}`;
   const save = async (event: FormEvent) => { event.preventDefault(); setSaving(true); setFailure(""); try { const response = await fetch(existing ? `/api/workspace/teams/${existing.id}` : "/api/workspace/teams", { method: existing ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: initialData.workspaceId, ...(existing ? { version: existing.version } : { code }), businessUnitId: unitId, name, description, memberIds: Array.from(memberIds), leadMembershipId: leadId === "none" ? null : leadId, roleIds: Array.from(roleIds), queueIds: Array.from(queueIds) }) }); if (!response.ok) throw new Error(await responseMessage(response, t("The team could not be saved."))); onSaved(await response.json() as WorkspaceTeamRecord); } catch (error) { setFailure(error instanceof Error ? error.message : t("The team could not be saved.")); } finally { setSaving(false); } };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">{t("Save team")}</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? t("Edit team") : t("Create team")}>
-    <Form className={styles.form} id={formId} onSubmit={save}>
+  return <FormDialog isOpen={Boolean(item)} title={existing ? t("Edit team") : t("Create team")} onClose={onClose} isSubmitting={saving} submitLabel={t("Save team")} onSubmit={save} formClassName={styles.form}>
+
       {failure ? <Callout title={t("Could not save team")} tone="danger">{failure}</Callout> : null}
       <div className={styles.formColumns}><TextInput isRequired label={t("Team name")} onChange={setName} placeholder={t("Sales")} value={name} /><TextInput isDisabled={Boolean(existing)} isRequired label={t("Code")} onChange={setCode} placeholder={t("SALES")} value={code} /></div>
       <SelectField items={units.map((unit) => ({ id: unit.id, label: unit.name }))} label={t("Department")} onSelectionChange={(key) => key && setUnitId(String(key))} selectedKey={unitId} />
@@ -280,6 +258,6 @@ function TeamDialog({ initialData, item, onClose, onSaved, units }: { initialDat
       <fieldset className={styles.memberChoices}><legend>{t("Members")}</legend><div>{initialData.members.map((member) => <Checkbox isSelected={memberIds.has(member.id)} key={member.id} onChange={(checked) => { const next = new Set(memberIds); if (checked) next.add(member.id); else { next.delete(member.id); if (leadId === member.id) setLeadId("none"); } setMemberIds(next); }}><span><strong>{member.displayName}</strong><small>{member.email}</small></span></Checkbox>)}</div></fieldset>
       <SelectField items={[{ id: "none", label: t("No team lead") }, ...initialData.members.filter((member) => memberIds.has(member.id)).map((member) => ({ id: member.id, label: member.displayName }))]} label={t("Team lead")} onSelectionChange={(key) => key && setLeadId(String(key))} selectedKey={leadId} />
       <TextAreaField label={t("Description")} onChange={setDescription} placeholder={t("What this team owns")} value={description} />
-    </Form>
-  </ControlledModalDialog>;
+    
+</FormDialog>;
 }

@@ -35,6 +35,7 @@ export * from "./patterns/list-tabs";
 export * from "./patterns/stage-header";
 export * from "./patterns/month-calendar";
 export * from "./patterns/grouped-table";
+export * from "./patterns/document-table";
 export * from "./patterns/comments";
 export * from "./patterns/documents";
 export * from "./patterns/integrations";

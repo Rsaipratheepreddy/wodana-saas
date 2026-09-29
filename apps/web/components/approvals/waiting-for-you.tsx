@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, useDesignSystem, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { APPROVAL_FILTERS, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
 import { playFeedback } from "@/lib/feedback/sounds";
@@ -104,11 +104,7 @@ function DecisionNote({ pending, busy, onClose, onSave }: { pending: Pending; bu
   const [note, setNote] = useState("");
   const approve = pending.decision === "approve";
   const label = approve ? t("Approve") : t(OTHER_LABEL[pending.decision as "return" | "reject"]);
-  return <ControlledModalDialog isOpen size="md" title={`${label} · ${approvalTitle(pending.row, locale)}`} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
-    footer={<div className="wd-dialog-actions">
-      <Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={() => onSave(note.trim())}>{label}</Button>
-    </div>}>
+  return <FormDialog size="md" title={`${label} · ${approvalTitle(pending.row, locale)}`} onClose={onClose} isSubmitting={busy} isSubmitDisabled={!note.trim()} submitLabel={label} onSubmit={() => onSave(note.trim())}>
     <TextAreaField label={approve ? t("Why it's approved") : t("What needs to change")} isRequired value={note} onChange={setNote} maxLength={1000} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

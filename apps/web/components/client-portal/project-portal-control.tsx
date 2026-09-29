@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, Checkbox, ControlledModalDialog, IconMenuButton, InlineNotice, Switch, TextInput, formatDate, useDesignSystem } from "@/design-system";
+import { Badge, Button, Checkbox, ControlledModalDialog, IconMenuButton, InlineNotice, Switch, TextInput, formatDate, useDesignSystem, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, staffPortalApi } from "@/lib/client-portal/client";
 import type { ClientAccess, PortalSection, ProjectPortal } from "@/lib/client-portal/types";
@@ -117,18 +117,12 @@ export function ProjectPortalControl({ workspaceId, projectId, locale }: { works
         <ClientContacts workspaceId={workspaceId} caseId={portal.caseId} portalUrl={portal.portalUrl} portalEnabled={portal.enabled} locale={locale} onChanged={load} />
       </div>
     </ControlledModalDialog> : null}
-    {demoOpen ? <ControlledModalDialog isOpen onOpenChange={(next) => { if (!next) setDemoOpen(false); }} title={t("Set demo code for {name}", { name })}
-      description={t("They sign in with this code and their mobile number; no code is sent to them. For demonstrations only.")}
-      footer={<div className="wd-dialog-actions"><Button onPress={() => setDemoOpen(false)}>{t("Cancel")}</Button>
-        <Button variant="primary" isLoading={busy} isDisabled={demoCode.length !== 6} onPress={() => void demo(demoCode)}>{t("Save")}</Button></div>}>
+    {demoOpen ? <FormDialog title={t("Set demo code for {name}", { name })} description={t("They sign in with this code and their mobile number; no code is sent to them. For demonstrations only.")} onClose={() => { setDemoOpen(false); }} isSubmitting={busy} isSubmitDisabled={demoCode.length !== 6} submitLabel={t("Save")} onSubmit={() => demo(demoCode)}>
       <TextInput label={t("Demo code")} value={demoCode} onChange={(value) => setDemoCode(value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" maxLength={6} autoFocus />
-    </ControlledModalDialog> : null}
-    {confirmRevoke ? <ControlledModalDialog isOpen onOpenChange={(next) => { if (!next) setConfirmRevoke(false); }} title={t("Revoke access for {name}?", { name })}
-      description={t("They are signed out everywhere and can't sign in until invited again.")}
-      footer={<div className="wd-dialog-actions"><Button onPress={() => setConfirmRevoke(false)}>{t("Cancel")}</Button>
-        <Button variant="danger" isLoading={busy} onPress={() => void revoke()}>{t("Revoke access")}</Button></div>}>
+    </FormDialog> : null}
+    {confirmRevoke ? <FormDialog title={t("Revoke access for {name}?", { name })} description={t("They are signed out everywhere and can't sign in until invited again.")} onClose={() => { setConfirmRevoke(false); }} isSubmitting={busy} submitVariant="danger" submitLabel={t("Revoke access")} onSubmit={() => revoke()}>
       <span />
-    </ControlledModalDialog> : null}
+    </FormDialog> : null}
   </div>;
 }
 

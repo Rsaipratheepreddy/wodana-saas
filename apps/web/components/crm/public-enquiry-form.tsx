@@ -2,7 +2,10 @@
 
 import { useState, type FormEvent } from "react";
 import Image from "next/image";
-import { Button, Callout, Checkbox, Form, NumericInput, RadioSet, SelectField, TextAreaField, TextInput } from "@/design-system";
+import { parseDate } from "@internationalized/date";
+import { Button, Callout, Checkbox, DateField, FieldCaption, Form, NumericInput, RadioSet, SelectField, TextAreaField, TextInput } from "@/design-system";
+
+const dateOf = (value: string) => { try { return value ? parseDate(value.slice(0, 10)) : null; } catch { return null; } };
 import type { PublicEnquiryForm } from "@/lib/crm/lead-forms";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
@@ -59,9 +62,10 @@ export function PublicEnquiryFormView({ form, token, preview = false, link, subm
         : question.type === "dropdown" ? <SelectField label={question.title} description={question.description} isRequired={question.required} items={question.options} selectedKey={String(answers[question.id] ?? "") || null} onSelectionChange={key => update(question.id, String(key ?? ""))} />
         : question.type === "tel" ? <CrmPhoneField label={question.title} required={question.required} value={String(answers[question.id] ?? "")} onChange={value => update(question.id, value)} countryCode={phoneCountries[question.id] ?? form.defaultCountryCode ?? ""} onCountryChange={value => setPhoneCountries(previous => ({ ...previous, [question.id]: value }))} locale={form.defaultLocale ?? undefined} />
         : question.type === "radio" ? <RadioSet label={question.title} description={question.description} isRequired={question.required} items={question.options} value={String(answers[question.id] ?? "")} onChange={value => update(question.id, value)} />
-        : question.type === "checkboxes" ? <fieldset className={styles.answerChoices}><legend>{question.title}{question.required ? " *" : ""}</legend>{question.description && <p>{question.description}</p>}
+        : question.type === "checkboxes" ? <fieldset className={styles.answerChoices}><legend><FieldCaption isRequired={question.required}>{question.title}</FieldCaption></legend>{question.description && <p>{question.description}</p>}
           {question.options.map(option => <Checkbox key={option.id} isSelected={Array.isArray(answers[question.id]) && answers[question.id].includes(option.id)} onChange={selected => { const current = Array.isArray(answers[question.id]) ? answers[question.id] as string[] : []; update(question.id, selected ? [...current, option.id] : current.filter(value => value !== option.id)); }}>{option.label}</Checkbox>)}
-        </fieldset> : question.type === "number" ? <NumericInput label={question.title} description={question.description} isRequired={question.required} value={answers[question.id] === undefined || answers[question.id] === "" ? undefined : Number(answers[question.id])} onChange={value => update(question.id, String(value))} />
+        </fieldset> : question.type === "date" ? <DateField label={question.title} description={question.description} isRequired={question.required} value={dateOf(String(answers[question.id] ?? ""))} onChange={value => update(question.id, value?.toString() ?? "")} />
+        : question.type === "number" ? <NumericInput label={question.title} description={question.description} isRequired={question.required} value={answers[question.id] === undefined || answers[question.id] === "" ? undefined : Number(answers[question.id])} onChange={value => update(question.id, String(value))} />
         : <TextInput label={question.title} description={question.description} isRequired={question.required} inputType={question.type === "email" || question.type === "tel" || question.type === "date" ? question.type : "text"} value={String(answers[question.id] ?? "")} onChange={value => update(question.id, value)} />}
     </section>)}
     {error && <Callout title={t("Enquiry not submitted")} tone="danger">{error}</Callout>}

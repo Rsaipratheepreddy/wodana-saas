@@ -3,10 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Badge, Button, Callout, Checkbox, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, NoResultsState, PageHeader, Tabs, TextInput,
-  useDesignSystem, type DataGridColumn, type TabItem,
-} from "@/design-system";
+import { Badge, Callout, Checkbox, DataGrid, EmptyState, ErrorState, NoResultsState, PageHeader, Tabs, TextInput, useDesignSystem, type DataGridColumn, type TabItem, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { consoleApi, type AiCreditsList, type AiCreditsOrganization, type AiModelRate, type AiModelRates } from "@/lib/internal/console";
 import { formatCredits } from "@/lib/workspace/ai-credits";
@@ -123,24 +120,17 @@ function RateDialog({ rate, onClose, onSave }: { rate: AiModelRate; onClose: () 
   const [margin, setMargin] = useState(rate.margin);
   const [priceConfirmed, setConfirmed] = useState(rate.priceConfirmed);
   const [active, setActive] = useState(rate.active);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const valid = PRICE.test(listInput.trim()) && PRICE.test(listOutput.trim()) && MARGIN.test(margin.trim()) && !/^0+(\.0+)?$/.test(margin.trim());
-  return <ControlledModalDialog isOpen size="md" title={rate.label} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={rate.label} onClose={onClose} error={error || undefined} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={async () => { setError("");
         try { await onSave({ listInput: listInput.trim(), listOutput: listOutput.trim(), margin: margin.trim(), priceConfirmed, active }); }
         catch (cause) { setError((cause as Error).message || t("The rate could not be saved.")); }
-        finally { setBusy(false); }
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+        finally { }
+      }}>
       <TextInput label={t("Input price (US$ per 1M tokens)")} isRequired value={listInput} onChange={setListInput} />
       <TextInput label={t("Output price (US$ per 1M tokens)")} isRequired value={listOutput} onChange={setListOutput} />
       <TextInput label={t("Margin")} isRequired value={margin} onChange={setMargin} description={t("1.5 charges 50% over the list price.")} />
       <Checkbox isSelected={priceConfirmed} onChange={setConfirmed}>{t("Price confirmed")}</Checkbox>
       <Checkbox isSelected={active} onChange={setActive}>{t("Active")}</Checkbox>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

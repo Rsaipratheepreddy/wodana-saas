@@ -5,8 +5,7 @@ import { Copy } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge, Button, Callout, ControlledModalDialog, DateField, InlineNotice, RecordTable, SelectField, TextAreaField,
-  EmptyState, type DataGridColumn,
-} from "@/design-system";
+  EmptyState, type DataGridColumn, FormDialog } from "@/design-system";
 import type { OperatorPermission } from "@/lib/internal/auth";
 import { useT } from "@/lib/i18n/i18n-provider";
 import {
@@ -142,21 +141,14 @@ function Exports({ orgKey, canManage, lifecycle, onChanged }: { orgKey: string; 
 export function ReasonDialog({ title, action, onClose, onSave }: { title: string; action: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const valid = reason.trim().length >= 10;
-  return <ControlledModalDialog isOpen size="md" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={title} onClose={onClose} error={error || undefined} isSubmitDisabled={!valid} submitLabel={action} onSubmit={async () => { setError("");
         try { await onSave(reason.trim()); } catch (cause) { setError((cause as Error).message || t("The change could not be saved.")); }
-        finally { setBusy(false); }
-      }}>{action}</Button></div>}>
-    <div className={styles.dialogBody}>
+        finally { }
+      }}>
       <TextAreaField label={t("Reason")} isRequired value={reason} onChange={setReason} description={t("At least 10 characters.")} />
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** Changes the organization's state with a reason; grace needs its end date and archive needs a current export. */

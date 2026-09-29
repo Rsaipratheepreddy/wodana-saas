@@ -1,10 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Badge, Button, ControlledModalDialog, EmptyState, ErrorState, InlineNotice, RecordTable, SegmentedControl, Skeleton, TextAreaField, TextInput,
-  useDesignSystem, type DataGridColumn,
-} from "@/design-system";
+import { Badge, Button, EmptyState, ErrorState, RecordTable, SegmentedControl, Skeleton, TextAreaField, TextInput, useDesignSystem, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { consoleApi, type CreditOverview } from "@/lib/internal/console";
 import { ENTRY_LABELS, featureLabel, formatCredits, type CreditLedgerEntry } from "@/lib/workspace/ai-credits";
@@ -88,28 +85,21 @@ function EntryDialog({ kind, onClose, onSave }: { kind: "top-up" | "adjust"; onC
   const [credits, setCredits] = useState("");
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const amount = credits.trim();
   const valid = (kind === "adjust" && entry === "adjustment" ? SIGNED_CREDITS : CREDITS).test(amount) && !ZERO.test(amount) && reference.trim().length >= 3;
-  return <ControlledModalDialog isOpen size="md" title={kind === "top-up" ? t("Top up") : t("Adjust")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={kind === "top-up" ? t("Top up") : t("Adjust")} onClose={onClose} error={error || undefined} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={async () => { setError("");
         try { await onSave({ kind: kind === "adjust" ? entry : undefined, credits: amount, reference: reference.trim(), note: note.trim() || undefined }, key.current); }
         catch (cause) { setError((cause as Error).message || t("The credits could not be saved.")); }
-        finally { setBusy(false); }
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+        finally { }
+      }}>
       {kind === "adjust" ? <SegmentedControl label={t("Entry")} value={entry} onChange={(value) => setEntry(value as "adjustment" | "refund")}
         options={[{ id: "adjustment", label: t("Adjustment") }, { id: "refund", label: t("Refund") }]} /> : null}
       <TextInput label={t("Credits")} isRequired value={credits} onChange={setCredits}
         description={kind === "adjust" && entry === "adjustment" ? t("Negative to take credits away.") : undefined} />
       <TextInput label={kind === "top-up" ? t("Invoice or payment reference") : t("Reference")} isRequired value={reference} onChange={setReference} />
       <TextAreaField label={t("Note")} value={note} onChange={setNote} />
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** The low-balance line: 20% of the last topped-up balance, or a fixed number of credits. */
@@ -117,22 +107,15 @@ function ThresholdDialog({ credits, onClose, onSave }: { credits: CreditOverview
   const t = useT();
   const [mode, setMode] = useState<"automatic" | "fixed">(credits.customThreshold === null ? "automatic" : "fixed");
   const [value, setValue] = useState(credits.customThreshold ?? credits.threshold);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const valid = mode === "automatic" || CREDITS.test(value.trim());
-  return <ControlledModalDialog isOpen size="md" title={t("Set alert")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); setError("");
+  return <FormDialog size="md" title={t("Set alert")} onClose={onClose} error={error || undefined} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={async () => { setError("");
         try { await onSave(mode === "automatic" ? null : value.trim()); }
         catch (cause) { setError((cause as Error).message || t("The alert could not be saved.")); }
-        finally { setBusy(false); }
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+        finally { }
+      }}>
       <SegmentedControl label={t("Alert at")} value={mode} onChange={(next) => setMode(next as "automatic" | "fixed")}
         options={[{ id: "automatic", label: t("20% of the last top-up") }, { id: "fixed", label: t("Fixed credits") }]} />
       {mode === "fixed" ? <TextInput label={t("Credits")} isRequired value={value} onChange={setValue} /> : null}
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

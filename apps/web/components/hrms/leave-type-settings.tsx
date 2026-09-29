@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { LeaveType } from "@wodana/contracts";
-import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, NumericInput, Switch, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, DataGrid, EmptyState, ErrorState, NumericInput, Switch, TextInput, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
 import { useHrmsFormat } from "./hrms-format";
@@ -59,11 +59,7 @@ function LeaveTypeDialog({ api, type, onClose, onSaved }: { api: HrmsApi; type: 
       onSaved();
     } catch (cause) { setError(format.failure(cause, t("Could not save."))); setBusy(false); }
   };
-  return <ControlledModalDialog isOpen size="md" title={type ? type.name : t("New leave type")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!form.name.trim() || !daysValid} onPress={() => void save()}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={type ? type.name : t("New leave type")} onClose={onClose} error={error || undefined} isSubmitting={busy} isSubmitDisabled={!form.name.trim() || !daysValid} submitLabel={t("Save")} onSubmit={() => save()}>
       <TextInput label={t("Name")} isRequired value={form.name} onChange={(value) => set("name", value)} maxLength={100} />
       <Switch isSelected={form.limited} onChange={(value) => set("limited", value)}>{t("Limited")}</Switch>
       {form.limited ? <NumericInput label={t("Days a year")} isRequired minValue={0} maxValue={366} step={0.5} value={days} onChange={(value) => set("annualDays", value)}
@@ -73,6 +69,5 @@ function LeaveTypeDialog({ api, type, onClose, onSaved }: { api: HrmsApi; type: 
         <Switch isSelected={form.paid} onChange={(value) => set("paid", value)}>{t("Paid")}</Switch>
         <Switch isSelected={form.active} onChange={(value) => set("active", value)}>{t("Active")}</Switch>
       </div>
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

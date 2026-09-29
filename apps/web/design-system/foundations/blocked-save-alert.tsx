@@ -22,7 +22,9 @@ export const fieldName = (control: Control) => {
 /** Takes the person to a control: the visible part of its field (a dropdown's button, not its hidden select). */
 export function focusField(control: Control) {
   const field = control.closest(".wd-field");
-  const focusable = field?.querySelector<HTMLElement>("input:not([type=hidden]):not([aria-hidden=true]), textarea, button, [tabindex]:not([tabindex='-1'])") ?? control;
+  // The visible control: a select's hidden native twin (inside aria-hidden) must not take focus.
+  const candidates = field ? [...field.querySelectorAll<HTMLElement>("input:not([type=hidden]), textarea, button, [tabindex]:not([tabindex='-1'])")] : [];
+  const focusable = candidates.find((element) => !element.closest("[aria-hidden=true]") && element.tabIndex !== -1) ?? control;
   focusable.scrollIntoView?.({ block: "center", behavior: "smooth" });
   focusable.focus?.({ preventScroll: true });
 }

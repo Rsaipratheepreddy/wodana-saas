@@ -2,8 +2,8 @@
 
 import { useT } from "@/lib/i18n/i18n-provider";
 import { Building2, CheckCircle2, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, SelectField, TextInput, useDesignSystem } from "@/design-system";
+import { useMemo, useState, type FormEvent } from "react";
+import { Badge, Button, Callout, ConfirmationDialog, SelectField, TextInput, useDesignSystem, FormDialog } from "@/design-system";
 import { countryFromLocale } from "@/lib/workspace/region-labels";
 import { TaxNumberingSheet } from "./tax-numbering-sheet";
 import type { CompanyAddress, LegalEntityRecord, WorkspaceRecord } from "@/lib/workspace/company-profile";
@@ -105,6 +105,9 @@ export function LegalEntitiesPanel({
   const t = useT();
   const { locale } = useDesignSystem();
   const [entities, setEntities] = useState(initialEntities);
+  // A reloaded list from the page replaces the local one, adjusted while rendering rather than in an effect.
+  const [entitiesFrom, setEntitiesFrom] = useState(initialEntities);
+  if (initialEntities !== entitiesFrom) { setEntitiesFrom(initialEntities); setEntities(initialEntities); }
   const [editing, setEditing] = useState<LegalEntityRecord | "new" | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<LegalEntityRecord | null>(null);
   const [draft, setDraft] = useState<LegalEntityDraft>(() => createDraft(workspace));
@@ -117,10 +120,6 @@ export function LegalEntitiesPanel({
   const locales = useMemo(() => localeOptions, []);
   const timezones = useMemo(() => timeZoneOptions(), []);
   const existing = editing && editing !== "new" ? editing : null;
-
-  useEffect(() => {
-    setEntities(initialEntities);
-  }, [initialEntities]);
 
   const commit = (next: LegalEntityRecord[]) => {
     setEntities(next);
@@ -243,16 +242,8 @@ export function LegalEntitiesPanel({
       {entities.length === 1 && canManage ? <p className={styles.permissionNote}>{t("At least one active business record is required for a workspace.")}</p> : null}
     </section>
 
-    <ControlledModalDialog
-      description={existing ? t("Update the official details and defaults for this business.") : t("Add official business details for documents, operating units and integrations.")}
-      footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={() => setEditing(null)}>{t("Cancel")}</Button><Button form="legal-entity-form" isLoading={saving} type="submit" variant="primary">{existing ? t("Save business") : t("Add business")}</Button></div>}
-      isDismissable={!saving}
-      isOpen={Boolean(editing)}
-      onOpenChange={(open) => { if (!open && !saving) setEditing(null); }}
-      size="lg"
-      title={existing ? t("Edit {name}", { name: existing.displayName }) : t("Add business")}
-    >
-      <form className={styles.legalEntityForm} id="legal-entity-form" noValidate onSubmit={save}>
+    <FormDialog isOpen={Boolean(editing)} size="lg" title={existing ? t("Edit {name}", { name: existing.displayName }) : t("Add business")} description={existing ? t("Update the official details and defaults for this business.") : t("Add official business details for documents, operating units and integrations.")} onClose={() => { setEditing(null); }} isSubmitting={saving} submitLabel={existing ? t("Save business") : t("Add business")} onSubmit={save} formClassName={styles.legalEntityForm}>
+
         {error ? <Callout title={t("Could not save business record")} tone="danger">{error}</Callout> : null}
         <div className={styles.formGrid}>
           <TextInput isDisabled={Boolean(existing)} isRequired label={t("Entity code")} onChange={(code) => { setDraft((current) => ({ ...current, code: code.toUpperCase() })); setError(""); }} placeholder={t("PALM_LIVING")} value={draft.code} />
@@ -270,8 +261,8 @@ export function LegalEntitiesPanel({
           <TextInput label={t("State / region")} onChange={(region) => setDraft((current) => ({ ...current, region }))} value={draft.region} />
           <TextInput label={t("Postal code")} onChange={(postalCode) => setDraft((current) => ({ ...current, postalCode }))} value={draft.postalCode} />
         </div>
-      </form>
-    </ControlledModalDialog>
+      
+</FormDialog>
 
     <ConfirmationDialog
       body={archiveTarget ? t("Archive {name}? Its operating units and integrations must already be reassigned or archived.", { name: archiveTarget.displayName }) : null}

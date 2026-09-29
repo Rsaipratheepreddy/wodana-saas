@@ -3,7 +3,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { CalendarClock, FileText, Paperclip, Send, StickyNote, X, Zap } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, EmptyState, IconButton, SearchInput, SegmentedControl, TextInput, useConfirmationDialog, useDesignSystem, useReadOnlyReason } from "@/design-system";
+import { Badge, Button, EmptyState, IconButton, SearchInput, SegmentedControl, TextInput, useConfirmationDialog, useDesignSystem, useReadOnlyReason, FormDialog } from "@/design-system";
 import { crmRequest, type RecordData } from "@/lib/crm/client";
 import { ATTACH_ACCEPT, attachProblem, fileSizeText, fillQuickReply, fillTemplate, quickReplyQuery, renderTemplate, sendableKind, sendableTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_STATUS, uploadAttachment, windowLeft, type ChatContext, type InboxOwner, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -214,10 +214,7 @@ function TemplatePicker({ templates, variables, canManage, connected, onClose, o
   const stillMissing = filled?.missing.filter((item) => !(typed[item.position] ?? "").trim()) ?? [];
   const unmapped = filled?.missing.find((item) => !item.source);
   const fieldOf = (item: { position: number; source: keyof typeof TEMPLATE_SOURCE_LABELS | null }) => item.source ? t(TEMPLATE_SOURCE_LABELS[item.source]) : t("No field yet");
-  return <ControlledModalDialog isOpen size="lg" title={t("Send a template")} onOpenChange={(open) => { if (!open && !sending) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={sending} onPress={onClose}>{t("Cancel")}</Button>
-      {onSendLater ? <Button isDisabled={sending || !selected || stillMissing.length > 0} onPress={() => { if (selected) onSendLater(selected, filled?.missing.length ? parameters : undefined); }}>{t("Send later")}</Button> : null}
-      <Button variant="primary" isLoading={sending} isDisabled={!selected || stillMissing.length > 0} onPress={async () => { if (!selected) return; setSending(true); await onSend(selected, filled?.missing.length ? parameters : undefined); setSending(false); }}>{t("Send template")}</Button></div>}>
+  return <FormDialog size="lg" title={t("Send a template")} onClose={onClose} isSubmitDisabled={!selected || stillMissing.length > 0} submitLabel={t("Send template")} onSubmit={async () => { if (!selected) return; setSending(true); await onSend(selected, filled?.missing.length ? parameters : undefined); setSending(false); }} secondaryAction={<>{onSendLater ? <Button isDisabled={sending || !selected || stillMissing.length > 0} onPress={() => { if (selected) onSendLater(selected, filled?.missing.length ? parameters : undefined); }}>{t("Send later")}</Button> : null}</>}>
     <div className={styles.templatePicker}>
       {!connected ? <EmptyState title={t("WhatsApp isn't connected")} action={canManage ? <Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/integrations">{t("Connect WhatsApp")}</Link> : undefined} />
         : noneApproved ? <EmptyState title={t("No approved templates yet")} action={canManage ? <Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/settings/inbox#inbox-templates">{t("New template")}</Link> : undefined} />
@@ -235,5 +232,5 @@ function TemplatePicker({ templates, variables, canManage, connected, onClose, o
         {unmapped && canManage ? <Link href="/workspace/settings/inbox#inbox-templates">{t("Map its variables")}</Link> : null}
       </div> : null}
     </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

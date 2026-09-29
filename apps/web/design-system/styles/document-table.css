@@ -1,0 +1,15 @@
+/* The document table: sealed scopes, invoices and printed lists (DocumentTable). */
+.wd-document-table { inline-size: 100%; border-collapse: collapse; color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.wd-document-table th, .wd-document-table td { padding: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); text-align: start; vertical-align: top; }
+.wd-document-table [data-align="end"] { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wd-document-table thead th { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.wd-document-table td small { display: block; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.wd-document-group th, .wd-document-group td { padding-block-start: var(--wd-space-4); font-weight: var(--wd-weight-semibold); }
+.wd-document-table tbody[data-tone="muted"] td, .wd-document-table tbody[data-tone="muted"] th { color: var(--wd-color-text-secondary); }
+.wd-document-table tfoot th { color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-regular); text-align: end; border-block-end: 0; }
+.wd-document-table tfoot td { border-block-end: 0; }
+.wd-document-table tfoot tr[data-emphasis] th, .wd-document-table tfoot tr[data-emphasis] td { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); }
+@media print {
+  .wd-document-table { font-size: var(--wd-text-xs); }
+  .wd-document-table tr { break-inside: avoid; }
+}

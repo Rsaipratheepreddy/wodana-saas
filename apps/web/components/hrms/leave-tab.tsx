@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import type { HrmsEmployee, LeaveBalance, LeaveRequest, LeaveType } from "@wodana/contracts";
 import {
-  Button, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, SelectField, Skeleton, TextAreaField,
+  Button, DataGrid, DateField, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, SelectField, Skeleton, TextAreaField,
   type DataGridColumn,
-} from "@/design-system";
+ FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
 import { Facts, PeriodStepper } from "./hrms-controls";
@@ -110,11 +110,7 @@ function RequestLeaveDialog({ api, types, balances, onClose, onSaved }: {
       onSaved();
     } catch (cause) { setError(format.failure(cause, t("Could not send."))); setBusy(false); }
   };
-  return <ControlledModalDialog isOpen size="md" title={t("Request leave")} onOpenChange={(value) => { if (!value) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!ready} onPress={() => void save()}>{t("Send request")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={t("Request leave")} onClose={onClose} error={error || undefined} isSubmitting={busy} isSubmitDisabled={!ready} submitLabel={t("Send request")} onSubmit={() => save()}>
       {!active.length ? <InlineNotice tone="info" message={t("No kinds of leave are set up yet.")} /> : null}
       <SelectField label={t("Type")} isRequired placeholder={t("Choose")} selectedKey={typeId} onSelectionChange={(key) => setTypeId(key ? String(key) : null)}
         items={active.map((item) => { const balance = balances.find((row) => row.leaveTypeId === item.id); return { id: item.id, label: item.name, description: balance ? balanceLine(balance, format, t) : undefined }; })} />
@@ -130,8 +126,7 @@ function RequestLeaveDialog({ api, types, balances, onClose, onSaved }: {
       {halfDay ? <SegmentedControl label={t("Part of day")} value={part} onChange={(value) => setPart(value as LeaveRequest["dayPart"])}
         options={(["full", "first_half", "second_half"] as const).map((id) => ({ id, label: labels.part(id) }))} /> : null}
       <TextAreaField label={t("Reason")} isRequired value={reason} onChange={setReason} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** One of my requests: when, how long, why and what was decided; while it stands, it can be cancelled with a reason. */
@@ -164,16 +159,9 @@ function CancelLeaveDialog({ api, request, onClose, onCancelled }: { api: HrmsAp
   const format = useHrmsFormat();
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Cancel request")} onOpenChange={(value) => { if (!value) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="danger" isLoading={busy} isDisabled={reason.trim().length < MIN_REASON} onPress={async () => {
-        setBusy(true); setError("");
-        try { await api.cancelLeave(request.id, reason.trim()); onCancelled(); } catch (cause) { setError(format.failure(cause, t("Could not save."))); setBusy(false); }
-      }}>{t("Cancel request")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={t("Cancel request")} onClose={onClose} cancelLabel={t("Back")} error={error || undefined} isSubmitDisabled={reason.trim().length < MIN_REASON} submitVariant="danger" submitLabel={t("Cancel request")} onSubmit={async () => { setError("");
+        try { await api.cancelLeave(request.id, reason.trim()); onCancelled(); } catch (cause) { setError(format.failure(cause, t("Could not save."))); }
+      }}>
       <TextAreaField label={t("Why cancel")} isRequired value={reason} onChange={setReason} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

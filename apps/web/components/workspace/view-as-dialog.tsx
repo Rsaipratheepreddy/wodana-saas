@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Button, Callout, ControlledModalDialog, TextInput } from "@/design-system";
+import { Callout, FormDialog, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
 import { startViewAs, type ViewAsTarget } from "@/lib/workspace/view-as";
@@ -48,20 +48,19 @@ function ViewAsDialogBody({ mfaEnabled, onClose, target, workspaceId }: Props) {
   };
 
   const title = target?.kind === "role" ? t("Preview as {role}", { role: target.name }) : t("View as {name}", { name: target?.name ?? "" });
-  return <ControlledModalDialog
+  return <FormDialog
     description={target?.kind === "role" ? t("Read-only for {minutes} minutes.", { minutes: 15 }) : t("Read-only for {minutes} minutes.", { minutes: 30 })}
-    footer={<div className="wd-dialog-actions">
-      <Button isDisabled={working} onPress={onClose}>{t("Cancel")}</Button>
-      {mfaEnabled ? <Button isDisabled={working} isLoading={working} onPress={() => void start()} variant="primary">{t("Start viewing")}</Button> : null}
-    </div>}
-    isDismissable={!working}
+    hideSubmit={!mfaEnabled}
+    isSubmitting={working}
     isOpen={Boolean(target)}
-    onOpenChange={(open) => { if (!open && !working) onClose(); }}
+    onClose={onClose}
+    onSubmit={() => start()}
+    submitLabel={t("Start viewing")}
     title={title}
   >
     {failure ? <Callout title={t("Could not continue")} tone="danger">{failure}</Callout> : null}
     {mfaEnabled
       ? <TextInput autoComplete="one-time-code" autoFocus isRequired label={t("Authenticator or recovery code")} onChange={(value) => { setCode(value); setFailure(""); }} placeholder={t("Six digits or a recovery code")} value={code} />
       : <Callout title={t("Turn on two-step verification first")} tone="warning"><Link href="/workspace/settings/security">{t("Open Security")}</Link></Callout>}
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

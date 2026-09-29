@@ -6,9 +6,8 @@ import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
 import type { CrewDay, CrewPresence, HrmsBootstrap, HrmsCrewState } from "@wodana/contracts";
 import {
-  Button, ComboboxField, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoAccessState, NoResultsState,
-  NumericInput, SegmentedControl, SelectField, TextAreaField, useDesignSystem, type DataGridColumn,
-} from "@/design-system";
+  Button, ComboboxField, DataGrid, DateField, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoAccessState, NoResultsState,
+  NumericInput, SegmentedControl, SelectField, TextAreaField, useDesignSystem, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { hrmsApi, type CrewDayList, type HrmsApi } from "@/lib/hrms/api";
 import { hrmsHref } from "@/lib/hrms/sections";
@@ -291,18 +290,13 @@ function SubmitCrewDayDialog({ api, day, today, onClose, onSubmitted }: {
       setBusy(false);
     }
   };
-  return <ControlledModalDialog isOpen size="md" title={t("Group photo")} isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!ready} onPress={() => void submit()}>{t("Submit")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={t("Group photo")} onClose={onClose} error={error || undefined} isSubmitting={busy} isSubmitDisabled={!ready} submitLabel={t("Submit")} onSubmit={() => submit()}>
       <CameraCapture facing="environment" photoLabel={t("Group photo")} onChange={(next) => { setPhoto(next); if (next) position.locate(); }}>
         <PositionStatus position={position} />
       </CameraCapture>
       {issues ? <InlineNotice tone="info" title={t("Needs a reason")} message={<ul className={styles.issues}>{issues.map((issue) => <li key={issue}>{labels.issue(issue)}</li>)}</ul>} /> : null}
       {needsReason ? <TextAreaField label={t("Reason for review")} isRequired value={reason} onChange={setReason} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** A sent crew day: who was there, the photo and where it was taken, any reason; approved, what it cost. The approver decides here. */
@@ -375,12 +369,7 @@ function CrewDayView({ api, day, viewer, canSeeCosts, showPlace, onClose, onChan
 function ReturnCrewDayDialog({ error, busy, onClose, onSend }: { error: string; busy: boolean; onClose: () => void; onSend: (note: string) => Promise<void> }) {
   const t = useT();
   const [note, setNote] = useState("");
-  return <ControlledModalDialog isOpen size="md" title={t("Send the crew day back")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={note.trim().length < MIN_REASON} onPress={() => void onSend(note.trim())}>{t("Send back")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={t("Send the crew day back")} onClose={onClose} cancelLabel={t("Back")} error={error || undefined} isSubmitting={busy} isSubmitDisabled={note.trim().length < MIN_REASON} submitLabel={t("Send back")} onSubmit={() => onSend(note.trim())}>
       <TextAreaField label={t("What to change")} isRequired value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

@@ -4,9 +4,8 @@ import { ArrowUpRight, Copy, Plus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Button, Checkbox, ControlledModalDialog, EmailInput, EmptyState, ErrorState, IconMenuButton, InlineNotice, isNoAccessError, NoAccessState, PhoneField, RecordTable, SegmentedControl, Skeleton, TextInput,
-  type DataGridColumn,
-} from "@/design-system";
+  Button, Checkbox, EmailInput, EmptyState, ErrorState, IconMenuButton, InlineNotice, isNoAccessError, NoAccessState, PhoneField, RecordTable, SegmentedControl, Skeleton, TextInput,
+  type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { staffPortalApi } from "@/lib/client-portal/client";
 import type { PortalContact } from "@/lib/client-portal/types";
@@ -87,11 +86,8 @@ export function ClientContacts({ workspaceId, caseId, portalUrl, portalEnabled, 
     {error && !edit ? <InlineNotice tone="error" message={error} /> : null}
     {state.contacts.length ? <RecordTable ariaLabel={t("Client contacts")} data={state.contacts} getRowId={(row) => row.id} columns={columns} showToolbar={false} wrapText />
       : <EmptyState title={t("No client contacts yet")} description={state.canManage ? t("Add the people who follow this project.") : t("People who manage the client portal add contacts here.")} action={state.canManage ? <Button variant="primary" onPress={() => open()}>{t("Add contact")}</Button> : undefined} />}
-    {edit ? <ControlledModalDialog isOpen onOpenChange={(openState) => { if (!openState) setEdit(null); }} title={edit.id ? t("Edit contact") : t("Add contact")}
-      footer={<div className="wd-dialog-actions"><Button onPress={() => setEdit(null)}>{t("Cancel")}</Button>
-        <Button variant="primary" isLoading={busy} isDisabled={!edit.name.trim() || !edit.national.trim()} onPress={() => void save()}>{t("Save")}</Button></div>}>
+    {edit ? <FormDialog title={edit.id ? t("Edit contact") : t("Add contact")} onClose={() => { setEdit(null); }} error={error || undefined} isSubmitting={busy} isSubmitDisabled={!edit.name.trim() || !edit.national.trim()} submitLabel={t("Save")} onSubmit={() => save()}>
       <div className={styles.stack}>
-        {error ? <InlineNotice tone="error" message={error} /> : null}
         <TextInput label={t("Name")} value={edit.name} onChange={(name) => setEdit({ ...edit, name })} maxLength={160} isRequired autoFocus />
         <PhoneField label={t("Mobile number")} value={edit.national} countryCode={edit.country} locale={locale} isRequired
           onChange={(national) => setEdit({ ...edit, national })} onCountryChange={(next) => setEdit({ ...edit, country: next })} description={t("They sign in with this number.")} />
@@ -101,6 +97,6 @@ export function ClientContacts({ workspaceId, caseId, portalUrl, portalEnabled, 
         {edit.id ? <Checkbox isSelected={edit.active} onChange={(active) => setEdit({ ...edit, active })}>{t("Can sign in")}</Checkbox> : null}
         {state.demo ? <Checkbox isSelected={edit.testContact} onChange={(testContact) => setEdit({ ...edit, testContact })}>{t("Test contact (demo code)")}</Checkbox> : null}
       </div>
-    </ControlledModalDialog> : null}
+    </FormDialog> : null}
   </div>;
 }

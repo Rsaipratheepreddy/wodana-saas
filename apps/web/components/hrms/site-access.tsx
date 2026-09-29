@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { Printer, X } from "lucide-react";
 import type { HrmsCrewState, SiteAccess, SiteClearance } from "@wodana/contracts";
 import {
-  Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, IconButton, InlineNotice, NoAccessState, NoResultsState, SegmentedControl, SelectField, Skeleton,
+  Button, ControlledModalDialog, DataGrid, DocumentTable, EmptyState, ErrorState, IconButton, InlineNotice, NoAccessState, NoResultsState, SegmentedControl, SelectField, Skeleton,
   type DataGridColumn,
 } from "@/design-system";
 import { useWorkspaceIdentity } from "@/components/workspace/workspace-identity";
@@ -150,9 +150,11 @@ function GateList({ access, people, projectName, documents, onDone }: {
         <p>{t("Cleared for site on {date}", { date: format.longDay(access.day) })}</p>
       </div>
     </header>
-    <table>
-      <thead><tr><th>{t("Name")}</th><th>{t("Role")}</th><th>{t("Documents")}</th></tr></thead>
-      <tbody>{people.map((person) => <tr key={rowId(person)}><td>{person.name}</td><td>{person.detail}</td><td>{documents(person)}</td></tr>)}</tbody>
-    </table>
+    <DocumentTable label={t("Gate list")} rows={people} getRowKey={(person) => rowId(person)}
+      columns={[
+        { id: "name", header: t("Name"), cell: (person) => person.name },
+        { id: "role", header: t("Role"), cell: (person) => person.detail },
+        { id: "documents", header: t("Documents"), cell: (person) => documents(person) },
+      ]} />
   </section>, document.body);
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, ErrorState, Skeleton } from "@/design-system";
+import { Button, DocumentTable, ErrorState, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { inventoryApi } from "@/lib/inventory/client";
 import type { TransferState } from "@/lib/inventory/types";
@@ -42,14 +42,11 @@ export function MovePrint({ workspaceId, moveId }: { workspaceId: string; moveId
         {transfer.projects?.length ? <div><dt>{t("Projects")}</dt><dd>{transfer.projects.map((project) => project.reference).join(", ")}</dd></div> : null}
         {transfer.note ? <div><dt>{t("Note")}</dt><dd>{transfer.note}</dd></div> : null}
       </dl>
-      <table className={styles.table}>
-        <thead><tr><th scope="col">{t("Item")}</th><th scope="col">{t("Project")}</th><th scope="col" className={styles.end}>{t("Quantity")}</th></tr></thead>
-        <tbody>{lines.map((line) => <tr key={line.id}>
-          <td dir="auto">{line.itemName}</td>
-          <td>{line.projectReference ?? "—"}</td>
-          <td className={styles.end}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</td>
-        </tr>)}</tbody>
-      </table>
+      <DocumentTable label={t("Lines")} rows={lines} getRowKey={(line) => line.id} columns={[
+        { id: "item", header: t("Item"), cell: (line) => <span dir="auto">{line.itemName}</span> },
+        { id: "project", header: t("Project"), cell: (line) => line.projectReference ?? "—" },
+        { id: "quantity", header: t("Quantity"), align: "end", cell: (line) => `${quantityText(line.quantity)} ${line.unit}`.trim() },
+      ]} />
     </article>
   </main>;
 }

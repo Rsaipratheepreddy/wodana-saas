@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
-import { Badge, Button, Checkbox, ControlledModalDialog, DataGrid, EmptyState, InlineNotice, NoAccessState, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, Checkbox, DataGrid, EmptyState, InlineNotice, NoAccessState, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn, FormDialog } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
 import { fillTemplate, LABEL_COLORS, renderTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_SOURCES, TEMPLATE_STATUS, type InboxLabel, type InboxTemplate, type LabelColor, type QuickReply, type TemplateSource } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -159,15 +159,13 @@ function StarterPackDialog({ workspaceId, onClose, onSubmit }: { workspaceId: st
   const t = useT();
   const [pack, setPack] = useState<StarterPack | null>(null);
   const [languages, setLanguages] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false), [error, setError] = useState("");
+  const [error, setError] = useState("");
   useEffect(() => {
     void crmRequest<StarterPack>(workspaceId, "inbox/starter-pack").then((next) => { setPack(next); setLanguages(new Set(next.defaultLanguages)); }).catch((reason: Error) => setError(reason.message));
   }, [workspaceId]);
   const names: Record<string, string> = { en: "English", ar: "العربية" };
   const missing = pack?.items.filter((item) => languages.has(item.language) && !item.status) ?? [];
-  return <ControlledModalDialog isOpen size="lg" title={t("Starter templates")} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={saving} isDisabled={!missing.length}
-      onPress={async () => { setSaving(true); await onSubmit([...languages]); setSaving(false); }}>{missing.length ? t("Send {count} to Meta", { count: missing.length }) : t("Nothing to add")}</Button></div>}>
+  return <FormDialog size="lg" title={t("Starter templates")} onClose={onClose} isSubmitDisabled={!missing.length} submitLabel={missing.length ? t("Send {count} to Meta", { count: missing.length }) : t("Nothing to add")} onSubmit={() => onSubmit([...languages])}>
     <div className={styles.form}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
       {!pack && !error ? <Skeleton lines={5} /> : null}
@@ -179,52 +177,44 @@ function StarterPackDialog({ workspaceId, onClose, onSubmit }: { workspaceId: st
         </li>)}</ul>
       </> : null}
     </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 function LabelDialog({ initial, onClose, onSave }: { initial: Partial<InboxLabel>; onClose: () => void; onSave: (value: Partial<InboxLabel>) => Promise<void> }) {
   const t = useT();
   const [value, setValue] = useState<Partial<InboxLabel>>(initial);
-  const [saving, setSaving] = useState(false), [error, setError] = useState("");
   const save = async () => {
-    if (!value.name?.trim()) { setError(t("Enter the label name.")); return; }
-    setSaving(true); setError(""); await onSave({ ...value, name: value.name.trim() }); setSaving(false);
+    if (!value.name?.trim()) throw new Error(t("Enter the label name."));
+    await onSave({ ...value, name: value.name.trim() });
   };
-  return <ControlledModalDialog isOpen title={initial.id ? t("Edit label") : t("New label")} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={saving} onPress={() => void save()}>{t("Save label")}</Button></div>}>
-    <form className={styles.form} onSubmit={(event) => { event.preventDefault(); void save(); }}>
+  return <FormDialog title={initial.id ? t("Edit label") : t("New label")} onClose={onClose} isDirty={(value.name ?? "") !== (initial.name ?? "") || value.color !== initial.color}
+    submitLabel={t("Save label")} onSubmit={save} formClassName={styles.form}>
       <TextInput isRequired label={t("Name")} maxLength={60} value={value.name ?? ""} onChange={(name) => setValue((current) => ({ ...current, name }))} />
       <div role="group" aria-label={t("Colour")} className={styles.swatches}>
         {LABEL_COLORS.map((color: LabelColor) => <button key={color} type="button" aria-pressed={value.color === color} aria-label={t("Colour {number}", { number: LABEL_COLORS.indexOf(color) + 1 })} onClick={() => setValue((current) => ({ ...current, color }))}><LabelChip label={{ name: value.name?.trim() || t("Label"), color }} /></button>)}
       </div>
-      {error ? <InlineNotice message={error} tone="error" /> : null}
-    </form>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** Quick replies can use fields from the chat's records, written as {{contact.first_name}}. */
 function QuickReplyDialog({ initial, canShare, onClose, onSave }: { initial: Partial<QuickReply>; canShare: boolean; onClose: () => void; onSave: (value: Partial<QuickReply>) => Promise<void> }) {
   const t = useT();
   const [value, setValue] = useState<Partial<QuickReply>>(initial);
-  const [saving, setSaving] = useState(false), [error, setError] = useState("");
   const save = async () => {
     const shortcut = (value.shortcut ?? "").trim().replace(/^\//, "").toLowerCase();
-    if (!/^\S{1,40}$/u.test(shortcut)) { setError(t("Enter a shortcut without spaces.")); return; }
-    if (!value.body?.trim()) { setError(t("Enter the reply.")); return; }
-    setSaving(true); setError(""); await onSave({ ...value, shortcut, body: value.body.trim() }); setSaving(false);
+    if (!/^\S{1,40}$/u.test(shortcut)) throw new Error(t("Enter a shortcut without spaces."));
+    if (!value.body?.trim()) throw new Error(t("Enter the reply."));
+    await onSave({ ...value, shortcut, body: value.body.trim() });
   };
-  return <ControlledModalDialog isOpen title={initial.id ? t("Edit quick reply") : t("New quick reply")} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={saving} onPress={() => void save()}>{t("Save quick reply")}</Button></div>}>
-    <form className={styles.form} onSubmit={(event) => { event.preventDefault(); void save(); }}>
+  return <FormDialog title={initial.id ? t("Edit quick reply") : t("New quick reply")} onClose={onClose} isDirty={(value.shortcut ?? "") !== (initial.shortcut ?? "") || (value.body ?? "") !== (initial.body ?? "")}
+    submitLabel={t("Save quick reply")} onSubmit={save} formClassName={styles.form}>
       <TextInput isRequired label={t("Shortcut")} prefix="/" maxLength={41} value={value.shortcut ?? ""} onChange={(shortcut) => setValue((current) => ({ ...current, shortcut }))} />
       <TextAreaField isRequired label={t("Reply")} maxLength={4096} value={value.body ?? ""} onChange={(body) => setValue((current) => ({ ...current, body }))} />
       <div className={styles.fields} role="group" aria-label={t("Insert a field")}>
         {TEMPLATE_SOURCES.filter((source) => source !== "staff.first_name").map((source) => <Button key={source} size="compact" variant="quiet" onPress={() => setValue((current) => ({ ...current, body: `${current.body ?? ""}{{${source}}}` }))}>{t(TEMPLATE_SOURCE_LABELS[source])}</Button>)}
       </div>
       {!initial.id && canShare ? <SelectField label={t("For")} items={[{ id: "workspace", label: t("Everyone") }, { id: "personal", label: t("Only me") }]} selectedKey={value.scope ?? "workspace"} onSelectionChange={(key) => setValue((current) => ({ ...current, scope: String(key) as QuickReply["scope"] }))} /> : null}
-      {error ? <InlineNotice message={error} tone="error" /> : null}
-    </form>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** Which field fills each {{n}}; the preview shows an example with the field names in place. */
@@ -241,8 +231,7 @@ function TemplateVariablesDialog({ template, onClose, onSave }: { template: Inbo
     await onSave(template.positions.map((position) => ({ position, source: sources[position] as TemplateSource })));
     setSaving(false);
   };
-  return <ControlledModalDialog isOpen title={template.code} description={template.locale} onOpenChange={(open) => { if (!open && !saving) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={saving} onPress={() => void save()}>{t("Save variables")}</Button></div>}>
+  return <FormDialog title={template.code} description={template.locale} onClose={onClose} isSubmitting={saving} submitLabel={t("Save variables")} onSubmit={() => save()}>
     <div className={styles.variables}>
       <p className={styles.preview}>{preview}</p>
       {template.positions.map((position) => <SelectField key={position} isRequired label={`{{${position}}}`} placeholder={t("Choose a field")}
@@ -250,5 +239,5 @@ function TemplateVariablesDialog({ template, onClose, onSave }: { template: Inbo
         selectedKey={sources[position] || null} onSelectionChange={(key) => setSources((current) => ({ ...current, [position]: (key ? String(key) : "") as TemplateSource | "" }))} />)}
       {error ? <InlineNotice message={error} tone="error" /> : null}
     </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

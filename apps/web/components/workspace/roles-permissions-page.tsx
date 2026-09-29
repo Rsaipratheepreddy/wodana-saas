@@ -4,7 +4,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import Link from "next/link";
 import { useId, useMemo, useState, type FormEvent } from "react";
 import { ChevronDown, ChevronRight, Lock, Plus } from "lucide-react";
-import { Avatar, AvatarGroup, Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, IconMenuButton, SaveBar, SearchInput, SegmentedControl, SelectField, SettingsPage, Switch, TextAreaField, TextInput } from "@/design-system";
+import { Avatar, AvatarGroup, Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, IconMenuButton, SaveBar, SearchInput, SegmentedControl, SelectField, SettingsPage, Switch, TextAreaField, TextInput, FormDialog } from "@/design-system";
 import type { WorkspaceRole } from "@/lib/workspace/members";
 import {
   isSensitivePermission,
@@ -451,7 +451,6 @@ function RoleDialog({ initialData, item, onClose, onSaved }: { initialData: Role
   const [description, setDescription] = useState(existing?.description ?? source?.description ?? "");
   const [failure, setFailure] = useState("");
   const [saving, setSaving] = useState(false);
-  const formId = `role-${existing?.id ?? "new"}`;
   const copiedPermissions = source
     ? source.permissions.filter((permission) => initialData.delegablePermissions === null || initialData.delegablePermissions.includes(permission))
     : [];
@@ -488,14 +487,14 @@ function RoleDialog({ initialData, item, onClose, onSaved }: { initialData: Role
       ? t("The copy starts with the same capabilities; adjust them after saving.")
       : t("Create the role, then choose its product capabilities from the list.");
 
-  return <ControlledModalDialog description={intro} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">{t("Save role")}</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={title}>
-    <form className={styles.form} id={formId} onSubmit={save}>
+  return <FormDialog isOpen={Boolean(item)} title={title} description={intro} onClose={onClose} isSubmitting={saving} submitLabel={t("Save role")} onSubmit={save} formClassName={styles.form}>
+
       {failure ? <Callout title={t("Could not save role")} tone="danger">{failure}</Callout> : null}
       <div className={styles.formColumns}>
         <TextInput isRequired label={t("Role name")} onChange={(value) => { setName(value); if (!existing && !codeTouched) setCode(roleCode(value)); }} placeholder={t("Studio lead")} value={name} />
         <TextInput description={existing ? t("Role codes cannot be changed.") : t("Used internally for access assignments.")} isDisabled={Boolean(existing)} isRequired label={t("Role code")} onChange={(value) => { setCodeTouched(true); setCode(roleCode(value)); }} placeholder={t("studio_lead")} value={code} />
       </div>
       <TextAreaField label={t("Description")} onChange={setDescription} placeholder={t("What members with this role can do")} value={description} />
-    </form>
-  </ControlledModalDialog>;
+    
+</FormDialog>;
 }

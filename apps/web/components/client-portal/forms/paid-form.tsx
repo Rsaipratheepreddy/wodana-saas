@@ -2,7 +2,7 @@
 
 import { parseDate } from "@internationalized/date";
 import { useState } from "react";
-import { Button, DateField, Form, InlineNotice, TextAreaField, TextInput } from "@/design-system";
+import { Button, DateField, Form, InlineNotice, MoneyField, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import type { PortalMilestone } from "@/lib/client-portal/types";
@@ -43,8 +43,7 @@ export function PaidForm({ milestone, caseId, currency, today, api, format, onDo
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {milestone.left ? <p className={styles.muted}>{t("{amount} left", { amount: format.money(milestone.left, currency) })}</p> : null}
     <DateField label={t("Paid on")} isRequired value={paidOn ? parseDate(paidOn) : null} maxValue={parseDate(today)} onChange={(value) => setPaidOn(value ? value.toString() : null)} />
-    <TextInput label={t("Amount paid")} inputMode="decimal" value={amount} onChange={setAmount} isInvalid={Boolean(amountError)} errorMessage={amountError || undefined}
-      prefix={currency ?? undefined} maxLength={20} />
+    <MoneyField label={t("Amount paid")} currency={currency ?? undefined} value={amount} onChange={setAmount} />
     <TextInput label={t("Bank reference")} value={reference} onChange={setReference} maxLength={120} />
     <AttachFiles caseId={caseId} api={api} onChange={setUploads} onBusy={setUploading} max={5} label={t("Add the receipt")} />
     <TextAreaField label={t("Note")} value={note} onChange={setNote} maxLength={1000} />
