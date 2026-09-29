@@ -16,6 +16,7 @@ import { statusLabel } from '../../ui/status';
 import { useToast } from '../../ui/toast';
 import { useTheme } from '../../ui/theme';
 import { useOpenWork, useWorkBoard, useWorkCommand } from './api';
+import { inPlanFilter, planFilterOf, type PlanFilter } from './overview-model';
 
 const ORDER: WorkStatus[] = ['in_progress', 'todo', 'in_review', 'done', 'cancelled'];
 export const TYPE_LABEL: Record<WorkType, string> = { task: key('Task'), blocker: key('Blocker'), client_request: key('Client request'), snag: key('Snag') };
@@ -39,27 +40,33 @@ export function WorkTrailing({ item }: { item: WorkItem }) {
   return <View />;
 }
 
-/** The plan: my work or everyone's on this project, by status; a task opens to update it. */
+/** The plan: my work or everyone's on this project, by status; a task opens to update it. Late, blocked and snags are one tap. */
 export function PlanScreen() {
   const t = useT();
   const theme = useTheme();
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const format = useFormat();
+  const { id, filter: linked } = useLocalSearchParams<{ id: string; filter?: string }>();
   const board = useWorkBoard(id);
-  const [who, setWho] = useState<'mine' | 'all'>('mine');
-  const [state, setState] = useState<'open' | 'done'>('open');
+  // A link from the overview ("3 tasks late") opens that list for everyone.
+  const initial = planFilterOf(linked);
+  const [who, setWho] = useState<'mine' | 'all'>(initial && initial !== 'open' ? 'all' : 'mine');
+  const [state, setState] = useState<PlanFilter>(initial ?? 'open');
+  const today = format.today();
   const [creating, setCreating] = useState(false);
   const detail = useWorkDetail();
   const items = useMemo(() => (board.data?.items ?? [])
     .filter((item) => !item.parentId)
     .filter((item) => who === 'all' || item.assigneeId === board.data?.me)
-    .filter((item) => (state === 'open' ? item.status !== 'done' && item.status !== 'cancelled' : item.status === 'done' || item.status === 'cancelled'))
-    .sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || a.number - b.number), [board.data, who, state]);
+    .filter((item) => inPlanFilter(item, state, today))
+    .sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || a.number - b.number), [board.data, who, state, today]);
   return <>
     <ListScreen title={t('Plan')} back items={items} keyExtractor={(item) => item.id} groupBy={(item) => t(statusLabel(item.status))}
       toolbar={<View style={{ gap: theme.space(3) }}>
         <SegmentedControl value={who} onChange={setWho} options={[{ value: 'mine', label: t('Mine') }, { value: 'all', label: t('Everyone') }]} />
-        <FilterChips value={state} onChange={setState} options={[{ value: 'open', label: t('Open') }, { value: 'done', label: t('Done') }]} />
+        <FilterChips value={state} onChange={setState} options={[
+          { value: 'open', label: t('Open') }, { value: 'late', label: t('Late') }, { value: 'blocked', label: t('Blocked') }, { value: 'snags', label: t('Snags') }, { value: 'done', label: t('Done') },
+        ]} />
       </View>}
       loading={board.isLoading} error={board.error ? errorMessage(board.error, t('The plan could not be loaded.')) : null} onRetry={() => void board.refetch()}
       onRefresh={() => void board.refetch()} refreshing={board.isRefetching}

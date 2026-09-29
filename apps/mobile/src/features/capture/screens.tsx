@@ -133,6 +133,7 @@ export function PickProjectScreen() {
   useEffect(() => { if (projects.data && running.length === 1) router.replace(pick.href(running[0].id)); }, [projects.data]); // eslint-disable-line react-hooks/exhaustive-deps
   return <ListScreen title={t(pick.title)} subtitle={t('Which project?')} back items={running} keyExtractor={(project) => project.id}
     loading={projects.isLoading} error={projects.error ? errorMessage(projects.error, t('Projects could not be loaded.')) : null} onRetry={() => void projects.refetch()}
+    onRefresh={() => void projects.refetch()} refreshing={projects.isRefetching}
     empty={<Empty icon={FolderKanban} title={t('No running projects')} />}
     renderItem={(project, _, first) => <ListRow first={first} title={project.name} detail={`${project.reference} · ${project.clientName}`} trailing={<StatusChip status={project.health} />}
       onPress={() => router.replace(pick.href(project.id))} />} />;

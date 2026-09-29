@@ -81,6 +81,34 @@ async def test_expo_ticket_is_acceptance_not_delivery() -> None:
 
 
 @pytest.mark.asyncio
+async def test_an_approval_push_shows_approve_and_names_the_row_to_decide() -> None:
+    order = "55555555-5555-4555-8555-555555555555"
+    http = FakeHttp(FakeResponse({"data": {"status": "ok", "id": "expo-ticket"}}))
+    result = await connected(http).deliver(DeliveryJob.model_validate({
+        "id": NOTIFICATION_ID, "workspaceId": WORKSPACE_ID, "attempt": 1,
+        "channel": "push", "subject": "PO-0042 needs approval", "body": "Al Noor Timber",
+        "destination": {"tokenReference": REFERENCE},
+        "deepLink": f"/workspace/purchasing/orders?order={order}",
+        "eventType": "purchasing.approval_needed",
+        "pushCategory": "approval", "approval": {"kind": "order", "id": order, "version": 5},
+    }))
+    assert result.result == "accepted"
+    sent = http.requests[0][1]["json"]
+    assert isinstance(sent, dict)
+    assert sent["categoryId"] == "approval"
+    assert sent["data"]["approval"] == {"kind": "order", "id": order, "version": 5}
+
+
+def test_an_unknown_push_category_is_refused() -> None:
+    with pytest.raises(ValueError):
+        DeliveryJob.model_validate({
+            "id": NOTIFICATION_ID, "workspaceId": WORKSPACE_ID, "attempt": 1, "channel": "push",
+            "body": "x", "pushCategory": "delete_everything",
+            "approval": {"kind": "order", "id": NOTIFICATION_ID, "version": 1},
+        })
+
+
+@pytest.mark.asyncio
 async def test_expo_receipt_marks_unregistered_device_terminal() -> None:
     http = FakeHttp(FakeResponse({"data": {"expo-ticket": {
         "status": "error", "message": "Device is not registered",

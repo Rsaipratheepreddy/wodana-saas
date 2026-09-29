@@ -8,7 +8,7 @@ import { useFormat } from '../../core/format';
 import { useT } from '../../core/i18n';
 import { FilterChips, SearchField } from '../../ui/fields';
 import { Empty, ListRow, ListScreen } from '../../ui/layout';
-import { Row, Text } from '../../ui/primitives';
+import { Chip, Row, Text } from '../../ui/primitives';
 import { StatusChip } from '../../ui/status';
 import { useTheme } from '../../ui/theme';
 import { useProjects } from './api';
@@ -47,6 +47,8 @@ export function ProjectsScreen() {
       meta={<Row gap={2} wrap style={{ marginTop: 4 }}>
         {row.stage ? <Text variant="caption" tone="secondary">{t('Stage {n} of {m}', { n: row.stage.position, m: row.stage.count })} · {row.stage.name}</Text> : null}
         {row.promiseDate ? <Text variant="caption" tone={row.promiseDate < today && row.status === 'active' ? 'danger' : 'tertiary'}>{t('Handover {day}', { day: format.day(row.promiseDate) })}</Text> : null}
+        {row.status === 'active' && row.attention?.late ? <Chip label={t('{count} late', { count: row.attention.late })} tone="danger" /> : null}
+        {row.status === 'active' && row.attention?.blocked ? <Chip label={t('{count} blocked', { count: row.attention.blocked })} tone="warning" /> : null}
       </Row>}
       trailing={row.status === 'active' ? <StatusChip status={row.health} /> : <StatusChip status={row.status} />} />} />;
 }

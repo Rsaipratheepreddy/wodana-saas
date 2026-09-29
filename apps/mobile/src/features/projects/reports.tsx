@@ -9,19 +9,23 @@ import { useT } from '../../core/i18n';
 import { ReasonSheet } from '../../ui/dialogs';
 import { TextField } from '../../ui/fields';
 import { Banner, Empty, Fact, ListRow, ListScreen, Section } from '../../ui/layout';
-import { PhotoGrid } from '../../ui/photos';
+import { AuthImage, PhotoGrid } from '../../ui/photos';
 import { Button, Chip, Row, Stack, Text } from '../../ui/primitives';
 import { Sheet } from '../../ui/sheet';
 import { StatusChip } from '../../ui/status';
 import { useToast } from '../../ui/toast';
+import { useTheme } from '../../ui/theme';
 import { sitePhotoPath, useSite, useSiteCommand } from './api';
 
 /** The day's state as one chip: sent to the client wins over approved. */
 const statusOf = (report: SiteReport) => (report.delivery === 'sent' ? 'sent' : report.status);
+/** The day's lead photo, else its first one. */
+const leadPhoto = (report: SiteReport) => report.heroPhotoId ?? report.photos[0]?.id ?? null;
 
 /** The project's daily progress, newest first; the project manager reviews, approves & sends, or sends back here. */
 export function ReportsScreen() {
   const t = useT();
+  const theme = useTheme();
   const router = useRouter();
   const format = useFormat();
   const { id: projectId, report: linked } = useLocalSearchParams<{ id: string; report?: string }>();
@@ -40,6 +44,8 @@ export function ReportsScreen() {
         ? <Banner tone="warning" title={t('{count} to review', { count: state.reports.filter((report) => report.status === 'submitted' && report.authorId !== state.me).length })} /> : undefined}
       empty={<Empty icon={ClipboardList} title={t('No reports yet')} />}
       renderItem={(report, _, first) => <ListRow first={first} title={report.authorName} onPress={() => setOpen(report)}
+        leading={leadPhoto(report) ? <AuthImage path={sitePhotoPath(projectId, leadPhoto(report)!)} accessibilityLabel={t('Lead photo')}
+          style={{ width: 52, height: 52, borderRadius: theme.radius.md }} /> : undefined}
         detail={report.clientSummary || (report.noWorkReason ? t('No work · {reason}', { reason: report.noWorkReason }) : [t('{count} on site', { count: people(report) }), report.lines.length ? t('{count} lines installed', { count: report.lines.length }) : null].filter(Boolean).join(' · '))}
         meta={report.late || report.safety !== 'none' || report.forecast !== 'none' ? <Row gap={1} style={{ marginTop: 4 }}>
           {report.late ? <Chip label={t('Late')} tone="warning" /> : null}

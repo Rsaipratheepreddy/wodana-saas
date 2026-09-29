@@ -51,7 +51,10 @@ const FOREGROUND_ROTATION_MS = 5 * 60_000;
 export class AuthError extends Error {
   constructor(message: string, public code: 'credentials' | 'expired' | 'network' | 'server' | 'storage' | 'cancelled' | 'access' | 'configuration') { super(message); }
 }
-export class ApiError extends Error { constructor(message:string, public status:number, public issues:string[]=[]){super(message);} }
+/** A workspace request the server refused: its message, status, listed issues and, when it sent one, its code (e.g. AI_CREDITS_EXHAUSTED). */
+export class ApiError extends Error { constructor(message:string, public status:number, public issues:string[]=[], public code:string|null=null){super(message);} }
+/** A command's own request options: its headers (an Idempotency-Key; never the token) and a longer wait for slow work. */
+export type RequestOptions = { headers?: Record<string, string>; timeoutMs?: number };
 /** A workspace to choose when one email belongs to several (email-first sign-in). */
 export type WorkspaceChoice = { workspaceId: string; name: string; loginSlug: string; logoUrl: string | null; primaryColor: string | null };
 /** Another device this account is signed in on (the server allows a few). */
@@ -130,7 +133,7 @@ export class AuthClient {
     this.storageWork = next;
     return next;
   }
-  private async request(path: string, body?: unknown, token?: string, api?:{method:string;binary?:boolean}): Promise<unknown> {
+  private async request(path: string, body?: unknown, token?: string, api?:{method:string;binary?:boolean}&RequestOptions): Promise<unknown> {
     let url: URL | null = null;
     try { url = new URL(this.base); } catch { /* report configuration error below */ }
     const local = url && ['localhost', '127.0.0.1', '[::1]', '10.0.2.2'].includes(url.hostname);
@@ -139,11 +142,11 @@ export class AuthClient {
       throw new AuthError('Authentication is not configured for this build.', 'configuration');
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? (api ? 60000 : 15000));
+    const timer = setTimeout(() => controller.abort(), api?.timeoutMs ?? this.options.timeoutMs ?? (api ? 60000 : 15000));
     try {
       const response = await this.fetcher(`${this.base}${path}`, {
         method: api?.method ?? (body === undefined ? 'GET' : 'POST'),
-        headers: { accept: 'application/json', ...(body === undefined || body instanceof FormData ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        headers: { ...Object.fromEntries(Object.entries(api?.headers ?? {}).filter(([name]) => !['authorization', 'content-type', 'accept'].includes(name.toLowerCase()))), accept: 'application/json', ...(body === undefined || body instanceof FormData ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
         body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
         credentials: this.options.credentials ?? 'omit', signal: controller.signal, redirect: 'error',
       });
@@ -166,7 +169,7 @@ export class AuthClient {
           ? new AuthError('Email or password is incorrect.', 'credentials')
           : path === '/auth/mfa/verify' ? new AuthError('Verification code is incorrect.', 'credentials') : expired();
         if (response.status === 410 && path === '/auth/mfa/verify') throw expired();
-        if(api){const payload=await response.json().catch(()=>null);throw new ApiError(Array.isArray(payload?.message)?payload.message.join(' '):payload?.message??'The request could not be completed.',response.status,payload?.issues??[]);}
+        if(api){const payload=await response.json().catch(()=>null);throw new ApiError(Array.isArray(payload?.message)?payload.message.join(' '):payload?.message??'The request could not be completed.',response.status,payload?.issues??[],typeof payload?.code==='string'?payload.code:null);}
         if (response.status === 403) throw new AuthError('You no longer have access to this workspace.', 'access');
         if (response.status === 429) throw new AuthError('Too many attempts. Please try again later.', 'server');
         if (response.status === 400 || response.status === 422) throw new AuthError('Check your details and try again.', 'server');
@@ -485,8 +488,11 @@ export class AuthClient {
       throw error;
     }
   }
-  /** Workspace API requests share auth rotation and preserve multipart bodies on retry. */
-  async api<T>(path:string,method='GET',body?:unknown,binary=false):Promise<T>{
+  /**
+   * Workspace API requests share auth rotation and preserve multipart bodies on retry. `options` carries a
+   * command's own headers (an Idempotency-Key, never the token or content type) and a longer wait.
+   */
+  async api<T>(path:string,method='GET',body?:unknown,binary=false,options:RequestOptions={}):Promise<T>{
     const epoch=this.epoch;let session=this.session;
     if(!session||this.state.status!=='signedIn')throw expired();
     const workspaceId=session.workspaceId;
@@ -499,8 +505,8 @@ export class AuthClient {
     try{
       if(session.accessExpiresAt<=this.now()+30000)session=await this.rotate(session);
       let result:unknown;
-      try{result=await this.request(path,body,session.accessToken,{method,binary});}
-      catch(error){if(!(error instanceof AuthError)||error.code!=='expired')throw error;session=this.session&&this.session!==session?this.session:await this.rotate(session);result=await this.request(path,body,session.accessToken,{method,binary});}
+      try{result=await this.request(path,body,session.accessToken,{method,binary,...options});}
+      catch(error){if(!(error instanceof AuthError)||error.code!=='expired')throw error;session=this.session&&this.session!==session?this.session:await this.rotate(session);result=await this.request(path,body,session.accessToken,{method,binary,...options});}
       if(epoch!==this.epoch)throw cancelled();return result as T;
     }catch(error){
       if(epoch===this.epoch&&error instanceof ApiError&&error.status===403)await this.revalidateAccess(session,epoch);

@@ -13,7 +13,7 @@ test('areas and captures follow the server\'s permission codes, never role names
 
   const sales = makeAccess(['crm.leads.view', 'crm.leads.manage', 'crm.activities.view', 'crm.activities.manage', 'crm.notifications.view', 'hrms.self'], ['workspace', 'crm', 'hrms']);
   assert.deepEqual(workAreas(sales), ['sales', 'people']);
-  assert.deepEqual(captureActions(sales), ['note', 'follow-up']);
+  assert.deepEqual(captureActions(sales), ['enquiry', 'note', 'follow-up']);
   assert.equal(canUseInbox(sales), true);
 
   const store = makeAccess(['stock.receive', 'stock.inspect', 'factory.report'], ['workspace', 'projects']);

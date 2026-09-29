@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { ActorUser, RequestActor } from "../auth/actor";
@@ -61,6 +61,10 @@ export class ApprovalsService {
     if (!row) throw new NotFoundException("This is no longer waiting for you. Refresh to see what is.");
     if (!row.decide) throw new BadRequestException("Open it to decide.");
     if (decision !== "approve" && decision !== row.decide.other) throw new BadRequestException("That decision doesn't apply here.");
+    // A decision made from a notice (the phone's lock screen) names the version it was told about: a change since opens it instead.
+    if (body.version !== undefined && body.version !== null && Number(body.version) !== row.version) {
+      throw new ConflictException("This changed after you were told about it. Open it to decide.");
+    }
     await this.dispatch(actor, workspaceId, row, decision, note);
     return this.mine(actor, workspaceId);
   }

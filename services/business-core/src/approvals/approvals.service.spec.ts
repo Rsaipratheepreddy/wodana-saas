@@ -39,6 +39,15 @@ describe("deciding in the row", () => {
     ]);
   });
 
+  it("refuses a decision made from a notice when the record changed after it (X-2)", async () => {
+    rows.splice(0, rows.length, { ...base, kind: "order", group: "orders", id: id(1), title: "PO-1", decide: { approve: "approve", other: "return", approveNeedsNote: false } });
+    const { instance, calls } = service();
+    await expect(instance.decide({} as never, "w", { kind: "order", id: id(1), decision: "approve", version: 3 })).rejects.toThrow(/changed after you were told/);
+    expect(calls).toEqual([]);
+    await instance.decide({} as never, "w", { kind: "order", id: id(1), decision: "approve", version: 4 });
+    expect(calls).toEqual([["orders", [{}, "w", id(1), { action: "approve", version: 4, note: "" }]]]);
+  });
+
   it("refuses what isn't waiting for this person, what must be opened, and answers that don't apply", async () => {
     rows.splice(0, rows.length,
       { ...base, kind: "deal_approval", group: "deals", id: id(5), title: "Deal", decide: null },

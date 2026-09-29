@@ -205,18 +205,27 @@ class ConnectedProviderAdapter:
                         error_code="DeviceNotRegistered",
                         error_message="The registered push token is no longer available",
                     )
+                message: dict[str, Any] = {
+                    "to": token,
+                    "title": job.subject or "Wodana",
+                    "body": job.body,
+                    "data": {
+                        "notificationId": str(job.id),
+                        "workspaceId": str(job.workspace_id),
+                        "deepLink": job.deep_link,
+                    },
+                }
+                # An approval the phone can decide from the lock screen shows Approve and Open.
+                if job.push_category and job.approval:
+                    message["categoryId"] = job.push_category
+                    message["data"]["approval"] = {
+                        "kind": job.approval.kind,
+                        "id": str(job.approval.id),
+                        "version": job.approval.version,
+                    }
                 response = await self.providers.client.http.post(
                     "https://exp.host/--/api/v2/push/send",
-                    json={
-                        "to": token,
-                        "title": job.subject or "Wodana",
-                        "body": job.body,
-                        "data": {
-                            "notificationId": str(job.id),
-                            "workspaceId": str(job.workspace_id),
-                            "deepLink": job.deep_link,
-                        },
-                    },
+                    json=message,
                     headers={"Accept": "application/json", "Content-Type": "application/json"},
                 )
                 if response.status_code == 429 or response.status_code >= 500:

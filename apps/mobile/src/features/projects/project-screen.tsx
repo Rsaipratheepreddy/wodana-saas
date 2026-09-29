@@ -1,7 +1,8 @@
 import { Linking, Platform, Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { Check, ClipboardList, FileCheck2, HardHat, ListChecks, MapPin, Navigation, ReceiptText, ShieldCheck, TriangleAlert, type LucideIcon } from 'lucide-react-native';
-import type { ProjectStage } from '../../../../web/lib/project-core/types';
+import { Check, CheckCircle2, ClipboardList, FileCheck2, HardHat, ListChecks, MapPin, Navigation, ReceiptText, ShieldCheck, TriangleAlert, type LucideIcon } from 'lucide-react-native';
+import type { Blocker, ProjectOverview, ProjectStage } from '../../../../web/lib/project-core/types';
+import { appRouteFor } from '../../core/deep-links';
 import { errorMessage } from '../../core/api';
 import { useFormat } from '../../core/format';
 import { haptic } from '../../core/haptics';
@@ -14,7 +15,8 @@ import { StatusChip } from '../../ui/status';
 import { useToast } from '../../ui/toast';
 import { useTheme } from '../../ui/theme';
 import { useBootstrap, useLocations } from '../hrms/api';
-import { useProject, useProjectCommand } from './api';
+import { useProject, useProjectCommand, useProjectOverview } from './api';
+import { blockerLabel, stageLateBy } from './overview-model';
 
 const CHECK_LABEL: Record<string, string> = {
   lead_assigned: key('Project lead assigned'), role_assigned: key('Role assigned'), payment_verified: key('Payment verified'),
@@ -22,7 +24,10 @@ const CHECK_LABEL: Record<string, string> = {
   snags_closed: key('All snags closed'), no_critical_snags: key('No critical snag open'), handover_accepted: key('Client accepted the handover'),
 };
 
-/** A project: where it stands (stage, progress, handover date), what's next, and the site actions. */
+/**
+ * A project: where it stands (stage, progress, handover date), what's next and what holds it up, its money at a glance
+ * for the people who may see it (the server decides), and the site actions.
+ */
 export function ProjectScreen() {
   const t = useT();
   const theme = useTheme();
@@ -31,6 +36,7 @@ export function ProjectScreen() {
   const session = useSession();
   const { id } = useLocalSearchParams<{ id: string }>();
   const detail = useProject(id);
+  const overview = useProjectOverview(id);
   const locations = useLocations();
   const bootstrap = useBootstrap();
   const pending = usePending(`project:${id}`);
@@ -49,7 +55,7 @@ export function ProjectScreen() {
     { label: key('Daily report'), icon: ClipboardList, href: `/projects/${id}/report`, show: project.status === 'active' || project.status === 'on_hold' },
     { label: key('Crew days'), icon: HardHat, href: `/projects/${id}/crew-days`, show: crews },
     { label: key('Snags'), icon: TriangleAlert, href: `/projects/${id}/snags`, show: true },
-    { label: key('Site reports'), icon: FileCheck2, href: `/projects/${id}/reports`, show: true },
+    { label: key('Daily progress'), icon: FileCheck2, href: `/projects/${id}/reports`, show: true },
     { label: key('Handover'), icon: ShieldCheck, href: `/projects/${id}/handover`, show: true },
     { label: key('Expenses'), icon: ReceiptText, href: `/projects/${id}/expenses`, show: project.status === 'active' },
   ];
@@ -59,7 +65,10 @@ export function ProjectScreen() {
     const url = Platform.OS === 'ios' ? `maps:0,0?q=${label}@${site.latitude},${site.longitude}` : `geo:0,0?q=${site.latitude},${site.longitude}(${label})`;
     void Linking.openURL(Platform.OS === 'web' ? `https://www.google.com/maps/search/?api=1&query=${site.latitude},${site.longitude}` : url).catch(() => undefined);
   };
-  return <Screen back title={project.name} subtitle={`${project.reference} · ${project.clientName}`} onRefresh={() => void detail.refetch()} refreshing={detail.isRefetching}>
+  const glance = overview.data;
+  const lateBy = current && glance ? stageLateBy(glance.stagePlan[current.id], glance.today) : 0;
+  const running = project.status === 'active' || project.status === 'on_hold';
+  return <Screen back title={project.name} subtitle={`${project.reference} · ${project.clientName}`} onRefresh={() => { void detail.refetch(); void overview.refetch(); }} refreshing={detail.isRefetching}>
     <Row gap={2} wrap>
       <StatusChip status={project.status} />
       {project.status === 'active' ? <StatusChip status={project.health} /> : null}
@@ -81,7 +90,9 @@ export function ProjectScreen() {
       </Text> : null}
     </Card>
 
-    {next ? <Banner tone="info" icon={Check} title={next.text} detail={next.owner ? t('With {name}', { name: next.owner }) : undefined} /> : null}
+    {next ? <Banner tone={lateBy ? 'warning' : 'info'} icon={Check} title={t(next.text)}
+      detail={[next.owner ? t('With {name}', { name: next.owner }) : null, lateBy ? t('{stage} is {count} days past its plan', { stage: t(next.stage), count: lateBy }) : null].filter(Boolean).join(' · ') || undefined} /> : null}
+    {running ? <HoldUps projectId={project.id} overview={glance} loading={overview.isLoading} failed={!!overview.error} onRetry={() => void overview.refetch()} /> : null}
     {current ? <StageChecks projectId={project.id} version={project.version} stage={current} /> : null}
 
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2) }}>
@@ -98,8 +109,9 @@ export function ProjectScreen() {
       {manager ? <Fact first label={t('Project manager')} value={manager.name} /> : null}
       {project.startDate ? <Fact first={!manager} label={t('Started')} value={format.day(project.startDate)} /> : null}
       {project.templateName ? <Fact label={t('Route')} value={project.templateName} /> : null}
-      {detail.data.canSeeMoney ? <Fact label={t('Agreed value')} value={format.money(project.total, project.currency)} /> : null}
+      {detail.data.canSeeMoney && !glance?.money ? <Fact label={t('Agreed value')} value={format.money(project.total, project.currency)} /> : null}
     </Section>
+    {glance?.money ? <MoneyGlance money={glance.money} /> : null}
     {site ? <Section title={t('Site')}>
       <ListRow first icon={MapPin} title={site.name} detail={site.address} trailing={<Button size="sm" label={t('Directions')} icon={Navigation} onPress={directions} />} />
     </Section> : null}
@@ -137,5 +149,45 @@ function StageChecks({ projectId, version, stage }: { projectId: string; version
         title={label} detail={check.passed && check.confirmedBy ? t('Confirmed by {name}', { name: check.confirmedBy }) : undefined}
         trailing={manual ? <Button size="sm" label={check.passed ? t('Undo') : t('Confirm')} variant={check.passed ? 'ghost' : 'secondary'} onPress={() => confirm(check.key, check.passed)} loading={command.isPending} /> : undefined} />;
     })}
+  </Section>;
+}
+
+/** What holds the project up, each opening its list; a calm line when nothing does. */
+function HoldUps({ projectId, overview, loading, failed, onRetry }: { projectId: string; overview: ProjectOverview | undefined; loading: boolean; failed: boolean; onRetry: () => void }) {
+  const t = useT();
+  const theme = useTheme();
+  const router = useRouter();
+  const format = useFormat();
+  if (loading) return null;
+  if (failed || !overview) return <Banner tone="warning" title={t("The overview didn't load.")} action={{ label: t('Try again'), onPress: onRetry }} />;
+  if (!overview.blockers.length) return <Banner tone="success" icon={CheckCircle2} title={t('Nothing is holding the project up.')} />;
+  const items = (blocker: Blocker) => (blocker.key === 'reports_missing' ? blocker.items.map((day) => format.day(day)) : blocker.items);
+  return <Section title={t('What holds it up')}>
+    {overview.blockers.map((blocker, index) => {
+      const route = appRouteFor(blocker.href);
+      const opens = route && route !== `/projects/${projectId}`;
+      return <ListRow key={blocker.key} first={index === 0}
+        leading={<View style={{ minWidth: 36, height: 36, paddingHorizontal: theme.space(2), borderRadius: theme.radius.md, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: blocker.key === 'funds_short' || blocker.key === 'critical_snags' ? theme.colors.dangerSubtle : theme.colors.warningSubtle }}>
+          <Text variant="label" tone={blocker.key === 'funds_short' || blocker.key === 'critical_snags' ? 'danger' : 'warning'} style={{ fontVariant: ['tabular-nums'] }}>{blocker.count}</Text>
+        </View>}
+        title={t(blockerLabel(blocker.key, blocker.count))} detail={items(blocker).join(' · ') || undefined}
+        onPress={opens ? () => router.push(route as Href) : undefined} />;
+    })}
+  </Section>;
+}
+
+/** The client side at a glance (agreed, received, still due, next payment) and the cash in hand, for people who see money. */
+function MoneyGlance({ money }: { money: NonNullable<ProjectOverview['money']> }) {
+  const t = useT();
+  const format = useFormat();
+  const short = money.available !== null && Number(money.available) < 0;
+  return <Section title={t('Money')}>
+    <Fact first label={t('Agreed')} value={format.money(money.agreed, money.currency)} />
+    <Fact label={t('Received')} value={format.money(money.received, money.currency)} />
+    <Fact label={t('Still due')} value={format.money(money.due, money.currency)} />
+    {money.next ? <Fact label={t('Next payment')} value={[money.next.title, format.money(money.next.amount, money.currency), money.next.dueDate ? format.day(money.next.dueDate) : null].filter(Boolean).join(' · ')} /> : null}
+    {money.available !== null && money.costCurrency ? <Fact label={t('Cash in hand')}
+      value={<Text variant="label" tone={short ? 'danger' : 'default'}>{format.money(money.available, money.costCurrency)}</Text>} /> : null}
   </Section>;
 }

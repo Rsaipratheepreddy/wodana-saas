@@ -35,7 +35,7 @@ export function workAreas(access: Access): WorkArea[] {
   return areas;
 }
 
-export type CaptureAction = 'photo' | 'measurement' | 'report' | 'crew-day' | 'delivery' | 'snag' | 'note' | 'follow-up' | 'expense';
+export type CaptureAction = 'photo' | 'measurement' | 'report' | 'crew-day' | 'delivery' | 'snag' | 'enquiry' | 'note' | 'follow-up' | 'expense';
 
 /** Quick actions on the Capture sheet, most used first. */
 export function captureActions(access: Access): CaptureAction[] {
@@ -48,7 +48,8 @@ export function captureActions(access: Access): CaptureAction[] {
   if (projects) actions.push('snag');
   if (survey) actions.push('measurement');
   if (access.has('projects') && access.can('stock.receive', 'purchasing.manage')) actions.push('delivery');
-  if (access.has('crm') && access.can('crm.leads.manage')) actions.push('note');
+  // A new enquiry while the client is on the phone, then the call just made.
+  if (access.has('crm') && access.can('crm.leads.manage')) actions.push('enquiry', 'note');
   if (access.has('crm') && access.can('crm.activities.manage')) actions.push('follow-up');
   if (projects) actions.push('expense');
   return actions;

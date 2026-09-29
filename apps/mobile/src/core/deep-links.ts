@@ -23,7 +23,12 @@ export function appRouteFor(link: string | null | undefined): string | null {
       const record = q('record') ?? q('item');
       if (section === 'site' && q('crewDay')) return `/crew-day/${q('crewDay')}`;
       if (section === 'plan' && q('item')) return `/projects/${projectId}/task/${q('item')}`;
-      if (section === 'plan' || section === 'plan-teams') return record ? `/projects/${projectId}/task/${record}` : `/projects/${projectId}/plan`;
+      if (section === 'plan' || section === 'plan-teams') {
+        if (record) return `/projects/${projectId}/task/${record}`;
+        // The overview's "3 tasks late" opens that list.
+        const filter = url.searchParams.get('filter');
+        return filter && /^(late|blocked|snags|materials)$/.test(filter) ? `/projects/${projectId}/plan?filter=${filter}` : `/projects/${projectId}/plan`;
+      }
       if (section === 'snagging') return record ? `/projects/${projectId}/task/${record}` : `/projects/${projectId}/snags`;
       // A day to review (a notice, Approvals) opens that day.
       if (section === 'site' && q('report')) return `/projects/${projectId}/reports?report=${q('report')}`;
@@ -47,10 +52,11 @@ export function appRouteFor(link: string | null | undefined): string | null {
       const section = rest[0] ?? '';
       if (section === 'leads') {
         const lead = id(rest[1]) ?? q('lead') ?? q('record');
+        if (!lead && url.searchParams.get('create') === 'true') return '/sales/new';
         return lead ? `/sales/${lead}` : '/sales';
       }
       if (section === 'opportunities') return id(rest[1]) ? `/sales/opportunity/${rest[1]}` : q('record') ? `/sales/opportunity/${q('record')}` : '/sales/opportunities';
-      if (section === 'follow-ups' || section === 'activities') return '/sales/follow-ups';
+      if (section === 'follow-ups' || section === 'activities') return q('record') ? `/sales/follow-ups?record=${q('record')}` : '/sales/follow-ups';
       // A chat opens its thread; a link naming only the enquiry opens the enquiry.
       if (section === 'conversations' || section === 'inbox') {
         const chat = q('conversation') ?? q('record');
