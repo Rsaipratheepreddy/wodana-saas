@@ -35,6 +35,8 @@ import { decisionPolicySummary } from "@/lib/commercial/decision-requests";
 import { ControlledChangeCase } from "./controlled-change-case";
 import { ClientReportCell, ClientReportDialog, useClientPaymentReports } from "./client-payment-reports";
 import { ClientFiles } from "@/components/client-activity/client-files";
+import { AssetUpload } from "@/components/pre-project/case-controls";
+import type { CaseAsset } from "@/lib/pre-project/content";
 import { SeenByClient, useClientThreads } from "@/components/client-activity/client-threads";
 import s from "./commercial.module.css";
 import tableStyles from "../workspace/workspace.module.css";
@@ -60,6 +62,9 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
     }),
     [comment, setComment] = useState(""),
     [internal, setInternal] = useState(false),
+    // Photos or PDFs the team sends with a reply the client reads (uploaded to the case first).
+    [replyFiles, setReplyFiles] = useState<CaseAsset[]>([]),
+    [replyFileError, setReplyFileError] = useState(""),
     [edit, setEdit] = useState<ChangeRequest | null>(opened ?? null);
   const request = state.data.requests.find((r) => r.id === selected);
   const accepted = state.data.quotes.some((quote) => quote.kind === "quotation" && quote.status === "accepted");
@@ -333,18 +338,31 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
                     onChange={(e) => setInternal(e.target.checked)}
                   />
                   {t("Internal note · hidden from client")}</label>
+                {!internal ? <div className={s.replyFiles}>
+                  {replyFiles.length ? <ul aria-label={t("Files to send")}>{replyFiles.map((file) => <li key={file.id}>
+                    <span>{file.name}</span>
+                    <button type="button" className={s.button} aria-label={t("Remove {name}", { name: file.name })} onClick={() => setReplyFiles((files) => files.filter((item) => item.id !== file.id))}>{t("Remove")}</button>
+                  </li>)}</ul> : null}
+                  {replyFiles.length < 10 ? <AssetUpload workspaceId={state.workspaceId} caseId={state.caseId} label={t("Attach photos or PDFs to the reply")} currentCount={replyFiles.length}
+                    disabled={busy} onUploaded={(asset) => setReplyFiles((files) => [...files, asset].slice(0, 10))} onError={setReplyFileError} /> : null}
+                  {replyFileError ? <p role="alert">{replyFileError}</p> : null}
+                </div> : null}
                 <button
                   className={s.primary}
-                  disabled={busy || !comment.trim()}
+                  disabled={busy || (!comment.trim() && (internal || !replyFiles.length))}
                   onClick={async () => {
                     if (
                       await run("comment", {
                         requestId: request.id,
                         text: comment,
                         visibility: internal ? "internal" : "client",
+                        ...(!internal && replyFiles.length ? { assetIds: replyFiles.map((file) => file.id) } : {}),
                       })
-                    )
+                    ) {
                       setComment("");
+                      setReplyFiles([]);
+                      void threads.load();
+                    }
                   }}
                 >
                   {t("Add reply")}</button>

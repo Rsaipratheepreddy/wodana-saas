@@ -246,3 +246,5 @@
 @media (prefers-reduced-motion: reduce) { .moreToggle svg { transition: none; } }
 .attentionFlags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
 .newRows { display: flex; justify-content: center; margin-block-end: var(--wd-space-2); }
+/* The page title and New enquiry sit above the section (S-20). */
+.pageHeader { margin-block-end: var(--wd-space-4); }

@@ -26,6 +26,8 @@ type WoddyContextValue = {
   selection: Selection | null;
   /** An open chat's reply box, so a reply Woddy drafts can be put there (never sent). */
   registerComposer: (conversationId: string, put: (text: string) => void) => () => void;
+  /** Opens the chat and asks this question (⌘K → "Ask Woddy: …"). */
+  ask: (question: string) => void;
 };
 const WoddyContext = createContext<WoddyContextValue | null>(null);
 
@@ -82,13 +84,18 @@ export function WoddyProvider({ children, workspaceId }: { children: ReactNode; 
     return true;
   }, []);
   const open = useCallback(() => setOpen(true), []);
-  const value = useMemo(() => ({ open, register, select, selection, registerComposer }), [open, register, select, selection, registerComposer]);
+  // A question handed over from elsewhere (the command palette); the chat asks it once and clears it.
+  const [question, setQuestion] = useState<{ id: number; text: string } | null>(null);
+  const ask = useCallback((text: string) => { setQuestion((current) => ({ id: (current?.id ?? 0) + 1, text })); setOpen(true); }, []);
+  const asked = useCallback(() => setQuestion(null), []);
+  const value = useMemo(() => ({ open, register, select, selection, registerComposer, ask }), [open, register, select, selection, registerComposer, ask]);
   const record = records.at(-1);
-  return <WoddyContext.Provider value={value}>{children}<ChatPanel key={`${workspaceId}/${record?.type}/${record?.id}`} workspaceId={workspaceId} context={record} selection={selection} putDraft={putDraft} isOpen={isOpen} onOpenChange={setOpen} /></WoddyContext.Provider>;
+  return <WoddyContext.Provider value={value}>{children}<ChatPanel key={`${workspaceId}/${record?.type}/${record?.id}`} workspaceId={workspaceId} context={record} selection={selection} putDraft={putDraft} isOpen={isOpen} onOpenChange={setOpen} question={question} onAsked={asked} /></WoddyContext.Provider>;
 }
 
-function ChatPanel({ workspaceId, context, selection, putDraft, isOpen, onOpenChange }: {
+function ChatPanel({ workspaceId, context, selection, putDraft, isOpen, onOpenChange, question = null, onAsked }: {
   workspaceId: string; context?: RecordContext; selection: Selection | null; putDraft: (conversationId: string, text: string) => boolean; isOpen: boolean; onOpenChange: (open: boolean) => void;
+  question?: { id: number; text: string } | null; onAsked?: () => void;
 }) {
   const t = useT();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -150,6 +157,12 @@ function ChatPanel({ workspaceId, context, selection, putDraft, isOpen, onOpenCh
   };
   const prompts = context?.type === "commercial" ? [t("What is missing before I issue this quotation?"), t("Review the payment schedule"), t("Which catalog materials match this scope?")] : context ? [t("What should I do next?"), t("What information is missing?"), t("Draft a short follow-up")] : [t("What needs attention today?"), t("What is waiting for my approval?"), t("Explain the flow from enquiry to handover")];
   const recordHref = context?.type === "commercial" ? `/workspace/pre-projects/cases/${context.id}/quotations` : context ? `/workspace/crm/${context.type === "lead" ? "leads" : context.type === "opportunity" ? "opportunities" : context.type === "conversation" ? "conversations" : "customers"}?${context.type === "lead" ? "lead" : "record"}=${context.id}` : null;
+  // A question handed over (⌘K → "Ask Woddy: …") is asked once, then cleared so a remount doesn't ask it again.
+  useEffect(() => {
+    if (!question || !isOpen) return;
+    queueMicrotask(() => { onAsked?.(); void send(question.text); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question, isOpen]);
   return <ModalOverlay className={styles.overlay} isOpen={isOpen} onOpenChange={onOpenChange} isDismissable>
     <Modal className={`${styles.panel} ${workspaceColors.theme}`}><Dialog aria-label={t("Woddy chat")} className={styles.dialog}>
       <header className={styles.header}><Woddy className={styles.avatar} decorative pose={error ? "oops" : busy ? "thinking" : messages.length ? "idle" : "hello"} size={40} /><div><Heading slot="title">Woddy</Heading><p>{t(context?.type === "commercial" ? "Your commercial copilot" : context ? "Your CRM copilot" : "Your copilot")}</p></div><IconButton aria-label={t("New Woddy chat")} isDisabled={busy || !messages.length} onPress={() => { setMessages([]); setError(""); setDraft(""); }}><RotateCcw size={16} /></IconButton><IconButton aria-label={t("Close Woddy chat")} onPress={() => onOpenChange(false)}><X size={18} /></IconButton></header>

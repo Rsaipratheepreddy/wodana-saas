@@ -70,7 +70,8 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
     finally { setBusy(false); }
   };
 
-  return <CrmProductShell title={t("Clients")} description="" canView={initialData.canView} useWorkspaceColors>
+  return <CrmProductShell title={t("Clients")} description="" canView={initialData.canView} useWorkspaceColors
+    actions={<Button variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={15} />{t("Add client")}</Button>}>
     {failure ? <Callout title={t("Could not refresh customers")} tone="warning">{failure}</Callout> : null}
     <div data-sales-grid className={styles.clientsGrid}><DataGrid
       ariaLabel={t("Customer records")}
@@ -92,7 +93,7 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
         { id: "organization", label: t("Companies"), count: counts.organization },
         { id: "archived", label: t("Archived"), count: counts.archived },
       ]} />}
-      toolbarActions={<><IconButton aria-label={t("Refresh")} isDisabled={busy} isLoading={busy} size="compact" onPress={() => void reload()}><RefreshCw size={15} /></IconButton><Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />{t("Add client")}</Button></>}
+      toolbarActions={<><IconButton aria-label={t("Refresh")} isDisabled={busy} isLoading={busy} size="compact" onPress={() => void reload()}><RefreshCw size={15} /></IconButton></>}
       searchLabel={t("Search customers")}
       selectable={false}
     /></div>

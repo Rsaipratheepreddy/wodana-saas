@@ -43,7 +43,8 @@ function columnsFor(now: number, timeZone: string, locale: string, t: Translate)
   ];
 }
 
-export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "timeline", tasksOnly = false }: { tasksOnly?: boolean; initialLayout?: "timeline" | "list" | "kanban"; initialData: CrmScreenPageData; initialRecordId?: string }) {
+/** `initialCreate` opens Add follow-up (or Add task) at once, e.g. from ⌘K. */
+export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "timeline", tasksOnly = false, initialCreate = false }: { tasksOnly?: boolean; initialLayout?: "timeline" | "list" | "kanban"; initialData: CrmScreenPageData; initialRecordId?: string; initialCreate?: boolean }) {
   const t = useT();
   // Due times, "today" and the schedule are the workspace's (its region's zone), wherever the viewer is.
   const { locale, timeZone } = useDesignSystem();
@@ -60,7 +61,7 @@ export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "ti
   const [day, setDay] = useState(() => zonedToday(timeZone, new Date(initialData.referenceTime)));
   const [createTime, setCreateTime] = useState("10:00");
   const [revision, setRevision] = useState(0);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(initialCreate && initialData.canView);
   const [selected, setSelected] = useState(initialRecordId);
   const [busy, setBusy] = useState(false);
   const fetching = useRef(false);
@@ -112,9 +113,11 @@ export function CrmFollowUps({ initialData, initialRecordId, initialLayout = "ti
   const actions = <div className={styles.actions}>
     {!tasksOnly?<Link href="/workspace/crm/follow-ups?view=schedule" className={styles.calendarLink}><CalendarDays aria-hidden="true" size={15} />{t("Open schedule")}</Link>:null}
     <IconButton size="compact" aria-label={t("Refresh follow-ups")} isDisabled={busy} onPress={() => { void reload(); setRevision(value => value + 1); }}><RefreshCw size={15} /></IconButton>
-    <Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus size={15} />{tasksOnly?t('Add task'):t('Add follow-up')}</Button>
   </div>;
-  return <CrmProductShell title={t("Follow-ups")} description="" canView={initialData.canView} useWorkspaceColors pageClassName={tasksOnly?boardStyles.page:styles.page}>
+  // One primary action, top-end in the page header (S-20).
+  const primary = <Button variant="primary" onPress={() => setCreating(true)}><Plus size={15} aria-hidden="true" />{tasksOnly ? t("Add task") : t("Add follow-up")}</Button>;
+  // The title follows the layout: the Sales task board is Tasks, the timeline and table are Follow-ups (S-19).
+  return <CrmProductShell title={tasksOnly ? t("Tasks") : t("Follow-ups")} description="" canView={initialData.canView} actions={primary} useWorkspaceColors pageClassName={tasksOnly?boardStyles.page:styles.page}>
     {failure ? <Callout title={t("Could not load follow-ups")} tone="warning">{failure}<Button size="compact" onPress={() => void reload()}>{t("Retry")}</Button></Callout> : null}
     {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
     {!creating && !selected ? <>{tasksOnly?<div className={boardStyles.boardHeader}><nav aria-label={t("Task boards")} className={boardStyles.boardSwitcher}><Link aria-current="page" href="/workspace/crm/follow-ups?view=activity">{t("Sales")}</Link><Link href="/workspace/tasks">{t("Projects")}</Link></nav></div>:null}

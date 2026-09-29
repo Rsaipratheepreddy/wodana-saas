@@ -1,0 +1,20 @@
+.trigger { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-space-8); padding-inline: var(--wd-space-3); border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-sm); cursor: pointer; }
+.trigger:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.trigger:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.kbd { padding-inline: var(--wd-space-1-5); border-radius: var(--wd-radius-2xs); background: var(--wd-color-surface-muted); color: var(--wd-color-text-tertiary); font-family: inherit; font-size: var(--wd-text-xs); }
+.dialog :global(.wd-dialog-body) { padding: 0; }
+.palette { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-3); }
+.list { display: grid; max-block-size: min(60vh, 28rem); margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.group { display: block; padding: var(--wd-space-2) var(--wd-space-2) var(--wd-space-1); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.option { display: flex; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-2); border-radius: var(--wd-radius-sm); color: var(--wd-color-text); cursor: pointer; }
+.option svg { flex: none; color: var(--wd-color-icon); }
+.option[aria-selected="true"] { background: var(--wd-color-surface-selected); }
+.optionText { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.optionText strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }
+.optionText small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.status { margin: 0; padding: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.hint { margin: 0; padding-inline: var(--wd-space-2); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+@media (max-width: 600px) {
+  .triggerLabel, .kbd { display: none; }
+  .trigger { padding-inline: var(--wd-space-2); }
+}

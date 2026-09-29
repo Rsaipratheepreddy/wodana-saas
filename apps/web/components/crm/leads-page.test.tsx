@@ -6,6 +6,7 @@ import { integrationsPageFixture } from "@/lib/workspace/integrations";
 import { LeadsPage } from "./leads-page";
 
 vi.mock("next/font/google", () => ({ Caveat: () => ({ variable: "note-font" }) }));
+const OWNER_ID_FOR_TEST = leadsPageFixture.members[0].id;
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
@@ -342,6 +343,36 @@ describe("LeadsPage", () => {
     expect(await screen.findByRole("button", { name: "Open Omar Al Ketbi" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Open Dr Maya Nair" })).toHaveLength(1);
     expect(screen.getByText("6 records")).toBeInTheDocument();
+  });
+
+  it("opens on My day: my new enquiries and those due today or overdue, most urgent first (S-30)", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-06T08:00:00.000Z"));
+    try {
+      const data = structuredClone(leadsPageFixture);
+      const [first, ...rest] = data.items;
+      const mine = (id: string, title: string, extra: Partial<CrmLeadListItem>) => ({ ...first, id, title, ownerMembershipId: OWNER_ID_FOR_TEST, slaStatus: null, slaDueAt: null, ...extra }) as CrmLeadListItem;
+      data.currentMembershipId = OWNER_ID_FOR_TEST;
+      data.items = [
+        mine("62000000-0000-4000-8000-000000000101", "Later this week", { status: "connected", nextActionAt: "2026-09-09T09:00:00.000Z" }),
+        mine("62000000-0000-4000-8000-000000000102", "Overdue callback", { status: "connected", nextActionAt: "2026-09-05T09:00:00.000Z" }),
+        mine("62000000-0000-4000-8000-000000000103", "Fresh enquiry", { status: "new", nextActionAt: null }),
+        ...rest.map((lead) => ({ ...lead, ownerMembershipId: "someone-else" })),
+      ];
+      render(<LeadsPage initialData={data} />);
+      expect(screen.getByRole("button", { name: /^My day/ })).toHaveAttribute("aria-pressed", "true");
+      const rows = within(screen.getByRole("table", { name: "CRM enquiries" })).getAllByRole("button", { name: /^Log contact/ });
+      // The overdue callback and the new enquiry; next week's follow-up waits for its day.
+      expect(rows).toHaveLength(2);
+      expect(rows[0].closest("[role='row'], tr")).toHaveTextContent(/overdue/);
+      expect(rows[1].closest("[role='row'], tr")).toHaveTextContent(/New/);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("has one title with New enquiry as its one primary action, top-end (S-20)", () => {
+    render(<LeadsPage initialData={structuredClone(leadsPageFixture)} />);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Enquiries"]);
+    expect(screen.getAllByRole("button", { name: "New enquiry" })).toHaveLength(1);
   });
 
   it("filters by source and resets to all leads", async () => {

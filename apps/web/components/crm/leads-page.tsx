@@ -16,6 +16,7 @@ import {
   InspectorSheet,
   NoAccessNotice,
   NoAccessState,
+  PageHeader,
   type DataGridColumn,
   DesignSystemProvider,
   TextAreaField,
@@ -50,6 +51,7 @@ import { IntegrationsPage } from "@/components/workspace/integrations-page";
 import { LogContactDialog } from "./log-contact-dialog";
 import { RespondByChip, useNow } from "./respond-by-chip";
 import { respondBy } from "@/lib/crm/sales-time";
+import { zonedToUtc, zonedToday } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown, type Translate } from "@/lib/i18n/keys";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
@@ -68,7 +70,7 @@ function humanize(value: string | null, notSet: string) {
     .join(" ");
 }
 
-type EnquiryView = "new" | "contacted" | "come_back" | "all" | "unassigned" | "review" | "duplicates";
+type EnquiryView = "my_day" | "new" | "contacted" | "come_back" | "all" | "unassigned" | "review" | "duplicates";
 /** New enquiries are worked in respond-by order: the most urgent first (S-6). */
 const respondOrder = (lead: CrmLeadListItem) => lead.slaDueAt && ["active", "warning", "breached"].includes(lead.slaStatus ?? "") ? Date.parse(lead.slaDueAt) : Number.POSITIVE_INFINITY;
 /** How often the list checks for new and changed enquiries while it is on screen (S-5). */
@@ -125,9 +127,10 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [items, setItems] = useState(initialData.items);
   const [nextCursor, setNextCursor] = useState(initialData.nextCursor);
-  // Whoever assigns enquiries sees the team; salespeople start from their own new enquiries (PLM-076). A permission, never a role name.
+  // Whoever assigns enquiries sees the team; salespeople see their own (PLM-076). A permission, never a role name.
   const seesTeam = serverData.canAssign !== false || !serverData.currentMembershipId;
-  const [leadView, setLeadView] = useState<EnquiryView>(seesTeam ? "all" : "new");
+  // S-30: everyone with enquiries of their own opens on My day: new ones, and those due today or overdue.
+  const [leadView, setLeadView] = useState<EnquiryView>(serverData.currentMembershipId ? "my_day" : "all");
   const [contactLead, setContactLead] = useState<CrmLeadListItem | null>(null);
   const [savingLeadId, setSavingLeadId] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<LeadMove | null>(null);
@@ -164,9 +167,16 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
 
   // Salespeople see their own lists; team leads see everyone's.
   const scoped = useMemo(() => seesTeam ? items : items.filter((lead) => lead.ownerMembershipId === serverData.currentMembershipId), [items, seesTeam, serverData.currentMembershipId]);
+  // The end of today in the workspace's zone: a follow-up before it is due today or overdue.
+  const endOfToday = useMemo(() => {
+    const [year, month, day] = zonedToday(timeZone, new Date(now)).split("-").map(Number);
+    return Date.parse(zonedToUtc(new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10), "00:00", timeZone) ?? "") || Number.POSITIVE_INFINITY;
+  }, [now, timeZone]);
   const inView = (lead: CrmLeadListItem, view: EnquiryView) => {
     if (lead.isConverted && view !== "all") return false;
     if (view === "all") return true;
+    if (view === "my_day") return lead.ownerMembershipId === serverData.currentMembershipId && ACTIVE_STATUSES.has(lead.status) && lead.status !== "paused"
+      && (lead.status === "new" || Number.isFinite(respondOrder(lead)) || (lead.nextActionAt !== null && Date.parse(lead.nextActionAt) < endOfToday));
     if (view === "unassigned") return ACTIVE_STATUSES.has(lead.status) && !lead.ownerMembershipId;
     if (view === "review") return Boolean(lead.clientMatches) && lead.status !== "duplicate";
     if (view === "duplicates") return lead.status === "duplicate";
@@ -174,8 +184,11 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   };
   const visibleItems = useMemo(() => {
     const listed = scoped.filter((lead) => inView(lead, leadView));
-    return leadView === "new" ? [...listed].sort((a, b) => respondOrder(a) - respondOrder(b)) : listed;
-  }, [scoped, leadView]);
+    // New and My day read in the order they need a reply: respond-by first, then the follow-up that's due.
+    const due = (lead: CrmLeadListItem) => (lead.nextActionAt ? Date.parse(lead.nextActionAt) : Number.POSITIVE_INFINITY);
+    return leadView === "new" || leadView === "my_day" ? [...listed].sort((a, b) => respondOrder(a) - respondOrder(b) || due(a) - due(b)) : listed;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoped, leadView, endOfToday]);
   const viewCount = (view: EnquiryView) => scoped.filter((lead) => inView(lead, view)).length;
   const sources = useMemo(() => [...new Set(items.map(lead => lead.source))].sort(), [items]);
 
@@ -356,6 +369,9 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const workspaceArea = activeSection === "leads" ? "work" : activeSection === "forms" || activeSection === "sources" ? "capture" : activeSection === "assignment" || activeSection === "sla" ? "response" : "performance";
   return <DesignSystemProvider className={`${styles.provider} ${theme.theme}`} portalContainer={portalContainer} ref={setPortalContainer}>
     <section aria-label={t("Enquiries workspace")} className={styles.page}>
+      {/* One title per section, with New enquiry top-end on the list (S-20). */}
+      <div className={styles.pageHeader}><PageHeader title={t(SECTION_AREA[activeSection])} actions={activeSection === "leads" && initialData.canView
+        ? <Button variant="primary" onPress={() => setCreateOpen(true)}><Plus size={15} aria-hidden="true"/>{t("New enquiry")}</Button> : undefined} /></div>
 
 
       {workspaceArea === "capture" && !sectionDenied && !(activeSection === "forms" && formEditing) ? <nav className={styles.subnav} aria-label={t("Capture settings")}><button type="button" data-active={activeSection === "forms" || undefined} onClick={() => openSection("forms")}>{t("Forms")}</button><button type="button" data-active={activeSection === "sources" || undefined} onClick={() => openSection("sources")}>{t("Lead sources")}</button></nav> : null}
@@ -391,8 +407,9 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
             initialColumnVisibility={{emirate:false,updatedAt:false,title:false,channel:false,intakeMethod:false,serviceType:false,priority:false,createdAt:false,budgetRange:false,customerType:false,area:false,campaign:false}} searchLabel={t("Search enquiries")} exportFileName="enquiries.csv"
 
             onRowAction={setCardLead} pageSize={50} hasMoreRows={Boolean(nextCursor)} totalRowCount={items.length}
-            emptyTitle={items.length ? t("No matching enquiries") : t("Your enquiries will appear here")} emptyDescription={items.length ? t("Try another view or clear your filters.") : t("Use New enquiry to add one.")}
+            emptyTitle={leadView === "my_day" && items.length ? t("You're all caught up") : items.length ? t("No matching enquiries") : t("Your enquiries will appear here")} emptyDescription={items.length ? t("Try another view or clear your filters.") : t("Use New enquiry to add one.")}
             toolbarLeading={<ListTabs label={t("Enquiry lists")} value={leadView} onChange={setLeadView} items={[
+          ...(serverData.currentMembershipId ? [{ id: "my_day" as const, label: t("My day"), count: viewCount("my_day") }] : []),
           { id: "new", label: t("New"), count: viewCount("new") },
           { id: "contacted", label: t("Contacted"), count: viewCount("contacted") },
           { id: "come_back", label: t("Come back to"), count: viewCount("come_back") },
@@ -401,7 +418,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
           ...(viewCount("duplicates") ? [{ id: "duplicates" as const, label: t("Duplicates"), count: viewCount("duplicates") }] : []),
           { id: "all", label: t("All") },
         ]} />}
-            toolbarActions={<><IconMenuButton ariaLabel={t("More actions")} items={[{ id: "import", label: t("Import CSV") }, { id: "review", label: t("Intake review") }]} onAction={(id) => id === "import" ? setImportOpen(true) : setReviewOpen(true)} /><Button size="compact" variant="primary" onPress={() => setCreateOpen(true)}><Plus size={14} aria-hidden="true"/>{t("New enquiry")}</Button></>}
+            toolbarActions={<><IconMenuButton ariaLabel={t("More actions")} items={[{ id: "import", label: t("Import CSV") }, { id: "review", label: t("Intake review") }]} onAction={(id) => id === "import" ? setImportOpen(true) : setReviewOpen(true)} /></>}
             footerActions={<><Button size="compact" variant="quiet" isDisabled={busy || !items.some(lead => !lead.ownerMembershipId && ACTIVE_STATUSES.has(lead.status))} onPress={() => void runAutoAssign()}>{t("Assign unassigned")}</Button>{nextCursor ? <Button isDisabled={busy} isLoading={loadingMore} onPress={() => void loadMore()} size="compact">{t("Load more enquiries")}</Button> : null}<IconButton aria-label={t("Refresh enquiries")} onPress={() => void refresh()} isDisabled={busy} size="compact"><RefreshCw size={14} aria-hidden="true"/></IconButton></>}
           />
         </section>

@@ -40,7 +40,8 @@ describe("CRM calendar", () => {
   it("uses one compact toolbar with organisation, personal and member calendars", async () => {
     render(<CrmCalendar workspaceId={workspaceId} />);
     expect(await screen.findByRole("searchbox", { name: "Search calendar" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Calendar" })).not.toBeInTheDocument();
+    // One title (the page header), with the calendar's controls below it.
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Calendar"]);
     expect(screen.getByRole("tab", { name: "Organisation" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Personal" })).toBeInTheDocument();
     const googleLink = screen.getByRole("link", { name: "Connect Google" });

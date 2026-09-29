@@ -415,13 +415,15 @@ export class ClientPortalAdminService {
     });
   }
 
-  /** A file the client added (an inspiration photo, proof of payment, a photo of a problem), for the team. */
+  /** A file in the client conversations: one the client added (an inspiration, proof of payment, a problem) or the team sent with a reply. */
   clientFile(actor: RequestActor, workspaceId: string, caseId: string, assetId: string, preview: boolean) {
     return this.access.withAnyPermission(actor, workspaceId, ["pre_projects.view", "projects.view", "receivables.view", "commercial.finance.verify"], async (client) => {
       const id = this.caseId(caseId);
       const row = UUID.test(assetId) ? (await client.query<{ objectKey: string; previewKey: string | null; mimeType: string; name: string }>(
         `SELECT object_key AS "objectKey", preview_key AS "previewKey", mime_type AS "mimeType", original_name AS name FROM pre_project_brief_assets
-          WHERE workspace_id = $1 AND case_id = $2 AND id = $3 AND client_grant_id IS NOT NULL`, [workspaceId, id, assetId])).rows[0] : undefined;
+          WHERE workspace_id = $1 AND case_id = $2 AND id = $3
+            AND (client_grant_id IS NOT NULL OR EXISTS (SELECT 1 FROM client_portal_attachments attachment
+                   WHERE attachment.workspace_id = pre_project_brief_assets.workspace_id AND attachment.asset_id = pre_project_brief_assets.id))`, [workspaceId, id, assetId])).rows[0] : undefined;
       if (!row) throw new NotFoundException("File not found.");
       return readStored(this.storage, row, preview);
     });

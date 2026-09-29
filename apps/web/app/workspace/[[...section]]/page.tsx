@@ -212,7 +212,7 @@ export default async function WorkspaceScreen({
 
   if (crmScreens.has(screen.id as CrmScreenId)) {
     const query = await searchParams;
-    return <CrmScreenPage key={`${screen.id}-${query.record ?? "list"}-${query.view ?? "table"}`} initialFollowUpList={query.view === "activity"} initialCalendar={query.view === "calendar" || query.view === "schedule"} initialData={await getCrmScreenPageData(screen.id as CrmScreenId)} initialRecordId={typeof query.record === "string" && /^[\da-f-]{36}$/i.test(query.record) ? query.record : undefined} />;
+    return <CrmScreenPage key={`${screen.id}-${query.record ?? "list"}-${query.view ?? "table"}`} initialCreate={query.create === "true"} initialFollowUpList={query.view === "activity"} initialCalendar={query.view === "calendar" || query.view === "schedule"} initialData={await getCrmScreenPageData(screen.id as CrmScreenId)} initialRecordId={typeof query.record === "string" && /^[\da-f-]{36}$/i.test(query.record) ? query.record : undefined} />;
   }
 
   const t = await getServerT();

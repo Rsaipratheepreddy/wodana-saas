@@ -26,6 +26,23 @@ describe("Customer enquiry forms", () => {
     expect(upgraded.questions.some(question => question.field === "location")).toBe(false);
     expect(parseLeadForm(upgraded, true, REQUIRED).questions.filter(question => question.required).map(question => question.field)).toEqual(expect.arrayContaining(["displayName", "mobile", "emirate", "serviceType"]));
   });
+  it("honours each question's own required flag on submit, and keeps a location question's label and flag (S-35)", () => {
+    const form = schema();
+    // The author requires the email and the area.
+    const published = parseLeadForm({ ...form, questions: form.questions.map(q => q.field === "email" || q.field === "area" ? { ...q, required: true } : q) }, true, REQUIRED);
+    const values = answers(published);
+    delete values[published.questions.find(q => q.field === "email")!.id];
+    expect(() => validateFormAnswers(published, values)).toThrow("Email address is required");
+    values[published.questions.find(q => q.field === "email")!.id] = "customer@example.com";
+    expect(() => validateFormAnswers(published, values)).toThrow("Area is required");
+    values[published.questions.find(q => q.field === "area")!.id] = "Marina";
+    expect(validateFormAnswers(published, values).fields).toMatchObject({ email: "customer@example.com", area: "Marina" });
+    // An older required "Neighbourhood" location question stays required under its own label.
+    const older = schema();
+    older.questions = older.questions.filter(q => q.field !== "area");
+    older.questions.push({ id: "old_location", title: "Neighbourhood", description: "", type: "text", field: "location", required: true, options: [] });
+    expect(completeLeadForm(older, CHOICES).questions.find(q => q.id === "old_location")).toMatchObject({ field: "area", title: "Neighbourhood", required: true });
+  });
   it("rejects duplicate question IDs and duplicate linked fields", () => {
     const form = schema();
     expect(() => parseLeadForm({ ...form, questions: [...form.questions, form.questions[0]] })).toThrow("Question IDs");
