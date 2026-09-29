@@ -14,7 +14,7 @@ const OUTCOME_LABELS: Record<ContactOutcome, MessageKey> = {
 };
 
 /** A logged contact reads "Call · Willing to talk" in the reader's language; any other activity keeps its own title. */
-export function activityTitle(item: { type?: unknown; title?: unknown; completionOutcome?: unknown }, t: Translate): string {
+export function activityTitle(item: { type?: unknown; title?: unknown; completionOutcome?: unknown } | Record<string, unknown>, t: Translate): string {
   const channel = CONTACT_CHANNELS.find((value) => value === item.type);
   const outcome = CONTACT_OUTCOMES.find((value) => value === item.completionOutcome);
   return channel && outcome ? `${t(CHANNEL_LABELS[channel])} · ${t(OUTCOME_LABELS[outcome])}` : String(item.title ?? "");
