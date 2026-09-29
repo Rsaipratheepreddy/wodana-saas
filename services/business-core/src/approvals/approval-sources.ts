@@ -94,21 +94,23 @@ const quotes: Source = async (db, ctx) => {
 const receipts: Source = async (db, ctx) => {
   if (!(await ctx.can("commercial.finance.verify"))) return [];
   const rows = (await db.query<{ id: string; caseId: string; paymentId: string; title: string; amount: string; currency: string; source: string; since: string | null;
-    reportedById: string | null; reportedBy: string | null; revision: number; client: string }>(
+    reportedById: string | null; reportedBy: string | null; revision: number; client: string; projectId: string | null; projectReference: string | null; projectName: string | null }>(
     `SELECT receipt.id, receipt.case_id AS "caseId", receipt.payment_id AS "paymentId", coalesce(payment.title, receipt.reference) AS title,
             receipt.amount::text AS amount, receipt.currency, receipt.source, receipt.detail->>'reportedAt' AS since,
             receipt.detail->>'reportedById' AS "reportedById", receipt.detail->>'reportedBy' AS "reportedBy", commercial.revision,
-            coalesce(party.display_name, opportunity.title) AS client
+            coalesce(party.display_name, opportunity.title) AS client,
+            project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName"
        FROM commercial_receipts receipt
        JOIN commercial_cases commercial ON commercial.workspace_id = receipt.workspace_id AND commercial.case_id = receipt.case_id
        LEFT JOIN commercial_payments payment ON payment.workspace_id = receipt.workspace_id AND payment.case_id = receipt.case_id AND payment.id = receipt.payment_id
        JOIN pre_project_cases pre_case ON pre_case.workspace_id = receipt.workspace_id AND pre_case.id = receipt.case_id
        JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
        LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+       LEFT JOIN delivery_projects project ON project.workspace_id = receipt.workspace_id AND project.case_id = receipt.case_id
       WHERE receipt.workspace_id = $1 AND receipt.status IN ('reported', 'provider_confirmed')
       ORDER BY receipt.detail->>'reportedAt' NULLS FIRST LIMIT 100`, [ctx.workspaceId])).rows;
   return rows.map((receipt) => row({
-    kind: "receipt", group: "payments", id: receipt.paymentId, title: receipt.title, subject: receipt.client, project: null,
+    kind: "receipt", group: "payments", id: receipt.paymentId, title: receipt.title, subject: receipt.client, project: project(receipt),
     amount: receipt.amount, currency: receipt.currency, since: receipt.since, version: receipt.revision, parentId: receipt.caseId,
     own: receipt.source === "manual" && (receipt.reportedById ? receipt.reportedById === ctx.userId : receipt.reportedBy === ctx.displayName),
     href: `/workspace/pre-projects/cases/${receipt.caseId}/payment-plan`,

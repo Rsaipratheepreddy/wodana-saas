@@ -1,4 +1,4 @@
-import { tKey } from "@/lib/i18n/keys";
+import { tKey, type MessageKey, type Translate } from "@/lib/i18n/keys";
 
 export const CONTACT_OUTCOMES = ["no_answer", "message_sent_no_reply", "willing_to_talk", "come_back_later", "not_interested"] as const;
 export const CONTACT_CHANNELS = ["call", "whatsapp", "email", "meeting", "sms"] as const;
@@ -6,6 +6,19 @@ export type ContactOutcome = (typeof CONTACT_OUTCOMES)[number];
 /** Tries that reached nobody: the note is optional and each one is counted (S-16). */
 export const UNANSWERED_OUTCOMES: readonly ContactOutcome[] = ["no_answer", "message_sent_no_reply"];
 export type ContactChannel = (typeof CONTACT_CHANNELS)[number];
+
+const CHANNEL_LABELS: Record<ContactChannel, MessageKey> = { call: tKey("Call"), whatsapp: tKey("WhatsApp"), email: tKey("Email"), meeting: tKey("Meeting"), sms: tKey("SMS") };
+const OUTCOME_LABELS: Record<ContactOutcome, MessageKey> = {
+  no_answer: tKey("No answer"), message_sent_no_reply: tKey("Message sent, no reply"), willing_to_talk: tKey("Willing to talk"),
+  come_back_later: tKey("Come back later"), not_interested: tKey("Not interested"),
+};
+
+/** A logged contact reads "Call · Willing to talk" in the reader's language; any other activity keeps its own title. */
+export function activityTitle(item: { type?: unknown; title?: unknown; completionOutcome?: unknown }, t: Translate): string {
+  const channel = CONTACT_CHANNELS.find((value) => value === item.type);
+  const outcome = CONTACT_OUTCOMES.find((value) => value === item.completionOutcome);
+  return channel && outcome ? `${t(CHANNEL_LABELS[channel])} · ${t(OUTCOME_LABELS[outcome])}` : String(item.title ?? "");
+}
 
 export type LoggedContact = { id?: string; status: string; version: number; nextActionAt: string | null; updatedAt?: string; contactAttempts?: number };
 

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Link2, Plus } from "lucide-react";
 import { Avatar, Badge, Button, InlineNotice, Skeleton, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
-import type { ChatContext, InboxOwner } from "@/lib/crm/inbox";
+import { channelName, type ChatContext, type InboxOwner } from "@/lib/crm/inbox";
 import type { LeadOptions } from "@/lib/crm/lead-options";
 import type { LeadsPageData } from "@/lib/crm/leads";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -55,7 +55,7 @@ export function ChatContextPanel({ workspaceId, thread, context, owners, members
   const inbound = ((thread.messages ?? []) as RecordData[]).filter((message) => message.direction === "inbound").slice(-3).map((message) => String(message.bodyText ?? "")).join("\n");
   const placeholderName = /^whatsapp\s*\+?\d/i.test(name);
   return <div className={styles.contactDetails}>
-    <header><Avatar name={name} size="lg" /><h2>{name}</h2><span>{label(thread.channel)}</span></header>
+    <header><Avatar name={name} size="lg" /><h2>{name}</h2><span>{channelName(thread.channel, t)}</span></header>
     {failure ? <InlineNotice tone="error" message={failure} /> : null}
     <dl>
       {phone ? <div><dt>{t("Phone")}</dt><dd>{phone}</dd></div> : null}

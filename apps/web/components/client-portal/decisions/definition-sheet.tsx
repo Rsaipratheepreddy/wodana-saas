@@ -31,7 +31,7 @@ export function DefinitionSheet({ definition, caseId, api, format, channels, onD
     confirmLabel={decision === "accept" ? t("Confirm") : t("Send")} onBack={() => setConfirming(false)}
     onConfirm={async (proof) => { await api.command(id, { action: "definition_decision", caseId, baselineId: definition.id, decision, note: note.trim(), uploadIds: decision === "changes" ? uploads : [], ...proof }); onDecided(); }} />;
   return <div className={styles.sheet}>
-    <div className={styles.rowHead}><StateLabel state={definition.status} />{definition.publishedAt ? <span className={styles.muted}>{format.date(definition.publishedAt)}</span> : null}</div>
+    <div className={styles.rowHead}><StateLabel state={definition.status} canDecide={definition.canDecide} />{definition.publishedAt ? <span className={styles.muted}>{format.date(definition.publishedAt)}</span> : null}</div>
     {definition.message ? <p className={styles.body}>{definition.message}</p> : null}
     <dl className={styles.facts}>{brief.filter(([, value]) => value).map(([label, value]) => <Fragment key={label}><dt>{label}</dt><dd>{value}</dd></Fragment>)}</dl>
     {definition.items.length ? <ul className={styles.list}>{definition.items.map((item, index) => <li className={styles.item} key={`${item.title}-${index}`}>

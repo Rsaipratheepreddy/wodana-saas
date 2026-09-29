@@ -70,4 +70,20 @@ integration("waiting for you, across modules", () => {
       expect(manager.rows).toEqual([expect.objectContaining({ kind: "site_report", canDecide: true, project: expect.objectContaining({ reference: "P-12" }) })]);
     });
   });
+
+  it("names the project a reported client payment belongs to", async () => {
+    await world(async (client, ids) => {
+      const caseId = (await client.query<{ case_id: string }>("SELECT case_id FROM delivery_projects WHERE id = $1", [ids.projectId])).rows[0].case_id;
+      const opportunityId = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,pipeline_id,stage_id,title,reference) VALUES($1,$2,$3,$3,$3,'Villa 12 fit-out','OP-1')`, [opportunityId, ids.workspaceId, randomUUID()]);
+      await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, ids.workspaceId, opportunityId, ids.approver]);
+      await client.query("INSERT INTO commercial_cases(workspace_id,case_id,content) VALUES($1,$2,'{}'::jsonb)", [ids.workspaceId, caseId]);
+      await client.query(`INSERT INTO commercial_receipts(workspace_id,case_id,id,sort_order,payment_id,legal_entity_id,currency,amount,source,status,reference)
+        VALUES($1,$2,'r1',0,'p1','le','AED',5000,'manual','reported','TT-1')`, [ids.workspaceId, caseId]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      const finance = await waitingFor(client, context(ids, ids.approver, ["commercial.finance.verify"]));
+      expect(finance.rows).toEqual([expect.objectContaining({ kind: "receipt", project: expect.objectContaining({ id: ids.projectId, reference: "P-12", name: "Villa 12" }) })]);
+    });
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -17,6 +17,11 @@ type Pending = { row: ApprovalRow; decision: "approve" | "return" | "reject" };
  * site reports, stock and finance. Decided in the row (with a note where the module asks for one) or
  * opened for the evidence. Only what they may decide counts; their own work shows who else decides.
  */
+const subscribeMinute = (notify: () => void) => { const timer = window.setInterval(notify, 60_000); return () => window.clearInterval(timer); };
+const currentMinute = () => Math.floor(Date.now() / 60_000) * 60_000;
+// The server's clock is not the browser's: "Waiting for" is filled in once the page runs, so the two always match.
+const noClockOnServer = () => null;
+
 export function WaitingForYouList({ workspaceId, initial, initialError }: { workspaceId: string; initial: WaitingForYou | null; initialError?: string }) {
   const t = useT();
   const router = useRouter();
@@ -29,6 +34,7 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
+  const now = useSyncExternalStore(subscribeMinute, currentMinute, noClockOnServer);
 
   const reload = async () => {
     setLoadError("");
@@ -64,7 +70,8 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     { id: "about", header: t("About"), size: 200, accessorFn: (row) => row.subject ?? "", meta: { mobileHidden: true } },
     { id: "project", header: t("Project"), size: 180, accessorFn: (row) => row.project ? [row.project.reference, row.project.name].filter(Boolean).join(" · ") : "", meta: { mobileHidden: true } },
     { id: "amount", header: t("Amount"), size: 140, accessorFn: (row) => money(row), meta: { align: "end" } },
-    { id: "since", header: t("Waiting for"), size: 120, accessorFn: (row) => waitingSince(row.since, new Date(), locale) },
+    { id: "since", header: t("Waiting for"), size: 120, accessorFn: (row) => row.since,
+      meta: { renderCell: (row) => (now === null ? "" : waitingSince(row.since, new Date(now), locale)) } },
     { id: "decide", header: t("Decide"), size: 240, accessorFn: () => "", enableSorting: false, meta: { renderCell: (row) => <span className={styles.actions} onClick={(event) => event.stopPropagation()}>
       {!row.canDecide ? <span className={styles.muted}>{t("Someone else decides")}</span>
         : row.decide ? <>

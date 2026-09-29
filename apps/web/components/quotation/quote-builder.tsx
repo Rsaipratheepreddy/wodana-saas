@@ -524,8 +524,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         {["accepted", "declined"].includes(state.quote.status) && state.quote.kind === "quotation" ? <QuoteNextSteps key={`next:${state.quote.id}:${state.quote.revision}`} workspaceId={workspaceId} caseId={caseId} quote={{ id: state.quote.id, round: state.quote.round, status: state.quote.status }} projectStarted={Boolean(state.project)} /> : null}
         {error ? <InlineNotice tone="error" message={error} /> : null}
         {flowNotice ? <InlineNotice tone={flowNotice.tone} message={flowNotice.message} /> : null}
-        {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={["internal_review", "internal_approved"].includes(state.quote.status)
-          ? t("This quote is in review. It can be changed again if it's sent back.") : t("This quote has been sent. Start a new revision to change it.")} /> : null}
+        {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={state.quote.status === "internal_review"
+          ? t("This quote is in review. It can be changed again if it's sent back.") : state.quote.status === "internal_approved"
+            ? t("This quote is approved and ready to send to the client.") : t("This quote has been sent. Start a new revision to change it.")} /> : null}
 
         {tab === "document" ? <QuoteProposal workspaceId={workspaceId} caseId={caseId} quoteId={quoteId} api={api} sizeUnit={state.sizeUnit ?? "cm"} onPayments={() => setTab("payments")}
           columns={customColumns.filter((custom) => custom.showInProposal).map(({ id, name }) => ({ id, name }))} facts={proposalFacts} />

@@ -5,7 +5,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
 import { Avatar, Badge, Button, ControlledModalDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
-import { CLIENT_EVENT_LABELS, eventLine, snoozePresets, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
+import { CLIENT_EVENT_LABELS, channelName, eventLine, snoozePresets, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -117,7 +117,7 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       <Avatar name={String(thread.partyName ?? t("Customer"))} size="md" />
       <div className={styles.headingIdentity}>
         <h2>{String(thread.partyName ?? t("Customer"))}</h2>
-        <span>{isWhatsApp && replyingAs?.number ? t("Replying as {business} · {number}", { business: replyingAs.businessName ?? "", number: replyingAs.number }) : label(thread.channel)}{isWhatsApp && (thread.numberHealth === "limited" || thread.numberHealth === "blocked") ? <> <Badge tone={thread.numberHealth === "blocked" ? "danger" : "warning"}>{thread.numberHealth === "blocked" ? t("Blocked by Meta") : t("Limited by Meta")}</Badge></> : null}</span>
+        <span>{isWhatsApp && replyingAs?.number ? t("Replying as {business} · {number}", { business: replyingAs.businessName ?? "", number: replyingAs.number }) : channelName(thread.channel, t)}{isWhatsApp && (thread.numberHealth === "limited" || thread.numberHealth === "blocked") ? <> <Badge tone={thread.numberHealth === "blocked" ? "danger" : "warning"}>{thread.numberHealth === "blocked" ? t("Blocked by Meta") : t("Limited by Meta")}</Badge></> : null}</span>
         {chatLabels.length ? <span className={styles.headingLabels}>{chatLabels.map((item) => <LabelChip key={item.id} label={item} />)}</span> : null}
       </div>
       <div className={styles.actions}>

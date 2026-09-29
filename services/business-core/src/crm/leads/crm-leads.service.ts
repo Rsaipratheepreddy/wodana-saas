@@ -1313,6 +1313,8 @@ export class CrmLeadsService {
         [workspaceId, leadId, status, input.reason?.trim() || null, note, next, input.version]);
       if (!updated.rowCount) throw new ConflictException("Lead changed; reload and try again");
       await this.slas.recordFirstResponse(client, workspaceId, leadId, { sourceType: "activity", sourceId: activity.rows[0].id, actorUserId: actorUser.userId, respondedAt: new Date() });
+      // Recording the first response recomputes the next action from open tasks; the follow-up booked here wins.
+      if (next && status !== "disqualified") await client.query(`UPDATE crm_leads SET next_action_at = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, leadId, next]);
       await refreshUnownedEscalation(client, workspaceId, leadId);
       const attempts = UNANSWERED_OUTCOMES.includes(input.outcome) ? attempt : attempt - 1;
       await this.events.record(client, {

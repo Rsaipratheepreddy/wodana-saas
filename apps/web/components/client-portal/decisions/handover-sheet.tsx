@@ -34,7 +34,7 @@ export function HandoverSheet({ pack, caseId, api, format, channels, onDecided }
       onDecided();
     }} />;
   return <div className={styles.sheet}>
-    <div className={styles.rowHead}><StateLabel state={pack.status} /><span className={styles.muted}>{format.date(pack.issuedAt)}</span></div>
+    <div className={styles.rowHead}><StateLabel state={pack.status} canDecide={pack.canDecide} /><span className={styles.muted}>{format.date(pack.issuedAt)}</span></div>
     {pack.areas.length ? <p className={styles.muted}>{pack.areas.join(" · ")}</p> : null}
     <ul className={styles.list}>
       {pack.documents.map((document) => <li className={styles.item} key={document.id}>
