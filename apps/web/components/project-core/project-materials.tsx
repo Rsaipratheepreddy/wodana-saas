@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Send, Sparkles } from "lucide-react";
 import {
-  Button, ControlledModalDialog, EmptyState, ErrorState, GroupedTable, InspectorSheet, MultiSelectField, SegmentedControl, SelectField, Skeleton, Switch, TextAreaField, TextInput,
+  Button, EmptyState, FormDialog, FormRow, ErrorState, GroupedTable, InspectorSheet, MultiSelectField, SegmentedControl, SelectField, Skeleton, Switch, TextAreaField, TextInput,
   type GroupedTableColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -12,7 +12,7 @@ import type { MaterialItem, MaterialsState, ScopeLine } from "@/lib/project-core
 import { useProjectFormat } from "./format";
 import styles from "./project-core.module.css";
 
-type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
+type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
 const METHODS = [["signed_document", "Signed copy"], ["email", "Email"], ["in_person", "In person"], ["phone", "Phone"], ["message", "Message"]] as const;
 
 /**
@@ -128,17 +128,13 @@ function DecisionDialog({ data, run, onClose }: { data: MaterialsState; run: Run
   const [decidedBy, setDecidedBy] = useState("");
   const [method, setMethod] = useState<string>("signed_document");
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
   const valid = decidedBy.trim() && Object.values(decisions).every((entry) => entry.decision === "approved" || entry.note.trim());
-  return <ControlledModalDialog isOpen size="lg" title={t("Record the client's decision")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true);
-        if (await run("record_materials_decision", { decidedBy: decidedBy.trim(), method, note: note.trim(),
-          decisions: Object.entries(decisions).map(([itemId, entry]) => ({ itemId, decision: entry.decision, note: entry.note.trim() })) })) onClose();
-        setBusy(false);
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
+  return <FormDialog size="lg" title={t("Record the client's decision")} onClose={onClose} isDirty={Boolean(decidedBy.trim() || note.trim())} isSubmitDisabled={!valid} submitLabel={t("Save")}
+    onSubmit={async () => {
+      await run("record_materials_decision", { decidedBy: decidedBy.trim(), method, note: note.trim(),
+        decisions: Object.entries(decisions).map(([itemId, entry]) => ({ itemId, decision: entry.decision, note: entry.note.trim() })) }, { inDialog: true });
+      onClose();
+    }}>
       <ul className={styles.decisions} aria-label={t("Materials")}>
         {data.items.map((item) => <li key={item.id}>
           <span className={styles.lineCell}><span>{item.name}</span>{item.specification ? <small>{item.specification}</small> : null}</span>
@@ -149,11 +145,10 @@ function DecisionDialog({ data, run, onClose }: { data: MaterialsState; run: Run
             value={decisions[item.id].note} onChange={(value) => setDecisions({ ...decisions, [item.id]: { ...decisions[item.id], note: value } })} /> : null}
         </li>)}
       </ul>
-      <div className={styles.pair}>
-        <TextInput label={t("Decided by")} isRequired value={decidedBy} onChange={setDecidedBy} />
-        <SelectField label={t("How")} selectedKey={method} onSelectionChange={(key) => setMethod(String(key))} items={METHODS.map(([id, label]) => ({ id, label: t(label as never) }))} />
-      </div>
+      <FormRow>
+        <TextInput label={t("Decided by")} isRequired maxLength={160} value={decidedBy} onChange={setDecidedBy} />
+        <SelectField label={t("How")} isRequired selectedKey={method} onSelectionChange={(key) => setMethod(String(key))} items={METHODS.map(([id, label]) => ({ id, label: t(label as never) }))} />
+      </FormRow>
       <TextAreaField label={t("Note")} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

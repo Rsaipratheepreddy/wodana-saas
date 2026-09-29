@@ -11,7 +11,8 @@ import {
   ShieldCheck,
   Factory,
 } from "lucide-react";
-import { useDesignSystem } from "@/design-system";
+import { Button, DateField, Form, FormRow, MoneyField, NumericInput, TextAreaField, useDesignSystem } from "@/design-system";
+import { parseDate } from "@internationalized/date";
 import { jsonRequest, money } from "@/lib/commercial/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
@@ -82,6 +83,7 @@ const actions = [
     icon: Truck,
   },
 ];
+const dateOf = (value: string) => { try { return value ? parseDate(value.slice(0, 10)) : null; } catch { return null; } };
 /** Order kinds, order states and update kinds the supplier sees; anything unknown is humanized. */
 const vendorLabels: Record<string, string> = {
   material: tKey("Material"), subcontract: tKey("Subcontract"),
@@ -280,125 +282,50 @@ export function VendorOrderForm() {
                   <p>{t("Your previous updates remain available below.")}</p>
                 </section>
               ) : editing ? (
-                <form
-                  className={`${ui.form} ${s.actionPanel}`}
-                  onSubmit={submit}
-                >
-                  <button
-                    className={s.back}
-                    type="button"
-                    onClick={() => setEditing(false)}
-                  >
+                <Form className={s.actionPanel} onSubmit={submit}>
+                  <Button size="compact" variant="quiet" onPress={() => setEditing(false)}>
                     <ArrowLeft size={14} />
                     {t("Back to order")}
-                  </button>
+                  </Button>
                   <h2>{t(current.title as never)}</h2>
-                  <p>
-                    {t(current.description as never)}. {t("The project team reviews your update before changing the order.")}
-                  </p>
-                  <fieldset disabled={busy}>
-                    <div className={ui.grid}>
-                      <label>
-                        {form.kind === "delivery"
-                          ? t("Delivery date")
-                          : form.kind === "progress"
-                            ? t("Progress date")
-                            : t("Proposed delivery date")}
-                        <input
-                          required
-                          type="date"
-                          value={form.date}
-                          onChange={(e) =>
-                            setForm({ ...form, date: e.target.value })
-                          }
-                        />
-                      </label>
-                      <label>
-                        {form.kind === "progress"
-                          ? t("Completed quantity ({unit})", { unit: o.unit })
-                          : form.kind === "delivery"
-                            ? t("Quantity in this delivery ({unit})", { unit: o.unit })
-                            : t("Offered / confirmed quantity ({unit})", { unit: o.unit })}
-                        <input
-                          required
-                          type="number"
-                          min="0"
-                          max={o.quantity}
-                          step="any"
-                          value={form.quantity}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              quantity: Number(e.target.value),
-                            })
-                          }
-                        />
-                      </label>
-                      {form.kind === "quotation" && (
-                        <label>
-                          {t("Unit price ({currency})", { currency: o.currency })}
-                          <input
-                            required
-                            type="number"
-                            min="0"
-                            step=".01"
-                            value={form.unitCost}
-                            onChange={(e) =>
-                              setForm({
-                                ...form,
-                                unitCost: Number(e.target.value),
-                              })
-                            }
-                          />
-                        </label>
-                      )}
+                  <p>{t(current.description as never)}</p>
+                  <FormRow>
+                    <DateField isRequired isDisabled={busy}
+                      label={form.kind === "delivery" ? t("Delivery date") : form.kind === "progress" ? t("Progress date") : t("Proposed delivery date")}
+                      value={dateOf(form.date)} onChange={(value) => setForm({ ...form, date: value?.toString() ?? "" })} />
+                    <NumericInput isRequired isDisabled={busy} minValue={0} maxValue={o.quantity} formatOptions={{ maximumFractionDigits: 4 }}
+                      label={form.kind === "progress"
+                        ? t("Completed quantity ({unit})", { unit: o.unit })
+                        : form.kind === "delivery"
+                          ? t("Quantity in this delivery ({unit})", { unit: o.unit })
+                          : t("Offered / confirmed quantity ({unit})", { unit: o.unit })}
+                      value={form.quantity} onChange={(quantity) => setForm({ ...form, quantity: Number.isFinite(quantity) ? quantity : 0 })} />
+                  </FormRow>
+                  {form.kind === "quotation" && <>
+                    <MoneyField isRequired isDisabled={busy} label={t("Unit price")} currency={o.currency}
+                      value={form.unitCost ? String(form.unitCost) : ""} onChange={(value) => setForm({ ...form, unitCost: Number(value || 0) })} />
+                    <div className={s.offerTotal}>
+                      <span>{t("Your offer · before taxes")}</span>
+                      <strong>{money(form.quantity * form.unitCost, o.currency, locale)}</strong>
                     </div>
-                    {form.kind === "quotation" && (
-                      <div className={s.offerTotal}>
-                        <span>{t("Your offer · before taxes")}</span>
-                        <strong>
-                          {money(form.quantity * form.unitCost, o.currency, locale)}
-                        </strong>
-                      </div>
-                    )}
-                    <label>
-                      {form.kind === "quotation"
-                        ? t("Scope, inclusions, exclusions & payment terms")
-                        : form.kind === "progress"
-                          ? t("Completed work, issues & expected finish")
-                          : form.kind === "delivery"
-                            ? t("Delivery details & contact")
-                            : t("Availability, scope & date confirmation")}
-                      <textarea
-                        required
-                        rows={4}
-                        value={form.note}
-                        onChange={(e) =>
-                          setForm({ ...form, note: e.target.value })
-                        }
-                      />
-                    </label>
-                    <label>
-                      {form.kind === "delivery"
-                        ? t("Delivery note / tracking reference")
-                        : t("Supporting document reference or link")}
-                      <textarea
-                        rows={2}
-                        value={form.evidence}
-                        onChange={(e) =>
-                          setForm({ ...form, evidence: e.target.value })
-                        }
-                      />
-                    </label>
-                    <button
-                      className={ui.primary}
-                      disabled={busy || !form.note.trim()}
-                    >
-                      {busy ? t("Submitting…") : t("Submit update")}
+                  </>}
+                  <TextAreaField isRequired isDisabled={busy} value={form.note} onChange={(note) => setForm({ ...form, note })}
+                    label={form.kind === "quotation"
+                      ? t("Scope, inclusions, exclusions & payment terms")
+                      : form.kind === "progress"
+                        ? t("Completed work, issues & expected finish")
+                        : form.kind === "delivery"
+                          ? t("Delivery details & contact")
+                          : t("Availability, scope & date confirmation")} />
+                  <TextAreaField isDisabled={busy} value={form.evidence} onChange={(evidence) => setForm({ ...form, evidence })}
+                    label={form.kind === "delivery" ? t("Delivery note / tracking reference") : t("Supporting document reference or link")} />
+                  <div className={s.formActions}>
+                    <Button type="submit" variant="primary" isLoading={busy} isDisabled={!form.note.trim()}>
+                      {t("Submit update")}
                       <ArrowRight size={15} />
-                    </button>
-                  </fieldset>
-                </form>
+                    </Button>
+                  </div>
+                </Form>
               ) : (
                 <section className={s.actionPanel}>
                   <span className={s.eyebrow}>{t("YOUR NEXT STEP")}</span>

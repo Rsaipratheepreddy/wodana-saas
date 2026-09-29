@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, Trash2 } from "lucide-react";
-import { Button, ControlledModalDialog, DateField, EmptyState, IconButton, InlineNotice, SettingsRow, SettingsSection, Skeleton, TextInput } from "@/design-system";
+import { Button, DateField, EmptyState, FormDialog, FormRow, IconButton, InlineNotice, MoneyField, SettingsRow, SettingsSection, Skeleton, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { LabourRates, TradeRate } from "@/lib/project-core/types";
@@ -11,7 +11,6 @@ import { useProjectFormat } from "./format";
 import styles from "./project-settings.module.css";
 
 type Trade = LabourRates["trades"][number];
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 
 /** The rate in force on a day: set from the latest date on or before it. */
 const rateOn = (rates: TradeRate[], day: string) => rates.filter((rate) => rate.from <= day).at(-1) ?? null;
@@ -76,22 +75,18 @@ function RateDialog({ trade, currency, today, onClose, onSave, onRemove }: {
     try { await work(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     setBusy(false);
   };
-  return <ControlledModalDialog isOpen size="md" title={trade ? trade.name : t("Add trade")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!name.trim() || !rate || !from}
-        onPress={() => void run(() => onSave({ trade: name.trim(), dayRate: rate, from: from!, version }))}>{t("Save")}</Button></div>}>
-    <div className={styles.editor}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+  return <FormDialog size="md" title={trade ? trade.name : t("Add trade")} onClose={onClose} error={error || undefined} isSubmitting={busy}
+    isDirty={Boolean(rate || (!trade && name.trim()))} isSubmitDisabled={!name.trim() || !rate || !from} submitLabel={t("Save")}
+    onSubmit={() => onSave({ trade: name.trim(), dayRate: rate, from: from!, version })}>
       {rates.length ? <ul className={styles.history} aria-label={t("Rates")}>{rates.map((item) => <li key={item.id}>
         <span>{t("{amount} a day from {date}", { amount: format.money(item.rate, item.currency), date: format.day(item.from) })}</span>
         <IconButton aria-label={t("Remove {name}", { name: format.day(item.from) })} size="compact" variant="quiet" isDisabled={busy} onPress={() => void run(() => onRemove(item))}>
           <Trash2 aria-hidden="true" size={14} /></IconButton>
       </li>)}</ul> : null}
-      {trade ? null : <TextInput label={t("Trade")} isRequired value={name} onChange={setName} />}
-      <div className={styles.pair}>
-        <TextInput label={t("Day rate")} isRequired inputMode="decimal" suffix={currency} value={rate} onChange={(value) => setRate(numeric(value))} />
+      {trade ? null : <TextInput label={t("Trade")} isRequired maxLength={80} value={name} onChange={setName} />}
+      <FormRow>
+        <MoneyField label={t("Day rate")} isRequired currency={currency} value={rate} onChange={setRate} />
         <DateField label={t("From")} isRequired value={from ? parseDate(from) : null} onChange={(value) => setFrom(value ? value.toString() : null)} />
-      </div>
-    </div>
-  </ControlledModalDialog>;
+      </FormRow>
+  </FormDialog>;
 }

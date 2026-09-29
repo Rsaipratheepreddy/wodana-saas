@@ -11,7 +11,6 @@ import { useProjectFormat } from "../project-core/format";
 import { plain, RunStatusLabel } from "./finance-labels";
 import styles from "./finance.module.css";
 
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 type Dialog = "return" | "cancel" | "paid" | null;
 type Action = "save" | "submit" | "approve" | "return" | "paid" | "cancel";
 

@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, Circle, CircleDot, Minus } from "lucide-react";
-import { Button, Checkbox, ControlledModalDialog, IconMenuButton, TextAreaField } from "@/design-system";
+import { Button, Checkbox, FormDialog, IconMenuButton, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
 import type { CloseOut, EvaluatedCheck, ProjectDetail, ProjectOverview, ProjectStage } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
 import styles from "./project-core.module.css";
 
-type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
+type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
 
 /**
  * The project's stages top to bottom. The current one is open and lists what it needs to finish —
@@ -71,7 +71,7 @@ export function ProjectStages({ detail, run, onTeam, plan, today, api }: {
     {reason ? <ReasonDialog title={reason.action === "skip_stage" ? t("Skip {stage}", { stage: reason.stage.name }) : t("Go back a stage")}
       label={reason.action === "skip_stage" ? t("Why doesn't it apply") : t("Why")}
       onClose={() => setReason(null)}
-      onSave={async (text) => { if (await run(reason.action, { stageId: reason.stage.id, reason: text })) setReason(null); }} /> : null}
+      onSave={async (text) => { await run(reason.action, { stageId: reason.stage.id, reason: text }, { inDialog: true }); setReason(null); }} /> : null}
   </>;
 }
 
@@ -143,10 +143,7 @@ function CloseOutList({ api, projectId }: { api: ProjectApi; projectId: string }
 function ReasonDialog({ title, label, onClose, onSave }: { title: string; label: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!text.trim()} onPress={async () => { setBusy(true); await onSave(text.trim()); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <TextAreaField label={label} isRequired value={text} onChange={setText} autoFocus />
-  </ControlledModalDialog>;
+  return <FormDialog size="md" title={title} onClose={onClose} isDirty={Boolean(text.trim())} isSubmitDisabled={!text.trim()} submitLabel={t("Save")} onSubmit={() => onSave(text.trim())}>
+    <TextAreaField label={label} isRequired value={text} onChange={setText} />
+  </FormDialog>;
 }

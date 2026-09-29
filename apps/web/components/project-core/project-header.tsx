@@ -9,7 +9,7 @@ import { useProjectFormat, useStatusLabel } from "./format";
 import styles from "./project-core.module.css";
 
 export type ProjectDialog = "team" | "hold" | "resume" | "dates" | "rename" | "cancel" | "reopen";
-type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
+type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
 
 /** The one thing to do next on this project, for this person: a command, a dialog, or a link to where it's done. */
 export type NextAction = { label: string; ariaLabel?: string; href?: string; press?: () => void };

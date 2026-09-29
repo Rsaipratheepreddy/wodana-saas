@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
 import {
-  Button, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorState, FileUploader, InlineNotice, InspectorSheet, NoResultsState, SelectField, TextAreaField, TextInput,
+  Button, DataGrid, DateField, EmptyState, ErrorState, FileUploader, FormDialog, FormNotSaved, FormRow, InlineNotice, InspectorSheet, MoneyField, NoResultsState, SelectField, TextAreaField, TextInput,
   type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -16,7 +16,6 @@ import { useProjectFormat } from "../project-core/format";
 import { CATEGORIES, ClaimStatusLabel, useCategoryLabels } from "./petty-cash-labels";
 import styles from "./petty-cash.module.css";
 
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const plain = (value: string) => (value.includes(".") ? value.replace(/\.?0+$/, "") : value) || "0";
 
 /**
@@ -106,22 +105,17 @@ function ClaimSheet({ api, projectId, state, claim, onChanged, onEdit, onClose }
       </dl>
     </div>
     {rejecting ? <RejectDialog reference={claim.reference} error={notice} onClose={() => { setRejecting(false); setNotice(""); }}
-      onSave={async (note) => { if (await run("reject", { note })) setRejecting(false); }} /> : null}
+      onSave={async (note) => { if (!(await run("reject", { note }))) throw new FormNotSaved(); setRejecting(false); }} /> : null}
   </InspectorSheet>;
 }
 
 function RejectDialog({ reference, error, onClose, onSave }: { reference: string; error: string; onClose: () => void; onSave: (note: string) => Promise<void> }) {
   const t = useT();
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Reject {claim}", { claim: reference })} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim()); setBusy(false); }}>{t("Reject")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-      <TextAreaField label={t("Why it's rejected")} isRequired value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog size="md" title={t("Reject {claim}", { claim: reference })} onClose={onClose} cancelLabel={t("Back")} error={error || undefined}
+    isDirty={Boolean(note.trim())} isSubmitDisabled={!note.trim()} submitLabel={t("Reject")} submitVariant="danger" onSubmit={() => onSave(note.trim())}>
+    <TextAreaField label={t("Why it's rejected")} isRequired value={note} onChange={setNote} />
+  </FormDialog>;
 }
 
 /** A claim as its claimant writes it: saved as a draft, or submitted with its receipt (or why there's none). */
@@ -148,42 +142,38 @@ function ClaimDialog({ api, projectId, state, claim, onClose, onSaved }: {
   const tooPrecise = (amount.split(".")[1]?.length ?? 0) > places;
   const ready = Boolean(spentOn && amount && Number(amount) > 0 && !tooPrecise && description.trim() && category);
   const evidence = Boolean(file || claim?.receiptName || noReceiptReason.trim());
-  const save = async (submit: boolean) => {
-    setBusy(submit ? "submit" : "save"); setError("");
-    try {
-      let next = await api.command(projectId, "save", { id, ...(version === null ? {} : { version }), spentOn, amount, description: description.trim(), category,
-        packageId: packageId || null, noReceiptReason: file ? "" : noReceiptReason.trim() });
-      const saved = () => next.claims.find((row) => row.id === id)!.version;
-      setVersion(saved());
-      if (file) { next = await api.uploadReceipt(projectId, id, file); setVersion(saved()); }
-      if (submit) next = await api.command(projectId, "submit", { claimId: id, version: saved() });
-      onSaved(next, id);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(null); }
+  const persist = async (submit: boolean) => {
+    let next = await api.command(projectId, "save", { id, ...(version === null ? {} : { version }), spentOn, amount, description: description.trim(), category,
+      packageId: packageId || null, noReceiptReason: file ? "" : noReceiptReason.trim() });
+    const saved = () => next.claims.find((row) => row.id === id)!.version;
+    setVersion(saved());
+    if (file) { next = await api.uploadReceipt(projectId, id, file); setVersion(saved()); }
+    if (submit) next = await api.command(projectId, "submit", { claimId: id, version: saved() });
+    onSaved(next, id);
   };
-  return <ControlledModalDialog isOpen size="lg" title={claim ? claim.reference : t("New claim")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button isLoading={busy === "save"} isDisabled={Boolean(busy) || !ready} onPress={() => void save(false)}>{t("Save draft")}</Button>
-      <Button variant="primary" isLoading={busy === "submit"} isDisabled={Boolean(busy) || !ready || !evidence} onPress={() => void save(true)}>{t("Submit")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-      <div className={styles.pair}>
+  const saveDraft = async () => {
+    setBusy("save"); setError("");
+    try { await persist(false); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(null); }
+  };
+  return <FormDialog size="lg" title={claim ? claim.reference : t("New claim")} onClose={onClose} error={error || undefined} isDirty={Boolean(amount || description.trim() || file)}
+    isSubmitting={busy === "save"} isSubmitDisabled={!ready || !evidence} submitLabel={t("Submit")} onSubmit={() => { setError(""); return persist(true); }}
+    secondaryAction={<Button isLoading={busy === "save"} isDisabled={Boolean(busy) || !ready} onPress={() => void saveDraft()}>{t("Save draft")}</Button>}>
+      <FormRow>
         <DateField label={t("Spent on")} isRequired value={spentOn ? parseDate(spentOn) : null} onChange={(value) => setSpentOn(value ? value.toString() : null)} />
-        <TextInput label={t("Amount")} isRequired inputMode="decimal" suffix={state.currency} value={amount} onChange={(value) => setAmount(numeric(value))}
-          isInvalid={tooPrecise} errorMessage={tooPrecise ? t("{currency} has {count} decimals.", { currency: state.currency, count: places }) : undefined} />
-      </div>
-      <TextInput label={t("What for")} isRequired value={description} onChange={setDescription} />
-      <div className={styles.pair}>
+        <MoneyField label={t("Amount")} isRequired currency={state.currency} value={amount} onChange={setAmount} />
+      </FormRow>
+      <TextInput label={t("What for")} isRequired maxLength={500} value={description} onChange={setDescription} />
+      <FormRow>
         <SelectField label={t("Kind")} isRequired placeholder={t("Choose")} selectedKey={category} onSelectionChange={(key) => setCategory(key ? (key as PettyCashCategory) : null)}
           items={CATEGORIES.map((item) => ({ id: item, label: categories[item] }))} />
         <SelectField label={t("Package")} selectedKey={packageId || "none"} onSelectionChange={(key) => setPackageId(key && key !== "none" ? String(key) : "")}
           items={[{ id: "none", label: t("Not in a package") }, ...state.packages.map((item) => ({ id: item.id, label: item.name }))]} />
-      </div>
+      </FormRow>
       <div className={styles.receipt}>
         <FileUploader appearance="button" accept="application/pdf,image/*" multiple={false} label={file || claim?.receiptName ? t("Replace receipt") : t("Attach receipt")}
           onFiles={(files) => setFile(files[0] ?? null)} />
         {file ? <span>{file.name}</span> : claim?.receiptName ? <span className={styles.muted}>{claim.receiptName}</span> : null}
       </div>
-      {!file && !claim?.receiptName ? <TextInput label={t("If there's no receipt, why")} value={noReceiptReason} onChange={setNoReceiptReason} /> : null}
-    </div>
-  </ControlledModalDialog>;
+      {!file && !claim?.receiptName ? <TextInput label={t("If there's no receipt, why")} maxLength={500} value={noReceiptReason} onChange={setNoReceiptReason} /> : null}
+  </FormDialog>;
 }

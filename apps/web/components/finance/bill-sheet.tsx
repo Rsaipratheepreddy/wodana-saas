@@ -13,7 +13,6 @@ import { PaymentDialog } from "./payment-dialog";
 import styles from "./finance.module.css";
 
 type Dialog = "edit" | "approve" | "cancel" | "pay" | "release" | null;
-const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 
 /**
  * One supplier invoice: its lines against their orders, why it's held (if it is), who approved it, the

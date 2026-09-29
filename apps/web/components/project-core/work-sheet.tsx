@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { ArrowRight, Plus, X } from "lucide-react";
 import {
-  ActivityFeed, Avatar, Button, Checkbox, ControlledModalDialog, DateField, ErrorState, IconButton, InlineNotice, InspectorSheet, MenuButton, SegmentedControl, SelectField, Skeleton,
+  ActivityFeed, Avatar, Button, Checkbox, ControlledModalDialog, DateField, FormDialog, ErrorState, IconButton, InlineNotice, InspectorSheet, MenuButton, SegmentedControl, SelectField, Skeleton,
   FileUploader, Switch, TextAreaField, TextInput, type ActivityItem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -17,7 +17,7 @@ import { useProjectFormat } from "./format";
 import { ALL_STATUSES, AwayChip, PRIORITIES, StatusIcon, StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
 import styles from "./work.module.css";
 
-type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
+type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
 type Dates = { startDate?: string | null; dueDate?: string | null };
 type Preview = (dates: Dates) => Promise<WorkMove[]>;
 
@@ -37,7 +37,7 @@ export function WorkSheet({ api, projectId, itemId, board, onBoard, onOpenItem, 
   }, [api, projectId, itemId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
-  const run: Run = useCallback(async (action, input = {}) => {
+  const run: Run = useCallback(async (action, input = {}, options = {}) => {
     setNotice("");
     try {
       const next = await api.workCommand(projectId, action, { itemId, ...input });
@@ -46,8 +46,9 @@ export function WorkSheet({ api, projectId, itemId, board, onBoard, onOpenItem, 
       if (next.item?.id === itemId) setDetail(next.item); else await load();
       return true;
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : t("Could not save."));
       if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
+      if (options.inDialog) throw cause;
+      setNotice(cause instanceof Error ? cause.message : t("Could not save."));
       return false;
     }
   }, [api, projectId, itemId, onBoard, load, t]);
@@ -116,7 +117,7 @@ function WorkBody({ workspaceId, detail, board, run, notice, onOpenItem, preview
           onAction={(id) => { if (snag && detail.status === "done" && isOpen(id as WorkStatus)) setReopening(id); else void update({ status: id }); }}
           items={ALL_STATUSES.filter((status) => status !== detail.status).map((status) => ({ id: status, label: labels.status[status] }))} /> : <StatusLabel status={detail.status} />}
         {detail.blockedBy.length && isOpen(detail.status) ? <span className={styles.blocked}>{t("Blocked")}</span> : null}
-        {reopening ? <ReopenDialog onClose={() => setReopening(null)} onSave={async (reason) => { if (await update({ status: reopening, reason })) setReopening(null); }} /> : null}
+        {reopening ? <ReopenDialog onClose={() => setReopening(null)} onSave={async (reason) => { await run("update", { version: detail.version, status: reopening, reason }, { inDialog: true }); setReopening(null); }} /> : null}
       </dd></div>
       <div><dt>{t("Assignee")}</dt><dd>
         {edit ? <MenuButton size="compact" label={detail.assigneeName ? <span className={styles.person}><Avatar name={detail.assigneeName} size="sm" />{detail.assigneeName}</span> : t("No one")}
@@ -369,10 +370,8 @@ function useActivityText() {
 function ReopenDialog({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Open the snag again")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Open again")}</Button></div>}>
+  return <FormDialog size="md" title={t("Open the snag again")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()}
+    submitLabel={t("Open again")} onSubmit={() => onSave(reason.trim())}>
     <TextAreaField label={t("Why it's open again")} isRequired value={reason} onChange={setReason} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

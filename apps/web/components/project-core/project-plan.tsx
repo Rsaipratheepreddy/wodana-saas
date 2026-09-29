@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
 import {
-  Avatar, Button, ControlledModalDialog, DateField, EmptyState, ErrorState, GroupedTable, IconMenuButton, InlineNotice, Kanban, MenuButton, PillTabs, SearchInput, SegmentedControl,
+  Avatar, Button, DateField, FormDialog, FormRow, EmptyState, ErrorState, GroupedTable, IconMenuButton, InlineNotice, Kanban, MenuButton, PillTabs, SearchInput, SegmentedControl,
   SelectField, Skeleton, Switch, TextInput, type GroupedTableSection,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -230,28 +230,23 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
           items={(["todo", "in_progress", "in_review", "done"] as const).map((id) => ({ id, label: labels.status[id] }))} />
       </span>
     </div> : null}
-    {bulkDue ? <BulkDueDialog count={selected.size} onClose={() => setBulkDue(false)} onSave={async (dueDate) => { if (await bulk({ dueDate })) setBulkDue(false); }} /> : null}
+    {bulkDue ? <BulkDueDialog count={selected.size} onClose={() => setBulkDue(false)} onSave={async (dueDate) => {
+      const items = [...selected].map((id) => board.items.find((item) => item.id === id)).filter((item): item is WorkItem => Boolean(item)).map((item) => ({ id: item.id, version: item.version }));
+      try { setBoard(await api.workCommand(projectId, "bulk_update", { items, changes: { dueDate } })); }
+      catch (cause) { if (cause instanceof Error && "status" in cause && cause.status === 409) await load(); throw cause; }
+      setSelected(new Set()); setBulkDue(false);
+    }} /> : null}
     {open && board.items.some((item) => item.id === open) ? <WorkSheet api={api} projectId={projectId} itemId={open} board={board} onBoard={setBoard}
       onOpenItem={(id) => navigate({ item: id })} onClose={() => navigate({ item: null })} /> : null}
-    {baselining ? <ControlledModalDialog isOpen size="md" title={board.baseline ? t("Reset the baseline") : t("Set the baseline")} onOpenChange={(open) => { if (!open) setBaselining(false); }}
-      footer={<div className="wd-dialog-actions"><Button onPress={() => setBaselining(false)}>{t("Cancel")}</Button>
-        <Button variant="primary" onPress={async () => {
-          try { setBoard(await api.workCommand(projectId, "set_baseline")); setBaselining(false); }
-          catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); setBaselining(false); }
-        }}>{t("Save")}</Button></div>}>
+    {baselining ? <FormDialog size="md" title={board.baseline ? t("Reset the baseline") : t("Set the baseline")} onClose={() => setBaselining(false)} submitLabel={t("Save")}
+      onSubmit={async () => { setBoard(await api.workCommand(projectId, "set_baseline")); setBaselining(false); }}>
       <p className={styles.dialogText}>{board.baseline
         ? t("Today's dates replace the baseline set on {date} by {name}.", { date: format.when(board.baseline.at), name: board.baseline.byName ?? "" })
         : t("Today's dates become the plan you measure slips against.")}</p>
-    </ControlledModalDialog> : null}
+    </FormDialog> : null}
     {planning ? <PlanPackageDialog board={board} load={(packageId, startDate) => api.packagePlan(projectId, packageId, startDate)} onClose={() => setPlanning(false)}
-      onSave={async (packageId, startDate) => {
-        try { setBoard(await api.workCommand(projectId, "plan_package", { packageId, startDate })); return true; }
-        catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
-      }} /> : null}
-    {creating && board.canEdit ? <NewWorkDialog board={board} onClose={() => setCreating(false)} onCreate={async (input) => {
-      try { setBoard(await api.workCommand(projectId, "create", input)); return true; }
-      catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
-    }} /> : null}
+      onSave={async (packageId, startDate) => { setBoard(await api.workCommand(projectId, "plan_package", { packageId, startDate })); }} /> : null}
+    {creating && board.canEdit ? <NewWorkDialog board={board} onClose={() => setCreating(false)} onCreate={async (input) => { setBoard(await api.workCommand(projectId, "create", input)); }} /> : null}
   </div>;
 }
 
@@ -306,7 +301,7 @@ function PlanList({ board, items, onOpen, selected, onSelect }: { board: WorkBoa
 }
 
 /** A new task, client request or snag: its title, who does it, when it's due and its package. */
-function NewWorkDialog({ board, onClose, onCreate }: { board: WorkBoard; onClose: () => void; onCreate: (input: Record<string, unknown>) => Promise<boolean> }) {
+function NewWorkDialog({ board, onClose, onCreate }: { board: WorkBoard; onClose: () => void; onCreate: (input: Record<string, unknown>) => Promise<void> }) {
   const t = useT();
   const labels = useWorkLabels();
   const [id] = useState(() => crypto.randomUUID());
@@ -315,27 +310,19 @@ function NewWorkDialog({ board, onClose, onCreate }: { board: WorkBoard; onClose
   const [assigneeId, setAssigneeId] = useState<string | null>(board.me);
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [packageId, setPackageId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("New task")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!title.trim()} onPress={async () => {
-        setBusy(true);
-        if (await onCreate({ id, title: title.trim(), type, assigneeId, dueDate, packageId })) onClose();
-        setBusy(false);
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <TextInput label={t("Title")} isRequired autoFocus value={title} onChange={setTitle} />
-      <SegmentedControl label={t("Type")} value={type} onChange={(value) => setType(value as WorkType)}
-        options={(["task", "client_request", "snag"] as const).map((option) => ({ id: option, label: labels.type[option] }))} />
-      <div className={styles.pair}>
-        <SelectField label={t("Assignee")} placeholder={t("No one")} selectedKey={assigneeId} onSelectionChange={(key) => setAssigneeId(key === null ? null : String(key))}
-          items={board.people.map((person) => ({ id: person.membershipId, label: person.membershipId === board.me ? t("{name} (me)", { name: person.name }) : person.name }))} />
-        <DateField label={t("Due")} value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
-      </div>
-      {board.packages.length ? <SelectField label={t("Package")} placeholder={t("None")} selectedKey={packageId} onSelectionChange={(key) => setPackageId(key === null ? null : String(key))}
-        items={board.packages.map((item) => ({ id: item.id, label: item.name }))} /> : null}
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog size="md" title={t("New task")} onClose={onClose} isDirty={Boolean(title.trim())} submitLabel={t("Save")} closeOnSuccess
+    onSubmit={() => onCreate({ id, title: title.trim(), type, assigneeId, dueDate, packageId })}>
+    <TextInput label={t("Title")} isRequired maxLength={240} value={title} onChange={setTitle} />
+    <SegmentedControl label={t("Type")} value={type} onChange={(value) => setType(value as WorkType)}
+      options={(["task", "client_request", "snag"] as const).map((option) => ({ id: option, label: labels.type[option] }))} />
+    <FormRow>
+      <SelectField label={t("Assignee")} placeholder={t("No one")} selectedKey={assigneeId} onSelectionChange={(key) => setAssigneeId(key === null ? null : String(key))}
+        items={board.people.map((person) => ({ id: person.membershipId, label: person.membershipId === board.me ? t("{name} (me)", { name: person.name }) : person.name }))} />
+      <DateField label={t("Due")} value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
+    </FormRow>
+    {board.packages.length ? <SelectField label={t("Package")} placeholder={t("None")} selectedKey={packageId} onSelectionChange={(key) => setPackageId(key === null ? null : String(key))}
+      items={board.packages.map((item) => ({ id: item.id, label: item.name }))} /> : null}
+  </FormDialog>;
 }
 
 /**
@@ -343,7 +330,7 @@ function NewWorkDialog({ board, onClose, onCreate }: { board: WorkBoard; onClose
  * who does each (from the project team's roles) and its stage. Shown before anything is created.
  */
 function PlanPackageDialog({ board, load, onClose, onSave }: {
-  board: WorkBoard; load: (packageId: string, startDate: string | null) => Promise<PackagePlan>; onClose: () => void; onSave: (packageId: string, startDate: string) => Promise<boolean>;
+  board: WorkBoard; load: (packageId: string, startDate: string | null) => Promise<PackagePlan>; onClose: () => void; onSave: (packageId: string, startDate: string) => Promise<void>;
 }) {
   const t = useT();
   const format = useProjectFormat();
@@ -353,7 +340,6 @@ function PlanPackageDialog({ board, load, onClose, onSave }: {
   const [startDate, setStartDate] = useState<string | null>(null);
   const [plan, setPlan] = useState<PackagePlan | null>(null);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!packageId) return;
     let alive = true;
@@ -361,20 +347,13 @@ function PlanPackageDialog({ board, load, onClose, onSave }: {
     return () => { alive = false; };
   }, [load, packageId, startDate]);
   const shown = plan && plan.package.id === packageId ? plan : null;
-  return <ControlledModalDialog isOpen size="lg" title={t("Plan a package")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!shown || !shown.tasks.length} onPress={async () => {
-        if (!shown) return;
-        setBusy(true);
-        if (await onSave(shown.package.id, shown.startDate)) onClose();
-        setBusy(false);
-      }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <div className={styles.pair}>
-        <SelectField label={t("Package")} selectedKey={packageId} onSelectionChange={(key) => setPackageId(key === null ? null : String(key))}
+  return <FormDialog size="lg" title={t("Plan a package")} onClose={onClose} isSubmitDisabled={!shown || !shown.tasks.length} submitLabel={t("Save")} closeOnSuccess
+    onSubmit={async () => { if (shown) await onSave(shown.package.id, shown.startDate); }}>
+      <FormRow>
+        <SelectField label={t("Package")} isRequired selectedKey={packageId} onSelectionChange={(key) => setPackageId(key === null ? null : String(key))}
           items={options.map((item) => ({ id: item.id, label: `${item.name} · ${supplies[item.supply]}` }))} />
         <DateField label={t("Start")} value={shown ? parseDate(shown.startDate) : startDate ? parseDate(startDate) : null} onChange={(value) => setStartDate(value ? value.toString() : null)} />
-      </div>
+      </FormRow>
       {error ? <InlineNotice tone="error" message={error} />
         : !shown ? <Skeleton lines={4} shape="rows" />
         : !shown.tasks.length ? <EmptyState illustration={null} title={t("No standard tasks for this kind of package")} description={t("Add them in Settings → Projects → Standard tasks.")} />
@@ -385,18 +364,14 @@ function PlanPackageDialog({ board, load, onClose, onSave }: {
               <span className={task.assigneeName ? undefined : styles.muted}>{task.assigneeName ?? (task.roleLabel ? t("No {role} named", { role: task.roleLabel.toLocaleLowerCase() }) : "—")}</span>
             </li>)}
           </ol>}
-    </div>
-  </ControlledModalDialog>;
+  </FormDialog>;
 }
 
 /** A new due date for the selected work. */
 function BulkDueDialog({ count, onClose, onSave }: { count: number; onClose: () => void; onSave: (dueDate: string | null) => Promise<void> }) {
   const t = useT();
   const [dueDate, setDueDate] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Due date for {count} items", { count })} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!dueDate} onPress={async () => { setBusy(true); await onSave(dueDate); setBusy(false); }}>{t("Save")}</Button></div>}>
+  return <FormDialog size="md" title={t("Due date for {count} items", { count })} onClose={onClose} isSubmitDisabled={!dueDate} submitLabel={t("Save")} onSubmit={() => onSave(dueDate)}>
     <DateField label={t("Due")} isRequired value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
-  </ControlledModalDialog>;
+  </FormDialog>;
 }

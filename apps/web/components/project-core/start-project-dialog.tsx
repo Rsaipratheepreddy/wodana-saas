@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, CircleAlert } from "lucide-react";
 import { parseDate } from "@internationalized/date";
-import { Button, ControlledModalDialog, DateField, InlineNotice, SelectField, Skeleton, TextInput } from "@/design-system";
+import { DateField, FormDialog, FormRow, InlineNotice, SelectField, Skeleton, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { StartState } from "@/lib/project-core/types";
@@ -31,7 +31,6 @@ export function StartProjectDialog({ workspaceId, caseId, onClose }: { workspace
   const [lead, setLead] = useState<string | null>(null);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [promiseDate, setPromiseDate] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -48,22 +47,17 @@ export function StartProjectDialog({ workspaceId, caseId, onClose }: { workspace
   };
   const start = async () => {
     if (!state?.quote || !lead) return;
-    setBusy(true); setError("");
-    try {
-      const started = await api.start(caseId, { quoteId: state.quote.id, templateId: route ?? undefined, name: name.trim(), leadMembershipId: lead, startDate, promiseDate });
-      router.push(`/workspace/projects/${started.projectId}`);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not start the project.")); setBusy(false); }
+    setError("");
+    const started = await api.start(caseId, { quoteId: state.quote.id, templateId: route ?? undefined, name: name.trim(), leadMembershipId: lead, startDate, promiseDate });
+    router.push(`/workspace/projects/${started.projectId}`);
   };
   const datesValid = !startDate || !promiseDate || promiseDate >= startDate;
 
-  return <ControlledModalDialog isOpen size="md" title={t("Start project")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions">
-      <Button onPress={onClose}>{t("Cancel")}</Button>
-      {state?.project ? <Link className="wd-button" data-variant="primary" href={`/workspace/projects/${state.project.id}`}>{t("Open project")}</Link>
-        : <Button variant="primary" isLoading={busy} isDisabled={!state?.canStart || !lead || !name.trim() || !datesValid} onPress={() => void start()}>{t("Start project")}</Button>}
-    </div>}>
+  return <FormDialog size="md" title={t("Start project")} onClose={onClose} error={error || undefined} submitLabel={t("Start project")} errorTitle={t("Could not start the project.")}
+    hideSubmit={Boolean(state?.project) || !state?.canManage} isSubmitDisabled={!state?.canStart || !lead || !name.trim() || !datesValid} onSubmit={start}
+    secondaryAction={state?.project ? <Link className="wd-button" data-variant="primary" href={`/workspace/projects/${state.project.id}`}>{t("Open project")}</Link> : undefined}>
     {!state && !error ? <Skeleton lines={5} /> : null}
-    {state ? <div className={styles.dialogBody}>
+    {state ? <>
       {state.project ? <InlineNotice tone="info" message={t("This project has already started as {reference}.", { reference: state.project.reference })} />
         : !state.quote ? <InlineNotice tone="info" message={t("A project starts from an accepted quotation.")} />
         : <>
@@ -79,19 +73,18 @@ export function StartProjectDialog({ workspaceId, caseId, onClose }: { workspace
             </li>)}
           </ul>
           {state.canManage ? <>
-            <TextInput label={t("Project name")} value={name} onChange={setName} isRequired />
-            {state.templates.length > 1 ? <SelectField label={t("Route")} selectedKey={route} onSelectionChange={(key) => setRoute(String(key))}
+            <TextInput label={t("Project name")} maxLength={200} value={name} onChange={setName} isRequired />
+            {state.templates.length > 1 ? <SelectField label={t("Route")} isRequired selectedKey={route} onSelectionChange={(key) => setRoute(String(key))}
               items={state.templates.map((item) => ({ id: item.id, label: item.name }))} /> : null}
             <SelectField label={t("Project manager")} isRequired placeholder={t("Choose someone")} selectedKey={lead} onSelectionChange={(key) => setLead(String(key))}
               items={state.members.map((member) => ({ id: member.membershipId, label: member.name }))} />
-            <div className={styles.pair}>
+            <FormRow>
               <DateField label={t("Start date")} value={startDate ? parseDate(startDate) : null} onChange={(value) => setStartDate(value ? value.toString() : null)} />
-              <DateField label={t("Handover date")} value={promiseDate ? parseDate(promiseDate) : null} onChange={(value) => setPromiseDate(value ? value.toString() : null)}
+              <DateField label={t("Handover date")} minValue={startDate ? parseDate(startDate) : undefined} value={promiseDate ? parseDate(promiseDate) : null} onChange={(value) => setPromiseDate(value ? value.toString() : null)}
                 errorMessage={datesValid ? undefined : t("The handover date can't be before the start date.")} isInvalid={!datesValid} />
-            </div>
+            </FormRow>
           </> : <InlineNotice tone="info" message={t("Ask a project manager to start this project.")} />}
         </>}
-    </div> : null}
-    {error ? <InlineNotice tone="error" message={error} /> : null}
-  </ControlledModalDialog>;
+    </> : null}
+  </FormDialog>;
 }

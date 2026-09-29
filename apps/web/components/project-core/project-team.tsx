@@ -6,7 +6,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectDetail } from "@/lib/project-core/types";
 import styles from "./project-core.module.css";
 
-type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
+type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
 const NOBODY = "__nobody";
 
 /** One named person per role. The project manager leads; the firm's role list lives in Settings → Projects. */

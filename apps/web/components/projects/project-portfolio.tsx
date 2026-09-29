@@ -1,11 +1,11 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, FolderKanban, ContactRound, UsersRound, CalendarClock, Flag, CheckCircle2 } from "lucide-react";
-import { Avatar, Badge, Button, DesignSystemProvider, ControlledModalDialog, DataGrid, Form, SearchInput, SegmentedControl, SelectField, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { Avatar, Badge, Button, DesignSystemProvider, DataGrid, FormDialog, SearchInput, SegmentedControl, SelectField, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { tKey, type Translate } from "@/lib/i18n/keys";
 import { jsonRequest } from "@/lib/commercial/client";
 import { projectPath, label } from "@/lib/projects/execution";
@@ -81,18 +81,11 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
     finally { setBusy(false); }
   }
 
-  async function createProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!caseId || busy) return;
-    setBusy(true);
+  async function createProject() {
+    if (!caseId) return;
     setError("");
-    try {
-      const project = await jsonRequest<{ id: string }>(projectPath(workspaceId, "planning"), "POST", { caseId });
-      router.push(`/workspace/projects/${project.id}/plan-teams`);
-    } catch (cause) {
-      setError((cause as Error).message);
-      setBusy(false);
-    }
+    const project = await jsonRequest<{ id: string }>(projectPath(workspaceId, "planning"), "POST", { caseId });
+    router.push(`/workspace/projects/${project.id}/plan-teams`);
   }
 
   return <DesignSystemProvider className={enquiryStyles.provider}><section aria-label={t("Projects")} className={`${enquiryStyles.page} ${styles.compactPage}`}>
@@ -141,21 +134,18 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
       searchValue={search}
       selectedView={status}
     /></>}
-    <ControlledModalDialog isOpen={open} onOpenChange={setOpen} title={t("Start project")}>
-      <Form className={styles.form} onSubmit={createProject}>
-        {error ? <p className={styles.error} role="alert">{error}</p> : null}
-        <SelectField
-          isDisabled={busy || !cases.length}
-          isRequired
-          items={cases.map((item) => ({ id: item.id, label: `${item.title} · ${item.customer}` }))}
-          label={t("Planning case")}
-          onSelectionChange={(key) => setCaseId(String(key ?? ""))}
-          placeholder={t("Choose a case")}
-          selectedKey={caseId || null}
-        />
-        {!busy && !cases.length && !error ? <p className={styles.empty}>{t("No eligible cases are available.")}</p> : null}
-        <div className={styles.formActions}><Button onPress={() => setOpen(false)}>{t("Cancel")}</Button><Button isDisabled={!caseId} isLoading={busy} type="submit" variant="primary">{t("Create planning workspace")}</Button></div>
-      </Form>
-    </ControlledModalDialog>
+    <FormDialog isOpen={open} onClose={() => setOpen(false)} title={t("Start project")} error={error || undefined} isSubmitDisabled={!caseId || busy}
+      submitLabel={t("Create planning workspace")} onSubmit={createProject}>
+      <SelectField
+        isDisabled={busy || !cases.length}
+        isRequired
+        items={cases.map((item) => ({ id: item.id, label: `${item.title} · ${item.customer}` }))}
+        label={t("Planning case")}
+        onSelectionChange={(key) => setCaseId(String(key ?? ""))}
+        placeholder={t("Choose a case")}
+        selectedKey={caseId || null}
+      />
+      {!busy && !cases.length && !error ? <p className={styles.empty}>{t("No eligible cases are available.")}</p> : null}
+    </FormDialog>
   </section></DesignSystemProvider>;
 }
