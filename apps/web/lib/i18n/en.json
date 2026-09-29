@@ -10929,5 +10929,11 @@
   "Allow the camera to scan": "Allow the camera to scan",
   "Scan the code on a printed order or move to receive it.": "Scan the code on a printed order or move to receive it.",
   "Allow camera": "Allow camera",
-  "Open settings": "Open settings"
+  "Open settings": "Open settings",
+  "Send a template to reopen it.": "Send a template to reopen it.",
+  "Templates could not be loaded.": "Templates could not be loaded.",
+  "Templates are added and approved on the web.": "Templates are added and approved on the web.",
+  "Template · {code}": "Template · {code}",
+  "Voice note": "Voice note",
+  "Video": "Video"
 }

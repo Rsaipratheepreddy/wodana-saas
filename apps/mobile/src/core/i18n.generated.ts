@@ -108,6 +108,7 @@ export const dictionaries: Record<string, Record<string, string>> = {
     "Site photo": "صورة الموقع",
     "Add photos": "إضافة صور",
     "Measure": "قياس",
+    "Open {name}": "فتح {name}",
     "Choose a room": "اختر غرفة",
     "Field": "حقل",
     "Budget": "الميزانية",
@@ -150,6 +151,7 @@ export const dictionaries: Record<string, Record<string, string>> = {
     "Quote": "عرض سعر",
     "Project": "المشروع",
     "Location": "الموقع",
+    "Template": "قالب",
     "Hidden": "مخفي",
     "Search": "بحث",
     "Today": "اليوم",
@@ -862,6 +864,7 @@ export const dictionaries: Record<string, Record<string, string>> = {
     "Verify": "تحقق",
     "Not delivered": "لم يتم التسليم",
     "Add note": "إضافة ملاحظة",
+    "Opening…": "جارٍ الفتح…",
     "Notifications": "الإشعارات",
     "Returned": "مُعاد"
   },
@@ -973,6 +976,7 @@ export const dictionaries: Record<string, Record<string, string>> = {
     "Site photo": "साइट फ़ोटो",
     "Add photos": "फ़ोटो जोड़ें",
     "Measure": "मापें",
+    "Open {name}": "{name} खोलें",
     "Choose a room": "कमरा चुनें",
     "Field": "फ़ील्ड",
     "Budget": "बजट",
@@ -1015,6 +1019,7 @@ export const dictionaries: Record<string, Record<string, string>> = {
     "Quote": "कोटेशन",
     "Project": "प्रोजेक्ट",
     "Location": "स्थान",
+    "Template": "टेम्पलेट",
     "Hidden": "छिपा हुआ",
     "Search": "खोजें",
     "Today": "आज",
@@ -1727,6 +1732,7 @@ export const dictionaries: Record<string, Record<string, string>> = {
     "Verify": "सत्यापित करें",
     "Not delivered": "डिलीवर नहीं हुआ",
     "Add note": "नोट जोड़ें",
+    "Opening…": "खुल रहा है…",
     "Notifications": "नोटिफिकेशन",
     "Returned": "वापस भेजा गया"
   }

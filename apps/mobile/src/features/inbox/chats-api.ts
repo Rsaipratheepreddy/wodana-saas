@@ -2,10 +2,11 @@ import * as Crypto from 'expo-crypto';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useApi } from '../../core/api';
 import { useSession } from '../../core/session';
+import type { ChatAttachment, ChatTemplate } from './chat-content';
 
 /**
  * The team inbox (WhatsApp, email and portal chats) on the phone, on the web's endpoints: Mine and
- * Unassigned open chats, a thread, a text reply or an internal note. Templates, labels and snoozing stay
+ * Unassigned open chats, a thread with its files and templates, a text or template reply, or an internal note. Labels and snoozing stay
  * on the web.
  */
 export type ChatView = 'mine' | 'unassigned';
@@ -18,6 +19,8 @@ export type ChatRow = {
 export type ChatMessage = {
   id: string; direction: 'inbound' | 'outbound' | 'internal'; status: string; senderName: string | null; bodyText: string | null;
   hiddenAt: string | null; createdAt: string; failureCode: string | null; metadata?: Record<string, unknown> | null;
+  /** A photo, voice note, video or document on the message, kept in the workspace's storage. */
+  attachment?: ChatAttachment | null;
 };
 
 export const chatKeys = {
@@ -56,7 +59,7 @@ export function useChat(id: string) {
   });
 }
 
-/** WhatsApp lets a free-text reply only within 24 hours of the client's last message; after it, a template (on the web). */
+/** WhatsApp lets a free-text reply only within 24 hours of the client's last message; after it, a template. */
 export const replyWindowOpen = (chat: Pick<ChatDetail, 'channel' | 'windowClosesAt'>, now = Date.now()) =>
   chat.channel !== 'whatsapp' || (!!chat.windowClosesAt && Date.parse(chat.windowClosesAt) > now);
 
@@ -69,13 +72,35 @@ export function useMarkChatRead(id: string) {
   });
 }
 
-/** A reply to the client (`outbound`) or a note only the team sees (`internal`); a retry keeps its message id. */
+/**
+ * A reply to the client (`outbound`), a note only the team sees (`internal`), or an approved WhatsApp template (its
+ * values from the chat's records, or typed for this message); a retry keeps its message id.
+ */
 export function useSendChat(id: string) {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ text, internal, clientMessageId = Crypto.randomUUID() }: { text: string; internal: boolean; clientMessageId?: string }) =>
-      api.send(`crm/conversations/${id}/messages`, 'POST', { clientMessageId, direction: internal ? 'internal' : 'outbound', bodyText: text.trim() }),
+    mutationFn: ({ text = '', internal = false, template, clientMessageId = Crypto.randomUUID() }: {
+      text?: string; internal?: boolean; template?: { id: string; parameters?: string[] }; clientMessageId?: string;
+    }) => api.send(`crm/conversations/${id}/messages`, 'POST', template
+      ? { clientMessageId, direction: 'outbound', templateId: template.id, ...(template.parameters ? { templateParameters: template.parameters } : {}) }
+      : { clientMessageId, direction: internal ? 'internal' : 'outbound', bodyText: text.trim() }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: chatKeys.all(api.workspaceId) }),
+  });
+}
+
+/** The workspace's WhatsApp templates (only approved, numbered ones are sent), fetched when the picker opens. */
+export function useChatTemplates(enabled: boolean) {
+  const api = useApi();
+  return useQuery({ queryKey: ['chats', api.workspaceId, 'templates'], queryFn: () => api.get<ChatTemplate[]>('crm/inbox/templates'), enabled, staleTime: 5 * 60_000 });
+}
+
+/** The chat's records' values a template fills in (client name, enquiry, project…). */
+export function useChatValues(id: string, enabled: boolean) {
+  const api = useApi();
+  return useQuery({
+    queryKey: ['chats', api.workspaceId, 'context', id],
+    queryFn: () => api.get<{ variables: Record<string, string | null> }>(`crm/conversations/${id}/context`).then((context) => context.variables ?? {}),
+    enabled,
   });
 }
