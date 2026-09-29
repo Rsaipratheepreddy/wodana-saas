@@ -102,7 +102,7 @@ export function ReportReview({ api, state, reportId, onState, onClose, onReject 
         </div>
 
         {report.photos.length ? <fieldset className={styles.group}>
-          <legend>{t("Photos for the client")} <span className={styles.muted}>{t("{count} of {limit}", { count: picked.length, limit: PICK_LIMIT })}</span></legend>
+          <legend>{t("Photos for the client")} <span className={styles.muted}>{t("{count} chosen · up to {limit}", { count: picked.length, limit: PICK_LIMIT })}</span></legend>
           <ul className={styles.photos}>{report.photos.map((photo) => <li key={photo.id} data-picked={photo.forClient || undefined}>
             {/* eslint-disable-next-line @next/next/no-img-element -- a private report photo */}
             <img src={api.photoUrl(photo.id)} alt={photo.name} loading="lazy" />

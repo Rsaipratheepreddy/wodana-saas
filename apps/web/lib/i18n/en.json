@@ -11527,5 +11527,8 @@
   "The milestones add up to {total}%, not 100%.": "The milestones add up to {total}%, not 100%.",
   "Mark at least one milestone as paid before work starts.": "Mark at least one milestone as paid before work starts.",
   "Create and use": "Create and use",
-  "Paid before work starts": "Paid before work starts"
+  "Paid before work starts": "Paid before work starts",
+  "{name} refused.": "{name} refused.",
+  "{name} verified.": "{name} verified.",
+  "{count} chosen · up to {limit}": "{count} chosen · up to {limit}"
 }
