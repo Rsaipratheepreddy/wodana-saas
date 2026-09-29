@@ -31,11 +31,12 @@ describe("theme bootstrap", () => {
     expect(runAt("/workspace", { stored: "sepia", prefersDark: true })).toBe("dark");
   });
 
-  it("keeps client and supplier pages light", () => {
+  it("keeps client and supplier pages, and printed documents, light", () => {
     expect(runAt("/portal/palm", { stored: "dark" })).toBe("light");
     expect(runAt("/enquiry/abc", { prefersDark: true })).toBe("light");
     expect(runAt("/quotation/case-1", { stored: "dark" })).toBe("light");
     expect(runAt("/vendor/order", { stored: "dark" })).toBe("light");
+    expect(runAt("/print/order/o1", { stored: "dark" })).toBe("light");
     expect(runAt("/portals", { stored: "dark" })).toBe("dark");
   });
 

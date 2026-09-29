@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSection } from "@/lib/navigation/use-section";
-import { Plus } from "lucide-react";
+import { Plus, ScanLine } from "lucide-react";
 import { Button, PageHeader, Tabs } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { RECEIVE_PATH } from "@/lib/operations/receive-link";
 import { purchasingApi } from "@/lib/purchasing/client";
 import type { PurchasingSection } from "@/lib/purchasing/sections";
 import { useProjectFilter, withProject } from "../operations/ops";
@@ -34,6 +35,7 @@ export function PurchasingPage({ workspaceId, section: initialSection }: { works
   const t = useT();
   const [section, move] = useSection(initialSection);
   const params = useSearchParams();
+  const router = useRouter();
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const [projectId, setProjectId] = useProjectFilter();
   const [addingSupplier, setAddingSupplier] = useState(false);
@@ -56,7 +58,9 @@ export function PurchasingPage({ workspaceId, section: initialSection }: { works
     move(next, withProject(record, projectId));
   };
   const action = section === "orders" ? <Button variant="primary" onPress={() => setNewOrder(true)}><Plus aria-hidden="true" size={15} />{t("New order")}</Button>
-    : section === "suppliers" ? <Button variant="primary" onPress={() => setAddingSupplier(true)}><Plus aria-hidden="true" size={15} />{t("Add supplier")}</Button> : null;
+    : section === "suppliers" ? <Button variant="primary" onPress={() => setAddingSupplier(true)}><Plus aria-hidden="true" size={15} />{t("Add supplier")}</Button>
+    // Deliveries: receive by scanning the code on the printed order or move (D-46).
+    : section === "deliveries" ? <Button variant="primary" onPress={() => router.push(RECEIVE_PATH)}><ScanLine aria-hidden="true" size={15} />{t("Scan to receive")}</Button> : null;
   return <div className={styles.page}>
     <PageHeader title={t("Purchasing")} actions={action} />
     <Tabs tour="purchasing-tab" selectedKey={section} onSelectionChange={(key) => go(key as PurchasingSection)} items={[

@@ -3,9 +3,12 @@ import { Linking, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Crypto from 'expo-crypto';
-import { Mail, PackageCheck, Phone, ShoppingCart, Truck } from 'lucide-react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Mail, PackageCheck, Phone, ScanLine, ShoppingCart, Truck } from 'lucide-react-native';
 import { errorMessage, useApi } from '../../core/api';
+import { appRouteFor } from '../../core/deep-links';
 import { useFormat } from '../../core/format';
+import { haptic } from '../../core/haptics';
 import { key, useT } from '../../core/i18n';
 import type { LocalPhoto } from '../../core/media';
 import { useOutbox, usePending } from '../../core/outbox';
@@ -48,6 +51,8 @@ export function DeliveriesScreen() {
     ]} />}
     loading={deliveries.isLoading} error={deliveries.error ? errorMessage(deliveries.error, t('Deliveries could not be loaded.')) : null} onRetry={() => void deliveries.refetch()}
     onRefresh={() => void deliveries.refetch()} refreshing={deliveries.isRefetching}
+    // Camera first (D-46): the code on the printed order or move opens what arrived.
+    footer={data?.canReceive ? <Button label={t('Scan to receive')} icon={ScanLine} variant="primary" size="lg" full onPress={() => router.push('/purchasing/scan')} /> : undefined}
     empty={<Empty icon={Truck} title={view === 'expected' ? t('Nothing expected') : view === 'inspect' ? t('Nothing to inspect') : t('Nothing received yet')} />}
     renderItem={(item, _, first) => item.order
       ? <ListRow first={first} icon={Truck} title={item.order.supplierName}
@@ -353,5 +358,39 @@ export function MoveScreen() {
         {num(value(line.id, line.quantity)) < num(line.quantity) ? <TextField label={t('Why is it short?')} value={loss[line.id] ?? ''} onChangeText={(next) => setLoss((current) => ({ ...current, [line.id]: next }))} maxLength={500} /> : null}
       </> : <Text variant="caption" tone="secondary">{`${format.number(line.received ?? line.quantity, 2)} / ${format.number(line.quantity, 2)} ${line.unit}`}{line.lossReason ? ` · ${line.lossReason}` : ''}</Text>}
     </Stack>)}
+  </Screen>;
+}
+
+/**
+ * Scan to receive (D-46), camera first: the code printed on an order or a move opens its receive screen. Codes that
+ * aren't one of ours are ignored with a word; without the camera, the phone's settings are one tap away.
+ */
+export function ScanScreen() {
+  const t = useT();
+  const theme = useTheme();
+  const router = useRouter();
+  const [permission, requestPermission] = useCameraPermissions();
+  const [unknown, setUnknown] = useState(false);
+  const handled = useRef(false);
+  const scanned = ({ data }: { data: string }) => {
+    if (handled.current) return;
+    const route = appRouteFor(data);
+    if (!route || !/^\/purchasing\/(receive|move)\/[0-9a-fA-F-]{36}$/.test(route)) { setUnknown(true); return; }
+    handled.current = true;
+    haptic.success();
+    router.replace(route as never);
+  };
+  if (!permission) return <Screen back title={t('Scan to receive')}><Loading shape="record" count={2} /></Screen>;
+  if (!permission.granted) return <Screen back title={t('Scan to receive')}>
+    <Empty icon={ScanLine} title={t('Allow the camera to scan')} detail={t('Scan the code on a printed order or move to receive it.')}
+      action={permission.canAskAgain ? { label: t('Allow camera'), onPress: () => void requestPermission() } : { label: t('Open settings'), onPress: () => void Linking.openSettings() }} />
+  </Screen>;
+  return <Screen back title={t('Scan to receive')} scroll={false}>
+    <View style={{ flex: 1, borderRadius: theme.radius.lg, overflow: 'hidden', backgroundColor: theme.colors.surface }}>
+      <CameraView style={{ flex: 1 }} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={scanned} accessibilityLabel={t('Camera')} />
+    </View>
+    <Text variant="caption" tone={unknown ? 'danger' : 'secondary'} accessibilityLiveRegion="polite">
+      {unknown ? t("That code isn't an order or a move. Scan the code on the printed order or move.") : t('Point the camera at the code on the printed order or move.')}
+    </Text>
   </Screen>;
 }

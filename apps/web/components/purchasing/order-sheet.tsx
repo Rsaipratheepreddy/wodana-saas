@@ -353,6 +353,8 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
           <OrderStatusLabel status={order.status} />
           <span>{[order.supplierName, order.companyName, order.revision ? t("Change {number}", { number: order.revision }) : ""].filter(Boolean).join(" · ")}</span>
           <ProjectLinks projects={order.projects} />
+          {/* The printed order carries the code that opens its receive screen on arrival (D-46). */}
+          {order.status !== "draft" && order.status !== "cancelled" ? <a className={ops.projectLink} href={`/print/order/${order.id}`} target="_blank" rel="noopener">{t("Print")}</a> : null}
         </div>
         {order.status !== "cancelled" ? <StageTracker ariaLabel={t("Where the order is")} stages={stages()} /> : null}
         {step ? <NextStep title={step.title} detail={step.detail} tone={step.tone} /> : null}
