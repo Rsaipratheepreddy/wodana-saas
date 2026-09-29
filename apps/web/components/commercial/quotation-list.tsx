@@ -75,7 +75,7 @@ export function QuotationList({
         {matching.map(quote => <article className={cards.card} key={quote.id}>
           <div className={cards.meta}><span className={cards.icon}><FileText size={20} aria-hidden="true"/></span><span className={s.status} data-status={quote.status}>{status(quote.status)}</span></div>
           <h3><Link href={href(quote.id)}>{quote.title}</Link></h3>
-          <p className={cards.reference}>QT-{quote.id.slice(0,8).toUpperCase()} · {t("Version {number}", { number: quote.number })}{quote.kind === "variation" ? ` · ${t("Variation")}` : ""}</p>
+          <p className={cards.reference}>{t("Q-{number}", { number: quote.number })}{quote.kind === "variation" ? ` · ${t("Variation")}` : ""}</p>
           <strong className={cards.amount}>{money(acceptedQuoteValue(quote), quote.currency, locale)}</strong>
           <dl><div><dt>{t("Items")}</dt><dd>{quote.lines.length}</dd></div><div><dt>{t("Valid until")}</dt><dd>{quote.validUntil || t("Not set")}</dd></div></dl>
           <Link className={cards.open} href={href(quote.id)}>{t(["draft", "internal_review", "internal_approved"].includes(quote.status) ? "Open quotation" : "View version")}<ArrowRight size={14} aria-hidden="true"/></Link>
@@ -89,7 +89,7 @@ export function QuotationList({
                     {q.title}
                   </Link>
                   <small className={s.detail}>
-                    QT-{q.id.slice(0, 8).toUpperCase()}
+                    {t("Q-{number}", { number: q.number })}
                     {q.kind === "variation" ? ` · ${t("Variation")}` : q.round ? ` · ${t(q.round === "design" ? "Design" : "Main")}` : ""}
                   </small>
                 </>;}},

@@ -119,7 +119,7 @@ export function referencePresentation(quote: Quote, company: string, customer: s
       companyName: brand, companyLogo, clientName: quote.cover?.preparedFor || customer,
       clientPhone: context?.customerPhone || contact?.phone || '', clientEmail: context?.customerEmail || '',
       projectName: context?.title || quote.title, location: quote.cover?.location || context?.customerAddress || '',
-      reference: `QT-${quote.id.slice(0, 8).toUpperCase()} · Rev ${quote.number}`, date: quote.createdAt?.slice(0, 10) || '',
+      reference: `Q-${quote.number}`, date: quote.createdAt?.slice(0, 10) || '',
       preparedBy: quote.cover?.signerName || '', estimator: '', manager: '',
     },
     scopeColumns: {hidden: [], custom: []},

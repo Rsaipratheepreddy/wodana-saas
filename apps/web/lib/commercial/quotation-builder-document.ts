@@ -15,7 +15,7 @@ export function builderPresentation(quote:Quote,company:string,customer:string,c
   text('subtitle',quote.cover?.subtitle||'Design, thoughtfully considered.',76,615,750,120,24,'#66746b'),
   text('for','PREPARED FOR',76,965,370,36,14,'#738278'),
   text('customer',quote.cover?.preparedFor||customer,76,1010,700,90,26),
-  text('reference',`QT-${quote.id.slice(0,8).toUpperCase()}  ·  Revision ${quote.number}`,76,1200,680,40,16,'#738278'),
+  text('reference',`Q-${quote.number}`,76,1200,680,40,16,'#738278'),
  ];
  const result:QuotePresentation = {...existing,
   pageOrder:existing?.pageOrder??['cover','scope','payments','terms','acceptance',...(existing?.pages.filter(page=>page.kind==='custom'&&page.id!=='cover').map(page=>page.id)??[])],

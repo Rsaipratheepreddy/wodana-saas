@@ -94,7 +94,7 @@ export function QuotationDocumentPage({
       <header className={d.documentHeader}>
         {brand ? <BrandLogo brand={brand} /> : <strong>{t("Quotation")}</strong>}
         <span>
-          {t("QUOTATION")}<strong>QT-{quote.id.slice(0, 8).toUpperCase()}</strong>
+          {t("QUOTATION")}<strong>{t("Q-{number}", { number: quote.number })}</strong>
           <small>{t("Version {number}", { number: quote.number })}</small>
         </span>
       </header>

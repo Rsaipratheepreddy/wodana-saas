@@ -44,7 +44,8 @@ export function QuotationCover({
     location: "",
     subtitle: t("Interior design & fit-out proposal"),
   };
-  const reference = `QT-${quote.id.slice(0, 8).toUpperCase()}`;
+  // The same quote number the team uses (Q-1), never a derived id.
+  const reference = t("Q-{number}", { number: quote.number });
   const coverStyle = {
     "--quotation-cover-color": brand?.primaryColor || "#E4E3DE",
     ...(cover.banner

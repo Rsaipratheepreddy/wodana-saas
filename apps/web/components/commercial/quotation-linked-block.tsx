@@ -21,7 +21,7 @@ export function QuotationLinkedBlock({id,quote}:{id:string;quote:Quote}){
  const lineAmount=(line:{id:string;quantity:number;rate:number})=>facts?.lineAmount[line.id]!==undefined?Number(facts.lineAmount[line.id]):line.quantity*line.rate;
  const stored=quote.presentation?.details??{};
  // The reference the app generated before is replaced by the quote's own (Q-1 · R1); anything typed stays.
- const generated=(value?:string)=>!value||/^QT-[0-9A-F]{8} · Rev \d+$/.test(value);
+ const generated=(value?:string)=>!value||/^(QT-[0-9A-F]{8} · Rev \d+|Q-\d+)$/.test(value);
  const details={...stored,
   reference:generated(stored.reference)?(facts?.reference??stored.reference):stored.reference,
   date:stored.date||facts?.date||'',
