@@ -11,6 +11,7 @@ import {
   palmMaterialListSignedOff,
   paymentHasFinanceVerifiedReceipt,
   releasePaymentIsOperational,
+  requestBlocksRelease,
 } from "@/lib/commercial/release";
 import type { CommercialState } from "@/lib/commercial/types";
 import s from "./commercial.module.css";
@@ -43,9 +44,7 @@ export function PreExecutionFlow({
     requiredPayments.length > 0 &&
     requiredPayments.every((payment) =>
       releasePaymentIsOperational(payment) && paymentHasFinanceVerifiedReceipt(data, payment));
-  const openChanges = data.requests.filter(
-    (request) => !["resolved", "declined", "withdrawn"].includes(request.status),
-  ).length;
+  const openChanges = data.requests.filter(requestBlocksRelease).length;
   const materialsReady = Boolean(
     accepted && (data.palmFlow ? palmMaterialListSignedOff(data, accepted) : materialApprovalsComplete(accepted, data.materialApprovals)),
   );

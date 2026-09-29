@@ -114,7 +114,7 @@ describe("CRM inbox", () => {
   it("offers to connect WhatsApp when no number is connected", async () => {
     const { data, record } = setup({ whatsappConnected: false }, { payloads: { "inbox/templates": [] } });
     render(<CrmInbox initialData={data} initialRecordId={record.id} />);
-    expect(await screen.findByText(/Connect WhatsApp in Integrations to reply/)).toBeInTheDocument();
+    expect(await screen.findByText(/Connect WhatsApp in Connections to reply/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Connect WhatsApp" })).toHaveAttribute("href", "/workspace/integrations");
     expect(screen.getByRole("button", { name: "Templates" })).toBeDisabled();
   });

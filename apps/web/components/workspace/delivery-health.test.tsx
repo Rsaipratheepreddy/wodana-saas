@@ -38,7 +38,7 @@ describe("delivery health rules", () => {
     expect(channelState(channel({ waiting: 4, oldestWaitingAt: minutesAgo(30) }), ok)).toBe("waiting");
     expect(channelState(channel({ waiting: 1 }), { worker: { status: "not-reporting", lastSeenAt: null, delivery: null } })).toBe("failing");
     expect(nextStep(t, channel({ teamEmail: false, configured: false }), "not-set-up")?.text).toBe("Email isn't set up. Ask support to turn on email sending.");
-    expect(nextStep(t, channel({ channel: "whatsapp", configured: false, connection: null }), "not-set-up")).toEqual({ text: "Connect WhatsApp in Integrations.", href: "/workspace/integrations" });
+    expect(nextStep(t, channel({ channel: "whatsapp", configured: false, connection: null }), "not-set-up")).toEqual({ text: "Connect WhatsApp in Connections.", href: "/workspace/integrations" });
     expect(nextStep(t, channel({}), "working")).toBeNull();
     expect(failureReason(t, { at: "", code: "MAILGUN_HTTP_401", message: null })).toBe("The email service refused the sending credentials");
     expect(failureReason(t, { at: "", code: "destination_missing", message: null })).toBe("No address or phone on file");
@@ -57,7 +57,7 @@ describe("Settings → Delivery", () => {
     expect(screen.getByText("Not delivering")).toBeInTheDocument();
     expect(screen.getByText(/Last failed .*: The email service refused the sending credentials/)).toBeInTheDocument();
     expect(screen.getByText(/2 not delivered in 24 hours/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Connect WhatsApp in Integrations." })).toHaveAttribute("href", "/workspace/integrations");
+    expect(screen.getByRole("link", { name: "Connect WhatsApp in Connections." })).toHaveAttribute("href", "/workspace/integrations");
     expect(screen.getByText(/3 phones/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Send me a test" }));
     await waitFor(() => expect(screen.getByText("Test sent to your email and phone.")).toBeInTheDocument());

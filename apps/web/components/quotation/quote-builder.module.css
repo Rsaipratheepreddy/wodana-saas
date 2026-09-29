@@ -231,6 +231,9 @@
 
 /* Flow, payments and revision changes. */
 .waiting { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+/* The file the client decided in (Q-24): its caption, then the file or the upload. */
+.evidence { display: flex; flex-direction: column; gap: var(--wd-space-2); }
+.evidenceFile { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
 .payments { display: flex; flex-direction: column; gap: var(--wd-space-2); padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
 .paymentsHead { display: flex; align-items: center; justify-content: space-between; }
 .paymentsHead h3 { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }

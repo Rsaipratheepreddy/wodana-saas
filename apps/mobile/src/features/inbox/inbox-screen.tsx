@@ -54,7 +54,7 @@ export function InboxScreen() {
     if (!item.readAt) read.mutate(item.id);
     const route = appRouteFor(item.deepLink);
     if (route) router.push(route as Href);
-    // A notice the app has no screen for (finance, suppliers…) opens on the web, in the browser.
+    // A notice the app has no screen for (settings, AI apps…) opens on the web, in the browser.
     else if (item.webUrl) void Linking.openURL(item.webUrl).catch(() => toast.show(t('Open this on the web to see it.')));
     else toast.show(t('Open this on the web to see it.'));
   };

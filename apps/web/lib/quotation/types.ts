@@ -5,7 +5,7 @@ export type QuoteView = "area" | "trade" | "area_trade";
 export type QuotationSettings = {
   defaultView: QuoteView; pricesIncludeTax: boolean; rounding: "line" | "document"; defaultMarkupPercent: string;
   marginFloorPercent: string | null; discountApprovalPercent: string | null; validityDays: number; internalReview: boolean;
-  priceBookId: string | null; version: number;
+  priceBookId: string | null; decisionReminderDays: number[]; expiryWarningDays: number; version: number;
 };
 
 export type BuildUpRow = {
@@ -60,10 +60,12 @@ export type BuilderState = {
   quote: {
     id: string; number: number; title: string; status: string; kind: string; round: string | null; currency: string; decimals: number; validUntil: string | null; taxRate: string; revision: number;
     paymentTerms: PaymentMilestone[]; approvedBy: string | null;
-    clientDecision: { decision: string; decidedBy: string; decidedAt: string; note: string; method: string | null; recordedBy: string | null } | null;
+    clientDecision: { decision: string; decidedBy: string; decidedAt: string; note: string; method: string | null; recordedBy: string | null; evidence?: { id: string; name: string } | null } | null;
   };
   family: Array<{ id: string; number: number; status: string; total: string; createdAt: string | null }>;
-  flow: { internalReview: boolean; reviewAction: "approve" | "qs_approve"; canReview: boolean; canRecordDecision: boolean };
+  /** Whether this person may extend a sent or expired quote's validity (Q-7). */
+  canEditValidity?: boolean;
+  flow: { internalReview: boolean; reviewAction: "approve" | "qs_approve"; canReview: boolean; canRecordDecision: boolean; decisionEvidenceRequired?: boolean };
   paymentTemplates: Array<{ id: string; name: string; milestones: PaymentMilestone[] }>;
   settings: QuotationSettings;
   areas: Array<{ id: string; name: string }>;

@@ -40,7 +40,8 @@ describe("firm kit role templates", () => {
       "crm.leads.view", "crm.leads.manage", "crm.opportunities.manage", "crm.opportunities.transition",
       "pre_projects.view", "pre_projects.create", "pre_projects.edit", "catalog.view",
     ]));
-    expect(sales.permissions.filter((code) => code.startsWith("commercial.") || code === "crm.settings.manage" || code === "crm.privacy.erase")).toEqual([]);
+    // No costs, approvals or settings; recording a client's decision given outside the portal is theirs (Q-24).
+    expect(sales.permissions.filter((code) => code.startsWith("commercial.") || code === "crm.settings.manage" || code === "crm.privacy.erase")).toEqual(["commercial.record_decision"]);
   });
 
   it("keeps the estimator and finance reviewer as the seeded review roles", () => {

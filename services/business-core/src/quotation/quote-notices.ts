@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { permissionHolders } from "../commercial/commercial-notices";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 
 type Db = Pick<PoolClient, "query">;
@@ -12,6 +13,8 @@ export async function noticeQuoteStep(db: Db, input: {
   workspaceId: string; caseId: string; quoteId: string; number: number; title: string; action: string; actorUserId: string; revision: number; note?: string; decision?: string;
   /** The permission the review needs: `commercial.estimate` for a QS estimate review, else `commercial.approve` (variations, plain approval). */
   reviewPermission?: "commercial.approve" | "commercial.estimate";
+  /** Sales recorded the client's decision from outside the portal: the estimators and deal approvers hear it too (Q-24). */
+  recordedBySales?: boolean;
 }) {
   const facts = (await db.query<{ clientName: string; ownerUserId: string | null }>(
     `SELECT coalesce(party.display_name, opportunity.title) AS "clientName", owner.user_id AS "ownerUserId"
@@ -48,7 +51,9 @@ export async function noticeQuoteStep(db: Db, input: {
   } else if (input.action === "return") {
     await tell([facts.ownerUserId, ...await editors(db, input)], "quotation.returned");
   } else if (input.action === "record_decision") {
-    await tell([facts.ownerUserId, ...await editors(db, input)], input.decision === "accept" ? "quotation.client_accepted" : "quotation.client_changes", input.decision === "accept");
+    const oversight = input.recordedBySales
+      ? [...await permissionHolders(db, input.workspaceId, "commercial.estimate", 20), ...await permissionHolders(db, input.workspaceId, "commercial.deal.approve", 20)] : [];
+    await tell([facts.ownerUserId, ...await editors(db, input), ...oversight], input.decision === "accept" ? "quotation.client_accepted" : "quotation.client_changes", input.decision === "accept");
   }
 }
 

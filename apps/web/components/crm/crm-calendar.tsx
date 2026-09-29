@@ -229,7 +229,7 @@ function GoogleEventDialog({ workspaceId, connections, date, onClose, onSaved }:
     const selectedCalendar = calendars[Number(calendarIndex)];
     // The fields hold the workspace's wall clock, so they are read in its zone.
     const from = new Date(zonedDateTimeToIso(start, timeZone) ?? NaN), to = new Date(zonedDateTimeToIso(end, timeZone) ?? NaN);
-    if (!selectedCalendar) throw new Error(t("Choose a writable Google calendar in Integrations."));
+    if (!selectedCalendar) throw new Error(t("Choose a writable Google calendar in Connections."));
     if (!title.trim() || !Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || to <= from) throw new Error(t("Enter a title and an end time after the start."));
     const attendeeEmails = attendees.split(/[\s,;]+/).map(email => email.trim()).filter(Boolean);
     const response = await fetch(`/api/workspace/integration-connections/${selectedCalendar.connectionId}/tools`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId, action: "calendar.create", idempotencyKey, payload: { calendarId: selectedCalendar.calendarId, summary: title.trim(), description: description.trim() || undefined, location: location.trim() || undefined, start: from.toISOString(), end: to.toISOString(), timeZone, attendeeEmails, sendUpdates: attendeeEmails.length ? "all" : "none" } }) });

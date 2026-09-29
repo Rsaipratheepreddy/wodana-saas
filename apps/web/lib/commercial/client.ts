@@ -11,6 +11,7 @@ export const statusLabel: Record<string, string> = {
   declined: tKey("Declined"),
   superseded: tKey("Replaced"),
   withdrawn: tKey("Withdrawn"),
+  expired: tKey("Expired"),
   open: tKey("Open"),
   under_review: tKey("Under review"),
   awaiting_decision: tKey("Awaiting decision"),

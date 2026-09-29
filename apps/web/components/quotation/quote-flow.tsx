@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { Button, Checkbox, DataGrid, type DataGridColumn, EmptyState, FormDialog, FormRow, FormSection, IconButton, InlineNotice, PercentageInput, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, VisuallyHidden } from "@/design-system";
-import { tKey } from "@/lib/i18n/keys";
+import { type CalendarDate, parseDate, today } from "@internationalized/date";
+import { Button, Checkbox, DataGrid, type DataGridColumn, DateField, EmptyState, FieldCaption, FileUploader, FormDialog, FormRow, FormSection, IconButton, InlineNotice, PercentageInput, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, VisuallyHidden } from "@/design-system";
+import { tKey, translateKnown } from "@/lib/i18n/keys";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { StartProjectDialog } from "@/components/project-core/start-project-dialog";
+import { caseRequest, type CaseAsset } from "@/lib/pre-project/content";
 import { SendQuoteDialog, deliveryMessage } from "./send-quote-dialog";
 import { projectApi } from "@/lib/project-core/client";
 import Link from "next/link";
@@ -31,6 +33,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   const [deciding, setDeciding] = useState(false);
   const [starting, setStarting] = useState(false);
   const [returning, setReturning] = useState(false);
+  const [extending, setExtending] = useState(false);
   const { status } = state.quote;
   const { flow } = state;
   const { confirmationDialog } = useConfirmationDialog();
@@ -70,9 +73,12 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
       {flow.canReview ? <Button size="compact" isLoading={busy === "return"} onPress={() => setReturning(true)}>{t("Return")}</Button> : null}
       <Button size="compact" variant="primary" isLoading={busy === "issue"} onPress={() => confirmSend("issue", [["issue"]])}>{t("Send to client")}</Button>
     </>;
-  } else if (status === "issued") {
-    actions = <>
+  } else if (status === "issued" || status === "expired") {
+    // A sent quote can be kept open longer; an expired one sent again with the same content (Q-7).
+    const extend = state.canEditValidity ? <Button size="compact" variant={status === "expired" ? "primary" : "secondary"} onPress={() => setExtending(true)}>{t("Extend validity")}</Button> : null;
+    actions = status === "expired" ? <>{newRevision}{extend}</> : <>
       {newRevision}
+      {extend}
       {flow.canRecordDecision ? <Button size="compact" variant="primary" onPress={() => setDeciding(true)}>{t("Record client decision")}</Button> : <span className={styles.waiting}>{t("Waiting for the client")}</span>}
     </>;
   } else if (["changes_requested", "declined", "withdrawn", "superseded"].includes(status)) {
@@ -108,7 +114,9 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
     {starting ? <StartProjectDialog workspaceId={workspaceId} caseId={caseId} onClose={() => setStarting(false)} /> : null}
     {returning ? <ReturnDialog busy={busy === "return"} onClose={() => setReturning(false)}
       onSave={async (note) => { await run("return", [["return", { note }]]); setReturning(false); }} /> : null}
-    {deciding ? <DecisionDialog state={state} onClose={() => setDeciding(false)}
+    {extending ? <ExtendValidityDialog current={state.quote.validUntil} busy={busy === "extend"} onClose={() => setExtending(false)}
+      onSave={async (validUntil) => { await run("extend", [["extend_validity", { validUntil }]]); setExtending(false); }} /> : null}
+    {deciding ? <DecisionDialog state={state} workspaceId={workspaceId} caseId={caseId} onClose={() => setDeciding(false)}
       onSave={async (input) => { await run("decide", [["record_decision", input]]); setDeciding(false); }} busy={busy === "decide"} /> : null}
   </>;
 }
@@ -123,11 +131,38 @@ function ReturnDialog({ onClose, onSave, busy }: { onClose: () => void; onSave: 
   </FormDialog>;
 }
 
-const METHODS = [["signed_document", tKey("Signed copy")], ["email", tKey("Email")], ["in_person", tKey("In person")], ["phone", tKey("Phone")], ["message", tKey("Message")]] as const;
+/** Same content, a new date: the client is told it's open again (Q-7). */
+function ExtendValidityDialog({ current, onClose, onSave, busy }: { current: string | null; onClose: () => void; onSave: (validUntil: string) => Promise<void>; busy: boolean }) {
+  const t = useT();
+  // The earliest date is tomorrow on the workspace's calendar (its region's zone).
+  const { timeZone } = useDesignSystem();
+  const minimum = today(timeZone).add({ days: 1 });
+  const [initial] = useState<CalendarDate>(() => {
+    const start = current ? parseDate(current) : null;
+    return start && start.compare(minimum) >= 0 ? start.add({ days: 14 }) : minimum.add({ days: 13 });
+  });
+  const [value, setValue] = useState<CalendarDate | null>(initial);
+  const valid = Boolean(value && value.compare(minimum) >= 0);
+  return <FormDialog title={t("Extend validity")} onClose={onClose} isSubmitting={busy} isDirty={value?.toString() !== initial.toString()}
+    isSubmitDisabled={!valid} submitLabel={t("Extend")} onSubmit={() => (value ? onSave(value.toString()) : undefined)}>
+    <DateField label={t("Valid until")} isRequired minValue={minimum} value={value} onChange={(next) => setValue(next as CalendarDate | null)} />
+  </FormDialog>;
+}
 
-function DecisionDialog({ state, onClose, onSave, busy }: { state: BuilderState; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>; busy: boolean }) {
+const METHODS = [["signed_document", tKey("Signed copy")], ["email", tKey("Email")], ["in_person", tKey("In person")], ["phone", tKey("Phone")], ["message", tKey("Message")]] as const;
+/** The file the client decided in: an image or a PDF, up to 20 MB. */
+const EVIDENCE_TYPES = "image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,application/pdf";
+const EVIDENCE_BYTES = 20 * 1024 * 1024;
+
+function DecisionDialog({ state, workspaceId, caseId, onClose, onSave, busy }: { state: BuilderState; workspaceId: string; caseId: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>; busy: boolean }) {
   const t = useT();
   const { locale } = useDesignSystem();
+  // The file the client decided in: a signed copy, the email or a screenshot of the message (required from Sales, Q-24).
+  const [evidence, setEvidence] = useState<CaseAsset | null>(null);
+  const [uploadError, setUploadError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const evidenceLabel = useId();
+  const evidenceRequired = Boolean(state.flow.decisionEvidenceRequired);
   const [decision, setDecision] = useState("accept");
   const [method, setMethod] = useState("signed_document");
   const [clientName, setClientName] = useState("");
@@ -135,10 +170,23 @@ function DecisionDialog({ state, onClose, onSave, busy }: { state: BuilderState;
   const [options, setOptions] = useState<string[]>([]);
   const optional = state.lines.filter((line) => line.optional);
   const priced = new Map(state.pricing.lines.map((line) => [line.id, line.total]));
+  // Each file goes to the case first; the decision then carries its id.
+  const attach = async (file?: File) => {
+    setUploadError("");
+    if (!file) return;
+    if (file.size > EVIDENCE_BYTES) { setUploadError(t("{name} is larger than 20 MB.", { name: file.name })); return; }
+    setUploading(true);
+    try {
+      const body = new FormData();
+      body.set("file", file);
+      setEvidence(await caseRequest<CaseAsset>(workspaceId, caseId, `assets/${crypto.randomUUID()}`, "POST", body));
+    } catch (failure) { setUploadError(failure instanceof Error ? translateKnown(t, failure.message) : t("Upload failed.")); }
+    finally { setUploading(false); }
+  };
   return <FormDialog title={t("Record client decision")} onClose={onClose} isSubmitting={busy} submitLabel={t("Save")}
-    isDirty={Boolean(clientName.trim() || note.trim() || options.length)}
-    isSubmitDisabled={!clientName.trim() || (decision !== "accept" && !note.trim())}
-    onSubmit={() => onSave({ decision, method, clientName: clientName.trim(), note: note.trim(), selectedOptionLineIds: decision === "accept" ? options : [] })}>
+    isDirty={Boolean(clientName.trim() || note.trim() || options.length || evidence)}
+    isSubmitDisabled={uploading || !clientName.trim() || (decision !== "accept" && !note.trim()) || (evidenceRequired && !evidence)}
+    onSubmit={() => onSave({ decision, method, clientName: clientName.trim(), note: note.trim(), selectedOptionLineIds: decision === "accept" ? options : [], ...(evidence ? { evidenceAssetId: evidence.id } : {}) })}>
     <FormRow>
       <SelectField label={t("Decision")} isRequired selectedKey={decision} onSelectionChange={(key) => setDecision(String(key))}
         items={[{ id: "accept", label: t("Accepted") }, { id: "changes", label: t("Wants changes") }, { id: "decline", label: t("Declined") }]} />
@@ -151,6 +199,13 @@ function DecisionDialog({ state, onClose, onSave, busy }: { state: BuilderState;
       </Checkbox>)}
     </FormSection> : null}
     <TextAreaField label={decision === "accept" ? t("Note") : t("What they asked for")} isRequired={decision !== "accept"} value={note} onChange={setNote} />
+    <div className={styles.evidence} role="group" aria-labelledby={evidenceLabel}>
+      <FieldCaption id={evidenceLabel} isRequired={evidenceRequired}>{t("Evidence")}</FieldCaption>
+      {evidence ? <div className={styles.evidenceFile}><span>{evidence.name}</span><Button size="compact" variant="quiet" onPress={() => setEvidence(null)}>{t("Remove")}</Button></div>
+        : uploading ? <InlineNotice message={t("Uploading…")} />
+        : <FileUploader accept={EVIDENCE_TYPES} appearance="button" label={t("Attach the signed copy, email or message")} multiple={false} onFiles={(files) => void attach(files[0])} />}
+      {uploadError ? <InlineNotice tone="error" message={uploadError} /> : null}
+    </div>
   </FormDialog>;
 }
 

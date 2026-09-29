@@ -75,8 +75,8 @@ function routeTable() {
     { id: "ai-action", label: "Waiting for your OK", href: "/workspace/approvals", parent: "approvals", paths: ["/workspace/ai-actions"] },
     // A case's client portal as the client sees it (read-only preview; no workspace chrome).
     { id: "client-view", label: "Client view", href: "/workspace/pre-projects", parent: "home", paths: ["/workspace/client-view"] },
-    // Sales people without project tasks get their follow-ups as Home › Tasks.
-    { id: "sales-tasks", label: "Tasks", href: "/workspace/crm/follow-ups?view=activity", parent: "home", homeTab: true, paths: ["/workspace/crm/follow-ups"], query: { view: ["activity"] } },
+    // Sales people without project tasks get their follow-ups as Home › Follow-ups.
+    { id: "sales-tasks", label: "Follow-ups", href: "/workspace/crm/follow-ups?view=activity", parent: "home", homeTab: true, paths: ["/workspace/crm/follow-ups"], query: { view: ["activity"] } },
     { id: "calendar", label: "Calendar", href: "/workspace/crm/follow-ups?view=schedule", nav: "daily-follow-ups", paths: ["/workspace/crm/follow-ups"], query: { view: ["schedule", "calendar"] } },
     { id: "calendar-legacy", label: "Calendar", href: "/workspace/crm/follow-ups?view=schedule", nav: "daily-follow-ups", paths: ["/workspace/crm/calendar"] },
     { id: "inbox", label: "Inbox", href: "/workspace/crm/conversations", nav: "inbox", paths: ["/workspace/crm/conversations"] },

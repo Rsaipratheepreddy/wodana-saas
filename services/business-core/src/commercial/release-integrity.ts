@@ -246,6 +246,16 @@ export function sameMaterialEvidence(
   return JSON.stringify(normalize(expected)) === JSON.stringify(normalize(current));
 }
 
+/**
+ * Whether a change request holds up release (Q-29): a decision the client still owes, a controlled change case, or
+ * a change to a quote while it is open. A client's plain message from the portal ("when do you start?") is a
+ * conversation, not a change, and never blocks.
+ */
+export function requestBlocksRelease(request: Pick<CommercialData["requests"][number], "status" | "quoteId" | "control" | "decisionRequest">) {
+  if (["resolved", "declined", "withdrawn"].includes(request.status)) return false;
+  return Boolean(request.decisionRequest || request.control || request.quoteId);
+}
+
 export function commercialReleaseInputsReady(data: CommercialData | null | undefined) {
   const quote = data?.palmFlow
     ? data.quotes.find(candidate => candidate.kind === "quotation" && candidate.round === "main" && candidate.status === "accepted")
@@ -268,9 +278,7 @@ export function commercialReleaseInputsReady(data: CommercialData | null | undef
     return false;
   return (
     financeGatePaymentsReady(data, "release", data.palmFlow ? quote.id : undefined) &&
-    data.requests.every((request) =>
-      ["resolved", "declined", "withdrawn"].includes(request.status),
-    )
+    !data.requests.some(requestBlocksRelease)
   );
 }
 

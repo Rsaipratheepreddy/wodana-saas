@@ -3,6 +3,9 @@ import { Dec } from "../catalog-core/decimal";
 import { copyBuilderData } from "../quotation/quote-revision";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { releasePhaseOnDealApproval, winOpportunityOnAcceptance } from "./quote-acceptance";
+import { decisionEvidenceFile, decisionRecorder } from "./quote-decision-access";
+import { extendQuoteValidity } from "./quote-expiry";
+import { recordAudit } from "../audit/record-audit";
 import { noticeReceiptStep, permissionHolderNames } from "./commercial-notices";
 import { effectivePortalBrand } from "./effective-brand";
 import { newQuoteDefaults } from "./quote-defaults";
@@ -157,7 +160,8 @@ export function commercialCommandPermission(action: string) {
   if (["verify_payment", "verify_credit", "review_deal_finance"].includes(action))
     return "commercial.finance.verify";
   if (action === "decide_owner_review") return "commercial.deal.approve";
-  if (action === "record_decision") return "commercial.approve";
+  // Approvers, Sales with commercial.record_decision and the case's owner record it (checked in the command, Q-24).
+  if (action === "record_decision") return "pre_projects.view";
   if (["approve", "execute_agreement"].includes(action))
     return "commercial.approve";
   if (action === "release") return "commercial.release";
@@ -1437,6 +1441,8 @@ export class CommercialService {
         const now = new Date().toISOString();
         /** What issuing a quote actually delivered (Q-22): always the portal, and the emails that were queued. */
         let sent: IssueDelivery | undefined;
+        /** Who recorded a client's decision given outside the portal (Q-24). */
+        let recorder: "approver" | "sales" | null = null;
         if (action === "set_palm_flow") {
           const template = await resolvedProjectWorkflowTemplate(client, workspaceId);
           if (template.code !== DEAL_FIRST_WORKFLOW_CODE)
@@ -3257,9 +3263,21 @@ export class CommercialService {
         } else if (action === "release") {
           // Projects start from the accepted quotation (Start project), never from this old release step.
           throw new ConflictException("Start the project from the accepted quotation.");
+        } else if (action === "extend_validity") {
+          // Same content, a new date: no new review round (Q-7). The client is told it's open again.
+          if (!q) throw new NotFoundException("Quotation not found.");
+          const today = await this.workspaceDate(client, workspaceId);
+          const change = extendQuoteValidity(q, text(b.validUntil, 10, true), today);
+          q.validityExtensions = [...(q.validityExtensions ?? []), { ...change, at: now, by: user.displayName, byId: user.userId }];
+          await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "commercial.quote_validity_extended.v1", entityType: "pre_project_case", entityId: caseId,
+            before: { quoteId: q.id, validUntil: change.from }, after: { quoteId: q.id, validUntil: change.to } });
+          await tellClients(client, { workspaceId, caseId, event: "quote_issued", recordId: `${q.id}:${q.hash}:valid:${change.to}`, title: `${q.title} (V${q.number})`,
+            due: q.validUntil, demo: this.testMode });
         } else if (action === "record_decision") {
           // Staff record the client's decision on the sent quote (a signed copy, an email, in person).
           if (!q) throw new NotFoundException("Quotation not found.");
+          recorder = await decisionRecorder(client, (code) => this.access.hasPermission(client, workspaceId, user.userId, code), { workspaceId, caseId, userId: user.userId });
+          if (!recorder) throw new ForbiddenException("Only the case owner, Sales who record decisions or an approver can record the client's decision.");
           if (q.kind !== "quotation") throw new ConflictException("Record a variation's decision from its change case.");
           actionable(q);
           const decision = text(b.decision, 20, true);
@@ -3268,10 +3286,18 @@ export class CommercialService {
           if (!["signed_document", "email", "in_person", "phone", "message"].includes(method)) throw new BadRequestException("Choose how the client decided.");
           const note = text(b.note ?? "", 6000, decision !== "accept");
           const clientName = text(b.clientName ?? record.customerName ?? "", 160, true);
+          // The file the client decided in (a signed copy, a screenshot of the message); required from Sales.
+          const evidenceId = typeof b.evidenceAssetId === "string" ? b.evidenceAssetId.trim() : "";
+          const evidence = evidenceId ? await decisionEvidenceFile(client, workspaceId, caseId, evidenceId) : null;
+          if (evidenceId && !evidence) throw new BadRequestException("This file does not belong to this case.");
+          if (recorder === "sales" && !evidence) throw new BadRequestException("Attach the signed copy, email or message the client decided in.");
           const typed = decision as "accept" | "changes" | "decline";
           q.decidedAt = now;
           q.decidedBy = clientName;
-          q.clientDecision = { ...quoteDecisionEvidence(q, typed, b.selectedOptionLineIds ?? [], clientName, now, note), recordedBy: user.displayName, method: method as NonNullable<QuoteDecisionEvidence["method"]> };
+          q.clientDecision = { ...quoteDecisionEvidence(q, typed, b.selectedOptionLineIds ?? [], clientName, now, note), recordedBy: user.displayName, recordedById: user.userId,
+            method: method as NonNullable<QuoteDecisionEvidence["method"]>, ...(evidence ? { evidence } : {}) };
+          await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "commercial.quote_decision_recorded.v1", entityType: "pre_project_case", entityId: caseId,
+            before: { quoteId: q.id, status: "issued" }, after: { quoteId: q.id, decision, method, clientName, recorder, evidenceAssetId: evidence?.id ?? null } });
           if (typed === "accept") validateDeduction(data, q);
           q.status = typed === "accept" ? "accepted" : typed === "changes" ? "changes_requested" : "declined";
           if (typed === "changes") newRequest(data, `Changes to quotation V${q.number}`, note, q.id);
@@ -3298,6 +3324,7 @@ export class CommercialService {
           await copyBuilderData(client, workspaceId, caseId, b.quoteId, q.id);
         if (q && ["submit", "qs_approve", "approve", "return", "record_decision"].includes(action))
           await noticeQuoteStep(client, { workspaceId, caseId, quoteId: q.id, number: q.number, title: q.title, action, actorUserId: user.userId, revision: data.revision, note: typeof b.note === "string" ? b.note : "", decision: typeof b.decision === "string" ? b.decision : undefined,
+            recordedBySales: action === "record_decision" && recorder === "sales",
             reviewPermission: data.palmFlow && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve" });
         // The payment hand-offs: Finance hears a receipt was reported; the reporter, the case owner, whoever
         // approves a waiting deal and the client hear it was verified.

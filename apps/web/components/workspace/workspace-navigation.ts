@@ -162,9 +162,9 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
       },
       {
         id: "workspace-connections",
-        label: tKey("Connections"),
+        label: tKey("Apps & delivery"),
         items: [
-          { href: "/workspace/integrations", icon: "integrations", id: "integrations", label: tKey("Integrations") },
+          { href: "/workspace/integrations", icon: "integrations", id: "integrations", label: tKey("Connections") },
           { href: "/workspace/settings/delivery", icon: "settings", id: "delivery-health", label: tKey("Delivery") },
           { href: "/workspace/settings/ai-apps", icon: "integrations", id: "ai-apps", label: tKey("AI apps") },
         ],
@@ -415,7 +415,8 @@ export function homeTabs(modules: WorkspaceModuleDefinition[]): { id: string; la
   const projectTasks = allowed.has("projects-overview");
   return [
     { id: "overview", label: tKey("Overview"), href: "/workspace" },
-    ...(projectTasks || allowed.has("follow-ups") ? [{ id: "tasks", label: tKey("Tasks"), href: projectTasks ? "/workspace/tasks" : "/workspace/crm/follow-ups?view=activity" }] : []),
+    // One name per page (NV-1): project work is Tasks; a salesperson's own queue is their Follow-ups.
+    ...(projectTasks || allowed.has("follow-ups") ? [{ id: "tasks", label: projectTasks ? tKey("Tasks") : tKey("Follow-ups"), href: projectTasks ? "/workspace/tasks" : "/workspace/crm/follow-ups?view=activity" }] : []),
     // Everyone has approvals waiting somewhere (quotes, payments, orders, bills, reports): the list is theirs.
     { id: "approvals", label: tKey("Approvals"), href: "/workspace/approvals" },
   ];

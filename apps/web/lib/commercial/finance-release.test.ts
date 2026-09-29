@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommercialData } from "./types";
-import { activeDeliveryQuote, commercialReleaseInputsReady, commercialReleaseReady, financeGatePaymentsReady } from "./release";
+import { activeDeliveryQuote, commercialReleaseInputsReady, commercialReleaseReady, financeGatePaymentsReady, requestBlocksRelease } from "./release";
 
 function fixture(): CommercialData {
   return {
@@ -190,5 +190,20 @@ describe("web commercial finance readiness", () => {
     expect(commercialReleaseInputsReady(data)).toBe(false);
     data.palmFlow.scope.materialSelection = false;
     expect(commercialReleaseInputsReady(data)).toBe(true);
+  });
+
+  it("is held by open changes and client decisions, never by a client's plain message (Q-29)", () => {
+    const data = fixture();
+    data.receipts![0].status = "finance_verified";
+    data.payments[0].status = "verified";
+    const request = { id: "r1", number: 1, title: "When do you start?", detail: "", status: "open" as const, owner: "", dueDate: "", resolution: "", comments: [], createdAt: "2026-09-18T00:00:00.000Z" };
+    data.requests = [request];
+    expect(requestBlocksRelease(request)).toBe(false);
+    expect(commercialReleaseInputsReady(data)).toBe(true);
+    data.requests = [{ ...request, quoteId: "quote" }];
+    expect(commercialReleaseInputsReady(data)).toBe(false);
+    data.requests = [{ ...request, quoteId: "quote", status: "resolved" }];
+    expect(commercialReleaseInputsReady(data)).toBe(true);
+    expect(requestBlocksRelease({ ...request, control: { kind: "variation", sourceLineIds: [], quoteIds: [], dispositions: [] } } as never)).toBe(true);
   });
 });

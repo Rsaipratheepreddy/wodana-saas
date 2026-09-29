@@ -141,6 +141,12 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "commercial.receipt_reported", channel: "in_app", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}}.", variables: ["title", "clientName", "actor", "amount", "note"] },
   { code: "commercial.receipt_reported", channel: "email", subject: "Payment to verify · {{clientName}}", body: "{{actor}} reported {{amount}} for {{title}} ({{clientName}}).\n\nOpen it to check the receipt and verify it.", variables: ["title", "clientName", "actor", "amount", "note"] },
   { code: "commercial.receipt_verified", channel: "in_app", subject: "Payment verified · {{clientName}}", body: "{{actor}} verified {{amount}} for {{title}}.", variables: ["title", "clientName", "actor", "amount", "note"] },
+  // A sent quote running out, and one that ran out (commercial/quote-expiry.ts, Q-6).
+  { code: "quotation.expiring", channel: "in_app", subject: "{{title}} expires {{due}}", body: "{{clientName}} hasn't decided yet. Follow up, or extend its validity.", variables: ["title", "clientName", "due"] },
+  { code: "quotation.expired", channel: "in_app", subject: "{{title}} expired", body: "It was valid until {{due}} and {{clientName}} didn't decide. Extend its validity to send it again.", variables: ["title", "clientName", "due"] },
+  { code: "quotation.expired", channel: "email", subject: "{{title}} expired", body: "{{title}} for {{clientName}} was valid until {{due}} and the client didn't decide.\n\nOpen the quote and extend its validity to send it again, or start a new revision.", variables: ["title", "clientName", "due"] },
+  // A quote or design waiting on the client, on the firm's reminder days (commercial/client-decision-reminders.ts).
+  { code: "commercial.decision_waiting", channel: "in_app", subject: "Waiting on the client · {{title}}", body: "{{note}}", variables: ["title", "clientName", "note"] },
   { code: "quotation.client_accepted", channel: "in_app", subject: "{{clientName}} accepted {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.client_accepted", channel: "email", subject: "{{clientName}} accepted {{title}}", body: "{{clientName}} accepted {{title}}.\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.client_changes", channel: "in_app", subject: "{{clientName}} wants changes to {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },

@@ -84,8 +84,8 @@ export function nextStep(t: Translate, channel: ChannelHealth, state: ChannelSta
     return null;
   }
   if (channel.channel === "whatsapp") {
-    if (!channel.configured) return { text: channel.connection ? t("Reconnect WhatsApp in Integrations.") : t("Connect WhatsApp in Integrations."), href: "/workspace/integrations" };
-    if (state === "failing") return { text: t("Check the WhatsApp connection and its templates in Integrations."), href: "/workspace/integrations" };
+    if (!channel.configured) return { text: channel.connection ? t("Reconnect WhatsApp in Connections.") : t("Connect WhatsApp in Connections."), href: "/workspace/integrations" };
+    if (state === "failing") return { text: t("Check the WhatsApp connection and its templates in Connections."), href: "/workspace/integrations" };
     return null;
   }
   if (!channel.configured) return { text: t("Ask your team to sign in on the mobile app and allow notifications.") };

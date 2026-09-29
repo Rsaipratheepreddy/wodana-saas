@@ -228,7 +228,9 @@ export type QuoteStatus =
   | "changes_requested"
   | "declined"
   | "superseded"
-  | "withdrawn";
+  | "withdrawn"
+  /** Its validity ended before the client decided (set by the daily run, Q-6); "Extend validity" sends it again. */
+  | "expired";
 export type QuoteDecisionEvidence = {
   decision: "accept" | "changes" | "decline";
   /** Hash of the immutable, issued quotation the client reviewed. */
@@ -244,7 +246,10 @@ export type QuoteDecisionEvidence = {
   note?: string;
   /** Set when staff recorded the decision (signed copy, email…), not the client on the portal. */
   recordedBy?: string;
+  recordedById?: string;
   method?: "signed_document" | "email" | "in_person" | "phone" | "message";
+  /** The case file the client decided in (a signed copy, the email or message), when staff recorded it. */
+  evidence?: { id: string; name: string; mimeType: string; byteSize: number; hasPreview: boolean };
 };
 export type Quote = {
   /** Separate client and payment rounds for Palm's design and main proposal. */
@@ -300,6 +305,8 @@ export type Quote = {
   decidedAt?: string;
   decidedBy?: string;
   clientDecision?: QuoteDecisionEvidence;
+  /** Each time its validity was extended without a new review (Q-7). */
+  validityExtensions?: Array<{ from: string; to: string; at: string; by: string; byId: string }>;
   hash?: string;
   total: number;
   brand?: PortalBrand;

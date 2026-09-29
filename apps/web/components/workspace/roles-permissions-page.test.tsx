@@ -39,7 +39,7 @@ describe("RolesPermissionsPage", () => {
     expect(screen.getByRole("button", { name: "Company 5 of 29 on" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: "Sales 5 of 26 on" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "Planning & design 5 of 9 on" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Quotations & finance 2 of 8 on" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Quotations & finance 2 of 9 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Projects & work 4 of 7 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Supply & catalog 2 of 7 on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Client portal 0 of 2 on" })).toBeInTheDocument();
@@ -69,7 +69,7 @@ describe("RolesPermissionsPage", () => {
 
     const bar = within(screen.getByRole("region", { name: "Unsaved changes" }));
     expect(bar.getByText("1 change")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Quotations & finance 3 of 8 on" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Quotations & finance 3 of 9 on" })).toBeInTheDocument();
     await interaction.click(bar.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
@@ -116,7 +116,7 @@ describe("RolesPermissionsPage", () => {
     render(<RolesPermissionsPage initialData={structuredClone(rolesPermissionsFixture)} />);
 
     await interaction.type(screen.getByRole("searchbox", { name: "Search capabilities" }), "quotation costs");
-    expect(screen.getByRole("button", { name: "Quotations & finance 2 of 8 on" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Quotations & finance 2 of 9 on" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.queryByRole("button", { name: /^Company / })).not.toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Studio lead: Manage internal quotation costs" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Studio lead: View internal quotation costs" })).toBeInTheDocument();
