@@ -14,13 +14,19 @@ import { SignIn } from "./sign-in";
 
 type State = { kind: "loading" } | { kind: "signed-out"; message?: string } | { kind: "failed"; message: string } | { kind: "ready"; view: PortalView };
 
-/** The shape of the portal while it opens: a title, the section tabs and a few rows. */
+/** The shape of the portal while it opens: the project's profile, then a section's title and rows. */
 function PortalSkeleton() {
   const t = useT();
   return <div aria-busy="true" aria-label={t("Loading")} className={styles.skeleton} role="status">
-    <SkeletonBlock height={2} width={16} />
-    <SkeletonBlock height={1} width={10} />
-    <Skeleton lines={4} shape="rows" />
+    <div>
+      <SkeletonBlock height={2} width={14} />
+      <SkeletonBlock height={1} width={10} />
+      <Skeleton lines={3} shape="rows" />
+    </div>
+    <div>
+      <SkeletonBlock height={2} width={10} />
+      <Skeleton lines={4} shape="rows" />
+    </div>
   </div>;
 }
 

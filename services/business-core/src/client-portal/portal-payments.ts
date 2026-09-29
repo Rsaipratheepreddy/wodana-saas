@@ -83,7 +83,10 @@ export async function readPayments(db: Db, workspaceId: string, row: CaseRow, se
     };
   });
   const order = (status: string) => (status === "overdue" ? 0 : 1);
-  return { currency, showAmounts: amounts, milestones: list.map((item, index) => ({ item, index })).sort((a, b) => order(a.item.status) - order(b.item.status) || a.index - b.index)
+  // What's paid and what's left across the plan, exact to the cent; only when the tenant shows amounts.
+  const sum = (pick: (item: (typeof list)[number]) => string | null) => list.reduce((total, item) => total.add(pick(item) ?? "0"), Dec.ZERO).toFixed(4);
+  const totals = amounts ? { paid: sum((item) => item.paid), left: sum((item) => item.left) } : null;
+  return { currency, showAmounts: amounts, totals, milestones: list.map((item, index) => ({ item, index })).sort((a, b) => order(a.item.status) - order(b.item.status) || a.index - b.index)
     .map(({ item }) => item) };
 }
 

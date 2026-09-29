@@ -114,7 +114,7 @@ function PortalPreview({ site, draft }: { site: PortalSite; draft: Draft }) {
   const t = useT();
   const labels = usePortalLabels();
   const style = workspacePrimaryColorStyle({ primaryColor: site.brand.primaryColor, secondaryColor: site.brand.secondaryColor, headingFont: site.brand.headingFont, bodyFont: site.brand.bodyFont });
-  const tabs = ["home" as const, ...PORTAL_SECTIONS.filter((section) => draft.sections[section])];
+  const tabs = ["overview" as const, ...PORTAL_SECTIONS.filter((section) => draft.sections[section])];
   return <div className={styles.preview}>
     <DesignSystemProvider theme="light" style={style}>
       <div aria-hidden="true" className={styles.previewFrame}>

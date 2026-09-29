@@ -72,8 +72,9 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     status: (row.projectStatus ?? "planning") as "planning" | "active" | "on_hold" | "completed" | "cancelled",
     paused: Boolean(access?.paused),
   };
-  if (access?.paused) return { ...base, sections, manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, rooms: [], next: [],
-    unread: 0, latestUpdate: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null, messages: null };
+  if (access?.paused) return { ...base, sections, manager: null, stage: null, handoverDate: null, handedOverOn: null, warrantyUntil: null, address: null, startDate: null,
+    team: [] as PortalTeamMember[], rooms: [], next: [], unread: 0, latestUpdate: null, progress: null, moodboard: null, decisions: null, payments: null, documents: null, warranty: null,
+    messages: null };
   const commercial = await loadCommercial(db, workspaceId, row.caseId);
   const on = (section: Section) => sections[section];
   const progress = started && on("progress") ? await readProgress(db, workspaceId, row, settings, running, files, grant.id, today) : null;
@@ -95,6 +96,9 @@ async function readProject(db: Db, workspaceId: string, grant: Grant, row: CaseR
     // The planned handover while the work is on; once it's handed over, when it was, and the warranty.
     stage, handoverDate: dates && running ? row.promiseDate : null, handedOverOn: dates && row.projectStatus === "completed" ? row.completedOn : null,
     warrantyUntil: warranty?.rooms.map((room) => room.until).sort().at(-1) ?? null,
+    // The client's profile of the project: where it is, when the work started, and who they deal with.
+    address: await readAddress(db, workspaceId, row), startDate: dates ? row.startDate : null,
+    team: portalTeam(await readTeam(db, workspaceId, row)),
     rooms: on("progress") || on("moodboard") ? await readRooms(db, workspaceId, row.caseId) : [],
     next: nextSteps(decisions, payments, progress),
     unread: messages?.unread ?? 0,
@@ -113,6 +117,73 @@ export type PortalProject = Awaited<ReturnType<typeof readProject>>;
 async function loadCommercial(db: Db, workspaceId: string, caseId: string): Promise<CommercialData> {
   const stored = (await commercialRepository.load(db as PoolClient, workspaceId, caseId))?.content as CommercialData | undefined;
   return { quotes: [], requests: [], payments: [], ...stored } as CommercialData;
+}
+
+const TEAM_ROLES = ["manager", "designer", "sales"] as const;
+type TeamRole = (typeof TEAM_ROLES)[number];
+type TeamRow = { role: TeamRole; membershipId: string; name: string; email: string | null; avatar: string | null };
+export type PortalTeamMember = { roles: TeamRole[]; name: string; email: string | null; avatar: string | null };
+const AVATAR = /^[a-z_]+-[fm]$/;
+
+/**
+ * The people a client deals with, in `rank` order: the project manager, the designer (the project's, else the one
+ * chosen at the intro meeting) and the sales contact (the project's account manager, else the deal's owner). Each
+ * role goes to its first holder; one person holding two roles is one entry. Only a name, a work email and a drawn
+ * avatar leave here: no ids, no other roles, nobody else on the team.
+ */
+export function portalTeam(rows: TeamRow[]): PortalTeamMember[] {
+  const holders = new Map<TeamRole, TeamRow>();
+  for (const row of rows) if (TEAM_ROLES.includes(row.role) && !holders.has(row.role)) holders.set(row.role, row);
+  const people = new Map<string, PortalTeamMember>();
+  for (const role of TEAM_ROLES) {
+    const row = holders.get(role);
+    if (!row) continue;
+    const known = people.get(row.membershipId);
+    if (known) known.roles.push(role);
+    else people.set(row.membershipId, { roles: [role], name: row.name, email: row.email || null, avatar: row.avatar && AVATAR.test(row.avatar) ? row.avatar : null });
+  }
+  return [...people.values()];
+}
+
+async function readTeam(db: Db, workspaceId: string, row: CaseRow) {
+  return (await db.query<TeamRow>(
+    `WITH named AS (
+       SELECT assignment.membership_id, 'manager' AS role, 1 AS rank FROM project_assignments assignment
+        WHERE assignment.workspace_id = $1 AND assignment.project_id = $3 AND assignment.active AND assignment.is_manager
+       UNION ALL
+       SELECT assignment.membership_id, 'designer', 2 FROM project_assignments assignment
+        WHERE assignment.workspace_id = $1 AND assignment.project_id = $3 AND assignment.active AND 'designer' = ANY(assignment.role_keys)
+       UNION ALL
+       SELECT designer.membership_id, 'designer', 3 FROM pre_project_cases pre_case
+         JOIN crm_opportunity_designer designer ON designer.workspace_id = pre_case.workspace_id AND designer.opportunity_id = pre_case.opportunity_id
+        WHERE pre_case.workspace_id = $1 AND pre_case.id = $2
+       UNION ALL
+       SELECT assignment.membership_id, 'sales', 4 FROM project_assignments assignment
+        WHERE assignment.workspace_id = $1 AND assignment.project_id = $3 AND assignment.active AND 'account_manager' = ANY(assignment.role_keys)
+       UNION ALL
+       SELECT opportunity.owner_membership_id, 'sales', 5 FROM pre_project_cases pre_case
+         JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+        WHERE pre_case.workspace_id = $1 AND pre_case.id = $2 AND opportunity.owner_membership_id IS NOT NULL)
+     SELECT named.role, membership.id AS "membershipId", person.display_name AS name, person.primary_email::text AS email, profile.avatar_preset AS avatar
+       FROM named
+       JOIN workspace_memberships membership ON membership.workspace_id = $1 AND membership.id = named.membership_id AND membership.status = 'active'
+       JOIN users person ON person.id = membership.user_id AND person.status = 'active'
+       LEFT JOIN workspace_member_profiles profile ON profile.workspace_id = $1 AND profile.user_id = membership.user_id
+      ORDER BY named.rank`, [workspaceId, row.caseId, row.projectId])).rows;
+}
+
+/** Where the project is: its site's address, or the area the client gave when they first asked. */
+async function readAddress(db: Db, workspaceId: string, row: CaseRow) {
+  return (await db.query<{ address: string | null }>(
+    `SELECT coalesce(
+       (SELECT btrim(location.address) FROM work_locations location
+         WHERE location.workspace_id = $1 AND location.kind = 'site' AND location.active AND btrim(location.address) <> '' AND (location.case_id = $2 OR location.project_id = $3)
+         ORDER BY location.name, location.id LIMIT 1),
+       (SELECT nullif(btrim(coalesce(nullif(enquiry.details->>'area', ''), enquiry.details->>'location', '')), '') FROM pre_project_cases pre_case
+          JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+          JOIN crm_leads lead ON lead.workspace_id = opportunity.workspace_id AND lead.id = opportunity.lead_id
+          JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
+         WHERE pre_case.workspace_id = $1 AND pre_case.id = $2)) AS address`, [workspaceId, row.caseId, row.projectId])).rows[0]?.address ?? null;
 }
 
 /** "Your project manager": the one staff name a client sees. */

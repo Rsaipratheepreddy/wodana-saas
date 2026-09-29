@@ -1,75 +1,105 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { ArrowRight, CalendarClock, ChevronRight, FileImage, FileText, MessageCircleReply } from "lucide-react";
 import { Button } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PortalStep } from "@/lib/client-portal/types";
 import { stageName } from "@/lib/client-portal/stage-names";
-import { daysBetween, isolate } from "../portal-format";
+import { ProgressCard } from "../../site/progress-card";
+import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
+import { ProfileDetails, useStepText } from "../project-profile";
 import type { SectionProps } from "./section-types";
 
-/** Where the project stands, what's needed from the client now (decisions, payments, new replies), and the latest word from the team. */
-export function HomeSection({ project, format, today, open, go }: SectionProps) {
+/**
+ * The Overview: what's needed from the client first (as cards to act on), then the team's latest day on site, what's
+ * coming up and the newest documents. On a narrow screen the key dates, balance and team follow at the foot.
+ */
+export function HomeSection({ project, site, api, format, today, open, go, wide }: SectionProps) {
   const t = useT();
-  const kinds: Record<PortalStep["kind"], string> = {
-    quote: t("Quotation to decide"), design: t("Design to review"), definition: t("Requirements to confirm"), materials: t("Material list to sign off"),
-    handover: t("Handover to accept"), request: t("Question to answer"), invoice: t("Invoice to pay"), site_access: t("Confirm site access"),
-  };
-  // A delivery names its day in the title ("Confirm site access for 3 Oct"); the rest say by when.
-  const titleOf = (step: PortalStep) => (step.kind === "site_access" && step.due ? t("Confirm site access for {date}", { date: format.date(step.due) }) : kinds[step.kind]);
-  const dueOf = (step: PortalStep) => (step.due && step.kind !== "site_access" ? ` · ${t("by {date}", { date: format.date(step.due) })}` : "");
-  const stages = project.progress?.stages ?? [];
-  const act = (step: PortalStep) => (step.kind === "invoice" ? go("payments") : open({ kind: step.kind, id: step.id }));
+  const step = useStepText(format);
+  const act = (item: PortalStep) => (item.kind === "invoice" ? go("payments") : open({ kind: item.kind, id: item.id }));
   const replies = (project.messages?.requests ?? []).filter((request) => request.unread > 0);
-  const handover = () => {
-    if (project.handedOverOn) return project.warrantyUntil
-      ? t("Handed over on {date} · warranty until {until}", { date: format.date(project.handedOverOn), until: format.date(project.warrantyUntil) })
-      : t("Handed over on {date}", { date: format.date(project.handedOverOn) });
-    if (!project.handoverDate) return null;
-    const days = daysBetween(today, project.handoverDate);
-    const when = days > 0 ? (days === 1 ? t("tomorrow") : t("in {count} days", { count: days })) : days === 0 ? t("today") : days === -1 ? t("1 day late") : t("{count} days late", { count: -days });
-    return t("Handover planned for {date} · {when}", { date: format.date(project.handoverDate), when });
-  };
-  const handoverLine = handover();
+  const card = project.progress?.cards?.[0] ?? null;
+  const stages = project.progress?.stages ?? [];
+  const current = stages.findIndex((stage) => stage.state === "current");
+  const coming = stages.map((stage, index) => ({ ...stage, index })).filter((stage) => stage.state !== "done").slice(0, current >= 0 ? 4 : 3);
+  const documents = [...(project.documents ?? [])].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 3);
+  const waiting = project.next.length + replies.length;
   return <div className={styles.section} data-tour="portal-home">
-    {project.stage ? <div className={styles.stage}>
-      <p className={styles.itemTitle}>{project.stage.name
-        ? t("Stage {number} of {total} · {name}", { number: project.stage.number, total: project.stage.total, name: isolate(stageName(t, project.stage.name)) })
-        : t("Stage {number} of {total}", { number: project.stage.number, total: project.stage.total })}</p>
-      {stages.length ? <div aria-hidden="true" className={styles.stageBar}>{stages.map((stage, index) => <span data-state={stage.state} key={index} />)}</div> : null}
-      {handoverLine ? <p className={styles.itemMeta}>{handoverLine}</p> : null}
-    </div> : handoverLine ? <p className={styles.itemMeta}>{handoverLine}</p> : null}
-
     <section className={styles.group} aria-labelledby="portal-next">
-      <h2 className={styles.groupTitle} id="portal-next">{t("Needed from you")}</h2>
-      {project.next.length || replies.length ? <ul className={styles.list}>
-        {project.next.map((step) => <li key={`${step.kind}-${step.id}`}>
-          <button className={`${styles.item} ${styles.itemButton}`} type="button" onClick={() => act(step)}>
-            <span className={styles.itemText}><span className={styles.itemTitle}>{titleOf(step)}</span>
-              <span className={styles.itemMeta} dir="auto">{step.title}{dueOf(step)}</span></span>
-            <span className={styles.itemEnd}><ChevronRight aria-hidden="true" size={18} /></span>
+      <h3 className={styles.groupTitle} id="portal-next">{t("Needed from you")}</h3>
+      {waiting ? <ul className={styles.actionCards}>
+        {project.next.map((item) => <li key={`${item.kind}-${item.id}`}>
+          <button className={styles.actionCard} type="button" onClick={() => act(item)}>
+            <span className={styles.itemText}>
+              <span className={styles.actionTitle}>{step.title(item)}</span>
+              <span className={styles.itemMeta} dir="auto">{[item.title, step.due(item)].filter(Boolean).join(" · ")}</span>
+            </span>
+            <ArrowRight aria-hidden="true" size={18} />
           </button>
         </li>)}
         {replies.map((request) => <li key={`reply-${request.id}`}>
-          <button className={`${styles.item} ${styles.itemButton}`} type="button" onClick={() => open({ kind: "thread", id: request.id })}>
-            <span className={styles.itemText}><span className={styles.itemTitle}>{t("New reply from your team")}</span>
-              <span className={styles.itemMeta} dir="auto">{request.title}</span></span>
-            <span className={styles.itemEnd}><ChevronRight aria-hidden="true" size={18} /></span>
+          <button className={styles.actionCard} data-tone="info" type="button" onClick={() => open({ kind: "thread", id: request.id })}>
+            <span className={styles.itemText}>
+              <span className={styles.actionTitle}><MessageCircleReply aria-hidden="true" size={16} /> {t("New reply from your team")}</span>
+              <span className={styles.itemMeta} dir="auto">{request.title}</span>
+            </span>
+            <ArrowRight aria-hidden="true" size={18} />
           </button>
         </li>)}
-      </ul> : <p className={styles.muted}>{t("Nothing is waiting for you right now.")}</p>}
+      </ul> : <p className={styles.allClear}>{t("Nothing is waiting for you right now.")}</p>}
     </section>
 
-    {project.latestUpdate ? <section className={styles.group} aria-labelledby="portal-latest">
-      <h2 className={styles.groupTitle} id="portal-latest">{t("Latest update")}</h2>
+    {card ? <section className={styles.group} aria-labelledby="portal-latest">
+      <div className={styles.groupHead}>
+        <h3 className={styles.groupTitle} id="portal-latest">{t("Latest from site")}</h3>
+        <Button size="compact" variant="quiet" onPress={() => go("progress")}>{t("See progress")}<ChevronRight aria-hidden="true" size={16} /></Button>
+      </div>
+      <ProgressCard card={{ ...card, summary: card.summary || (card.noWork ? t("No work on site this day.") : "") }} photoUrl={(id, preview) => api.file("photo", id, preview)}
+        formatDay={format.date} />
+    </section> : project.latestUpdate ? <section className={styles.group} aria-labelledby="portal-latest">
+      <div className={styles.groupHead}>
+        <h3 className={styles.groupTitle} id="portal-latest">{t("Latest update")}</h3>
+        {project.sections.progress && project.progress ? <Button size="compact" variant="quiet" onPress={() => go("progress")}>{t("See progress")}<ChevronRight aria-hidden="true" size={16} /></Button> : null}
+      </div>
       <div className={styles.callout}>
         <p className={styles.quote} dir="auto">{project.latestUpdate.text}</p>
         <span className={styles.muted}>{format.date(project.latestUpdate.at)}</span>
       </div>
-      {project.sections.progress ? <div><Button size="compact" variant="quiet" onPress={() => go("progress")}>{t("See progress")}</Button></div> : null}
     </section> : null}
 
-    {project.manager ? <p className={styles.muted}>{t("Your project manager: {name}", { name: isolate(project.manager) })}</p> : null}
+    {coming.length ? <section className={styles.group} aria-labelledby="portal-coming">
+      <h3 className={styles.groupTitle} id="portal-coming">{t("Coming up")}</h3>
+      <ol className={styles.milestones}>{coming.map((stage) => <li key={stage.index} data-state={stage.state}>
+        <CalendarClock aria-hidden="true" size={16} />
+        <span className={styles.itemText}>
+          <span className={styles.milestoneName} dir="auto">{stage.name ? stageName(t, stage.name) : t("Stage {number}", { number: stage.index + 1 })}</span>
+          {stage.state === "current" && stage.startedOn ? <span className={styles.itemMeta}>{t("since {date}", { date: format.date(stage.startedOn) })}</span> : null}
+        </span>
+        {stage.state === "current" ? <StateLabel state="current" /> : null}
+      </li>)}
+        {project.handoverDate && !project.handedOverOn ? <li data-state="handover">
+          <CalendarClock aria-hidden="true" size={16} />
+          <span className={styles.itemText}><span className={styles.milestoneName}>{t("Handover")}</span>
+            <span className={styles.itemMeta}>{format.date(project.handoverDate)}</span></span>
+        </li> : null}
+      </ol>
+    </section> : null}
+
+    {documents.length ? <section className={styles.group} aria-labelledby="portal-documents">
+      <div className={styles.groupHead}>
+        <h3 className={styles.groupTitle} id="portal-documents">{t("Recent documents")}</h3>
+        <Button size="compact" variant="quiet" onPress={() => go("documents")}>{t("See documents")}<ChevronRight aria-hidden="true" size={16} /></Button>
+      </div>
+      <ul className={styles.list}>{documents.map((document) => <li className={styles.item} key={`${document.kind}-${document.id}`}>
+        <a className={styles.itemText} href={api.file(document.kind, document.id)} rel="noreferrer" target="_blank">
+          <span className={styles.fileName}>{document.mimeType.startsWith("image/") ? <FileImage aria-hidden="true" size={16} /> : <FileText aria-hidden="true" size={16} />} {document.title}</span>
+          <span className={styles.itemMeta}>{[document.group, format.date(document.date)].filter(Boolean).join(" · ")}</span>
+        </a>
+      </li>)}</ul>
+    </section> : null}
+
+    {wide ? null : <div className={styles.profileFoot}><ProfileDetails project={project} site={site} format={format} today={today} go={go} /></div>}
   </div>;
 }

@@ -130,17 +130,20 @@ describe("client portal", () => {
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
     expect(await screen.findByText("Stage 2 of 5 · \u2068Production\u2069")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Overview" })).toBeInTheDocument();
     expect(screen.getByText("Cabinets are in the factory.")).toBeInTheDocument();
-    expect(screen.getByText("Your project manager: \u2068Omar Manager\u2069")).toBeInTheDocument();
-    expect(screen.getByText("Handover planned for Dec 1, 2026 · in 65 days")).toBeInTheDocument();
+    expect(screen.getByText("Omar Manager")).toBeInTheDocument();
+    expect(screen.getByText("Dec 1, 2026 · in 65 days")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Material list to sign off/ })).toBeInTheDocument();
-    const tabs = screen.getByRole("tablist", { name: "Sections" });
-    // Documents has nothing in it, so it isn't a tab; a count shows the decision that waits.
-    expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Home", "Progress", "Moodboard", "Decisions1", "Payments", "Messages"]);
+    const tabs = screen.getByRole("navigation", { name: "Sections" });
+    // Documents has nothing in it, so it isn't shown; a badge says what waits where (a decision, an overdue payment).
+    expect(within(tabs).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Overview", "Progress", "Decisions1 to decide", "Moodboard", "Payments1 overdue", "Messages"]);
     expect(tabs).toHaveAttribute("data-layout", "scroll");
-    await user.click(within(tabs).getByRole("tab", { name: "Payments" }));
+    expect(within(tabs).getByRole("button", { name: "Overview" })).toHaveAttribute("aria-current", "page");
+    await user.click(within(tabs).getByRole("button", { name: /^Payments/ }));
+    expect(within(tabs).getByRole("button", { name: /^Payments/ })).toHaveAttribute("aria-current", "page");
     // One row per payment, overdue first, with its invoice to print and what was received.
-    const rows = await screen.findAllByRole("listitem");
+    const rows = within(await screen.findByRole("region", { name: "Payments" })).getAllByRole("listitem");
     expect(rows[0]).toHaveTextContent("Before installation");
     expect(within(rows[0]).getByText("Overdue")).toBeInTheDocument();
     expect(within(rows[0]).getByRole("link", { name: "Invoice \u2068INV-3\u2069" }))
@@ -148,7 +151,7 @@ describe("client portal", () => {
     expect(screen.getByText(/Received .*5,000\.00.* on Sep 21, 2026/).closest("a")).toHaveAttribute("href", "/portal/studio/print?case=c1&receipt=22222222-2222-4222-8222-222222222221");
     expect(screen.queryByText("Invoices")).toBeNull();
     expect(screen.getByRole("link", { name: /Pay/ })).toHaveAttribute("href", "https://pay.example.com/p2");
-    await user.click(within(tabs).getByRole("tab", { name: "Progress" }));
+    await user.click(within(tabs).getByRole("button", { name: /^Progress/ }));
     expect(await screen.findByRole("img", { name: /Site photo 1/ })).toHaveAttribute("src", "/api/client-portal/studio/files/photo/p1?preview=1");
   });
 
@@ -158,13 +161,13 @@ describe("client portal", () => {
     mount(() => ({ body: view({}, [hidden, project({ id: "c2", title: "Beach house", paused: true })]) }));
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Payments" }));
+    await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /^Payments/ }));
     expect(await screen.findByText("Received on Sep 21, 2026")).toBeInTheDocument();
     expect(screen.queryAllByText(/\$5,000\.00/)).toEqual([]);
     await user.click(screen.getByRole("button", { name: /Project/ }));
     await user.click(await screen.findByRole("option", { name: "Beach house" }));
     expect(await screen.findByText("Your project page is paused")).toBeInTheDocument();
-    expect(screen.queryByRole("tablist", { name: "Sections" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
   });
 
   it("signs the material list off item by item with a code bound to that revision", async () => {
@@ -219,7 +222,8 @@ describe("client portal", () => {
     expect(container.querySelector("[data-portal-root]")).toHaveAttribute("dir", "rtl");
     expect(screen.getByRole("heading", { name: "Villa 12" })).toHaveAttribute("dir", "auto");
     expect(screen.getByText("Cabinets are in the factory.")).toHaveAttribute("dir", "auto");
-    expect(screen.getByText(/⁨Omar Manager⁩/)).toBeInTheDocument();
+    expect(screen.getByText("Omar Manager")).toHaveAttribute("dir", "auto");
+    expect(screen.getByRole("navigation")).toHaveAttribute("data-layout", "scroll");
   });
 
   it("says a finished project is completed (an adjective, not the verb) in Arabic", async () => {
@@ -227,7 +231,7 @@ describe("client portal", () => {
     render(<I18nProvider language="ar"><PortalApp site={site} /></I18nProvider>);
     expect(await screen.findByText(/^مكتمل/)).toBeInTheDocument();
     expect(screen.queryByText(/إكمال/)).toBeNull();
-    expect(screen.getByText(/^تم التسليم في/)).toBeInTheDocument();
+    expect(screen.getByText("تم التسليم").tagName).toBe("DT");
   });
 
   it("names the product's own stages in the client's language and a tenant's own stage as they wrote it", async () => {
@@ -237,8 +241,8 @@ describe("client portal", () => {
     mount(() => ({ body: view({}, [staged]) }));
     const user = userEvent.setup();
     render(<I18nProvider language="ar"><PortalApp site={site} /></I18nProvider>);
-    expect(await screen.findByText(/التوريد والتركيب/)).toBeInTheDocument();
-    await user.click(within(screen.getByRole("tablist")).getAllByRole("tab")[1]);
+    expect((await screen.findAllByText(/التوريد والتركيب/)).length).toBeGreaterThan(0);
+    await user.click(within(screen.getByRole("navigation")).getAllByRole("button")[1]);
     expect(await screen.findByText("الانطلاق")).toBeInTheDocument();
     expect(screen.getByText("Villa blessing")).toBeInTheDocument();
   });
@@ -257,8 +261,10 @@ describe("client portal", () => {
   it("says when a finished project was handed over and until when its warranty runs", async () => {
     mount(() => ({ body: view({}, [project({ status: "completed", handoverDate: null, handedOverOn: "2026-09-28", warrantyUntil: "2027-09-27" })]) }));
     render(<PortalApp site={site} />);
-    expect(await screen.findByText("Handed over on Sep 28, 2026 · warranty until Sep 27, 2027")).toBeInTheDocument();
-    expect(screen.queryByText(/Handover planned/)).toBeNull();
+    const dates = within(await screen.findByRole("region", { name: "Key dates" }));
+    expect(dates.getByText("Handed over").nextElementSibling).toHaveTextContent("Sep 28, 2026");
+    expect(dates.getByText("Warranty until").nextElementSibling).toHaveTextContent("Sep 27, 2027");
+    expect(dates.queryByText("Handover")).toBeNull();
   });
 
   it("likes a board, comments on an idea and adds the client's own idea with a photo", async () => {
@@ -266,7 +272,7 @@ describe("client portal", () => {
       : url.endsWith("/command") ? { body: { ok: true } } : { body: view() }));
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Moodboard" }));
+    await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /^Moodboard/ }));
     await user.click(await screen.findByRole("button", { name: "I like Kitchen concept" }));
     await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "react", caseId: "c1", targetKind: "design", targetId: "b1", reaction: "like" })]));
     // Liked already: pressing it again takes the like back.
@@ -294,8 +300,8 @@ describe("client portal", () => {
     const fetcher = mount((url) => (url.endsWith("/command") ? { body: { ok: true } } : { body: view() }));
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Payments" }));
-    const [overdue] = await screen.findAllByRole("listitem");
+    await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /^Payments/ }));
+    const [overdue] = within(await screen.findByRole("region", { name: "Payments" })).getAllByRole("listitem");
     await user.click(within(overdue).getByRole("button", { name: "I've paid" }));
     const dialog = await screen.findByRole("dialog", { name: "Before installation" });
     expect(within(dialog).getByRole("button", { name: "Send" })).toBeDisabled();
@@ -340,7 +346,7 @@ describe("client portal", () => {
     const fetcher = mount((url) => (url.endsWith("/command") ? { body: { ok: true } } : { body: view({}, [daily]) }));
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Progress" }));
+    await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /^Progress/ }));
     expect(await screen.findByText("42% complete")).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "How far the project is" })).toHaveAttribute("aria-valuenow", "42");
     const day = screen.getByRole("article", { name: "Progress on Sep 26, 2026" });
@@ -372,7 +378,7 @@ describe("client portal", () => {
     const fetcher = mount((url) => (url.endsWith("/command") ? { body: { ok: true } } : { body: view({}, [reported]) }));
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    await user.click(within(await screen.findByRole("tablist", { name: "Sections" })).getByRole("tab", { name: "Progress" }));
+    await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /^Progress/ }));
     expect(await screen.findByText("Chipped panel")).toBeInTheDocument();
     expect(screen.getByText("Not taken up")).toBeInTheDocument();
     expect(screen.getByText("That's the sample, not your panel.")).toBeInTheDocument();
@@ -392,14 +398,76 @@ describe("client portal", () => {
       : { body: view({}, [project({ unread: 1, messages: { requests: [thread], unread: 1 } })]) }));
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
-    const tabs = await screen.findByRole("tablist", { name: "Sections" });
-    expect(within(tabs).getByRole("tab", { name: /Messages/ })).toHaveTextContent("Messages1");
+    const tabs = await screen.findByRole("navigation", { name: "Sections" });
+    expect(within(tabs).getByRole("button", { name: /Messages/ })).toHaveTextContent("Messages1 new");
     expect(screen.getByRole("button", { name: /New reply from your team/ })).toBeInTheDocument();
-    await user.click(within(tabs).getByRole("tab", { name: /Messages/ }));
+    await user.click(within(tabs).getByRole("button", { name: /Messages/ }));
     await user.click(await screen.findByRole("button", { name: /Reading light/ }));
     const dialog = await screen.findByRole("dialog", { name: "Reading light" });
     expect(within(dialog).getByRole("link", { name: /plan\.pdf/ })).toHaveAttribute("href", "/api/client-portal/studio/files/asset/f2");
     await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "read_thread", caseId: "c1", requestId: "t1" })]));
     expect(within(dialog).queryByText("Seen by your project team")).toBeNull();
+  });
+  it("keeps the client and project profile beside the section on a wide screen: stage, key dates, balance, the team to contact, and the sections with what waits", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("min-width: 64rem"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    const profiled = project({ address: "Dubai Hills", startDate: "2026-09-01",
+      team: [{ roles: ["manager"], name: "Omar Manager", email: "omar@studio.example", avatar: null }, { roles: ["designer", "sales"], name: "Dana Designer", email: null, avatar: "designer-f" }],
+      payments: { ...project().payments!, totals: { paid: "5000.0000", left: "7000.0000" } } });
+    mount(() => ({ body: view({}, [profiled]) }));
+    const user = userEvent.setup();
+    render(<PortalApp site={{ ...site, support: { ...site.support, whatsapp: "+12025550123" } }} />);
+    const profile = within(await screen.findByRole("complementary", { name: "Your project" }));
+    expect(profile.getByRole("heading", { level: 1, name: "Villa 12" })).toBeInTheDocument();
+    expect(profile.getByText("Dubai Hills")).toBeInTheDocument();
+    expect(profile.getByText("Maya")).toBeInTheDocument();
+    expect(profile.getByText("Stage 2 of 5 · ⁨Production⁩")).toBeInTheDocument();
+    expect(profile.getByRole("progressbar", { name: "How far the project is" })).toHaveAttribute("aria-valuenow", "20");
+    // Key dates: the start, the next stage and the planned handover.
+    const dates = within(profile.getByRole("region", { name: "Key dates" }));
+    expect(dates.getByText("Started").nextElementSibling).toHaveTextContent("Sep 1, 2026");
+    expect(dates.getByText("Next milestone").nextElementSibling).toHaveTextContent("Installation");
+    expect(dates.getByText("Handover").nextElementSibling).toHaveTextContent("Dec 1, 2026 · in 65 days");
+    // The balance, exact from the plan, and the next payment (overdue first).
+    const balance = within(profile.getByRole("region", { name: "Payments" }));
+    expect(balance.getByText("Paid").nextElementSibling).toHaveTextContent("$5,000.00");
+    expect(balance.getByText("Still to pay").nextElementSibling).toHaveTextContent("$7,000.00");
+    expect(balance.getByText("Before installation")).toBeInTheDocument();
+    // The team: each by role, email where there is one, and the firm's own line to call, WhatsApp or email.
+    const team = within(profile.getByRole("region", { name: "Your team" }));
+    expect(team.getByText("Project manager")).toBeInTheDocument();
+    expect(team.getByText("Designer · Sales")).toBeInTheDocument();
+    expect(team.getByRole("link", { name: "Email Omar Manager" })).toHaveAttribute("href", "mailto:omar@studio.example");
+    expect(team.queryByRole("link", { name: "Email Dana Designer" })).toBeNull();
+    expect(team.getByRole("link", { name: "Call Studio Interiors" })).toHaveAttribute("href", "tel:+15550100100");
+    expect(team.getByRole("link", { name: "WhatsApp Studio Interiors" })).toHaveAttribute("href", "https://wa.me/12025550123");
+    expect(team.getByRole("link", { name: "Email Studio Interiors" })).toHaveAttribute("href", "mailto:care@studio.example");
+    // The Overview beside it doesn't repeat them.
+    expect(screen.getAllByRole("region", { name: "Key dates" })).toHaveLength(1);
+    // The sections down the side, with what waits in each; the arrow keys move along them.
+    const nav = profile.getByRole("navigation", { name: "Sections" });
+    expect(nav).toHaveAttribute("data-layout", "list");
+    expect(within(nav).getByRole("button", { name: /^Decisions/ })).toHaveTextContent("1 to decide");
+    expect(within(nav).getByRole("button", { name: /^Payments/ })).toHaveTextContent("1 overdue");
+    within(nav).getByRole("button", { name: "Overview" }).focus();
+    await user.keyboard("{ArrowDown}");
+    expect(within(nav).getByRole("button", { name: "Progress" })).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(within(nav).getByRole("button", { name: "Messages" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(within(nav).getByRole("button", { name: "Messages" })).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByRole("heading", { level: 2, name: "Messages" })).toBeInTheDocument();
+  });
+
+  it("collapses the profile into a card on a phone: the project, its stage, and the next thing to do from any section", async () => {
+    mount(() => ({ body: view() }));
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    const card = within(await screen.findByRole("complementary", { name: "Your project" }));
+    expect(card.getByRole("heading", { level: 1, name: "Villa 12" })).toBeInTheDocument();
+    // On the Overview the waiting things are cards of their own; elsewhere the card offers the first one.
+    expect(card.queryByText("Next for you")).toBeNull();
+    await user.click(within(card.getByRole("navigation", { name: "Sections" })).getByRole("button", { name: "Moodboard" }));
+    await user.click(card.getByRole("button", { name: /Next for you.*Material list to sign off/ }));
+    expect(await screen.findByRole("dialog", { name: "Material list · R1" })).toBeInTheDocument();
   });
 });

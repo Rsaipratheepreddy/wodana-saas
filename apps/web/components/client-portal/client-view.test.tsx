@@ -35,8 +35,7 @@ describe("client view", () => {
     const user = userEvent.setup();
     render(<ClientView workspaceId={W} caseId={C} />);
     expect(await screen.findByRole("heading", { name: "Villa 12" })).toBeInTheDocument();
-    expect(screen.getByText("Client view")).toBeInTheDocument();
-    expect(screen.getByText("Maya Client")).toBeInTheDocument();
+    expect(screen.getByText("Client view").parentElement).toHaveTextContent("Maya Client");
     expect(screen.getByRole("link", { name: "Close client view" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${C}/overview`);
     expect(calls).toEqual([{ url: `/api/client-portal-admin/cases/${C}/preview?workspaceId=${W}`, method: "GET" }]);
     // The client's own decision, as they would take it: it stops at the code, which only the client can get.

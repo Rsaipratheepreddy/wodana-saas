@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChangeRequest, Quote } from "../commercial/commercial.types";
 import { maskEmail, mobileNumber, PortalCodes } from "./portal-auth";
 import { portalQuote } from "./portal-quote";
-import { portalRequest } from "./portal-read";
+import { portalRequest, portalTeam } from "./portal-read";
 import { effectiveSections, type PortalSettings } from "./portal-settings";
 
 const settings = (sections: Partial<PortalSettings["sections"]> = {}): PortalSettings => ({
@@ -54,5 +54,22 @@ describe("client portal rules", () => {
     const projected = portalRequest(request, { id: "g", caseId: "c", name: "Maya", role: "approver", email: null, confirmed: true, demo: false });
     expect(projected.comments.map((comment) => [comment.text, comment.fromClient])).toEqual([["Yes", false], ["Thanks", true]]);
     expect(JSON.stringify(projected)).not.toMatch(/Dana Designer|Check budget|owner/);
+  });
+
+  it("names the client's team (project manager, designer, sales) by name, work email and drawn avatar only, each role to its first holder", () => {
+    const team = portalTeam([
+      { role: "manager", membershipId: "m1", name: "Omar Manager", email: "omar@studio.example", avatar: "project_manager-m" },
+      { role: "designer", membershipId: "m2", name: "Dana Designer", email: "dana@studio.example", avatar: "../../etc" },
+      // The intro meeting's designer loses to the project's own.
+      { role: "designer", membershipId: "m3", name: "Intro Designer", email: "intro@studio.example", avatar: null },
+      // One person holding two roles is one entry.
+      { role: "sales", membershipId: "m1", name: "Omar Manager", email: "omar@studio.example", avatar: "project_manager-m" },
+      { role: "site_supervisor" as never, membershipId: "m4", name: "Sid Supervisor", email: "sid@studio.example", avatar: null },
+    ]);
+    expect(team).toEqual([
+      { roles: ["manager", "sales"], name: "Omar Manager", email: "omar@studio.example", avatar: "project_manager-m" },
+      { roles: ["designer"], name: "Dana Designer", email: "dana@studio.example", avatar: null },
+    ]);
+    expect(JSON.stringify(team)).not.toMatch(/membershipId|m1|m2|Intro Designer|Sid Supervisor/);
   });
 });
