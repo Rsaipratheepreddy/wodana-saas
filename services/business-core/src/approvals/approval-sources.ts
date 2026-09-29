@@ -3,12 +3,14 @@ import type { PoolClient } from "pg";
 type Db = Pick<PoolClient, "query">;
 
 /** The chips on the Approvals page, one per kind of work. */
-export const APPROVAL_GROUPS = ["quotes", "payments", "deals", "orders", "factory", "site", "stock", "finance"] as const;
+export const APPROVAL_GROUPS = ["quotes", "payments", "deals", "orders", "factory", "site", "stock", "finance", "ai"] as const;
 export type ApprovalGroup = (typeof APPROVAL_GROUPS)[number];
 
 export type ApprovalKind =
   | "quote_review" | "receipt" | "deal_finance" | "deal_approval" | "order" | "output" | "material_swap"
-  | "site_report" | "petty_cash" | "snag" | "warranty" | "stock_correction" | "bill" | "payment_run" | "reimbursement";
+  | "site_report" | "petty_cash" | "snag" | "warranty" | "stock_correction" | "bill" | "payment_run" | "reimbursement"
+  // A change an AI app prepared through MCP (W-5): the person it acts as confirms it in Wodana.
+  | "ai_action";
 
 /** What deciding in the row does: approve, and whether the other answer is a return or a refusal (with a note). */
 export type RowDecision = { approve: string; other: "return" | "reject" | null; approveNeedsNote: boolean };
@@ -19,6 +21,8 @@ export type ApprovalRow = {
   id: string;
   /** What it is, as people say it: "PO-0042 · Al Noor Timber", "Q-118 · Kitchen". */
   title: string;
+  /** The title as a sentence the web translates (an English key with {placeholders}), when there is one. */
+  phrase?: { key: string; values?: Record<string, string | number> } | null;
   /** The client, supplier or item it's about. */
   subject: string | null;
   project: { id: string; reference: string | null; name: string } | null;
@@ -313,7 +317,25 @@ const finance: Source = async (db, ctx) => {
   return out;
 };
 
-export const APPROVAL_SOURCES: Source[] = [quotes, receipts, deals, orders, factory, site, stock, finance];
+/**
+ * Changes an AI app prepared through MCP (W-5) that wait for this person's OK: only their own, while the
+ * proposal is open. Always opened (the card shows exactly what changes), never decided in the row.
+ */
+const aiActions: Source = async (db, ctx) => {
+  const rows = (await db.query<{ id: string; summary: string; title: { key: string; values?: Record<string, string | number> } | null; since: Date; client: string | null }>(
+    `SELECT call.id, call.summary, call.preview->'title' AS title, call.created_at AS since, connection.client_name AS client
+       FROM ai_tool_calls call
+       JOIN ai_agent_runs run ON run.workspace_id = call.workspace_id AND run.id = call.run_id AND run.surface = 'mcp'
+       LEFT JOIN mcp_connections connection ON connection.workspace_id = run.workspace_id AND connection.id::text = run.context_id
+      WHERE call.workspace_id = $1 AND call.requested_by = $2 AND call.status = 'proposed' AND call.expires_at > now()
+      ORDER BY call.created_at LIMIT 50`, [ctx.workspaceId, ctx.userId])).rows;
+  return rows.map((action) => row({
+    kind: "ai_action", group: "ai", id: action.id, title: action.summary, phrase: action.title?.key ? action.title : null, subject: action.client, project: null,
+    amount: null, currency: null, since: action.since, own: false, href: `/workspace/ai-actions/${action.id}`, decide: null,
+  }));
+};
+
+export const APPROVAL_SOURCES: Source[] = [quotes, receipts, deals, orders, factory, site, stock, finance, aiActions];
 
 /** Everything waiting on this person, oldest first; what they may decide before what is their own. */
 export async function waitingFor(db: Db, ctx: ApprovalContext) {

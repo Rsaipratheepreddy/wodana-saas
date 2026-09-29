@@ -71,6 +71,8 @@ function routeTable() {
     { id: "home", label: "Home", href: "/workspace", nav: "home", paths: ["/workspace"], exact: true },
     { id: "tasks", label: "Tasks", href: "/workspace/tasks", parent: "home", homeTab: true, paths: ["/workspace/tasks"] },
     { id: "approvals", label: "Approvals", href: "/workspace/approvals", parent: "home", homeTab: true, paths: ["/workspace/approvals"] },
+    // A change an AI app prepared, waiting for the person's OK (opened from Approvals or its notice).
+    { id: "ai-action", label: "Waiting for your OK", href: "/workspace/approvals", parent: "approvals", paths: ["/workspace/ai-actions"] },
     // A case's client portal as the client sees it (read-only preview; no workspace chrome).
     { id: "client-view", label: "Client view", href: "/workspace/pre-projects", parent: "home", paths: ["/workspace/client-view"] },
     // Sales people without project tasks get their follow-ups as Home › Tasks.

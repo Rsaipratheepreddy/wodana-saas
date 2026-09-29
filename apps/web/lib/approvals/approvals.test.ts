@@ -11,7 +11,7 @@ describe("waiting for you", () => {
     const rows = [row("order", "orders"), row("receipt", "payments"), row("bill", "finance")];
     expect(filterRows(rows, "all")).toHaveLength(3);
     expect(filterRows(rows, "payments").map((item) => item.kind)).toEqual(["receipt"]);
-    expect(APPROVAL_FILTERS.map((item) => item.id)).toEqual(["all", "quotes", "payments", "deals", "orders", "factory", "site", "stock", "finance"]);
+    expect(APPROVAL_FILTERS.map((item) => item.id)).toEqual(["all", "quotes", "payments", "deals", "orders", "factory", "site", "stock", "finance", "ai"]);
   });
 
   it("names every kind, and verifies money rather than approving it", () => {

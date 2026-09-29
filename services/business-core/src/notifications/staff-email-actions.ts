@@ -33,6 +33,7 @@ const EVENT_ACTIONS: Record<string, string> = {
   "hrms.timesheet_submitted": "Review timesheet",
   "hrms.crew_day_submitted": "Review crew day",
   "delivery.test": "Open delivery health",
+  "ai.app_connected": "Review AI apps",
 };
 
 const MODULE_ACTIONS: Record<string, string> = {

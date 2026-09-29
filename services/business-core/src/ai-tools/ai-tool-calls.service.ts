@@ -6,7 +6,7 @@ import { recordAudit } from "../audit/record-audit";
 import { runWithCommandOrigin } from "../database/command-origin";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { ItemsFailedError, type Phrase, type Proposal, type ProposalPreview, type RecordRef, type StoredProposal } from "./ai-tool";
-import { AI_USE, readAsker, toolContext } from "./ai-tool-context";
+import { AI_USE, readAsker, toolContext, type Asker } from "./ai-tool-context";
 import { AiToolRegistry } from "./ai-tools.registry";
 import { moduleMessage } from "./tool-kit";
 
@@ -14,21 +14,31 @@ import { moduleMessage } from "./tool-kit";
 export const PROPOSAL_TTL_MS = 15 * 60_000;
 
 export type ToolCallStatus = "proposed" | "confirmed" | "executed" | "rejected" | "failed" | "expired";
+/** Where the proposal was asked for: Woddy in Wodana, or an AI app through MCP (W-5). */
+export type ToolCallSurface = "panel" | "inbox" | "comment" | "search" | "mcp";
 /** What the web shows as a confirmation card. */
 export type ToolCallCard = {
   id: string; runId: string; tool: string; status: ToolCallStatus; title: Phrase; summary: string; preview: ProposalPreview;
   target: RecordRef | null; expiresAt: string; version: number; selection: string[] | null;
   record: RecordRef | null; failures: Array<{ id: string; label: string; message: string }>; error: string | null;
+  surface: ToolCallSurface | null;
+  /** The AI app that prepared it, when it came through MCP. */
+  clientName: string | null;
 };
 
+type CallOrigin = { surface: ToolCallSurface; connectionId: string | null; clientName: string | null } | null;
 type CallRow = {
   id: string; runId: string; tool: string; status: ToolCallStatus; requestedBy: string; targetType: string | null; targetId: string | null; targetVersion: number | null;
   summary: string; preview: ProposalPreview; command: Record<string, unknown>; selection: string[] | null; idempotencyKey: string; result: Record<string, unknown> | null;
-  errorMessage: string | null; expiresAt: Date; version: number; expired: boolean;
+  errorMessage: string | null; expiresAt: Date; version: number; expired: boolean; origin?: CallOrigin;
 };
 const COLUMNS = `id, run_id AS "runId", tool, status, requested_by AS "requestedBy", target_type AS "targetType", target_id AS "targetId", target_version AS "targetVersion",
   summary, preview, command, selection, idempotency_key AS "idempotencyKey", result, error_message AS "errorMessage", expires_at AS "expiresAt", version,
-  (status = 'proposed' AND expires_at <= now()) AS expired`;
+  (status = 'proposed' AND expires_at <= now()) AS expired,
+  (SELECT jsonb_build_object('surface', run.surface, 'connectionId', CASE WHEN run.surface = 'mcp' THEN run.context_id END, 'clientName', connection.client_name)
+     FROM ai_agent_runs run
+     LEFT JOIN mcp_connections connection ON run.surface = 'mcp' AND connection.workspace_id = run.workspace_id AND connection.id::text = run.context_id
+    WHERE run.workspace_id = ai_tool_calls.workspace_id AND run.id = ai_tool_calls.run_id) AS origin`;
 
 const cardOf = (row: CallRow): ToolCallCard => {
   const result = row.result ?? {};
@@ -37,24 +47,39 @@ const cardOf = (row: CallRow): ToolCallCard => {
     target: row.targetType && row.targetId ? { type: row.targetType, id: row.targetId, label: String((row.preview as { targetLabel?: string }).targetLabel ?? row.summary), href: (row.preview as { targetHref?: string | null }).targetHref ?? null } : null,
     expiresAt: new Date(row.expiresAt).toISOString(), version: row.version, selection: row.selection,
     record: (result.record as RecordRef | undefined) ?? null, failures: (result.failures as ToolCallCard["failures"] | undefined) ?? [], error: row.errorMessage,
+    surface: row.origin?.surface ?? null, clientName: row.origin?.clientName ?? null,
   };
 };
 
 /**
+ * Whether an AI app's proposal may still run: the workspace keeps AI and AI apps on, and the person has not
+ * revoked the app (W-5). Checked again when the person confirms, wherever they confirm.
+ */
+async function mcpStillAllowed(client: PoolClient, workspaceId: string, connectionId: string | null) {
+  const found = await client.query(
+    `SELECT 1 FROM workspace_ai_settings setting
+      WHERE setting.workspace_id = $1 AND setting.enabled AND setting.mcp_enabled
+        AND EXISTS (SELECT 1 FROM mcp_connections connection WHERE connection.workspace_id = $1 AND connection.id::text = $2 AND connection.revoked_at IS NULL)`,
+    [workspaceId, connectionId ?? ""]);
+  return Boolean(found.rowCount);
+}
+
+/**
  * Proposed actions (W-1): stored when a write tool proposes, and moved on only by the person who asked.
- * proposed → confirmed → executed | failed; or proposed → rejected | expired (15 minutes). Confirming runs
- * the module's own command as that person, with the proposal's idempotency key and the record's version,
- * inside a command origin that marks its audit rows `via: woddy` with the run id.
+ * proposed → confirmed → executed | failed; or proposed → rejected | expired (15 minutes for Woddy, an hour
+ * for an AI app). Confirming runs the module's own command as that person, with the proposal's idempotency
+ * key and the record's version, inside a command origin that marks its audit rows `via: woddy` (or `mcp`
+ * for an AI app's proposal) with the run id.
  */
 @Injectable()
 export class AiToolCallsService {
   private readonly logger = new Logger(AiToolCallsService.name);
-  constructor(private readonly access: WorkspaceAccessService, @Inject(AiToolRegistry) private readonly registry: AiToolRegistry) {}
+  constructor(@Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService, @Inject(AiToolRegistry) private readonly registry: AiToolRegistry) {}
 
   /** Stores a write tool's proposal, in the person's own tenant transaction. */
-  async propose(actor: RequestActor, workspaceId: string, input: { runId: string; tool: string; proposal: Proposal; now?: Date }): Promise<ToolCallCard> {
+  async propose(actor: RequestActor, workspaceId: string, input: { runId: string; tool: string; proposal: Proposal; now?: Date; ttlMs?: number }): Promise<ToolCallCard> {
     const { proposal } = input;
-    const expiresAt = new Date((input.now ?? new Date()).getTime() + PROPOSAL_TTL_MS);
+    const expiresAt = new Date((input.now ?? new Date()).getTime() + (input.ttlMs ?? PROPOSAL_TTL_MS));
     // The card shows the target as the tool named it; the snapshot keeps it with the preview.
     const preview = { ...proposal.preview, title: proposal.title, ...(proposal.target ? { targetLabel: proposal.target.label, targetHref: proposal.target.href ?? null } : {}) };
     return this.access.withPermission(actor, workspaceId, AI_USE, async (client, user) => {
@@ -91,22 +116,28 @@ export class AiToolCallsService {
    * person may untick items of a multi-record proposal (`selection`), never add new ones.
    */
   async confirm(actor: RequestActor, workspaceId: string, id: string, input: { version: number; selection?: string[] }) {
-    const claimed = await this.access.withPermission(actor, workspaceId, AI_USE, async (client, user) => {
+    type Claim = { done: ToolCallCard } | { expired: true } | { row: CallRow; asker: Asker; via: "woddy" | "mcp" };
+    const claimed = await this.access.withPermission(actor, workspaceId, AI_USE, async (client, user): Promise<Claim> => {
       const row = await this.expireIfDue(client, workspaceId, await this.mine(client, workspaceId, id, user.userId, true));
       if (row.status === "executed" || row.status === "failed") return { done: cardOf(row) };
       if (row.status === "expired") return { expired: true as const };
       if (row.status !== "proposed") throw new ConflictException(row.status === "confirmed" ? "This action is already running." : `This action was ${row.status}.`);
       if (row.version !== input.version) throw new ConflictException("This card changed; reload it.");
       const selection = selectionFor(row.preview, input.selection);
+      // An AI app's proposal runs only while the workspace allows AI apps and the app is still connected.
+      const via = row.origin?.surface === "mcp" ? "mcp" as const : "woddy" as const;
+      if (via === "mcp" && !(await mcpStillAllowed(client, workspaceId, row.origin?.connectionId ?? null))) {
+        throw new ForbiddenException({ message: "AI apps are off for this workspace, or the app was disconnected.", code: "AI_APP_UNAVAILABLE" });
+      }
       const confirmed = await this.move(client, workspaceId, id, "confirmed", user.userId, { selection });
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "ai.tool_call.confirmed", entityType: "ai_tool_call", entityId: id,
-        after: { tool: row.tool, runId: row.runId, targetType: row.targetType, targetId: row.targetId, targetVersion: row.targetVersion, selection } });
+        after: { tool: row.tool, runId: row.runId, via, targetType: row.targetType, targetId: row.targetId, targetVersion: row.targetVersion, selection } });
       const asker = await readAsker(this.access, client, workspaceId, user.userId, this.registry.permissionCodes);
-      return { row: confirmed, asker };
+      return { row: confirmed, asker, via };
     });
     if ("expired" in claimed) throw expiredError();
     if ("done" in claimed) return claimed.done;
-    const { row, asker } = claimed;
+    const { row, asker, via } = claimed;
     const tool = this.registry.get(row.tool);
     let outcome: { status: "executed" | "failed"; result: Record<string, unknown>; error: string | null; code: string | null };
     try {
@@ -114,8 +145,8 @@ export class AiToolCallsService {
       const { context } = toolContext({ actor, workspaceId, runId: row.runId, asker });
       const stored: StoredProposal = { id: row.id, runId: row.runId, tool: row.tool, targetType: row.targetType, targetId: row.targetId, targetVersion: row.targetVersion,
         command: row.command, selection: row.selection, idempotencyKey: row.idempotencyKey };
-      // The module's command, as this person, marked as coming from Woddy in its audit rows.
-      const execution = await runWithCommandOrigin({ via: "woddy", runId: row.runId }, () => tool.execute!(context, stored));
+      // The module's command, as this person, marked in its audit rows as coming from Woddy or an AI app.
+      const execution = await runWithCommandOrigin({ via, runId: row.runId }, () => tool.execute!(context, stored));
       outcome = { status: "executed", result: { ...execution.result, record: execution.record, failures: execution.failures ?? [] }, error: null, code: null };
     } catch (error) {
       if (!(error instanceof HttpException) && !(error instanceof ItemsFailedError)) this.logger.error(`Woddy action ${row.id} (${row.tool}) failed: ${(error as Error)?.name ?? "unknown"}`);

@@ -225,3 +225,18 @@ these integrations as end-to-end verified or ready for customer rollout.
 
 Verified in this session: 115 Business Core tests, 57 Python service tests, 7 targeted web tests,
 TypeScript checks for web and core, Python type checking, and lint for the integration changes.
+
+## AI apps (MCP): connect Claude Desktop
+
+Wodana is an MCP server. An AI app acts as the person who connects it: their own permissions, the
+scopes they allow (read; write means changes they confirm) and only in a workspace whose owner turned
+on **Settings → Connections → AI apps** (AI assistance must be on too).
+
+1. In Claude Desktop: **Settings → Connectors → Add custom connector**, URL
+   `https://<tenant>.wodana.ai/api/v1/mcp` (Settings → AI apps shows the exact address).
+2. Claude opens Wodana: sign in, choose the workspace and the access, then **Allow**.
+3. Reads answer at once, with links to the records. A change waits for your OK: Claude asks when it
+   can, otherwise it appears in **Approvals → Waiting for you** (the link is in Claude's answer).
+
+Revoke an app in Settings → AI apps (owners can revoke anyone's). Tokens last an hour and refresh
+tokens rotate on every use; no AI credits are charged for MCP calls.
