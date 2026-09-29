@@ -13,6 +13,8 @@ describe("DataGrid", () => {
     render(<DesignSystemProvider><DataGrid ariaLabel="Customer organizations" columns={columns} data={[]} getRowId={(row) => row.id} isLoading /></DesignSystemProvider>);
     expect(screen.getByRole("status", { name: "Loading Customer organizations" })).toBeInTheDocument();
     expect(screen.queryByText("No records found")).not.toBeInTheDocument();
+    // No count while loading: "0 records" under the placeholders would be untrue (m21).
+    expect(screen.queryByText("0 records")).not.toBeInTheDocument();
   });
   it("doesn't tell people to adjust filters on a grid that has none", () => {
     const { unmount } = render(<DesignSystemProvider><DataGrid ariaLabel="Viewed as you" columns={columns} data={[]} getRowId={(row) => row.id} showToolbar={false} emptyTitle="Nobody has viewed as you" /></DesignSystemProvider>);
