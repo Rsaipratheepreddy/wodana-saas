@@ -19,8 +19,16 @@ export class CatalogRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); this.name = "CatalogRequestError"; }
 }
 
+/** The web route for a catalog API path. The root ("" or "?…") has no trailing slash: a slash would be redirected (308). */
+export function catalogApiUrl(workspaceId: string, path: string): string {
+  const queryStart = path.indexOf("?");
+  const pathname = (queryStart < 0 ? path : path.slice(0, queryStart)).replace(/^\/+|\/+$/g, "");
+  const query = queryStart < 0 ? "" : path.slice(queryStart + 1);
+  return `/api/workspace/catalogs${pathname ? `/${pathname}` : ""}?${query ? `${query}&` : ""}workspaceId=${workspaceId}`;
+}
+
 export async function catalogApi<T>(workspaceId: string, path: string, init?: { method?: string; body?: unknown }): Promise<T> {
-  const url = `/api/workspace/catalogs/${path}${path.includes("?") ? "&" : "?"}workspaceId=${workspaceId}`;
+  const url = catalogApiUrl(workspaceId, path);
   const response = await fetch(url, init?.body === undefined ? { method: init?.method ?? "GET" } : {
     method: init?.method ?? "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(init.body),
   });
