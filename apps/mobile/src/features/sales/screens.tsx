@@ -318,6 +318,15 @@ export function FollowUpsScreen() {
   const [done, setDone] = useState<Activity | null>(null);
   const [outcome, setOutcome] = useState('');
   const complete = useSalesCommand((api, input: { id: string; version: number; outcome: string }) => api.send(`crm/activities/${input.id}/complete`, 'POST', { version: input.version, ...(input.outcome ? { outcome: input.outcome } : {}) }));
+  // Today and notices open the follow-up they're about.
+  const { record } = useLocalSearchParams<{ record?: string }>();
+  const linked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!record || linked.current === record || !activities.data) return;
+    linked.current = record;
+    const found = activities.data.data.find((item) => item.id === record);
+    if (found) setDone(found);
+  }, [record, activities.data]);
   const today = format.today();
   const items = [...(activities.data?.data ?? [])].filter((item) => item.type !== 'note').sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'));
   const group = (item: Activity) => {

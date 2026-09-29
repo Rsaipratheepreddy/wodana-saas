@@ -56,7 +56,7 @@ export function appRouteFor(link: string | null | undefined): string | null {
         return lead ? `/sales/${lead}` : '/sales';
       }
       if (section === 'opportunities') return id(rest[1]) ? `/sales/opportunity/${rest[1]}` : q('record') ? `/sales/opportunity/${q('record')}` : '/sales/opportunities';
-      if (section === 'follow-ups' || section === 'activities') return '/sales/follow-ups';
+      if (section === 'follow-ups' || section === 'activities') return q('record') ? `/sales/follow-ups?record=${q('record')}` : '/sales/follow-ups';
       // A chat opens its thread; a link naming only the enquiry opens the enquiry.
       if (section === 'conversations' || section === 'inbox') {
         const chat = q('conversation') ?? q('record');

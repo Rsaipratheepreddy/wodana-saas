@@ -1,11 +1,15 @@
-import { View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { CalendarCheck, CheckCircle2, ClipboardCheck, ClipboardList, CloudOff, CloudUpload, Inbox, ListChecks, LogIn, LogOut, PackageCheck, PhoneCall, Users } from 'lucide-react-native';
-import type { HomeOverview } from '../../../../../packages/contracts/src/home';
-import { errorMessage, useApi } from '../../core/api';
+import {
+  Banknote, CalendarCheck, CalendarClock, CheckCircle2, ClipboardCheck, ClipboardList, Clock3, CloudOff, CloudUpload, Factory, FileText, Inbox, LogIn, LogOut,
+  MessageSquare, PackageCheck, Palette, Receipt, Truck, UserCheck, UserPlus, Users, Wallet, type LucideIcon,
+} from 'lucide-react-native';
+import type { HomeFocusItem, HomeFocusSource, HomeFunnelStage, HomeUpcomingItem } from '../../../../../packages/contracts/src/home';
+import { errorMessage } from '../../core/api';
 import { appRouteFor } from '../../core/deep-links';
 import { useFormat } from '../../core/format';
+import { haptic } from '../../core/haptics';
 import { key, useT } from '../../core/i18n';
 import { useOutbox } from '../../core/outbox';
 import { useOnline } from '../../core/query';
@@ -18,28 +22,37 @@ import { useBootstrap, useCrewDays, useCurrentAttendance, useLeaveRequests, useP
 import { minutesSince, MODE_LABEL } from '../hrms/model';
 import { useWaitingCount } from '../approvals/api';
 import { useInbox } from '../inbox/api';
-import { useOpenWork, useSitesToday } from '../projects/api';
-import { WorkTrailing } from '../projects/plan-screen';
+import { useSitesToday } from '../projects/api';
 import { useDeliveries } from '../purchasing/api';
 import { WoddyButton } from '../woddy/woddy-screen';
+import { useHomeMetrics, useHomeSummary } from './api';
+import { dueLabel, expectsNumbers, figuresFor, focusItems, lensFor, showsPipeline, SOURCE_REASON, STAGE_LABEL, type Figure } from './home-model';
 
-const OVERDUE = key('Overdue follow-up');
+const SOURCE_ICON: Record<HomeFocusSource, LucideIcon> = {
+  follow_up: CalendarClock, response: Clock3, unowned: UserPlus, confirm_client: UserCheck, reply: MessageSquare, work: ClipboardList, delivery: Truck,
+  invoice: Receipt, production: Factory, quote_review: FileText, receipt: Banknote, order_approval: Truck, design_review: Palette, design_client: Palette,
+  design_present: Palette, design_revise: Palette, petty_cash: Wallet, leave: Users,
+};
+const UPCOMING: Record<HomeUpcomingItem['kind'], { label: string; icon: LucideIcon }> = {
+  meeting: { label: key('Meeting'), icon: Users }, follow_up: { label: key('Follow-up'), icon: CalendarClock }, work: { label: key('Task'), icon: ClipboardList },
+  delivery: { label: key('Delivery'), icon: Truck }, payment: { label: key('Payment due'), icon: Banknote }, production: { label: key('Production'), icon: Factory },
+};
+const VISIBLE = 6;
 
 /**
- * Today: my next actions, each with the button that does it — attendance, work due, what waits for my
- * approval, follow-ups and deliveries expected. Nothing here is decoration.
+ * Today: the web's Home for one person on the phone. First what they act on (attendance, what waits for their
+ * decision, their sites), then what needs them now, most urgent first; the pipeline and one or two figures for
+ * people who run the business or its front; then what's coming. Every section follows what the server sent.
  */
 export function TodayScreen() {
   const t = useT();
   const theme = useTheme();
   const router = useRouter();
   const format = useFormat();
-  const api = useApi();
   const online = useOnline();
   const session = useSession();
   const outbox = useOutbox();
   const hrms = session.has('hrms');
-  const projects = session.has('projects') && session.can('projects.view', 'projects.manage');
   const bootstrap = useBootstrap();
   const current = useCurrentAttendance(hrms);
   const team = !!bootstrap.data?.permissions.team;
@@ -47,33 +60,45 @@ export function TodayScreen() {
   const teamReviews = useReviews('team', hrms && team);
   const teamTime = usePendingTime(hrms && team);
   const crewDays = useCrewDays(null, hrms && !!bootstrap.data?.permissions.crews);
-  const work = useOpenWork('mine');
   const sites = useSitesToday();
   const inbox = useInbox();
   const waiting = useWaitingCount();
   const deliveries = useDeliveries(session.has('projects') && session.can('stock.receive', 'purchasing.manage'));
-  const overview = useQuery({ queryKey: ['home-overview', api.workspaceId], queryFn: () => api.get<HomeOverview>('home-overview') });
+  const summary = useHomeSummary();
+  const numbersExpected = expectsNumbers(session.can);
+  const metrics = useHomeMetrics(numbersExpected);
+  const [expanded, setExpanded] = useState(false);
   const today = format.today();
 
-  const refresh = () => { void current.refetch(); void work.refetch(); void sites.refetch(); void overview.refetch(); void inbox.refetch(); void deliveries.refetch(); void teamLeave.refetch(); void teamReviews.refetch(); void waiting.refetch(); };
+  const refresh = () => {
+    void current.refetch(); void sites.refetch(); void summary.refetch(); void inbox.refetch(); void deliveries.refetch();
+    void teamLeave.refetch(); void teamReviews.refetch(); void waiting.refetch(); if (numbersExpected) void metrics.refetch();
+  };
   const open = current.data && !current.data.endedAt ? current.data : null;
   const segment = open?.segments[open.segments.length - 1];
-  const due = (work.data?.items ?? []).filter((item) => item.dueDate && item.dueDate <= today).slice(0, 5);
   const approvals = (teamLeave.data ?? []).filter((item) => item.canDecide && ['pending', 'cancellation_pending'].includes(item.status)).length
     + (teamReviews.data ?? []).filter((item) => item.canDecide && item.status === 'pending').length
     + (teamTime.data?.weeks ?? []).filter((week) => week.canDecide).length
     + (crewDays.data?.days ?? []).filter((day) => day.status === 'submitted' && day.canDecide).length;
-  const followUps = overview.data?.sales ?? [];
+  const focus = focusItems(summary.data);
+  const shown = expanded ? focus : focus.slice(0, VISIBLE);
+  const funnel = summary.data && showsPipeline(summary.data.funnel) ? summary.data.funnel : [];
+  const figures = metrics.data ? figuresFor(metrics.data, lensFor(session.can)) : [];
+  const upcoming = (summary.data?.upcoming ?? []).slice(0, 3);
   const expected = (deliveries.data?.expected ?? []).filter((order) => !order.due || order.due <= today).slice(0, 3);
   const blocked = outbox.items.filter((item) => item.status === 'blocked');
   // My sites first: today's report with one tap; after 19:00 a missing report turns amber.
   const mySites = sites.data?.sites ?? [];
   const late = (sites.data?.hour ?? 0) >= 19;
-  const nothing = !due.length && !approvals && !waiting.count && !followUps.length && !expected.length && !(inbox.unread > 0) && !mySites.length;
-  const loading = work.isLoading || overview.isLoading;
-  const failed = (projects ? work.error : null) ?? overview.error ?? (hrms ? current.error : null);
+  const nothing = !focus.length && !approvals && !waiting.count && !expected.length && !(inbox.unread > 0) && !mySites.length && !upcoming.length;
+  const failed = summary.error ?? (hrms ? current.error : null);
+  const go = (link: string | null | undefined, fallback?: string) => { const route = appRouteFor(link) ?? fallback; if (route) router.push(route as Href); };
+  const due = (item: HomeFocusItem) => {
+    const label = dueLabel(item, summary.data?.today ?? today, summary.data?.timeZone ?? format.timeZone, { time: (value) => format.time(value), date: (value) => format.day(value) });
+    return label ? t(label.key, label.values) : null;
+  };
 
-  return <Screen large title={t('Today')} subtitle={format.longDay(today)} action={<WoddyButton />} onRefresh={refresh} refreshing={current.isRefetching || work.isRefetching}>
+  return <Screen large title={t('Today')} subtitle={format.longDay(today)} action={<WoddyButton />} onRefresh={refresh} refreshing={summary.isRefetching || current.isRefetching}>
     {!online ? <Banner tone="neutral" icon={CloudOff} title={t('No connection')} detail={t('Captures are saved on this phone and sent later.')} /> : null}
     {blocked.length ? <Banner tone="warning" title={t('{count} captures need you', { count: blocked.length })} action={{ label: t('Fix'), onPress: () => router.push('/outbox') }} />
       : outbox.items.length ? <Banner tone="info" icon={CloudUpload} title={t('{count} waiting to send', { count: outbox.items.length })} action={{ label: t('View'), onPress: () => router.push('/outbox') }} /> : null}
@@ -90,12 +115,9 @@ export function TodayScreen() {
       </Row>
     </Card> : null}
 
-    {waiting.count ? <Section>
-      <ListRow first icon={ClipboardCheck} iconTone="warning" title={t('{count} waiting for you', { count: waiting.count })} onPress={() => router.push('/approvals')} />
-    </Section> : null}
-
-    {approvals ? <Section>
-      <ListRow first icon={Users} iconTone="warning" title={t('{count} to approve', { count: approvals })} detail={t('Leave, attendance, timesheets and crew days')} onPress={() => router.push('/hrms/team')} />
+    {waiting.count || approvals ? <Section>
+      {waiting.count ? <ListRow first icon={ClipboardCheck} iconTone="warning" title={t('{count} waiting for you', { count: waiting.count })} onPress={() => router.push('/approvals')} /> : null}
+      {approvals ? <ListRow first={!waiting.count} icon={Users} iconTone="warning" title={t('{count} to approve', { count: approvals })} detail={t('Leave, attendance, timesheets and crew days')} onPress={() => router.push('/hrms/team')} /> : null}
     </Section> : null}
 
     {mySites.length ? <Section title={t('My sites today')}>
@@ -106,21 +128,34 @@ export function TodayScreen() {
         onPress={() => router.push(site.report ? `/projects/${site.projectId}/reports` : `/projects/${site.projectId}/report`)} />)}
     </Section> : null}
 
-    {projects && (due.length || work.isLoading) ? <Section title={t('Due today')} action={<Button size="sm" variant="ghost" label={t('All')} onPress={() => router.push('/projects/tasks')} />}>
-      {work.isLoading ? <View style={{ padding: theme.space(4), gap: theme.space(2) }}><Shimmer width="60%" height={12} /><Shimmer width="40%" height={9} /></View> : due.map((item, index) => <ListRow key={item.id} first={index === 0} icon={ListChecks} title={item.title}
-        detail={`${item.projectReference} · #${item.number}${item.dueDate && item.dueDate < today ? ` · ${t('due {day}', { day: format.day(item.dueDate) })}` : ''}`}
-        trailing={<WorkTrailing item={item} />} onPress={() => router.push(`/projects/${item.projectId}/task/${item.id}`)} />)}
-    </Section> : null}
+    {summary.isLoading ? <Section><View style={{ padding: theme.space(4), gap: theme.space(2) }}><Shimmer width="60%" height={12} /><Shimmer width="40%" height={9} /></View></Section>
+      : focus.length ? <Section title={t('Needs attention')} action={summary.data && summary.data.focus.total > summary.data.focus.items.length
+        ? <Text variant="caption" tone="tertiary">{t('{count} more not shown', { count: summary.data.focus.total - summary.data.focus.items.length })}</Text> : undefined}>
+        {shown.map((item, index) => {
+          const when = due(item);
+          return <ListRow key={item.id} first={index === 0} icon={SOURCE_ICON[item.source] ?? ClipboardCheck} iconTone={item.urgency === 'overdue' ? 'danger' : item.urgency === 'today' ? 'action' : 'warning'}
+            title={item.title || t(SOURCE_REASON[item.source])} detail={[t(SOURCE_REASON[item.source]), item.context].filter(Boolean).join(' · ')}
+            meta={when ? <Text variant="caption" tone={item.urgency === 'overdue' ? 'danger' : 'tertiary'}>{when}</Text> : undefined}
+            onPress={() => go(item.href, item.projectId ? `/projects/${item.projectId}` : undefined)} />;
+        })}
+        {focus.length > VISIBLE ? <ListRow title={expanded ? t('Show less') : t('Show all {count}', { count: focus.length })} onPress={() => setExpanded((value) => !value)} trailing={<View />} /> : null}
+      </Section> : null}
 
-    {followUps.length ? <Section title={t('Follow-ups')} action={<Button size="sm" variant="ghost" label={t('All')} onPress={() => router.push('/sales/follow-ups')} />}>
-      {followUps.map((item, index) => <ListRow key={item.id} first={index === 0} icon={item.detail === OVERDUE ? PhoneCall : CalendarCheck} iconTone={item.detail === OVERDUE ? 'danger' : 'action'}
-        title={item.title} detail={[t(item.detail), item.date ? format.when(item.date) : null].filter(Boolean).join(' · ')}
-        onPress={() => router.push((appRouteFor(item.href) ?? '/sales/follow-ups') as Href)} />)}
-    </Section> : null}
+    {funnel.length ? <Pipeline stages={funnel} onOpen={(stage) => go(stage.href)} /> : null}
+    {figures.length ? <KeyNumbers figures={figures} onOpen={(figure) => router.push(figure.route as Href)} /> : null}
 
     {expected.length ? <Section title={t('Deliveries expected')} action={<Button size="sm" variant="ghost" label={t('All')} onPress={() => router.push('/purchasing')} />}>
       {expected.map((order, index) => <ListRow key={order.id} first={index === 0} icon={PackageCheck} title={order.supplierName} detail={`${order.number} · ${t('{count} lines', { count: order.linesLeft })}`}
         onPress={() => router.push(`/purchasing/receive/${order.id}`)} />)}
+    </Section> : null}
+
+    {upcoming.length ? <Section title={t('Coming up')}>
+      {upcoming.map((item, index) => {
+        const look = UPCOMING[item.kind];
+        return <ListRow key={item.id} first={index === 0} icon={look.icon} title={item.title}
+          detail={[item.allDay ? format.weekday(item.at.slice(0, 10)) : format.when(item.at), t(look.label), item.context].filter(Boolean).join(' · ')}
+          onPress={appRouteFor(item.href) ? () => go(item.href) : undefined} />;
+      })}
     </Section> : null}
 
     {inbox.enabled && inbox.unread ? <Section>
@@ -129,6 +164,41 @@ export function TodayScreen() {
 
     {/* A failed load never reads as "all caught up". */}
     {failed && online ? <Banner tone="warning" title={t('Something went wrong')} detail={errorMessage(failed, t('Try again'))} action={{ label: t('Try again'), onPress: refresh }} /> : null}
-    {!loading && !failed && nothing ? <Empty icon={CheckCircle2} title={t('You’re all caught up')} /> : null}
+    {!summary.isLoading && !failed && nothing ? <Empty icon={CheckCircle2} title={t('You’re all caught up')}
+      action={session.has('crm') && session.can('crm.leads.manage') ? { label: t('New enquiry'), onPress: () => router.push('/sales/new') } : undefined} /> : null}
   </Screen>;
+}
+
+/** The business flow the person can see: a count per stage, and how many have stalled. */
+function Pipeline({ stages, onOpen }: { stages: HomeFunnelStage[]; onOpen: (stage: HomeFunnelStage) => void }) {
+  const t = useT();
+  const theme = useTheme();
+  return <Section title={t('Pipeline')} flat>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.space(2) }}>
+      {stages.map((stage) => <Pressable key={stage.id} accessibilityRole="button"
+        accessibilityLabel={[t(STAGE_LABEL[stage.id]), String(stage.count), stage.stuck ? t('{count} stalled', { count: stage.stuck }) : ''].filter(Boolean).join(', ')}
+        onPress={() => { haptic.tap(); onOpen(stage); }}
+        style={({ pressed }) => ({ minWidth: 104, minHeight: 88, padding: theme.space(3), gap: theme.space(1), borderRadius: theme.radius.lg, borderWidth: 1,
+          borderColor: stage.stuck ? theme.colors.warning : theme.colors.structuralDivider, backgroundColor: pressed ? theme.colors.surfacePressed : theme.colors.surface })}>
+        <Text variant="caption" tone="secondary" numberOfLines={1}>{t(STAGE_LABEL[stage.id])}</Text>
+        <Text variant="number">{stage.count}</Text>
+        {stage.stuck ? <Text variant="caption" tone="warning" numberOfLines={1}>{t('{count} stalled', { count: stage.stuck })}</Text> : null}
+      </Pressable>)}
+    </ScrollView>
+  </Section>;
+}
+
+/** One or two figures that matter for the person's role, each with how it compares to last month. */
+function KeyNumbers({ figures, onOpen }: { figures: Figure[]; onOpen: (figure: Figure) => void }) {
+  const t = useT();
+  const format = useFormat();
+  const value = (figure: Figure) => (figure.value.kind === 'money' ? format.money(figure.value.amount, figure.value.currency)
+    : figure.value.kind === 'share' ? t('{count} of {total}', { count: figure.value.count, total: figure.value.total }) : format.number(figure.value.value, 0));
+  return <Row gap={2} align="stretch">
+    {figures.map((figure) => <Card key={figure.id} style={{ flex: 1 }} onPress={() => { haptic.tap(); onOpen(figure); }}>
+      <Text variant="caption" tone="secondary" numberOfLines={2}>{t(figure.label)}</Text>
+      <Text variant="number" numberOfLines={1} adjustsFontSizeToFit>{value(figure)}</Text>
+      {figure.note ? <Text variant="caption" tone={figure.note.tone === 'neutral' ? 'tertiary' : figure.note.tone} numberOfLines={2}>{t(figure.note.key, figure.note.values)}</Text> : null}
+    </Card>)}
+  </Row>;
 }
