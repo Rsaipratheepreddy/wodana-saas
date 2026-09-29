@@ -51,7 +51,7 @@ export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: stri
   }), [rows, filter, search, health, format]);
 
   const columns = useMemo<DataGridColumn<ProjectRow>[]>(() => [
-    { id: "name", header: t("Project"), accessorFn: (row) => `${row.name} ${row.reference}`, size: 240, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
+    { id: "name", header: t("Project"), accessorFn: (row) => `${row.name} ${row.reference}`, size: 240, meta: { primary: true, interactive: true, renderCell: (row) => <span className={styles.nameCell}>
       <Link data-tour="project-open" href={`/workspace/projects/${row.id}`}>{row.name}</Link><small>{row.reference}</small></span> } },
     { id: "client", header: t("Client"), accessorFn: (row) => row.clientName, size: 160 },
     { id: "stage", header: t("Stage"), accessorFn: (row) => row.stage?.name ?? "", size: 170, meta: { renderCell: (row) => row.stage

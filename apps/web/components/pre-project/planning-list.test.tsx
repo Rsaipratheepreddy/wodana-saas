@@ -61,6 +61,14 @@ describe("Planning list", () => {
     expect(within(grid).getByText(/48,000/)).toBeVisible();
   });
 
+  it("renders the case cell without a control inside another, so the list hydrates cleanly (M1)", () => {
+    const qualified = { ...planning, id: "lead-1", title: "Qualified lead", qualifiedLead: true, status: "qualified", opportunityId: "deal-1" } as PreProjectListItem;
+    const { container } = render(<PlanningList projects={[]} planning={list([planning, qualified])} />);
+    expect(container.querySelector("button button, button a, a button")).toBeNull();
+    expect(screen.getByRole("link", { name: "Villa interiors" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Qualified lead" })).toBeEnabled();
+  });
+
   it("filters by planning stage and status, and says when nothing matches", async () => {
     const paid = { ...project, id: "project-2", caseId: "case-2", workflow: { templateCode: "design_build_deal_first", currentStageKey: "concept", currentStageName: "Concept" } };
     render(<PlanningList projects={[paid]} planning={list([planning, { ...planning, id: "case-3", title: "Paused office", status: "on_hold" } as PreProjectListItem])} workflow={workflow} servicePathEnabled />);
