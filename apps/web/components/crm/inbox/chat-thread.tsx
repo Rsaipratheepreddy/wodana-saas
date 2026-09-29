@@ -12,6 +12,7 @@ import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CrmDateTimeField } from "../crm-date-time-field";
 import { ChatContextPanel } from "./chat-context";
 import { InboxComposer } from "./inbox-composer";
+import { ScheduledMessages, type ScheduledMessage } from "./scheduled-messages";
 import { useWoddy, useWoddyComposer, useWoddyRecord } from "../woddy-chat";
 import { useWoddyPrivateAsk, WoddyPrivateReplies } from "@/components/woddy/woddy-private-replies";
 import { LabelChip, useNow } from "./inbox-parts";
@@ -139,7 +140,9 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     {status === "snoozed" && thread.snoozedUntil ? <p className={styles.stateBar}><Clock3 aria-hidden="true" size={14} />{t("Snoozed until {time}", { time: new Intl.DateTimeFormat(locale, { timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(String(thread.snoozedUntil))) })}</p> : null}
     <MessageHistory workspaceId={workspaceId} thread={thread} onHide={thread.canSend ? hide : undefined} canShowHidden={Boolean(thread.canManage)}
       revision={woddy.turns.map((turn) => `${turn.id}:${turn.state}`).join(",")}
-      after={<WoddyPrivateReplies workspaceId={workspaceId} turns={woddy.turns} onDismiss={woddy.dismiss} draftPlaced />} />
+      after={<><ScheduledMessages workspaceId={workspaceId} conversationId={id} items={(thread.scheduledMessages ?? []) as ScheduledMessage[]} canSend={Boolean(thread.canSend)}
+        windowClosesAt={(thread.windowClosesAt as string | null) ?? null} onChanged={async () => { await refresh(); await onChanged(); }} />
+        <WoddyPrivateReplies workspaceId={workspaceId} turns={woddy.turns} onDismiss={woddy.dismiss} draftPlaced /></>} />
     <InboxComposer workspaceId={workspaceId} thread={thread} now={now} blocked={blocked} draft={draft} onDraftChange={onDraftChange} variables={context?.variables ?? {}}
       lookups={{ quickReplies: lookups.quickReplies, templates: lookups.templates, owners, canManage: Boolean(lookups.settings?.canManage) }}
       onSent={async () => { await refresh(); await onChanged(); }} onAskWoddy={woddy.ask} woddyBusy={woddy.asking} />

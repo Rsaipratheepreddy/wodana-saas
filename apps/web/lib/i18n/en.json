@@ -10754,5 +10754,20 @@
   "Attach a file": "Attach a file",
   "Add a caption": "Add a caption",
   "Invalid file.": "Invalid file.",
-  "Files can be up to 20 MB.": "Files can be up to 20 MB."
+  "Files can be up to 20 MB.": "Files can be up to 20 MB.",
+  "Choose a time at least a minute from now": "Choose a time at least a minute from now",
+  "WhatsApp's 24-hour window will be closed by then. Choose an earlier time or a template.": "WhatsApp's 24-hour window will be closed by then. Choose an earlier time or a template.",
+  "Write a message": "Write a message",
+  "The message could not be scheduled.": "The message could not be scheduled.",
+  "Send at": "Send at",
+  "Clear this message?": "Clear this message?",
+  "Cancel this scheduled message?": "Cancel this scheduled message?",
+  "Cancel message": "Cancel message",
+  "It won't be sent.": "It won't be sent.",
+  "The scheduled message could not be cancelled.": "The scheduled message could not be cancelled.",
+  "Scheduled messages": "Scheduled messages",
+  "Scheduled for {time}": "Scheduled for {time}",
+  "Edit scheduled message": "Edit scheduled message",
+  "Send later": "Send later",
+  "Send the template later": "Send the template later"
 }
