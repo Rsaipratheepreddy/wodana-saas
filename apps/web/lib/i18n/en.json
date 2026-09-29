@@ -11674,5 +11674,8 @@
   "Add a proof-of-payment link.": "Add a proof-of-payment link.",
   "I verified the payment receipt": "I verified the payment receipt",
   "Convert {name} to an opportunity?": "Convert {name} to an opportunity?",
-  "A converted enquiry can't be changed back.": "A converted enquiry can't be changed back."
+  "A converted enquiry can't be changed back.": "A converted enquiry can't be changed back.",
+  "Nothing new to suggest from the scope.": "Nothing new to suggest from the scope.",
+  "1 material added from the scope.": "1 material added from the scope.",
+  "{count} materials added from the scope.": "{count} materials added from the scope."
 }

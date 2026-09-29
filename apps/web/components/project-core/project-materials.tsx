@@ -27,6 +27,8 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<MaterialItem | "new" | null>(null);
   const [deciding, setDeciding] = useState(false);
+  // What "Suggest from the scope" did: materials added, or that the scope had nothing new.
+  const [suggested, setSuggested] = useState("");
   const load = useCallback(async () => {
     try { setData(await api.materials(projectId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The material list didn't load.")); }
   }, [api, projectId, t]);
@@ -46,6 +48,17 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
     : data.state === "changes_requested" ? t("The client asked for changes to R{number}", { number: latest.number })
     : t("Changed since R{number} was signed off", { number: latest.number });
   const locked = data.state === "sent";
+  const suggest = async () => {
+    const before = data.items.length;
+    setSuggested("");
+    if (!(await run("suggest_materials"))) return;
+    try {
+      const next = await api.materials(projectId);
+      setData(next);
+      const added = next.items.length - before;
+      setSuggested(added <= 0 ? t("Nothing new to suggest from the scope.") : added === 1 ? t("1 material added from the scope.") : t("{count} materials added from the scope.", { count: added }));
+    } catch { /* The list reloads with the project version. */ }
+  };
   const columns: GroupedTableColumn<MaterialItem>[] = [
     { id: "name", label: t("Material"), width: "30%", render: (item) => <span className={styles.lineCell}><span>{item.name}</span>{item.code || item.supplier ? <small>{[item.code, item.supplier].filter(Boolean).join(" · ")}</small> : null}</span> },
     { id: "spec", label: t("Finish"), width: "24%", mobileHidden: true, render: (item) => <span className={styles.muted}>{item.specification}</span> },
@@ -61,7 +74,8 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
       <span className={styles.materialStatus} data-state={data.state}>{status}</span>
       {data.canEdit ? <div className={styles.toolbarActions}>
         {!locked ? <>
-          <Button size="compact" onPress={() => void run("suggest_materials")}><Sparkles aria-hidden="true" size={14} />{t("Suggest from the scope")}</Button>
+          {suggested ? <span className={styles.muted} role="status">{suggested}</span> : null}
+          <Button size="compact" onPress={() => void suggest()}><Sparkles aria-hidden="true" size={14} />{t("Suggest from the scope")}</Button>
           <Button size="compact" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("Add material")}</Button>
           {data.items.length && data.state !== "signed_off" ? <Button size="compact" variant="primary" onPress={() => void run("send_materials")}><Send aria-hidden="true" size={14} />{t("Send to the client")}</Button> : null}
         </> : <>
