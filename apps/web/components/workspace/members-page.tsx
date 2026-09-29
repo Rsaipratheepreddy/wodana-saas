@@ -620,8 +620,9 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             <TextInput autoComplete="off" label={t("Work emails")} onChange={setQuickEmail} placeholder={t("name@company.com")} value={quickEmail} />
             <SelectField
               items={[
-                ...assignableTeams.map((team) => ({ id: `team:${team.id}`, label: t("{name} team", { name: team.name }) })),
-                ...assignableRoles.map((role) => ({ id: `role:${role.code}`, label: t("{name} role", { name: role.name }) })),
+                // The name as the workspace wrote it, with its kind beside it (a name like "QS Team" never becomes "QS Team team").
+                ...assignableTeams.map((team) => ({ id: `team:${team.id}`, label: team.name, description: t("Team") })),
+                ...assignableRoles.map((role) => ({ id: `role:${role.code}`, label: role.name, description: t("Role") })),
               ]}
               label={t("Access")}
               onSelectionChange={(key) => key && setQuickAccess(String(key))}

@@ -114,6 +114,17 @@ describe("MembersPage", () => {
     expect(await screen.findByRole("dialog", { name: "Invitation ready" })).toBeInTheDocument();
   });
 
+  it("lists teams and roles by their own names, with the kind beside each", async () => {
+    const interaction = userEvent.setup();
+    const data = structuredClone(membersPageFixture);
+    data.teams = [{ id: "20000000-0000-4000-8000-000000000001", name: "QS Team" }];
+    render(<MembersPage initialData={data} />);
+    await interaction.click(screen.getByRole("button", { name: /Access/ }));
+    const option = await screen.findByRole("option", { name: /QS Team/ });
+    expect(option).toHaveTextContent("QS TeamTeam");
+    expect(screen.queryByText("QS Team team")).toBeNull();
+  });
+
   it("creates a team-only invitation without adding a direct role", async () => {
     const interaction = userEvent.setup();
     const data = structuredClone(membersPageFixture);
