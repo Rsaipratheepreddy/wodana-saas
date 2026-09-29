@@ -946,6 +946,13 @@
       "when": 1801740000100,
       "tag": "0240_platform_integration_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1801740000200,
+      "tag": "0241_role_notice_wording",
+      "breakpoints": true
     }
   ]
 }
