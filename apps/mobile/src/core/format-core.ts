@@ -67,6 +67,25 @@ export function weekStart(day: string, startsOn = 1) {
   return addDays(day, -((weekday - startsOn + 7) % 7));
 }
 
+type RelativeUnit = 'second' | 'minute' | 'hour' | 'day';
+
+/** "in 3 days", "5 min ago". Hermes (the phone's engine) has no Intl.RelativeTimeFormat, so it gets plain words
+ *  with the locale's digits instead of crashing. */
+function relativeTime(locale: string): { format: (value: number, unit: RelativeUnit) => string } {
+  if (typeof Intl.RelativeTimeFormat === 'function') return new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'short' });
+  const number = new Intl.NumberFormat(locale);
+  const units: Record<RelativeUnit, [string, string]> = { second: ['sec', 'sec'], minute: ['min', 'min'], hour: ['hr', 'hr'], day: ['day', 'days'] };
+  return {
+    format: (value, unit) => {
+      if (unit === 'day' && Math.abs(value) <= 1) return value === 0 ? 'today' : value > 0 ? 'tomorrow' : 'yesterday';
+      if (value === 0) return 'now';
+      const count = Math.abs(value);
+      const label = `${number.format(count)} ${units[unit][count === 1 ? 0 : 1]}`;
+      return value > 0 ? `in ${label}` : `${label} ago`;
+    },
+  };
+}
+
 export function makeFormat(settings: { locale?: string | null; timeZone?: string | null; currency?: string | null }) {
   const locale = safeLocale(settings.locale);
   const timeZone = safeZone(settings.timeZone);
@@ -79,7 +98,7 @@ export function makeFormat(settings: { locale?: string | null; timeZone?: string
   const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone });
   const wallClock = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
   const when = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone });
-  const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'short' });
+  const relative = relativeTime(locale);
   const asDate = (value: string) => new Date(`${value.slice(0, 10)}T00:00:00Z`);
   const today = () => isoDay(new Date(), timeZone);
   const format = {

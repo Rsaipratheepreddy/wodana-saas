@@ -49,3 +49,19 @@ test('durations, clock labels and unknown settings degrade safely', () => {
   assert.match(makeFormat({ locale: 'en-GB', timeZone: 'UTC' }).clockLabel('09:05'), /09:05|9:05/);
   assert.equal(makeFormat({ locale: 'en', timeZone: 'Asia/Dubai' }).instant('2026-10-05', '09:30'), '2026-10-05T05:30:00.000Z');
 });
+
+test('relative dates work on an engine without Intl.RelativeTimeFormat (Hermes on the phone)', () => {
+  const intl = Intl as { RelativeTimeFormat?: typeof Intl.RelativeTimeFormat };
+  const original = intl.RelativeTimeFormat;
+  delete intl.RelativeTimeFormat; // Hermes ships Intl without it.
+  try {
+    const format = makeFormat({ locale: 'en', timeZone: 'UTC' });
+    assert.equal(format.fromToday(format.today()), 'today');
+    assert.equal(format.fromToday(addDays(format.today(), 1)), 'tomorrow');
+    assert.equal(format.fromToday(addDays(format.today(), 3)), 'in 3 days');
+    assert.equal(format.fromToday(addDays(format.today(), -2)), '2 days ago');
+    assert.equal(format.ago(new Date(Date.now() - 5 * 60000)), '5 min ago');
+  } finally {
+    intl.RelativeTimeFormat = original;
+  }
+});
