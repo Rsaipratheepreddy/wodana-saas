@@ -11680,5 +11680,6 @@
   "{count} materials added from the scope.": "{count} materials added from the scope.",
   "Me · {name}": "Me · {name}",
   "1 pin": "1 pin",
-  "Enquiry requirements": "Enquiry requirements"
+  "Enquiry requirements": "Enquiry requirements",
+  "{duration} overdue": "{duration} overdue"
 }

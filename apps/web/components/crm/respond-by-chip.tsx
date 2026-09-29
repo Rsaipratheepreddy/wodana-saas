@@ -26,7 +26,11 @@ export function durationText(minutes: number, t: Translate) {
 }
 
 /** S-6: "Respond by 10:00 · 42 min", amber at the warning and red once overdue. */
-export function RespondByChip({ lead, now }: { lead: { slaStatus?: string | null; slaDueAt?: string | null; slaWarningAt?: string | null }; now: number }) {
+/**
+ * `compact` is for a list column already headed "Respond by": the chip shows only the time left (or overdue) on one
+ * line, with the full deadline in its tooltip.
+ */
+export function RespondByChip({ lead, now, compact = false }: { lead: { slaStatus?: string | null; slaDueAt?: string | null; slaWarningAt?: string | null }; now: number; compact?: boolean }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const timer = respondBy(lead, now);
@@ -34,5 +38,6 @@ export function RespondByChip({ lead, now }: { lead: { slaStatus?: string | null
   const at = deadlineText(timer.dueAt, { locale, timeZone }, new Date(now));
   const left = durationText(timer.minutesLeft, t);
   const label = timer.state === "breached" ? t("Respond by {when} · {duration} overdue", { when: at, duration: left }) : t("Respond by {when} · {duration}", { when: at, duration: left });
-  return <span className={styles.chip} data-state={timer.state} title={label}><Timer aria-hidden="true" size={12} /><span>{label}</span></span>;
+  const shown = !compact ? label : timer.state === "breached" ? t("{duration} overdue", { duration: left }) : left;
+  return <span className={styles.chip} data-chip data-state={timer.state} title={label}><Timer aria-hidden="true" size={12} /><span>{shown}</span></span>;
 }
