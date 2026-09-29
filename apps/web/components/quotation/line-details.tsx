@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { Button, Checkbox, IconButton, InlineNotice, InspectorSheet, SegmentedControl, SelectField, Switch, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { Button, Checkbox, DataGrid, type DataGridColumn, IconButton, InlineNotice, InspectorSheet, MoneyField, NumericInput, SegmentedControl, SelectField, Switch, TextAreaField, TextInput, useDesignSystem, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { LINE_KIND_LABEL, money, plain } from "@/lib/quotation/format";
 import type { BuilderLine, BuilderState, BuildUpRow, LineKind } from "@/lib/quotation/types";
@@ -108,16 +108,17 @@ export function LineDetails({ line, state, onClose, onSave }: { line: BuilderLin
           <SegmentedControl label={t("Pricing")} value={form.pricingMode} onChange={(value) => set("pricingMode", value as "rate" | "build_up")}
             options={[{ id: "rate", label: t("Rate") }, { id: "build_up", label: t("Build-up") }]} />
           {form.pricingMode === "rate" ? <div className={styles.triple}>
-            <TextInput label={t("Rate")} isReadOnly={readOnly} inputMode="decimal" value={form.rate} onChange={(value) => set("rate", value.replace(/[^\d.]/g, ""))} />
-            {state.canViewCosts ? <TextInput label={t("Cost")} isReadOnly={readOnly || !state.canEditCosts} inputMode="decimal" value={form.unitCost} onChange={(value) => set("unitCost", value.replace(/[^\d.]/g, ""))} /> : null}
-            {state.canViewCosts ? <TextInput label={t("Markup %")} isReadOnly={readOnly || !state.canEditCosts} inputMode="decimal" value={form.markupPercent} onChange={(value) => set("markupPercent", value.replace(/[^\d.]/g, ""))} /> : null}
+            <MoneyField label={t("Rate")} currency={currency} isReadOnly={readOnly} value={form.rate} onChange={(value) => set("rate", value)} />
+            {state.canViewCosts ? <MoneyField label={t("Cost")} currency={currency} isReadOnly={readOnly || !state.canEditCosts} value={form.unitCost} onChange={(value) => set("unitCost", value)} /> : null}
+            {state.canViewCosts ? <PercentText label={t("Markup %")} isReadOnly={readOnly || !state.canEditCosts} value={form.markupPercent} onChange={(value) => set("markupPercent", value)} /> : null}
           </div> : <BuildUp rows={rows} readOnly={readOnly} costs={state.canViewCosts} editCosts={state.canEditCosts} line={line} onChange={editRows} currency={currency} decimals={decimals}
             markup={form.markupPercent} onMarkup={(value) => set("markupPercent", value)} />}
         </>}
         <div className={styles.pair}>
           <SelectField label={t("Discount")} isDisabled={readOnly} selectedKey={form.discountKind} onSelectionChange={(key) => set("discountKind", String(key ?? "") as "" | "percent" | "amount")}
             items={[{ id: "", label: t("None") }, { id: "percent", label: t("Percent") }, { id: "amount", label: t("Amount") }]} />
-          {form.discountKind ? <TextInput label={form.discountKind === "percent" ? t("Discount %") : t("Discount amount")} isReadOnly={readOnly} inputMode="decimal" value={form.discountValue} onChange={(value) => set("discountValue", value.replace(/[^\d.]/g, ""))} /> : null}
+          {form.discountKind === "percent" ? <PercentText label={t("Discount %")} max={100} isReadOnly={readOnly} value={form.discountValue} onChange={(value) => set("discountValue", value)} /> : null}
+          {form.discountKind === "amount" ? <MoneyField label={t("Discount amount")} currency={currency} isReadOnly={readOnly} value={form.discountValue} onChange={(value) => set("discountValue", value)} /> : null}
         </div>
         {state.taxCodes.length ? <SelectField label={t("Tax")} isDisabled={readOnly} selectedKey={form.taxCode} onSelectionChange={(key) => set("taxCode", String(key ?? ""))}
           items={[{ id: "", label: t("Quote tax") }, ...state.taxCodes.map((tax) => ({ id: tax.code, label: `${tax.label} · ${plain(tax.rate, locale)}%` }))]} /> : null}
@@ -133,6 +134,12 @@ export function LineDetails({ line, state, onClose, onSave }: { line: BuilderLin
   </InspectorSheet>;
 }
 
+/** A percentage kept as decimal text (markup can run past 100%). */
+function PercentText({ label, value, onChange, isReadOnly, max = 1000 }: { label: string; value: string; onChange: (value: string) => void; isReadOnly?: boolean; max?: number }) {
+  return <NumericInput label={label} isReadOnly={isReadOnly} minValue={0} maxValue={max} suffix="%" formatOptions={{ maximumFractionDigits: 4 }}
+    value={value === "" ? Number.NaN : Number(value)} onChange={(next) => onChange(Number.isFinite(next) ? String(next) : "")} />;
+}
+
 /** What one unit is made of: each row per one unit (a quantity or a formula), with its rate or cost. */
 function BuildUp({ rows, readOnly, costs, editCosts, line, onChange, currency, decimals, markup, onMarkup }: {
   rows: Row[]; readOnly: boolean; costs: boolean; editCosts: boolean; line: BuilderLine; onChange: (rows: Row[]) => void; currency: string; decimals: number; markup: string; onMarkup: (value: string) => void;
@@ -141,37 +148,42 @@ function BuildUp({ rows, readOnly, costs, editCosts, line, onChange, currency, d
   const { locale } = useDesignSystem();
   const update = (key: string, patch: Partial<Row>) => onChange(rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   const worked = new Map(line.components.map((part, index) => [part.id || String(index), part.worked]));
+  const hidden = (text: string) => <VisuallyHidden>{text}</VisuallyHidden>;
+  const kindItems = ROW_KINDS.map((kind) => ({ id: kind, label: t(ROW_KIND_LABEL[kind] as never) }));
+  const columns: DataGridColumn<Row>[] = [
+    { id: "part", header: t("Part"), size: 220, accessorFn: (row) => row.name, meta: { renderCell: (row) => <div className={styles.partCell}>
+      <TextInput label={hidden(t("Part"))} isReadOnly={readOnly} maxLength={200} value={row.name} onChange={(name) => update(row.key, { name })} />
+      <SelectField label={hidden(t("Type of {name}", { name: row.name || t("part") }))} accent="neutral" isDisabled={readOnly} items={kindItems} selectedKey={row.kind} onSelectionChange={(kind) => update(row.key, { kind: String(kind) as Row["kind"] })} />
+    </div> } },
+    { id: "perUnit", header: t("Per unit"), size: 140, accessorFn: (row) => row.quantityFormula ?? row.quantity, meta: { renderCell: (row) => {
+      const work = worked.get(row.key);
+      return <>
+        <TextInput label={hidden(t("Per unit"))} isReadOnly={readOnly} value={row.quantityFormula ?? row.quantity} description={work ? undefined : t("A number, or a formula like height * 2")}
+          onChange={(value) => update(row.key, /^[\d.]*$/.test(value) ? { quantity: value, quantityFormula: null } : { quantityFormula: value })} />
+        {work ? <small className={styles.worked} data-error={work.error ? true : undefined}>{work.error ?? `= ${plain(work.quantity, locale)}`}</small> : null}
+      </>;
+    } } },
+    { id: "unit", header: t("Unit"), size: 90, accessorFn: (row) => row.unit, meta: { renderCell: (row) =>
+      <TextInput label={hidden(t("Unit"))} isReadOnly={readOnly} maxLength={20} value={row.unit} onChange={(unit) => update(row.key, { unit })} /> } },
+    { id: "rate", header: t("Rate"), size: 140, accessorFn: (row) => row.rate ?? "", meta: { renderCell: (row) =>
+      <MoneyField label={hidden(t("Rate"))} currency={currency} isReadOnly={readOnly} isDisabled={row.suppliedByClient} placeholder={costs ? t("from cost") : undefined}
+        value={row.rate ?? ""} onChange={(rate) => update(row.key, { rate: rate || null })} /> } },
+    ...(costs ? [{ id: "cost", header: t("Cost"), size: 140, accessorFn: (row: Row) => row.unitCost ?? "", meta: { renderCell: (row: Row) =>
+      <MoneyField label={hidden(t("Cost"))} currency={currency} isReadOnly={readOnly || !editCosts} value={row.unitCost ?? ""} onChange={(unitCost) => update(row.key, { unitCost: unitCost || null })} /> } }] : []),
+    { id: "waste", header: t("Waste %"), size: 100, accessorFn: (row) => row.wastePercent ?? "", meta: { renderCell: (row) =>
+      <NumericInput label={hidden(t("Waste %"))} isReadOnly={readOnly} minValue={0} maxValue={100} formatOptions={{ maximumFractionDigits: 2 }}
+        value={row.wastePercent ? Number(row.wastePercent) : Number.NaN} onChange={(value) => update(row.key, { wastePercent: Number.isFinite(value) ? String(value) : null })} /> } },
+    { id: "client", header: t("Client"), size: 80, accessorFn: (row) => row.suppliedByClient, meta: { renderCell: (row) =>
+      <Checkbox aria-label={t("Client supplies")} isDisabled={readOnly} isSelected={row.suppliedByClient} onChange={(value) => update(row.key, { suppliedByClient: value })} /> } },
+    ...(readOnly ? [] : [{ id: "remove", header: "", size: 56, enableSorting: false, meta: { renderCell: (row: Row) =>
+      <IconButton aria-label={t("Remove {name}", { name: row.name })} size="compact" variant="quiet" onPress={() => onChange(rows.filter((item) => item.key !== row.key))}><Trash2 aria-hidden="true" size={14} /></IconButton> } }]),
+  ];
   return <div className={styles.buildUp}>
-    <table>
-      <thead><tr>
-        <th>{t("Part")}</th><th>{t("Per unit")}</th><th>{t("Unit")}</th><th>{t("Rate")}</th>{costs ? <th>{t("Cost")}</th> : null}<th>{t("Waste %")}</th><th>{t("Client")}</th><th><span className={styles.srOnly}>{t("Remove")}</span></th>
-      </tr></thead>
-      <tbody>{rows.map((row) => {
-        const work = worked.get(row.key);
-        return <tr key={row.key}>
-          <td>
-            <input aria-label={t("Part")} disabled={readOnly} value={row.name} onChange={(event) => update(row.key, { name: event.target.value })} />
-            <select aria-label={t("Type")} disabled={readOnly} value={row.kind} onChange={(event) => update(row.key, { kind: event.target.value as Row["kind"] })}>
-              {ROW_KINDS.map((kind) => <option key={kind} value={kind}>{t(ROW_KIND_LABEL[kind] as never)}</option>)}
-            </select>
-          </td>
-          <td>
-            <input aria-label={t("Per unit")} disabled={readOnly} value={row.quantityFormula ?? row.quantity} title={t("A number, or a formula like height * 2")}
-              onChange={(event) => { const value = event.target.value; update(row.key, /^[\d.]*$/.test(value) ? { quantity: value, quantityFormula: null } : { quantityFormula: value }); }} />
-            {work ? <small data-error={work.error ? true : undefined}>{work.error ?? `= ${plain(work.quantity, locale)}`}</small> : null}
-          </td>
-          <td><input aria-label={t("Unit")} disabled={readOnly} value={row.unit} onChange={(event) => update(row.key, { unit: event.target.value })} /></td>
-          <td><input aria-label={t("Rate")} disabled={readOnly || row.suppliedByClient} inputMode="decimal" value={row.rate ?? ""} placeholder={costs ? t("from cost") : ""} onChange={(event) => update(row.key, { rate: event.target.value.replace(/[^\d.]/g, "") || null })} /></td>
-          {costs ? <td><input aria-label={t("Cost")} disabled={readOnly || !editCosts} inputMode="decimal" value={row.unitCost ?? ""} onChange={(event) => update(row.key, { unitCost: event.target.value.replace(/[^\d.]/g, "") || null })} /></td> : null}
-          <td><input aria-label={t("Waste %")} disabled={readOnly} inputMode="decimal" value={row.wastePercent ?? ""} onChange={(event) => update(row.key, { wastePercent: event.target.value.replace(/[^\d.]/g, "") || null })} /></td>
-          <td><Checkbox aria-label={t("Client supplies")} isDisabled={readOnly} isSelected={row.suppliedByClient} onChange={(value) => update(row.key, { suppliedByClient: value })} /></td>
-          <td>{readOnly ? null : <IconButton aria-label={t("Remove {name}", { name: row.name })} size="compact" variant="quiet" onPress={() => onChange(rows.filter((item) => item.key !== row.key))}><Trash2 aria-hidden="true" size={14} /></IconButton>}</td>
-        </tr>;
-      })}</tbody>
-    </table>
+    <DataGrid ariaLabel={t("Build-up")} data={rows} getRowId={(row) => row.key} columns={columns} emptyTitle={t("No parts yet")}
+      showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} />
     <div className={styles.buildUpFoot}>
       {readOnly ? null : <Button size="compact" variant="quiet" onPress={() => onChange([...rows, { key: crypto.randomUUID(), kind: "material", name: "", quantityFormula: null, quantity: "1", unit: "", rate: null, unitCost: null, wastePercent: null, suppliedByClient: false, catalogItemId: null }])}><Plus aria-hidden="true" size={14} />{t("Add part")}</Button>}
-      {costs ? <label className={styles.inlineField}>{t("Markup % on cost")}<input inputMode="decimal" disabled={readOnly || !editCosts} value={markup} onChange={(event) => onMarkup(event.target.value.replace(/[^\d.]/g, ""))} /></label> : null}
+      {costs ? <PercentText label={t("Markup % on cost")} isReadOnly={readOnly || !editCosts} value={markup} onChange={onMarkup} /> : null}
       <span className={styles.spacer} />
       <strong>{t("Per unit {amount}", { amount: money(line.rate, currency, decimals, locale) })}</strong>
     </div>

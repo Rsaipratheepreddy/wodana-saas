@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Percent, Sparkles } from "lucide-react";
-import { Button, IconButton, SegmentedControl, TextInput, useDesignSystem } from "@/design-system";
+import { Button, Form, IconButton, MoneyField, PercentageInput, SegmentedControl, submitOnModEnter, TextInput, useDesignSystem, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { money, plain } from "@/lib/quotation/format";
@@ -75,17 +75,18 @@ export function QuoteSummary({ state, api, onState, onError, discountFor, onDisc
 
 function QuoteTax({ state, api, onState, onError, value }: { state: BuilderState; api: ReturnType<typeof quoteApi>; onState: (state: BuilderState) => void; onError: (message: string) => void; value: string }) {
   const t = useT();
-  const [rate, setRate] = useState(state.quote.taxRate);
-  const save = async () => {
-    const next = rate.trim();
-    // Only a number from 0 to 100 is a tax rate; anything else puts the rate back.
-    if (!/^\d{1,3}(\.\d{1,4})?$/.test(next) || Number(next) > 100) { setRate(state.quote.taxRate); if (next) onError(t("Tax must be a number from 0 to 100.")); return; }
-    if (Number(next) === Number(state.quote.taxRate)) return;
-    try { onState(await api.tax(next)); } catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not save.")); setRate(state.quote.taxRate); }
+  const [rate, setRate] = useState(Number(state.quote.taxRate));
+  // The rate saves when the field is left (or on Enter); a cleared field puts the saved rate back.
+  const save = async (next: number) => {
+    if (!Number.isFinite(next)) { setRate(Number(state.quote.taxRate)); return; }
+    setRate(next);
+    if (next === Number(state.quote.taxRate)) return;
+    try { onState(await api.tax(String(next))); } catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not save.")); setRate(Number(state.quote.taxRate)); }
   };
   return <div>
     <dt className={styles.withAction}>{t("Tax")}
-      <input className={styles.taxInput} aria-label={t("Tax %")} inputMode="decimal" disabled={!state.canEdit} value={rate} onChange={(event) => setRate(event.target.value.replace(/[^\d.]/g, ""))} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />%
+      <span className={styles.taxInput}><PercentageInput label={<VisuallyHidden>{t("Tax %")}</VisuallyHidden>} isDisabled={!state.canEdit} formatOptions={{ maximumFractionDigits: 4 }}
+        value={rate} onChange={(next) => void save(next)} /></span>
     </dt>
     <dd>{value}</dd>
   </div>;
@@ -100,17 +101,20 @@ function DiscountForm({ target, state, onClose, onSave }: { target: Target; stat
   const [busy, setBusy] = useState(false);
   const run = async (next: string) => { setBusy(true); await onSave({ kind, value: next, reason }); setBusy(false); };
   const approvalAt = state.settings.discountApprovalPercent;
-  return <form className={styles.discountForm} onSubmit={(event) => { event.preventDefault(); void run(value || "0"); }}>
+  return <Form className={styles.discountForm} fieldMarkers="optional" onSubmit={(event) => { event.preventDefault(); void run(value || "0"); }}
+    onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } else submitOnModEnter(event, event.currentTarget); }}>
     <h3>{t("Discount on {name}", { name: target.name })}</h3>
-    <SegmentedControl label={t("Discount type")} value={kind} onChange={(next) => setKind(next as "percent" | "amount")} options={[{ id: "percent", label: "%" }, { id: "amount", label: state.quote.currency }]} />
-    <TextInput label={kind === "percent" ? t("Percent") : t("Amount")} inputMode="decimal" value={value} onChange={(next) => setValue(next.replace(/[^\d.]/g, ""))}
-      description={kind === "percent" && approvalAt ? t("Above {percent}% needs approval.", { percent: approvalAt }) : undefined} />
-    <TextInput label={t("Reason · optional")} value={reason} onChange={setReason} />
+    <SegmentedControl label={t("Discount type")} value={kind} onChange={(next) => { setKind(next as "percent" | "amount"); setValue(""); }} options={[{ id: "percent", label: "%" }, { id: "amount", label: state.quote.currency }]} />
+    {kind === "percent"
+      ? <PercentageInput isRequired label={t("Percent")} formatOptions={{ maximumFractionDigits: 2 }} value={value === "" ? Number.NaN : Number(value)} onChange={(next) => setValue(Number.isFinite(next) ? String(next) : "")}
+          description={approvalAt ? t("Above {percent}% needs approval.", { percent: approvalAt }) : undefined} />
+      : <MoneyField isRequired label={t("Amount")} currency={state.quote.currency} value={value} onChange={setValue} />}
+    <TextInput label={t("Reason")} maxLength={300} value={reason} onChange={setReason} />
     <div className={styles.formActions}>
       {current ? <Button size="compact" variant="quiet" isDisabled={busy} onPress={() => void run("0")}>{t("Remove")}</Button> : null}
       <span className={styles.spacer} />
       <Button size="compact" isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button>
       <Button size="compact" type="submit" variant="primary" isLoading={busy} isDisabled={!value}>{t("Save")}</Button>
     </div>
-  </form>;
+  </Form>;
 }

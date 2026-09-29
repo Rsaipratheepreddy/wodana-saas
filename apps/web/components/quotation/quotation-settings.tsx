@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import { Button, EmptyState, InlineNotice, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, EmptyState, Form, InlineNotice, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { quotationPath } from "@/lib/quotation/client";
 import { VIEW_LABEL } from "@/lib/quotation/format";
@@ -113,10 +113,10 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
         <TradeName name={item.name} readOnly={readOnly || item.archived} onRename={(name) => void updateTrade(item.id, { name })} />
         {readOnly ? null : <Button size="compact" variant="quiet" onPress={() => void updateTrade(item.id, { archived: !item.archived })}>{item.archived ? t("Restore") : t("Archive")}</Button>}
       </li>)}</ul> : <p className={styles.muted}>{t("No work packages yet. Add the trades you quote by, like joinery or electrical.")}</p>}
-      {readOnly ? null : <form className={styles.addTrade} onSubmit={(event) => { event.preventDefault(); void addTrade(); }}>
-        <TextInput aria-label={t("New work package")} label={null} placeholder={t("New work package")} value={trade} onChange={setTrade} />
+      {readOnly ? null : <Form className={styles.addTrade} fieldMarkers="none" onSubmit={(event) => { event.preventDefault(); void addTrade(); }}>
+        <TextInput aria-label={t("New work package")} label={null} maxLength={80} placeholder={t("New work package")} value={trade} onChange={setTrade} />
         <Button size="compact" type="submit" isDisabled={!trade.trim()}><Plus aria-hidden="true" size={14} />{t("Add")}</Button>
-      </form>}
+      </Form>}
     </SettingsSection>
   </SettingsPage>;
 }
@@ -124,6 +124,8 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
 function TradeName({ name, readOnly, onRename }: { name: string; readOnly: boolean; onRename: (name: string) => void }) {
   const t = useT();
   const [value, setValue] = useState(name);
-  return <input className={styles.tradeInput} aria-label={t("Work package name")} disabled={readOnly} value={value} onChange={(event) => setValue(event.target.value)}
-    onBlur={() => { if (value.trim() && value.trim() !== name) onRename(value.trim()); else setValue(name); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />;
+  // A rename saves when the field is left or on Enter; an empty name puts the saved one back.
+  const commit = () => { if (value.trim() && value.trim() !== name) onRename(value.trim()); else setValue(name); };
+  return <TextInput aria-label={t("Work package name")} label={null} isDisabled={readOnly} maxLength={80} value={value} onChange={setValue}
+    onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(); } }} />;
 }

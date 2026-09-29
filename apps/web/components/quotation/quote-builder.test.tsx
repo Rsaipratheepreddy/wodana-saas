@@ -214,12 +214,12 @@ describe("quotation builder", () => {
     await userEvent.click(screen.getByRole("radio", { name: "Payments" }));
     const dialog = screen.getByRole("region", { name: "Payments" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Add milestone" }));
-    await userEvent.type(within(dialog).getByRole("textbox", { name: "Milestone" }), "Advance");
-    await userEvent.type(within(dialog).getByRole("textbox", { name: "When" }), "On acceptance");
-    const percent = within(dialog).getByRole("textbox", { name: "%" });
-    await userEvent.clear(percent); await userEvent.type(percent, "40");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Milestone 1" }), "Advance");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "When milestone 1 is due" }), "On acceptance");
+    const percent = within(dialog).getByRole("textbox", { name: "Share of milestone 1" });
+    await userEvent.clear(percent); await userEvent.type(percent, "40"); await userEvent.tab();
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
-    await userEvent.clear(percent); await userEvent.type(percent, "100");
+    await userEvent.clear(percent); await userEvent.type(percent, "100"); await userEvent.tab();
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => String(url).includes("/payment-terms") && init?.method === "PUT")).toBe(true));
   });

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button as AriaButton, Dialog, DialogTrigger, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { ChevronDown } from "lucide-react";
 import { getExampleNumber, isSupportedCountry, type CountryCode } from "libphonenumber-js/max";
 import mobileExamples from "libphonenumber-js/examples.mobile.json";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { phoneCountryOptions, phoneProblem, splitPhone } from "@/lib/phone";
+import { joinPhone, phoneCountry, phoneCountryOptions, phoneProblem, splitPhone, toE164 } from "@/lib/phone";
 import { countryFromLocale } from "@/lib/workspace/region-labels";
 import { useDesignSystem } from "../foundations/provider";
 import { SearchInput, TextInput } from "./forms";
@@ -100,4 +100,26 @@ export function PhoneField({ label, value, onChange, countryCode: chosenCountry,
   const field = <TextInput autoFocus={autoFocus} description={description} inputType="tel" isDisabled={isDisabled} isReadOnly={isReadOnly} isRequired={isRequired} label={label} onBlur={tidy} onChange={type}
     placeholder={example ? example.formatNational() : undefined} prefix={picker} validate={validate} value={value} />;
   return notice ? <div className="wd-field-with-notice">{field}<div aria-live="polite" className="wd-field-notice">{notice}</div></div> : field;
+}
+
+/**
+ * A phone kept as one international number ("+9715…"): typed as a country and a local number, stored exact
+ * when it is valid. For records that hold a single phone string.
+ */
+export function PhoneNumberField({ value, onChange, kind = "any", ...props }: Omit<PhoneFieldProps, "value" | "onChange" | "countryCode" | "onCountryChange"> & { value: string; onChange: (value: string) => void }) {
+  const { regionLocale } = useDesignSystem();
+  // What was typed stays as typed; the stored value is one international number.
+  const [phone, setPhone] = useState(() => splitPhone(value, phoneCountry(null, regionLocale) ?? ""));
+  const [sent, setSent] = useState(value);
+  if (value !== sent) { setSent(value); setPhone(splitPhone(value, phone.country)); }
+  // A pasted number may report its country and its local part one after the other: build on the latest.
+  const latest = useRef(phone);
+  useEffect(() => { latest.current = phone; }, [phone]);
+  const change = (patch: Partial<{ country: string; national: string }>) => {
+    const next = { ...latest.current, ...patch };
+    latest.current = next; setPhone(next);
+    const stored = next.national.trim() ? toE164(next.national, next.country) ?? joinPhone(next.country, next.national) : "";
+    setSent(stored); onChange(stored);
+  };
+  return <PhoneField {...props} countryCode={phone.country} kind={kind} onChange={(national) => change({ national })} onCountryChange={(country) => change({ country })} value={phone.national} />;
 }

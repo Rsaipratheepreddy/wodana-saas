@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, EmptyState, InlineNotice, RadioSet, RecordTable, useDesignSystem } from "@/design-system";
+import { Badge, Button, EmptyState, FormDialog, InlineNotice, RadioSet, RecordTable, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commercialPath, jsonRequest } from "@/lib/commercial/client";
 import { SERVICE_PATHS } from "@/lib/commercial/service-paths";
@@ -77,12 +77,10 @@ export function QuoteList({ initial, baseHref }: { initial: CommercialState; bas
           cell: ({ row: { original: quote } }) => <Badge tone={QUOTE_STATUS[quote.status]?.tone ?? "neutral"}>{t((QUOTE_STATUS[quote.status]?.label ?? quote.status) as never)}</Badge> },
         { id: "validUntil", header: t("Valid until"), size: 140, accessorFn: (quote) => quote.validUntil, cell: ({ row: { original: quote } }) => date(quote.validUntil) },
       ]} />}
-    {choosing ? <ControlledModalDialog isOpen size="md" title={t("What is the client buying?")} onOpenChange={(open) => { if (!open && !busy) setChoosing(false); }}
-      footer={<div className={styles.dialogActions}><Button size="compact" isDisabled={busy} onPress={() => setChoosing(false)}>{t("Cancel")}</Button>
-        <Button size="compact" variant="primary" isLoading={busy} onPress={() => void create()}>{t("Start the quote")}</Button></div>}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-      <RadioSet label={t("Service")} value={String(path)} onChange={(value) => setPath(Number(value))}
+    {choosing ? <FormDialog size="md" title={t("What is the client buying?")} onClose={() => setChoosing(false)} isSubmitting={busy}
+      error={error || undefined} submitLabel={t("Start the quote")} onSubmit={create}>
+      <RadioSet isRequired label={t("Service")} value={String(path)} onChange={(value) => setPath(Number(value))}
         items={SERVICE_PATHS.map((item, index) => ({ id: String(index), label: t(item.label as never) }))} />
-    </ControlledModalDialog> : null}
+    </FormDialog> : null}
   </div>;
 }

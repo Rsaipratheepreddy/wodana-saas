@@ -10951,5 +10951,18 @@
   "Find by invoice ID": "Find by invoice ID",
   "I checked that {invoice} belongs to {client} and this milestone.": "I checked that {invoice} belongs to {client} and this milestone.",
   "this invoice": "this invoice",
-  "this client": "this client"
+  "this client": "this client",
+  "Your team": "Your team",
+  "Before release": "Before release",
+  "Milestone {number} required before release": "Milestone {number} required before release",
+  "Before production": "Before production",
+  "Milestone {number} required before production": "Milestone {number} required before production",
+  "Type of {name}": "Type of {name}",
+  "part": "part",
+  "No parts yet": "No parts yet",
+  "Milestone {number}": "Milestone {number}",
+  "Share of milestone {number}": "Share of milestone {number}",
+  "When milestone {number} is due": "When milestone {number} is due",
+  "Milestone {number} before the project starts": "Milestone {number} before the project starts",
+  "Add the client's decision-maker": "Add the client's decision-maker"
 }

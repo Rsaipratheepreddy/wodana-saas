@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { Button, Checkbox, ControlledModalDialog, EmptyState, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem } from "@/design-system";
+import { Button, Checkbox, DataGrid, type DataGridColumn, EmptyState, FormDialog, FormRow, FormSection, IconButton, InlineNotice, PercentageInput, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, VisuallyHidden } from "@/design-system";
+import { tKey } from "@/lib/i18n/keys";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { StartProjectDialog } from "@/components/project-core/start-project-dialog";
@@ -116,16 +117,13 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
 function ReturnDialog({ onClose, onSave, busy }: { onClose: () => void; onSave: (note: string) => Promise<void>; busy: boolean }) {
   const t = useT();
   const [note, setNote] = useState("");
-  return <ControlledModalDialog isOpen size="md" title={t("Return for changes")} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
-    footer={<div className={styles.formActions}><span className={styles.spacer} /><Button size="compact" onPress={onClose}>{t("Cancel")}</Button>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={() => void onSave(note.trim())}>{t("Return")}</Button></div>}>
-    <div className={styles.dialogForm}>
-      <TextAreaField label={t("What needs to change")} isRequired value={note} onChange={setNote} maxLength={3000} />
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog title={t("Return for changes")} onClose={onClose} isSubmitting={busy} isDirty={Boolean(note.trim())}
+    isSubmitDisabled={!note.trim()} submitLabel={t("Return")} onSubmit={() => onSave(note.trim())}>
+    <TextAreaField label={t("What needs to change")} isRequired value={note} onChange={setNote} maxLength={3000} />
+  </FormDialog>;
 }
 
-const METHODS = [["signed_document", "Signed copy"], ["email", "Email"], ["in_person", "In person"], ["phone", "Phone"], ["message", "Message"]] as const;
+const METHODS = [["signed_document", tKey("Signed copy")], ["email", tKey("Email")], ["in_person", tKey("In person")], ["phone", tKey("Phone")], ["message", tKey("Message")]] as const;
 
 function DecisionDialog({ state, onClose, onSave, busy }: { state: BuilderState; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>; busy: boolean }) {
   const t = useT();
@@ -137,27 +135,26 @@ function DecisionDialog({ state, onClose, onSave, busy }: { state: BuilderState;
   const [options, setOptions] = useState<string[]>([]);
   const optional = state.lines.filter((line) => line.optional);
   const priced = new Map(state.pricing.lines.map((line) => [line.id, line.total]));
-  return <ControlledModalDialog isOpen size="md" title={t("Record client decision")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className={styles.formActions}><span className={styles.spacer} /><Button size="compact" onPress={onClose}>{t("Cancel")}</Button>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!clientName.trim() || (decision !== "accept" && !note.trim())}
-        onPress={() => void onSave({ decision, method, clientName: clientName.trim(), note: note.trim(), selectedOptionLineIds: decision === "accept" ? options : [] })}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogForm}>
-      <div className={styles.pair}>
-        <SelectField label={t("Decision")} selectedKey={decision} onSelectionChange={(key) => setDecision(String(key))}
-          items={[{ id: "accept", label: t("Accepted") }, { id: "changes", label: t("Wants changes") }, { id: "decline", label: t("Declined") }]} />
-        <SelectField label={t("How")} selectedKey={method} onSelectionChange={(key) => setMethod(String(key))} items={METHODS.map(([id, label]) => ({ id, label: t(label as never) }))} />
-      </div>
-      <TextInput label={t("Decided by")} isRequired value={clientName} onChange={setClientName} />
-      {decision === "accept" && optional.length ? <fieldset className={styles.options}>
-        <legend>{t("Options the client chose")}</legend>
-        {optional.map((line) => <Checkbox key={line.id} isSelected={options.includes(line.id)} onChange={(on) => setOptions((current) => on ? [...current, line.id] : current.filter((id) => id !== line.id))}>
-          {line.title} · {money(priced.get(line.id) ?? null, state.quote.currency, state.quote.decimals, locale)}
-        </Checkbox>)}
-      </fieldset> : null}
-      <TextAreaField label={decision === "accept" ? t("Note · optional") : t("What they asked for")} isRequired={decision !== "accept"} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog title={t("Record client decision")} onClose={onClose} isSubmitting={busy} submitLabel={t("Save")}
+    isDirty={Boolean(clientName.trim() || note.trim() || options.length)}
+    isSubmitDisabled={!clientName.trim() || (decision !== "accept" && !note.trim())}
+    onSubmit={() => onSave({ decision, method, clientName: clientName.trim(), note: note.trim(), selectedOptionLineIds: decision === "accept" ? options : [] })}>
+    <FormRow>
+      <SelectField label={t("Decision")} isRequired selectedKey={decision} onSelectionChange={(key) => setDecision(String(key))}
+        items={[{ id: "accept", label: t("Accepted") }, { id: "changes", label: t("Wants changes") }, { id: "decline", label: t("Declined") }]} />
+      <SelectField label={t("How")} isRequired selectedKey={method} onSelectionChange={(key) => setMethod(String(key))} items={METHODS.map(([id, label]) => ({ id, label: t(label) }))} />
+    </FormRow>
+    <TextInput label={t("Decided by")} isRequired value={clientName} onChange={setClientName} maxLength={160} />
+    {decision === "accept" && optional.length ? <FormSection title={t("Options the client chose")}>
+      {optional.map((line) => <Checkbox key={line.id} isSelected={options.includes(line.id)} onChange={(on) => setOptions((current) => on ? [...current, line.id] : current.filter((id) => id !== line.id))}>
+        {line.title} · {money(priced.get(line.id) ?? null, state.quote.currency, state.quote.decimals, locale)}
+      </Checkbox>)}
+    </FormSection> : null}
+    <TextAreaField label={decision === "accept" ? t("Note") : t("What they asked for")} isRequired={decision !== "accept"} value={note} onChange={setNote} />
+  </FormDialog>;
 }
+
+type Milestone = PaymentMilestone & { text: string };
 
 /**
  * The payment milestones: each one's share of the total, when it's due and whether it must be paid
@@ -167,16 +164,31 @@ export function QuotePayments({ state, api, onState, onError }: { state: Builder
   const t = useT();
   const { locale } = useDesignSystem();
   const initial = () => state.quote.paymentTerms.map((term) => ({ ...term, text: String(term.percent) }));
-  const [rows, setRows] = useState<Array<PaymentMilestone & { text: string }>>(initial);
+  const [rows, setRows] = useState<Milestone[]>(initial);
   const [busy, setBusy] = useState(false);
   const total = Number(state.pricing.total);
   const sum = rows.reduce((acc, row) => acc + (Number(row.text) || 0), 0);
-  const update = (id: string, patch: Partial<PaymentMilestone & { text: string }>) => setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  const update = (id: string, patch: Partial<Milestone>) => setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   const complete = rows.every((row) => row.title.trim() && row.trigger.trim() && Number(row.text) > 0);
   // No milestones is allowed (clearing them); otherwise every one is complete and the shares make 100%.
   const valid = rows.length === 0 || (Math.abs(sum - 100) < 0.001 && complete);
   const dirty = JSON.stringify(rows.map(({ text, ...row }) => ({ ...row, percent: Number(text) }))) !== JSON.stringify(state.quote.paymentTerms);
   const amount = (percent: string) => money((total * (Number(percent) || 0)) / 100, state.quote.currency, state.quote.decimals, locale);
+  const number = (id: string) => rows.findIndex((row) => row.id === id) + 1;
+  const columns: DataGridColumn<Milestone>[] = [
+    { id: "title", header: t("Milestone"), size: 220, accessorFn: (row) => row.title, meta: { renderCell: (row) =>
+      <TextInput label={<VisuallyHidden>{t("Milestone {number}", { number: number(row.id) })}</VisuallyHidden>} maxLength={160} placeholder={t("Advance")} value={row.title} onChange={(title) => update(row.id, { title })} /> } },
+    { id: "percent", header: t("Share"), size: 110, accessorFn: (row) => Number(row.text), meta: { align: "end", renderCell: (row) =>
+      <PercentageInput label={<VisuallyHidden>{t("Share of milestone {number}", { number: number(row.id) })}</VisuallyHidden>} formatOptions={{ maximumFractionDigits: 2 }}
+        value={row.text === "" ? Number.NaN : Number(row.text)} onChange={(value) => update(row.id, { text: Number.isFinite(value) ? String(value) : "" })} /> } },
+    { id: "amount", header: t("Amount"), size: 140, accessorFn: (row) => Number(row.text), meta: { align: "end", renderCell: (row) => amount(row.text) } },
+    { id: "trigger", header: t("When"), size: 220, accessorFn: (row) => row.trigger, meta: { renderCell: (row) =>
+      <TextInput label={<VisuallyHidden>{t("When milestone {number} is due", { number: number(row.id) })}</VisuallyHidden>} maxLength={300} placeholder={t("On acceptance")} value={row.trigger} onChange={(trigger) => update(row.id, { trigger })} /> } },
+    { id: "release", header: t("Before the project starts"), size: 150, accessorFn: (row) => row.requiredForRelease, meta: { renderCell: (row) =>
+      <Checkbox aria-label={t("Milestone {number} before the project starts", { number: number(row.id) })} isSelected={row.requiredForRelease} onChange={(value) => update(row.id, { requiredForRelease: value })} /> } },
+    { id: "remove", header: "", size: 56, enableSorting: false, meta: { renderCell: (row) =>
+      <IconButton aria-label={t("Remove milestone {number}", { number: number(row.id) })} size="compact" variant="quiet" onPress={() => setRows((current) => current.filter((item) => item.id !== row.id))}><Trash2 aria-hidden="true" size={14} /></IconButton> } },
+  ];
   const save = async () => {
     setBusy(true);
     try { onState(await api.paymentTerms(rows.map(({ text, ...row }) => ({ ...row, percent: Number(text) })))); }
@@ -192,17 +204,8 @@ export function QuotePayments({ state, api, onState, onError }: { state: Builder
     {state.paymentTemplates.length ? <div className={styles.paymentTemplate}><SelectField label={t("Start from a template")} placeholder={t("Choose a template")} selectedKey={null}
       onSelectionChange={(key) => { const template = state.paymentTemplates.find((item) => item.id === key); if (template) setRows(template.milestones.map((term) => ({ ...term, id: crypto.randomUUID(), text: String(term.percent) }))); }}
       items={state.paymentTemplates.map((template) => ({ id: template.id, label: template.name }))} /></div> : null}
-    {rows.length ? <table className={styles.milestones}>
-      <thead><tr><th>{t("Milestone")}</th><th data-numeric>{t("%")}</th><th data-numeric>{t("Amount")}</th><th>{t("When")}</th><th>{t("Before the project starts")}</th><th><span className={styles.srOnly}>{t("Remove")}</span></th></tr></thead>
-      <tbody>{rows.map((row) => <tr key={row.id}>
-        <td><input aria-label={t("Milestone")} value={row.title} onChange={(event) => update(row.id, { title: event.target.value })} placeholder={t("Advance")} /></td>
-        <td><input aria-label={t("%")} data-numeric inputMode="decimal" value={row.text} onChange={(event) => update(row.id, { text: event.target.value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1") })} /></td>
-        <td data-numeric>{amount(row.text)}</td>
-        <td><input aria-label={t("When")} value={row.trigger} onChange={(event) => update(row.id, { trigger: event.target.value })} placeholder={t("On acceptance")} /></td>
-        <td><Checkbox aria-label={t("Before the project starts")} isSelected={row.requiredForRelease} onChange={(value) => update(row.id, { requiredForRelease: value })} /></td>
-        <td><IconButton aria-label={t("Remove {name}", { name: row.title })} size="compact" variant="quiet" onPress={() => setRows((current) => current.filter((item) => item.id !== row.id))}><Trash2 aria-hidden="true" size={14} /></IconButton></td>
-      </tr>)}</tbody>
-    </table> : <EmptyState title={t("No payment milestones yet")} action={<Button size="compact" variant="primary" onPress={() => setRows((current) => [...current, { id: crypto.randomUUID(), title: "", percent: 0, text: String(Math.max(0, Math.round((100 - sum) * 100) / 100)), trigger: "", requiredForRelease: current.length === 0 }])}><Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button>} />}
+    {rows.length ? <DataGrid ariaLabel={t("Payment milestones")} data={rows} getRowId={(row) => row.id} columns={columns}
+      showToolbar={false} showFooter={false} selectable={false} rowNumbers={false} pinFirstColumn={false} /> : <EmptyState title={t("No payment milestones yet")} action={<Button size="compact" variant="primary" onPress={() => setRows((current) => [...current, { id: crypto.randomUUID(), title: "", percent: 0, text: String(Math.max(0, Math.round((100 - sum) * 100) / 100)), trigger: "", requiredForRelease: current.length === 0 }])}><Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button>} />}
     {rows.length || dirty ? <div className={styles.formActions}>
       {rows.length ? <Button size="compact" variant="quiet" onPress={() => setRows((current) => [...current, { id: crypto.randomUUID(), title: "", percent: 0, text: String(Math.max(0, Math.round((100 - sum) * 100) / 100)), trigger: "", requiredForRelease: current.length === 0 }])}><Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button> : null}
       <span className={styles.spacer} />
