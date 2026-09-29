@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@/design-system";
+import { Button, DocumentTable } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PortalInvoiceDocument, PortalReceiptDocument, PortalSite } from "@/lib/client-portal/types";
 import styles from "../commercial/quotation-print.module.css";
@@ -55,12 +55,13 @@ export function PortalDocumentPrint({ site, document }: { site: PortalSite; docu
         <dt>{t("Due")}</dt><dd>{format.date(invoice.dueDate)}</dd>
         <dt>{t("For")}</dt><dd dir="auto">{[invoice.milestone, invoice.reference ? isolate(invoice.reference) : ""].filter(Boolean).join(" · ")}</dd>
       </dl>
-      <table className={own.lines}>
-        <thead><tr><th scope="col">{t("Description")}</th><th scope="col">{t("Net")}</th><th scope="col">{t("Tax")}</th><th scope="col">{t("Total")}</th></tr></thead>
-        <tbody>{invoice.lines.map((line, index) => <tr key={index}>
-          <td dir="auto">{line.description}<small>{t("Tax {rate}%", { rate: format.number(line.taxRate) })}</small></td>
-          <td>{money(line.net)}</td><td>{money(line.tax)}</td><td>{money(line.total)}</td></tr>)}</tbody>
-      </table>
+      <DocumentTable label={t("Lines")} rows={invoice.lines} getRowKey={(_line, index) => String(index)}
+        columns={[
+          { id: "description", header: t("Description"), cell: (line) => <><span dir="auto">{line.description}</span><small>{t("Tax {rate}%", { rate: format.number(line.taxRate) })}</small></> },
+          { id: "net", header: t("Net"), align: "end", cell: (line) => money(line.net) },
+          { id: "tax", header: t("Tax"), align: "end", cell: (line) => money(line.tax) },
+          { id: "total", header: t("Total"), align: "end", cell: (line) => money(line.total) },
+        ]} />
       <dl className={own.totals}>
         <dt>{t("Net")}</dt><dd>{money(invoice.net)}</dd>
         <dt>{t("Tax")}</dt><dd>{money(invoice.tax)}</dd>

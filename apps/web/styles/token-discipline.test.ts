@@ -18,6 +18,15 @@ const RAW_HEX_CEILING = 386;
 const views = execSync("git ls-files 'app/**/*.tsx' 'components/**/*.tsx' 'design-system/**/*.tsx'", { encoding: "utf8" })
   .split("\n").filter((file) => file && !/\.(test|stories)\.tsx$/.test(file) && existsSync(file));
 
+// Lists people work in use DataGrid / RecordTable and documents use DocumentTable. The quotation document
+// and builder keep their own tables until the quotation rebuild; nothing else adds one.
+const RAW_TABLE_ALLOWED = new Set([
+  "components/commercial/quotation-document.tsx",
+  "components/commercial/quotation-document-page.tsx",
+  "components/commercial/quotation-linked-block.tsx",
+  "components/commercial/quotation-scope-grid.tsx",
+]);
+
 describe("design token discipline", () => {
   it("uses spacing, type and radius tokens instead of raw values", () => {
     const offenders = files.filter((file) => {
@@ -30,6 +39,11 @@ describe("design token discipline", () => {
   it("does not add raw hex colours", () => {
     const count = files.reduce((sum, file) => sum + (readFileSync(file, "utf8").match(/#[0-9a-fA-F]{3,8}\b/g)?.length ?? 0), 0);
     expect(count).toBeLessThanOrEqual(RAW_HEX_CEILING);
+  });
+
+  it("renders tables through the shared table components", () => {
+    const offenders = views.filter((file) => !file.startsWith("design-system/") && !RAW_TABLE_ALLOWED.has(file) && /<table[\s>]/.test(readFileSync(file, "utf8")));
+    expect(offenders, "use DataGrid, RecordTable or DocumentTable from @/design-system").toEqual([]);
   });
 
   it("has no native checkboxes or radios", () => {

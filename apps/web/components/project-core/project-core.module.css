@@ -135,17 +135,7 @@ li[data-passed] > .autoMark { border-style: solid; border-color: var(--wd-color-
 .sealLine[data-intact] svg { color: var(--wd-color-success); }
 .sealLine strong { margin-inline-start: auto; font-weight: var(--wd-weight-medium); color: var(--wd-color-danger); }
 .sealLine[data-intact] strong { color: var(--wd-color-success); }
-.scopeTable { inline-size: 100%; border-collapse: collapse; font-size: var(--wd-text-sm); }
-.scopeTable th, .scopeTable td { padding: var(--wd-space-2) var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); text-align: start; vertical-align: top; }
-.scopeTable thead th { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
-.scopeTable th:nth-child(n + 2), .scopeTable td:nth-child(n + 2) { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.scopeTable .groupRow th, .scopeTable .groupRow td { padding-block-start: var(--wd-space-4); font-weight: var(--wd-weight-semibold); }
 .itemTitle { display: block; }
-.scopeTable td small { display: block; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
-.declined td { color: var(--wd-color-text-tertiary); }
-.scopeTable tfoot th { font-weight: var(--wd-weight-regular); color: var(--wd-color-text-secondary); text-align: end; border-block-end: 0; }
-.scopeTable tfoot td { border-block-end: 0; }
-.totalRow th, .totalRow td { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
 .milestones { display: grid; margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-sm); }
 .milestones li { display: grid; grid-template-columns: minmax(0, 1fr) auto 9rem; gap: var(--wd-space-3); align-items: baseline; padding: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .milestones li span:first-child { display: grid; gap: var(--wd-space-0-5); }

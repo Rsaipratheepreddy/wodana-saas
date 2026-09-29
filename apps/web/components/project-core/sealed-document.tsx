@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ShieldAlert, ShieldCheck } from "lucide-react";
-import { Button, ErrorState, PillTabs, Skeleton } from "@/design-system";
+import { Button, DocumentTable, ErrorState, PillTabs, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { SealedLine, SealedScope } from "@/lib/project-core/types";
@@ -10,6 +10,7 @@ import { useProjectFormat } from "./format";
 import styles from "./project-core.module.css";
 
 type View = "items" | "requests" | "payments" | "terms";
+type ScopeRow = { id: string; title: string; description: string; quantity: string; rate: string; amount: string };
 const METHOD: Record<string, string> = { signed_document: "Signed copy", email: "Email", in_person: "In person", phone: "Phone", message: "Message", portal: "Client portal" };
 
 /**
@@ -53,28 +54,25 @@ export function SealedDocument({ workspaceId, projectId, sealId, onBack }: { wor
     <PillTabs ariaLabel={t("Scope")} selectedKey={view} onSelectionChange={(key) => setView(key as View)}
       items={[{ id: "items", label: t("Items") }, ...(snapshot.requirements?.length ? [{ id: "requests", label: t("Requests") }] : []), { id: "payments", label: t("Payments") }, { id: "terms", label: t("Terms") }]} />
 
-    {view === "items" ? <table className={styles.scopeTable}>
-      <thead><tr><th>{t("Item")}</th><th>{t("Qty")}</th><th>{t("Rate")}</th><th>{t("Amount")}</th></tr></thead>
-      {groups.map((group) => <tbody key={group.key}>
-        <tr className={styles.groupRow}><th colSpan={3} scope="rowgroup">{group.name}</th><td>{money(snapshot.pricing.areas.find((area) => area.key === (group.key || "general"))?.net ?? "0")}</td></tr>
-        {group.lines.map((line) => <tr key={line.id}>
-          <td><span className={styles.itemTitle}>{line.title}</span>{line.description ? <small>{line.description}</small> : null}</td>
-          <td>{Number(line.quantity).toLocaleString()} {line.unit}</td>
-          <td>{money(line.rate)}</td>
-          <td>{money(line.net)}</td>
-        </tr>)}
-      </tbody>)}
-      {snapshot.declinedOptions.length ? <tbody className={styles.declined}>
-        <tr className={styles.groupRow}><th colSpan={4} scope="rowgroup">{t("Options the client didn't choose")}</th></tr>
-        {snapshot.declinedOptions.map((line) => <tr key={line.id}><td colSpan={3}>{line.title}</td><td>{money(line.total)}</td></tr>)}
-      </tbody> : null}
-      <tfoot>
-        <tr><th colSpan={3}>{t("Subtotal")}</th><td>{money(snapshot.pricing.subtotal)}</td></tr>
-        {Number(snapshot.pricing.discounts) ? <tr><th colSpan={3}>{t("Discount")}</th><td>−{money(snapshot.pricing.discounts)}</td></tr> : null}
-        {Number(snapshot.pricing.tax) ? <tr><th colSpan={3}>{t("Tax")}</th><td>{money(snapshot.pricing.tax)}</td></tr> : null}
-        <tr className={styles.totalRow}><th colSpan={3}>{t("Total")}</th><td>{money(snapshot.pricing.total)}</td></tr>
-      </tfoot>
-    </table> : null}
+    {view === "items" ? <DocumentTable<ScopeRow> label={t("Items")} getRowKey={(row) => row.id}
+      columns={[
+        { id: "item", header: t("Item"), cell: (row) => <><span className={styles.itemTitle}>{row.title}</span>{row.description ? <small>{row.description}</small> : null}</> },
+        { id: "quantity", header: t("Qty"), align: "end", cell: (row) => row.quantity },
+        { id: "rate", header: t("Rate"), align: "end", cell: (row) => row.rate },
+        { id: "amount", header: t("Amount"), align: "end", cell: (row) => row.amount },
+      ]}
+      groups={[
+        ...groups.map((group) => ({ key: group.key || "general", title: group.name, total: money(snapshot.pricing.areas.find((area) => area.key === (group.key || "general"))?.net ?? "0"),
+          rows: group.lines.map((line) => ({ id: line.id, title: line.title, description: line.description, quantity: `${Number(line.quantity).toLocaleString()} ${line.unit}`, rate: money(line.rate), amount: money(line.net) })) })),
+        ...(snapshot.declinedOptions.length ? [{ key: "declined", tone: "muted" as const, title: t("Options the client didn't choose"),
+          rows: snapshot.declinedOptions.map((line) => ({ id: line.id, title: line.title, description: "", quantity: "", rate: "", amount: money(line.total) })) }] : []),
+      ]}
+      summary={[
+        { key: "subtotal", label: t("Subtotal"), value: money(snapshot.pricing.subtotal) },
+        ...(Number(snapshot.pricing.discounts) ? [{ key: "discount", label: t("Discount"), value: `−${money(snapshot.pricing.discounts)}` }] : []),
+        ...(Number(snapshot.pricing.tax) ? [{ key: "tax", label: t("Tax"), value: money(snapshot.pricing.tax) }] : []),
+        { key: "total", label: t("Total"), value: money(snapshot.pricing.total), emphasis: true },
+      ]} /> : null}
 
     {view === "requests" && snapshot.requirements ? <div className={styles.requests}>
       {(["included", "later", "excluded", "not_possible"] as const).map((status) => {
