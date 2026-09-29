@@ -25,6 +25,11 @@ describe("workspace route map", () => {
     expect(crumbs("/workspace/settings/audit-logs")).toBe("Settings › Audit history");
   });
 
+  it("names the page that receives a scanned order Receive, not Home (m13)", () => {
+    expect(crumbs("/workspace/receive")).toBe("Purchasing › Receive");
+    expect(route("/workspace/receive").label).toBe("Receive");
+  });
+
   it("treats Clients and Calendar as top-level destinations", () => {
     expect(crumbs("/workspace/crm/customers")).toBe("Clients");
     expect(crumbs("/workspace/projects/clients")).toBe("Clients");
