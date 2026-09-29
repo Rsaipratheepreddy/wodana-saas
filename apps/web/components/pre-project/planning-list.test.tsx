@@ -27,7 +27,7 @@ describe("Planning rows (D-31)", () => {
   it("opens the planning case, never the project, when a project in planning has one; otherwise its plan", () => {
     const inPlanning = { ...project, phase: "planning" as const };
     expect(planningRows([inPlanning], [planning], {}, true)[0].href).toBe("/workspace/pre-projects/cases/case-1/overview");
-    expect(planningRows([{ ...inPlanning, caseId: undefined } as typeof inPlanning], [], {}, true)[0].href).toMatch(/^\/workspace\/projects\/[^/]+\/plan\?/);
+    expect(planningRows([{ ...inPlanning, caseId: "" }], [], {}, true)[0].href).toMatch(/^\/workspace\/projects\/[^/]+\/plan\?/);
   });
 
   it("reads a project's stage from its workflow template, not a list of stage keys", () => {
