@@ -2722,6 +2722,7 @@ export class WorkspacesService {
         await this.lockWorkspace(client, workspaceId);
         const permissions = await this.resolvePermissions(client, input.permissionCodes);
         await this.assertRoleDelegation(client, workspaceId, actorUser.userId, input.permissionCodes);
+        await this.assertRoleNameFree(client, workspaceId, input.name);
 
         try {
           const role = await client.query<{ id: string } & Record<string, unknown>>(
@@ -2754,6 +2755,14 @@ export class WorkspacesService {
     );
   }
 
+  /** Two roles never share a name (ignoring case and spaces): people pick roles by name in Invite and Access. */
+  private async assertRoleNameFree(client: PoolClient, workspaceId: string, name: string, exceptRoleId?: string) {
+    const taken = await client.query(
+      `SELECT 1 FROM roles WHERE workspace_id = $1 AND lower(btrim(name)) = lower(btrim($2)) AND ($3::uuid IS NULL OR id <> $3::uuid) LIMIT 1`,
+      [workspaceId, name, exceptRoleId ?? null]);
+    if (taken.rowCount) throw new ConflictException(`A role named ${name.trim()} already exists. Choose another name, or change that role.`);
+  }
+
   async updateRole(
     actor: RequestActor,
     workspaceId: string,
@@ -2778,6 +2787,7 @@ export class WorkspacesService {
         ) {
           return before;
         }
+        if (input.name !== undefined) await this.assertRoleNameFree(client, workspaceId, input.name, roleId);
         const permissions = input.permissionCodes === undefined
           ? undefined
           : await this.resolvePermissions(client, input.permissionCodes);
