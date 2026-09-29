@@ -112,7 +112,7 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
       <SelectField aria-label={t("Room")} accent="neutral" items={rooms} label={null} onSelectionChange={(key) => setRoom(String(key ?? "all"))} selectedKey={room} />
       <SegmentedControl label={t("Feeling")} value={feeling} onChange={setFeeling} options={[{ id: "all", label: t("All") }, { id: "love", label: t("Love") }, { id: "avoid", label: t("Avoid") }]} />
       <SegmentedControl label={t("Added by")} value={source} onChange={setSource} options={[{ id: "all", label: t("Everyone") }, { id: "client", label: t("Client") }, { id: "team", label: t("Team") }]} />
-      <span className={styles.count}>{t("{count} pins", { count: visible.length })}</span>
+      <span className={styles.count}>{visible.length === 1 ? t("1 pin") : t("{count} pins", { count: visible.length })}</span>
       <span className={styles.spacer} />
       {client.board?.canEdit && teamInView.length ? <MenuButton size="compact" label={t("Client portal")} onAction={(id) => void shareMany(id === "show" ? toShow : toHide, id === "show")} items={[
         ...(toShow.length ? [{ id: "show", label: t("Show {count} in the portal", { count: toShow.length }) }] : []),

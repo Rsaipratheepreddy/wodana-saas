@@ -174,7 +174,7 @@ describe('Requirements tabs and original forms', () => {
   const user=userEvent.setup();
   render(<DesignSystemProvider><BriefScopePage initialData={gatheringData}/></DesignSystemProvider>);
   await user.click(screen.getByRole('button',{name:'Add requirement'}));
-  expect(screen.getByRole('dialog',{name:'Inquiry Requirements'})).toBeVisible();
+  expect(screen.getByRole('dialog',{name:'Enquiry requirements'})).toBeVisible();
   await user.type(screen.getByRole('textbox',{name:'Client requirement'}),'New storage');
   await user.type(screen.getByRole('textbox',{name:'Requirement notes'}),'Deep drawers');
   await user.click(screen.getByRole('button',{name:'Save requirement'}));

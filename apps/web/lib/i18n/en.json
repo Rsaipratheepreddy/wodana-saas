@@ -11677,5 +11677,8 @@
   "A converted enquiry can't be changed back.": "A converted enquiry can't be changed back.",
   "Nothing new to suggest from the scope.": "Nothing new to suggest from the scope.",
   "1 material added from the scope.": "1 material added from the scope.",
-  "{count} materials added from the scope.": "{count} materials added from the scope."
+  "{count} materials added from the scope.": "{count} materials added from the scope.",
+  "Me · {name}": "Me · {name}",
+  "1 pin": "1 pin",
+  "Enquiry requirements": "Enquiry requirements"
 }

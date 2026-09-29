@@ -68,7 +68,7 @@ export function ScopeEditor({ entry, data, onClose, onSave, assetUrl, uploadFile
     finally { setSaving(false); }
   };
 
-  return <><CaseModal layout="sheet" size="lg" title={t(draft.kind === "requirement" ? "Inquiry Requirements" : draft.kind === "inspiration" ? "Inspiration" : draft.kind === "file" ? "Site plan" : "Project note")} onClose={onClose} dirty={dirty} busy={busy} footer={writable ? <Button size="compact" form="scope-form" type="submit" variant="primary" isDisabled={uploading} isLoading={saving}>{t(saveLabels[draft.kind])}</Button> : undefined}>
+  return <><CaseModal layout="sheet" size="lg" title={t(draft.kind === "requirement" ? "Enquiry requirements" : draft.kind === "inspiration" ? "Inspiration" : draft.kind === "file" ? "Site plan" : "Project note")} onClose={onClose} dirty={dirty} busy={busy} footer={writable ? <Button size="compact" form="scope-form" type="submit" variant="primary" isDisabled={uploading} isLoading={saving}>{t(saveLabels[draft.kind])}</Button> : undefined}>
     <form id="scope-form" noValidate onSubmit={save} className={styles.captureForm}>
 
       {error && <p className={styles.error} role="alert">{error}</p>}{message && <p role="status" className={styles.notice}>{message}</p>}

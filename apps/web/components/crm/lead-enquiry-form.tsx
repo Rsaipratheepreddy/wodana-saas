@@ -176,7 +176,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
 
   const ownerItems = [
     ...(routingConfigured ? [{ id: ROUTING, label: t("Use routing rules") }] : []),
-    ...ownerChoices.map(member => ({ id: member.id, label: member.id === me ? t("Me ({name})", { name: member.displayName || member.email }) : member.displayName || member.email })),
+    ...ownerChoices.map(member => ({ id: member.id, label: member.id === me ? t("Me · {name}", { name: member.displayName || member.email }) : member.displayName || member.email })),
     { id: UNASSIGNED, label: t("Leave unassigned") },
   ];
   const locked = Boolean(savedId);
