@@ -11109,5 +11109,17 @@
   "Remind after": "Remind after",
   "Tell the owners after": "Tell the owners after",
   "Email as well": "Email as well",
-  "Cancel it if the client replies first": "Cancel it if the client replies first"
+  "Cancel it if the client replies first": "Cancel it if the client replies first",
+  "Assign to…": "Assign to…",
+  "Assign {count} enquiries": "Assign {count} enquiries",
+  "Change the status of {count} enquiries": "Change the status of {count} enquiries",
+  "Add a follow-up to {count} enquiries": "Add a follow-up to {count} enquiries",
+  "Close {count} enquiries": "Close {count} enquiries",
+  "{done} done · {failed} not changed": "{done} done · {failed} not changed",
+  "{count} enquiries updated.": "{count} enquiries updated.",
+  "Apply to {count}": "Apply to {count}",
+  "{count} already closed or converted are left as they are.": "{count} already closed or converted are left as they are.",
+  "Choose a status": "Choose a status",
+  "Call back": "Call back",
+  "Why they're closed": "Why they're closed"
 }

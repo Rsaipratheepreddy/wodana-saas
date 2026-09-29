@@ -42,6 +42,7 @@ import { LeadAssignmentDialog } from "./lead-assignment-dialog";
 import Link from "next/link";
 import { quickConversion, quickConvert } from "@/lib/crm/quick-convert";
 import { CreateDealDialog } from "./create-deal-dialog";
+import { EnquiryBulkActions, EnquiryBulkDialog, type BulkMode } from "./enquiry-bulk-actions";
 import { CrmDateTimeField } from "./crm-date-time-field";
 import { NewFollowUpDialog } from "./follow-up-editor";
 import { SourceChip } from "./source-chip";
@@ -149,6 +150,10 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   // One-click Convert (S-39): the opportunity just made, to open from the enquiry list.
   const [converted, setConverted] = useState<{ name: string; id: string } | null>(null);
   const [convertingId, setConvertingId] = useState<string | null>(null);
+  // Bulk actions (S-17): select enquiries, then assign, change status, add a follow-up or close; each is its own command.
+  const [bulk, setBulk] = useState<{ mode: BulkMode; rows: CrmLeadListItem[] } | null>(null);
+  const [bulkRound, setBulkRound] = useState(0);
+  const canBulk = Boolean(initialData.canAssign || initialData.canEdit);
   const [loadingMore, setLoadingMore] = useState(false);
   const [failure, setFailure] = useState("");
   const [followUp, setFollowUp] = useState<CrmLeadListItem | null>(null);
@@ -427,7 +432,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
           </section>}
           {seesTeam && unowned > 0 && leadView !== "unassigned" ? <Callout title={unowned === 1 ? t("1 enquiry has no owner") : t("{count} enquiries have no owner", { count: unowned })} tone="warning" actions={<Button size="compact" onPress={() => setLeadView("unassigned")}>{t("Show them")}</Button>}>{t("Assign them before the client waits longer.")}</Callout> : null}
           {incoming.length ? <div className={styles.newRows}><Button size="compact" variant="secondary" onPress={showIncoming}>{incoming.length === 1 ? t("1 new enquiry · Show") : t("{count} new enquiries · Show", { count: incoming.length })}</Button></div> : null}
-          <DataGrid keepEmptyTable compactToolbar selectable={false} emptyContent={<div className={styles.illustratedEmpty}><Image src="/images/empty-states/enquiries.png" width={112} height={112} alt={items.length ? t("No matching enquiries") : t("Your enquiries will appear here")} /><span>{items.length ? t("No matching enquiries") : t("No enquiries yet")}</span></div>} key={initialData.workspaceId} ariaLabel={t("CRM enquiries")} persistKey="crm-enquiries-v4" rowNumbers={false} columns={columns} data={visibleItems} getRowId={lead => lead.id}
+          <DataGrid keepEmptyTable compactToolbar selectable={canBulk} key={`${initialData.workspaceId}:${bulkRound}`} bulkActions={canBulk ? (selected) => <EnquiryBulkActions rows={selected} onPick={(mode, picked) => setBulk({ mode, rows: picked })} /> : undefined} emptyContent={<div className={styles.illustratedEmpty}><Image src="/images/empty-states/enquiries.png" width={112} height={112} alt={items.length ? t("No matching enquiries") : t("Your enquiries will appear here")} /><span>{items.length ? t("No matching enquiries") : t("No enquiries yet")}</span></div>} ariaLabel={t("CRM enquiries")} persistKey="crm-enquiries-v4" rowNumbers={false} columns={columns} data={visibleItems} getRowId={lead => lead.id}
             initialColumnVisibility={{emirate:false,updatedAt:false,title:false,channel:false,intakeMethod:false,serviceType:false,priority:false,createdAt:false,budgetRange:false,customerType:false,area:false,campaign:false}} searchLabel={t("Search enquiries")} exportFileName="enquiries.csv"
 
             onRowAction={setCardLead} pageSize={50} hasMoreRows={Boolean(nextCursor)} totalRowCount={items.length}
@@ -460,6 +465,8 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
         {importOpen ? <LeadImportDialog initialData={initialData} onClose={() => setImportOpen(false)} onImported={() => reloadLeads()} /> : null}
         {reviewOpen ? <InspectorSheet isOpen onOpenChange={setReviewOpen} size="lg" title={t("Intake review")}><IntakeInbox workspaceId={initialData.workspaceId} onChanged={() => reloadLeads()} /></InspectorSheet> : null}
         {pendingMove && pendingLead ? <MoveLeadDialog lead={pendingLead} move={pendingMove} saving={Boolean(savingLeadId)} onClose={() => setPendingMove(null)} onSave={(details) => saveMove(pendingMove, details)} /> : null}
+        {bulk ? <EnquiryBulkDialog mode={bulk.mode} rows={bulk.rows} initialData={initialData} onClose={() => setBulk(null)}
+          onDone={async (summary) => { setStatusMessage(summary); setBulkRound((round) => round + 1); await reloadLeads(); }} /> : null}
         {qualificationLead ? <CreateDealDialog lead={qualificationLead} initialData={initialData} onClose={() => setQualificationLead(null)} onCreated={async record => {
           setStatusMessage(t("{name}: opportunity created.", { name: customerDisplayName(qualificationLead.partyName) }));
           setQualificationLead(null); setCardLead(null);
