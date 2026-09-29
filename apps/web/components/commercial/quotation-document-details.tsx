@@ -4,32 +4,60 @@ import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { useState } from 'react';
 import type { Quote, QuotePresentation } from '@/lib/commercial/types';
 import { quotationPhoto } from '@/lib/commercial/quotation-table';
-import { ControlledModalDialog } from '@/design-system';
+import { Button, DateField, EmailInput, FileUploader, FormDialog, FormRow, FormSection, MoreDetails, PhoneNumberField, TextInput } from '@/design-system';
+import { parseDate } from '@internationalized/date';
 import s from './quotation-builder-shell.module.css';
-const fields: [
-    keyof NonNullable<QuotePresentation['details']>,
-    MessageKey
-][] = [['clientName', tKey('Client name')], ['clientPhone', tKey('Client phone')], ['clientEmail', tKey('Client email')], ['projectName', tKey('Project name')], ['location', tKey('Delivery address / location')], ['reference', tKey('Quote reference')], ['date', tKey('Issue date')], ['companyName', tKey('Company name')], ['preparedBy', tKey('Prepared by')], ['estimator', tKey('Estimator')], ['manager', tKey('Manager / reviewer')]];
+
+type Details = NonNullable<QuotePresentation['details']>;
+type Key = keyof Details;
+const text = (key: Key, label: MessageKey) => ({ key, label });
+const client = [text('clientName', tKey('Client name')), text('projectName', tKey('Project name')), text('location', tKey('Delivery address / location'))];
+const team = [text('companyName', tKey('Company name')), text('preparedBy', tKey('Prepared by')), text('estimator', tKey('Estimator')), text('manager', tKey('Manager / reviewer'))];
+const dateOf = (value?: string) => { try { return value ? parseDate(value.slice(0, 10)) : null; } catch { return null; } };
+
+/** The client and project details printed on this quotation (filled from the project; edits stay on this quotation). */
 export function QuotationDocumentDetails({ quote, readOnly, onChange, onClose }: {
-    quote: Quote;
-    readOnly: boolean;
-    onChange: (quote: Quote, checkpoint?: boolean) => void;
-    onClose: () => void;
+  quote: Quote;
+  readOnly: boolean;
+  onChange: (quote: Quote, checkpoint?: boolean) => void;
+  onClose: () => void;
 }) {
   const t = useT();
-    const [details, setDetails] = useState(quote.presentation?.details ?? {}), [error, setError] = useState(''), [busy, setBusy] = useState(false);
-    return <ControlledModalDialog title={t("Client & project details")} isOpen onOpenChange={open => { if (!open && !busy)
-        onClose(); }} size="lg" footer={<div className={s.actions}><button type="button" disabled={busy} onClick={onClose}>{t(readOnly ? 'Close' : 'Cancel')}</button>{!readOnly && <button type="button" className={s.primary} disabled={busy || !details.clientName?.trim()} onClick={() => { onChange({ ...quote, cover: { subtitle: '', ...quote.cover, preparedFor: details.clientName ?? '', location: details.location ?? '' }, presentation: { ...quote.presentation!, details } }, true); onClose(); }}>{t("Apply details")}</button>}</div>}>
-  <div className={s.detailsForm}><p>{t("Details are filled from this project when available. Edits here apply to this quotation only.")}</p><fieldset disabled={readOnly || busy}><div className={s.detailsFields}>{fields.map(([key, label]) => <label key={key}>{t(label)}<input maxLength={500} value={details[key] ?? ''} onChange={event => setDetails({ ...details, [key]: event.target.value })}/></label>)}</div><label>{t("Client logo")}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={async (event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; if (!file)
-        return; setBusy(true); setError(''); try {
-        const photo = await quotationPhoto(file);
-        setDetails(current => ({ ...current, clientLogo: photo }));
-    }
-    catch (error) {
-        setError((error as Error).message);
-    }
-    finally {
-        setBusy(false);
-    } }}/></label>{details.clientLogo && <div className={s.clientLogo}><img src={details.clientLogo} alt={t("Client logo")}/><button type="button" onClick={() => setDetails({ ...details, clientLogo: '' })}>{t("Remove logo")}</button></div>}</fieldset>{error && <p role="alert">{error}</p>}</div>
- </ControlledModalDialog>;
+  const saved = quote.presentation?.details ?? {};
+  const [details, setDetails] = useState<Details>(saved);
+  const [problem, setProblem] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = (key: Key, value: string) => setDetails((current) => ({ ...current, [key]: value }));
+  const field = ({ key, label }: { key: Key; label: MessageKey }) => <TextInput key={key} isRequired={key === 'clientName'} isReadOnly={readOnly} label={t(label)} maxLength={500}
+    value={details[key] ?? ''} onChange={(value) => set(key, value)} />;
+  const dirty = JSON.stringify(details) !== JSON.stringify(saved);
+  const addLogo = async (file?: File) => {
+    if (!file) return;
+    setBusy(true); setProblem('');
+    try { const photo = await quotationPhoto(file); setDetails((current) => ({ ...current, clientLogo: photo })); }
+    catch (error) { setProblem((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  return <FormDialog title={t("Client & project details")} size="lg" onClose={onClose} isDirty={dirty} hideSubmit={readOnly} cancelLabel={readOnly ? t('Close') : undefined}
+    isSubmitting={busy} submitLabel={t("Apply details")} closeOnSuccess error={problem || undefined}
+    onSubmit={() => onChange({ ...quote, cover: { subtitle: '', ...quote.cover, preparedFor: details.clientName ?? '', location: details.location ?? '' }, presentation: { ...quote.presentation!, details } }, true)}>
+    <FormSection title={t("Client")}>
+      {client.map(field)}
+      <FormRow>
+        <PhoneNumberField isReadOnly={readOnly} label={t("Client phone")} value={details.clientPhone ?? ''} onChange={(value) => set('clientPhone', value)} />
+        <EmailInput isReadOnly={readOnly} label={t("Client email")} maxLength={254} value={details.clientEmail ?? ''} onChange={(value) => set('clientEmail', value)} />
+      </FormRow>
+    </FormSection>
+    <FormSection title={t("Quotation")}>
+      <FormRow>
+        <TextInput isReadOnly={readOnly} label={t("Quote reference")} maxLength={500} value={details.reference ?? ''} onChange={(value) => set('reference', value)} />
+        <DateField isReadOnly={readOnly} label={t("Issue date")} value={dateOf(details.date)} onChange={(date) => set('date', date?.toString() ?? '')} />
+      </FormRow>
+    </FormSection>
+    <MoreDetails filled={team.filter(({ key }) => details[key]).length + (details.clientLogo ? 1 : 0)}>
+      <FormSection title={t("Your team")}>{team.map(field)}</FormSection>
+      {readOnly ? null : <FileUploader accept="image/png,image/jpeg,image/webp" appearance="button" label={t("Client logo")} multiple={false} onFiles={(files) => void addLogo(files[0])} />}
+      {details.clientLogo ? <div className={s.clientLogo}><img src={details.clientLogo} alt={t("Client logo")} />{readOnly ? null : <Button size="compact" variant="quiet" onPress={() => set('clientLogo', '')}>{t("Remove logo")}</Button>}</div> : null}
+    </MoreDetails>
+  </FormDialog>;
 }

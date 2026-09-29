@@ -16,6 +16,7 @@ import {
 import { X } from "lucide-react";
 import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provider";
 import { Button, IconButton } from "./actions";
+import { submitOnModEnter } from "./form-context";
 
 export function TooltipBubble({ children, content }: { children: ReactNode; content: ReactNode }) {
   const { direction } = useDesignSystem();
@@ -98,7 +99,8 @@ export function ControlledModalDialog({ children, className, description, footer
   }, [isOpen]);
   const requestClose = useCallback(() => { if (isDirty) setConfirming(true); else onOpenChange(false); }, [isDirty, onOpenChange]);
   const dialog = useRef<HTMLElement>(null);
-  const keyDown = useEffectEvent((event: globalThis.KeyboardEvent) => onKeyDown?.(event));
+  // ⌘/Ctrl+Enter submits the form in the dialog unless the dialog handles keys itself.
+  const keyDown = useEffectEvent((event: globalThis.KeyboardEvent) => onKeyDown ? onKeyDown(event) : submitOnModEnter(event, dialog.current?.querySelector("form") ?? null));
   useEffect(() => {
     const element = dialog.current;
     if (!isOpen || !element) return;
@@ -205,5 +207,5 @@ export function InspectorSheet({ children, description, footer, hideTitle = fals
     if (isDirty) {setDiscardOpen(true);return;}
     onOpenChange(false);
   };
-  return <><ModalOverlay {...portalTheme} dir={direction} className="wd-sheet-overlay" isDismissable isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header data-minimal={hideTitle || undefined}><div className={hideTitle ? "wd-visually-hidden" : undefined}><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label={t("Close inspector")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay><ConfirmationDialog isOpen={discardOpen} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} body={t("Your saved records will stay as they are. Unsaved changes will be discarded.")} confirmLabel={t("Discard changes")} onConfirm={()=>{setDiscardOpen(false);onOpenChange(false);}}/></>;
+  return <DialogCloseContext.Provider value={requestClose}><ModalOverlay {...portalTheme} dir={direction} className="wd-sheet-overlay" isDismissable isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header data-minimal={hideTitle || undefined}><div className={hideTitle ? "wd-visually-hidden" : undefined}><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label={t("Close inspector")} onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay><ConfirmationDialog isOpen={discardOpen} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} body={t("Your saved records will stay as they are. Unsaved changes will be discarded.")} confirmLabel={t("Discard changes")} onConfirm={()=>{setDiscardOpen(false);onOpenChange(false);}}/></DialogCloseContext.Provider>;
 }

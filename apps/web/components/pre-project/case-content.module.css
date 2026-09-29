@@ -190,8 +190,8 @@
 .uploadFile textarea { min-block-size:76px; }
 @media(max-width:560px) { .uploadFields { grid-template-columns:minmax(0,1fr); } }
 
-.documentHeading > span { position:absolute; inline-size:1px; block-size:1px; overflow:hidden; clip-path:inset(50%); }
-.captureForm .documentHeading input { border:0; border-radius:0; background:transparent; box-shadow:none; padding-inline:var(--wd-space-2); font-size:var(--wd-text-xl); font-weight:600; }
+.documentHeading :global(.wd-input-group) { border-color: transparent; background: transparent; box-shadow: none; }
+.documentHeading :global(.wd-input) { font-size: var(--wd-text-xl); font-weight: 600; }
 .optionalDetails { border-block-start:1px solid var(--wd-color-structural-divider); padding-block-start:var(--wd-space-3); }
 .optionalDetails > summary { color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); cursor:pointer; }
 .optionalDetails[open] > summary { margin-block-end:var(--wd-space-3); }

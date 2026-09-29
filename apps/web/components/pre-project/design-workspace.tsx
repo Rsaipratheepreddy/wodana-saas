@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ChevronRight, CircleCheck, CircleDashed, Folder, Plus, Upload } from "lucide-react";
-import { Badge, Button, EmptyState, InlineNotice, PillTabs, SegmentedControl, Skeleton, TextAreaField, useDesignSystem } from "@/design-system";
+import { Badge, Button, EmptyState, InlineNotice, PillTabs, SegmentedControl, Skeleton, TextAreaField, TextInput, useDesignSystem, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest, type CaseAsset, type CaseContent, type CaseDesign, type CaseRoom, type DesignOptions } from "@/lib/pre-project/content";
 import { mergeDesigns } from "@/lib/pre-project/design-workflow";
@@ -232,7 +232,7 @@ function UploadSheet({ data, stage, roomId, onRoomAdded, onClose, onUploaded }: 
         <Upload aria-hidden="true" size={18} /><span>{t("Choose images or PDFs")}</span>
       </label>
       {files.length ? <ul className={styles.pending}>{files.map((pending) => <li key={pending.key}>
-        <input aria-label={t("Title")} value={pending.title} maxLength={240} onChange={(event) => setFiles((current) => current.map((item) => item.key === pending.key ? { ...item, title: event.target.value } : item))} />
+        <TextInput label={<VisuallyHidden>{t("Title of {name}", { name: pending.file.name })}</VisuallyHidden>} value={pending.title} maxLength={240} onChange={(title) => setFiles((current) => current.map((item) => item.key === pending.key ? { ...item, title } : item))} />
         <Button size="compact" variant="quiet" aria-label={t("Remove {name}", { name: pending.title })} onPress={() => setFiles((current) => current.filter((item) => item.key !== pending.key))}>{t("Remove")}</Button>
       </li>)}</ul> : null}
     </div>

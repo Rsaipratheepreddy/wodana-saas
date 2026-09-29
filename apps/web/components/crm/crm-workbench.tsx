@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Archive, CalendarClock, Check, GitMerge, Pencil, Plus, ShieldCheck, Trash2, UserRound } from "lucide-react";
-import { ActivityFeed, Badge, Button, Callout, DateField, EditableField, EditableFieldList, EmptyState, FieldCaption, FormDialog, MoneyField, MoreDetails, NumericInput, PhoneField, SelectField, TextInput, TextAreaField, Checkbox, Tabs, Skeleton, useDesignSystem } from "@/design-system";
+import { ActivityFeed, Badge, Button, Callout, DateField, EditableField, EditableFieldList, EmptyState, FieldCaption, FormDialog, MoneyField, MoreDetails, NumericInput, PhoneNumberField, SelectField, TextInput, TextAreaField, Checkbox, Tabs, Skeleton, useDesignSystem } from "@/design-system";
 import { parseDate } from "@internationalized/date";
-import { joinPhone, phoneCountry, splitPhone, toE164 } from "@/lib/phone";
 import { CrmRequestError, crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import { clientTimelineItems } from "@/lib/crm/client-timeline";
 import type { ClientTimelineEvent } from "@wodana/contracts";
@@ -33,22 +32,7 @@ export type ActionSpec = {
 };
 
 function PhoneSpecField({ field, value, onChange }: { field: FieldSpec; value: string; onChange: (value: string) => void }) {
-  const { regionLocale } = useDesignSystem();
-  // What was typed stays as typed; the stored value is one international number (exact when valid).
-  const [phone, setPhone] = useState(() => splitPhone(value, phoneCountry(null, regionLocale) ?? ""));
-  const [sent, setSent] = useState(value);
-  if (value !== sent) { setSent(value); setPhone(splitPhone(value, phone.country)); }
-  const full = (code: string, number: string) => number.trim() ? toE164(number, code) ?? joinPhone(code, number) : "";
-  // The field may report a pasted number's country and its local part one after the other: build on the latest.
-  const latest = useRef(phone);
-  useEffect(() => { latest.current = phone; }, [phone]);
-  const change = (patch: Partial<{ country: string; national: string }>) => {
-    const next = { ...latest.current, ...patch };
-    latest.current = next; setPhone(next);
-    const stored = full(next.country, next.national); setSent(stored); onChange(stored);
-  };
-  return <PhoneField countryCode={phone.country} isRequired={field.required} kind="any" label={field.label} onChange={(national) => change({ national })}
-    onCountryChange={(country) => change({ country })} value={phone.national} />;
+  return <PhoneNumberField isRequired={field.required} label={field.label} onChange={onChange} value={value} />;
 }
 
 export function Fields({ fields, values, onChange, notice }: { fields: FieldSpec[]; values: Record<string, unknown>; onChange: (key: string, value: unknown) => void; notice?: ActionSpec["notice"] }) {

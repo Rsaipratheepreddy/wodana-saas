@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, ControlledModalDialog, EmailInput, InlineNotice, PhoneField, SelectField, Skeleton, TextInput, useDesignSystem } from "@/design-system";
+import { Button, EmailInput, FormDialog, FormSection, InlineNotice, PhoneField, SelectField, Skeleton, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { staffPortalApi } from "@/lib/client-portal/client";
 import type { PortalContact } from "@/lib/client-portal/types";
@@ -51,20 +51,16 @@ export function SendQuoteDialog({ workspaceId, caseId, quoteLabel, clientName, b
     finally { setSaving(false); }
   };
 
-  return <ControlledModalDialog isOpen size="md" title={t("Send {quote} to {client}?", { quote: quoteLabel, client: clientName })} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
-    footer={<div className="wd-dialog-actions">
-      <Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!chosen} onPress={() => chosen && onSend(chosen.id)}>{t("Send to client")}</Button>
-    </div>}>
+  return <FormDialog size="md" title={t("Send {quote} to {client}?", { quote: quoteLabel, client: clientName })} onClose={onClose} isSubmitting={busy}
+    submitLabel={t("Send to client")} isSubmitDisabled={!chosen} error={error || undefined} onSubmit={() => { if (chosen) onSend(chosen.id); }}>
     {!state && !error ? <Skeleton lines={3} /> : null}
-    {state ? <div className={styles.dialogForm}>
+    {state ? <>
       {deciders.length > 1 ? <SelectField label={t("Who decides")} isRequired placeholder={t("Choose someone")} selectedKey={approverId || null}
         onSelectionChange={(key) => setApproverId(String(key))} items={deciders.map((contact) => ({ id: contact.id, label: contact.confirmedName ?? contact.name }))} /> : null}
       {chosen ? <InlineNotice tone="info" message={chosen.email
         ? t("{name} sees it in their portal and gets it by message or email.", { name: chosen.confirmedName ?? chosen.name })
         : t("{name} sees it in their portal. They have no email, so share the portal link if WhatsApp isn't set up.", { name: chosen.confirmedName ?? chosen.name })} /> : null}
-      {!deciders.length && state.canManage ? <>
-        <InlineNotice tone="info" message={t("Add the client's decision-maker: they sign in with their mobile number and decide in their portal.")} />
+      {!deciders.length && state.canManage ? <FormSection title={t("Add the client's decision-maker")}>
         <TextInput label={t("Name")} isRequired value={draft.name} onChange={(name) => setDraft({ ...draft, name })} maxLength={160} />
         <PhoneField label={t("Mobile number")} value={draft.national} countryCode={draft.country} locale={locale} isRequired
           onChange={(national) => setDraft({ ...draft, national })} onCountryChange={(next) => setDraft({ ...draft, country: next })} />
@@ -72,11 +68,10 @@ export function SendQuoteDialog({ workspaceId, caseId, quoteLabel, clientName, b
         <div className={styles.formActions}><span className={styles.spacer} />
           <Button size="compact" isLoading={saving} isDisabled={!draft.name.trim() || !draft.national.trim()} onPress={() => void addDecider()}>{t("Add decision-maker")}</Button>
         </div>
-      </> : null}
+      </FormSection> : null}
       {!deciders.length && !state.canManage ? <InlineNotice tone="error" message={t("Nobody decides for this client yet. Ask someone who manages client access to add the decision-maker.")} /> : null}
-    </div> : null}
-    {error ? <InlineNotice tone="error" message={error} /> : null}
-  </ControlledModalDialog>;
+    </> : null}
+  </FormDialog>;
 }
 
 /** Exactly what went out when a quote was sent: one line for the sender (Q-22). */

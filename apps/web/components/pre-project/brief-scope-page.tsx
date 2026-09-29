@@ -4,10 +4,9 @@ import { useId, useState, type ComponentProps } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { FileText, LayoutGrid, Plus, Table2 } from 'lucide-react';
-import { Badge, Button, Checkbox, ControlledModalDialog, DataGrid, EmptyState, MenuButton, SelectField, SearchInput, TextInput, TextAreaField, NumericInput, useDesignSystem, type DataGridColumn } from '@/design-system';
+import { Badge, Button, Checkbox, DataGrid, EmptyState, FormDialog, FormRow, MenuButton, MoneyField, MoreDetails, SelectField, SearchInput, TextInput, TextAreaField, useDesignSystem, type DataGridColumn } from '@/design-system';
 import { blankEntry, briefFields, caseApi, caseRequest, entryPayload, formatCaseMoney, scopeLabel, type CaseBrief, type CaseContent, type CaseRoom, type ScopeEntry, type ItemDimension } from '@/lib/pre-project/content';
 import { documentText, mediaIds, textDocument, type RequirementNote } from '@/lib/crm/note-document';
-import { CaseModal } from './case-controls';
 import { useT } from '@/lib/i18n/i18n-provider';
 import { ItemSpecificationEditor } from './item-specification-editor';
 import { MeasurementCreateForm } from './measurement-create-form';
@@ -184,15 +183,30 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
 
 function BriefEditor({data,onClose,onSave}:{data:CaseContent;onClose:()=>void;onSave:(brief:CaseBrief)=>Promise<void>}) {
  const {locale}=useDesignSystem();const t=useT();
- const [draft,setDraft]=useState(data.brief);const [saving,setSaving]=useState(false);const [error,setError]=useState('');const change=(key:string,value:string)=>setDraft(d=>({...d,[key]:value}));
- const field=(key:keyof typeof briefFields,large=false)=><div key={key} className={large?styles.full:undefined}>{large?<TextAreaField label={t(briefFields[key])} isDisabled={saving||!data.canEdit} value={draft[key]} maxLength={key==='goals'?6000:3000} onChange={value=>change(key,value)}/>:<TextInput label={t(briefFields[key])} isDisabled={saving||!data.canEdit} value={draft[key]} maxLength={key==='propertyType'?240:key==='area'?120:key==='timeline'||key==='budget'?500:key==='retainedItems'||key==='exclusions'?3000:1000} onChange={value=>change(key,value)}/>}</div>;
- return <CaseModal title={t("Project brief")} description={t("Confirm the context, budget and constraints before detailing each room.")} onClose={onClose} dirty={JSON.stringify(draft)!==JSON.stringify(data.brief)} busy={saving} footer={data.canEdit&&<Button type="submit" form="brief-form" variant="primary" isLoading={saving}>{t("Save brief")}</Button>}>
- {error&&<p role="alert" className={styles.error}>{error}</p>}<form id="brief-form" onSubmit={async e=>{e.preventDefault();setSaving(true);setError('');try{await onSave(draft);onClose();}catch(err){setError(err instanceof Error?err.message:t('Could not save.'));}finally{setSaving(false);}}}><fieldset disabled={saving||!data.canEdit}><div className={styles.grid}>{field('goals',true)}{field('propertyType')}{field('area')}{field('location')}{field('timeline')}
- <NumericInput label={t("Budget amount")} prefix={draft.currencyCode} isDisabled={saving||!data.canEdit} minValue={0} maxValue={1e12} formatOptions={{maximumFractionDigits:2}} value={draft.budgetAmount ? Number(draft.budgetAmount) : NaN} onChange={value=>change('budgetAmount',Number.isFinite(value)?String(value):'')}/>
- {field('budget')}{field('decisionMakers')}</div>
- <section className={styles.divider}><h3>{t('People, preferences & constraints')}</h3><div className={styles.grid}>{field('people',true)}{field('preferences',true)}{field('retainedItems')}{field('exclusions')}{field('constraints',true)}</div></section></fieldset></form>
- {data.crmContext.opportunityAmount&&<p className={styles.muted}>{t('CRM opportunity value: {amount}. This remains separate from the client’s budget.',{amount:formatCaseMoney(data.crmContext.opportunityAmount,data.crmContext.currencyCode??draft.currencyCode,locale,t)})}</p>}
- </CaseModal>;
+ const [draft,setDraft]=useState(data.brief);const change=(key:string,value:string)=>setDraft(d=>({...d,[key]:value}));
+ const readOnly=!data.canEdit;
+ const limit=(key:keyof typeof briefFields)=>key==='goals'?6000:key==='propertyType'?240:key==='area'?120:key==='timeline'||key==='budget'?500:key==='retainedItems'||key==='exclusions'?3000:1000;
+ const field=(key:keyof typeof briefFields,large=false)=>large
+  ?<TextAreaField key={key} label={t(briefFields[key])} isReadOnly={readOnly} value={draft[key]} maxLength={limit(key)} onChange={value=>change(key,value)}/>
+  :<TextInput key={key} label={t(briefFields[key])} isReadOnly={readOnly} value={draft[key]} maxLength={limit(key)} onChange={value=>change(key,value)}/>;
+ const later=['people','preferences','retainedItems','exclusions','constraints'] as const;
+ return <FormDialog size="lg" title={t("Project brief")} onClose={onClose} isDirty={JSON.stringify(draft)!==JSON.stringify(data.brief)} hideSubmit={readOnly} cancelLabel={readOnly?t('Close'):undefined}
+  submitLabel={t("Save brief")} closeOnSuccess onSubmit={()=>onSave(draft)}>
+  {field('goals',true)}
+  <FormRow>{field('propertyType')}{field('area')}</FormRow>
+  <FormRow>{field('location')}{field('timeline')}</FormRow>
+  <FormRow>
+   <MoneyField label={t("Budget amount")} currency={draft.currencyCode} isReadOnly={readOnly} value={draft.budgetAmount ?? ''} onChange={value=>change('budgetAmount',value)}/>
+   {field('budget')}
+  </FormRow>
+  {field('decisionMakers')}
+  {data.crmContext.opportunityAmount?<p className={styles.muted}>{t('CRM opportunity value: {amount}. This remains separate from the client’s budget.',{amount:formatCaseMoney(data.crmContext.opportunityAmount,data.crmContext.currencyCode??draft.currencyCode,locale,t)})}</p>:null}
+  <MoreDetails label={t('People, preferences & constraints')} filled={later.filter(key=>draft[key]?.trim()).length}>
+   {field('people',true)}{field('preferences',true)}
+   <FormRow>{field('retainedItems')}{field('exclusions')}</FormRow>
+   {field('constraints',true)}
+  </MoreDetails>
+ </FormDialog>;
 }
 
 function EligibilityButton({ reason, ...props }: ComponentProps<typeof Button> & { reason: string }) {
@@ -207,13 +221,8 @@ function EligibilityButton({ reason, ...props }: ComponentProps<typeof Button> &
 function ScopeReason({ status, title, initial, onClose, onSave }: { status: string; title: string; initial: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState(initial);
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState('');
   const heading = status === 'later' ? t("A later phase · {title}", { title }) : status === 'not_possible' ? t("Not possible · {title}", { title }) : t("Not included · {title}", { title });
-  return <ControlledModalDialog isOpen size="md" title={heading} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} onPress={async () => { setBusy(true); setFailure(''); try { await onSave(reason.trim()); } catch (cause) { setFailure(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); } }}>{t("Save")}</Button></div>}>
-    <TextAreaField label={t("Why (the client reads this)")} value={reason} onChange={setReason} autoFocus />
-    {failure ? <p role="alert" className={styles.error}>{failure}</p> : null}
-  </ControlledModalDialog>;
+  return <FormDialog size="md" title={heading} onClose={onClose} isDirty={reason.trim() !== initial.trim()} submitLabel={t("Save")} onSubmit={() => onSave(reason.trim())}>
+    <TextAreaField label={t("Why (the client reads this)")} value={reason} onChange={setReason} />
+  </FormDialog>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, ControlledModalDialog, InlineNotice, TextAreaField, type StatusTone } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, FormDialog, InlineNotice, TextAreaField, type StatusTone } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { PortalError, staffPortalApi } from "@/lib/client-portal/client";
 import type { StaffPaymentReport } from "@/lib/client-portal/types";
@@ -114,12 +114,8 @@ export function ClientReportDialog({ milestone, reports, currency, milestoneAmou
 function NotReceivedDialog({ busy, error, onClose, onSave }: { busy: boolean; error: string; onClose: () => void; onSave: (note: string) => void }) {
   const t = useT();
   const [note, setNote] = useState("");
-  return <ControlledModalDialog isOpen size="md" title={t("Payment not received")} onOpenChange={(value) => { if (!value && !busy) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={() => onSave(note.trim())}>{t("Not received")}</Button></div>}>
-    <div className={styles.body}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
-      <TextAreaField autoFocus label={t("What couldn't be found")} isRequired maxLength={1000} value={note} onChange={setNote} />
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog size="md" title={t("Payment not received")} onClose={onClose} isSubmitting={busy} error={error || undefined} isDirty={Boolean(note.trim())}
+    isSubmitDisabled={!note.trim()} submitLabel={t("Not received")} onSubmit={() => onSave(note.trim())}>
+    <TextAreaField label={t("What couldn't be found")} isRequired maxLength={1000} value={note} onChange={setNote} />
+  </FormDialog>;
 }

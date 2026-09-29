@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, ControlledModalDialog, ErrorState, InlineNotice, InspectorSheet, MenuButton, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Button, ErrorState, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MenuButton, MoneyField, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { BillState, PayablesState } from "@/lib/payables/types";
@@ -139,30 +139,22 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
     </div>}
     {dialog === "edit" && state ? <BillEditor api={api} vendors={vendors} companies={companies} existing={state} onClose={() => setDialog(null)}
       onSaved={() => { setDialog(null); onChanged(); void load(); }} /> : null}
-    {dialog === "approve" || dialog === "cancel" ? <ControlledModalDialog isOpen size="md" title={dialog === "approve" ? t("Approve invoice") : t("Cancel invoice")}
-      onOpenChange={(open) => { if (!open) setDialog(null); }}
-      footer={<div className="wd-dialog-actions"><Button onPress={() => setDialog(null)}>{t("Back")}</Button>
-        <Button variant={dialog === "approve" ? "primary" : "danger"} isLoading={busy} isDisabled={!text.trim()}
-          onPress={async () => { if (await run(dialog, dialog === "approve" ? { note: text.trim() } : { reason: text.trim() })) setDialog(null); }}>
-          {dialog === "approve" ? t("Approve") : t("Cancel invoice")}</Button></div>}>
-      <div className={styles.dialogBody}>
-        {notice ? <InlineNotice tone="error" message={notice} /> : null}
-        <TextAreaField label={dialog === "approve" ? t("Why it's approved") : t("Why it's cancelled")} isRequired value={text} onChange={setText} />
-      </div>
-    </ControlledModalDialog> : null}
-    {dialog === "release" && bill ? <ControlledModalDialog isOpen size="md" title={t("Release retention")} onOpenChange={(open) => { if (!open) setDialog(null); }}
-      footer={<div className="wd-dialog-actions"><Button onPress={() => setDialog(null)}>{t("Back")}</Button>
-        <Button variant="primary" isLoading={busy} isDisabled={!releasing || !text.trim() || !(Number(release.amount) > 0) || subtractExact(release.amount, releasing.held) !== "0"}
-          onPress={async () => { if (await run("release", { projectId: releasing?.projectId ?? null, amount: release.amount, reason: text.trim() })) setDialog(null); }}>{t("Release")}</Button></div>}>
-      <div className={styles.dialogBody}>
-        {notice ? <InlineNotice tone="error" message={notice} /> : null}
+    {dialog === "approve" || dialog === "cancel" ? <FormDialog size="md" title={dialog === "approve" ? t("Approve invoice") : t("Cancel invoice")} onClose={() => setDialog(null)} cancelLabel={t("Back")}
+      error={notice || undefined} isSubmitting={busy} isDirty={Boolean(text.trim())} isSubmitDisabled={!text.trim()}
+      submitLabel={dialog === "approve" ? t("Approve") : t("Cancel invoice")} submitVariant={dialog === "approve" ? "primary" : "danger"}
+      onSubmit={async () => { if (!(await run(dialog, dialog === "approve" ? { note: text.trim() } : { reason: text.trim() }))) throw new FormNotSaved(); setDialog(null); }}>
+      <TextAreaField label={dialog === "approve" ? t("Why it's approved") : t("Why it's cancelled")} isRequired value={text} onChange={setText} />
+    </FormDialog> : null}
+    {dialog === "release" && bill ? <FormDialog size="md" title={t("Release retention")} onClose={() => setDialog(null)} cancelLabel={t("Back")}
+      error={notice || undefined} isSubmitting={busy} isDirty={Boolean(text.trim())} submitLabel={t("Release")}
+      isSubmitDisabled={!releasing || !text.trim() || !(Number(release.amount) > 0) || subtractExact(release.amount, releasing.held) !== "0"}
+      onSubmit={async () => { if (!(await run("release", { projectId: releasing?.projectId ?? null, amount: release.amount, reason: text.trim() }))) throw new FormNotSaved(); setDialog(null); }}>
         {holding.length > 1 ? <SelectField label={t("Project")} selectedKey={release.key || null} items={holding.map((row) => ({ id: row.projectId ?? "none", label: row.projectReference ?? t("No project") }))}
           onSelectionChange={(key) => { const row = holding.find((item) => (item.projectId ?? "none") === key); setRelease({ key: String(key ?? ""), amount: row ? plain(row.held) : "" }); }} /> : null}
-        <TextInput label={t("Amount")} isRequired inputMode="decimal" prefix={bill.currency} value={release.amount} onChange={(value) => setRelease({ ...release, amount: numeric(value) })}
+        <MoneyField label={t("Amount")} isRequired currency={bill.currency} value={release.amount} onChange={(amount) => setRelease({ ...release, amount })}
           description={releasing ? t("{amount} held", { amount: money(releasing.held) }) : undefined} />
         <TextAreaField label={t("Why it's released")} isRequired value={text} onChange={setText} />
-      </div>
-    </ControlledModalDialog> : null}
+    </FormDialog> : null}
     {dialog === "pay" && bill ? <PaymentDialog api={api} vendorId={bill.vendorId} legalEntityId={bill.legalEntityId} currency={bill.currency} forBill={bill}
       onClose={() => setDialog(null)} onSaved={() => { setDialog(null); onChanged(); void load(); }} /> : null}
   </InspectorSheet>;

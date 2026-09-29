@@ -192,7 +192,6 @@
 .terms { display: flex; flex-direction: column; gap: var(--wd-space-4); max-inline-size: 48rem; }
 .paymentEditor { display: flex; flex-direction: column; gap: var(--wd-space-3); max-inline-size: 60rem; }
 .paymentTemplate { max-inline-size: 20rem; }
-.milestones [data-numeric] { text-align: end; font-variant-numeric: tabular-nums; }
 
 /* Summary beside the grid. */
 .summary { display: flex; flex-direction: column; gap: var(--wd-space-3); }
@@ -206,7 +205,7 @@
 .muted dt, .muted dd { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .muted[data-alert] dd { color: var(--wd-color-danger); }
 .alert { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
-.taxInput { inline-size: calc(var(--wd-space-12) + var(--wd-space-2)); min-block-size: var(--wd-space-6); padding: 0 var(--wd-space-1-5); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-xs); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-xs); text-align: end; }
+.taxInput { display: inline-block; inline-size: calc(var(--wd-space-12) + var(--wd-space-8)); font-size: var(--wd-text-xs); }
 .discountForm { display: flex; flex-direction: column; gap: var(--wd-space-3); padding: var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
 .discountForm h3 { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
 .formActions { display: flex; align-items: center; gap: var(--wd-space-2); }
@@ -221,19 +220,10 @@
 .triple { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); }
 .quad { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--wd-space-2); }
 .worked { align-self: end; margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
-.buildUp { display: flex; flex-direction: column; gap: var(--wd-space-2); overflow-x: auto; }
-.buildUp table { inline-size: 100%; border-collapse: collapse; font-size: var(--wd-text-sm); }
-.buildUp th { padding: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); text-align: start; }
-.buildUp td { padding: var(--wd-space-0-5) var(--wd-space-1); border-block-start: 1px solid var(--wd-color-border); vertical-align: top; }
-.buildUp input, .buildUp select { inline-size: 100%; min-inline-size: calc(var(--wd-space-12) + var(--wd-space-2)); min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-1-5); border: 1px solid transparent; border-radius: var(--wd-radius-xs); background: transparent; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); }
-.buildUp input:hover:not(:disabled), .buildUp select:hover:not(:disabled) { border-color: var(--wd-color-border); }
-.buildUp input:focus, .buildUp select:focus { border-color: var(--wd-color-focus); outline: none; }
-.buildUp td:first-child { min-inline-size: 11rem; }
-.buildUp small { display: block; padding-inline: var(--wd-space-1-5); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
-.buildUp small[data-error] { color: var(--wd-color-danger); }
+.buildUp { display: flex; flex-direction: column; gap: var(--wd-space-2); min-inline-size: 0; }
+.partCell { display: grid; gap: var(--wd-space-1); }
+.buildUp .worked[data-error] { color: var(--wd-color-danger); }
 .buildUpFoot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-3); font-size: var(--wd-text-sm); }
-.inlineField { display: inline-flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-secondary); }
-.inlineField input { inline-size: calc(var(--wd-space-16)); min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-2); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-xs); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; }
 
 @media (max-width: 48rem) {
   .quad, .triple { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -241,9 +231,6 @@
 
 /* Flow, payments and revision changes. */
 .waiting { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
-.dialogForm { display: flex; flex-direction: column; gap: var(--wd-space-3); }
-.options { display: flex; flex-direction: column; gap: var(--wd-space-2); margin: 0; padding: 0; border: 0; }
-.options legend { margin-block-end: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .payments { display: flex; flex-direction: column; gap: var(--wd-space-2); padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
 .paymentsHead { display: flex; align-items: center; justify-content: space-between; }
 .paymentsHead h3 { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
@@ -253,11 +240,6 @@
 .payments small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .mutedText { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .mutedText[data-alert] { color: var(--wd-color-danger); }
-.milestones { inline-size: 100%; border-collapse: collapse; font-size: var(--wd-text-sm); }
-.milestones th { padding: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); text-align: start; }
-.milestones td { padding: var(--wd-space-0-5) var(--wd-space-1); border-block-start: 1px solid var(--wd-color-border); }
-.milestones input { inline-size: 100%; min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-2); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-xs); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); }
-.milestones td:nth-child(2) { inline-size: calc(var(--wd-space-16) + var(--wd-space-2)); }
 .changes { border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); }
 .changes > button { display: flex; align-items: center; gap: var(--wd-space-3); inline-size: 100%; padding: var(--wd-space-2) var(--wd-space-3); border: 0; background: none; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); text-align: start; cursor: pointer; }
 .changes > button span { color: var(--wd-color-text-secondary); }

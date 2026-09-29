@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, Skeleton, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, FormDialog, EmptyState, ErrorState, InlineNotice, Skeleton, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { commercialPath, jsonRequest } from "@/lib/commercial/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
@@ -31,14 +31,20 @@ export function ProjectClientMoney({ workspaceId, projectId, switcher }: { works
   const labels: Record<MilestoneState, string> = { to_invoice: t("To invoice"), invoiced: t("Invoiced"), reported: t("Waiting for Finance"), verified: t("Received") };
   const tones: Record<MilestoneState, "neutral" | "info" | "warning" | "success"> = { to_invoice: "neutral", invoiced: "info", reported: "warning", verified: "success" };
 
-  const command = useCallback(async (action: string, input: Record<string, unknown>) => {
+  /** Runs a deal receipt command; a dialog passes `inDialog` to show a refusal itself instead of on the page. */
+  const command = useCallback(async (action: string, input: Record<string, unknown>, inDialog = false) => {
     if (!state?.caseRevision) return false;
     setNotice("");
     try {
       await jsonRequest(commercialPath(workspaceId, `cases/${state.caseId}`), "POST", { action, revision: state.caseRevision, ...input });
       await load();
       return true;
-    } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); await load(); return false; }
+    } catch (cause) {
+      await load();
+      if (inDialog) throw cause;
+      setNotice(cause instanceof Error ? cause.message : t("Could not save."));
+      return false;
+    }
   }, [load, state, t, workspaceId]);
 
   const columns = useMemo<DataGridColumn<Milestone>[]>(() => [
@@ -76,7 +82,7 @@ export function ProjectClientMoney({ workspaceId, projectId, switcher }: { works
     <DataGrid<Milestone> ariaLabel={t("Payment milestones")} columns={columns} data={state.milestones} getRowId={(row) => row.id} rowNumbers={false} wrapText toolbarLeading={switcher}
       emptyContent={<EmptyState title={t("No payment milestones")} description={t("They come from the accepted quotation's payment terms.")} />} />
     {recording ? <ReceiptDialog milestone={recording} onClose={() => setRecording(null)}
-      onSave={async (reference, evidence) => { if (await command("report_payment_receipt", { paymentId: recording.id, reference, evidence })) setRecording(null); }} /> : null}
+      onSave={async (reference, evidence) => { if (await command("report_payment_receipt", { paymentId: recording.id, reference, evidence }, true)) setRecording(null); }} /> : null}
   </div>;
 }
 
@@ -85,14 +91,9 @@ function ReceiptDialog({ milestone, onClose, onSave }: { milestone: Milestone; o
   const format = useProjectFormat();
   const [reference, setReference] = useState("");
   const [evidence, setEvidence] = useState("");
-  const [busy, setBusy] = useState(false);
-  return <ControlledModalDialog isOpen size="md" title={t("Record receipt")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!reference.trim() || !evidence.trim()} onPress={async () => { setBusy(true); await onSave(reference.trim(), evidence.trim()); setBusy(false); }}>{t("Save")}</Button></div>}>
-    <div className={styles.dialogBody}>
-      <p className={styles.muted}>{`${milestone.title} · ${format.money(milestone.amount, milestone.currency)}`}</p>
-      <TextInput label={t("Bank or cheque reference")} isRequired value={reference} onChange={setReference} autoFocus />
-      <TextAreaField label={t("Receipt evidence")} isRequired value={evidence} onChange={setEvidence} />
-    </div>
-  </ControlledModalDialog>;
+  return <FormDialog size="md" title={t("Record receipt")} description={`${milestone.title} · ${format.money(milestone.amount, milestone.currency)}`} onClose={onClose}
+    isDirty={Boolean(reference.trim() || evidence.trim())} submitLabel={t("Save")} onSubmit={() => onSave(reference.trim(), evidence.trim())}>
+    <TextInput label={t("Bank or cheque reference")} isRequired maxLength={240} value={reference} onChange={setReference} />
+    <TextAreaField label={t("Receipt evidence")} isRequired value={evidence} onChange={setEvidence} />
+  </FormDialog>;
 }

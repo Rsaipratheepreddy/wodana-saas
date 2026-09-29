@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MoneyField, NoResultsState, TextAreaField, VisuallyHidden, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { PayablesState, SupplierPayment } from "@/lib/payables/types";
@@ -66,8 +66,8 @@ function PaymentSheet({ api, payment, canManage, bills, onChanged, onClose, onOp
   const over = subtractExact(allocating, payment.unallocated) !== "0";
   const run = async (action: "allocate" | "reverse", input: Record<string, unknown>) => {
     setBusy(true); setNotice("");
-    try { await api.paymentCommand(action, { paymentId: payment.id, ...input }); onChanged(); setDialog(null); }
-    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); } finally { setBusy(false); }
+    try { await api.paymentCommand(action, { paymentId: payment.id, ...input }); onChanged(); setDialog(null); return true; }
+    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; } finally { setBusy(false); }
   };
   return <InspectorSheet isOpen size="md" title={`${payment.supplierName} · ${money(payment.amount)}`} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={canManage && recorded ? <div className="wd-dialog-actions">
@@ -92,23 +92,25 @@ function PaymentSheet({ api, payment, canManage, bills, onChanged, onClose, onOp
           <span className={styles.money}>{money(item.amount)}</span></li>)}</ul>
       </section> : null}
     </div>
-    {dialog ? <ControlledModalDialog isOpen size="md" title={dialog === "allocate" ? t("Allocate payment") : t("Reverse payment")} onOpenChange={(value) => { if (!value) setDialog(null); }}
-      footer={<div className="wd-dialog-actions"><Button onPress={() => setDialog(null)}>{t("Back")}</Button>
-        {dialog === "allocate" ? <Button variant="primary" isLoading={busy} isDisabled={allocating === "0" || over}
-          onPress={() => void run("allocate", { allocations: Object.entries(parts).filter(([, value]) => Number(value) > 0).map(([invoiceId, amount]) => ({ invoiceId, amount })) })}>{t("Allocate")}</Button>
-          : <Button variant="danger" isLoading={busy} isDisabled={!reason.trim()} onPress={() => void run("reverse", { reason: reason.trim() })}>{t("Reverse payment")}</Button>}</div>}>
-      <div className={styles.dialogBody}>
-        {notice ? <InlineNotice tone="error" message={notice} /> : null}
+    {dialog ? <FormDialog size="md" title={dialog === "allocate" ? t("Allocate payment") : t("Reverse payment")} onClose={() => setDialog(null)} cancelLabel={t("Back")}
+      error={notice || undefined} isSubmitting={busy} isDirty={dialog === "allocate" ? allocating !== "0" : Boolean(reason.trim())}
+      isSubmitDisabled={dialog === "allocate" ? allocating === "0" || Boolean(over) : !reason.trim()}
+      submitLabel={dialog === "allocate" ? t("Allocate") : t("Reverse payment")} submitVariant={dialog === "allocate" ? "primary" : "danger"}
+      onSubmit={async () => {
+        const done = dialog === "allocate"
+          ? await run("allocate", { allocations: Object.entries(parts).filter(([, value]) => Number(value) > 0).map(([invoiceId, amount]) => ({ invoiceId, amount })) })
+          : await run("reverse", { reason: reason.trim() });
+        if (!done) throw new FormNotSaved();
+      }}>
         {dialog === "allocate" ? <>
           <p className={styles.muted}>{t("{amount} to allocate", { amount: money(payment.unallocated) })}</p>
           <div className={styles.allocations}>{open.map((bill) => <div key={bill.id} className={styles.allocation}>
             <span className={styles.nameCell}><span>{bill.number}</span><small>{t("{amount} to pay", { amount: money(bill.payable) })}</small></span>
-            <TextInput aria-label={t("Amount for {invoice}", { invoice: bill.number })} label={null} inputMode="decimal" value={parts[bill.id] ?? ""} placeholder={plain(bill.payable)}
-              onChange={(value) => setParts({ ...parts, [bill.id]: numeric(value) })} />
+            <MoneyField label={<VisuallyHidden>{t("Amount for {invoice}", { invoice: bill.number })}</VisuallyHidden>} currency={payment.currency} value={parts[bill.id] ?? ""}
+              onChange={(value) => setParts({ ...parts, [bill.id]: value })} />
           </div>)}</div>
           {over ? <InlineNotice tone="error" message={t("That's more than is left of the payment.")} /> : null}
         </> : <TextAreaField label={t("Why it's reversed")} description={t("A bounced cheque or a returned transfer. Its invoices are owed again.")} isRequired value={reason} onChange={setReason} />}
-      </div>
-    </ControlledModalDialog> : null}
+    </FormDialog> : null}
   </InspectorSheet>;
 }

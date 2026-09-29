@@ -11,6 +11,8 @@ import { History, Plus } from "lucide-react";
 import {
   Button,
   ControlledModalDialog,
+  FormDialog,
+  FormNotSaved,
   DesignSystemProvider,
   IconButton,
   SelectField,
@@ -554,48 +556,34 @@ export function CommercialPage({
               ))}
           </ul>
         </ControlledModalDialog>
-        <ControlledModalDialog
+        <FormDialog
           isOpen={dialog === "issue"}
-          onOpenChange={(open) => !open && setDialog("")}
+          onClose={() => setDialog("")}
           title={t("Issue this quotation")}
-          footer={
-            <Button
-              size="compact"
-              variant="primary"
-              isDisabled={busy || !approver}
-              onPress={() => void run("issue", { approverId: approver })}
-            >
-              {t("Issue V")}{draft?.number}
-            </Button>
-          }
+          description={t("Publishing to the portal does not send a WhatsApp message.")}
+          isSubmitting={busy}
+          error={error || undefined}
+          isSubmitDisabled={!approver}
+          submitLabel={t("Issue V{number}", { number: draft?.number ?? "" })}
+          onSubmit={async () => { if (!(await run("issue", { approverId: approver }))) throw new FormNotSaved(); }}
         >
-          <div className={s.form}>
+          <SelectField
+            isRequired
+            label={t("Client approver")}
+            placeholder={t("Choose an approver")}
+            items={state.contacts
+              .filter((c) => c.active && c.role === "approver")
+              .map((c) => ({ id: c.id, label: `${c.name} · ${c.phone}` }))}
+            selectedKey={approver || null}
+            onSelectionChange={(key) => setApprover(String(key))}
+          />
+          {!state.contacts.some((c) => c.active && c.role === "approver") && (
             <p>
-              {t("Freeze this version and make it available for the client’s decision. Any previous pending version is replaced.")}</p>
-            <SelectField
-              label={t("Client approver")}
-              placeholder={t("Choose an approver")}
-              items={state.contacts
-                .filter((c) => c.active && c.role === "approver")
-                .map((c) => ({ id: c.id, label: `${c.name} · ${c.phone}` }))}
-              selectedKey={approver || null}
-              onSelectionChange={(key) => setApprover(String(key))}
-            />
-            {!state.contacts.some((c) => c.active && c.role === "approver") && (
-              <p>
-                {t("Add an approver in the")}{" "}
-                <Link href={`${root}/client-portal`}>{t("Client portal tab")}</Link>{" "}
-                {t("first.")}</p>
-            )}
-            {error && (
-              <p role="alert" className={s.error}>
-                {error}
-              </p>
-            )}
-            <p className={s.muted}>
-              {t("Publishing to the portal does not send a WhatsApp message.")}</p>
-          </div>
-        </ControlledModalDialog>
+              {t("Add an approver in the")}{" "}
+              <Link href={`${root}/client-portal`}>{t("Client portal tab")}</Link>{" "}
+              {t("first.")}</p>
+          )}
+        </FormDialog>
         {confirmationDialog}
       </section>
     </DesignSystemProvider>
