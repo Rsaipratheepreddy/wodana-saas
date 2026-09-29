@@ -13,6 +13,8 @@ type Db = Pick<PoolClient, "query">;
 
 export type ProjectSettings = {
   requireAgreement: boolean; requirePayment: boolean; requireApproval: boolean; requireVariationPayment: boolean; referencePrefix: string; roles: ProjectRole[]; version: number;
+  /** D-7: the project finishes by itself once the client accepts the handover and its last stage's checks pass. */
+  autoFinish: boolean;
 };
 
 /** The workspace's project settings, created with the defaults the first time they're read. */
@@ -21,7 +23,7 @@ export async function ensureSettings(db: Db, workspaceId: string): Promise<Proje
     [workspaceId, JSON.stringify(DEFAULT_ROLES)]);
   return (await db.query<ProjectSettings>(
     `SELECT require_agreement AS "requireAgreement", require_payment AS "requirePayment", require_approval AS "requireApproval",
-            require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+            require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version, auto_finish AS "autoFinish" FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 
 export type TemplateRow = { id: string; name: string; isDefault: boolean; version: number; stages: TemplateStage[] };
@@ -110,12 +112,15 @@ export async function readTeam(db: Db, workspaceId: string, projectIds: string[]
 export type StageRow = {
   id: string; projectId: string; position: number; key: string; name: string; ownerRole: string | null; checks: StageCheck[];
   status: "upcoming" | "current" | "done" | "skipped"; startedAt: string | null; completedAt: string | null; completedByName: string | null; skipReason: string | null;
+  /** Finished by itself (D-7) on behalf of `completedByName`. */
+  finishedAutomatically: boolean;
 };
 
 export async function readStages(db: Db, workspaceId: string, projectIds: string[], currentOnly = false): Promise<StageRow[]> {
   return (await db.query<StageRow>(
     `SELECT stage.id, stage.project_id AS "projectId", stage.position, stage.key, stage.name, stage.owner_role AS "ownerRole", stage.checks, stage.status,
-            stage.started_at AS "startedAt", stage.completed_at AS "completedAt", finisher.display_name AS "completedByName", stage.skip_reason AS "skipReason"
+            stage.started_at AS "startedAt", stage.completed_at AS "completedAt", finisher.display_name AS "completedByName", stage.skip_reason AS "skipReason",
+            stage.finished_automatically AS "finishedAutomatically"
        FROM project_stages stage LEFT JOIN users finisher ON finisher.id = stage.completed_by
       WHERE stage.workspace_id = $1 AND stage.project_id = ANY($2::uuid[]) ${currentOnly ? "AND stage.status = 'current'" : ""}
       ORDER BY stage.project_id, stage.position`, [workspaceId, projectIds])).rows;

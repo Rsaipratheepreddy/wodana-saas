@@ -11,6 +11,8 @@ export type ProjectRoute = { id: string; name: string; isDefault: boolean; versi
 
 export type ProjectSettings = {
   requireAgreement: boolean; requirePayment: boolean; requireApproval: boolean; requireVariationPayment: boolean; referencePrefix: string; roles: ProjectRole[]; version: number;
+  /** The project finishes by itself once the client accepts the handover (D-7). */
+  autoFinish: boolean;
 };
 export type SettingsState = { settings: ProjectSettings; templates: ProjectRoute[]; workTemplates: WorkTemplate[]; canManage: boolean };
 /** One step of a package's standard work: working days, the role that does it, its stage, and whether it runs with the step before. */
@@ -34,6 +36,8 @@ export type EvaluatedCheck = StageCheck & { passed: boolean; confirmedBy: string
 export type ProjectStage = {
   id: string; position: number; key: string; name: string; ownerRole: string | null; status: "upcoming" | "current" | "done" | "skipped";
   startedAt: string | null; completedAt: string | null; completedByName: string | null; skipReason: string | null;
+  /** Finished by itself (D-7), on behalf of `completedByName`. */
+  finishedAutomatically?: boolean;
   checks: EvaluatedCheck[]; ready: boolean; owner: Member | null; canWork: boolean;
 };
 export type StatusUpdate = {

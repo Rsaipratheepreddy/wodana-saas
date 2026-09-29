@@ -383,7 +383,7 @@ describe("standard tasks", () => {
 
   it("edits the standard tasks for a way of delivering a package", async () => {
     const state: SettingsState = {
-      settings: { requireAgreement: true, requirePayment: true, requireApproval: false, requireVariationPayment: false, referencePrefix: "PRJ", version: 2,
+      settings: { requireAgreement: true, requirePayment: true, requireApproval: false, requireVariationPayment: false, autoFinish: false, referencePrefix: "PRJ", version: 2,
         roles: [{ key: "project_manager", label: "Project manager" }, { key: "factory_lead", label: "Factory lead" }] },
       templates: [{ id: "r1", name: "Standard", isDefault: true, version: 1, stages: [{ key: "production", name: "Production", ownerRole: "factory_lead", checks: [] }] }],
       workTemplates: [{ supply: "make", version: 3, tasks: [{ title: "Production", days: 15, role: "factory_lead", stage: "production", withPrevious: false }] },

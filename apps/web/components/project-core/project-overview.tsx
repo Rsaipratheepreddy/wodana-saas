@@ -120,6 +120,9 @@ function ActivityText({ row }: { row: ActivityRow }) {
   const who = row.source === "client_portal" || !row.actor ? t("The client") : row.actor;
   const subject = row.subject;
   const text = (() => {
+    // Steps the system took by itself (Settings → Projects → Finish by itself).
+    if (row.source === "internal" && row.action === "project.complete_stage") return t("{subject} finished by itself", { subject: t(subject as never) });
+    if (row.source === "internal" && row.action === "project.completed") return t("The project finished by itself");
     switch (row.action) {
       case "project.started": return t("{who} started the project", { who });
       case "project.complete_stage": return t("{who} finished {subject}", { who, subject: t(subject as never) });

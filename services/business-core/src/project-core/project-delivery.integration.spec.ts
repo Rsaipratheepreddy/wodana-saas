@@ -224,6 +224,55 @@ integration("project delivery v2: overview, reminders, hold, handover money, cli
     });
   });
 
+  /** Every stage before Handover done, then the client accepts a whole-project pack (with the balance still due, and why). */
+  async function acceptHandover(w: World) {
+    await w.client.query(`UPDATE project_stages SET status = 'done', started_at = coalesce(started_at, now()), completed_at = now(), completed_by = $3
+      WHERE workspace_id = $1 AND project_id = $2 AND key <> 'handover'`, [w.workspaceId, w.projectId, w.manager]);
+    await w.client.query(`UPDATE project_stages SET status = 'current', started_at = now() WHERE workspace_id = $1 AND project_id = $2 AND key = 'handover'`, [w.workspaceId, w.projectId]);
+    const handover = w.handover(w.manager);
+    const packId = randomUUID();
+    let state = await handover.command(actor, w.workspaceId, w.projectId, { action: "create_pack", id: packId, title: "Whole home" });
+    await w.client.query(`INSERT INTO handover_documents(id,workspace_id,pack_id,kind,title,original_name,mime_type,byte_size,object_key,sha256,created_by)
+      VALUES($1,$2,$3,'warranty','Warranty','warranty.pdf','application/pdf',10,'handover/x',repeat('c',64),$4)`, [randomUUID(), w.workspaceId, packId, w.manager]);
+    let pack = state.packs.find((entry: { id: string }) => entry.id === packId)!;
+    state = await handover.command(actor, w.workspaceId, w.projectId, { action: "issue", packId, version: pack.version, confirmOpen: true, openReason: "Test" });
+    pack = state.packs.find((entry: { id: string }) => entry.id === packId)!;
+    await handover.command(actor, w.workspaceId, w.projectId, { action: "accept", packId, version: pack.version, decidedOn: w.today, decidedByName: "Maya", method: "in_person",
+      confirmOpen: true, openReason: "Test", balanceReason: "Final payment on handover per the agreement" });
+  }
+
+  it("D-7: with 'Finish by itself' on, the client accepting the handover finishes the project, audited as automatic", async () => {
+    await world(async (w) => {
+      const core = w.core(w.manager);
+      const settings = (await w.client.query<{ version: number }>("SELECT version FROM workspace_project_settings WHERE workspace_id = $1", [w.workspaceId])).rows[0];
+      expect((await core.saveSettings(actor, w.workspaceId, { version: settings.version, autoFinish: true })).settings.autoFinish).toBe(true);
+      await acceptHandover(w);
+      const detail = await core.get(actor, w.workspaceId, w.projectId);
+      expect(detail.project.status).toBe("completed");
+      expect(detail.stages.at(-1)).toMatchObject({ key: "handover", status: "done", finishedAutomatically: true, completedByName: "Omar Manager" });
+      const audits = (await w.client.query<{ action: string; actor: string | null; source: string; automatic: boolean }>(
+        `SELECT action, actor_user_id AS actor, source, (after->>'automatic')::boolean AS automatic FROM audit_events
+          WHERE workspace_id = $1 AND entity_id = $2 AND action IN ('project.completed', 'project.complete_stage') ORDER BY occurred_at`, [w.workspaceId, w.projectId])).rows;
+      expect(audits).toEqual([
+        { action: "project.complete_stage", actor: null, source: "internal", automatic: true },
+        { action: "project.completed", actor: null, source: "internal", automatic: true },
+      ]);
+      expect((await w.notices("project.finished_automatically")).map((row) => row.recipient).sort()).toEqual([w.manager, w.designer].sort());
+      // The daily run has nothing left to do.
+      expect(await noticeStageReady(w.client, w.workspaceId, w.projectId, null)).toBe(0);
+    });
+  });
+
+  it("D-7: with 'Finish by itself' off, an accepted handover leaves the last stage for the project manager to finish", async () => {
+    await world(async (w) => {
+      await acceptHandover(w);
+      const detail = await w.core(w.manager).get(actor, w.workspaceId, w.projectId);
+      expect(detail.project.status).toBe("active");
+      expect(detail.stages.at(-1)).toMatchObject({ key: "handover", status: "current", finishedAutomatically: false });
+      expect(detail.stages.at(-1)?.ready).toBe(true);
+    });
+  });
+
   it("D-9: accepting a handover with money due needs someone who manages projects and why; it stays on the pack", async () => {
     await world(async (w) => {
       const handover = w.handover(w.manager);

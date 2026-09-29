@@ -186,6 +186,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.cancelled", channel: "in_app", subject: "{{title}} is cancelled", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.cancelled", channel: "email", subject: "{{title}} is cancelled", body: "{{actor}} cancelled {{title}} for {{clientName}}.\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.completed", channel: "in_app", subject: "{{title}} is complete", body: "{{actor}} finished the last stage.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.finished_automatically", channel: "in_app", subject: "{{title}} is complete", body: "{{clientName}} accepted the handover, so {{note}} and the project finished by themselves.", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.reopened", channel: "in_app", subject: "{{title}} is open again", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.materials_signed_off", channel: "in_app", subject: "{{title}}: material list signed off", body: "{{clientName}} signed off {{revision}}.", variables: ["title", "clientName", "actor", "revision"] },
   { code: "project.materials_changes", channel: "in_app", subject: "{{title}}: changes to the material list", body: "{{clientName}} asked for changes to {{revision}}: {{note}}", variables: ["title", "clientName", "actor", "revision", "note"] },

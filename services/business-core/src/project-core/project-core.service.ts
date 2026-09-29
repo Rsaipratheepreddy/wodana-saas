@@ -20,6 +20,7 @@ import {
 import { tellScopeChanges } from "../factory/factory-changes";
 import { tellOverOrdered } from "../purchasing/purchasing-changes";
 import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeout";
+import { completeProject } from "./project-finish";
 import { readProgress } from "./project-work";
 import { noticeProject, type ProjectNotice } from "./project-notices";
 import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, suggestMaterials } from "./project-materials";
@@ -32,7 +33,6 @@ import { decideClientUpdate } from "./client-updates";
 import { holdLength, shiftForHold } from "./project-hold";
 import { noticeStageReady } from "./project-stage-watch";
 import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
-import { thankForHandover } from "../crm/conversations/inbox/client-followups";
 
 type Db = PoolClient;
 const SETTINGS = ["workspace.settings.manage"];
@@ -95,11 +95,11 @@ export class ProjectCoreService {
       }
       const prefix = body.referencePrefix === undefined ? current.referencePrefix : String(body.referencePrefix).trim().toUpperCase();
       if (!/^[A-Z][A-Z0-9]{0,11}$/.test(prefix)) throw new BadRequestException("Use up to 12 letters or digits for the project number, starting with a letter.");
-      const flag = (key: "requireAgreement" | "requirePayment" | "requireApproval" | "requireVariationPayment") => (body[key] === undefined ? current[key] : body[key] === true);
+      const flag = (key: "requireAgreement" | "requirePayment" | "requireApproval" | "requireVariationPayment" | "autoFinish") => (body[key] === undefined ? current[key] : body[key] === true);
       await client.query(
         `UPDATE workspace_project_settings SET require_agreement = $2, require_payment = $3, require_approval = $4, reference_prefix = $5, roles = $6::jsonb,
-                require_variation_payment = $8, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
-        [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment")]);
+                require_variation_payment = $8, auto_finish = $9, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
+        [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment"), flag("autoFinish")]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.settings_changed", entityType: "workspace_project_settings", entityId: workspaceId, before: current, after: { ...body, roles } });
       const saved = await ensureSettings(client, workspaceId);
       return { settings: saved, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, saved.roles), canManage: true };
@@ -530,15 +530,7 @@ export class ProjectCoreService {
       notices.push({ key: `stage:${next.key}:${project.version}`, notice: { code: "project.stage_done", stage: next.name, previous: finished.name, memberships: told } });
     } else if (!stages.some((stage) => stage.id !== finished.id && (stage.status === "current" || stage.status === "upcoming"))) {
       // The last stage closes the project, once nothing is left open; leftover project stock becomes free stock.
-      const closeOut = await readCloseOut(client, workspaceId, project.id);
-      const blockers = closeOutBlockers(closeOut, true);
-      if (blockers.length) throw new ConflictException(`Before the project closes: ${blockers.join("; ")}.`);
-      const settled = await settleCloseOut(client, { workspaceId, projectId: project.id, reference: project.reference, closeOut, why: `${project.reference} completed`, actorId: userId,
-        today: await this.today(client, workspaceId) });
-      await client.query(`UPDATE delivery_projects SET status = 'completed', completed_at = now(), completed_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, project.id, userId]);
-      await recordAudit(client, { workspaceId, actorUserId: userId, action: "project.completed", entityType: "project", entityId: project.id, after: settled });
-      // Unless the handover already thanked them, the client is thanked now (once per project).
-      await thankForHandover(client, workspaceId, project.id, { actorUserId: userId });
+      await completeProject(client, { workspaceId, project, actorUserId: userId });
       notices.push({ key: `completed:${project.version}`, notice: { code: "project.completed", note: "", memberships: team.map((member) => member.membershipId) } });
     }
   }

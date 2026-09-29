@@ -813,6 +813,13 @@
       "when": 1801260000009,
       "tag": "0169_client_follow_up_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1801290000100,
+      "tag": "0172_project_auto_finish",
+      "breakpoints": true
     }
   ]
 }

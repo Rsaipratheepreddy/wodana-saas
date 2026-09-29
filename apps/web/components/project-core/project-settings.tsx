@@ -99,8 +99,13 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
         <Switch aria-label={t("Change payment verified")} isDisabled={readOnly} isSelected={form.requireVariationPayment} onChange={(value) => setForm({ ...form, requireVariationPayment: value })} />
       </SettingsRow>
     </SettingsSection>
+    <SettingsSection id="finish" title={t("When a project finishes")}>
+      <SettingsRow label={t("Finish by itself")} hint={t("When the client accepts the handover and nothing is left open.")}>
+        <Switch aria-label={t("Finish by itself")} isDisabled={readOnly} isSelected={form.autoFinish} onChange={(value) => setForm({ ...form, autoFinish: value })} />
+      </SettingsRow>
+    </SettingsSection>
     {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} isDisabled={!/^[A-Z]/.test(form.referencePrefix)} onDiscard={() => setForm(data.settings)}
-      onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment, referencePrefix: form.referencePrefix }); setBusy(false); }} />}
+      onSave={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment, autoFinish: form.autoFinish, referencePrefix: form.referencePrefix }); setBusy(false); }} />}
   </>;
 }
 

@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { evaluateStages, readProject, readStages, readTeam } from "./project-core.store";
+import { autoFinishProject } from "./project-finish";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -14,6 +15,8 @@ type Db = Pick<PoolClient, "query">;
 export async function noticeStageReady(db: Db, workspaceId: string, projectId: string, actorUserId: string | null = null) {
   const project = await readProject(db, workspaceId, projectId);
   if (!project || project.status !== "active") return 0;
+  // With "Finish by itself" on, a handover the client accepted closes the project instead (D-7).
+  if (await autoFinishProject(db, workspaceId, projectId, actorUserId)) return 0;
   const [stage] = await readStages(db, workspaceId, [projectId], true);
   if (!stage || !stage.checks.some((check) => check.kind !== "confirm")) return 0;
   const team = (await readTeam(db, workspaceId, [projectId])).get(projectId) ?? [];
