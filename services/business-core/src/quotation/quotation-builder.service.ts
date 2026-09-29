@@ -1,4 +1,5 @@
 import { aiConfigured } from "../ai-gateway/ai-gateway.service";
+import { DEFAULT_DECISION_REMINDER_DAYS, reminderDays } from "../commercial/client-decision-reminders";
 import { randomUUID as randomUUIDv4 } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
@@ -28,11 +29,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export type QuotationSettings = {
   defaultView: "area" | "trade" | "area_trade"; pricesIncludeTax: boolean; rounding: "line" | "document";
   defaultMarkupPercent: string; marginFloorPercent: string | null; discountApprovalPercent: string | null;
-  validityDays: number; internalReview: boolean; priceBookId: string | null; version: number;
+  validityDays: number; internalReview: boolean; priceBookId: string | null;
+  /** Days after a quote or design reaches the client when they and the case owner are reminded (Q-8). */
+  decisionReminderDays: number[]; version: number;
 };
 const DEFAULT_SETTINGS: QuotationSettings = {
   defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null,
-  discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, version: 0,
+  discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], version: 0,
 };
 
 type LineRow = {
@@ -96,6 +99,12 @@ export class QuotationBuilderService {
         next.validityDays = days;
       }
       if (input.internalReview !== undefined) next.internalReview = bool(input.internalReview);
+      if (input.decisionReminderDays !== undefined) {
+        const days = Array.isArray(input.decisionReminderDays) ? input.decisionReminderDays.map(Number) : [];
+        if (!Array.isArray(input.decisionReminderDays) || days.length > 5 || days.some((day) => !Number.isInteger(day) || day < 1 || day > 60))
+          throw new BadRequestException("Reminder days are up to five whole days between 1 and 60.");
+        next.decisionReminderDays = reminderDays(days);
+      }
       if (input.priceBookId !== undefined) {
         next.priceBookId = input.priceBookId === null ? null : uuid(input.priceBookId, "Price book");
         if (next.priceBookId && !(await client.query(`SELECT 1 FROM price_books WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.priceBookId])).rowCount)
@@ -103,14 +112,15 @@ export class QuotationBuilderService {
       }
       await client.query(
         `INSERT INTO workspace_quotation_settings (workspace_id, default_view, prices_include_tax, rounding, default_markup_percent, margin_floor_percent,
-           discount_approval_percent, validity_days, internal_review, price_book_id, version, updated_by, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, now())
+           discount_approval_percent, validity_days, internal_review, price_book_id, decision_reminder_days, version, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], 1, $11, now())
          ON CONFLICT (workspace_id) DO UPDATE SET default_view = excluded.default_view, prices_include_tax = excluded.prices_include_tax,
            rounding = excluded.rounding, default_markup_percent = excluded.default_markup_percent, margin_floor_percent = excluded.margin_floor_percent,
            discount_approval_percent = excluded.discount_approval_percent, validity_days = excluded.validity_days, internal_review = excluded.internal_review,
-           price_book_id = excluded.price_book_id, version = workspace_quotation_settings.version + 1, updated_by = excluded.updated_by, updated_at = now()`,
+           price_book_id = excluded.price_book_id, decision_reminder_days = excluded.decision_reminder_days,
+           version = workspace_quotation_settings.version + 1, updated_by = excluded.updated_by, updated_at = now()`,
         [workspaceId, next.defaultView, next.pricesIncludeTax, next.rounding, next.defaultMarkupPercent, next.marginFloorPercent,
-          next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId]);
+          next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.settings_changed.v1", entityType: "workspace", entityId: workspaceId, before: current, after: next });
       return readSettings(client, workspaceId);
     });
@@ -746,9 +756,9 @@ async function readSettings(db: Db, workspaceId: string): Promise<QuotationSetti
   const row = (await db.query<QuotationSettings>(
     `SELECT default_view AS "defaultView", prices_include_tax AS "pricesIncludeTax", rounding, default_markup_percent::text AS "defaultMarkupPercent",
             margin_floor_percent::text AS "marginFloorPercent", discount_approval_percent::text AS "discountApprovalPercent", validity_days AS "validityDays",
-            internal_review AS "internalReview", price_book_id AS "priceBookId", version
+            internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", version
        FROM workspace_quotation_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
-  return row ? { ...row, defaultMarkupPercent: Dec.of(row.defaultMarkupPercent).toString(), marginFloorPercent: row.marginFloorPercent === null ? null : Dec.of(row.marginFloorPercent).toString(), discountApprovalPercent: row.discountApprovalPercent === null ? null : Dec.of(row.discountApprovalPercent).toString() } : { ...DEFAULT_SETTINGS };
+  return row ? { ...row, decisionReminderDays: reminderDays(row.decisionReminderDays), defaultMarkupPercent: Dec.of(row.defaultMarkupPercent).toString(), marginFloorPercent: row.marginFloorPercent === null ? null : Dec.of(row.marginFloorPercent).toString(), discountApprovalPercent: row.discountApprovalPercent === null ? null : Dec.of(row.discountApprovalPercent).toString() } : { ...DEFAULT_SETTINGS };
 }
 
 async function workPackages(db: Db, workspaceId: string, includeArchived: boolean) {

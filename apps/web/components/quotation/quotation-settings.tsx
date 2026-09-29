@@ -31,13 +31,14 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [trade, setTrade] = useState("");
+  const [days, setDays] = useState("");
   const load = useCallback(async () => {
-    try { const next = await call<Loaded>(quotationPath(workspaceId, "settings")); setData(next); setForm(next.settings); setError(""); }
+    try { const next = await call<Loaded>(quotationPath(workspaceId, "settings")); setData(next); setForm(next.settings); setDays(dayList(next.settings)); setError(""); }
     catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [workspaceId, t]);
   useEffect(() => {
     let alive = true;
-    call<Loaded>(quotationPath(workspaceId, "settings")).then((next) => { if (alive) { setData(next); setForm(next.settings); } }).catch((cause: Error) => { if (alive) setError(cause.message); });
+    call<Loaded>(quotationPath(workspaceId, "settings")).then((next) => { if (alive) { setData(next); setForm(next.settings); setDays(dayList(next.settings)); } }).catch((cause: Error) => { if (alive) setError(cause.message); });
     return () => { alive = false; };
   }, [workspaceId]);
 
@@ -52,7 +53,7 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
     setBusy(true); setError("");
     try {
       const next = await call<Settings>(quotationPath(workspaceId, "settings"), "PUT", { ...form, marginFloorPercent: form.marginFloorPercent || null, discountApprovalPercent: form.discountApprovalPercent || null });
-      setData({ ...data, settings: next }); setForm(next); setSaved(true);
+      setData({ ...data, settings: next }); setForm(next); setDays(dayList(next)); setSaved(true);
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     finally { setBusy(false); }
   };
@@ -100,11 +101,15 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       <SettingsRow label={t("Valid for (days)")}>
         <TextInput aria-label={t("Valid for (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.validityDays)} onChange={(value) => set("validityDays", Number(value.replace(/\D/g, "") || 0))} />
       </SettingsRow>
+      <SettingsRow label={t("Remind the client after (days)")} hint={t("While a quote or design waits, the client and the case owner hear on each of these days. Leave empty for none.")}>
+        <TextInput aria-label={t("Remind the client after (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={days}
+          onChange={(value) => { const clean = value.replace(/[^\d,\s]/g, ""); setDays(clean); set("decisionReminderDays", clean.split(/[,\s]+/).map(Number).filter((day) => Number.isInteger(day) && day > 0)); }} />
+      </SettingsRow>
       <SettingsRow label={t("Review before sending")} hint={t("A reviewer approves each quote before it goes to the client.")}>
         <Switch aria-label={t("Review before sending")} isDisabled={readOnly} isSelected={form.internalReview} onChange={(value) => set("internalReview", value)} />
       </SettingsRow>
     </SettingsSection>
-    {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} saved={saved} onDiscard={() => { setForm(data.settings); setError(""); }} onSave={() => void save()} />}
+    {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} saved={saved} onDiscard={() => { setForm(data.settings); setDays(dayList(data.settings)); setError(""); }} onSave={() => void save()} />}
 
     <ProposalKitSettings workspaceId={workspaceId} />
 
@@ -120,6 +125,8 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
     </SettingsSection>
   </SettingsPage>;
 }
+
+const dayList = (settings: Settings) => (settings.decisionReminderDays ?? []).join(", ");
 
 function TradeName({ name, readOnly, onRename }: { name: string; readOnly: boolean; onRename: (name: string) => void }) {
   const t = useT();

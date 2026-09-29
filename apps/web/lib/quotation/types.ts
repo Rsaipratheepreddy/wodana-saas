@@ -5,7 +5,7 @@ export type QuoteView = "area" | "trade" | "area_trade";
 export type QuotationSettings = {
   defaultView: QuoteView; pricesIncludeTax: boolean; rounding: "line" | "document"; defaultMarkupPercent: string;
   marginFloorPercent: string | null; discountApprovalPercent: string | null; validityDays: number; internalReview: boolean;
-  priceBookId: string | null; version: number;
+  priceBookId: string | null; decisionReminderDays: number[]; version: number;
 };
 
 export type BuildUpRow = {

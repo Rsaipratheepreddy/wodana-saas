@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
+import { processClientDecisions } from "../commercial/client-decision-reminders";
 import { processDesignDeadlines } from "../design/design-journey.store";
 import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { processHrmsCheckouts, processHrmsDocuments } from "../hrms/hrms-reminders";
@@ -31,13 +32,15 @@ export class ProjectRemindersService {
     const workspaces = await this.db.query<{ workspace_id: string }>(
       "SELECT workspace_id FROM list_reminder_workspaces()",
     );
-    const totals = { created: 0, decisionReminders: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
+    const totals = { created: 0, decisionReminders: 0, clientDecisions: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
       workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, payablesDue: 0, retentionReleased: 0, overBudget: 0,
       receivablesOverdue: 0, checkoutReminders: 0, documentReminders: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
       try {
         const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => ({
           decisions: await this.createDecisionReminders(client),
+          // Quotes and designs waiting on the client: they and the case owner are reminded on the firm's days (Q-8).
+          clientDecisions: await processClientDecisions(client, workspaceId),
           design: await processDesignDeadlines(client, workspaceId),
           work: await processWorkDeadlines(client, workspaceId),
           stages: await processStagesReady(client, workspaceId),
@@ -61,6 +64,7 @@ export class ProjectRemindersService {
           documents: await processHrmsDocuments(client, workspaceId),
         }));
         totals.decisionReminders += run.decisions;
+        totals.clientDecisions += run.clientDecisions?.sent ?? 0;
         totals.weeklySummaries += run.weekly.sent;
         totals.stagesReady += run.stages.sent;
         totals.materialsWaiting += run.materials.sent;
@@ -85,7 +89,7 @@ export class ProjectRemindersService {
         this.logger.error(`Reminder run failed for workspace ${workspaceId}: ${(error as Error).message}`);
       }
     }
-    totals.created = totals.decisionReminders + totals.weeklySummaries + totals.stagesReady + totals.materialsWaiting + totals.milestonesDue + totals.workReminders;
+    totals.created = totals.decisionReminders + totals.clientDecisions + totals.weeklySummaries + totals.stagesReady + totals.materialsWaiting + totals.milestonesDue + totals.workReminders;
     return totals;
   }
 
@@ -124,7 +128,7 @@ export class ProjectRemindersService {
       SELECT workspace_id,'user',user_id,'in_app','commercial.decision.reminder','delivered',
         'Client decision due · '||(request->>'title'),
         (request->'decisionRequest'->'target'->>'label')||' · Due '||(request->>'dueDate'),
-        '/workspace/pre-projects/'||case_id||'/commercial?request='||(request->>'id'),
+        '/workspace/pre-projects/cases/'||case_id||'/variations?request='||(request->>'id'),
         'decision-reminder:'||case_id||':'||(request->>'id')||':'||today,
         gen_random_uuid(),now()
       FROM due
