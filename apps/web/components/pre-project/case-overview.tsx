@@ -38,7 +38,7 @@ export function CaseOverview({ record: initial, workspaceId, members, onUpdated 
   const chosenPhaseIndex = phases.indexOf(phase);
   const reasonRequired = action === "hold" || action === "cancel" || action === "reopen" || (action === "set_phase" && (chosenPhaseIndex < phaseIndex || chosenPhaseIndex > phaseIndex + 1));
   const active = record.status === "active";
-  const manageable = Boolean(record.canManageLifecycle) && ["draft", "active", "on_hold"].includes(record.status);
+  const manageable = Boolean(record.canEditDetails ?? record.canManageLifecycle) && ["draft", "active", "on_hold"].includes(record.status);
   const caseActions: ActionItem[] = record.canManageLifecycle && record.status !== "released" ? [
     ...(active ? [{ id: "set_phase", label: t("Change stage") }, { id: "hold", label: t("Put on hold") }] : []),
     ...(record.status === "on_hold" ? [{ id: "resume", label: t("Resume") }] : []),
@@ -47,7 +47,7 @@ export function CaseOverview({ record: initial, workspaceId, members, onUpdated 
   ] : [];
 
   function update(next: PreProjectCase) {
-    const updated = { ...next, canManageLifecycle: record.canManageLifecycle };
+    const updated = { ...next, canManageLifecycle: record.canManageLifecycle, canEditDetails: record.canEditDetails };
     setRecord(updated);
     setPhase(next.phase);
     onUpdated(updated);

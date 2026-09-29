@@ -1,5 +1,5 @@
 import { assignDesignerToCase } from "../crm/opportunities/dedicated-designer";
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
@@ -166,7 +166,18 @@ export class PreProjectsService {
     return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => ({
       ...await this.read(client, workspaceId, id),
       canManageLifecycle: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.manage_lifecycle"),
+      canEditDetails: await this.canEditDetails(client, workspaceId, id, user.userId),
     }));
+  }
+
+  /** Whoever manages cases, and the case's own owner, may change its details (owner, target, priority, risk). */
+  private async canEditDetails(client: PoolClient, workspaceId: string, caseId: string, userId: string) {
+    if (await this.access.hasPermission(client, workspaceId, userId, "pre_projects.manage_lifecycle")) return true;
+    const owner = await client.query(
+      `SELECT 1 FROM pre_project_cases engagement
+         JOIN workspace_memberships membership ON membership.workspace_id = engagement.workspace_id AND membership.id = engagement.owner_membership_id AND membership.status = 'active'
+        WHERE engagement.workspace_id = $1 AND engagement.id = $2 AND membership.user_id = $3`, [workspaceId, caseId, userId]);
+    return Boolean(owner.rowCount);
   }
 
   start(actor: RequestActor, workspaceId: string, opportunityId: string) {
@@ -194,7 +205,9 @@ export class PreProjectsService {
   }
 
   updateProfile(actor: RequestActor, workspaceId: string, id: string, input: UpdateEngagementProfileDto) {
-    return this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.manage_lifecycle"], async (client, user) => {
+    return this.access.withPermissions(actor, workspaceId, ["pre_projects.view"], async (client, user) => {
+      if (!(await this.canEditDetails(client, workspaceId, id, user.userId)))
+        throw new ForbiddenException("Only the case owner or someone who manages cases can change these details.");
       const hash = canonicalHash({ action: "update_profile", caseId: id, ...input });
       const replay = await this.replay(client, workspaceId, id, input.requestId, "update_profile", hash);
       if (replay) return replay;

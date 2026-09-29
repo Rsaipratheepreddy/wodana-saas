@@ -11,6 +11,8 @@ export type PreProjectCase = {
   riskLevel: "none" | "low" | "medium" | "high" | "critical";
   activatedAt: string | null; holdReason: string | null; cancellationReason: string | null;
   releasedAt: string | null; canManageLifecycle?: boolean;
+  /** The case owner or someone who manages cases: may change owner, target, priority and risk. */
+  canEditDetails?: boolean;
   conversionOrigin?: string | null; convertedAt?: string | null;
   qualificationEvidence?: unknown; qualificationEvidenceHash?: string | null;
   /** Set only after a paid Deal File has opened the linked project. */

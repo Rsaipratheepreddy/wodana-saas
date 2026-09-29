@@ -90,5 +90,11 @@ describe("pre-execution case overview", () => {
     expect(screen.getByText(/View only/)).toBeVisible();
   });
 
+  it("lets the case owner change its details without the case-management permission", () => {
+    view({ ...initial, canManageLifecycle: false, canEditDetails: true });
+    expect(screen.queryByText(/View only/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Project actions" })).not.toBeInTheDocument();
+  });
+
 
 });
