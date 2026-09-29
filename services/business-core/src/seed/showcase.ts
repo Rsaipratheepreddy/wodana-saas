@@ -1186,7 +1186,12 @@ class ShowcaseSeed {
     await this.stage(at("factory"), async () => { ids.workOrderId = await this.factory(ctx, projectId); });
     // A project already completed (an earlier run) opens again for what the story still publishes, then closes again below.
     await this.stage(at("reopen"), () => this.reopenIfClosed(ctx, projectId));
-    if (s.execution.siteStartDaysAgo !== null) await this.stage(at("site"), () => this.site(ctx, projectId));
+    // The project reaches its stage before the days on site are written: each day's card names the stage the project
+    // is really in (moving the stages only afterwards left the earlier cards saying the first stage).
+    if (s.execution.siteStartDaysAgo !== null) {
+      await this.stage(at("stages before site"), () => this.stages(ctx, projectId));
+      await this.stage(at("site"), () => this.site(ctx, projectId));
+    }
     await this.stage(at("progress published to the client"), () => this.progress(ctx, projectId));
     await this.stage(at("stages"), () => this.stages(ctx, projectId));
     if (s.execution.handover === "issued") {
