@@ -62,6 +62,10 @@ class BusinessCoreClient:
             json={"access": "write" if write else "read"},
         )
 
+    async def platform_credentials(self) -> dict[str, Any]:
+        """Wodana's app credentials as saved in Wodana Control (secrets still sealed)."""
+        return await self._internal_request("GET", "/internal/platform-integrations/runtime")
+
     async def runtime_context(self, workspace_id: str, connection_id: str) -> dict[str, Any]:
         return await self._internal_request(
             "GET", f"/internal/integrations/{workspace_id}/{connection_id}/runtime"

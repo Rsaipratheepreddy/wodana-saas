@@ -13,6 +13,10 @@ import httpx
 
 from wodana_intelligence.config import Settings
 from wodana_intelligence.integrations.google_service import IntegrationFlowError
+from wodana_intelligence.integrations.platform_credentials import (
+    PlatformCredentialResolver,
+    PlatformCredentials,
+)
 from wodana_intelligence.integrations.provider_models import (
     InvoiceRequest,
     Provider,
@@ -178,43 +182,42 @@ def safe_payment_url(value: Any) -> Optional[str]:
 
 
 class ProviderClient:
-    def __init__(self, settings: Settings, client: Optional[httpx.AsyncClient] = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        client: Optional[httpx.AsyncClient] = None,
+        credentials: Optional[PlatformCredentialResolver] = None,
+    ) -> None:
         self.settings = settings
         self.http = client or httpx.AsyncClient(timeout=25, follow_redirects=False)
+        # Wodana's app credentials, read live (Wodana Control, else the environment).
+        self.credentials = credentials or PlatformCredentialResolver(settings)
 
-    def configured(self, provider: Provider) -> bool:
-        if provider == "quickbooks":
-            return bool(
-                self.settings.quickbooks_client_id and self.settings.quickbooks_client_secret
-            )
-        if provider == "zoho_books":
-            return bool(self.settings.zoho_client_id and self.settings.zoho_client_secret)
-        return bool(
-            self.settings.whatsapp_app_id
-            and self.settings.whatsapp_app_secret
-            and self.settings.whatsapp_config_id
-        )
+    async def configured(self, provider: Provider) -> bool:
+        return (await self.credentials.current()).configured(provider)
 
-    def redirect_uri(self, provider: Provider) -> str:
+    @staticmethod
+    def redirect_uri(credentials: PlatformCredentials, provider: Provider) -> str:
         return (
-            self.settings.quickbooks_redirect_uri
+            credentials.quickbooks_redirect_uri
             if provider == "quickbooks"
-            else self.settings.zoho_redirect_uri
+            else credentials.zoho_redirect_uri
         )
 
-    def authorization_url(self, provider: Provider, region: Region, state: str) -> str:
+    async def authorization_url(self, provider: Provider, region: Region, state: str) -> str:
+        credentials = await self.credentials.current()
         params = {
             "response_type": "code",
             "state": state,
-            "redirect_uri": self.redirect_uri(provider),
+            "redirect_uri": self.redirect_uri(credentials, provider),
         }
         if provider == "quickbooks":
             params.update(
-                client_id=self.settings.quickbooks_client_id, scope=" ".join(SCOPES[provider])
+                client_id=credentials.quickbooks_client_id, scope=" ".join(SCOPES[provider])
             )
             return "https://appcenter.intuit.com/connect/oauth2?" + urlencode(params)
         params.update(
-            client_id=self.settings.zoho_client_id,
+            client_id=credentials.zoho_client_id,
             scope=",".join(SCOPES[provider]),
             access_type="offline",
             prompt="consent",
@@ -261,13 +264,14 @@ class ProviderClient:
     async def token(
         self, provider: Provider, region: Region, *, code: str = "", refresh: str = ""
     ) -> dict[str, Any]:
+        credentials = await self.credentials.current()
         if provider == "whatsapp":
             return await self.request(
                 "GET",
-                f"{self.graph}/oauth/access_token",
+                f"{credentials.graph}/oauth/access_token",
                 params={
-                    "client_id": self.settings.whatsapp_app_id,
-                    "client_secret": self.settings.whatsapp_app_secret,
+                    "client_id": credentials.whatsapp_app_id,
+                    "client_secret": credentials.whatsapp_app_secret,
                     "code": code,
                 },
             )
@@ -275,12 +279,11 @@ class ProviderClient:
         payload.update(
             {"refresh_token": refresh}
             if refresh
-            else {"code": code, "redirect_uri": self.redirect_uri(provider)}
+            else {"code": code, "redirect_uri": self.redirect_uri(credentials, provider)}
         )
         if provider == "quickbooks":
-            basic = base64.b64encode(
-                f"{self.settings.quickbooks_client_id}:{self.settings.quickbooks_client_secret}".encode()
-            ).decode()
+            pair = f"{credentials.quickbooks_client_id}:{credentials.quickbooks_client_secret}"
+            basic = base64.b64encode(pair.encode()).decode()
             return await self.request(
                 "POST",
                 "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
@@ -288,17 +291,16 @@ class ProviderClient:
                 headers={"Authorization": f"Basic {basic}", "Accept": "application/json"},
             )
         payload.update(
-            client_id=self.settings.zoho_client_id, client_secret=self.settings.zoho_client_secret
+            client_id=credentials.zoho_client_id, client_secret=credentials.zoho_client_secret
         )
         return await self.request(
             "POST", f"https://{ZOHO_REGIONS[region][0]}/oauth/v2/token", data=payload
         )
 
-    @property
-    def graph(self) -> str:
-        return f"https://graph.facebook.com/{self.settings.whatsapp_graph_version}"
+    async def graph(self) -> str:
+        return (await self.credentials.current()).graph
 
-    def _signed(
+    async def _signed(
         self, credential: ProviderCredential, path: str, params: Optional[dict[str, Any]]
     ) -> tuple[str, dict[str, Any], dict[str, str]]:
         query = dict(params or {})
@@ -316,10 +318,11 @@ class ProviderClient:
             query["organization_id"] = credential.account_id
             authorization = f"Zoho-oauthtoken {credential.access_token}"
         else:
-            base = self.graph
+            app = await self.credentials.current()
+            base = app.graph
             authorization = f"Bearer {credential.access_token}"
             query["appsecret_proof"] = hmac.new(
-                self.settings.whatsapp_app_secret.encode(),
+                app.whatsapp_app_secret.encode(),
                 credential.access_token.encode(),
                 hashlib.sha256,
             ).hexdigest()
@@ -334,7 +337,7 @@ class ProviderClient:
         params: Optional[dict[str, Any]] = None,
         json: Any = None,
     ) -> dict[str, Any]:
-        url, query, headers = self._signed(credential, path, params)
+        url, query, headers = await self._signed(credential, path, params)
         return await self.request(method, url, params=query, json=json, headers=headers)
 
     async def books_request(
@@ -355,7 +358,7 @@ class ProviderClient:
         provider = credential.provider
         if provider != "quickbooks" and provider != "zoho_books":
             raise ValueError("Accounting sync supports QuickBooks and Zoho Books only")
-        url, query, headers = self._signed(credential, path, params)
+        url, query, headers = await self._signed(credential, path, params)
         content: Optional[bytes] = None
         if json is not None:
             content = jsonlib.dumps(exact_json_value(json)).encode()
@@ -648,7 +651,7 @@ class ProviderClient:
         self, credential: ProviderCredential, body: bytes, mime_type: str, filename: str
     ) -> str:
         """Uploads a file to the sending number; the answer is the media id a message names."""
-        url, query, headers = self._signed(
+        url, query, headers = await self._signed(
             credential, f"/{credential.configuration['phoneNumberId']}/media", None
         )
         data = await self.request(

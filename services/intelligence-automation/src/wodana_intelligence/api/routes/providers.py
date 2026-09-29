@@ -2,7 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -19,6 +19,8 @@ from wodana_intelligence.integrations.google_service import (
     GoogleIntegrationService,
     IntegrationFlowError,
 )
+from wodana_intelligence.integrations.platform_checks import check_platform_credentials
+from wodana_intelligence.integrations.platform_credentials import SecretField, Vendor
 from wodana_intelligence.integrations.provider_models import (
     OperationRequest,
     Provider,
@@ -34,14 +36,11 @@ Google = Annotated[GoogleIntegrationService, Depends(get_google_integration_serv
 
 @router.get("/readiness")
 async def readiness(service: Service) -> dict[str, Any]:
+    """Which providers firms can connect now (Wodana's app credentials are in place)."""
+    app = await service.credentials.current()
     return {
-        "google_workspace": bool(
-            service.settings.google_client_id and service.settings.google_client_secret
-        ),
-        **{
-            provider: service.client.configured(cast(Provider, provider))
-            for provider in ("quickbooks", "zoho_books", "whatsapp")
-        },
+        provider: app.configured(provider)
+        for provider in ("google_workspace", "quickbooks", "zoho_books", "whatsapp")
     }
 
 
@@ -209,7 +208,7 @@ async def inbox_sync(
 @router.get("/webhooks/whatsapp", response_class=PlainTextResponse)
 async def verify_whatsapp(request: Request, service: Service) -> str:
     query = request.query_params
-    expected = service.settings.whatsapp_webhook_verify_token
+    expected = (await service.credentials.current()).whatsapp_webhook_verify_token
     if (
         not expected
         or query.get("hub.mode") != "subscribe"
@@ -226,12 +225,13 @@ async def webhook(provider: Provider, request: Request, service: Service) -> dic
         raw.extend(chunk)
         if len(raw) > 1_000_000:
             raise HTTPException(413, "Webhook exceeds the size limit")
+    app = await service.credentials.current()
     if provider == "whatsapp":
-        secret = service.settings.whatsapp_app_secret
+        secret = app.whatsapp_app_secret
         expected = "sha256=" + hmac.new(secret.encode(), bytes(raw), hashlib.sha256).hexdigest()
         provided = request.headers.get("x-hub-signature-256", "")
     elif provider == "quickbooks":
-        secret = service.settings.quickbooks_webhook_verifier
+        secret = app.quickbooks_webhook_verifier
         expected = base64.b64encode(
             hmac.new(secret.encode(), bytes(raw), hashlib.sha256).digest()
         ).decode()
@@ -444,6 +444,43 @@ def _whatsapp_media_metadata(message: dict[str, Any], kind: str) -> dict[str, An
     }
 
 
+def require_internal(request: Request, service: ProviderService) -> None:
+    expected = service.settings.business_core_internal_token
+    supplied = request.headers.get("x-wodana-internal-token", "")
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        raise HTTPException(401, "Internal service credentials required")
+
+
+class PlatformSecret(BaseModel):
+    provider: Vendor
+    field: SecretField
+    value: str = Field(pattern=r"^[\x21-\x7e]{16,256}$")
+
+
+@router.post("/internal/platform-credentials/seal", include_in_schema=False)
+async def seal_platform_secret(
+    payload: PlatformSecret, request: Request, service: Service
+) -> dict[str, str]:
+    """Business Core stores Wodana Control's secrets sealed with this service's key, never in the clear."""
+    require_internal(request, service)
+    if payload.field == "webhookSecret" and payload.provider not in ("meta", "intuit"):
+        raise HTTPException(422, "This provider has no webhook secret")
+    return {"sealed": service.credentials.seal(payload.provider, payload.field, payload.value)}
+
+
+@router.post("/internal/platform-credentials/{vendor}/test", include_in_schema=False)
+async def test_platform_credentials(
+    vendor: Vendor, request: Request, service: Service
+) -> dict[str, Any]:
+    """Wodana Control's Test: a safe live check of what this service would use now."""
+    require_internal(request, service)
+    app = await service.credentials.refresh()
+    result = await check_platform_credentials(vendor, app, service.client.http)
+    if not result.ok and not app.versions:
+        return {"ok": False, "reason": "store_unavailable", "version": None}
+    return {"ok": result.ok, "reason": result.reason, "version": app.versions.get(vendor)}
+
+
 class PortalOtpDelivery(BaseModel):
     workspaceId: UUID
     challengeId: UUID
@@ -455,10 +492,7 @@ class PortalOtpDelivery(BaseModel):
 async def deliver_portal_otp(
     payload: PortalOtpDelivery, request: Request, service: Service
 ) -> dict[str, Any]:
-    expected = service.settings.business_core_internal_token
-    supplied = request.headers.get("x-wodana-internal-token", "")
-    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
-        raise HTTPException(401, "Internal service credentials required")
+    require_internal(request, service)
     if not service.settings.portal_otp_template:
         raise HTTPException(503, "Configure the approved WhatsApp authentication template")
     # The requested authentication code is identical in the body and copy-code button.

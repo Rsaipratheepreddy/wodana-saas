@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import quote, urlencode
 
 import httpx
@@ -10,6 +10,9 @@ from wodana_intelligence.integrations.models import (
     GoogleTokenResponse,
     GoogleUserInfo,
 )
+
+if TYPE_CHECKING:
+    from wodana_intelligence.integrations.platform_credentials import PlatformCredentialResolver
 
 GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -33,23 +36,38 @@ class GoogleCalendarClient:
         redirect_uri: str,
         timeout_seconds: float = 15.0,
         http_client: Optional[httpx.AsyncClient] = None,
+        credentials: Optional["PlatformCredentialResolver"] = None,
     ) -> None:
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
+        # When given, Wodana's Google app is read live from it (Wodana Control, else env).
+        self._credentials = credentials
         self._owns_client = http_client is None
         self._client = http_client or httpx.AsyncClient(timeout=timeout_seconds)
 
-    def authorization_url(
+    async def app(self) -> tuple[str, str, str]:
+        """Wodana's Google app now: client ID, client secret and the central callback."""
+        if self._credentials is None:
+            return self.client_id, self.client_secret, self.redirect_uri
+        current = await self._credentials.current()
+        return current.google_client_id, current.google_client_secret, current.google_redirect_uri
+
+    async def configured(self) -> bool:
+        client_id, client_secret, _ = await self.app()
+        return bool(client_id and client_secret)
+
+    async def authorization_url(
         self,
         state: str,
         code_challenge: str,
         scopes: Sequence[str],
         hosted_domain: Optional[str] = None,
     ) -> str:
+        client_id, _, redirect_uri = await self.app()
         params = {
-            "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
             "response_type": "code",
             "scope": " ".join(scopes),
             "access_type": "offline",
@@ -65,13 +83,14 @@ class GoogleCalendarClient:
         return f"{GOOGLE_AUTHORIZATION_URL}?{query}"
 
     async def exchange_code(self, code: str, code_verifier: str) -> GoogleTokenResponse:
+        client_id, client_secret, redirect_uri = await self.app()
         response = await self._client.post(
             GOOGLE_TOKEN_URL,
             data={
                 "code": code,
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "redirect_uri": self.redirect_uri,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
                 "code_verifier": code_verifier,
             },
@@ -85,12 +104,13 @@ class GoogleCalendarClient:
             ) from error
 
     async def refresh_token(self, refresh_token: str) -> GoogleTokenResponse:
+        client_id, client_secret, _ = await self.app()
         response = await self._client.post(
             GOOGLE_TOKEN_URL,
             data={
                 "refresh_token": refresh_token,
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "grant_type": "refresh_token",
             },
         )

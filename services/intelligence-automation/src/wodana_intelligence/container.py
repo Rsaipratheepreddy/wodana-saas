@@ -7,6 +7,7 @@ from wodana_intelligence.config import get_settings
 from wodana_intelligence.integrations.business_core import BusinessCoreClient
 from wodana_intelligence.integrations.google_client import GoogleCalendarClient
 from wodana_intelligence.integrations.google_service import GoogleIntegrationService
+from wodana_intelligence.integrations.platform_credentials import PlatformCredentialResolver
 from wodana_intelligence.integrations.provider_client import ProviderClient
 from wodana_intelligence.integrations.provider_service import ProviderService
 from wodana_intelligence.integrations.security import OAuthStateStore, TokenCipher
@@ -26,6 +27,17 @@ def get_business_core_client() -> BusinessCoreClient:
 
 
 @lru_cache
+def get_platform_credentials() -> PlatformCredentialResolver:
+    """Wodana's app credentials, read live from Wodana Control (one minute cache, env fallback)."""
+    settings = get_settings()
+    return PlatformCredentialResolver(
+        settings,
+        get_business_core_client().platform_credentials,
+        TokenCipher(settings.integrations_encryption_key),
+    )
+
+
+@lru_cache
 def get_google_client() -> GoogleCalendarClient:
     settings = get_settings()
     return GoogleCalendarClient(
@@ -33,6 +45,7 @@ def get_google_client() -> GoogleCalendarClient:
         settings.google_client_secret,
         settings.google_redirect_uri,
         settings.google_request_timeout_seconds,
+        credentials=get_platform_credentials(),
     )
 
 
@@ -61,7 +74,10 @@ async def get_google_integration_service() -> GoogleIntegrationService:
 def _cached_provider_service() -> ProviderService:
     settings = get_settings()
     return ProviderService(
-        settings, ProviderClient(settings), get_business_core_client(), get_redis_client()
+        settings,
+        ProviderClient(settings, credentials=get_platform_credentials()),
+        get_business_core_client(),
+        get_redis_client(),
     )
 
 
@@ -81,6 +97,7 @@ async def close_clients() -> None:
         await get_redis_client().aclose()
 
     _cached_google_integration_service.cache_clear()
+    get_platform_credentials.cache_clear()
     get_google_client.cache_clear()
     get_business_core_client.cache_clear()
     get_redis_client.cache_clear()

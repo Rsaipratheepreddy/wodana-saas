@@ -49,6 +49,8 @@ class ProviderService:
         self, settings: Settings, client: ProviderClient, core: BusinessCoreClient, redis: Any
     ) -> None:
         self.settings, self.client, self.core, self.redis = settings, client, core, redis
+        # Wodana's app credentials in effect (Wodana Control, else env), shared with the client.
+        self.credentials = client.credentials
         self.cipher = Fernet(
             base64.urlsafe_b64encode(
                 hashlib.sha256(settings.integrations_encryption_key.encode()).digest()
@@ -69,11 +71,10 @@ class ProviderService:
         )
         if public.get("provider") != provider:
             raise IntegrationFlowError("invalid_provider", "Connection belongs to another provider")
-        if not self.client.configured(provider):
+        app = await self.credentials.current()
+        if not app.configured(provider):
             raise IntegrationFlowError(
-                "provider_not_configured",
-                f"Configure the platform’s {provider} application credentials first",
-                503,
+                "provider_not_configured", "Not available yet — Wodana is setting this up", 503
             )
         connected = await self.core.request_connection(
             str(request.workspace_id), str(request.connection_id), request.version, headers
@@ -83,7 +84,10 @@ class ProviderService:
             connection_id=request.connection_id,
             version=connected["version"],
             provider=provider,
-            region=public.get("configuration", {}).get("region", "us"),
+            # A Zoho connection without a data center uses the one Wodana's app is registered in.
+            region=public.get("configuration", {}).get(
+                "region", app.zoho_region if provider == "zoho_books" else "us"
+            ),
             issued_at=datetime.now(timezone.utc),
         )
         nonce = secrets.token_urlsafe(32)
@@ -96,14 +100,16 @@ class ProviderService:
         if provider == "whatsapp":
             return {
                 "state": nonce,
-                "appId": self.settings.whatsapp_app_id,
-                "configId": self.settings.whatsapp_config_id,
-                "version": self.settings.whatsapp_graph_version,
+                "appId": app.whatsapp_app_id,
+                "configId": app.whatsapp_config_id,
+                "version": app.whatsapp_graph_version,
                 "connectionVersion": connected["version"],
                 "mode": "embedded_signup",
             }
         return {
-            "authorizationUrl": self.client.authorization_url(provider, state.region, nonce),
+            "authorizationUrl": await self.client.authorization_url(
+                provider, state.region, nonce
+            ),
             "connectionVersion": connected["version"],
             "expiresInSeconds": 600,
         }
@@ -153,7 +159,8 @@ class ProviderService:
                         "company_missing", "QuickBooks did not identify a company"
                     )
                 credential.account_id = realm_id
-                credential.configuration = {"environment": self.settings.quickbooks_environment}
+                app = await self.credentials.current()
+                credential.configuration = {"environment": app.quickbooks_environment}
                 company = await self.client.api(credential, "GET", f"/companyinfo/{realm_id}")
                 credential.configuration["accountName"] = company["CompanyInfo"]["CompanyName"]
                 preferences = await self.client.api(credential, "GET", "/preferences")
@@ -234,15 +241,13 @@ class ProviderService:
             credential = self.credential(
                 "whatsapp", "us", await self.client.token("whatsapp", "us", code=request.code)
             )
+            app = await self.credentials.current()
             debug = await self.client.request(
                 "GET",
-                f"{self.client.graph}/debug_token",
+                f"{app.graph}/debug_token",
                 params={"input_token": credential.access_token},
                 headers={
-                    "Authorization": (
-                        f"Bearer {self.settings.whatsapp_app_id}|"
-                        f"{self.settings.whatsapp_app_secret}"
-                    )
+                    "Authorization": f"Bearer {app.whatsapp_app_id}|{app.whatsapp_app_secret}"
                 },
             )
             details = debug.get("data", {})
@@ -254,7 +259,7 @@ class ProviderService:
             }
             if (
                 not details.get("is_valid")
-                or str(details.get("app_id")) != self.settings.whatsapp_app_id
+                or str(details.get("app_id")) != app.whatsapp_app_id
                 or request.waba_id not in targets
                 or not set(SCOPES["whatsapp"]).issubset(set(details.get("scopes", [])))
             ):
