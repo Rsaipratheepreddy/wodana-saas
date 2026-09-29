@@ -208,3 +208,14 @@ it("tells a member calmly that the owner is still setting the workspace up (M2)"
   api(); render(<WorkspaceHome {...base} permissions={["crm.leads.view"]} />);
   expect(screen.queryByText("Your workspace is being set up")).not.toBeInTheDocument();
 });
+
+it("greets in the workspace's time zone from the first render, before the summary arrives (m5)", () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-29T13:30:00Z"));
+  try {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => undefined)));
+    render(<WorkspaceHome {...base} firstName="Maya" permissions={owner} timeZone="Asia/Dubai" />);
+    // 17:30 in Dubai (13:30 UTC): evening there, whatever the machine's own clock says.
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Good evening, Maya");
+  } finally { vi.useRealTimers(); }
+});

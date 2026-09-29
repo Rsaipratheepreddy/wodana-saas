@@ -34,6 +34,8 @@ type Props = {
   permissions?: string[];
   /** The owner hasn't finished the first-time setup yet (shown to everyone else, who can't finish it). */
   setupPending?: boolean;
+  /** The workspace's time zone, so the greeting and date read the same on the server and in the browser. */
+  timeZone?: string;
 };
 
 export function WorkspaceHome(props: Props) {
@@ -63,7 +65,7 @@ function useSource<V>(url: string): Load<V> & { refresh: () => void } {
 
 type QuickAction = { id: string; label: string; icon: LucideIcon; href?: string; onPress?: () => void; onProject?: (projectId: string) => string };
 
-function HomeContent({ workspaceId, modules, canManage, firstName, permissions, setupPending }: Props) {
+function HomeContent({ workspaceId, modules, canManage, firstName, permissions, setupPending, timeZone: workspaceTimeZone }: Props) {
   const t = useT();
   const router = useRouter();
   const { locale } = useDesignSystem();
@@ -144,11 +146,13 @@ function HomeContent({ workspaceId, modules, canManage, firstName, permissions, 
   const expectNumbers = ["receivables.view", "projects.view", "crm.leads.view", "pre_projects.view", "purchasing.view"].some(can);
   const canActivity = can("workspace.settings.manage") || can("audit.view");
 
-  const part = greetingPart(summary.data?.timeZone);
+  // The workspace's clock from the first render (the server's HTML and the browser agree), then the summary's.
+  const zone = summary.data?.timeZone ?? workspaceTimeZone;
+  const part = greetingPart(zone);
   const greeting = firstName
     ? (part === "morning" ? t("Good morning, {name}", { name: firstName }) : part === "afternoon" ? t("Good afternoon, {name}", { name: firstName }) : t("Good evening, {name}", { name: firstName }))
     : (part === "morning" ? t("Good morning") : part === "afternoon" ? t("Good afternoon") : t("Good evening"));
-  const today = new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", timeZone: summary.data?.timeZone }).format(new Date());
+  const today = new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", timeZone: zone }).format(new Date());
   const afterAction = () => { summary.refresh(); metrics.refresh(); };
   // Someone else's change re-reads Home in place (no loading state), so it needs no polling.
   useLiveInvalidate(workspaceId, HOME_SCOPES, afterAction, 5_000);
