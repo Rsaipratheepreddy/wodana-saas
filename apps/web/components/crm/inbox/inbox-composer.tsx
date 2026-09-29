@@ -2,13 +2,14 @@
 
 import { useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { FileText, Paperclip, Send, StickyNote, X, Zap } from "lucide-react";
+import { CalendarClock, FileText, Paperclip, Send, StickyNote, X, Zap } from "lucide-react";
 import { Badge, Button, ControlledModalDialog, EmptyState, IconButton, SearchInput, SegmentedControl, TextInput, useConfirmationDialog, useDesignSystem, useReadOnlyReason } from "@/design-system";
 import { crmRequest, type RecordData } from "@/lib/crm/client";
 import { ATTACH_ACCEPT, attachProblem, fileSizeText, fillQuickReply, fillTemplate, quickReplyQuery, renderTemplate, sendableKind, sendableTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_STATUS, uploadAttachment, windowLeft, type ChatContext, type InboxOwner, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { woddyInstruction } from "@/lib/woddy/agent";
 import { submitChatOnEnter } from "../chat-composer";
+import { ScheduleDialog } from "./scheduled-messages";
 import styles from "../crm-inbox.module.css";
 import parts from "./inbox-parts.module.css";
 
@@ -40,6 +41,8 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [later, setLater] = useState<{ bodyText?: string; templateId?: string; templateParameters?: string[] } | null>(null);
+  const scheduleAttempt = useRef<{ key: string; id: string } | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const saving = useRef(false), attempt = useRef<{ text: string; id: string; fileId: string } | null>(null);
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
@@ -98,6 +101,8 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
     finally { saving.current = false; setBusy(false); input.current?.focus(); }
   };
   const canAttach = !busy && !readOnly && Boolean(thread.canSend) && !replyBlocked;
+  // "Send later": a reply to the client (not a note, not a file), written now and sent at a chosen time.
+  const canSendLater = mode === "reply" && thread.channel !== "internal" && !readOnly && Boolean(thread.canSend) && !replyBlocked && !file && instruction === null;
   const pick = (picked: File | null | undefined) => {
     if (!picked || !canAttach) return;
     const problem = attachProblem(picked);
@@ -164,11 +169,24 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
         role={popup.length ? "combobox" : undefined} aria-expanded={popup.length ? true : undefined} aria-controls={popup.length ? `suggest-${id}` : undefined}
         aria-activedescendant={popup.length ? `suggest-${id}-${Math.min(highlight, popup.length - 1)}` : undefined} aria-autocomplete={popup.length ? "list" : undefined}
         onChange={(event) => { onDraftChange(event.target.value); setNotice(""); setHighlight(0); }} onKeyDown={onKeyDown} aria-describedby={`message-help-${id}`} />
+      {canSendLater ? <IconButton aria-label={t("Send later")} className={styles.attachButton} size="compact" variant="quiet" isDisabled={!draft.trim() || busy} onPress={() => setLater({ bodyText: draft.trim() })}><CalendarClock size={17} /></IconButton> : null}
       <Button className={styles.sendButton} aria-label={instruction !== null ? t("Ask Woddy") : mode === "note" ? t("Add note") : t("Send message")} variant="primary" type="submit" isDisabled={(!draft.trim() && !file) || (instruction === null ? Boolean(replyBlocked) : woddyBusy || !instruction)} isLoading={busy || (instruction !== null && woddyBusy)}><Send data-directional="true" size={19} /></Button>
     </div> : null}
     <div className={styles.composerFooter} id={`message-help-${id}`}><span role="status">{notice}</span><small>{instruction !== null ? t("Only Woddy reads this line. It is never sent.") : mode === "note" ? t("Only your team sees notes") : thread.signatureEnabled ? t("Signed with your first name") : t("Enter to send · Shift+Enter for a new line")}</small></div>
     {failure ? <p className={styles.error} role="alert">{failure}{isWhatsApp && windowClosed && mode === "reply" ? <> <Button size="compact" variant="quiet" onPress={() => setPicking(true)}>{t("Choose template")}</Button></> : null}</p> : null}
-    {picking ? <TemplatePicker templates={lookups.templates} variables={variables} canManage={lookups.canManage} connected={thread.whatsappConnected !== false} onClose={() => setPicking(false)} onSend={async (template, templateParameters) => { setPicking(false); await send({ templateId: template.id, templateParameters }); }} /> : null}
+    {picking ? <TemplatePicker templates={lookups.templates} variables={variables} canManage={lookups.canManage} connected={thread.whatsappConnected !== false} onClose={() => setPicking(false)} onSend={async (template, templateParameters) => { setPicking(false); await send({ templateId: template.id, templateParameters }); }}
+      onSendLater={readOnly ? undefined : (template, templateParameters) => { setPicking(false); setLater({ templateId: template.id, templateParameters }); }} /> : null}
+    {later ? <ScheduleDialog title={later.templateId ? t("Send the template later") : t("Send later")} freeText={!later.templateId} windowClosesAt={isWhatsApp ? String(thread.windowClosesAt ?? "") || null : undefined}
+      onClose={() => setLater(null)} onSchedule={async (sendAt) => {
+        const key = JSON.stringify(later);
+        if (scheduleAttempt.current?.key !== key) scheduleAttempt.current = { key, id: crypto.randomUUID() };
+        await crmRequest(workspaceId, `conversations/${id}/scheduled-messages`, "POST", { clientRequestId: scheduleAttempt.current.id, sendAt,
+          ...(later.templateId ? { templateId: later.templateId, ...(later.templateParameters ? { templateParameters: later.templateParameters } : {}) } : { bodyText: later.bodyText }) }, timeout());
+        scheduleAttempt.current = null;
+        if (!later.templateId) onDraftChange("");
+        setLater(null); setNotice(t("Scheduled"));
+        await onSent();
+      }} /> : null}
     {confirmationDialog}
   </form>;
 }
@@ -177,7 +195,7 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
  * Approved templates with a preview filled from the chat's records. A value the chat does not have is named
  * with its field and can be typed for this one message; until it is, Send stays off.
  */
-function TemplatePicker({ templates, variables, canManage, connected, onClose, onSend }: { templates: InboxTemplate[]; variables: ChatContext["variables"]; canManage: boolean; connected: boolean; onClose: () => void; onSend: (template: InboxTemplate, parameters?: string[]) => Promise<void> }) {
+function TemplatePicker({ templates, variables, canManage, connected, onClose, onSend, onSendLater }: { templates: InboxTemplate[]; variables: ChatContext["variables"]; canManage: boolean; connected: boolean; onClose: () => void; onSend: (template: InboxTemplate, parameters?: string[]) => Promise<void>; onSendLater?: (template: InboxTemplate, parameters?: string[]) => void }) {
   const t = useT();
   const [search, setSearch] = useState("");
   const matching = templates.filter((template) => `${template.code} ${template.body}`.toLowerCase().includes(search.trim().toLowerCase()));
@@ -195,7 +213,9 @@ function TemplatePicker({ templates, variables, canManage, connected, onClose, o
   const unmapped = filled?.missing.find((item) => !item.source);
   const fieldOf = (item: { position: number; source: keyof typeof TEMPLATE_SOURCE_LABELS | null }) => item.source ? t(TEMPLATE_SOURCE_LABELS[item.source]) : t("No field yet");
   return <ControlledModalDialog isOpen size="lg" title={t("Send a template")} onOpenChange={(open) => { if (!open && !sending) onClose(); }}
-    footer={<div className="wd-dialog-actions"><Button isDisabled={sending} onPress={onClose}>{t("Cancel")}</Button><Button variant="primary" isLoading={sending} isDisabled={!selected || stillMissing.length > 0} onPress={async () => { if (!selected) return; setSending(true); await onSend(selected, filled?.missing.length ? parameters : undefined); setSending(false); }}>{t("Send template")}</Button></div>}>
+    footer={<div className="wd-dialog-actions"><Button isDisabled={sending} onPress={onClose}>{t("Cancel")}</Button>
+      {onSendLater ? <Button isDisabled={sending || !selected || stillMissing.length > 0} onPress={() => { if (selected) onSendLater(selected, filled?.missing.length ? parameters : undefined); }}>{t("Send later")}</Button> : null}
+      <Button variant="primary" isLoading={sending} isDisabled={!selected || stillMissing.length > 0} onPress={async () => { if (!selected) return; setSending(true); await onSend(selected, filled?.missing.length ? parameters : undefined); setSending(false); }}>{t("Send template")}</Button></div>}>
     <div className={styles.templatePicker}>
       {!connected ? <EmptyState title={t("WhatsApp isn't connected")} action={canManage ? <Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/integrations">{t("Connect WhatsApp")}</Link> : undefined} />
         : noneApproved ? <EmptyState title={t("No approved templates yet")} action={canManage ? <Link className="wd-button" data-size="compact" data-variant="primary" href="/workspace/settings/inbox#inbox-templates">{t("New template")}</Link> : undefined} />
