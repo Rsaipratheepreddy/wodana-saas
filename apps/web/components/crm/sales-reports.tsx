@@ -114,10 +114,11 @@ export function SalesReports({ initialData, regionLabel }: { initialData: LeadsP
   const gridRows: GridRow[] = rows.map((row, index) => {
     const id = String(row.id ?? `${report}-${index}`);
     if (report === "funnel") return { id, title: String(row.stage ?? human(row.status)), detail: human(row.status), value: String(num(row.count)) };
-    if (report === "pipeline") return { id, title: `${String(row.pipeline ?? "")} · ${String(row.stage ?? t("Not set"))}`, detail: `${human(row.status)} · ${num(row.count)}`, value: money(row.value, row.currency) };
+    if (report === "pipeline") return { id, title: [String(row.pipeline ?? ""), String(row.stage ?? t("Not set"))].filter(Boolean).join(" · "), detail: `${human(row.status)} · ${num(row.count)}`, value: money(row.value, row.currency) };
     if (report === "sla") return { id, title: human(row.status), detail: t("{responded} responded · {breached} breached", { responded: num(row.responded), breached: num(row.breached) }), value: row.averageMinutes == null ? "—" : durationText(Math.round(num(row.averageMinutes)), t) };
     if (report === "assignment") return { id, title: String(row.owner ?? t("Unassigned")), detail: human(row.method), value: String(num(row.count)) };
-    return { id, title: `${String(row.currency ?? "")} · ${human(row.status)}`, detail: t("{count} · Weighted {amount}", { count: num(row.count), amount: money(row.weightedAmount, row.currency) }), value: money(row.amount, row.currency) };
+    // Opportunities with no value (so no currency) are their own row, named as such rather than left blank.
+    return { id, title: `${row.currency ? String(row.currency) : t("No value set")} · ${human(row.status)}`, detail: t("{count} · Weighted {amount}", { count: num(row.count), amount: money(row.weightedAmount, row.currency) }), value: money(row.amount, row.currency) };
   });
   const otherColumns: DataGridColumn<GridRow>[] = [
     { accessorKey: "title", header: t("Breakdown"), size: 320, meta: { primary: true } },

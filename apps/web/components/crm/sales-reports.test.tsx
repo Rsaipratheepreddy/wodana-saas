@@ -31,6 +31,17 @@ describe("Sales reports", () => {
     expect(String(fetcher.mock.calls.at(-1)?.[0])).toContain(`groupBy=cf%3A${FIELD}`);
   });
 
+  it("names the forecast row of opportunities with no value instead of leaving it blank", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => String(url).includes("reports/forecast")
+      ? { rows: [{ id: "a", currency: "AED", status: "open", count: 2, amount: "5000", weightedAmount: "2500" }, { id: "b", currency: null, status: "open", count: 1, amount: "0", weightedAmount: "0" }], summary: {} }
+      : { rows: [], summary: {} } })));
+    const user = userEvent.setup();
+    render(<DesignSystemProvider><SalesReports initialData={data()} regionLabel="Emirate" /></DesignSystemProvider>);
+    await user.click(screen.getByRole("radio", { name: "Forecast" }));
+    expect(await screen.findByText("No value set · Open")).toBeInTheDocument();
+    expect(screen.queryByText(/^ · Open$/)).toBeNull();
+  });
+
   it("says plainly when a report needs access, instead of an error", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => String(url).includes("reports/pipeline") ? { ok: false, status: 403, json: async () => ({ message: "Forbidden" }) } : { ok: true, json: async () => ({ rows: [], summary: {} }) }));
     const user = userEvent.setup();

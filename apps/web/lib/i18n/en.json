@@ -11691,5 +11691,6 @@
   "Not the workspace week": "Not the workspace week",
   "Nothing on {order} can be invoiced until its delivery is inspected and accepted.": "Nothing on {order} can be invoiced until its delivery is inspected and accepted.",
   "Ready to award": "Ready to award",
-  "Decided": "Decided"
+  "Decided": "Decided",
+  "No value set": "No value set"
 }
