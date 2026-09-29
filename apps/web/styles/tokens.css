@@ -338,6 +338,93 @@
   --wd-field-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 20%, transparent);
 }
 
+/* A light provider inside a dark page (the public form preview) restores the light neutrals and tones on its own
+   element; without them it would inherit the page's dark surfaces and text. */
+[data-wd-theme="light"] {
+  color-scheme: light;
+  --wd-brand-lilac: var(--wd-workspace-accent-light-lilac, #eee8f6);
+  --wd-brand-rose: var(--wd-workspace-accent-light-rose, #f5e8ec);
+  --wd-brand-peach: var(--wd-workspace-accent-light-peach, #f5ece0);
+  --wd-identity-base: #e9ece9;
+  --wd-identity-ink: #2a302c;
+  --wd-identity-color-0: var(--wd-workspace-identity-light-0, #e8edf4);
+  --wd-identity-color-1: var(--wd-workspace-identity-light-1, #f3eae2);
+  --wd-identity-color-2: var(--wd-workspace-identity-light-2, #eee9f5);
+  --wd-identity-color-3: var(--wd-workspace-identity-light-3, #f5e9ed);
+  --wd-identity-color-4: var(--wd-workspace-identity-light-4, #e9f1ef);
+  --wd-identity-color-5: var(--wd-workspace-identity-light-5, #f4efe3);
+  --wd-brand-50: var(--wd-workspace-brand-light-50, #f5f6f7);
+  --wd-brand-100: var(--wd-workspace-brand-light-100, #eceef0);
+  --wd-brand-200: var(--wd-workspace-brand-light-200, #d9dde1);
+  --wd-brand-300: var(--wd-workspace-brand-light-300, #bdc3c9);
+  --wd-brand-400: var(--wd-workspace-brand-light-400, #929ba4);
+  --wd-brand-500: var(--wd-workspace-brand-light-500, #68727c);
+  --wd-brand-600: var(--wd-workspace-brand-light-600, #4d565f);
+  --wd-brand-700: var(--wd-workspace-brand-light-700, #394149);
+  --wd-brand-800: var(--wd-workspace-brand-light-800, #292f35);
+  --wd-brand-900: var(--wd-workspace-brand-light-900, #20252a);
+  --wd-brand-950: var(--wd-workspace-brand-light-950, #171b1f);
+  --wd-aqua-500: var(--wd-workspace-accent-light-aqua, #3f7f86);
+  --wd-color-viz-1: #2f6aa8;
+  --wd-color-viz-2: #6957a6;
+  --wd-color-viz-3: #35745a;
+  --wd-color-viz-4: #846300;
+  --wd-color-viz-5: #a84a43;
+  --wd-color-viz-6: #26737d;
+  --wd-color-viz-1-soft: #e6edf5;
+  --wd-color-viz-2-soft: #edebf4;
+  --wd-color-viz-3-soft: #e7eeeb;
+  --wd-color-viz-4-soft: #f0ece0;
+  --wd-color-viz-5-soft: #f5e9e8;
+  --wd-color-viz-6-soft: #e5eeef;
+  --wd-color-canvas: var(--wd-neutral-0);
+  --wd-color-surface: var(--wd-neutral-0);
+  --wd-color-surface-subtle: var(--wd-neutral-25);
+  --wd-color-surface-muted: var(--wd-neutral-100);
+  --wd-color-skeleton-sheen: color-mix(in srgb, var(--wd-color-surface) 78%, transparent);
+  --wd-color-surface-hover: #f0f0f0;
+  --wd-color-surface-pressed: #e8e8e8;
+  --wd-color-surface-selected: var(--wd-color-action-primary-subtle);
+  --wd-color-composer-surface: #ffffff;
+  --wd-color-floating-surface: color-mix(in srgb, var(--wd-color-surface) 94%, transparent);
+  --wd-color-text: var(--wd-neutral-900);
+  --wd-color-text-secondary: var(--wd-neutral-600);
+  --wd-color-text-tertiary: var(--wd-neutral-500);
+  --wd-color-text-disabled: var(--wd-neutral-400);
+  --wd-color-text-inverse: var(--wd-neutral-0);
+  --wd-color-icon: var(--wd-neutral-600);
+  --wd-color-icon-subtle: var(--wd-neutral-500);
+  --wd-color-border: #dadada;
+  --wd-color-border-strong: #c2c2c2;
+  --wd-color-table-border: #e0e0e0;
+  --wd-color-table-selected: #eaf2ff;
+  --wd-color-table-header: #fafafa;
+  --wd-color-table-header-ink: #404040;
+  --wd-color-border-control: #cfcfcf;
+  --wd-color-border-choice: #767676;
+  --wd-color-overlay: rgb(16 19 18 / 46%);
+  --wd-color-workspace-canvas: #ffffff;
+  --wd-color-workspace-toolbar: #ffffff;
+  --wd-color-sidebar: #ffffff;
+  --wd-color-sidebar-hover: #f0f0f0;
+  --wd-color-sidebar-active: #ebebeb;
+  --wd-color-structural-divider: #e6e6e6;
+  --wd-color-breadcrumb: #6b6b6b;
+  --wd-color-success: #2f6b4f;
+  --wd-color-success-subtle: #e6f2ea;
+  --wd-color-warning: #8a5a14;
+  --wd-color-warning-subtle: #f8efdc;
+  --wd-color-danger: #a3454a;
+  --wd-color-danger-subtle: #f8e9e9;
+  --wd-color-danger-solid: #ad474d;
+  --wd-color-on-danger: #ffffff;
+  --wd-color-info: #3b6a78;
+  --wd-color-info-subtle: #e6f0f3;
+  --wd-shadow-xs: 0 1px 2px rgb(20 28 24 / 6%);
+  --wd-shadow-sm: 0 1px 2px rgb(20 28 24 / 6%), 0 4px 12px rgb(20 28 24 / 5%);
+  --wd-shadow-md: 0 16px 40px rgb(20 28 24 / 12%), 0 3px 10px rgb(20 28 24 / 6%);
+}
+
 [data-theme="dark"],
 [data-theme="dark"] [data-wd-theme="document"],
 [data-wd-theme="dark"] {
