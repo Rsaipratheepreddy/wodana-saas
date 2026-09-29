@@ -74,6 +74,11 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
       },
       {
+        // The landing's pre-generated screenshots have a content hash in their names (scripts/landing-images.mjs).
+        source: "/landing/opt/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+      {
         // HRMS check-in can be reached through client-side navigation from any
         // staff page, so its document policy must allow these same-origin APIs.
         // The browser still requires the user's camera/location permission.

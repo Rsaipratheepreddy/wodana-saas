@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ClipboardCheck, Factory, FileText, Handshake, LayoutDashboard, SquareKanban, type LucideIcon } from "lucide-react";
+import { ImageGate } from "./deferred-picture";
 import styles from "./feature-tabs.module.css";
 
 /** The tour's tabs in order; each id is also its anchor (/#sales). */
@@ -36,14 +37,21 @@ export function FeatureTabs({ tabs, label, interval = 7000 }: { tabs: FeatureTab
   const [focused, setFocused] = useState(false);
   const [stopped, setStopped] = useState(false);
   const [reduced, setReduced] = useState(false);
+  const [near, setNear] = useState(false);
+  const [visited, setVisited] = useState<ReadonlySet<number>>(() => new Set([0]));
   const root = useRef<HTMLDivElement>(null);
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const choose = useCallback((index: number, focus = false) => {
+  const show = useCallback((index: number) => {
     setActive(index);
+    setVisited((current) => current.has(index) ? current : new Set([...current, index]));
+  }, []);
+
+  const choose = useCallback((index: number, focus = false) => {
+    show(index);
     setStopped(true);
     if (focus) buttons.current[index]?.focus();
-  }, []);
+  }, [show]);
 
   useEffect(() => {
     const media = window.matchMedia(REDUCED);
@@ -62,16 +70,25 @@ export function FeatureTabs({ tabs, label, interval = 7000 }: { tabs: FeatureTab
     return () => observer.disconnect();
   }, []);
 
+  // Screens start loading once the tour is about to come into view.
+  useEffect(() => {
+    const node = root.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => { if (entry?.isIntersecting) setNear(true); }, { rootMargin: "50% 0px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   // /#sales, /#quotes… open their tab (on load and when a menu link changes the hash).
   useEffect(() => {
     const open = () => {
       const index = tabs.findIndex((tab) => `#${tab.id}` === window.location.hash);
-      if (index >= 0) { setActive(index); setStopped(true); }
+      if (index >= 0) { show(index); setStopped(true); }
     };
     open();
     window.addEventListener("hashchange", open);
     return () => window.removeEventListener("hashchange", open);
-  }, [tabs]);
+  }, [tabs, show]);
 
   // Keep the current tab in view when the row scrolls sideways (phones), without moving the page.
   useEffect(() => {
@@ -85,7 +102,10 @@ export function FeatureTabs({ tabs, label, interval = 7000 }: { tabs: FeatureTab
 
   const playing = !stopped && !reduced && visible && !hovered && !focused;
   const auto = !stopped && !reduced;
-  const next = useCallback(() => setActive((current) => (current + 1) % tabs.length), [tabs.length]);
+  const next = () => show((active + 1) % tabs.length);
+  // A tab's screens load once the tour is near: every tab shown so far and the one after each (the next to come), so a
+  // loaded screen stays loaded and the tour never waits on the one it moves to.
+  const armed = (index: number) => near && (visited.has(index) || visited.has((index - 1 + tabs.length) % tabs.length));
 
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
     const rtl = getComputedStyle(event.currentTarget).direction === "rtl";
@@ -126,7 +146,7 @@ export function FeatureTabs({ tabs, label, interval = 7000 }: { tabs: FeatureTab
               {tab.points.map((point) => <li key={point}><Check aria-hidden="true" size={18} strokeWidth={2.25} /><span>{point}</span></li>)}
             </ul>
           </div>
-          <div className={styles.visual}>{tab.visual}</div>
+          <div className={styles.visual}><ImageGate.Provider value={armed(index)}>{tab.visual}</ImageGate.Provider></div>
         </div>;
       })}
     </div>

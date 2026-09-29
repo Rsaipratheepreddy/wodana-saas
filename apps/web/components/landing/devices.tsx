@@ -30,7 +30,7 @@ function StatusBar({ kind }: { kind: DeviceKind }) {
  * Every measure is a share of the phone's width (container units), so it keeps its proportions at any size.
  * The frame is decoration; only the screenshot is described.
  */
-export function Phone({ kind = "iphone", shot, t, sizes, width, className, decorative = false }: {
+export function Phone({ kind = "iphone", shot, t, sizes, width, className, decorative = false, defer = false }: {
   kind?: DeviceKind;
   shot: Shot;
   t: Translate;
@@ -39,6 +39,8 @@ export function Phone({ kind = "iphone", shot, t, sizes, width, className, decor
   width?: string;
   className?: string;
   decorative?: boolean;
+  /** Load the screen only when the page or the product tour asks for it (see Screenshot). */
+  defer?: boolean;
 }) {
   const style = width ? { "--device-w": width } as CSSProperties : undefined;
   return <div className={[styles.device, className].filter(Boolean).join(" ")} data-kind={kind} style={style}>
@@ -46,7 +48,7 @@ export function Phone({ kind = "iphone", shot, t, sizes, width, className, decor
       <span aria-hidden="true" className={styles.buttons} />
       <div className={styles.bezel}>
         <div className={styles.screen}>
-          <Screenshot className={styles.shot} decorative={decorative} shot={shot} sizes={sizes} t={t} />
+          <Screenshot className={styles.shot} decorative={decorative} defer={defer} shot={shot} sizes={sizes} t={t} />
           <StatusBar kind={kind} />
           <span aria-hidden="true" className={kind === "iphone" ? styles.island : styles.camera} />
           <span aria-hidden="true" className={styles.home} />
