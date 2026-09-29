@@ -59,6 +59,8 @@ export type CrmLeadListItem = {
   ownershipDueAt?: string | null;
   version: number;
   isConverted?: boolean;
+  /** The opportunity this enquiry became (the latest one when there are several). */
+  opportunityId?: string | null;
   createdAt: string;
   updatedAt: string;
   partyId: string;

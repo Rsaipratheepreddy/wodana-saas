@@ -473,6 +473,8 @@ export class CrmLeadsService {
                 lead.next_action_at AS "nextActionAt", lead.version,
                 lead.ownership_due_at AS "ownershipDueAt",
                 EXISTS (SELECT 1 FROM crm_opportunities converted WHERE converted.workspace_id = lead.workspace_id AND converted.lead_id = lead.id) AS "isConverted",
+                (SELECT converted.id FROM crm_opportunities converted WHERE converted.workspace_id = lead.workspace_id AND converted.lead_id = lead.id
+                  ORDER BY converted.created_at DESC LIMIT 1) AS "opportunityId",
                 lead.created_at AS "createdAt", lead.updated_at AS "updatedAt",
                 party.id AS "partyId", party.display_name AS "partyName",
                 enquiry.id AS "enquiryId", enquiry.reference, enquiry.details, enquiry.title, enquiry.source, enquiry.channel,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { ArrowUpRight, CalendarDays, ChevronDown, CircleDot, Globe, Mail, MessageCircle, Phone, PhoneCall, UserRound } from "lucide-react";
 import { Button, Callout, EditableField, EditableFieldList, Form, Tabs, SelectField, TextInput, useDesignSystem } from "@/design-system";
@@ -31,16 +31,19 @@ import { ClientMatchList } from "./client-match-list";
 import { RespondByChip, useNow } from "./respond-by-chip";
 
 
-export function LinkedLeadWorkbench({ leadId, initialData, onChanged, onQualify }: { leadId: string; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void }) {
+type OpenRecord = (href: string) => void;
+
+export function LinkedLeadWorkbench({ leadId, initialData, onChanged, onQualify, onOpenRecord }: { leadId: string; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void; onOpenRecord?: OpenRecord }) {
   const t = useT();
   const resource = useCrmResource<RecordData>(initialData.workspaceId, `leads/${leadId}`);
   if (!resource.data) return <ResourceState {...resource} retry={resource.refresh} />;
   const enquiry = resource.data.enquiry as RecordData;
   const lead = { ...resource.data, ...enquiry, id: leadId, partyName: enquiry?.partyName ?? t("Customer"), title: enquiry?.title ?? t("Enquiry") } as unknown as CrmLeadListItem;
-  return <LeadWorkbench lead={lead} initialData={initialData} onChanged={onChanged} onQualify={onQualify} />;
+  return <LeadWorkbench lead={lead} initialData={initialData} onChanged={onChanged} onQualify={onQualify} onOpenRecord={onOpenRecord} />;
 }
 
-export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lead: CrmLeadListItem; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void }) {
+/** `onOpenRecord` leaves for a linked record once the sheet is closed; navigating with the sheet open leaves its modal blocking the next page. */
+export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenRecord }: { lead: CrmLeadListItem; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void; onOpenRecord?: OpenRecord }) {
   useWoddyRecord("lead", lead.id, lead.title);
   const t = useT();
   const zoned = useDesignSystem();
@@ -63,6 +66,11 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
   const questions = qualificationState?.form?.questions ?? [];
   const configuredFields = qualificationFields(questions);
   const opportunities = (detail?.opportunities ?? []) as RecordData[];
+  const openRecord = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!onOpenRecord || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+    onOpenRecord(event.currentTarget.getAttribute("href") ?? "");
+  };
   const enquiry = detail?.enquiry as Record<string, unknown> | undefined;
   const needsEnquiryType = !hasResolvedEnquiryType(String(enquiry?.serviceType ?? lead.serviceType ?? ""));
   const attribution = (enquiry?.attribution ?? []) as RecordData[];
@@ -143,7 +151,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
     </section> : null}
     {live.status === "duplicate" ? <Callout title={t("Held as a duplicate")} tone="info" actions={<Button size="compact" isDisabled={!detail} onPress={() => setAction({ title: t("Not a duplicate: open as new"), path: `leads/${lead.id}/reopen-duplicate`, method: "POST", submit: t("Open as new"), fields: [{ key: "reason", label: t("Reason"), type: "textarea", required: true }], transform: (values) => ({ version, reason: String(values.reason ?? "").trim() }) })}>{t("Not a duplicate")}</Button>}>{live.duplicateOfLeadId ? <a href={`/workspace/crm/leads?lead=${String(live.duplicateOfLeadId)}`}>{t("Open the original")}</a> : t("This contact already had an open enquiry.")}</Callout> : null}
     <dl className={styles.properties} aria-label={t("Enquiry properties")} data-tour="enquiry-properties">
-      <div><dt><CircleDot size={14} aria-hidden="true" />{t("Stage")}</dt><dd className={styles.quietSelect}><SelectField label={null} aria-label={t("Enquiry stage")} selectedKey={String(live.status)} items={[{ id: String(live.status), label: t(leadStageLabel(String(live.status))) }, ...stageOptions.filter(item => item.id !== String(live.status)).map(item => ({ ...item, label: t(item.label) }))]} isDisabled={!detail || Boolean(opportunities.length) || !stageOptions.length} onSelectionChange={key => { if (key) { const changed = String(key) !== String(live.status); setSelectedStage(changed ? String(key) : ""); setStageEditing(changed); } }} /></dd></div>
+      <div><dt><CircleDot size={14} aria-hidden="true" />{t("Stage")}</dt><dd className={styles.quietSelect}><SelectField label={null} aria-label={t("Enquiry stage")} selectedKey={String(live.status)} items={[{ id: String(live.status), label: live.isConverted || opportunities.length ? t("Converted") : t(leadStageLabel(String(live.status))) }, ...stageOptions.filter(item => item.id !== String(live.status)).map(item => ({ ...item, label: t(item.label) }))]} isDisabled={!detail || Boolean(opportunities.length) || !stageOptions.length} onSelectionChange={key => { if (key) { const changed = String(key) !== String(live.status); setSelectedStage(changed ? String(key) : ""); setStageEditing(changed); } }} /></dd></div>
       <div><dt><UserRound size={14} aria-hidden="true" />{t("Owner")}</dt><dd><Button size="compact" variant="quiet" isDisabled={!detail || !active} onPress={() => setAssigning(true)}><span>{owner ?? t("Assign owner")}</span><ChevronDown size={14} aria-hidden="true" /></Button></dd></div>
       <div><dt><CalendarDays size={14} aria-hidden="true" />{t("Next follow-up")}</dt><dd>{live.nextActionAt ? <span>{dateText(live.nextActionAt, zoned)}</span> : active && !live.isConverted ? <Button size="compact" variant="quiet" isDisabled={!detail} onPress={() => setScheduling(true)}>{t("Schedule")}</Button> : <span>{t("Not scheduled")}</span>}</dd></div>
       <div><dt><Globe size={14} aria-hidden="true" />{t("Source")}</dt><dd>{leadOptionLabel(initialData.leadOptions?.sources, String(enquiry?.source ?? lead.source))}</dd></div>
@@ -228,7 +236,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
       { id: "notes", label: t("Requirements"), panel: <RequirementNotes workspaceId={workspaceId} leadId={lead.id} /> },
     ]} /></main></div>
     {(opportunities.length > 0 || (canCreateDeal && onQualify)) && <section className={`${styles.dealNextStep} ${opportunities.length ? "" : styles.dealNextStepSticky}`} data-tour="enquiry-next-step">
-      {opportunities.length ? <><strong>{opportunities.length === 1 ? t("Linked opportunity") : t("Linked opportunities")}</strong>{opportunities.map(opportunity => <div key={opportunity.id} className={styles.linkedOpportunity}><Link className={styles.link} href={`/workspace/crm/opportunities?record=${opportunity.id}`}><span className={styles.dealLinkText}>{opportunity.title && String(opportunity.title) !== enquiryReference ? String(opportunity.title) : t("Open opportunity")}</span><ArrowUpRight size={13} aria-hidden="true" /></Link>{opportunity.preProjectCaseId && opportunity.dealFileReference ? <Link className={styles.link} href={`/workspace/pre-projects/cases/${opportunity.preProjectCaseId}/approvals`}>{t("Deal File {reference}", { reference: String(opportunity.dealFileReference) })} <ArrowUpRight size={13} aria-hidden="true" /></Link> : null}</div>)}</> : <>
+      {opportunities.length ? <><strong>{opportunities.length === 1 ? t("Linked opportunity") : t("Linked opportunities")}</strong>{opportunities.map(opportunity => <div key={opportunity.id} className={styles.linkedOpportunity}><Link className={styles.link} href={`/workspace/crm/opportunities?record=${opportunity.id}`} onClick={openRecord}><span className={styles.dealLinkText}>{opportunity.title && String(opportunity.title) !== enquiryReference ? String(opportunity.title) : t("Open opportunity")}</span><ArrowUpRight size={13} aria-hidden="true" /></Link>{opportunity.preProjectCaseId && opportunity.dealFileReference ? <Link className={styles.link} href={`/workspace/pre-projects/cases/${opportunity.preProjectCaseId}/approvals`} onClick={openRecord}>{t("Deal File {reference}", { reference: String(opportunity.dealFileReference) })} <ArrowUpRight size={13} aria-hidden="true" /></Link> : null}</div>)}</> : <>
         <div><strong>{needsEnquiryType ? t("Choose an enquiry type") : t("Ready to move forward?")}</strong><p>{needsEnquiryType ? t("Replace Not Sure Yet with the actual enquiry type before qualification or conversion.") : qualificationState?.form && !qualificationState.ready ? t("Complete qualification before conversion.") : t("Convert to an opportunity when the client's requirements are clear.")}</p></div>
         {questions.length ? <Button size="compact" isDisabled={!detail || live.status === "qualified"} onPress={() => setAction({ title: qualificationState?.form?.name ?? t("Qualification"), path: `leads/${lead.id}/qualification`, method: "PUT", initial: initialQualificationValues(questions, answers), fields: configuredFields, transform: values => ({ version, values: qualificationValues(questions, values) }) })}>{t("Qualification")}</Button> : null}
         {detail && canCreateDeal && onQualify ? needsEnquiryType ? <Button size="compact" variant="primary" onPress={() => setEditing(true)}>{t("Edit enquiry type")}</Button> : <Button size="compact" variant="primary" isDisabled={Boolean(qualificationState?.form && !qualificationState.ready)} onPress={() => onQualify(live)}>{t("Convert to opportunity")}</Button> : null}

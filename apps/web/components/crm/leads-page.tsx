@@ -351,6 +351,21 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
       setQualificationLead(lead);
     } finally { setConvertingId(null); }
   };
+  // Converting can't be undone, so the row button asks first (the full dialog opens instead when details are missing).
+  const confirmConvert = (lead: CrmLeadListItem) => {
+    if (!quickConversion(lead, initialData, timeZone)) { setQualificationLead(lead); return; }
+    const name = customerDisplayName(lead.partyName);
+    requestConfirmation({ title: t("Convert {name} to an opportunity?", { name }), body: t("A converted enquiry can't be changed back."), confirmLabel: t("Convert"), confirmVariant: "primary", onConfirm: () => void convertNow(lead) });
+  };
+  // Leaving for a linked record closes the enquiry sheet first; navigating with it open leaves its modal over the next page.
+  const [leavingFor, setLeavingFor] = useState<string | null>(null);
+  const openRecord = (href: string) => { setCardLead(null); setLinkedLead(undefined); setLeavingFor(href); };
+  useEffect(() => {
+    if (!leavingFor || cardLead || linkedLead) return;
+    setLeavingFor(null);
+    router.push(leavingFor);
+  }, [leavingFor, cardLead, linkedLead, router]);
+  const opportunityHref = (id: string) => `/workspace/crm/opportunities?record=${encodeURIComponent(id)}`;
   const busy = Boolean(savingLeadId || refreshing || loadingMore || pendingMove || qualificationLead || autoBusy);
   const sourceLabel = (source: string) => initialData.leadOptions?.sources.find(option => option.id === source)?.label ?? humanize(source, notSet);
   // Hidden enquiry fields leave the list; the workspace's own fields become columns.
@@ -397,10 +412,10 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
     { accessorKey: "updatedAt", header: t("Last updated"), size: 120, cell: ({row:{original:lead}}) => formatDate(new Date(lead.updatedAt), localFormat, {day:'numeric',month:'short',year:'numeric'}) },
     { accessorKey: "createdAt", header: t("Created"), size: 150, meta: { headerIcon: <CalendarDays size={14}/> }, cell: ({row:{original:lead}}) => formatDate(new Date(lead.createdAt), localFormat, {day:'numeric',month:'short',year:'numeric'}) },
     { id: "dealAction", header: t("Opportunity"), size: 136, enableSorting: false, cell: ({ row: { original: lead } }) => lead.isConverted
-      ? <Button size="compact" variant="quiet" onPress={() => setCardLead(lead)}>{t("View opportunity")}</Button>
+      ? <Button size="compact" variant="quiet" onPress={() => lead.opportunityId ? router.push(opportunityHref(lead.opportunityId)) : setCardLead(lead)}>{t("View opportunity")}</Button>
       : ["disqualified", "paused"].includes(lead.status) ? <span className={styles.sheetText}>—</span>
       : !hasResolvedEnquiryType(lead.serviceType) ? <Button size="compact" className={styles.createDeal} isDisabled={busy} aria-label={t("Choose enquiry type for {name}", { name: customerDisplayName(lead.partyName) })} onPress={() => setCardLead(lead)}>{t("Choose type")}</Button>
-      : <Button size="compact" className={styles.createDeal} data-tour="enquiry-convert" data-tour-safe isDisabled={busy} isLoading={convertingId === lead.id} aria-label={t("Convert {name} to opportunity", { name: customerDisplayName(lead.partyName) })} onPress={() => void convertNow(lead)}>{t("Convert")}</Button> },
+      : <Button size="compact" className={styles.createDeal} data-tour="enquiry-convert" data-tour-safe isDisabled={busy} isLoading={convertingId === lead.id} aria-label={t("Convert {name} to opportunity", { name: customerDisplayName(lead.partyName) })} onPress={() => confirmConvert(lead)}>{t("Convert")}</Button> },
   ];
   const pendingLead = pendingMove ? items.find((lead) => lead.id === pendingMove.leadId) : undefined;
   const workspaceArea = activeSection === "leads" ? "work" : activeSection === "forms" || activeSection === "sources" ? "capture" : activeSection === "assignment" || activeSection === "sla" ? "response" : "performance";
@@ -415,7 +430,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
 
 
       {!initialData.canView ? <NoAccessState area={t("Enquiries")} /> : sectionDenied ? <NoAccessState area={t(SECTION_AREA[activeSection])} /> : <>
-        {linkedLead ? <InspectorSheet isOpen hideTitle title={t("Enquiry details")} size="md" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}
+        {linkedLead ? <InspectorSheet isOpen hideTitle title={t("Enquiry details")} size="md" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} onOpenRecord={openRecord} /></InspectorSheet> : null}
         {failure ? <Callout title={t("Enquiries could not be updated")} tone="danger">{failure}</Callout> : null}
         {statusMessage ? <p aria-live="polite" className={styles.statusMessage}>{statusMessage}</p> : null}
         {converted && !statusMessage ? <p aria-live="polite" className={styles.statusMessage}>{t("{name}: opportunity created.", { name: converted.name })} <Link href={`/workspace/crm/opportunities?record=${encodeURIComponent(converted.id)}`}>{t("View opportunity")}</Link></p> : null}
@@ -471,7 +486,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
           {activeSection === "automations" ? <SalesAutomations workspaceId={initialData.workspaceId} /> : null}
         </div>
 
-        {cardLead ? <InspectorSheet isOpen onOpenChange={(open) => { if (!open) setCardLead(null); }} size="md" hideTitle title={t("Enquiry details")}><LeadWorkbench initialData={initialData} key={cardLead.id} lead={items.find((item) => item.id === cardLead.id) ?? cardLead} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}
+        {cardLead ? <InspectorSheet isOpen onOpenChange={(open) => { if (!open) setCardLead(null); }} size="md" hideTitle title={t("Enquiry details")}><LeadWorkbench initialData={initialData} key={cardLead.id} lead={items.find((item) => item.id === cardLead.id) ?? cardLead} onChanged={() => reloadLeads()} onQualify={setQualificationLead} onOpenRecord={openRecord} /></InspectorSheet> : null}
         {importOpen ? <LeadImportDialog initialData={initialData} onClose={() => setImportOpen(false)} onImported={() => reloadLeads()} /> : null}
         {reviewOpen ? <InspectorSheet isOpen onOpenChange={setReviewOpen} size="lg" title={t("Intake review")}><IntakeInbox workspaceId={initialData.workspaceId} onChanged={() => reloadLeads()} /></InspectorSheet> : null}
         {pendingMove && pendingLead ? <MoveLeadDialog lead={pendingLead} move={pendingMove} saving={Boolean(savingLeadId)} onClose={() => setPendingMove(null)} onSave={(details) => saveMove(pendingMove, details)} /> : null}

@@ -11672,5 +11672,7 @@
   "Your feedback": "Your feedback",
   "Use a secure HTTPS proof-of-payment link.": "Use a secure HTTPS proof-of-payment link.",
   "Add a proof-of-payment link.": "Add a proof-of-payment link.",
-  "I verified the payment receipt": "I verified the payment receipt"
+  "I verified the payment receipt": "I verified the payment receipt",
+  "Convert {name} to an opportunity?": "Convert {name} to an opportunity?",
+  "A converted enquiry can't be changed back.": "A converted enquiry can't be changed back."
 }

@@ -146,7 +146,11 @@ describe("LeadsPage", () => {
 
     expect(entry).toBe("table action");
     await user.click(screen.getByRole("button", { name: `Convert ${lead.partyName} to opportunity` }));
-    // No dialog: what the enquiry already says is used, and the list stays with a link to the new opportunity.
+    // Converting can't be undone: nothing is sent until the user confirms.
+    const confirm = await screen.findByRole("dialog", { name: `Convert ${lead.partyName} to an opportunity?` });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await user.click(within(confirm).getByRole("button", { name: "Convert" }));
+    // No form: what the enquiry already says is used, and the list stays with a link to the new opportunity.
     expect(await screen.findByRole("link", { name: "View opportunity" })).toHaveAttribute("href", "/workspace/crm/opportunities?record=71000000-0000-4000-8000-000000000001");
     expect(router.push).not.toHaveBeenCalled();
     const conversionRequest = fetchMock.mock.calls.find(call => call[0].includes(`/leads/${lead.id}/qualify`)) as unknown as [string, { body: string }];
@@ -185,6 +189,21 @@ describe("LeadsPage", () => {
     expect(convertAction.closest("section")?.className).toContain("dealNextStepSticky");
     await interaction.click(within(dialog).getByRole("tab", { name: "Activity" }));
     expect(convertAction).toBeVisible();
+  });
+
+  it("closes the enquiry sheet before opening its linked opportunity, and names the state Converted", async () => {
+    const interaction = userEvent.setup();
+    const fixture = structuredClone(leadsPageFixture);
+    fixture.items[4].isConverted = true;
+    router.push.mockClear();
+    render(<LeadsPage initialData={fixture} />);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...fixture.items[4], status: "qualified", opportunities: [{ id: "opp-1", title: "Villa kitchen" }] }) }));
+    await interaction.click(screen.getByRole("button", { name: "Open Amira Al Mansoori" }));
+    const dialog = await screen.findByRole("dialog", { name: "Enquiry details" });
+    expect((await within(dialog).findAllByText("Converted")).length).toBeGreaterThan(0);
+    await interaction.click(within(dialog).getByRole("link", { name: /Villa kitchen/ }));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/workspace/crm/opportunities?record=opp-1"));
+    expect(screen.queryByRole("dialog", { name: "Enquiry details" })).not.toBeInTheDocument();
   });
 
   it("edits an enquiry's details in place, sending the whole details with the enquiry's version", async () => {
@@ -432,6 +451,16 @@ describe("LeadsPage", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(JSON.parse((fetchMock.mock.calls[0] as [string, { body: string }])[1].body)).toMatchObject({ outcome: "not_interested", reason: "Budget" });
   }, 20_000);
+
+  it("opens the opportunity itself from a converted enquiry's row", async () => {
+    const fixture = structuredClone(leadsPageFixture);
+    fixture.items[4].isConverted = true;
+    fixture.items[4].opportunityId = "71000000-0000-4000-8000-000000000009";
+    render(<LeadsPage initialData={fixture} />);
+    const row = screen.getByRole("button", { name: /Open Amira Al Mansoori/ }).closest("tr")!;
+    await userEvent.click(within(row).getByRole("button", { name: "View opportunity" }));
+    expect(router.push).toHaveBeenCalledWith("/workspace/crm/opportunities?record=71000000-0000-4000-8000-000000000009");
+  });
 
   it("keeps converted enquiries visible without contact logging", () => {
     const fixture = structuredClone(leadsPageFixture);
