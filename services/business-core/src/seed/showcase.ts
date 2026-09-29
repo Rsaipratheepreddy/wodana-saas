@@ -2297,9 +2297,10 @@ class ShowcaseSeed {
     await this.advance(`warranty claim · ${s.execution.claim!.description.slice(0, 40)}…`, (known.claims ?? []).some((claim) => claim.description === s.execution.claim!.description), async () => {
       const view = await this.portalView(ctx);
       const project = view.projects.find((row) => row.id === caseId);
-      const items = (project?.warranty as { items: Array<{ id: string; title: string; active: boolean }> } | null | undefined)?.items ?? [];
+      // The portal lists what a claim can name as `lines`: the items under warranty today.
+      const items = (project?.warranty as { lines?: Array<{ id: string; title: string }> } | null | undefined)?.lines ?? [];
       if (!items.length) throw new Skip("nothing is under warranty in the portal");
-      const item = items.find((row) => s.execution.claim!.item.test(row.title) && row.active) ?? items.find((row) => row.active);
+      const item = items.find((row) => s.execution.claim!.item.test(row.title)) ?? items[0];
       const result = (await portal.command(this.slug, view.token, { commandId: randomUUID(), action: "warranty_claim", caseId, description: s.execution.claim!.description, ...(item ? { lineId: item.id } : {}) })) as { ok?: boolean };
       if (!result.ok) throw new Error("the client's warranty claim did not go through");
     });
