@@ -53,7 +53,8 @@ export function Screen({ children, onRefresh, refreshing = false, scroll = true,
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const body = <View style={{ paddingHorizontal: theme.space(4), gap: theme.space(4), paddingBottom: theme.space(footer ? 6 : 10) }}>
+  // Without its own scroll (a chat thread), the content fills the screen and scrolls inside.
+  const body = <View style={{ flex: scroll ? undefined : 1, paddingHorizontal: theme.space(4), gap: theme.space(4), paddingBottom: theme.space(footer ? 6 : 10) }}>
     <Header {...header} />
     {children}
   </View>;

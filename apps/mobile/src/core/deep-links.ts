@@ -49,8 +49,11 @@ export function appRouteFor(link: string | null | undefined): string | null {
       }
       if (section === 'opportunities') return id(rest[1]) ? `/sales/opportunity/${rest[1]}` : q('record') ? `/sales/opportunity/${q('record')}` : '/sales/opportunities';
       if (section === 'follow-ups' || section === 'activities') return '/sales/follow-ups';
-      // The app has no thread screen: a conversation opens the enquiry it belongs to.
-      if (section === 'conversations' || section === 'inbox') return q('lead') ? `/sales/${q('lead')}` : null;
+      // A chat opens its thread; a link naming only the enquiry opens the enquiry.
+      if (section === 'conversations' || section === 'inbox') {
+        const chat = q('conversation') ?? q('record');
+        return chat ? `/chats/${chat}` : q('lead') ? `/sales/${q('lead')}` : '/inbox';
+      }
       return null;
     }
     case 'tasks': {
@@ -97,6 +100,7 @@ export function routeForDestination(destination: NoticeDestination): string | nu
     case 'crm':
       if (screen === 'leads') return record ? `/sales/${record}` : '/sales';
       if (screen === 'deals') return record ? `/sales/opportunity/${record}` : '/sales/opportunities';
+      if (screen === 'inbox') return record ? `/chats/${record}` : '/inbox';
       return null;
     default:
       return null;

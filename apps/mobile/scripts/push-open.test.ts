@@ -30,7 +30,9 @@ test('the server destination for a job or record becomes an app screen', () => {
   assert.equal(routeForDestination({ module: 'pre-project', screen: 'overview', recordId: record }), `/survey/${record}`);
   assert.equal(routeForDestination({ module: 'crm', screen: 'leads', recordId: record }), `/sales/${record}`);
   assert.equal(routeForDestination({ module: 'crm', screen: 'deals', recordId: record }), `/sales/opportunity/${record}`);
-  assert.equal(routeForDestination({ module: 'crm', screen: 'inbox', recordId: null }), null);
+  assert.equal(routeForDestination({ module: 'crm', screen: 'inbox', recordId: null }), '/inbox');
+  assert.equal(routeForDestination({ module: 'crm', screen: 'inbox', recordId: record }), `/chats/${record}`);
+  assert.equal(routeForDestination({ module: 'crm', screen: 'calendar', recordId: record }), null);
   assert.equal(routeForDestination({ module: 'projects', screen: '../x', recordId: 'bad' }), '/projects');
   assert.equal(routeForDestination(null), null);
 });

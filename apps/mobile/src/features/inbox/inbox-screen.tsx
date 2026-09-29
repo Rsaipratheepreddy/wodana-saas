@@ -6,12 +6,14 @@ import { appRouteFor } from '../../core/deep-links';
 import { errorMessage } from '../../core/api';
 import { addDays, useFormat } from '../../core/format';
 import { useT } from '../../core/i18n';
-import { FilterChips } from '../../ui/fields';
+import { FilterChips, SegmentedControl } from '../../ui/fields';
 import { Empty, ListRow, ListScreen } from '../../ui/layout';
 import { IconButton, Text } from '../../ui/primitives';
 import { useToast } from '../../ui/toast';
 import { useTheme } from '../../ui/theme';
 import { useInbox, useMarkAllRead, useMarkRead, type InboxNotification } from './api';
+import { useCanChat } from './chats-api';
+import { ChatsList } from './chats-screen';
 
 const iconFor = (eventType: string): LucideIcon => {
   const area = eventType.split('.')[0];
@@ -38,6 +40,10 @@ export function InboxScreen() {
   const read = useMarkRead();
   const readAll = useMarkAllRead();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  // People who answer clients see their chats here too; everyone has their notifications.
+  const canChat = useCanChat();
+  const [pane, setPane] = useState<'notices' | 'chats'>('notices');
+  const switcher = canChat ? <SegmentedControl value={pane} onChange={setPane} options={[{ value: 'notices', label: t('Notifications') }, { value: 'chats', label: t('Chats') }]} /> : null;
   const items = useMemo(() => (inbox.data ?? []).filter((item) => filter === 'all' || !item.readAt), [inbox.data, filter]);
   const today = format.today();
   const group = (item: InboxNotification) => {
@@ -53,13 +59,14 @@ export function InboxScreen() {
     else toast.show(t('Open this on the web to see it.'));
   };
 
+  if (canChat && pane === 'chats') return <ChatsList switcher={switcher} />;
   if (!inbox.enabled) {
     return <ListScreen large title={t('Inbox')} items={[]} keyExtractor={() => ''} renderItem={() => <View />}
       empty={<Empty icon={Inbox} title={t('Notifications aren’t on for you')} detail={t('Ask your administrator for access to notifications.')} />} />;
   }
   return <ListScreen large title={t('Inbox')}
     action={inbox.unread ? <IconButton icon={CheckCheck} label={t('Mark all read')} onPress={() => readAll.mutate()} /> : undefined}
-    toolbar={<FilterChips value={filter} onChange={setFilter} options={[{ value: 'all', label: t('All') }, { value: 'unread', label: inbox.unread ? t('Unread · {count}', { count: inbox.unread }) : t('Unread') }]} />}
+    toolbar={<>{switcher}<FilterChips value={filter} onChange={setFilter} options={[{ value: 'all', label: t('All') }, { value: 'unread', label: inbox.unread ? t('Unread · {count}', { count: inbox.unread }) : t('Unread') }]} /></>}
     items={items} keyExtractor={(item) => item.id} groupBy={group}
     loading={inbox.isLoading} error={inbox.error ? errorMessage(inbox.error, t('The inbox could not be loaded.')) : null} onRetry={() => void inbox.refetch()}
     onRefresh={() => void inbox.refetch()} refreshing={inbox.isRefetching}
