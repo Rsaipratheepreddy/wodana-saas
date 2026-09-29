@@ -179,10 +179,10 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
     {picking ? <TemplatePicker templates={lookups.templates} variables={variables} canManage={lookups.canManage} connected={thread.whatsappConnected !== false} onClose={() => setPicking(false)} onSend={async (template, templateParameters) => { setPicking(false); await send({ templateId: template.id, templateParameters }); }}
       onSendLater={readOnly ? undefined : (template, templateParameters) => { setPicking(false); setLater({ templateId: template.id, templateParameters }); }} /> : null}
     {later ? <ScheduleDialog title={later.templateId ? t("Send the template later") : t("Send later")} freeText={!later.templateId} windowClosesAt={isWhatsApp ? String(thread.windowClosesAt ?? "") || null : undefined}
-      onClose={() => setLater(null)} onSchedule={async (sendAt) => {
+      offerCancelOnReply onClose={() => setLater(null)} onSchedule={async (sendAt, { cancelOnReply }) => {
         const key = JSON.stringify(later);
         if (scheduleAttempt.current?.key !== key) scheduleAttempt.current = { key, id: crypto.randomUUID() };
-        await crmRequest(workspaceId, `conversations/${id}/scheduled-messages`, "POST", { clientRequestId: scheduleAttempt.current.id, sendAt,
+        await crmRequest(workspaceId, `conversations/${id}/scheduled-messages`, "POST", { clientRequestId: scheduleAttempt.current.id, sendAt, cancelOnReply,
           ...(later.templateId ? { templateId: later.templateId, ...(later.templateParameters ? { templateParameters: later.templateParameters } : {}) } : { bodyText: later.bodyText }) }, timeout());
         scheduleAttempt.current = null;
         if (!later.templateId) onDraftChange("");

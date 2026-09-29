@@ -897,6 +897,13 @@
       "when": 1801310000700,
       "tag": "0187_approval_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1801310000800,
+      "tag": "0188_scheduled_cancel_on_reply",
+      "breakpoints": true
     }
   ]
 }

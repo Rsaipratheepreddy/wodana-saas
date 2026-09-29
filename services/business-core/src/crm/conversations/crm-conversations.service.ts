@@ -13,6 +13,7 @@ import { decodeCursor, encodeCursor, normalizeEmail, normalizeLoosePhone, normal
 import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSequenceDto, ListConversationsQueryDto, MessageReceiptDto, ProviderInboundMessageDto, ProviderMessageReceiptDto, SequenceVersionDto, StopSequenceEnrollmentDto, UpdateSequenceDto, UpdateConversationDto } from "./dto/conversations.dto";
 import { applyConversationChange, mapConversation, recordChatEvent } from "./inbox/inbox-commands";
 import { INBOX_MEMBERS_SQL, inboxQueue, selectInboxOwner } from "./inbox/inbox-assignment";
+import { cancelScheduledOnReply } from "./inbox/scheduled-cancel";
 import { inboxLink, noticeChat, readChatNotices, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
 import { inboundSummary, normalizeTemplateParameter, renderTemplate, stageFilterSql, TEMPLATE_SOURCE_NAMES, templateParametersProblem, templatePlaceholders, withSignature, type TemplateVariableSource } from "./inbox/inbox-rules";
 import { resolveTemplateSources } from "./inbox/template-variables";
@@ -832,6 +833,10 @@ export class CrmConversationsService {
     );
     if (input.direction === "inbound") {
       await client.query(`UPDATE crm_sequence_enrollments SET status = 'exited', exit_reason = 'customer_replied', exited_at = now(), next_run_at = NULL, version = version + 1 WHERE workspace_id = $1 AND party_id = $2 AND status = 'active'`, [workspaceId, conversation.party_id]);
+      // A follow-up scheduled in this chat doesn't land on top of the client's reply: it's cancelled and its author told (X-1).
+      for (const cancelled of await cancelScheduledOnReply(client, workspaceId, conversationId))
+        await this.events.record(client, { workspaceId, actorUserId: null, source: "automation", action: "crm.message.schedule_cancelled.v1", entityType: "crm_conversation", entityId: conversationId,
+          after: { scheduledMessageId: cancelled.id, reason: "client_replied", messageId } });
     }
     const response = { id: messageId, conversationId, direction: input.direction, status: queued ? "queued" : input.direction === "inbound" ? "delivered" : "sent", bodyText, bodyHtml,
       ...(attachment ? { attachmentId: attachment.id } : {}) };

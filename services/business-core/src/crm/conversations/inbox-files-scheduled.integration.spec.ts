@@ -206,4 +206,20 @@ integration("team inbox files, numbers and scheduled messages", () => {
       expect(notice.rows).toEqual([{ subject: "Your message to Noura Haddad wasn't sent", body: expect.stringMatching(/Reopen/) }]);
     });
   });
+
+  it("cancels a scheduled follow-up when the client writes first, tells its author, and keeps one marked to go anyway (X-1)", async () => {
+    await withWorld(async (client, world) => {
+      await client.query(`INSERT INTO notification_templates (workspace_id, code, channel, locale, version_number, status, subject_template, body_template, variables, approved_at)
+        VALUES ($1, 'crm.inbox_scheduled_cancelled', 'in_app', 'en', 1, 'approved', '{{clientName}} replied first', '{{preview}}', '["clientName","preview"]', now())`, [world.workspaceId]);
+      await client.query(`UPDATE crm_conversations SET last_inbound_at = now() WHERE id = $1`, [world.chat]);
+      const nudge = await world.scheduled.create(actor, world.workspaceId, world.chat, { clientRequestId: randomUUID(), sendAt: inAnHour(), bodyText: "Any thoughts on the quote?" } as never);
+      const anyway = await world.scheduled.create(actor, world.workspaceId, world.chat, { clientRequestId: randomUUID(), sendAt: inAnHour(), bodyText: "Site visit confirmed", cancelOnReply: false } as never);
+      expect(nudge).toMatchObject({ cancelOnReply: true });
+      await inbound(world, {}, "Yes, go ahead");
+      const rows = (await client.query(`SELECT id, status, cancel_reason AS reason FROM crm_scheduled_messages WHERE workspace_id = $1`, [world.workspaceId])).rows;
+      expect(Object.fromEntries(rows.map((row) => [row.id, [row.status, row.reason]]))).toEqual({ [nudge.id]: ["cancelled", "client_replied"], [anyway.id]: ["scheduled", null] });
+      const notice = await client.query(`SELECT subject, body FROM notifications WHERE workspace_id = $1 AND recipient_id = $2 AND event_type = 'crm.inbox.scheduled_cancelled'`, [world.workspaceId, world.admin]);
+      expect(notice.rows).toEqual([{ subject: "Noura Haddad replied first", body: "Any thoughts on the quote?" }]);
+    });
+  });
 });

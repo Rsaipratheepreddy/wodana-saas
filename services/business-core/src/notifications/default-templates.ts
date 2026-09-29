@@ -314,6 +314,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "crm.inbox_mention", channel: "in_app", subject: "{{actor}} mentioned you", body: "{{clientName}}: {{summary}}", variables: ["actor", "clientName", "summary"] },
   { code: "crm.inbox_unassigned", channel: "in_app", subject: "{{clientName}} is waiting", body: "Nobody could take this new chat. Assign it.", variables: ["clientName"] },
   // A message someone scheduled ("Send later") could not go at its time: they are told why.
+  { code: "crm.inbox_scheduled_cancelled", channel: "in_app", subject: "{{clientName}} replied first", body: "Your scheduled message was cancelled so it doesn't land on top of their reply: \"{{preview}}\"", variables: ["clientName", "preview"] },
   { code: "crm.inbox_scheduled_failed", channel: "in_app", subject: "Your message to {{clientName}} wasn't sent", body: "{{reason}}", variables: ["clientName", "reason"] },
   // Client portal notices (client-portal/portal-notices.ts): to client contacts, by email.
   { code: "portal.quote_issued", channel: "email", subject: "{{title}} is ready for you", body: "{{company}} sent you {{title}} for {{project}}.\n\nOpen your project page to read it and give your decision.", variables: ["company", "project", "title", "due", "note"] },

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Clock3, TriangleAlert } from "lucide-react";
-import { Button, ControlledModalDialog, InlineNotice, TextAreaField, useConfirmationDialog, useDesignSystem, useReadOnlyReason } from "@/design-system";
+import { Button, Checkbox, ControlledModalDialog, InlineNotice, TextAreaField, useConfirmationDialog, useDesignSystem, useReadOnlyReason } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -33,14 +33,17 @@ export function windowOpenAt(windowClosesAt: string | null | undefined, sendAt: 
  * "Send later": when a reply or a template goes, in the workspace's time zone. Free text only while WhatsApp's window
  * will still be open then (the server checks the same); a template at any time.
  */
-export function ScheduleDialog({ title, initial, freeText, windowClosesAt, text, onTextChange, onClose, onSchedule }: {
+export function ScheduleDialog({ title, initial, freeText, windowClosesAt, text, onTextChange, onClose, onSchedule, offerCancelOnReply = false }: {
   title: string; initial?: string; freeText: boolean; windowClosesAt?: string | null;
   /** Editing a scheduled free-text message: its words can change too. */
   text?: string; onTextChange?: (value: string) => void;
-  onClose: () => void; onSchedule: (sendAt: string) => Promise<void>;
+  onClose: () => void; onSchedule: (sendAt: string, options: { cancelOnReply: boolean }) => Promise<void>;
+  /** Offer "Cancel if the client replies first" (a new message; X-1). */
+  offerCancelOnReply?: boolean;
 }) {
   const t = useT();
   const { timeZone } = useDesignSystem();
+  const [cancelOnReply, setCancelOnReply] = useState(true);
   const [value, setValue] = useState(() => initial ?? wallTime(new Date(Date.now() + 3_600_000), timeZone));
   const [error, setError] = useState(""), [saving, setSaving] = useState(false);
   const submit = async () => {
@@ -50,7 +53,7 @@ export function ScheduleDialog({ title, initial, freeText, windowClosesAt, text,
     if (freeText && windowClosesAt !== undefined && !windowOpenAt(windowClosesAt, sendAt)) { setError(t("WhatsApp's 24-hour window will be closed by then. Choose an earlier time or a template.")); return; }
     if (onTextChange && !text?.trim()) { setError(t("Write a message")); return; }
     setSaving(true); setError("");
-    try { await onSchedule(sendAt); }
+    try { await onSchedule(sendAt, { cancelOnReply }); }
     catch (reason) { setError(reason instanceof Error ? reason.message : t("The message could not be scheduled.")); }
     finally { setSaving(false); }
   };
@@ -59,6 +62,7 @@ export function ScheduleDialog({ title, initial, freeText, windowClosesAt, text,
     <div className={styles.templatePicker}>
       {onTextChange ? <TextAreaField label={t("Message")} value={text ?? ""} maxLength={4096} onChange={onTextChange} /> : null}
       <CrmDateTimeField label={t("Send at")} value={value} onChange={setValue} isRequired />
+      {offerCancelOnReply ? <Checkbox isSelected={cancelOnReply} onChange={setCancelOnReply}>{t("Cancel it if the client replies first")}</Checkbox> : null}
       {error ? <InlineNotice tone="error" message={error} /> : null}
     </div>
   </ControlledModalDialog>;

@@ -18,12 +18,14 @@ export type ScheduleInput = { sendAt: string; bodyText?: string | null; template
 export type ScheduledMessage = {
   id: string; conversationId: string; status: string; sendAt: string; bodyText: string | null; templateId: string | null; templateCode: string | null;
   templateParameters: string[]; renderedText: string; failureReason: string | null; createdBy: string; version: number;
+  /** Cancelled by itself if the client writes first (X-1). */
+  cancelOnReply: boolean;
 };
 export const presentScheduled = (row: Row): ScheduledMessage => ({
   id: String(row.id), conversationId: String(row.conversation_id), status: String(row.status), sendAt: new Date(String(row.send_at)).toISOString(),
   bodyText: (row.body_text as string | null) ?? null, templateId: (row.template_id as string | null) ?? null, templateCode: (row.template_code as string | null) ?? null,
   templateParameters: (row.template_parameters as string[] | null) ?? [], renderedText: String(row.rendered_text), failureReason: (row.failure_reason as string | null) ?? null,
-  createdBy: String(row.created_by), version: Number(row.version),
+  createdBy: String(row.created_by), version: Number(row.version), cancelOnReply: row.cancel_on_reply !== false,
 });
 
 /** Whether free text can still go at `sendAt`: WhatsApp takes it only within 24 hours of the client's last message. */
@@ -71,10 +73,10 @@ export class CrmScheduledMessagesService {
       const prepared = await this.prepare(client, workspaceId, conversationId, input, user.userId);
       const inserted = await client.query<Row>(
         `INSERT INTO crm_scheduled_messages (workspace_id, conversation_id, body_text, template_id, template_code, template_parameters, rendered_text, send_at,
-           client_request_id, request_hash, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+           client_request_id, request_hash, created_by, cancel_on_reply)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
         [workspaceId, conversationId, prepared.bodyText, prepared.templateId, prepared.templateCode, prepared.templateParameters, prepared.renderedText, prepared.sendAt,
-          input.clientRequestId, requestHash, user.userId]);
+          input.clientRequestId, requestHash, user.userId, input.cancelOnReply !== false]);
       const scheduled = presentScheduled(inserted.rows[0]);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.message.scheduled.v1", entityType: "crm_conversation", entityId: conversationId, after: scheduled });
       return scheduled;

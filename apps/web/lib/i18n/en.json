@@ -11108,5 +11108,6 @@
   "When our message had no reply and nothing is pending. A reply reopens the chat. 0 for never.": "When our message had no reply and nothing is pending. A reply reopens the chat. 0 for never.",
   "Remind after": "Remind after",
   "Tell the owners after": "Tell the owners after",
-  "Email as well": "Email as well"
+  "Email as well": "Email as well",
+  "Cancel it if the client replies first": "Cancel it if the client replies first"
 }

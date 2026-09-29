@@ -73,6 +73,8 @@ export class CreateScheduledMessageDto {
   @IsOptional() @IsString() @IsNotEmpty() @MaxLength(4096) bodyText?: string;
   @IsOptional() @IsUUID() templateId?: string;
   @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(1024, { each: true }) templateParameters?: string[];
+  /** Cancel it when the client writes first (X-1); on unless the sender wants it to go anyway. */
+  @IsOptional() @IsBoolean() cancelOnReply?: boolean;
 }
 
 /** Changes a scheduled message before it goes: its time, its text, or its template's values. */
