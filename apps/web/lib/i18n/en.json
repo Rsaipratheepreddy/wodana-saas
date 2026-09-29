@@ -11071,5 +11071,7 @@
   "Warn before a quote expires (days)": "Warn before a quote expires (days)",
   "The case owner and the client hear it this many days before. 0 for none.": "The case owner and the client hear it this many days before. 0 for none.",
   "Extend validity": "Extend validity",
-  "Extend": "Extend"
+  "Extend": "Extend",
+  "Default payment plan": "Default payment plan",
+  "A new quote starts with these milestones; change them on the quote.": "A new quote starts with these milestones; change them on the quote."
 }

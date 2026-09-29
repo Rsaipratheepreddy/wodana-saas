@@ -70,6 +70,7 @@ import { ConfigurationRevisionsService } from "./configuration-revisions.service
 import { invitationGreetingName, placeholderDisplayName } from "./invitation-recipient";
 import { parseRoleTemplateCodes, roleTemplatesFor } from "./role-templates";
 import { parseSalesPipelineTemplate, seedDefaultSalesPipeline } from "../crm/default-sales-pipeline";
+import { seedKitPaymentPlan } from "../commercial/default-payment-plan";
 import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
 
 interface WorkspaceRow {
@@ -405,6 +406,8 @@ export class WorkspacesService {
         // The kit's Sales pipeline, so a salesperson's first conversion needs no CRM-settings permission.
         await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(setup?.firmKit.configuration.salesPipeline));
         if (setup) {
+          // The kit's payment plan becomes the workspace's default for new quotes (Q-34).
+          await seedKitPaymentPlan(client, workspaceId, (setup.firmKit.configuration as Record<string, unknown>).paymentTemplate);
           const workflow = parseProjectWorkflowTemplate(setup.firmKit.configuration.projectWorkflow);
           await client.query(
             `INSERT INTO project_workflow_templates

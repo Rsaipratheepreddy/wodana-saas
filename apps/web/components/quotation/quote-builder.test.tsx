@@ -18,7 +18,7 @@ const state = (lines: BuilderLine[]): BuilderState => ({
   family: [{ id: "q1", number: 2, status: "draft", total: "420.00", createdAt: null }],
   flow: { internalReview: true, reviewAction: "approve", canReview: true, canRecordDecision: true },
   paymentTemplates: [],
-  settings: { defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null, discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [2, 5], expiryWarningDays: 3, version: 0 },
+  settings: { defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null, discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [2, 5], expiryWarningDays: 3, defaultPaymentTemplateId: null, version: 0 },
   areas: [{ id: KITCHEN, name: "Kitchen" }], workPackages: [{ id: JOINERY, name: "Joinery" }], taxCodes: [], lines, discounts: [],
   pricing: { lines: lines.map((item) => ({ id: item.id, included: true, gross: "400.00", lineDiscount: "0.00", sectionDiscount: "0.00", quoteDiscount: "0.00", net: "400.00", tax: "20.00", total: "420.00", cost: "240.00" })),
     areas: [{ key: KITCHEN, gross: "400.00", discount: "0.00", net: "400.00" }], trades: [{ key: JOINERY, gross: "400.00", discount: "0.00", net: "400.00" }], subtotal: "400.00",

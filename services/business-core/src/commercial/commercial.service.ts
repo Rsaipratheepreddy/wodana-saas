@@ -5,6 +5,7 @@ import { noticeQuoteStep } from "../quotation/quote-notices";
 import { releasePhaseOnDealApproval, winOpportunityOnAcceptance } from "./quote-acceptance";
 import { decisionEvidenceFile, decisionRecorder } from "./quote-decision-access";
 import { extendQuoteValidity } from "./quote-expiry";
+import { readDefaultPaymentPlan, startingMilestones } from "./default-payment-plan";
 import { recordAudit } from "../audit/record-audit";
 import { noticeReceiptStep, permissionHolderNames } from "./commercial-notices";
 import { effectivePortalBrand } from "./effective-brand";
@@ -1840,6 +1841,8 @@ export class CommercialService {
               !data.palmFlow)
             throw new ConflictException("Choose the enquiry's service path before preparing its quotation.");
           const defaults = await newQuoteDefaults(client, workspaceId, caseId);
+          // A first quote starts with the firm's default payment plan; revisions and variations keep their source's (Q-34).
+          const plan = action === "create" && !q?.paymentTerms?.length ? startingMilestones(await readDefaultPaymentPlan(client, workspaceId)) : null;
           q = {
             id: randomUUID(),
             number: Math.max(0, ...data.quotes.map((q) => q.number)) + 1,
@@ -1876,8 +1879,8 @@ export class CommercialService {
             lines:
               action === "variation" ? [] : structuredClone(q?.lines ?? []),
             requestIds: [],
-            paymentTerms: structuredClone(q?.paymentTerms ?? []),
-            paymentTemplate: q?.paymentTemplate,
+            paymentTerms: plan ? plan.paymentTerms : structuredClone(q?.paymentTerms ?? []),
+            paymentTemplate: plan ? plan.paymentTemplate : q?.paymentTemplate,
             rooms:
               action === "variation" ? [] : structuredClone(q?.rooms ?? []),
             createdAt: now,

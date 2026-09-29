@@ -10,7 +10,8 @@ import type { QuotationSettings as Settings, QuoteView } from "@/lib/quotation/t
 import { ProposalKitSettings } from "./proposal-kit-settings";
 import styles from "./quotation-settings.module.css";
 
-type Loaded = { settings: Settings; workPackages: Array<{ id: string; name: string; archived: boolean }>; priceBooks: Array<{ id: string; name: string; currency: string; status: string }>; canManage: boolean };
+type Loaded = { settings: Settings; workPackages: Array<{ id: string; name: string; archived: boolean }>; priceBooks: Array<{ id: string; name: string; currency: string; status: string }>;
+  paymentTemplates?: Array<{ id: string; name: string }>; canManage: boolean };
 
 async function call<T>(url: string, method = "GET", body?: unknown): Promise<T> {
   const response = await fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store" });
@@ -101,6 +102,10 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       <SettingsRow label={t("Valid for (days)")}>
         <TextInput aria-label={t("Valid for (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.validityDays)} onChange={(value) => set("validityDays", Number(value.replace(/\D/g, "") || 0))} />
       </SettingsRow>
+      {data.paymentTemplates?.length ? <SettingsRow label={t("Default payment plan")} hint={t("A new quote starts with these milestones; change them on the quote.")}>
+        <SelectField aria-label={t("Default payment plan")} label={null} accent="neutral" isDisabled={readOnly} selectedKey={form.defaultPaymentTemplateId ?? ""} onSelectionChange={(key) => set("defaultPaymentTemplateId", key ? String(key) : null)}
+          items={[{ id: "", label: t("None") }, ...data.paymentTemplates.map((template) => ({ id: template.id, label: template.name }))]} />
+      </SettingsRow> : null}
       <SettingsRow label={t("Warn before a quote expires (days)")} hint={t("The case owner and the client hear it this many days before. 0 for none.")}>
         <TextInput aria-label={t("Warn before a quote expires (days)")} label={null} isReadOnly={readOnly} inputMode="numeric" value={String(form.expiryWarningDays ?? 0)} onChange={(value) => set("expiryWarningDays", Number(value.replace(/\D/g, "") || 0))} />
       </SettingsRow>

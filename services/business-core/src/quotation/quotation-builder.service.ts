@@ -34,11 +34,13 @@ export type QuotationSettings = {
   /** Days after a quote or design reaches the client when they and the case owner are reminded (Q-8). */
   decisionReminderDays: number[];
   /** Days before a sent quote's validity ends when Sales and the client hear it; 0 for none (Q-6). */
-  expiryWarningDays: number; version: number;
+  expiryWarningDays: number;
+  /** The payment template a new quote starts with (Q-34); null for none. */
+  defaultPaymentTemplateId: string | null; version: number;
 };
 const DEFAULT_SETTINGS: QuotationSettings = {
   defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null,
-  discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], expiryWarningDays: 3, version: 0,
+  discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, decisionReminderDays: [...DEFAULT_DECISION_REMINDER_DAYS], expiryWarningDays: 3, defaultPaymentTemplateId: null, version: 0,
 };
 
 type LineRow = {
@@ -81,6 +83,7 @@ export class QuotationBuilderService {
       settings: await readSettings(client, workspaceId),
       workPackages: await workPackages(client, workspaceId, true),
       priceBooks: (await client.query(`SELECT id, name, currency, status FROM price_books WHERE workspace_id = $1 AND status <> 'expired' ORDER BY name`, [workspaceId])).rows,
+      paymentTemplates: (await client.query(`SELECT id, name FROM commercial_payment_templates WHERE workspace_id = $1 AND status = 'active' ORDER BY name`, [workspaceId])).rows,
       canManage: await this.anyPermission(client, workspaceId, user.userId, SETTINGS),
     }));
   }
@@ -113,6 +116,11 @@ export class QuotationBuilderService {
         if (!Number.isInteger(days) || days < 0 || days > 30) throw new BadRequestException("Warn 0 to 30 days before a quote expires.");
         next.expiryWarningDays = days;
       }
+      if (input.defaultPaymentTemplateId !== undefined) {
+        next.defaultPaymentTemplateId = input.defaultPaymentTemplateId === null || input.defaultPaymentTemplateId === "" ? null : uuid(input.defaultPaymentTemplateId, "Payment plan");
+        if (next.defaultPaymentTemplateId && !(await client.query(`SELECT 1 FROM commercial_payment_templates WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, next.defaultPaymentTemplateId])).rowCount)
+          throw new BadRequestException("Choose one of your payment plans.");
+      }
       if (input.priceBookId !== undefined) {
         next.priceBookId = input.priceBookId === null ? null : uuid(input.priceBookId, "Price book");
         if (next.priceBookId && !(await client.query(`SELECT 1 FROM price_books WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.priceBookId])).rowCount)
@@ -120,15 +128,16 @@ export class QuotationBuilderService {
       }
       await client.query(
         `INSERT INTO workspace_quotation_settings (workspace_id, default_view, prices_include_tax, rounding, default_markup_percent, margin_floor_percent,
-           discount_approval_percent, validity_days, internal_review, price_book_id, decision_reminder_days, expiry_warning_days, version, updated_by, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], $13, 1, $11, now())
+           discount_approval_percent, validity_days, internal_review, price_book_id, decision_reminder_days, expiry_warning_days, default_payment_template_id, version, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $12::smallint[], $13, $14, 1, $11, now())
          ON CONFLICT (workspace_id) DO UPDATE SET default_view = excluded.default_view, prices_include_tax = excluded.prices_include_tax,
            rounding = excluded.rounding, default_markup_percent = excluded.default_markup_percent, margin_floor_percent = excluded.margin_floor_percent,
            discount_approval_percent = excluded.discount_approval_percent, validity_days = excluded.validity_days, internal_review = excluded.internal_review,
            price_book_id = excluded.price_book_id, decision_reminder_days = excluded.decision_reminder_days, expiry_warning_days = excluded.expiry_warning_days,
+           default_payment_template_id = excluded.default_payment_template_id,
            version = workspace_quotation_settings.version + 1, updated_by = excluded.updated_by, updated_at = now()`,
         [workspaceId, next.defaultView, next.pricesIncludeTax, next.rounding, next.defaultMarkupPercent, next.marginFloorPercent,
-          next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays, next.expiryWarningDays]);
+          next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId, next.decisionReminderDays, next.expiryWarningDays, next.defaultPaymentTemplateId]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.settings_changed.v1", entityType: "workspace", entityId: workspaceId, before: current, after: next });
       return readSettings(client, workspaceId);
     });
@@ -767,7 +776,7 @@ async function readSettings(db: Db, workspaceId: string): Promise<QuotationSetti
   const row = (await db.query<QuotationSettings>(
     `SELECT default_view AS "defaultView", prices_include_tax AS "pricesIncludeTax", rounding, default_markup_percent::text AS "defaultMarkupPercent",
             margin_floor_percent::text AS "marginFloorPercent", discount_approval_percent::text AS "discountApprovalPercent", validity_days AS "validityDays",
-            internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", expiry_warning_days AS "expiryWarningDays", version
+            internal_review AS "internalReview", price_book_id AS "priceBookId", decision_reminder_days AS "decisionReminderDays", expiry_warning_days AS "expiryWarningDays", default_payment_template_id AS "defaultPaymentTemplateId", version
        FROM workspace_quotation_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
   return row ? { ...row, decisionReminderDays: reminderDays(row.decisionReminderDays), defaultMarkupPercent: Dec.of(row.defaultMarkupPercent).toString(), marginFloorPercent: row.marginFloorPercent === null ? null : Dec.of(row.marginFloorPercent).toString(), discountApprovalPercent: row.discountApprovalPercent === null ? null : Dec.of(row.discountApprovalPercent).toString() } : { ...DEFAULT_SETTINGS };
 }
