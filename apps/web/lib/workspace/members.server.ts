@@ -7,6 +7,7 @@ import {
   memberAccessCapabilities,
   membersPageFixture,
   type MembersPageData,
+  type SeatUsage,
   type WorkspaceInvitation,
   type WorkspaceMember,
   type WorkspaceRole,
@@ -42,11 +43,12 @@ export async function getMembersPageData(): Promise<MembersPageData> {
     };
   }
   const { canReadInvitations, canReadTeams } = initialCapabilities;
-  const [membersResponse, rolesResponse, invitationsResponse, teamsResponse] = await Promise.all([
+  const [membersResponse, rolesResponse, invitationsResponse, teamsResponse, seatsResponse] = await Promise.all([
     request(`/workspaces/${membership.workspaceId}/members`),
     request(`/workspaces/${membership.workspaceId}/roles`),
     canReadInvitations ? request(`/workspaces/${membership.workspaceId}/invitations`) : Promise.resolve(null),
     canReadTeams ? request(`/workspaces/${membership.workspaceId}/teams`) : Promise.resolve(null),
+    request(`/workspaces/${membership.workspaceId}/seats`),
   ]);
 
   if ([membersResponse, rolesResponse, invitationsResponse, teamsResponse].some((response) => response?.status === 401)) {
@@ -74,5 +76,7 @@ export async function getMembersPageData(): Promise<MembersPageData> {
     invitations: invitationsResponse
       ? await invitationsResponse.json() as WorkspaceInvitation[]
       : [],
+    // The meter is a help, never a blocker: without it People still loads (the server refuses at the limit).
+    seats: seatsResponse?.ok ? await seatsResponse.json().catch(() => null) as SeatUsage | null : null,
   };
 }

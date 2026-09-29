@@ -551,6 +551,15 @@ export class WorkspacesController {
     return this.workspaces.inviteMember(actor, workspaceId, input);
   }
 
+  @Get(":workspaceId/seats")
+  @ApiOperation({ summary: "The workspace's seats: limit, in use, reserved by invitations and free" })
+  seats(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+  ) {
+    return this.workspaces.seats(actor, workspaceId);
+  }
+
   @Get(":workspaceId/invitations")
   @ApiOperation({ summary: "List workspace invitations" })
   @ApiOkResponse({ type: ListedInvitationResponseDto, isArray: true })

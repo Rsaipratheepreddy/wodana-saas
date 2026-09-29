@@ -42,7 +42,11 @@ export type WorkspaceInvitation = {
   teams?: Array<{ id: string; name: string }>;
 };
 
+/** The workspace's seats (SP-3): the limit, members using one, invitations reserving one, and what's free. */
+export type SeatUsage = { limit: number | null; used: number; reserved: number; available: number | null };
+
 export type MembersPageData = {
+  seats?: SeatUsage | null;
   canView?: boolean;
   canManage: boolean;
   canInvite?: boolean;

@@ -11086,5 +11086,9 @@
   "WhatsApp {name}": "WhatsApp {name}",
   "No client contact has a mobile number yet.": "No client contact has a mobile number yet.",
   "Send again": "Send again",
-  "Issue invoice · {milestone}": "Issue invoice · {milestone}"
+  "Issue invoice · {milestone}": "Issue invoice · {milestone}",
+  "{used} of {limit} seats · {reserved} reserved by invitations": "{used} of {limit} seats · {reserved} reserved by invitations",
+  "{used} of {limit} seats": "{used} of {limit} seats",
+  "Invitations wait for a free seat.": "Invitations wait for a free seat.",
+  "Add seats in Billing": "Add seats in Billing"
 }

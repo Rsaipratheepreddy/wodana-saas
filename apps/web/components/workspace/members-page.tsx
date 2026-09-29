@@ -71,6 +71,9 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const canInvite = initialData.canInvite ?? initialData.canManage;
+  // Seats before inviting (SP-3): the limit, who uses one, what invitations reserve; full means no new invitations.
+  const seats = initialData.seats ?? null;
+  const seatsFull = Boolean(seats?.limit && seats.available === 0);
   const canEdit = initialData.canEdit ?? initialData.canManage;
   const canCancelInvitations = initialData.canCancelInvitations ?? initialData.canManage;
   const scopedAssignments = initialData.assignableRoleCodes !== undefined && !initialData.canManage;
@@ -619,15 +622,21 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
               onSelectionChange={(key) => key && setQuickAccess(String(key))}
               selectedKey={quickAccess}
             />
-            <Button variant="primary" isLoading={isQuickInviting} type="submit">{quickInviteEmails.length ? t("Invite ({count})", { count: quickInviteEmails.length }) : t("Invite")}</Button>
+            <Button variant="primary" isDisabled={seatsFull} isLoading={isQuickInviting} type="submit">{quickInviteEmails.length ? t("Invite ({count})", { count: quickInviteEmails.length }) : t("Invite")}</Button>
           </Form>
           <div className={styles.inviteComposerFooter}>
             <div className={styles.inviteComposerActions}>
-              <Button onPress={openInvite} size="compact" variant="quiet">{t("Invite with details")}</Button>
-              <FileUploader accept=".csv,text/csv" appearance="button" label={t("Upload CSV")} multiple={false} onFiles={(files) => void loadInvitationCsv(files)} />
+              <Button isDisabled={seatsFull} onPress={openInvite} size="compact" variant="quiet">{t("Invite with details")}</Button>
+              {seatsFull ? null : <FileUploader accept=".csv,text/csv" appearance="button" label={t("Upload CSV")} multiple={false} onFiles={(files) => void loadInvitationCsv(files)} />}
             </div>
-            <span>{t("Activation links expire automatically after 7 days.")}</span>
+            {seats?.limit ? <span className={styles.seatMeter} data-full={seatsFull || undefined}>
+              {seats.reserved ? t("{used} of {limit} seats · {reserved} reserved by invitations", { used: seats.used, limit: seats.limit, reserved: seats.reserved })
+                : t("{used} of {limit} seats", { used: seats.used, limit: seats.limit })}
+            </span> : <span>{t("Activation links expire automatically after 7 days.")}</span>}
           </div>
+          {seatsFull ? <Callout title={t("Every seat is taken")} tone="warning">
+            {t("Invitations wait for a free seat.")} <Link href="/workspace/billing">{t("Add seats in Billing")}</Link>
+          </Callout> : null}
           {quickFailure ? <p className={styles.composerError} role="alert">{quickFailure}</p> : null}
         </section> : null}
 

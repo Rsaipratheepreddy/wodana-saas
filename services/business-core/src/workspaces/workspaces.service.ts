@@ -3121,6 +3121,26 @@ export class WorkspacesService {
     );
   }
 
+  /**
+   * The workspace's seats as People shows them before anyone invites (SP-3): the limit, members using a seat,
+   * pending invitations reserving one, and what's free. Null limit when no subscription is set up.
+   */
+  async seats(actor: RequestActor, workspaceId: string) {
+    return this.access.withAnyPermission(
+      actor,
+      workspaceId,
+      ["module.members.read", "module.members.write", "module.members.delete", "workspace.members.manage"],
+      async (client) => {
+        const row = (await client.query<{ seatLimit: number; activeMembers: number; pendingInvitations: number; reservedSeats: number }>(
+          `SELECT seat_limit AS "seatLimit", active_members AS "activeMembers", pending_invitations AS "pendingInvitations", reserved_seats AS "reservedSeats"
+             FROM workspace_seat_capacity($1, NULL)`, [workspaceId])).rows[0];
+        if (!row) return { limit: null, used: 0, reserved: 0, available: null };
+        return { limit: Number(row.seatLimit), used: Number(row.activeMembers), reserved: Number(row.pendingInvitations),
+          available: Math.max(0, Number(row.seatLimit) - Number(row.reservedSeats)) };
+      },
+    );
+  }
+
   async listInvitations(actor: RequestActor, workspaceId: string) {
     return this.access.withAnyPermission(
       actor,

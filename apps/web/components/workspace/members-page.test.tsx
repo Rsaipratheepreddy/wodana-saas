@@ -9,6 +9,18 @@ afterEach(() => {
 });
 
 describe("MembersPage", () => {
+  it("shows the seats before inviting, and stops inviting when every seat is taken (SP-3)", () => {
+    const open = { ...structuredClone(membersPageFixture), seats: { limit: 10, used: 7, reserved: 2, available: 1 } };
+    const { unmount } = render(<MembersPage initialData={open} />);
+    expect(screen.getByText("7 of 10 seats · 2 reserved by invitations")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Invite with details" })).toBeEnabled();
+    unmount();
+    render(<MembersPage initialData={{ ...structuredClone(membersPageFixture), seats: { limit: 10, used: 10, reserved: 0, available: 0 } }} />);
+    expect(screen.getByText("10 of 10 seats")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Invite with details" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Add seats in Billing" })).toHaveAttribute("href", "/workspace/billing");
+  });
+
   it("renders a full-width directory from real member and invitation records", () => {
     const data = structuredClone(membersPageFixture);
     data.invitations.push({
