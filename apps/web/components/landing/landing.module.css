@@ -175,6 +175,8 @@
   font-weight: var(--wd-weight-medium);
 }
 .chips svg { color: var(--wd-color-action-primary); }
+.brandMark { display: inline-flex; flex: none; inline-size: var(--wd-space-5); block-size: var(--wd-space-5); }
+.brandMark svg { inline-size: 100%; block-size: 100%; }
 
 /* ── Screens in the tour ───────────────────────────────────────────────────────────────── */
 .stack { position: relative; }

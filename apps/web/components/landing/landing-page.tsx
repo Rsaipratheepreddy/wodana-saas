@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import {
-  ArrowRight, BadgeCheck, Camera, ClipboardCheck, Coins, Inbox, Languages, MapPin, MessageCircle, BookOpen, Calculator,
-  CalendarDays, ShieldCheck, Smartphone, Sparkles, WifiOff,
+  ArrowRight, BadgeCheck, Camera, ClipboardCheck, Coins, Inbox, Languages, MapPin,
+  ShieldCheck, Smartphone, Sparkles, WifiOff,
 } from "lucide-react";
+import { ProviderMark } from "@/components/brand/provider-mark";
 import { ContactSalesForm } from "@/components/sales/contact-sales-form";
 import { getServerT } from "@/lib/i18n/server";
 import type { Translate } from "@/lib/i18n/keys";
@@ -200,10 +201,10 @@ export async function LandingPage({ form }: { form: PublicSalesForm }) {
     <section aria-labelledby="trust-title" className={styles.trust}>
       <h2 className={styles.trustTitle} id="trust-title">{t("Built for interior, fit-out and joinery firms")}</h2>
       <ul className={styles.chips}>
-        <li><MessageCircle aria-hidden="true" size={18} />{t("WhatsApp")}</li>
-        <li><Calculator aria-hidden="true" size={18} />{t("QuickBooks")}</li>
-        <li><BookOpen aria-hidden="true" size={18} />{t("Zoho Books")}</li>
-        <li><CalendarDays aria-hidden="true" size={18} />{t("Google Workspace")}</li>
+        <li><span className={styles.brandMark}><ProviderMark provider="whatsapp" /></span>{t("WhatsApp")}</li>
+        <li><span className={styles.brandMark}><ProviderMark provider="quickbooks" /></span>{t("QuickBooks")}</li>
+        <li><span className={styles.brandMark}><ProviderMark provider="zoho_books" /></span>{t("Zoho Books")}</li>
+        <li><span className={styles.brandMark}><ProviderMark provider="google_workspace" /></span>{t("Google Workspace")}</li>
         <li><Languages aria-hidden="true" size={18} />{t("Arabic & English")}</li>
         <li><Coins aria-hidden="true" size={18} />{t("Works in any currency")}</li>
       </ul>
