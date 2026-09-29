@@ -549,6 +549,16 @@ describe("Woddy's tools for an AI app", () => {
       .toEqual([true, true, false, true]);
     expect([...counts.keys()]).toEqual(["mcp-rate:c-1:29844600", "mcp-rate:c-2:29844600"]);
   });
+
+  it("limits app registrations per address each hour", async () => {
+    const limits = new McpRateLimitService({} as never, { hit: async () => null }, { get: (key: string) => (key === "MCP_REGISTRATIONS_PER_HOUR" ? "2" : undefined) } as never);
+    const oauth = new McpOAuthService(w.database as never, w.access as never, {} as never, limits);
+    const register = (address: string) => oauth.register({ client_name: "Spam", redirect_uris: [REDIRECT] }, address);
+    await register("198.51.100.1");
+    await register("198.51.100.1");
+    expect(await oauthError(register("198.51.100.1"))).toMatchObject({ error: "temporarily_unavailable", status: 429 });
+    await expect(register("198.51.100.2")).resolves.toMatchObject({ client_name: "Spam" });
+  });
 });
 
 // Spec files are compiled without legacy decorators, so the test module applies Nest's decorators by hand.

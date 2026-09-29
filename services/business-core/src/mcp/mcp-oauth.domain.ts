@@ -64,10 +64,14 @@ export function verifyPkce(verifier: unknown, challenge: string): boolean {
 
 // ---------- scopes ----------
 
-/** The scopes asked for: "read" is always part of a grant; anything else than read and write is refused. */
+/**
+ * The scopes asked for: "read" is always part of a grant; anything else than read and write is refused. An app
+ * that names none asks for both (RFC 6749 §3.3 default), and the person chooses on the consent screen.
+ */
 export function parseScopes(scope: unknown): McpScope[] | null {
   if (scope !== undefined && scope !== null && typeof scope !== "string") return null;
   const asked = new Set(String(scope ?? "").split(/\s+/).filter(Boolean));
+  if (!asked.size) return ["read", "write"];
   if ([...asked].some((item) => !(MCP_SCOPES as readonly string[]).includes(item))) return null;
   return asked.has("write") ? ["read", "write"] : ["read"];
 }

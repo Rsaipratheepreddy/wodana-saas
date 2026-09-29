@@ -36,7 +36,9 @@ describe("tokens", () => {
 
 describe("scopes", () => {
   it("always include read, refuse unknown scopes, and never grant more than was asked", () => {
-    expect(parseScopes(undefined)).toEqual(["read"]);
+    // Naming none asks for both; the person chooses on the consent screen.
+    expect(parseScopes(undefined)).toEqual(["read", "write"]);
+    expect(parseScopes("read")).toEqual(["read"]);
     expect(parseScopes("write")).toEqual(["read", "write"]);
     expect(parseScopes("read write")).toEqual(["read", "write"]);
     expect(parseScopes("read admin")).toBeNull();

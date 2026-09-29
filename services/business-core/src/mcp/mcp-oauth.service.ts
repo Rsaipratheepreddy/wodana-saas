@@ -407,7 +407,7 @@ export class McpOAuthService {
         return { error: new OAuthError("invalid_grant", "This refresh token was already used. Connect the app again.") };
       }
       if (row.revoked || row.rotated || row.expired || !row.member) return invalid;
-      const asked = params.scope === undefined ? row.scopes : parseScopes(params.scope);
+      const asked = !params.scope ? row.scopes : parseScopes(params.scope);
       if (!asked || asked.some((scope) => !row.scopes.includes(scope))) return { error: new OAuthError("invalid_scope", "A refreshed token can't have more scopes than were granted.") };
       const resource = str(params.resource);
       if (resource && canonicalResource(resource) !== row.resource) return { error: new OAuthError("invalid_target", "The token was issued for another resource.") };

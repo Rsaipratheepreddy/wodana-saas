@@ -5,8 +5,11 @@ import { DatabaseService } from "../database/database.service";
 
 /** Tool calls one AI app connection may make per minute (every token of the connection counts together). */
 export const MCP_CALLS_PER_MINUTE = 60;
-/** App registrations one address may make per hour (registration needs no sign-in). */
-export const MCP_REGISTRATIONS_PER_HOUR = 20;
+/**
+ * App registrations one address may make per hour (registration needs no sign-in). Hosted AI apps register
+ * from shared addresses, so this is generous; MCP_REGISTRATIONS_PER_HOUR changes it.
+ */
+export const MCP_REGISTRATIONS_PER_HOUR = 120;
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 
 /**
@@ -24,9 +27,12 @@ export class McpRateLimitService {
     @Optional() @Inject(ConfigService) private readonly config?: ConfigService,
   ) {}
 
-  get callsPerMinute() {
-    const configured = Number(this.config?.get<string>("MCP_CALLS_PER_MINUTE") ?? "");
-    return Number.isInteger(configured) && configured > 0 ? configured : MCP_CALLS_PER_MINUTE;
+  get callsPerMinute() { return this.setting("MCP_CALLS_PER_MINUTE", MCP_CALLS_PER_MINUTE); }
+  get registrationsPerHour() { return this.setting("MCP_REGISTRATIONS_PER_HOUR", MCP_REGISTRATIONS_PER_HOUR); }
+
+  private setting(key: string, fallback: number) {
+    const configured = Number(this.config?.get<string>(key) ?? "");
+    return Number.isInteger(configured) && configured > 0 ? configured : fallback;
   }
 
   /** Counts one tool call; false when the connection has used this minute's calls. */
@@ -58,6 +64,6 @@ export class McpRateLimitService {
       count = (this.registrations.get(key) ?? 0) + 1;
       this.registrations.set(key, count);
     }
-    return count <= MCP_REGISTRATIONS_PER_HOUR;
+    return count <= this.registrationsPerHour;
   }
 }
