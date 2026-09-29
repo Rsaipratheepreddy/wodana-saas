@@ -43,7 +43,7 @@ export function PaidForm({ milestone, caseId, currency, today, api, format, onDo
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {milestone.left ? <p className={styles.muted}>{t("{amount} left", { amount: format.money(milestone.left, currency) })}</p> : null}
     <DateField label={t("Paid on")} isRequired value={paidOn ? parseDate(paidOn) : null} maxValue={parseDate(today)} onChange={(value) => setPaidOn(value ? value.toString() : null)} />
-    <TextInput label={t("Amount paid")} description={t("Optional")} inputMode="decimal" value={amount} onChange={setAmount} isInvalid={Boolean(amountError)} errorMessage={amountError || undefined}
+    <TextInput label={t("Amount paid")} inputMode="decimal" value={amount} onChange={setAmount} isInvalid={Boolean(amountError)} errorMessage={amountError || undefined}
       prefix={currency ?? undefined} maxLength={20} />
     <TextInput label={t("Bank reference")} value={reference} onChange={setReference} maxLength={120} />
     <AttachFiles caseId={caseId} api={api} onChange={setUploads} onBusy={setUploading} max={5} label={t("Add the receipt")} />

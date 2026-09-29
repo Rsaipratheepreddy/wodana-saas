@@ -72,7 +72,7 @@ describe("pre-execution case overview", () => {
     await user.click(screen.getByRole("button", { name: "Project actions" }));
     await user.click(await screen.findByRole("menuitem", { name: "Put on hold" }));
     const dialog = screen.getByRole("dialog", { name: "Put on hold" });
-    await user.type(within(dialog).getByLabelText("Reason *"), "Waiting for client");
+    await user.type(within(dialog).getByLabelText("Reason"), "Waiting for client");
     await user.click(within(dialog).getByRole("button", { name: "Put on hold" }));
     await user.click(await screen.findByRole("button", { name: "Project actions" }));
     await user.click(await screen.findByRole("menuitem", { name: "Resume" }));

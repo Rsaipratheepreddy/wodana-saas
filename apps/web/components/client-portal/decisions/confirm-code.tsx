@@ -53,7 +53,7 @@ export function ConfirmCode({ api, purpose, channels, confirmLabel, onConfirm, o
         ? challenge.sentTo ? t("We sent a 6-digit code to {email}.", { email: challenge.sentTo }) : t("We sent a 6-digit code to your email.")
         : t("We sent a 6-digit code to your WhatsApp.")}</p>
       <div className={styles.codeInput}>
-        <TextInput label={t("Code")} value={code} onChange={(value) => setCode(value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus />
+        <TextInput label={t("Code")} value={code} onChange={(value) => setCode(value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} isRequired autoFocus />
       </div>
     </> : null}
     <div className={styles.links}>

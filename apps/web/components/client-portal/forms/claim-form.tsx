@@ -33,7 +33,7 @@ export function ClaimForm({ project, api, areaId: initialArea = null, onDone }: 
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {warranty.areas.length ? <SelectField label={t("Where")} placeholder={t("Anywhere")} selectedKey={areaId || null}
       onSelectionChange={(key) => { setAreaId(key ? String(key) : ""); setLineId(""); }} items={warranty.areas.map((area) => ({ id: area.id, label: area.name }))} /> : null}
-    {lines.length ? <SelectField label={t("Which item (optional)")} placeholder={t("I'm not sure")} selectedKey={lineId || null}
+    {lines.length ? <SelectField label={t("Which item")} placeholder={t("I'm not sure")} selectedKey={lineId || null}
       onSelectionChange={(key) => setLineId(key ? String(key) : "")} items={lines.map((line) => ({ id: line.id, label: line.title }))} /> : null}
     <TextAreaField label={t("What's wrong?")} value={description} onChange={setDescription} maxLength={2000} isRequired autoFocus />
     <AttachFiles caseId={project.id} api={api} onChange={setUploads} onBusy={setUploading} photosOnly max={6} />

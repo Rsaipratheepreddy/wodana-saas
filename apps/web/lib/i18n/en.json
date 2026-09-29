@@ -10846,5 +10846,19 @@
   "Scheduled for {time}": "Scheduled for {time}",
   "Edit scheduled message": "Edit scheduled message",
   "Send later": "Send later",
-  "Send the template later": "Send the template later"
+  "Send the template later": "Send the template later",
+  "Tomorrow {time}": "Tomorrow {time}",
+  "Next working day": "Next working day",
+  "Quick dates": "Quick dates",
+  "Restored your draft": "Restored your draft",
+  "Someone else saved a change first": "Someone else saved a change first",
+  "Keep my changes": "Keep my changes",
+  "Check 1 field": "Check 1 field",
+  "Check {count} fields": "Check {count} fields",
+  "Unnamed field": "Unnamed field",
+  "At least {amount}": "At least {amount}",
+  "Close this form?": "Close this form?",
+  "Your changes stay here as a draft until you save or discard them.": "Your changes stay here as a draft until you save or discard them.",
+  "Edit {label}": "Edit {label}",
+  "Which item": "Which item"
 }
