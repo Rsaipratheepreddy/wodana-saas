@@ -156,6 +156,13 @@ type Scenario = {
     siteStartDaysAgo: number | null; reports: number; snags: Snag[];
     /** One more daily report, from yesterday, submitted and waiting for the project manager's approval. */
     reportAwaitingApproval?: boolean;
+    /** One more, from two days ago, sent back to the supervisor with what to change. */
+    reportReturned?: boolean;
+    /**
+     * What each day's report says, in order (the days after site work started): the client's words, how far the plan's
+     * tasks got, tomorrow's plan, the rooms its photos are in (the first a before/after pair when `pair`), and a note.
+     */
+    days?: ProgressDay[];
     /** The stage that stays current (its key), or null to go as far as the checks allow. */
     stagesUntil: string | null;
     /** true: handed over and accepted; "issued": the pack waits for the client's acceptance in the portal. */
@@ -235,6 +242,13 @@ const SCENARIOS: Scenario[] = [
         { key: "task:installation", title: "Install the media wall and wardrobe", role: "site", start: 3, due: 6, made: true, status: "done" },
       ],
       orders: ORDERS_RECEIVED(-10, -9, "closed"), factory: "done", siteStartDaysAgo: 6, reports: 3,
+      days: [
+        { summary: "The engineered oak floor is going down in the living room, and it looks beautiful against the new walls.", tasks: [{ key: "task:flooring", progress: 50 }],
+          next: ["Finish the oak flooring"], rooms: ["Living room"], pair: true },
+        { summary: "The oak floor is finished. The media wall and wardrobe arrive from our workshop next.", tasks: [{ key: "task:flooring", progress: 100 }],
+          next: ["Install the media wall", "Fit the wardrobe"], rooms: ["Living room", "Master bedroom"] },
+        { summary: "The media wall is in and the site has been cleaned, ready for your handover walk-through.", next: ["Handover walk-through"], rooms: ["Living room"] },
+      ],
       snags: [{ key: "snag:1", title: "Shadow gap uneven on the media wall's left return", severity: "minor", source: "inspection", room: "Living room", close: true }],
       stagesUntil: null, handover: true,
     },
@@ -358,7 +372,19 @@ const SCENARIOS: Scenario[] = [
         { key: "study-lamp", label: "study desk lamp", pick: [{ description: "Brass desk lamp", quantity: "1", unit: "nos", unitPrice: "640" }], supplier: 3, state: "pending_approval", expected: 6, promised: 6 },
         { key: "wrong-tiles", label: "tiles ordered twice", pick: [{ description: "Porcelain tile 60x120 matte", quantity: "10", unit: "sqm", unitPrice: "95" }], supplier: 1, state: "cancelled", expected: 4, promised: 4 },
       ],
-      factory: "done", siteStartDaysAgo: 8, reports: 3, reportAwaitingApproval: true,
+      factory: "done", siteStartDaysAgo: 8, reports: 4, reportAwaitingApproval: true, reportReturned: true,
+      days: [
+        { summary: "Tiling has started in the family room: the levels are set and the first rows of the large porcelain tiles are down.", tasks: [{ key: "task:tiling", progress: 25 }],
+          next: ["Keep tiling the family room", "Unload the kitchen cabinets"], rooms: ["Family room"], pair: true },
+        { summary: "Half of the family room floor is tiled. Your kitchen cabinets left our workshop today and arrive tomorrow morning.", tasks: [{ key: "task:tiling", progress: 50 }],
+          next: ["Finish the family room tiles", "Start the kitchen installation"], rooms: ["Family room", "Kitchen"],
+          note: { text: "The kitchen cabinets arrive tomorrow morning; the lift is booked from 8 to 10.", internal: false } },
+        { summary: "The family room floor is nearly done, and the kitchen carcasses are standing along the main wall.",
+          tasks: [{ key: "task:tiling", progress: 75 }, { key: "task:installation", progress: 10 }], next: ["Grout the family room floor", "Fit the kitchen doors"], rooms: ["Kitchen"], pair: true },
+        { summary: "The family room floor is finished and grouted. The kitchen is a quarter of the way there, and the worktop is templated next.",
+          tasks: [{ key: "task:tiling", progress: 100 }, { key: "task:installation", progress: 25 }], next: ["Template the worktop", "Hang the study shelving"],
+          rooms: ["Family room", "Study"], note: { text: "Grout short by one bag; collected from the yard.", internal: true } },
+      ],
       snags: [
         { key: "snag:1", title: "Chip on the worktop edge by the hob", severity: "major", source: "inspection", room: "Kitchen", close: false },
         { key: "snag:2", title: "Study shelf 3 not level", severity: "minor", source: "client", room: "Study", close: false },
@@ -521,6 +547,7 @@ type Any = Record<string, any>;
 type Actor = RequestActor & { userId: string; membershipId: string | null };
 type Upload = { buffer: Buffer; originalname: string; mimetype: string; size: number };
 type Ctx = { s: Scenario; rooms: Map<string, string>; ids: ScenarioIds };
+type ProgressDay = { summary: string; tasks?: Array<{ key: string; progress: number }>; next?: string[]; rooms: string[]; pair?: boolean; note?: { text: string; internal: boolean } };
 
 /** A stage that can't go on in this run: reported, never a failure. */
 class Skip extends Error {
@@ -2165,7 +2192,8 @@ class ShowcaseSeed {
     const { s, rooms } = ctx;
     const site = this.get(SiteService), work = this.get(ProjectWorkService);
     const pm = await this.as("projectManager"), supervisor = await this.as("site");
-    const state = async () => (await site.state(pm, this.w, projectId)) as unknown as { site: { startedOn: string | null }; reports: Array<{ id: string; version: number; status: string; photos?: unknown[] }> };
+    type Row = { id: string; version: number; status: string; delivery?: string; summarySource?: string; photos: Array<{ id: string; forClient?: boolean }> };
+    const state = async () => (await site.state(pm, this.w, projectId)) as unknown as { site: { startedOn: string | null }; reports: Row[] };
     let current = await state();
     await this.advance("site work started", Boolean(current.site.startedOn), () => site.command(pm, this.w, projectId, { action: "start_site", on: dayFrom(-(s.execution.siteStartDaysAgo ?? 0)) }));
     current = await state();
@@ -2175,28 +2203,82 @@ class ShowcaseSeed {
       "Second coat of paint; electrical points tested.",
       "Doors hung and aligned; site cleaned for the client's visit.",
     ];
+    /** A day's report as the supervisor writes it: today's tasks, tomorrow, an issue, the crew and photos by room (the first pair before/after). */
+    const write = async (key: string, on: string, day: ProgressDay | undefined, fallback: string) => {
+      const reportId = this.id(ctx, key);
+      await site.command(supervisor, this.w, projectId, { id: reportId, action: "save_report", reportDate: on, weather: "Clear", lines: [],
+        workforce: [{ trade: "Carpenters", people: 3, hours: 8 }, { trade: "Tilers", people: 2, hours: 8 }], notes: fallback,
+        tasks: (day?.tasks ?? []).map((task) => ({ workItemId: this.id(ctx, task.key), progress: task.progress })),
+        next: (day?.next ?? []).map((title) => ({ title })),
+        issues: day?.note ? [{ id: this.id(ctx, `${key}:note`), severity: "minor", description: day.note.text, internal: day.note.internal }] : [] });
+      const places = day?.rooms.length ? day.rooms : [];
+      const shots = day?.pair ? [{ room: places[0], phase: "before" }, { room: places[0], phase: "after" }, ...places.slice(1).map((room) => ({ room, phase: null }))]
+        : places.length ? places.map((room) => ({ room, phase: null as string | null })) : [{ room: null as string | null, phase: null as string | null }];
+      for (const [index, shot] of shots.entries()) {
+        const photoId = this.id(ctx, `${key}:photo${index ? `:${index}` : ""}`);
+        const pairId = day?.pair && index < 2 ? this.id(ctx, `${key}:photo${index ? "" : ":1"}`) : null;
+        await site.uploadPhoto(supervisor, this.w, projectId, reportId, photoId, tile(`${s.key}-${key}-${index}`) as never,
+          { areaId: shot.room ? rooms.get(shot.room) ?? null : null, phase: shot.phase, pairId });
+      }
+      current = await state();
+      return current.reports.find((row) => row.id === reportId)!;
+    };
+    /** Approved and sent to the client (a day an earlier run approved is sent now, with the manager's words and its photos). */
+    const send = async (label: string, reportId: string, words: string | undefined) => {
+      let report = (await state()).reports.find((row) => row.id === reportId);
+      if (!report || report.delivery === "sent") { if (report) this.kept(`${label} sent to the client`); return; }
+      if (words && report.summarySource !== "edited" && (report.status === "submitted" || report.status === "approved"))
+        await this.advance(`${label} · the client's words`, false, () => site.command(approver, this.w, projectId, { action: "review", reportId, version: report!.version, summary: words }));
+      report = (await state()).reports.find((row) => row.id === reportId)!;
+      if (report.photos.length && !report.photos.some((photo) => photo.forClient))
+        await this.advance(`${label} · photos for the client`, false, () => site.command(approver, this.w, projectId, { action: "review", reportId, version: report!.version,
+          photos: report!.photos.slice(0, 6).map((photo) => ({ id: photo.id, forClient: true })) }));
+      report = (await state()).reports.find((row) => row.id === reportId)!;
+      await this.advance(`${label} approved and sent to the client`, false, () => site.command(approver, this.w, projectId,
+        { action: report!.status === "approved" ? "send" : "approve_send", reportId, version: report!.version }));
+      current = await state();
+    };
     for (let day = 1; day <= s.execution.reports; day += 1) {
       const reportId = this.id(ctx, `site-report:${day}`);
+      const plan = s.execution.days?.[day - 1];
       // The first days on site, one report each; a report a person already wrote for that day is theirs to keep.
       const on = dayFrom(Math.min(-(s.execution.siteStartDaysAgo ?? 0) + day, -1));
       let report = current.reports.find((row) => row.id === reportId);
       if (!report) {
-        await this.step(`daily site report ${on} with a photo (${supervisor.email})`, async () => null, async () => {
-          try {
-            await site.command(supervisor, this.w, projectId, { id: reportId, action: "save_report", reportDate: on, weather: day % 2 ? "Clear" : "Hazy", workforce: [{ trade: "Carpenters", people: 3 }, { trade: "Painters", people: 2 }],
-              notes: notes[(day - 1) % notes.length], lines: [] });
-          } catch (error) {
+        await this.step(`daily progress ${on} with photos by room (${supervisor.email})`, async () => null, async () => {
+          try { return await write(`site-report:${day}`, on, plan, notes[(day - 1) % notes.length]); }
+          catch (error) {
             if (error instanceof HttpException && error.getStatus() === 409) throw new Skip(`a report for ${on} already exists for ${supervisor.email}`);
             throw error;
           }
-          await site.uploadPhoto(supervisor, this.w, projectId, reportId, this.id(ctx, `site-report:${day}:photo`), tile(`${s.key}-site-${day}`) as never);
-          current = await state();
-          return current.reports.find((row) => row.id === reportId)!;
         }).catch((error) => { if (error instanceof Skip) this.skip(`site report ${on}`, error.reason); else throw error; });
         report = current.reports.find((row) => row.id === reportId);
       } else this.kept(`daily site report ${day}`);
       if (report && report.status === "draft") { await this.advance(`site report ${day} submitted`, false, () => site.command(supervisor, this.w, projectId, { action: "submit", reportId, version: report!.version })); current = await state(); report = current.reports.find((row) => row.id === reportId); }
-      if (report && report.status === "submitted") await this.advance(`site report ${day} approved`, false, () => site.command(approver, this.w, projectId, { action: "approve", reportId, version: report!.version }));
+      if (report && ["submitted", "approved"].includes(report.status)) await send(`daily progress ${on}`, reportId, plan?.summary);
+    }
+    // Two days ago: sent back to the supervisor with what to change (the phone shows it to fix).
+    if (s.execution.reportReturned) {
+      const reportId = this.id(ctx, "site-report:returned");
+      const on = dayFrom(-2);
+      if (!current.reports.some((row) => row.id === reportId)) {
+        await this.step(`daily progress ${on} to send back (${supervisor.email})`, async () => null, async () => {
+          try {
+            return await write("site-report:returned", on, { summary: "", rooms: ["Kitchen"], tasks: [{ key: "task:installation", progress: 40 }], next: ["Fit the worktop"] },
+              "Worktop templated; sink cut-out marked.");
+          } catch (error) {
+            if (error instanceof HttpException && error.getStatus() === 409) throw new Skip(`a report for ${on} already exists for ${supervisor.email}`);
+            throw error;
+          }
+        }).catch((error) => { if (error instanceof Skip) this.skip("site report to send back", error.reason); else throw error; });
+      } else this.kept("daily progress sent back");
+      let returned = (await state()).reports.find((row) => row.id === reportId);
+      if (returned?.status === "draft") {
+        await this.advance("site report to send back submitted", false, () => site.command(supervisor, this.w, projectId, { action: "submit", reportId, version: returned!.version }));
+        returned = (await state()).reports.find((row) => row.id === reportId);
+      }
+      if (returned?.status === "submitted") await this.advance("site report sent back to the supervisor", false, () => site.command(approver, this.w, projectId,
+        { action: "return", reportId, version: returned!.version, note: "Please add a close-up of the worktop edge by the hob." }));
     }
     // Yesterday's report, sent in and waiting for the project manager (Approvals shows it).
     if (s.execution.reportAwaitingApproval) {
@@ -2251,8 +2333,9 @@ class ShowcaseSeed {
     const actor = await this.actor(this.input.actorUserId);
     const detail = (await projects.get(actor, this.w, projectId)) as unknown as { project: { version: number; status: string }; updates: Array<{ note: string; sharedAt: string | null }> };
     if (detail.project.status !== "completed") return;
-    const approved = ((await this.get(SiteService).state(actor, this.w, projectId)) as unknown as { reports: Array<{ status: string; photos?: Array<{ sharedAt?: string | null; shared?: boolean }> }> }).reports.filter((row) => row.status === "approved");
-    const unshared = approved.some((report) => (report.photos ?? []).some((photo) => !(photo.sharedAt ?? photo.shared)));
+    const approved = ((await this.get(SiteService).state(actor, this.w, projectId)) as unknown as { reports: Array<{ status: string; delivery?: string; photos?: Array<{ sharedAt?: string | null; shared?: boolean }> }> }).reports.filter((row) => row.status === "approved");
+    // A day not yet sent to the client as its daily card still has something to publish.
+    const unshared = approved.some((report) => report.delivery !== "sent");
     const missing = ctx.s.execution.updates.some((note) => !detail.updates.some((update) => update.note === note && update.sharedAt)) || approved.length < ctx.s.execution.reports || unshared;
     if (!missing) { this.kept("project completed"); return; }
     await this.advance("project reopened to publish its record to the client", false, () =>
@@ -2276,8 +2359,9 @@ class ShowcaseSeed {
       else await this.advance(`update published to the client · ${note.slice(0, 40)}…`, false, () => projects.command(pm, this.w, projectId, { action: "post_update", health: "on_track", note, shareWithClient: true, version: current.project.version }));
       current = await detail();
     }
-    const state = (await site.state(pm, this.w, projectId)) as unknown as { reports: Array<{ id: string; status: string; photos?: Array<{ id: string; sharedAt?: string | null; shared?: boolean }> }> };
-    for (const report of state.reports.filter((row) => row.status === "approved"))
+    const state = (await site.state(pm, this.w, projectId)) as unknown as { reports: Array<{ id: string; status: string; delivery?: string; photos?: Array<{ id: string; sharedAt?: string | null; shared?: boolean }> }> };
+    // A day sent as a daily card shares the photos the manager picked; only days kept inside share photos one by one.
+    for (const report of state.reports.filter((row) => row.status === "approved" && row.delivery !== "sent"))
       for (const photo of report.photos ?? [])
         await this.advance(`site photo shared with the client`, Boolean(photo.sharedAt ?? photo.shared), () => site.command(pm, this.w, projectId, { action: "share_photo", photoId: photo.id, shared: true }));
   }
