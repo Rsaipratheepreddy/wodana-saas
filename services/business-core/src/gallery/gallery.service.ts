@@ -337,8 +337,12 @@ export class GalleryService {
   }
 }
 
-/** The gallery row, created on first use with a link from the workspace's own slug. */
-async function ensureGallery(client: PoolClient, workspaceId: string): Promise<Settings> {
+/**
+ * The gallery row, created on first use with a link from the workspace's own slug.
+ * Two first requests can arrive together: the insert skips any unique conflict (this workspace's row, or a slug
+ * taken meanwhile) and reads again, moving to the next slug only while the gallery still doesn't exist.
+ */
+export async function ensureGallery(client: PoolClient, workspaceId: string): Promise<Settings> {
   const read = () => client.query<Settings>(
     `SELECT slug, status, style, accent, headline, intro, about, hero_image_id AS "heroImageId", contact_phone AS "contactPhone", contact_email AS "contactEmail",
             contact_whatsapp AS "contactWhatsapp", contact_address AS "contactAddress", lead_form_id AS "leadFormId", enquiry_source AS "enquirySource",
@@ -349,11 +353,15 @@ async function ensureGallery(client: PoolClient, workspaceId: string): Promise<S
   const workspace = (await client.query<{ slug: string; name: string }>(`SELECT slug, name FROM workspaces WHERE id = $1`, [workspaceId])).rows[0];
   let base = (workspace?.slug ?? "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50);
   if (base.length < 3) base = `studio-${workspaceId.slice(0, 8)}`;
-  let slug = base;
-  for (let n = 2; (await client.query<{ taken: boolean }>(`SELECT gallery_slug_taken($1, $2) AS taken`, [slug, workspaceId])).rows[0].taken; n += 1) slug = `${base}-${n}`;
   const form = (await client.query<{ id: string }>(`SELECT id FROM crm_lead_forms WHERE workspace_id = $1 AND status = 'published' ORDER BY created_at LIMIT 1`, [workspaceId])).rows[0];
-  await client.query(`INSERT INTO workspace_galleries (workspace_id, slug, headline, lead_form_id) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId, slug, workspace?.name ?? "", form?.id ?? null]);
-  return (await read()).rows[0];
+  for (let n = 1; n <= 100; n += 1) {
+    const slug = n === 1 ? base : `${base}-${n}`;
+    if ((await client.query<{ taken: boolean }>(`SELECT gallery_slug_taken($1, $2) AS taken`, [slug, workspaceId])).rows[0]?.taken) continue;
+    await client.query(`INSERT INTO workspace_galleries (workspace_id, slug, headline, lead_form_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`, [workspaceId, slug, workspace?.name ?? "", form?.id ?? null]);
+    const created = (await read()).rows[0];
+    if (created) return created;
+  }
+  throw new ConflictException("The gallery link couldn't be created. Try again.");
 }
 
 async function readItems(client: PoolClient, workspaceId: string, publicOnly: boolean): Promise<Item[]> {
