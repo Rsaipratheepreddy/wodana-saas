@@ -511,7 +511,8 @@ export class HrmsLeaveService {
               calendar.timezone,
             );
           const attendance = await ctx.client.query(
-            `SELECT 1 FROM hrms_sessions WHERE workspace_id=$1 AND membership_id=$2 AND started_at<$4 AND (ended_at IS NULL OR ended_at>$3)`,
+            // A session still open (no check-out yet) counts up to now: it can't overlap leave that starts later.
+            `SELECT 1 FROM hrms_sessions WHERE workspace_id=$1 AND membership_id=$2 AND started_at<$4 AND COALESCE(ended_at, now())>$3`,
             [workspaceId, row.membership_id, start, end],
           );
           if (attendance.rowCount)

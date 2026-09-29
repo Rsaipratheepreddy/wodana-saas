@@ -153,6 +153,8 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
       const unpaid = types.find((type: { name: string }) => type.name === "Unpaid leave").id;
       const asked = await w.as(w.designer).leave.request(actor, w.workspaceId, { actionId: randomUUID(), leaveTypeId: unpaid, startDate: "2026-11-02", endDate: "2026-11-02", dayPart: "first_half", reason: "Visa office" });
       expect((await notices(w, "hrms.leave_requested")).map((row) => row.recipient)).toEqual([w.supervisor, w.supervisor]);
+      // A check-in never closed (from yesterday) counts up to now: it doesn't block leave weeks away.
+      await w.client.query("INSERT INTO hrms_sessions(workspace_id,membership_id,started_at,calendar_snapshot) VALUES($1,$2,now() - interval '1 day','{}'::jsonb)", [w.workspaceId, w.designerMember]);
       await w.as(w.supervisor).leave.decide(actor, w.workspaceId, asked.id, { decision: "approve", reason: "Fine" });
       await w.as(w.designer).leave.cancel(actor, w.workspaceId, asked.id, { reason: "Appointment moved" });
       expect(await notices(w, "hrms.leave_cancellation_requested")).toEqual([expect.objectContaining({ recipient: w.supervisor, body: "Unpaid leave · 2 Nov 2026: Appointment moved" })]);
