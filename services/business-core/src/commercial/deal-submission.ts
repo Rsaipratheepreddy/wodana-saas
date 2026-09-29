@@ -12,13 +12,22 @@ export type CommissionLine = {
 const commissionTypes = new Set(["sales", "designer", "referral"]);
 const commissionBases = new Set(["amount", "percent"]);
 
+/** A commission row nobody filled in: no recipient and no value. */
+function isBlankCommission(raw: unknown) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const row = raw as Record<string, unknown>;
+  const recipient = typeof row.recipientName === "string" ? row.recipientName.trim() : row.recipientName;
+  return !recipient && (row.value === undefined || row.value === null || row.value === "" || row.value === 0);
+}
+
 export function normalizeCommissionLines(input: unknown, dealValue: number, currencyCode?: string): CommissionLine[] {
   const places = currencyCode ? currencyDecimals(currencyCode) : 2;
-  if (!Array.isArray(input) || input.length < 1 || input.length > 3) {
-    throw new Error("Add between one and three commission recipients.");
-  }
+  if (input !== undefined && input !== null && !Array.isArray(input)) throw new Error("The commission lines are invalid.");
+  // No commission is a valid deal; a row left completely empty is not a commission.
+  const rows = (Array.isArray(input) ? input : []).filter((raw) => !isBlankCommission(raw));
+  if (rows.length > 3) throw new Error("Add up to three commission recipients.");
   if (!Number.isFinite(dealValue) || dealValue < 0) throw new Error("The deal value is invalid.");
-  const lines = input.map((raw, index) => {
+  const lines = rows.map((raw, index) => {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`Commission ${index + 1} is invalid.`);
     const row = raw as Record<string, unknown>;
     const recipientName = typeof row.recipientName === "string" ? row.recipientName.trim() : "";

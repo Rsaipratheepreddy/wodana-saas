@@ -186,7 +186,7 @@ export function commercialReleaseInputsReady(
     data.ownerReview.quoteId !== quote.id ||
     !data.ownerReview.financeReviewedById ||
     !data.dealFile.paymentProofUrl ||
-    !data.dealFile.commissionLines?.length ||
+    !Array.isArray(data.dealFile.commissionLines) ||
     !(data.servicePath ? materialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
   )
     return false;

@@ -58,6 +58,42 @@ it("submits a Won opportunity Deal File with separate commission and payment evi
   await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({paymentProofUrl:"https://example.com/proof",commissionLines:[{recipientName:"Sales A",type:"sales",basis:"amount",value:10}]})));
 });
 
+it("sends a Deal File with no commission, and says why Send to Finance waits (M5)", async () => {
+  const run = vi.fn().mockResolvedValue(true);
+  const state = {
+    opportunityStatus: "won", canEdit: true, contacts: [],
+    data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], ownerReview: null, dealFile: null, requests: [], payments: [], materialApprovals: [] },
+  } as unknown as CommercialState;
+  render(<ApprovalRelease initialView="owner" state={state} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
+  fireEvent.change(screen.getByRole("textbox", {name:"Proof-of-payment link"}), {target:{value:"https://example.com/proof"}});
+  expect(screen.getByRole("button", {name:"Send to Finance"})).toBeDisabled();
+  expect(screen.getByText("Write the submission note.")).toBeVisible();
+  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"No commission on this one"}});
+  // A half-filled commission says what's missing; removing it sends the deal without one.
+  const commission = screen.getByRole("group", {name:"Commission 1"});
+  fireEvent.change(within(commission).getByRole("textbox", {name:"Recipient"}), {target:{value:"Sales A"}});
+  expect(screen.getByText("Finish commission 1 or remove it.")).toBeVisible();
+  expect(screen.getByRole("button", {name:"Send to Finance"})).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", {name:"Remove commission 1"}));
+  expect(screen.queryByRole("group", {name:"Commission 1"})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
+  await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({commissionLines:[]})));
+});
+
+it("ignores the empty commission row when nothing is typed in it (M5)", async () => {
+  const run = vi.fn().mockResolvedValue(true);
+  const state = {
+    opportunityStatus: "won", canEdit: true, contacts: [],
+    data: { quotes: [{ id: "quote", number: 1, kind: "quotation", status: "accepted", currency: "AED", total: 100, lines: [] }], ownerReview: null, dealFile: null, requests: [], payments: [], materialApprovals: [] },
+  } as unknown as CommercialState;
+  render(<ApprovalRelease initialView="owner" state={state} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
+  fireEvent.change(screen.getByRole("textbox", {name:"Proof-of-payment link"}), {target:{value:"https://example.com/proof"}});
+  fireEvent.change(screen.getByRole("textbox", {name:"Submission note"}), {target:{value:"No commission"}});
+  expect(screen.getByRole("button", {name:"Send to Finance"})).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", {name:"Send to Finance"}));
+  await waitFor(()=>expect(run).toHaveBeenCalledWith("submit_owner_review", expect.objectContaining({commissionLines:[]})));
+});
+
 it("requires Finance to acknowledge payment proof before confirming a submitted deal", async () => {
   const run = vi.fn().mockResolvedValue(true);
   const state = {

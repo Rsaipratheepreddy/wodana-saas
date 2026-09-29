@@ -70,6 +70,8 @@ const newCommissionLine = (): CommissionDraft => ({ recipientName: "", type: "sa
 const draftOf = ({ recipientName, type, basis, value }: CommissionLine): CommissionDraft => ({ recipientName, type, basis, value: value ? String(value) : "" });
 const sent = (line: CommissionDraft): CommissionLine => ({ ...line, value: Number(line.value || 0) });
 const commissionReady = (line: CommissionDraft) => Boolean(line.recipientName.trim()) && Number(line.value || 0) > 0;
+/** A row nobody filled in: it isn't a commission and isn't sent (a deal may have none). */
+const commissionBlank = (line: CommissionDraft) => !line.recipientName.trim() && !Number(line.value || 0);
 const commissionTypes = [
   { id: "sales", label: tKey("Sales") },
   { id: "designer", label: tKey("Designer") },
@@ -527,18 +529,20 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
 function CommissionFields({ currency, index, line, onChange, onRemove, fixedRecipient }: { currency: string; index: number; line: CommissionDraft; onChange: (next: Partial<CommissionDraft>) => void; onRemove?: () => void; fixedRecipient?: boolean }) {
   const t = useT();
   const title = fixedRecipient ? `${line.recipientName} · ${translateKnown(t, commissionTypes.find((type) => type.id === line.type)?.label ?? line.type)}` : t("Commission {number}", { number: index + 1 });
+  // An untouched row is optional; once it's being filled in, it needs a recipient and a value.
+  const required = Boolean(fixedRecipient) || !commissionBlank(line);
   return <FormSection title={<span className={s.commissionTitle}>{title}{onRemove ? <IconButton aria-label={t("Remove commission {number}", { number: index + 1 })} onPress={onRemove}><X size={14} /></IconButton> : null}</span>}>
     {fixedRecipient ? null : <FormRow>
-      <TextInput isRequired label={t("Recipient")} maxLength={160} value={line.recipientName} onChange={(recipientName) => onChange({ recipientName })} />
-      <SelectField isRequired label={t("Type")} items={commissionTypes.map((type) => ({ id: type.id, label: t(type.label) }))} selectedKey={line.type}
+      <TextInput isRequired={required} label={t("Recipient")} maxLength={160} value={line.recipientName} onChange={(recipientName) => onChange({ recipientName })} />
+      <SelectField isRequired={required} label={t("Type")} items={commissionTypes.map((type) => ({ id: type.id, label: t(type.label) }))} selectedKey={line.type}
         onSelectionChange={(key) => onChange({ type: String(key ?? "sales") as CommissionDraft["type"] })} />
     </FormRow>}
     <FormRow>
-      <SelectField isRequired label={t("Basis")} items={[{ id: "amount", label: currency }, { id: "percent", label: t("Percentage") }]} selectedKey={line.basis}
+      <SelectField isRequired={required} label={t("Basis")} items={[{ id: "amount", label: currency }, { id: "percent", label: t("Percentage") }]} selectedKey={line.basis}
         onSelectionChange={(key) => onChange({ basis: String(key ?? "amount") as CommissionDraft["basis"], value: "" })} />
       {line.basis === "percent"
-        ? <PercentageInput isRequired label={t("Share")} minValue={0.01} value={line.value ? Number(line.value) : Number.NaN} onChange={(value) => onChange({ value: Number.isFinite(value) ? String(value) : "" })} />
-        : <MoneyField isRequired label={t("Amount")} currency={currency} min={smallestAmount(currency)} value={line.value} onChange={(value) => onChange({ value })} />}
+        ? <PercentageInput isRequired={required} label={t("Share")} minValue={0.01} value={line.value ? Number(line.value) : Number.NaN} onChange={(value) => onChange({ value: Number.isFinite(value) ? String(value) : "" })} />
+        : <MoneyField isRequired={required} label={t("Amount")} currency={currency} min={smallestAmount(currency)} value={line.value} onChange={(value) => onChange({ value })} />}
     </FormRow>
   </FormSection>;
 }
@@ -588,6 +592,10 @@ export function ApprovalRelease({
     if (finance) setFinanceDraft({ key: reviewKey, lines: next }); else setCommissionLines(next);
   };
   const checklistKeys = Object.keys(checklist).filter(key => !d.servicePath || key !== "materials");
+  // Why Send to Finance can't be pressed yet (the opportunity's Won state has its own notice above the form).
+  const unfinishedCommission = commissionLines.findIndex((line) => !commissionBlank(line) && !commissionReady(line));
+  const sendBlocker = unfinishedCommission >= 0 ? t("Finish commission {number} or remove it.", { number: unfinishedCommission + 1 })
+    : !note.trim() ? t("Write the submission note.") : "";
   const checks = [
     { label: tKey("Client accepted the quotation"), done: Boolean(deliveryQuote), href: "quotations" },
     {
@@ -620,7 +628,7 @@ export function ApprovalRelease({
         Boolean(d.ownerReview.financeReviewedById) &&
         d.dealFile?.quoteId === deliveryQuote?.id &&
         Boolean(d.dealFile?.paymentProofUrl) &&
-        Boolean(d.dealFile?.commissionLines?.length),
+        Array.isArray(d.dealFile?.commissionLines),
       href: "execution-release",
       view: "owner",
     },
@@ -690,20 +698,23 @@ export function ApprovalRelease({
                 <Button isDisabled={busy || !decisionNote.trim()} onPress={() => void run("decide_owner_review", { decision: "return", note: decisionNote })}>{t("Return for correction")}</Button>
                 <Button variant="primary" isLoading={busy} isDisabled={busy || Object.entries(d.ownerReview.checklist).some(([key, value]) => !value && (!d.servicePath || key !== "materials")) || (!d.servicePath && !materialApprovalsComplete(accepted, d.materialApprovals))} onPress={() => void run("decide_owner_review", { decision: "approve", note: decisionNote })}>{t("Approve Deal File")}</Button>
               </div>}
-            </section> : d.dealFile?.quoteId !== accepted.id && <Form className={s.ownerForm} onSubmit={async e => { e.preventDefault(); await run("submit_owner_review", { commissionLines: commissionLines.map(sent), paymentProofUrl, checklist, note }); }}>
+            </section> : d.dealFile?.quoteId !== accepted.id && <Form className={s.ownerForm} onSubmit={async e => { e.preventDefault(); await run("submit_owner_review", { commissionLines: commissionLines.filter((line) => !commissionBlank(line)).map(sent), paymentProofUrl, checklist, note }); }}>
               <h2>{t("1 · Submit Deal File")}</h2>
               {d.ownerReview && <p className={s.notice}>{t("Previous decision:")}{" "}{translateKnown(t, statusLabel[d.ownerReview.status] ?? d.ownerReview.status)}. {d.ownerReview.financeNote ?? d.ownerReview.decisionNote}</p>}
               {state.opportunityStatus !== "won" && <p className={s.notice}>{t("Mark the linked opportunity Won before submitting this Deal File.")}</p>}
               <TextInput isRequired inputType="url" label={t("Proof-of-payment link")} value={paymentProofUrl} onChange={setPaymentProofUrl} placeholder={t("https://…")} />
               {commissionLines.map((line, index) => <CommissionFields key={index} currency={accepted.currency} index={index} line={line}
                 onChange={(update) => updateCommission(index, update)}
-                onRemove={commissionLines.length > 1 ? () => setCommissionLines(commissionLines.filter((_, i) => i !== index)) : undefined} />)}
+                onRemove={() => setCommissionLines(commissionLines.filter((_, i) => i !== index))} />)}
               {commissionLines.length < 3 && <div><Button size="compact" variant="quiet" onPress={() => setCommissionLines([...commissionLines, newCommissionLine()])}><Plus size={14} />{t("Add recipient")}</Button></div>}
               <FormSection title={t("Checklist")}>
                 <div className={s.checkGrid}>{checklistKeys.map(key => <Checkbox key={key} isSelected={checklist[key as keyof typeof checklist]} onChange={(done) => setChecklist({ ...checklist, [key]: done })}>{translateKnown(t, checklistLabel[key] ?? key)}</Checkbox>)}</div>
               </FormSection>
               <TextAreaField isRequired label={t("Submission note")} value={note} onChange={setNote} placeholder={t("Summarize payment evidence, pricing decision and any conditions.")} />
-              {state.canEdit && <div className={s.formActions}><Button type="submit" variant="primary" isLoading={busy} isDisabled={busy || state.opportunityStatus !== "won" || !note.trim() || !commissionLines.every(commissionReady)}>{t("Send to Finance")}</Button></div>}
+              {state.canEdit && <div className={s.formActions}>
+                {sendBlocker ? <span className={s.muted} role="status">{sendBlocker}</span> : null}
+                <Button type="submit" variant="primary" isLoading={busy} isDisabled={busy || state.opportunityStatus !== "won" || Boolean(sendBlocker)}>{t("Send to Finance")}</Button>
+              </div>}
             </Form>}
           </>}
         </>
