@@ -24,6 +24,9 @@ export function HomeSection({ project, site, api, format, today, open, go, wide 
   const stages = project.progress?.stages ?? [];
   const current = stages.findIndex((stage) => stage.state === "current");
   const coming = stages.map((stage, index) => ({ ...stage, index })).filter((stage) => stage.state !== "done").slice(0, current >= 0 ? 4 : 3);
+  // The handover date belongs to the last stage: on its row when that stage is listed, else as its own row.
+  const handover = project.handoverDate && !project.handedOverOn ? project.handoverDate : null;
+  const lastListed = coming.some((stage) => stage.index === stages.length - 1);
   const documents = [...(project.documents ?? [])].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 3);
   const waiting = project.next.length + replies.length;
   return <div className={styles.section} data-tour="portal-home">
@@ -76,13 +79,14 @@ export function HomeSection({ project, site, api, format, today, open, go, wide 
         <span className={styles.itemText}>
           <span className={styles.milestoneName} dir="auto">{stage.name ? stageName(t, stage.name) : t("Stage {number}", { number: stage.index + 1 })}</span>
           {stage.state === "current" && stage.startedOn ? <span className={styles.itemMeta}>{t("since {date}", { date: format.date(stage.startedOn) })}</span> : null}
+          {handover && stage.index === stages.length - 1 ? <span className={styles.itemMeta}>{format.date(handover)}</span> : null}
         </span>
         {stage.state === "current" ? <StateLabel state="current" /> : null}
       </li>)}
-        {project.handoverDate && !project.handedOverOn ? <li data-state="handover">
+        {handover && !lastListed ? <li data-state="handover">
           <CalendarClock aria-hidden="true" size={16} />
           <span className={styles.itemText}><span className={styles.milestoneName}>{t("Handover")}</span>
-            <span className={styles.itemMeta}>{format.date(project.handoverDate)}</span></span>
+            <span className={styles.itemMeta}>{format.date(handover)}</span></span>
         </li> : null}
       </ol>
     </section> : null}
