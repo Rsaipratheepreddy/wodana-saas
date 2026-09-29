@@ -67,7 +67,8 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     { id: "about", header: t("About"), size: 200, accessorFn: (row) => row.subject ?? "", meta: { mobileHidden: true } },
     { id: "project", header: t("Project"), size: 180, accessorFn: (row) => row.project ? [row.project.reference, row.project.name].filter(Boolean).join(" · ") : "", meta: { mobileHidden: true } },
     { id: "amount", header: t("Amount"), size: 140, accessorFn: (row) => money(row), meta: { align: "end" } },
-    { id: "since", header: t("Waiting for"), size: 120, accessorFn: (row) => (now === null ? "" : waitingSince(row.since, new Date(now), locale)) },
+    { id: "since", header: t("Waiting for"), size: 120, accessorFn: (row) => row.since,
+      meta: { renderCell: (row) => (now === null ? "" : waitingSince(row.since, new Date(now), locale)) } },
     { id: "decide", header: t("Decide"), size: 240, accessorFn: () => "", enableSorting: false, meta: { renderCell: (row) => <span className={styles.actions} onClick={(event) => event.stopPropagation()}>
       {!row.canDecide ? <span className={styles.muted}>{t("Someone else decides")}</span>
         : row.decide ? <>
