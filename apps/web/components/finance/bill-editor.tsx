@@ -60,7 +60,9 @@ export function BillEditor({ api, vendors, companies, existing, onClose, onSaved
       const { order, lines: open } = await api.invoiceable(orderId);
       const taken = new Set(lines.map((line) => line.orderLineId));
       const fresh = open.filter((line) => Number(line.left) > 0 && !taken.has(line.orderLineId));
-      if (!fresh.length) { setError(t("Nothing on {order} is left to invoice.", { order: order.number })); return; }
+      // Only accepted goods are invoiced: goods still waiting for inspection say so, rather than "nothing left".
+      const awaitingInspection = open.some((line) => !taken.has(line.orderLineId) && Number(line.accepted) < Number(line.ordered));
+      if (!fresh.length) { setError(awaitingInspection ? t("Nothing on {order} can be invoiced until its delivery is inspected and accepted.", { order: order.number }) : t("Nothing on {order} is left to invoice.", { order: order.number })); return; }
       if (!lines.length) { setLegalEntityId(order.legalEntityId); setCurrency(order.currency); }
       setLines([...lines, ...fresh.map((line) => ({ key: crypto.randomUUID(), orderLineId: line.orderLineId, orderNumber: line.orderNumber, projectId: line.projectId,
         projectReference: line.projectReference, description: line.description, unit: line.unit, quantity: line.left, unitPrice: line.netUnitPrice, taxRate: plain(line.taxRate) }))]);

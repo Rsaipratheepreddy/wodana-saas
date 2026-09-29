@@ -147,6 +147,24 @@ describe("finance", () => {
     expect(posts(fetcher)[0].body.commandId).not.toBe(posts(fetcher)[1].body.commandId);
   });
 
+  it("says a received order's goods wait for inspection when none are accepted to invoice yet", async () => {
+    mount((url) => {
+      if (url.includes("/suppliers/v1")) return supplier();
+      if (url.includes("/orders/o1")) return { order: { id: "o1", number: "FAC-PO-2026-00001", vendorId: "v1", legalEntityId: "e1", currency: "AED", status: "received", creditDays: 30 },
+        lines: [{ orderLineId: "ol1", orderId: "o1", orderNumber: "FAC-PO-2026-00001", projectId: "p1", projectReference: "PRJ-0007", description: "Oak veneer", unit: "sheets",
+          ordered: "10.0000", taxRate: "5.0000", accepted: "0.0000", credited: "0.0000", billed: "0.0000", left: "0", netUnitPrice: "90" }] };
+      return overview({ bills: [] });
+    });
+    page();
+    await userEvent.click(await screen.findByRole("button", { name: "Enter invoice" }));
+    const dialog = await screen.findByRole("dialog", { name: "Enter invoice" });
+    await userEvent.click(within(dialog).getByRole("button", { name: /Supplier/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Nile Marble" }));
+    await userEvent.click(await within(dialog).findByRole("button", { name: /Add lines from an order/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /FAC-PO-2026-00001/ }));
+    expect(await within(dialog).findByText("Nothing on FAC-PO-2026-00001 can be invoiced until its delivery is inspected and accepted.")).toBeInTheDocument();
+  });
+
   it("records a payment against an invoice: by bank only into an approved account", async () => {
     nav.query = "bill=b1";
     const fetcher = mount((url, body) => {
