@@ -4398,7 +4398,7 @@ export class WorkspacesService {
          SELECT $1, $2, id FROM permissions
          WHERE code IN ('legal_entities.view', 'integrations.view', 'catalog.view')
             OR code LIKE 'module.%.read'
-            OR ($3 = 'member' AND code IN ('hrms.self', 'projects.view', 'projects.report'))`,
+            OR ($3 = 'member' AND code IN ('hrms.self', 'projects.view', 'projects.report', 'ai.suggestions.use'))`,
         [workspaceId, roleIds.get(roleCode), roleCode],
       );
     }
@@ -4421,6 +4421,13 @@ export class WorkspacesService {
       if (granted.rowCount !== role.permissions.length) {
         throw new Error(`Role template ${role.code} names a permission the catalog does not have`);
       }
+      // Every staff role can ask Woddy; the workspace AI switch and credits still decide whether it answers.
+      await client.query(
+        `INSERT INTO role_permissions (workspace_id, role_id, permission_id)
+         SELECT $1, $2, id FROM permissions WHERE code = 'ai.suggestions.use'
+         ON CONFLICT (role_id, permission_id) DO NOTHING`,
+        [workspaceId, result.rows[0].id],
+      );
     }
   }
 
