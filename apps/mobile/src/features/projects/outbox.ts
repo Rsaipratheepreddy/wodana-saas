@@ -7,8 +7,21 @@ import { projectKeys } from './api';
 export type SnagPayload = { projectId: string; create: Record<string, unknown>; photoIds: string[] };
 /** Photos added to an existing snag (before or after). */
 export type WorkPhotosPayload = { projectId: string; itemId: string; kind: 'before' | 'after'; photoIds: string[] };
-/** A daily site report: the whole report, its new photos, and whether to submit it. */
-export type ReportPayload = { projectId: string; reportId: string; report: Record<string, unknown>; photoIds: string[]; submit: boolean };
+/**
+ * A daily site report: the whole report, its new photos (with their room, before/after and pair), the snags and
+ * material requests to raise from its issues, and whether to submit it.
+ */
+export type ReportPayload = {
+  projectId: string; reportId: string; report: Record<string, unknown>; photoIds: string[]; submit: boolean;
+  photoTags?: Record<string, { areaId: string | null; phase: string | null; pairId: string | null }>;
+  raise?: Array<{ issueId: string; kind: 'snag' | 'material' }>;
+};
+
+/** A photo's tags as the upload's query (only what's set). */
+const tagQuery = (tags?: { areaId: string | null; phase: string | null; pairId: string | null }) => {
+  const query = [tags?.areaId ? `area=${tags.areaId}` : '', tags?.phase ? `phase=${tags.phase}` : '', tags?.pairId ? `pair=${tags.pairId}` : ''].filter(Boolean).join('&');
+  return query ? `?${query}` : '';
+};
 
 const uploadAll = async (ids: string[], done: number, step: (n: number) => void, send: (id: string, index: number) => Promise<unknown>) => {
   for (let index = done; index < ids.length; index += 1) {
@@ -52,9 +65,11 @@ registerOutboxHandler('site.report', async ({ api, item, withFile, step }) => {
   const have = new Set((state.reports.find((entry) => entry.id === payload.reportId)?.photos ?? []).map((photo) => photo.id));
   for (const photoId of payload.photoIds) {
     if (have.has(photoId)) continue;
-    try { state = await withFile(photoId, (file) => api.upload<SiteState>(`${base}/reports/${payload.reportId}/photos/${photoId}`, 'POST', 'file', file)); }
+    try { state = await withFile(photoId, (file) => api.upload<SiteState>(`${base}/reports/${payload.reportId}/photos/${photoId}${tagQuery(payload.photoTags?.[photoId])}`, 'POST', 'file', file)); }
     catch (error) { if (!(error instanceof ApiError && error.status === 409)) throw error; }
   }
+  // A snag or a material request from an issue: raised once (a retry finds it raised).
+  for (const entry of payload.raise ?? []) state = await api.send<SiteState>(base, 'POST', { action: 'raise_issue', issueId: entry.issueId, kind: entry.kind });
   if (payload.submit) {
     report = state.reports.find((entry) => entry.id === payload.reportId);
     if (report && (report.status === 'draft' || report.status === 'returned')) await api.send(base, 'POST', { action: 'submit', reportId: payload.reportId, version: report.version });

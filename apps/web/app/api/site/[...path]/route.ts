@@ -5,7 +5,9 @@ import { getServerT } from "@/lib/i18n/server";
 
 /** A project's site: its state and changes, report photos up and down. */
 function allowed(path: string[], method: string) {
+  if (path.length === 1 && path[0] === "attention") return method === "GET";
   if (path.length === 2 && path[0] === "projects" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
+  if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "reports" && UUID.test(path[3]) && path[4] === "client-view") return method === "GET";
   if (path.length === 6 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "reports" && UUID.test(path[3]) && path[4] === "photos" && UUID.test(path[5])) return method === "POST";
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "photos" && UUID.test(path[3])) return method === "GET";
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["handover", "warranty"].includes(path[2])) return ["GET", "POST"].includes(method);
@@ -37,8 +39,12 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
     if (!(file instanceof File) || !file.size || file.size > 20 * 1024 * 1024 || !(file.type.startsWith("image/") || (document && file.type === "application/pdf")))
       return NextResponse.json({ message: document ? t("Choose a PDF or a photo up to 20 MB.") : t("Choose a photo up to 20 MB.") }, { status: 400 });
     const body = new FormData(); body.set("file", file);
-    // A document keeps its kind and title.
-    const query = document ? `?${new URLSearchParams({ kind: search.get("kind") ?? "other", title: (search.get("title") ?? "").slice(0, 200) })}` : "";
+    // A document keeps its kind and title; a site photo its room, before/after and the photo it pairs with.
+    const tags = new URLSearchParams(["area", "phase", "pair"].flatMap((key) => {
+      const value = search.get(key) ?? "";
+      return (key === "phase" ? ["before", "after"].includes(value) : UUID.test(value)) ? [[key, value]] : [];
+    }));
+    const query = document ? `?${new URLSearchParams({ kind: search.get("kind") ?? "other", title: (search.get("title") ?? "").slice(0, 200) })}` : tags.size ? `?${tags}` : "";
     return workspaceJsonResponse(`/workspaces/${workspaceId}/site/${path.join("/")}${query}`, { method: "POST", body }, t("The file could not be uploaded."));
   }
   const body = request.method === "GET" ? undefined : await request.text();
