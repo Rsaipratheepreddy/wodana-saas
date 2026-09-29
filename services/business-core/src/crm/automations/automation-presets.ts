@@ -4,7 +4,8 @@ export const AUTOMATION_PRESETS = [
     definitionCode: "new_enquiry_assignment",
     eventType: null,
     name: "New enquiry ownership",
-    description: "Assign every new enquiry using the CRM queue and create its first response action.",
+    // Assignment and takeover are Sales settings and always run; this only adds the task (so Off never means unassigned).
+    description: "Adds a first-response task to each new enquiry. Who owns it, and when it moves to the next person, follow Sales settings whether this is on or off.",
     setupHref: "/workspace/crm/leads?section=assignment",
     availableChannels: ["in_app"],
   },
@@ -13,7 +14,7 @@ export const AUTOMATION_PRESETS = [
     definitionCode: "sla_breach_escalation",
     eventType: null,
     name: "Missed response escalation",
-    description: "Create an urgent action when the configured response target is missed.",
+    description: "Adds an urgent task when the response target is missed. Moving the enquiry to the next person follows Sales settings whether this is on or off.",
     setupHref: "/workspace/crm/leads?section=sla",
     availableChannels: ["in_app"],
   },
