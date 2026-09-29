@@ -266,9 +266,11 @@ const site: Source = async (db, ctx) => {
        FROM work_items item JOIN delivery_projects project ON project.workspace_id = item.workspace_id AND project.id = item.project_id
       WHERE item.workspace_id = $1 AND item.type = 'snag' AND item.status = 'in_review' AND ($2::uuid[] IS NULL OR item.project_id = ANY($2::uuid[]))
       ORDER BY item.updated_at LIMIT 100`, [ctx.workspaceId, scope])).rows;
-  const warranty = (await db.query<{ id: string; number: number; description: string; since: Date; projectId: string; projectReference: string | null; projectName: string }>(
-    `SELECT claim.id, claim.number, claim.description, claim.created_at AS since, ${projectColumns}
+  const warranty = (await db.query<{ id: string; number: number; description: string; since: Date; raisedBy: string | null; projectId: string; projectReference: string | null; projectName: string }>(
+    `SELECT claim.id, claim.number, claim.description, claim.created_at AS since, ${projectColumns},
+            coalesce(nullif(claim.raised_by_name, ''), raiser.display_name) AS "raisedBy"
        FROM warranty_claims claim JOIN delivery_projects project ON project.workspace_id = claim.workspace_id AND project.id = claim.project_id
+       LEFT JOIN users raiser ON raiser.id = claim.created_by
       WHERE claim.workspace_id = $1 AND claim.status = 'open' AND ($2::uuid[] IS NULL OR claim.project_id = ANY($2::uuid[]))
       ORDER BY claim.created_at LIMIT 100`, [ctx.workspaceId, scope])).rows;
   return [
@@ -290,7 +292,7 @@ const site: Source = async (db, ctx) => {
       href: `/workspace/projects/${snag.projectId}/plan?item=${snag.id}`, decide: null,
     })),
     ...warranty.map((claim) => row({
-      kind: "warranty", group: "site", id: claim.id, parentId: claim.projectId, title: `W-${claim.number} · ${claim.description}`, project: project(claim),
+      kind: "warranty", group: "site", id: claim.id, parentId: claim.projectId, title: `W-${claim.number} · ${claim.description}`, subject: claim.raisedBy, project: project(claim),
       amount: null, currency: null, since: claim.since, own: false, href: `/workspace/projects/${claim.projectId}/warranty`, decide: null,
     })),
   ];

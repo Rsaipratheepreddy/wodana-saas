@@ -11500,5 +11500,6 @@
   "Write the submission note.": "Write the submission note.",
   "Save the agreement first.": "Save the agreement first.",
   "Attach the signed agreement first.": "Attach the signed agreement first.",
-  "Agreement to verify": "Agreement to verify"
+  "Agreement to verify": "Agreement to verify",
+  "From {name} · Client": "From {name} · Client"
 }

@@ -49,7 +49,7 @@ export async function askAboutDay(ctx: DecisionContext, body: Record<string, unk
   if (text.length > 2000) throw new BadRequestException("Keep it under 2000 characters.");
   const files = await ownUploads(ctx.db, ctx.workspaceId, ctx.contact, row.caseId, body.uploadIds);
   const data = await ctx.commercial.load(ctx.db, ctx.workspaceId, row.caseId);
-  const request = newRequest(data, `About the progress on ${day.reportDate}`, text);
+  const request = newRequest(data, `About the progress on ${day.reportDate}`, text, undefined, undefined, { name: grant.name, client: true });
   await ctx.commercial.persist(ctx.db, ctx.workspaceId, row.caseId, data, grant.name, "Client question on the daily progress (portal)");
   await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: "message", targetId: request.id, files });
   await markRead(ctx.db, ctx.workspaceId, row.caseId, request.id, "client", contactId(grant) ?? grant.id);

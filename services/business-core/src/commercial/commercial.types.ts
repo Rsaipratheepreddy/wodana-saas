@@ -381,6 +381,8 @@ export type ChangeRequest = {
   resolution: string;
   comments: CommercialComment[];
   createdAt: string;
+  /** Who raised it, for the team: the client contact (their portal name) or the team member. Never shown to the client. */
+  raisedBy?: { name: string; client: boolean };
   control?: ControlledChange;
   decisionRequest?: {
     ownerMembershipId: string;

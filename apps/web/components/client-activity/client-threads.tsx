@@ -22,7 +22,7 @@ export function useClientThreads(workspaceId: string, caseId: string) {
   const markRead = useCallback((threadId: string) => { void api.readThread(caseId, threadId).catch(() => undefined); }, [api, caseId]);
   const files = useCallback((id: string) => threads?.files[id] ?? NONE, [threads]);
   const fileUrl = useCallback((assetId: string, preview = false) => api.clientFile(caseId, assetId, preview), [api, caseId]);
-  return { files, fileUrl, clientRead: (threadId: string) => threads?.clientRead[threadId] ?? null, markRead, load };
+  return { files, fileUrl, clientRead: (threadId: string) => threads?.clientRead[threadId] ?? null, raisedBy: (threadId: string) => threads?.raisedBy?.[threadId] ?? null, markRead, load };
 }
 
 /**

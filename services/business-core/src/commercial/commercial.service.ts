@@ -1497,6 +1497,9 @@ export class CommercialService {
             data,
             text(b.title, 240, true),
             text(b.detail, 6000, true),
+            undefined,
+            undefined,
+            { name: user.displayName, client: false },
           );
           request.owner = text(b.owner ?? "", 160);
           request.dueDate = b.dueDate ? date(b.dueDate) : "";
@@ -2948,7 +2951,7 @@ export class CommercialService {
                 channels: channels as Array<"in_app" | "email" | "whatsapp">,
               },
               decision: null,
-            });
+            }, { name: user.displayName, client: false });
             request.owner = user.displayName;
             request.dueDate = dueDate;
             request.status = "awaiting_decision";
@@ -2958,6 +2961,8 @@ export class CommercialService {
               text(b.title, 240, true),
               text(b.detail, 6000, true),
               q?.id,
+              undefined,
+              { name: user.displayName, client: false },
             );
           }
         } else if (action === "update_request") {
@@ -3310,7 +3315,8 @@ export class CommercialService {
             before: { quoteId: q.id, status: "issued" }, after: { quoteId: q.id, decision, method, clientName, recorder, evidenceAssetId: evidence?.id ?? null } });
           if (typed === "accept") validateDeduction(data, q);
           q.status = typed === "accept" ? "accepted" : typed === "changes" ? "changes_requested" : "declined";
-          if (typed === "changes") newRequest(data, `Changes to quotation V${q.number}`, note, q.id);
+          // The client asked for the changes; the team member recorded them for them.
+          if (typed === "changes") newRequest(data, `Changes to quotation V${q.number}`, note, q.id, undefined, { name: clientName, client: true });
           // Acceptance is the sale: the opportunity is Won and the case moves on, with no manual step.
           if (typed === "accept" && q.kind === "quotation")
             await winOpportunityOnAcceptance(client, { workspaceId, caseId, quoteNumber: q.number, round: q.round ?? null, actorUserId: user.userId, source: "user" });

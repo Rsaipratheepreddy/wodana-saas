@@ -119,6 +119,8 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
   const conversation = request && !request.decisionRequest ? request.id : null;
   useEffect(() => { if (conversation) markRead(conversation); }, [conversation, markRead]);
   const fromClient = (comment: ChangeRequest["comments"][number]) => Boolean((comment as { fromClient?: boolean }).fromClient);
+  /** Who raised a request: kept on it, else the client contact whose portal command raised it. */
+  const raiser = (r: ChangeRequest) => r.raisedBy ?? (threads.raisedBy(r.id) ? { name: threads.raisedBy(r.id)!, client: true } : null);
   const lastReplyAt = request?.comments.filter((comment) => comment.visibility === "client" && !fromClient(comment)).map((comment) => comment.at).sort().at(-1) ?? null;
   const contractLines = availableContractLines(state.data);
   const decisionTargets = [
@@ -165,6 +167,7 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
       ) : (
         <div className={tableStyles.recordTablePanel}><DataGrid selectable={false} compactToolbar ariaLabel={t("Change requests")} data={state.data.requests} getRowId={row => row.id} searchLabel={t("Search change requests")} exportFileName="change-requests.csv" onRowAction={r => setSelected(r.id)} columns={[
           { id: "title", header: t("Request"), size: 320, accessorFn: (r) => `CR-${String(r.number).padStart(3, "0")} ${r.title}`, cell: ({ row: { original: r } }) => <button type="button" className={s.requestButton} onClick={() => setSelected(r.id)}><span className={s.muted}>{t("CR-")}{String(r.number).padStart(3, "0")} · </span>{r.title}</button> },
+          { id: "from", header: t("From"), size: 170, accessorFn: (r) => raiser(r)?.name ?? "", cell: ({ row: { original: r } }) => <>{raiser(r)?.name ?? "—"}</> },
           { id: "owner", header: t("Owner"), size: 180, accessorFn: (r) => r.owner || t("Unassigned"), cell: ({ row: { original: r } }) => <>{r.owner || t("Unassigned")}</> },
           { id: "due", header: t("Due"), size: 140, accessorFn: (r) => r.dueDate, cell: ({ row: { original: r } }) => <>{r.dueDate || "—"}</> },
           { id: "status", header: t("Status"), size: 160, accessorFn: (r) => translateKnown(t, statusLabel[r.status] ?? r.status), cell: ({ row: { original: r } }) => <span className={s.status} data-status={r.status}>{translateKnown(t, statusLabel[r.status] ?? r.status)}</span> },
@@ -273,6 +276,7 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
         }}
       >
         {request && <>
+          {raiser(request) ? <p className={s.muted}>{raiser(request)!.client ? t("From {name} · Client", { name: raiser(request)!.name }) : t("From {name}", { name: raiser(request)!.name })}</p> : null}
           <p className={s.requestDetail}>{request.detail}</p>
           <ClientFiles files={threads.files(request.id)} url={threads.fileUrl} />
           {request.decisionRequest ? <div className={s.notice}><strong>{request.decisionRequest.target.label}</strong><p>{t("Due")}{" "}{request.dueDate} {t("· Choices:")}{" "}{request.decisionRequest.allowedChoices.map((choice) => choice.label).join(" / ")}</p><p>{decisionPolicySummary(request.decisionRequest)}</p>{request.decisionRequest.decision ? <p>{t("Client response:")}{" "}{request.decisionRequest.decision.choiceLabel}{request.decisionRequest.decision.note ? ` · ${request.decisionRequest.decision.note}` : ""}</p> : <p>{t("Awaiting the designated client approver.")}</p>}</div> : null}
@@ -289,7 +293,7 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
             {request.comments.map((c) => (
               <li key={c.id}>
                 <strong>{c.author}</strong>{" "}
-                <small>{c.visibility === "internal" ? t("Internal note") : t("Client conversation")}</small>
+                <small>{c.visibility === "internal" ? t("Internal note") : fromClient(c) ? t("Client") : t("Reply to client")}</small>
                 <p>{c.text}</p>
                 <ClientFiles files={threads.files(c.id)} url={threads.fileUrl} />
                 <small>{new Date(c.at).toLocaleString()}</small>

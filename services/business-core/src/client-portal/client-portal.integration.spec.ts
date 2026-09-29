@@ -639,6 +639,11 @@ integration("client portal (plan §6.22)", () => {
         [w.workspaceId, w.manager])).rows).toEqual([{ type: "site.client_question", channel: "email" }, { type: "site.client_question", channel: "in_app" }, { type: "site.client_reacted", channel: "in_app" }]);
       const again = await w.portal.view(w.slug, early);
       expect(again.projects[0].progress!.cards[0]).toMatchObject({ reactions: { like: 0, love: 1 }, mine: { like: false, love: true } });
+      // The team sees which client contact reacted, and who asked about the day.
+      const teamDay = (await pmSite.state(actor, w.workspaceId, projectId)).reports.find((row) => row.id === day)!;
+      expect(teamDay).toMatchObject({ reactions: { like: 0, love: 1 }, reactedBy: { like: [], love: ["Maya"] } });
+      expect((await commercialRepository.load(w.client, w.workspaceId, w.caseId))!.content as CommercialData).toMatchObject({
+        requests: expect.arrayContaining([expect.objectContaining({ id: asked.requestId, raisedBy: { name: "Maya", client: true } })]) });
       // A tax invoice for the advance, paid by a verified receipt; the second milestone has a pay link.
       const finance = new ReceivablesService({ withPermission: async (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => w.savepoint(async () => fn(w.client, { userId: w.manager })),
         hasPermission: async () => true } as never);
@@ -952,6 +957,35 @@ integration("client portal (plan §6.22)", () => {
       expect(mailer.sendStaffNotice).toHaveBeenCalledWith(expect.objectContaining({ to: "maya@example.com", subject: "Main quote (V1) is ready for you", actionLabel: "Open your project",
         deepLink: `/portal/${w.slug}?project=${w.caseId}&open=decisions` }));
       expect(await count("portal.quote_issued")).toBe(1);
+    });
+  });
+
+  it("tells the team which client contact raised and wrote each message, and never tells the client who on the team replied", async () => {
+    await world(async (w) => {
+      await open(w);
+      // Sam has no WhatsApp: his code goes by email.
+      await w.client.query("UPDATE client_portal_grants SET email = 'sam@example.com' WHERE workspace_id = $1 AND phone = $2", [w.workspaceId, VIEWER]);
+      const maya = await signIn(w, APPROVER), sam = await signIn(w, VIEWER);
+      const first = await w.portal.command(w.slug, maya, { commandId: randomUUID(), action: "request", caseId: w.caseId, title: "Kitchen handles", detail: "Can we see the options?" }) as { requestId: string };
+      const second = await w.portal.command(w.slug, sam, { commandId: randomUUID(), action: "request", caseId: w.caseId, title: "Balcony", detail: "Can the lights be dimmable?" }) as { requestId: string };
+      await w.portal.command(w.slug, sam, { commandId: randomUUID(), action: "comment", caseId: w.caseId, requestId: first.requestId, text: "Matte black, please." });
+      const loaded = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!;
+      const data = { ...(loaded.content as CommercialData), revision: loaded.revision };
+      const raised = (id: string) => data.requests.find((request) => request.id === id)!;
+      expect(raised(first.requestId).raisedBy).toEqual({ name: "Maya", client: true });
+      expect(raised(second.requestId).raisedBy).toEqual({ name: "Sam", client: true });
+      expect(raised(first.requestId).comments).toEqual([expect.objectContaining({ author: "Sam", visibility: "client", fromClient: true })]);
+      // A conversation raised before the raiser was kept still names its contact, from the portal command that raised it.
+      delete raised(first.requestId).raisedBy;
+      raised(first.requestId).comments.push({ id: randomUUID(), at: new Date().toISOString(), author: "Dana Designer", text: "Here are the options.", visibility: "client" });
+      data.revision = loaded.revision + 1;
+      await commercialRepository.save(w.client, w.workspaceId, w.caseId, data);
+      expect((await w.admin.threads(actor, w.workspaceId, w.caseId)).raisedBy).toEqual({ [first.requestId]: "Maya", [second.requestId]: "Sam" });
+      // The client reads "your project team", never a team member's name or who raised it.
+      const thread = (await w.portal.view(w.slug, maya)).projects[0].messages!.requests.find((request) => request.id === first.requestId)!;
+      expect(JSON.stringify(thread)).not.toContain("Dana Designer");
+      expect(thread).not.toHaveProperty("raisedBy");
+      expect(thread.comments.map((comment) => comment.fromClient)).toEqual([true, false]);
     });
   });
 

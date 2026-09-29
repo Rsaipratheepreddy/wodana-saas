@@ -32,4 +32,10 @@ describe("Approvals → Deals", () => {
     expect(rows).toEqual([expect.objectContaining({ kind: "deal_finance", group: "deals", title: "Emirates Hills Penthouse · Q-1",
       href: `/workspace/pre-projects/cases/${CASE}/execution-release`, canDecide: true })]);
   });
+
+  it("names the client contact who raised a warranty claim", async () => {
+    const claim = { id: CASE, number: 1, description: "Drawer won't close", since: new Date("2026-09-29T09:00:00.000Z"), raisedBy: "Faris", projectId: "p", projectReference: "PRJ-1", projectName: "Villa 12" };
+    const { rows } = await waitingFor(fakeDb([["FROM warranty_claims", [claim]]]), context(["projects.manage"]));
+    expect(rows).toEqual([expect.objectContaining({ kind: "warranty", title: "W-1 · Drawer won't close", subject: "Faris" })]);
+  });
 });

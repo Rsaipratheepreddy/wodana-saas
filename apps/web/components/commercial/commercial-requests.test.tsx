@@ -82,7 +82,7 @@ describe("a client's conversation", () => {
   const conversation = (clientRead: string) => {
     const fetcher = vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () => (String(url).includes("/threads?") ? {
       files: { r1: [{ id: "f1", name: "wall.jpg", mimeType: "image/jpeg", hasPreview: true }], c1: [{ id: "f2", name: "plan.pdf", mimeType: "application/pdf", hasPreview: false }] },
-      clientRead: { r1: clientRead },
+      clientRead: { r1: clientRead }, raisedBy: { r1: "Aisha" },
     } : { ok: true }) }));
     vi.stubGlobal("fetch", fetcher);
     const state = { canEdit: true, workspaceId: "workspace", caseId: "case",
@@ -119,6 +119,15 @@ describe("a client's conversation", () => {
     // Read after the team's last client-visible reply (internal notes don't count).
     expect(within(dialog).getByText(/^Seen by the client · /)).toBeInTheDocument();
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith("/api/client-portal-admin/cases/case/threads/r1/read?workspaceId=workspace", expect.objectContaining({ method: "POST" })));
+  });
+
+  it("names which client contact raised the conversation and wrote each message, and which team member replied", async () => {
+    conversation("2026-09-22T08:00:00.000Z");
+    const dialog = screen.getByRole("dialog", { name: "Move the TV wall" });
+    expect(await within(dialog).findByText("From Aisha · Client")).toBeVisible();
+    const entries = within(dialog).getAllByRole("listitem").filter((item) => item.querySelector("strong"));
+    expect(entries.map((item) => [item.querySelector("strong")!.textContent, item.querySelector("small")!.textContent]))
+      .toEqual([["Aisha", "Client"], ["Sara", "Reply to client"], ["Sara", "Internal note"]]);
   });
 
   it("says when the client hasn't seen the team's latest reply", async () => {

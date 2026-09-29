@@ -164,7 +164,7 @@ export async function decideQuote(ctx: DecisionContext, body: Record<string, unk
     controlled.status = "under_review";
     controlled.resolution = "";
   }
-  const asked = decision === "changes" && !controlled ? newRequest(data, `Changes to quotation V${q.number}`, note, q.id) : null;
+  const asked = decision === "changes" && !controlled ? newRequest(data, `Changes to quotation V${q.number}`, note, q.id, undefined, { name: grant.name, client: true }) : null;
   if (decision === "accept")
     for (const accepted of acceptedForEffects.values()) {
       if (accepted.kind === "variation" && accepted.direction !== "deduction" && data.agreement && !data.payments.some((payment) => payment.sourceQuoteId === accepted.id)) {

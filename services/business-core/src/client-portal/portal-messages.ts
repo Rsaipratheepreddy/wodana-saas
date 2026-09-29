@@ -76,7 +76,7 @@ export async function raiseRequest(ctx: DecisionContext, body: Record<string, un
   const detail = words(body.detail, 6000, "Say what you need.", true);
   const files = await ownUploads(ctx.db, ctx.workspaceId, ctx.contact, row.caseId, body.uploadIds);
   const data = await ctx.commercial.load(ctx.db, ctx.workspaceId, row.caseId);
-  const request = newRequest(data, title, detail);
+  const request = newRequest(data, title, detail, undefined, undefined, { name: grant.name, client: true });
   await ctx.commercial.persist(ctx.db, ctx.workspaceId, row.caseId, data, grant.name, "Client request (portal)");
   await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: "message", targetId: request.id, files });
   await markRead(ctx.db, ctx.workspaceId, row.caseId, request.id, "client", grant.id);
@@ -126,8 +126,16 @@ export async function readStaffThreads(db: Db, workspaceId: string, caseId: stri
   const clientReads = (await db.query<{ threadId: string; at: string }>(
     `SELECT thread_id AS "threadId", max(read_at) AS at FROM client_portal_reads WHERE workspace_id = $1 AND case_id = $2 AND reader_kind = 'client' GROUP BY thread_id`,
     [workspaceId, caseId])).rows;
+  // Who on the client's side raised each conversation, from the portal command that raised it (every command keeps its contact).
+  const raisers = (await db.query<{ requestId: string; name: string }>(
+    `SELECT command.result->>'requestId' AS "requestId", coalesce(grant_row.confirmed_name, grant_row.name) AS name
+       FROM client_portal_commands command
+       JOIN client_portal_grants grant_row ON grant_row.workspace_id = command.workspace_id AND grant_row.id = command.grant_id
+      WHERE command.workspace_id = $1 AND grant_row.case_id = $2 AND command.action IN ('request', 'progress_question') AND command.result ? 'requestId'`,
+    [workspaceId, caseId])).rows;
   return {
     files: Object.fromEntries([...files].map(([key, list]) => [key.replace(/^message:/, ""), list])),
     clientRead: Object.fromEntries(clientReads.map((row) => [row.threadId, new Date(row.at).toISOString()])),
+    raisedBy: Object.fromEntries(raisers.map((row) => [row.requestId, row.name])),
   };
 }

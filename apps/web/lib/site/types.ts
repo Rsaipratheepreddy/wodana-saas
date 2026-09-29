@@ -26,6 +26,8 @@ export type SiteReport = {
   delivery?: Delivery; sentAt?: string | null; sentByName?: string | null; sentAutomatically?: boolean;
   tasks?: ReportTask[]; next?: ReportNext[]; materials?: ReportMaterial[]; issues?: ReportIssue[];
   reactions?: { like: number; love: number };
+  /** Which client contacts reacted. */
+  reactedBy?: { like: string[]; love: string[] };
 };
 /** A scope line with what approved reports installed and what submitted ones would add. */
 export type SiteLine = { id: string; title: string; unit: string; quantity: string; supply: string | null; catalogItemId: string | null; areaName: string | null; installed: string; pending: string };
