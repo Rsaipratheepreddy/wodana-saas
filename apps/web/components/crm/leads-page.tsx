@@ -79,6 +79,8 @@ type EnquiryView = "my_day" | "new" | "contacted" | "come_back" | "all" | "unass
 const respondOrder = (lead: CrmLeadListItem) => lead.slaDueAt && ["active", "warning", "breached"].includes(lead.slaStatus ?? "") ? Date.parse(lead.slaDueAt) : Number.POSITIVE_INFINITY;
 /** How often the list checks for new and changed enquiries while it is on screen (S-5). */
 const REFRESH_EVERY = 30_000;
+/** How long a notice on the enquiry list stays before it goes. */
+const NOTICE_MS = 8_000;
 function listOf(status: CrmLeadStatus): "new" | "contacted" | "come_back" | "closed" {
   if (status === "new") return "new";
   if (status === "attempting_contact" || status === "connected" || status === "nurturing") return "contacted";
@@ -150,6 +152,9 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const [statusMessage, setStatusMessage] = useState("");
   // One-click Convert (S-39): the opportunity just made, to open from the enquiry list.
   const [converted, setConverted] = useState<{ name: string; id: string } | null>(null);
+  // A notice says what just happened and then goes; a newer one takes its place (they never stack).
+  useEffect(() => { if (!statusMessage) return; const timer = window.setTimeout(() => setStatusMessage(""), NOTICE_MS); return () => window.clearTimeout(timer); }, [statusMessage]);
+  useEffect(() => { if (!converted) return; const timer = window.setTimeout(() => setConverted(null), NOTICE_MS * 2); return () => window.clearTimeout(timer); }, [converted]);
   const [convertingId, setConvertingId] = useState<string | null>(null);
   // Bulk actions (S-17): select enquiries, then assign, change status, add a follow-up or close; each is its own command.
   const [bulk, setBulk] = useState<{ mode: BulkMode; rows: CrmLeadListItem[] } | null>(null);
@@ -338,6 +343,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
     setConvertingId(lead.id); setFailure(""); setConverted(null);
     try {
       const record = await quickConvert(initialData.workspaceId, lead, body);
+      setStatusMessage("");
       setConverted({ name: customerDisplayName(lead.partyName), id: String(record.id) });
       await reloadLeads();
     } catch (error) {
@@ -410,7 +416,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
         {linkedLead ? <InspectorSheet isOpen hideTitle title={t("Enquiry details")} size="md" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}
         {failure ? <Callout title={t("Enquiries could not be updated")} tone="danger">{failure}</Callout> : null}
         {statusMessage ? <p aria-live="polite" className={styles.statusMessage}>{statusMessage}</p> : null}
-        {converted ? <p aria-live="polite" className={styles.statusMessage}>{t("{name}: opportunity created.", { name: converted.name })} <Link href={`/workspace/crm/opportunities?record=${encodeURIComponent(converted.id)}`}>{t("View opportunity")}</Link></p> : null}
+        {converted && !statusMessage ? <p aria-live="polite" className={styles.statusMessage}>{t("{name}: opportunity created.", { name: converted.name })} <Link href={`/workspace/crm/opportunities?record=${encodeURIComponent(converted.id)}`}>{t("View opportunity")}</Link></p> : null}
 
         <div className={styles.sections}>
           {activeSection === "leads" ? <>
