@@ -79,14 +79,25 @@ export const DEFAULT_PUBLIC_SALES_FORM: PublicSalesForm = {
   thankYouMessage: null,
 };
 
-/** Reads the public form in a server component; falls back to the defaults when business-core is away. */
-export async function loadPublicSalesForm(apiUrl: string): Promise<PublicSalesForm> {
+/** Reads the public form in a server component. The landing reads the form at most once a minute, and never waits long for it: a slow core falls back to the default. */
+const FORM_TTL_MS = 60_000;
+let cachedForm: { at: number; form: PublicSalesForm } | null = null;
+
+export async function loadPublicSalesForm(apiUrl: string, now = Date.now()): Promise<PublicSalesForm> {
+  if (cachedForm && now - cachedForm.at < FORM_TTL_MS) return cachedForm.form;
   try {
-    const response = await fetch(apiUrl, { cache: "no-store", signal: AbortSignal.timeout(6000) });
-    if (!response.ok) return DEFAULT_PUBLIC_SALES_FORM;
+    const response = await fetch(apiUrl, { cache: "no-store", signal: AbortSignal.timeout(1500) });
+    if (!response.ok) return cachedForm?.form ?? DEFAULT_PUBLIC_SALES_FORM;
     const form = await response.json() as PublicSalesForm;
-    return form && typeof form === "object" && form.fields ? form : DEFAULT_PUBLIC_SALES_FORM;
+    if (!form || typeof form !== "object" || !form.fields) return cachedForm?.form ?? DEFAULT_PUBLIC_SALES_FORM;
+    cachedForm = { at: now, form };
+    return form;
   } catch {
-    return DEFAULT_PUBLIC_SALES_FORM;
+    return cachedForm?.form ?? DEFAULT_PUBLIC_SALES_FORM;
   }
+}
+
+/** Test seam: forget the cached form. */
+export function resetPublicSalesFormCache() {
+  cachedForm = null;
 }

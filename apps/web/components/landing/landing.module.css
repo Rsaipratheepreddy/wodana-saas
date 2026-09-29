@@ -154,6 +154,40 @@
   .headerInner .brand svg { block-size: 1.625rem; }
 }
 
+/* Motion: an entrance for the hero, then sections rise as they scroll into view. Scroll-linked (no JS), so it
+   follows the scroll exactly; only opacity, translate and scale move. Without scroll timelines everything is simply
+   shown, and reduced motion turns all of it off. */
+.page { --landing-enter: 720ms; --landing-rise: var(--wd-space-8); }
+
+@keyframes landing-enter { from { opacity: 0; translate: 0 var(--landing-rise); } }
+@keyframes landing-settle { from { translate: 0 var(--wd-space-12); scale: 0.97; } }
+@keyframes landing-reveal { from { opacity: 0; translate: 0 var(--landing-rise); } to { opacity: 1; translate: 0 0; } }
+@keyframes landing-reveal-soft { from { opacity: 0; translate: 0 var(--wd-space-12); scale: 0.97; } to { opacity: 1; translate: 0 0; scale: 1; } }
+
+.heroTitle, .heroLead, .heroActions { animation: landing-enter var(--landing-enter) var(--wd-ease-out) both; }
+.heroLead { animation-delay: 90ms; }
+.heroActions { animation-delay: 180ms; }
+/* The hero screenshot is the largest paint: it moves into place but is never hidden, so it paints at once. */
+.heroVisual { animation: landing-settle calc(var(--landing-enter) * 1.4) var(--wd-ease-out) both; }
+
+@supports (animation-timeline: view()) {
+  .featureCopy, .mobile .sectionTitle, .fitTitle, .contactCopy {
+    animation: landing-reveal var(--wd-ease-out) both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 28%;
+  }
+  .featureVisual, .phones, .contactForm {
+    animation: landing-reveal-soft var(--wd-ease-out) both;
+    animation-timeline: view();
+    animation-range: entry 5% cover 34%;
+  }
+  .phone { animation: landing-reveal var(--wd-ease-out) both; animation-timeline: view(); animation-range: entry 10% cover 36%; }
+  .phone:nth-child(2) { animation-range: entry 16% cover 42%; }
+  .phone:nth-child(3) { animation-range: entry 22% cover 48%; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .header, .pillPrimary, .pillSecondary { transition: none; }
+  .heroTitle, .heroLead, .heroActions, .heroVisual, .featureCopy, .featureVisual, .mobile .sectionTitle, .phones, .phone,
+  .fitTitle, .contactCopy, .contactForm { animation: none; }
 }
