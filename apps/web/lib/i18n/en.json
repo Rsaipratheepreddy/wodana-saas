@@ -3725,6 +3725,7 @@
   "Unable to verify your account. Please try again.": "Unable to verify your account. Please try again.",
   "Unable to verify your workspace.": "Unable to verify your workspace.",
   "Verification code is incorrect.": "Verification code is incorrect.",
+  "Verification code is incorrect": "Verification code is incorrect",
   "Workspace access could not be verified. Sign in again later.": "Workspace access could not be verified. Sign in again later.",
   "You no longer have access to this workspace.": "You no longer have access to this workspace.",
   "Your session has expired. Sign in again.": "Your session has expired. Sign in again.",

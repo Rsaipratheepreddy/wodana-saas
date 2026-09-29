@@ -7,6 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { randomBytes } from "node:crypto";
@@ -470,8 +471,8 @@ export class MfaService {
     if (outcome.state === "locked") {
       throw new HttpException("Too many MFA attempts. Try again later", HttpStatus.TOO_MANY_REQUESTS);
     }
-    if (outcome.state === "invalid") throw new UnauthorizedException("Verification code is incorrect");
-    if (!outcome.assurance) throw new UnauthorizedException("Verification code is incorrect");
+    // The person is signed in; only the code is wrong. A 401 here reads as "your session has expired".
+    if (outcome.state === "invalid" || !outcome.assurance) throw new UnprocessableEntityException("Verification code is incorrect");
     return outcome.assurance;
   }
 
