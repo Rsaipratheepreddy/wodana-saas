@@ -4,11 +4,16 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 
-/** Product screenshots on the landing page (public/landing), with their pixel size so nothing shifts. */
-export type Shot = { src: string; width: number; height: number; alt: MessageKey };
+/**
+ * Product screenshots on the public pages (public/landing): real screens of a demo workspace, each in the
+ * light theme and, when captured, the dark one (`<name>-dark.webp`). The pixel size is known so nothing shifts.
+ */
+export type Shot = { src: string; dark: string; width: number; height: number; alt: MessageKey };
 
-const desktop = (name: string, alt: MessageKey, height = 1500): Shot => ({ src: `/landing/${name}.webp`, width: 2400, height, alt });
-const phone = (name: string, alt: MessageKey): Shot => ({ src: `/landing/${name}.webp`, width: 1170, height: 2532, alt });
+const desktop = (name: string, alt: MessageKey): Shot =>
+  ({ src: `/landing/${name}.webp`, dark: `/landing/${name}-dark.webp`, width: 2880, height: 1800, alt });
+const phone = (name: string, alt: MessageKey): Shot =>
+  ({ src: `/landing/${name}.webp`, dark: `/landing/${name}-dark.webp`, width: 1170, height: 2532, alt });
 
 export const SHOTS = {
   home: desktop("home", tKey("Wodana home with the day's work across sales and projects")),
@@ -23,10 +28,18 @@ export const SHOTS = {
   mobileMe: phone("mobile-me", tKey("The mobile app: profile and attendance")),
 } satisfies Record<string, Shot>;
 
-const ready = new Set<string>();
+const present = new Map<string, boolean>();
+const exists = (src: string) => {
+  if (!present.has(src)) present.set(src, existsSync(join(process.cwd(), "public", src)));
+  return present.get(src) === true;
+};
 
 /** A screenshot shows only once its file is in public/landing, so the page never shows a broken image. */
 export function shotReady(shot: Shot) {
-  if (!ready.has(shot.src) && existsSync(join(process.cwd(), "public", shot.src))) ready.add(shot.src);
-  return ready.has(shot.src);
+  return exists(shot.src);
+}
+
+/** The dark variant, when it was captured. */
+export function darkReady(shot: Shot) {
+  return exists(shot.dark);
 }

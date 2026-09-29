@@ -6,6 +6,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../../database/database.service";
 import { TransactionalEmailService } from "../../email/transactional-email.service";
+import { OperatorNotificationsService } from "../operator-notifications.service";
 import { SalesContactFormService } from "./sales-contact-form.service";
 import type { AddSalesEnquiryNoteDto, AssignSalesEnquiryDto, ChangeSalesEnquiryStatusDto, SubmitSalesEnquiryDto } from "./sales-enquiries.dto";
 import {
@@ -90,6 +91,7 @@ export class SalesEnquiriesService {
     private readonly forms: SalesContactFormService,
     private readonly email: TransactionalEmailService,
     private readonly config: ConfigService,
+    private readonly notifications: OperatorNotificationsService,
   ) {}
 
   /** The visitor's address: the web server's forwarded one when it proves itself, else the connection's. */
@@ -151,6 +153,14 @@ export class SalesEnquiriesService {
           `INSERT INTO sales_enquiry_notices (enquiry_id, recipient_email, subject) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
           [id, recipient, subject]);
       }
+      // Everyone in Wodana Control who follows enquiries sees it in the portal too.
+      await this.notifications.notify(client, {
+        permission: "sales.read", eventType: "sales_enquiry.received", sourceType: "sales_enquiry", sourceId: id,
+        // Data only (reference, company, name): the portal words the event in the operator's language.
+        title: `${reference} · ${values.company ?? values.name}`,
+        body: values.company ? values.name : null,
+        link: `/internal/sales-enquiries?enquiry=${id}`,
+      });
       return { form, created: { reference } };
     });
     if (outcome.created) {
@@ -207,8 +217,13 @@ export class SalesEnquiriesService {
     });
   }
 
+  /** One enquiry; opening it reads this operator's notice about it. */
   async detail(operatorUserId: string, id: string) {
-    return this.database.actorTransaction(operatorUserId, (client) => this.read(client, id));
+    return this.database.actorTransaction(operatorUserId, async (client) => {
+      const detail = await this.read(client, id);
+      await this.notifications.markSourceRead(client, "sales_enquiry", id);
+      return detail;
+    });
   }
 
   async assignees(operatorUserId: string) {

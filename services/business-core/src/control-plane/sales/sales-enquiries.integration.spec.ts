@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DatabaseService } from "../../database/database.service";
+import { OperatorNotificationsService } from "../operator-notifications.service";
 import { SalesContactFormService } from "./sales-contact-form.service";
 import { SalesEnquiriesService } from "./sales-enquiries.service";
 import { DEFAULT_SALES_FORM } from "./sales-enquiry.domain";
@@ -23,6 +24,7 @@ integration("sales enquiries with PostgreSQL", () => {
   let db: DatabaseService;
   let forms: SalesContactFormService;
   let enquiries: SalesEnquiriesService;
+  let notifications: OperatorNotificationsService;
   let startVersion = 0;
 
   const submission = (overrides: Record<string, unknown> = {}) => {
@@ -52,7 +54,8 @@ integration("sales enquiries with PostgreSQL", () => {
         return { status: "not_configured" as const, provider: null, messageId: null };
       },
     };
-    enquiries = new SalesEnquiriesService(db, forms, email as never, config);
+    notifications = new OperatorNotificationsService(db);
+    enquiries = new SalesEnquiriesService(db, forms, email as never, config, notifications);
     await owner.query(`INSERT INTO users (id, primary_email, display_name) VALUES ($1, $2, 'Operator A'), ($3, $4, 'Operator B'), ($5, $6, 'Not an operator')`,
       [operatorA, emails[0], operatorB, emails[1], stranger, emails[2]]);
     await owner.query(`INSERT INTO platform_administrators (user_id, role) VALUES ($1, 'administrator'), ($2, 'account_billing_operator')`,
@@ -67,6 +70,7 @@ integration("sales enquiries with PostgreSQL", () => {
       const ids = (await owner.query<{ id: string }>(`SELECT id FROM sales_enquiries WHERE request_key = ANY($1::text[])`, [requestIds])).rows.map((row) => row.id);
       await owner.query(`DELETE FROM platform_operator_audit WHERE target_id = ANY($1::text[]) OR actor_user_id = ANY($2::uuid[])`,
         [ids, [operatorA, operatorB, stranger]]);
+      await owner.query(`DELETE FROM platform_operator_notifications WHERE source_id = ANY($1::uuid[])`, [ids]);
       await owner.query(`DELETE FROM sales_enquiries WHERE id = ANY($1::uuid[])`, [ids]);
       await owner.query(`DELETE FROM sales_contact_form_versions WHERE version > $1`, [startVersion]);
       await owner.query(`DELETE FROM platform_administrators WHERE user_id = ANY($1::uuid[])`, [[operatorA, operatorB]]);
@@ -114,6 +118,23 @@ integration("sales enquiries with PostgreSQL", () => {
     const email = sent.find((message) => message.consolePath?.includes(id));
     expect(email?.to).toBe("sales@wodana.test");
     expect(email?.body).toContain("Thirty fit-out jobs a year.");
+
+    // In Wodana Control: every operator who can read enquiries has a notice; someone else has none.
+    const inApp = await owner.query<{ recipient: string }>(
+      `SELECT recipient_user_id AS recipient FROM platform_operator_notifications WHERE source_id = $1 AND event_type = 'sales_enquiry.received'`, [id]);
+    expect(inApp.rows.map((row) => row.recipient)).toEqual(expect.arrayContaining([operatorA, operatorB]));
+    expect(inApp.rows.map((row) => row.recipient)).not.toContain(stranger);
+    const mine = await notifications.list(operatorB);
+    const notice = mine.notifications.find((item) => item.sourceId === id);
+    expect(notice).toMatchObject({ title: expect.stringContaining(`Studio Nord ${run}`), link: `/internal/sales-enquiries?enquiry=${id}`, readAt: null });
+    // Operators see only their own notices, and a stranger none.
+    expect((await notifications.list(stranger)).notifications).toEqual([]);
+    const unreadBefore = mine.unread;
+    const read = await notifications.markRead(operatorB, { ids: [notice!.id] });
+    expect(read.unread).toBe(unreadBefore - 1);
+    // Opening the enquiry reads operator A's notice about it.
+    await enquiries.detail(operatorA, id);
+    expect((await notifications.list(operatorA)).notifications.find((item) => item.sourceId === id)?.readAt).not.toBeNull();
   });
 
   it("stores nothing for a filled honeypot, refuses a form sent too fast, and limits one connection", async () => {

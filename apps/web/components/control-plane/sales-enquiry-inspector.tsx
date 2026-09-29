@@ -9,6 +9,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { ConsoleRequestError } from "@/lib/internal/console";
 import { salesApi, type SalesAssignee, type SalesEnquiryDetail, type SalesEnquiryHistoryEvent, type SalesEnquiryStatus, type SalesEnquirySummary } from "@/lib/internal/sales";
 import { useConsoleFormat } from "./labels";
+import { OPERATOR_NOTICES_EVENT } from "./operator-notifications";
 import { useCountryName, useSalesLabels } from "./sales-labels";
 import styles from "./sales.module.css";
 
@@ -31,7 +32,11 @@ export function SalesEnquiryInspector({ id, fallback, canManage, onClose, onChan
   const [noteId, setNoteId] = useState(() => crypto.randomUUID());
 
   const load = useCallback(async () => {
-    try { setDetail(await salesApi.enquiry(id)); setError(""); }
+    try {
+      setDetail(await salesApi.enquiry(id)); setError("");
+      // Opening an enquiry reads its notice; the bell follows.
+      window.dispatchEvent(new Event(OPERATOR_NOTICES_EVENT));
+    }
     catch (cause) { setError((cause as Error).message || t("The enquiry didn't load.")); }
   }, [id, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);

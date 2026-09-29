@@ -1,14 +1,14 @@
 import type { ReactNode } from "react";
-import Image from "next/image";
+import { getImageProps } from "next/image";
 import Link from "next/link";
 import { WodanaLogo } from "@/components/brand";
 import { ContactSalesForm } from "@/components/sales/contact-sales-form";
-import { DesignSystemProvider } from "@/design-system";
 import { getServerT } from "@/lib/i18n/server";
 import type { PublicSalesForm } from "@/lib/sales/contact-form";
 import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 import { LandingHeader } from "./landing-header";
-import { SHOTS, shotReady, type Shot } from "./landing-shots";
+import { darkReady, SHOTS, shotReady, type Shot } from "./landing-shots";
+import { MarketingSurface } from "./marketing-surface";
 import styles from "./landing.module.css";
 
 /** Wodana's brand green (the house in the logo). Actions use its accessible shade from the brand tokens. */
@@ -16,18 +16,29 @@ export const WODANA_GREEN = "#01A92D";
 
 type T = Awaited<ReturnType<typeof getServerT>>;
 
-/** A screenshot in a soft frame; the size is known up front so nothing shifts while it loads. */
-function Frame({ shot, t, sizes, priority = false, className }: { shot: Shot; t: T; sizes: string; priority?: boolean; className?: string }) {
-  return <div className={[styles.frame, className].filter(Boolean).join(" ")}>
-    <Image alt={t(shot.alt)} height={shot.height} priority={priority} sizes={sizes} src={shot.src} width={shot.width} />
-  </div>;
+/**
+ * A product screenshot in the visitor's theme: the dark capture on a dark system, else the light one. The
+ * browser fetches only the one it shows; the size is known up front so nothing shifts while it loads.
+ */
+function Screenshot({ shot, t, sizes, first = false }: { shot: Shot; t: T; sizes: string; first?: boolean }) {
+  const common = { alt: t(shot.alt), width: shot.width, height: shot.height, sizes };
+  const { props: light } = getImageProps({ ...common, src: shot.src, ...(first ? { loading: "eager" as const, fetchPriority: "high" as const } : {}) });
+  const dark = darkReady(shot) ? getImageProps({ ...common, src: shot.dark }).props.srcSet : null;
+  return <picture>
+    {dark ? <source media="(prefers-color-scheme: dark)" sizes={sizes} srcSet={dark} /> : null}
+    {/* eslint-disable-next-line @next/next/no-img-element -- getImageProps gives next/image's optimised sources to a <picture>. */}
+    <img {...light} alt={common.alt} />
+  </picture>;
+}
+
+/** A screenshot in a soft frame. */
+function Frame({ shot, t, sizes, first = false, className }: { shot: Shot; t: T; sizes: string; first?: boolean; className?: string }) {
+  return <div className={[styles.frame, className].filter(Boolean).join(" ")}><Screenshot first={first} shot={shot} sizes={sizes} t={t} /></div>;
 }
 
 function Phone({ shot, t }: { shot: Shot; t: T }) {
   return <div className={styles.phone}>
-    <div className={styles.phoneScreen}>
-      <Image alt={t(shot.alt)} height={shot.height} sizes="(max-width: 720px) 70vw, 280px" src={shot.src} width={shot.width} />
-    </div>
+    <div className={styles.phoneScreen}><Screenshot shot={shot} sizes="(max-width: 720px) 66vw, 280px" t={t} /></div>
   </div>;
 }
 
@@ -56,12 +67,12 @@ function Feature({ id, tag, title, copy, visual, flip = false }: { id: string; t
 /** The page frame shared by the landing page and /contact-sales: brand tokens, header and footer. */
 export async function MarketingFrame({ children, onLanding = true }: { children: ReactNode; onLanding?: boolean }) {
   const t = await getServerT();
-  return <DesignSystemProvider className={styles.page} style={workspacePrimaryColorStyle(WODANA_GREEN)} theme="light">
+  return <MarketingSurface className={styles.page} style={workspacePrimaryColorStyle(WODANA_GREEN)}>
     <a className={styles.skip} href="#main">{t("Skip to content")}</a>
     <LandingHeader onLanding={onLanding} />
     <main id="main">{children}</main>
     <LandingFooter t={t} onLanding={onLanding} />
-  </DesignSystemProvider>;
+  </MarketingSurface>;
 }
 
 function LandingFooter({ t, onLanding }: { t: T; onLanding: boolean }) {
@@ -108,7 +119,7 @@ export async function LandingPage({ form }: { form: PublicSalesForm }) {
         <Link className={styles.pillSecondary} href="/login">{t("Sign in")}</Link>
       </div>
       {shotReady(SHOTS.home) ? <div className={styles.heroVisual}>
-        <Frame priority shot={SHOTS.home} sizes="(max-width: 1280px) 100vw, 1200px" t={t} />
+        <Frame first shot={SHOTS.home} sizes="(max-width: 1280px) 100vw, 1200px" t={t} />
       </div> : null}
     </section>
 

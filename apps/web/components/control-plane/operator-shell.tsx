@@ -9,6 +9,7 @@ import type { OperatorPermission } from "@/lib/internal/auth";
 import { salesApi } from "@/lib/internal/sales";
 import { useLanguage, useT } from "@/lib/i18n/i18n-provider";
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
+import { OperatorNotifications } from "./operator-notifications";
 import { NEW_ENQUIRIES_EVENT } from "./sales-labels";
 import styles from "./control-plane.module.css";
 
@@ -37,7 +38,7 @@ export function OperatorShell({ operator, children }: { operator: ConsoleOperato
   </DesignSystemProvider>;
 }
 
-/** The portal's modules; the count on Sales enquiries is the notice of enquiries nobody has picked up yet. */
+/** The portal's modules; the count on Sales enquiries is how many enquiries nobody has picked up yet. */
 function ShellNavigation({ canReadSales }: { canReadSales: boolean }) {
   const t = useT();
   const pathname = usePathname() ?? "";
@@ -52,12 +53,14 @@ function ShellNavigation({ canReadSales }: { canReadSales: boolean }) {
   }, [canReadSales]);
   const items: ModuleNavigationItem[] = [
     { id: "accounts", href: "/internal", label: t("Accounts") },
+    { id: "ai-credits", href: "/internal/ai-credits", label: t("AI credits") },
     ...(canReadSales ? [
       { id: "sales", href: "/internal/sales-enquiries", label: t("Sales enquiries"), ...(newEnquiries > 0 ? { count: newEnquiries } : {}) },
       { id: "form", href: "/internal/contact-form", label: t("Contact form") },
     ] : []),
   ];
-  const activeId = pathname.startsWith("/internal/sales-enquiries") ? "sales" : pathname.startsWith("/internal/contact-form") ? "form" : "accounts";
+  const activeId = pathname.startsWith("/internal/sales-enquiries") ? "sales" : pathname.startsWith("/internal/contact-form") ? "form"
+    : pathname.startsWith("/internal/ai-credits") ? "ai-credits" : "accounts";
   return <ModuleNavigation activeId={activeId} items={items} />;
 }
 
@@ -66,7 +69,7 @@ function ShellActions({ operator, theme, onToggleTheme }: { operator: ConsoleOpe
   const router = useRouter();
   const toast = useToast();
   return <div className={styles.shellActions}>
-    <Link className={styles.shellLink} href="/internal/ai-credits">{t("AI credits")}</Link>
+    <OperatorNotifications />
     <span className={styles.operator}><Avatar name={operator.name} size="sm" /><span><strong>{operator.name}</strong><small>{operator.email}</small></span></span>
     <IconButton aria-label={theme === "dark" ? t("Use light mode") : t("Use dark mode")} onPress={onToggleTheme}>
       {theme === "dark" ? <Sun aria-hidden="true" size={16} /> : <Moon aria-hidden="true" size={16} />}

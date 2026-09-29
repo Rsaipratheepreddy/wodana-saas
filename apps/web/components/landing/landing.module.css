@@ -82,6 +82,7 @@
 
 /* ── Screenshot frames ────────────────────────────────────────────────────────────────── */
 .frame { position: relative; overflow: hidden; border-radius: var(--wd-radius-md); background: var(--wd-color-surface); box-shadow: 0 0 0 1px var(--wd-color-structural-divider), var(--wd-shadow-sm); }
+.frame picture, .phoneScreen picture { display: block; }
 .frame img { display: block; inline-size: 100%; block-size: auto; }
 
 /* ── Feature rows ─────────────────────────────────────────────────────────────────────── */

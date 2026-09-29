@@ -9,8 +9,6 @@
 /* Frame */
 .brand { color: inherit; text-decoration: none; }
 .shellActions { display: flex; align-items: center; gap: var(--wd-space-2); }
-.shellLink { padding-inline: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); text-decoration: none; }
-.shellLink:hover { color: var(--wd-color-text); }
 .operator { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
 .operator > span:last-child { display: grid; min-inline-size: 0; }
 .operator strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }

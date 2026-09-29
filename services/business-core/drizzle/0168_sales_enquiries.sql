@@ -2,7 +2,8 @@
 -- workspace_id. Like the other control-plane tables they are read and changed by Wodana operators only
 -- (forced RLS with the platform_operator_access policy), and the public form gets exactly what it needs:
 -- it reads the current form version, inserts a new enquiry, and records the notices for the enquiry it
--- just created (identified by app.current_sales_enquiry_id in its own transaction).
+-- just created (identified by app.current_sales_enquiry_id in its own transaction): an email per configured
+-- recipient and an in-app notice per operator in Wodana Control.
 
 -- The form configuration is versioned: every save is a new immutable version, the highest is current.
 CREATE TABLE sales_contact_form_versions (
@@ -159,6 +160,41 @@ CREATE POLICY submission_notices ON sales_enquiry_notices
   WITH CHECK (enquiry_id = NULLIF(current_setting('app.current_sales_enquiry_id', true), '')::uuid);
 --> statement-breakpoint
 
+-- Wodana Control's in-app notices: one row per operator and event, read by that operator only. A new sales
+-- enquiry tells every operator who can read enquiries (chosen by the core's operator policy).
+CREATE TABLE platform_operator_notifications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_type varchar(60) NOT NULL CHECK (event_type ~ '^[a-z_]+(\.[a-z_]+)+$'),
+  title varchar(200) NOT NULL CHECK (length(btrim(title)) > 0),
+  body varchar(1000),
+  link varchar(300) CHECK (link IS NULL OR link ~ '^/internal(/|\?|$)'),
+  source_type varchar(40) NOT NULL,
+  source_id uuid NOT NULL,
+  read_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (recipient_user_id, event_type, source_id)
+);
+--> statement-breakpoint
+CREATE INDEX platform_operator_notifications_recipient_idx ON platform_operator_notifications (recipient_user_id, created_at DESC);
+--> statement-breakpoint
+CREATE INDEX platform_operator_notifications_unread_idx ON platform_operator_notifications (recipient_user_id) WHERE read_at IS NULL;
+--> statement-breakpoint
+ALTER TABLE platform_operator_notifications ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+ALTER TABLE platform_operator_notifications FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
+CREATE POLICY own_notifications ON platform_operator_notifications
+  USING (recipient_user_id = NULLIF(current_setting('app.current_actor_id', true), '')::uuid
+    AND EXISTS (SELECT 1 FROM platform_administrators operator
+      WHERE operator.user_id = recipient_user_id AND operator.status = 'active'))
+  WITH CHECK (recipient_user_id = NULLIF(current_setting('app.current_actor_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY sales_enquiry_received ON platform_operator_notifications FOR INSERT
+  WITH CHECK (event_type = 'sales_enquiry.received' AND source_type = 'sales_enquiry' AND read_at IS NULL
+    AND source_id = NULLIF(current_setting('app.current_sales_enquiry_id', true), '')::uuid);
+--> statement-breakpoint
+
 -- The public rate limit counts recent enquiries without reading any of them.
 CREATE FUNCTION sales_enquiry_recent_submissions(requester char(64), window_minutes integer)
 RETURNS TABLE (from_requester integer, total integer)
@@ -177,6 +213,8 @@ BEGIN
     GRANT SELECT, INSERT, UPDATE ON sales_enquiries TO wodana_app;
     GRANT SELECT, INSERT ON sales_enquiry_notes TO wodana_app;
     GRANT SELECT, INSERT, UPDATE ON sales_enquiry_notices TO wodana_app;
+    GRANT SELECT, INSERT ON platform_operator_notifications TO wodana_app;
+    GRANT UPDATE (read_at) ON platform_operator_notifications TO wodana_app;
     GRANT EXECUTE ON FUNCTION sales_enquiry_recent_submissions(char, integer) TO wodana_app;
   END IF;
 END $$;
