@@ -170,6 +170,7 @@ function ReportDialog({ state, report, onClose, onSave }: {
   state: SiteState; report: SiteReport | null; onClose: () => void; onSave: (input: Record<string, unknown>, photos: File[], submit: boolean) => Promise<boolean>;
 }) {
   const t = useT();
+  const format = useProjectFormat();
   const [draft, setDraft] = useState<Draft>(() => ({
     reportDate: report?.reportDate ?? state.today, weather: report?.weather ?? "",
     workforce: report?.workforce.map((row) => ({ trade: row.trade, people: String(row.people) })) ?? [{ trade: "", people: "" }],
@@ -212,7 +213,7 @@ function ReportDialog({ state, report, onClose, onSave }: {
         <TextInput label={t("Weather")} value={draft.weather} onChange={(weather) => set({ weather })} />
       </div>
       {previous ? <div className={styles.row}>
-        <Button size="compact" onPress={repeat}>{t("Same crew as {date}", { date: previous.reportDate })}</Button>
+        <Button size="compact" onPress={repeat}>{t("Same crew as {date}", { date: format.short(previous.reportDate) })}</Button>
         <span className={styles.muted}>{[previous.workforce.map((row) => `${row.trade} ${row.people}`).join(" · "), unfinished.length ? t("{count} items still going", { count: unfinished.length }) : ""].filter(Boolean).join(" · ")}</span>
       </div> : null}
       <fieldset className={styles.group}>
