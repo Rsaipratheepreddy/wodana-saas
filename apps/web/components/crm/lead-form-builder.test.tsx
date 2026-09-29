@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { leadsPageFixture } from "@/lib/crm/leads";
@@ -40,9 +40,14 @@ const withFields = () => ({ ...structuredClone(leadsPageFixture), enquiryFields:
 } });
 async function openBuilder() {
   const user = userEvent.setup();
-  render(<LeadFormBuilder initialData={withFields()} />);
+  render(<LeadFormBuilder initialData={withFields()} autosaveDelay={0} />);
   await user.click(await screen.findByRole("button", { name: /Edit form Project enquiry/ }));
   return user;
+}
+/** "Add question" opens the field palette: the workspace's enquiry fields, then new field types. */
+async function openPalette(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Add question", expanded: false }));
+  return screen.getByRole("complementary", { name: "Enquiry fields" });
 }
 afterEach(() => vi.unstubAllGlobals());
 
@@ -56,7 +61,7 @@ describe("LeadFormBuilder", () => {
   });
   it("adds an enquiry field, previews it, and saves and reloads the draft", async () => {
     const { saves } = mockApi(); const user = await openBuilder();
-    const palette = screen.getByRole("complementary", { name: "Enquiry fields" });
+    const palette = await openPalette(user);
     expect(within(palette).queryByRole("button", { name: "Add Budget" })).not.toBeInTheDocument();
     expect(within(palette).queryByRole("button", { name: "Add Email" })).not.toBeInTheDocument();
     await user.click(within(palette).getByRole("button", { name: "Add Property type" }));
@@ -64,6 +69,8 @@ describe("LeadFormBuilder", () => {
     await user.click(screen.getByRole("button", { name: "Preview form" }));
     const preview = await screen.findByRole("dialog", { name: "Form preview" });
     expect(within(preview).getByRole("checkbox", { name: "Villa" })).toBeInTheDocument();
+    // The preview is the public form: light, whatever the workspace theme.
+    expect(within(preview).getByRole("checkbox", { name: "Villa" }).closest("[data-wd-theme]")).toHaveAttribute("data-wd-theme", "light");
     await user.click(within(preview).getByRole("button", { name: "Close dialog" }));
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     expect(await screen.findByText("Draft saved.")).toBeInTheDocument();
@@ -83,35 +90,50 @@ describe("LeadFormBuilder", () => {
 
   it("shows the workspace brand and links a response to its enquiry", async () => {
     mockApi(); const user = userEvent.setup();
-    render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} initialBranding={{ logoUrl: "/api/auth/tenant-logo/test", primaryColor: "#35715b", secondaryColor: null, workspaceName: "Test Company", canManage: true }} />);
+    render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} autosaveDelay={0} initialBranding={{ logoUrl: "/api/auth/tenant-logo/test", primaryColor: "#35715b", secondaryColor: null, workspaceName: "Test Company", canManage: true }} />);
     await user.click(await screen.findByRole("button", { name: /Edit form Project enquiry/ }));
-    await user.click(screen.getByRole("button", { name: "Brand" }));
+    await user.click(screen.getByRole("tab", { name: "Settings" }));
     expect(screen.getByRole("img", { name: "Test Company logo" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Replace logo" })).toBeEnabled();
     await user.click(screen.getByRole("tab", { name: "Responses" }));
     expect(await screen.findByText("E-0007")).toBeInTheDocument();
+    await user.type(screen.getByRole("searchbox", { name: "Search responses" }), "nobody");
+    expect(screen.queryByText("E-0007")).not.toBeInTheDocument();
+    await user.clear(screen.getByRole("searchbox", { name: "Search responses" }));
     await user.click(screen.getByText("E-0007"));
     expect(screen.getByRole("link", { name: "Open E-0007 in Enquiries" })).toHaveAttribute("href", "/workspace/crm/leads?lead=62000000-0000-4000-8000-000000000001");
   });
 
   it("provides touch/keyboard reorder controls and protects required lead fields", async () => {
     const { saves } = mockApi(); const user = await openBuilder();
-    expect(screen.getByRole("checkbox", { name: "Required" })).toBeDisabled();
+    // Cards start folded: one line each, and one opens at a time.
+    expect(screen.queryByRole("switch", { name: "Required" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Your name/, expanded: false }));
+    expect(screen.getByRole("switch", { name: "Required" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Field label" })).toHaveValue("Your name");
     expect(screen.queryByRole("button", { name: "Delete Your name" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Duplicate" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Mobile number/, expanded: false }));
+    expect(screen.getAllByRole("switch", { name: "Required" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /^Your name/ })).toHaveAttribute("aria-expanded", "false");
     await user.click(screen.getByRole("button", { name: "Move Your name down" }));
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     await screen.findByText("Draft saved.");
     expect(saves[0].draft.questions.map(question => question.id)).toEqual(["mobile", "name", "email", "location"]);
     await user.click(screen.getByRole("button", { name: "Delete Email address" }));
-    expect(within(screen.getByRole("complementary", { name: "Enquiry fields" })).getByRole("button", { name: "Add Email" })).toBeInTheDocument();
+    const palette = await openPalette(user);
+    expect(within(palette).getByRole("button", { name: "Add Email" })).toBeInTheDocument();
+    // A deleted question comes back where it was.
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(within(palette).queryByRole("button", { name: "Add Email" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete Email address" })).toBeInTheDocument();
   });
 
   it("creates a new enquiry field from the form and keeps edits after a failed save", async () => {
     const { fetchMock, saves } = mockApi(); const user = await openBuilder();
     const created = { id: "9f3d8e3a-4b2c-4e77-9f90-2c3d4e5f6071", key: "floor_ab12cd", label: "Floor", dataType: "text", configuration: {}, visible: true, position: 2, version: 1 };
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => created } as never);
-    await user.click(within(screen.getByRole("complementary", { name: "Enquiry fields" })).getByRole("button", { name: "New field" }));
+    await user.click(within(await openPalette(user)).getByRole("button", { name: "Short answer" }));
     await user.type(await screen.findByRole("textbox", { name: "Name" }), "Floor");
     await user.click(screen.getByRole("button", { name: "Add field" }));
     const request = fetchMock.mock.calls.find(([url, init]) => String(url).includes("custom-fields") && init?.method === "POST") as unknown as [string, { body: string }];
@@ -129,23 +151,80 @@ describe("LeadFormBuilder", () => {
     const { fetchMock } = mockApi();
     fetchMock.mockRejectedValueOnce(new Error("Forms could not be loaded."));
     const user = userEvent.setup();
-    render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} />);
+    render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} autosaveDelay={0} />);
     await user.click(await screen.findByRole("button", { name: "Retry loading forms" }));
     await screen.findByRole("button", { name: /Edit form Project enquiry/ });
     await user.click(screen.getByRole("button", { name: "New form" }));
-    expect(await screen.findByRole("complementary", { name: "Enquiry fields" })).toBeInTheDocument();
+    await user.click(within(await screen.findByRole("dialog", { name: "New form" })).getByRole("button", { name: /Default enquiry form/ }));
+    expect(await openPalette(user)).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true);
   });
 
   it("adds every shown enquiry field once and saves their order", async () => {
     const { saves } = mockApi(); const user = await openBuilder();
-    const palette = screen.getByRole("complementary", { name: "Enquiry fields" });
+    const palette = await openPalette(user);
     for (const name of ["Emirate", "Area / city", "Enquiry type", "Project details", "Property type"]) await user.click(within(palette).getByRole("button", { name: `Add ${name}` }));
     expect(within(palette).getByText("Every field is on this form.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(saves).toHaveLength(1));
     expect(saves[0].draft.questions.slice(4).map(question => question.field)).toEqual(["emirate", "area", "serviceType", "summary", `cf:${FIELD_ID}`]);
   }, 10_000);
+});
+
+describe("LeadFormBuilder flows", () => {
+  it("starts a form from a template built from enquiry fields", async () => {
+    const { saves } = mockApi(); const user = userEvent.setup();
+    render(<LeadFormBuilder initialData={withFields()} autosaveDelay={0} />);
+    await user.click(await screen.findByRole("button", { name: "New form" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "New form" })).getByRole("button", { name: /Callback request/ }));
+    expect(await screen.findByText("Unsaved changes")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(saves).toHaveLength(1));
+    expect(saves[0].draft.title).toBe("Request a callback");
+    expect(saves[0].draft.questions.map(question => [question.field, question.title, question.required])).toEqual([
+      ["mobile", "Mobile number", true], ["displayName", "Your name", true], ["emirate", "Emirate", true],
+      ["serviceType", "What should we call about?", true], ["summary", "Best time to call", false],
+    ]);
+  });
+
+  it("saves the draft by itself after an edit", async () => {
+    const { saves } = mockApi(); const user = userEvent.setup();
+    render(<LeadFormBuilder initialData={withFields()} autosaveDelay={20} />);
+    await user.click(await screen.findByRole("button", { name: /Edit form Project enquiry/ }));
+    await user.click(screen.getByRole("button", { name: "Move Your name down" }));
+    await waitFor(() => expect(saves).toHaveLength(1));
+    expect(saves[0]).toMatchObject({ version: 1, action: "save" });
+    expect(await screen.findByText("Draft saved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
+  });
+
+  it("shows the live public form beside the questions on a wide screen, always light", async () => {
+    mockApi();
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(min-width: 80rem)", addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    const user = await openBuilder();
+    const preview = screen.getByRole("complementary", { name: "Live preview" });
+    expect(within(preview).getByRole("heading", { name: "Project enquiry" })).toBeInTheDocument();
+    expect(within(preview).getByRole("textbox", { name: "Your name" }).closest("[data-wd-theme]")).toHaveAttribute("data-wd-theme", "light");
+    expect(within(preview).getByRole("button", { name: "Submit enquiry" })).toBeDisabled();
+    expect(within(preview).getByText("Tick the box to submit")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Your name/, expanded: false }));
+    await user.clear(screen.getByRole("textbox", { name: "Field label" }));
+    await user.type(screen.getByRole("textbox", { name: "Field label" }), "Full name");
+    expect(within(preview).getByRole("textbox", { name: "Full name" })).toBeInTheDocument();
+  });
+
+  it("shares a tagged link, WhatsApp text and embed code", async () => {
+    mockApi(); const user = await openBuilder();
+    await user.click(screen.getByRole("button", { name: "Publish" }));
+    const share = await screen.findByRole("dialog", { name: "Share enquiry form" });
+    await user.type(within(share).getByRole("textbox", { name: "Placement" }), "Showroom door");
+    await user.click(within(share).getByRole("radio", { name: "One question per screen" }));
+    const link = (within(share).getByRole("textbox", { name: "Form link" }) as HTMLInputElement).value;
+    expect(link).toMatch(/\/enquiry\/test-token\?placement=showroom-door&layout=steps$/);
+    expect(within(share).getByRole("textbox", { name: "WhatsApp message" })).toHaveValue(`Project enquiry: share a few details and we will get back to you. ${link}`);
+    expect(within(share).getByRole("link", { name: "Open WhatsApp" })).toHaveAttribute("href", expect.stringContaining("https://wa.me/?text="));
+    expect((within(share).getByRole("textbox", { name: "Embed code" }) as HTMLInputElement).value).toContain(`<iframe src="${link}"`);
+  });
 });
 
 describe("form ordering and validation", () => {

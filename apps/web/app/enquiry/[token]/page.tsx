@@ -23,7 +23,8 @@ export default async function EnquiryPage({ params, searchParams }: { params: Pr
   if (response.status === 404) notFound();
   if (!response.ok) throw new Error((await getServerT())("The enquiry form is temporarily unavailable. Please try again."));
   const form = await response.json() as PublicEnquiryForm;
-  return <DesignSystemProvider className={theme.theme} style={workspacePrimaryColorStyle(form.branding)} locale={form.defaultLocale ?? undefined}><main className={styles.publicPage}>
-    <PublicEnquiryFormView form={form} token={token} link={link.source || link.channel || link.placement ? link : undefined} />
+  // The public form is light-only (LIGHT_ONLY_PATH); a link or QR code may ask for one question per screen.
+  return <DesignSystemProvider className={theme.theme} theme="light" style={workspacePrimaryColorStyle(form.branding)} locale={form.defaultLocale ?? undefined}><main className={styles.publicPage}>
+    <PublicEnquiryFormView form={form} token={token} layout={query.layout === "steps" ? "steps" : "classic"} link={link.source || link.channel || link.placement ? link : undefined} />
   </main></DesignSystemProvider>;
 }
