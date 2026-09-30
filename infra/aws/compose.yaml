@@ -4,7 +4,8 @@ name: wodana-prod
 x-logging: &logging {driver: json-file, options: {max-size: 10m, max-file: "3"}}
 services:
   postgres:
-    image: postgres:16-alpine
+    # 18, the same major version as UAT, so a database moves between them with pg_dump/pg_restore.
+    image: postgres:18-alpine
     network_mode: host
     env_file: [./postgres.env]
     command:
@@ -24,7 +25,7 @@ services:
       - -c
       - log_min_duration_statement=1000
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
       - ./001-create-app-role.sh:/docker-entrypoint-initdb.d/001-create-app-role.sh:ro
     restart: unless-stopped
     mem_limit: 1g
@@ -120,6 +121,6 @@ services:
       start_period: 30s
       retries: 8
 volumes:
-  postgres_data: {name: wodana-prod-postgres}
+  postgres_data: {name: wodana-prod-postgres18}
   redis_data: {name: wodana-prod-redis}
   object_data: {name: wodana-prod-objects}
