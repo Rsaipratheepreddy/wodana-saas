@@ -57,7 +57,13 @@ set_var core.env REDIS_URL redis://127.0.0.1:6379/0
 set_var core.env WEB_ORIGIN "$WEB_ORIGIN"
 set_var core.env INTELLIGENCE_API_URL http://127.0.0.1:8001/api/v1
 set_var core.env BRAND_ASSET_STORAGE_DIR /app/.data/workspace-assets
-set_var core.env EMAIL_PROVIDER ses
+# Email: Mailgun when thirdparty.env carries its key and domain (works before SES production access), else SES.
+if [ -n "$(third MAILGUN_API_KEY)" ] && [ -n "$(third MAILGUN_DOMAIN)" ]; then
+  set_var core.env EMAIL_PROVIDER mailgun
+  for k in MAILGUN_API_KEY MAILGUN_DOMAIN MAILGUN_BASE_URL MAILGUN_FROM; do v=$(third $k); [ -n "$v" ] && set_var core.env $k "$v"; done
+else
+  set_var core.env EMAIL_PROVIDER ses
+fi
 set_var core.env SES_FROM "$SES_FROM"
 set_var core.env SES_REGION "$AWS_REGION"
 set_var core.env AWS_REGION "$AWS_REGION"
