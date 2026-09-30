@@ -330,6 +330,17 @@ describe("confirming what Woddy proposed", () => {
     expect(link[3]).toMatchObject({ version: 4, leadId: LEAD_2 });
   });
 
+  it("asks for the client type when the workspace has client types, and saves the one given (PLM-075)", async () => {
+    const options = await setup.services.intake.options(actor, WS) as Record<string, unknown>;
+    setup.services.intake.options.mockResolvedValue({ ...options, customerTypes: [{ id: "end_user", label: "End User" }, { id: "developer", label: "Developer" }] } as never);
+    await expect(propose("create_enquiry", { args: { enquiryType: "kitchen", region: "north" }, record: { type: "conversation", id: CHAT_A } })).rejects.toThrow(/client type/);
+    const card = await propose("create_enquiry", { args: { enquiryType: "kitchen", region: "north", customerType: "End User" }, record: { type: "conversation", id: CHAT_A } });
+    expect(card.preview).toMatchObject({ kind: "fields", fields: expect.arrayContaining([{ label: "Client type", after: "End User" }]) });
+    await setup.calls.confirm(actor, WS, card.id, { version: card.version });
+    const [, , , , intake] = setup.services.intake.createManual.mock.calls[0] as unknown as [unknown, string, string, string, Record<string, unknown>];
+    expect(intake).toMatchObject({ details: { emirate: "north", customerType: "end_user" } });
+  });
+
   it("asks before creating a client who may already exist", async () => {
     setup.services.leads.contactMatch.mockResolvedValue({ valid: true, matches: [{ partyId: "55555555-5555-4555-8555-555555555555", name: "Omar Khan", reference: "ENQ-7" }] } as never);
     await expect(propose("create_enquiry", { args: { enquiryType: "kitchen", region: "north" }, record: { type: "conversation", id: CHAT_A } })).rejects.toThrow(/already belongs to a client/);

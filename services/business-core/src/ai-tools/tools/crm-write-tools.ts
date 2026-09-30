@@ -159,6 +159,7 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
         enquiryType: { type: "string", description: "One of the workspace's enquiry types (id or label)", maxLength: 100 },
         region: { type: "string", description: "The client's region (id or label)", maxLength: 100 },
         area: { type: "string", maxLength: 240 },
+        customerType: { type: "string", description: "One of the workspace's client types (id or label), when it has any", maxLength: 100 },
         summary: { type: "string", description: "What the client wants, in their words", maxLength: 4000 },
         source: { type: "string", description: "Where it came from (id or label); a chat's source is worked out from its channel", maxLength: 100 },
         channel: { type: "string", maxLength: 60 },
@@ -193,6 +194,8 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
       const region = options.emirates.length ? choose(options.emirates, input.region, "region") : null;
       // Every enquiry has a region: the workspace's list when it has one, else as the person says it.
       if (!region && !str(input.region)) throw new ToolQuestion("Ask which region the client is in.");
+      // Client type is required once the workspace has client types (PLM-075), as on the enquiry form.
+      const customerType = options.customerTypes?.length ? choose(options.customerTypes, input.customerType, "client type") : null;
       // The chat's channel decides the source, as the enquiry form does: the company's own channel first.
       let source: Option;
       if (input.source) source = choose(options.sources, input.source, "source");
@@ -229,7 +232,7 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
       const intake = {
         source: source.id, channel: channel.id, intakeMethod: "manual",
         party: pick(party, ["displayName", "mobile", "email"]), title: "", ...(summary ? { summary: summary.slice(0, 10_000) } : {}),
-        serviceType: enquiryType.id, details: { emirate: region?.id ?? String(input.region ?? ""), ...(input.area ? { area: input.area } : {}) },
+        serviceType: enquiryType.id, details: { emirate: region?.id ?? String(input.region ?? ""), ...(input.area ? { area: input.area } : {}), ...(customerType ? { customerType: customerType.id } : {}) },
         assignment: owner, originalPayload: { origin: "woddy", runId: context.runId }, ...identity,
       };
       const fields: PreviewField[] = [
@@ -239,6 +242,7 @@ export function crmWriteTools(services: ToolServices): AiTool[] {
         { label: "Enquiry type", after: enquiryType.label },
         { label: "Region", after: region?.label ?? String(input.region) },
         ...(input.area ? [{ label: "Area", after: String(input.area) }] : []),
+        ...(customerType ? [{ label: "Client type", after: customerType.label }] : []),
         { label: "Source", after: `${source.label} · ${channel.label}` },
         { label: "Owner", after: ownerName },
         ...(summary ? [{ label: "Summary", after: clip(summary, 400) }] : []),
