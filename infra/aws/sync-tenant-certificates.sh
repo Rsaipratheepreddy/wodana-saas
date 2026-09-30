@@ -13,7 +13,7 @@ SELF=$(curl -fsS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/la
 slugs=$(docker compose -f /opt/wodana/prod/compose.yaml exec -T postgres sh -c \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT b.login_slug FROM tenant_login_branding b JOIN workspaces w ON w.id = b.workspace_id WHERE w.status = '"'"'active'"'"' ORDER BY 1"' 2>/dev/null || true)
 
-candidates=("internal.$BASE_DOMAIN" "admin.$BASE_DOMAIN" "api.$BASE_DOMAIN")
+candidates=("$BASE_DOMAIN" "www.$BASE_DOMAIN" "internal.$BASE_DOMAIN" "admin.$BASE_DOMAIN" "api.$BASE_DOMAIN")
 while IFS= read -r slug; do
   [[ "$slug" =~ ^[a-z0-9]+([a-z0-9-]*[a-z0-9])?$ ]] && candidates+=("$slug.$BASE_DOMAIN")
 done <<<"$slugs"
