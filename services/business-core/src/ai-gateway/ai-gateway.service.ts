@@ -9,7 +9,7 @@ import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { AiCreditRefusal, chargeUsage, checkCredits, creditLimits } from "./ai-credits";
 import {
-  aiConfigured, aiModelFor, aiProviderName, bedrockRegion, classifyBedrockError, readConverse, readConverseTurn, readGemini, readGeminiTurn, stripCodeFences,
+  aiConfigured, aiModelFor, aiProviderName, bedrockRegion, classifyBedrockError, readConverse, readConverseTurn, readGemini, readGeminiTurn, jsonFromModel,
   TextOnlyModelError, toConverse, withoutThinking,
   type AiProviderName, type AiUsage, type ConverseInput, type ModelRequest, type ProviderAnswer, type ProviderTurn, type ToolCall,
 } from "./ai-provider";
@@ -132,7 +132,7 @@ export class AiGatewayService {
       }, { deadline: started + 45_000, retry: false, separator: "" });
       usage = answer.usage;
       // JSON may be split across parts mid-string: joined as is.
-      const text = stripCodeFences(answer.text);
+      const text = jsonFromModel(answer.text);
       if (answer.finishReason && answer.finishReason !== "STOP") { status = "invalid_output"; throw new UnprocessableEntityException("The AI answer was cut short. Try fewer rows, or continue manually."); }
       let parsed: unknown;
       try { parsed = JSON.parse(text); } catch { status = "invalid_output"; throw new UnprocessableEntityException("The AI answer could not be read. Try again, or continue manually."); }
@@ -168,7 +168,7 @@ export class AiGatewayService {
       const json = (request.generationConfig as { responseMimeType?: string } | undefined)?.responseMimeType === "application/json";
       const answer = await this.complete(provider, model, request, { deadline, retry: input.feature === "quotation.plan", separator: json ? "" : "\n" });
       usage = answer.usage;
-      const text = json ? stripCodeFences(answer.text) : answer.text;
+      const text = json ? jsonFromModel(answer.text) : answer.text;
       status = text && answer.finishReason === "STOP" ? "ok" : "invalid_output";
       return { text, finishReason: answer.finishReason, model, provider };
     } catch (error) {

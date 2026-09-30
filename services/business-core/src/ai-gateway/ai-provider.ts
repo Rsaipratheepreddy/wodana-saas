@@ -252,6 +252,22 @@ export function stripCodeFences(text: string) {
   return text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
 }
 
+/**
+ * The JSON inside a model's answer. Gemini has a JSON mode; Bedrock's Converse doesn't, so a model there may wrap
+ * the value in a sentence or a fenced block. Returns the answer unchanged when no JSON value can be found in it.
+ */
+export function jsonFromModel(text: string) {
+  const stripped = stripCodeFences(text);
+  const parses = (candidate: string) => { try { JSON.parse(candidate); return true; } catch { return false; } };
+  if (parses(stripped)) return stripped;
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text)?.[1]?.trim();
+  if (fenced && parses(fenced)) return fenced;
+  const start = stripped.search(/[{[]/);
+  const end = Math.max(stripped.lastIndexOf("}"), stripped.lastIndexOf("]"));
+  if (start >= 0 && end > start && parses(stripped.slice(start, end + 1))) return stripped.slice(start, end + 1);
+  return stripped;
+}
+
 export type ProviderFailure = "throttled" | "temporary" | "denied" | "failed";
 
 /**

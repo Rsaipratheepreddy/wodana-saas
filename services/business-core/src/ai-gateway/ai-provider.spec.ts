@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  aiConfigured, aiModelFor, aiProviderName, bedrockRegion, classifyBedrockError, outputCap, readConverse, readConverseTurn, readGemini, readGeminiTurn, stripCodeFences, TextOnlyModelError, toConverse,
+  aiConfigured, aiModelFor, aiProviderName, bedrockRegion, classifyBedrockError, outputCap, readConverse, readConverseTurn, readGemini, readGeminiTurn, stripCodeFences, jsonFromModel, TextOnlyModelError, toConverse,
   withoutThinking,
 } from "./ai-provider";
 
@@ -93,6 +93,13 @@ describe("reading answers", () => {
   it("strips code fences around JSON", () => {
     expect(stripCodeFences('```json\n{"a":1}\n```')).toBe('{"a":1}');
     expect(stripCodeFences('{"a":1}')).toBe('{"a":1}');
+  });
+
+  it("finds the JSON in an answer a Bedrock model wrapped in prose or a fence", () => {
+    expect(jsonFromModel('{"a":1}')).toBe('{"a":1}');
+    expect(jsonFromModel('Here is the quote:\n```json\n{"a":[1,2]}\n```\nLet me know.')).toBe('{"a":[1,2]}');
+    expect(jsonFromModel('Sure! {"rooms":[{"name":"Living"}]} Hope this helps.')).toBe('{"rooms":[{"name":"Living"}]}');
+    expect(jsonFromModel('no json here')).toBe('no json here');
   });
 
   it("sorts Bedrock errors into throttled, temporary, denied and failed", () => {
