@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, ErrorState, ListTabs, NoResultsState, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, ListTabs, NoResultsState, type DataGridColumn, TypeChip } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { MovementKind, MovementRow } from "@/lib/inventory/types";
@@ -18,6 +18,10 @@ type Kind = "all" | "in" | "out" | "moves" | "reserved" | "corrections" | "made"
 const GROUPS: Record<Exclude<Kind, "all">, MovementKind[]> = {
   in: ["receive", "return"], out: ["issue", "supplier_return", "reverse"], moves: ["transfer_out", "transfer_in"], reserved: ["allocate", "release"], corrections: ["adjust"], made: ["produce"],
 };
+
+/** The chip colour of each kind: in green, out amber, moves blue, reserved purple, corrections red, made teal. */
+const KIND_HUE = Object.fromEntries(([["in", 3], ["out", 4], ["moves", 1], ["reserved", 2], ["corrections", 5], ["made", 6]] as const)
+  .flatMap(([group, hue]) => GROUPS[group].map((kind) => [kind, hue]))) as Record<MovementKind, 1 | 2 | 3 | 4 | 5 | 6>;
 
 /** Every change to stock, newest first: what moved, where, for whom, why, and who did it. The ledger never changes. */
 export function History({ api, itemId, onClearItem, refreshKey, projectId = null, onProject = () => undefined }: {
@@ -51,7 +55,7 @@ export function History({ api, itemId, onClearItem, refreshKey, projectId = null
     { id: "item", header: t("Item"), accessorFn: (row) => row.itemName, size: 220, meta: { primary: true } },
     { id: "change", header: t("Change"), accessorFn: (row) => Number(row.quantity), size: 170, meta: { renderCell: (row) => <span className={styles.nameCell}>
       <span className={styles.number} data-sign={Number(row.quantity) < 0 ? "out" : "in"}>{`${Number(row.quantity) > 0 ? "+" : ""}${quantityText(row.quantity)} ${row.unit}`.trim()}</span>
-      <small>{kinds[row.kind]}</small></span> } },
+      <span><TypeChip hue={KIND_HUE[row.kind]}>{kinds[row.kind]}</TypeChip></span></span> } },
     { id: "value", header: t("Value"), accessorFn: (row) => (row.unitCost ? movementValue(row.quantity, row.unitCost) : "0"), size: 130, meta: { align: "end", mobileHidden: true,
       renderCell: (row) => (row.unitCost && row.currency ? <span className={styles.number}>{format.money(movementValue(row.quantity, row.unitCost), row.currency)}</span> : "—") } },
     { id: "place", header: t("Place"), accessorFn: (row) => row.locationName, size: 160 },

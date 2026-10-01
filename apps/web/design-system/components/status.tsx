@@ -12,6 +12,18 @@ export function Badge({ children, className, tone = "neutral", ...props }: HTMLA
   return <span {...props} className={["wd-badge", className].filter(Boolean).join(" ")} data-tone={tone}>{children}</span>;
 }
 
+/** A record's type ("Warranty claim", "Plywood") as a coloured chip: the same type always gets the same colour. */
+export type TypeHue = 1 | 2 | 3 | 4 | 5 | 6;
+export function typeHue(key: string): TypeHue {
+  let hash = 0;
+  for (const char of key.toLowerCase()) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return ((hash % 6) + 1) as TypeHue;
+}
+export function TypeChip({ children, hue, typeKey }: { children: ReactNode; hue?: TypeHue; typeKey?: string }) {
+  if (children === null || children === undefined || children === "") return null;
+  return <span className="wd-badge wd-type-chip" data-hue={hue ?? typeHue(typeKey ?? String(children))}>{children}</span>;
+}
+
 export function Tag({ children, onRemove, tone = "neutral" }: { children: ReactNode; onRemove?: () => void; tone?: StatusTone }) {
   const t = useT();
   return <span className="wd-tag" data-tone={tone}>{children}{onRemove ? <IconButton aria-label={t("Remove {name}", { name: String(children) })} onPress={onRemove}><X size={13} /></IconButton> : null}</span>;

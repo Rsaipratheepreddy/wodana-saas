@@ -5,6 +5,7 @@ import { FileUp, Plus } from "lucide-react";
 import {
   Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, FormRow, MoreDetails, NoResultsState, PageHeader, SelectField, TextAreaField, TextInput, useFormDraft, useRememberedChoice,
   type DataGridColumn,
+  TypeChip,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { catalogApi, type CatalogItemRow, type CatalogStructure, type CatalogSummary } from "@/lib/workspace/catalog-v2";
@@ -52,7 +53,7 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
   const attributeColumns = (structure?.attributes ?? []).filter((attribute) => !attribute.categoryId).slice(0, 3);
   const columns = useMemo<DataGridColumn<CatalogItemRow>[]>(() => [
     { id: "name", header: t("Item"), accessorFn: (row) => `${row.name} ${row.code}`, size: 260, meta: { primary: true, renderCell: (row) => <span className={styles.itemCell}><strong>{row.name}</strong><small><bdi dir="ltr">{row.code}</bdi> · {typeLabels(t)[row.itemType] ?? row.itemType}</small></span> } },
-    { id: "category", header: t("Category"), accessorFn: (row) => row.categoryName ?? "", size: 150 },
+    { id: "category", header: t("Category"), accessorFn: (row) => row.categoryName ?? "", size: 150, cell: ({ row }) => <TypeChip>{row.original.categoryName}</TypeChip> },
     ...attributeColumns.map((attribute): DataGridColumn<CatalogItemRow> => ({ id: `attr-${attribute.code}`, header: attribute.label, accessorFn: (row) => row.values[attribute.code] ?? "", size: 120, meta: { mobileHidden: true } })),
     { id: "price", header: t("Price"), accessorFn: (row) => row.sellPrice?.price ?? row.sellPrice?.rate ?? "", size: 140, meta: { align: "end", renderCell: (row) => row.sellPrice && (row.sellPrice.price ?? row.sellPrice.rate)
       ? <span dir="ltr">{money(row.sellPrice.price ?? row.sellPrice.rate ?? "0", row.sellPrice.currency)}<span className={styles.muted}> / {row.unitCode}</span></span>

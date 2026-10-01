@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
-import { Button, DateField, EmptyState, ErrorState, InlineNotice, SegmentedControl, SelectField, SettingsSection, Skeleton, TextAreaField, TextInput, FormDialog } from "@/design-system";
+import { Button, DateField, EmptyState, ErrorState, InlineNotice, SegmentedControl, SelectField, SettingsSection, Skeleton, TextAreaField, TextInput, FormDialog, TypeChip } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { createVariation } from "@/lib/project-core/variations";
 import { siteApi, warrantySettingsApi } from "@/lib/site/client";
@@ -72,7 +72,8 @@ export function ProjectWarranty({ workspaceId, projectId }: { workspaceId: strin
       {!state.claims.length ? <EmptyState illustration={null} title={t("No claims")} /> : <ul className={styles.reports}>{state.claims.map((claim) => <li key={claim.id} className={styles.report}>
         <div className={styles.reportHead}>
           <strong>{t("Claim {number}", { number: claim.number })}</strong>
-          <span className={styles.muted}>{[format.day(claim.raisedOn), claim.raisedByName, channels[claim.channel], claim.lineTitle].filter(Boolean).join(" · ")}</span>
+          <TypeChip typeKey={claim.channel}>{channels[claim.channel]}</TypeChip>
+          <span className={styles.muted}>{[format.day(claim.raisedOn), claim.raisedByName, claim.lineTitle].filter(Boolean).join(" · ")}</span>
           <span className={styles.status} data-status={claim.status === "open" ? "submitted" : claim.status === "covered" ? "approved" : "returned"}>{statusLabel[claim.status]}</span>
           <span className={styles.spacer} />
           {claim.status === "open" && state.canManage ? <Button size="compact" onPress={() => setDialog({ kind: "decide", claim })}>{t("Decide")}</Button> : null}

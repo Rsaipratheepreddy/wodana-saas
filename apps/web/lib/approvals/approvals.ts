@@ -40,6 +40,12 @@ export const KIND_LABEL: Record<ApprovalKind, MessageKey> = {
   ai_action: tKey("AI app change"),
 };
 
+/** The colour of the type chip: sales purple, money in green, spend amber, issues red, site and factory teal, quotes blue. */
+export const KIND_HUE: Record<ApprovalKind, 1 | 2 | 3 | 4 | 5 | 6> = {
+  quote_review: 1, receipt: 3, agreement: 2, deal_finance: 2, deal_approval: 2, order: 4, output: 6, material_swap: 6,
+  site_report: 6, petty_cash: 4, snag: 5, warranty: 5, stock_correction: 6, bill: 4, payment_run: 4, reimbursement: 4, invoice: 3, ai_action: 2,
+};
+
 /** The title of a milestone to invoice (D-14), sent by the server as a phrase to translate. */
 export const INVOICE_PHRASE = tKey("Issue invoice · {milestone}");
 

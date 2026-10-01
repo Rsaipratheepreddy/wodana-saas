@@ -2,9 +2,9 @@
 
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, useDesignSystem, type DataGridColumn, FormDialog } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, TypeChip, useDesignSystem, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { APPROVAL_FILTERS, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
+import { APPROVAL_FILTERS, KIND_HUE, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
 import { playFeedback } from "@/lib/feedback/sounds";
 import styles from "./waiting-for-you.module.css";
 import { APPROVALS_CHANGED, WAITING_SCOPES } from "./use-waiting-count";
@@ -74,7 +74,7 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
       {/* A daily report shows its lead photo and the client's words, so it can be approved and sent from here. */}
       {row.preview?.photoId && row.parentId ? <img className={styles.thumb} src={siteApi(workspaceId, row.parentId).photoUrl(row.preview.photoId)} alt="" loading="lazy" /> : null}
       <span className={styles.whatText}>
-        <span className={styles.kind}>{t(KIND_LABEL[row.kind])}</span>
+        <span className={styles.kind}><TypeChip hue={KIND_HUE[row.kind]}>{t(KIND_LABEL[row.kind])}</TypeChip></span>
         <span>{title(row)}</span>
         {row.preview?.text ? <span className={styles.preview} dir="auto">{row.preview.text}</span> : null}
         {row.preview?.photos ? <span className={styles.muted}>{row.preview.photos === 1 ? t("1 photo") : t("{count} photos", { count: row.preview.photos })}</span> : null}

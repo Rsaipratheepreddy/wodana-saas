@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { CalendarDays, Filter, Plus, RefreshCw, Phone, CheckSquare, UserRound } from "lucide-react";
-import { Avatar, Badge, Button, Callout, DataGrid, IconButton, SearchInput, SelectField, useDesignSystem, useWorkspaceZoneLabel, type DataGridColumn } from "@/design-system";
+import { Avatar, Badge, Button, Callout, DataGrid, IconButton, SearchInput, SelectField, useDesignSystem, useWorkspaceZoneLabel, type DataGridColumn, TypeChip } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import {FollowUpKanban} from './follow-up-kanban';
@@ -36,7 +36,7 @@ function columnsFor(now: number, timeZone: string, locale: string, t: Translate)
   return [
     { accessorKey: "title", header: t("Follow-up"), size: 285, meta: { primary: true }, cell: ({ row }) => <span className={styles.followUpCell}><span className={styles.typeIcon} aria-hidden="true">{row.original.type === "call" ? <Phone size={15} /> : row.original.type === "meeting" ? <CalendarDays size={15} /> : <CheckSquare size={15} />}</span><span className={styles.identity}><strong>{String(row.original.title ?? t("Untitled follow-up"))}</strong>{row.original.description ? <small>{String(row.original.description)}</small> : null}</span></span> },
     { accessorKey: "partyName", header: t("Customer"), size: 200, cell: ({ row }) => row.original.partyName ? <span className={styles.personCell}><Avatar name={String(row.original.partyName)} size="sm" /><span>{String(row.original.partyName)}</span></span> : <span className={styles.muted}>{String(row.original.leadTitle ?? t("Not linked"))}</span> },
-    { accessorKey: "type", header: t("Type"), size: 115, cell: ({ row }) => t(row.original.type === "call" ? "Call" : row.original.type === "meeting" ? "Meeting" : "Task") },
+    { accessorKey: "type", header: t("Type"), size: 115, cell: ({ row }) => <TypeChip hue={row.original.type === "call" ? 3 : row.original.type === "meeting" ? 2 : 1}>{t(row.original.type === "call" ? "Call" : row.original.type === "meeting" ? "Meeting" : "Task")}</TypeChip> },
     { id: "when", accessorFn: (row) => String(row.dueAt ?? ""), header: t("Due"), size: 170, cell: ({ row }) => { const item = row.original; const due = Date.parse(String(item.dueAt ?? "")); return Number.isFinite(due) ? <time dateTime={String(item.dueAt)}>{new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(due)}</time> : <span className={styles.muted}>{t("No date yet")}</span>; } },
     { id: "priority", accessorFn: (row) => followUpGroup(row, now, timeZone), header: t("Status"), size: 125, cell: ({ row }) => { const group = followUpGroup(row.original, now, timeZone); return <Badge tone={group === "Overdue" ? "danger" : group === "Completed" ? "success" : group === "Today" ? "info" : "neutral"}>{t(group)}</Badge>; } },
     { accessorKey: "ownerName", header: t("Owner"), size: 160, cell: ({ row }) => <span className={styles.personCell}>{row.original.ownerName ? <Avatar name={String(row.original.ownerName)} size="sm" /> : <UserRound size={16} aria-hidden="true" />}<span className={!row.original.ownerName ? styles.muted : undefined}>{String(row.original.ownerName ?? t("Unassigned"))}</span></span> },

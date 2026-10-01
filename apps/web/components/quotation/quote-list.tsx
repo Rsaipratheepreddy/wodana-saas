@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
-import { Badge, Button, EmptyState, FormDialog, InlineNotice, RadioSet, RecordTable, useDesignSystem } from "@/design-system";
+import { Badge, Button, EmptyState, FormDialog, InlineNotice, RadioSet, RecordTable, useDesignSystem, TypeChip } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commercialPath, jsonRequest } from "@/lib/commercial/client";
 import { SERVICE_PATHS } from "@/lib/commercial/service-paths";
@@ -70,7 +70,7 @@ export function QuoteList({ initial, baseHref }: { initial: CommercialState; bas
       columns={[
         { id: "title", header: t("Quote"), size: 320, accessorFn: (quote) => quote.title, meta: { primary: true },
           cell: ({ row: { original: quote } }) => <span className={styles.title}><Link data-tour={quote.kind === "quotation" && quote.round !== "design" ? "quote-open quote-main" : "quote-open"} href={hrefOf(quote.id)}>{quote.title}</Link><small>{t("Q-{number}", { number: quote.number })}</small></span> },
-        { id: "kind", header: t("Type"), size: 130, accessorFn: kind },
+        { id: "kind", header: t("Type"), size: 130, accessorFn: kind, cell: ({ row: { original: quote } }) => <TypeChip typeKey={`${quote.kind}:${quote.round}`}>{kind(quote)}</TypeChip> },
         { id: "total", header: t("Amount"), size: 150, accessorFn: (quote) => quote.total, meta: { align: "end" },
           cell: ({ row: { original: quote } }) => <span className={styles.amount}>{money(quote.clientDecision?.acceptedTotal ?? quote.total, quote.currency, currencyDigits(quote.currency, locale), locale)}</span> },
         { id: "status", header: t("Status"), size: 170, accessorFn: (quote) => quote.status,
