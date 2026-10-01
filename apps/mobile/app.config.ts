@@ -43,8 +43,8 @@ if (release) {
 
 // Store versions. The old Flutter app shipped 1.0.1 (build 2026090101) under the same ids, so this app starts
 // above both. EAS keeps the build number (eas.json: appVersionSource remote) and raises it on every store
-// build; the number here is the floor for a local build.
-const version = '2.0.0';
+// build; the number here is the floor for a local build. 2.0.1 fixes the camera and dead screens of 2.0.0.
+const version = '2.0.1';
 const buildNumber = env('EXPO_PUBLIC_BUILD_NUMBER', '2026092800');
 if (!/^\d{1,10}$/.test(buildNumber) || Number(buildNumber) <= 2026090101 || Number(buildNumber) > 2100000000) {
   throw new Error('EXPO_PUBLIC_BUILD_NUMBER must be a whole number above 2026090101 (the old store build) and at most 2100000000.');

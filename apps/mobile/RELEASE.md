@@ -7,7 +7,7 @@ The Expo app replaces the old Flutter app in both stores under the same identity
 | iOS bundle id / Android package | `ai.wodana.mobile` |
 | Apple team | `MSZ9TCZKAB` |
 | Expo account / project | `pratheeprdys-team` / `wodana` (project id `9c7fb91b-e067-46bd-b675-2bc920452f75`) |
-| App version | `2.0.0` (the old store app was `1.0.1`) |
+| App version | `2.0.1` (`2.0.0` was the first Expo release; the old store app was `1.0.1`) |
 | Build number | EAS keeps it remotely and adds 1 per store build. It starts at `2026092800` (the old app's last build was `2026090101`). |
 | Build profiles (`eas.json`) | `development` (dev client), `preview` (UAT: internal APK and ad hoc iOS), `production` (store AAB and App Store build) |
 | API (preview and production) | `https://plm.wodana.ai/api/v1` |
@@ -150,7 +150,7 @@ eas submit --profile production --platform android --latest   # to the Play inte
 
 ### 4. Updates without a store review (JavaScript only)
 
-These reach builds with the same app version (runtime `2.0.0`):
+These reach builds with the same app version (the runtime version is the app version, e.g. `2.0.1`):
 
 ```sh
 eas update --channel production --message "<what changed>"
