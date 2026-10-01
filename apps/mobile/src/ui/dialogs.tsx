@@ -1,21 +1,26 @@
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { useT } from '../core/i18n';
 import { Button, IconBadge, Text } from './primitives';
 import { TextField } from './fields';
+import { deferred } from './sequence';
 import { Sheet } from './sheet';
 import { useTheme } from './theme';
 
 export type SheetAction = { label: string; icon?: LucideIcon; onPress: () => void; danger?: boolean; detail?: string; disabled?: boolean };
 
-/** The ⋯ menu: a short list of secondary actions. */
+/**
+ * The ⋯ menu: a short list of secondary actions. The chosen action runs once the sheet has gone, so an action
+ * that opens the camera or the photo library never presents it on top of the closing sheet.
+ */
 export function ActionSheet({ open, onClose, title, actions }: { open: boolean; onClose: () => void; title?: string; actions: SheetAction[] }) {
   const theme = useTheme();
-  return <Sheet open={open} onClose={onClose} title={title}>
+  const [chosen] = useState(deferred);
+  return <Sheet open={open} onClose={onClose} onClosed={chosen.run} title={title}>
     <View style={{ borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.structuralDivider, overflow: 'hidden' }}>
       {actions.map((action, index) => <Pressable key={action.label} accessibilityRole="button" disabled={action.disabled}
-        onPress={() => { onClose(); setTimeout(action.onPress, Platform.OS === 'ios' ? 280 : 0); }}
+        onPress={() => { chosen.set(action.onPress); onClose(); }}
         style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: theme.space(3), minHeight: 56, paddingHorizontal: theme.space(4), paddingVertical: theme.space(3),
           borderTopWidth: index ? 1 : 0, borderTopColor: theme.colors.structuralDivider, backgroundColor: pressed ? theme.colors.surfacePressed : 'transparent', opacity: action.disabled ? 0.45 : 1 })}>
         {action.icon ? <IconBadge icon={action.icon} tone={action.danger ? 'danger' : 'neutral'} /> : null}

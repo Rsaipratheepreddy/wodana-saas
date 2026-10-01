@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter, type Href } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { Camera, ClipboardList, FolderKanban, ImagePlus, Ruler, TriangleAlert } from 'lucide-react-native';
 import { errorMessage } from '../../core/api';
@@ -13,6 +13,7 @@ import { Empty, ListRow, ListScreen, Screen, Section } from '../../ui/layout';
 import { PhotoGrid } from '../../ui/photos';
 import { Button, Row, Text } from '../../ui/primitives';
 import { StatusChip } from '../../ui/status';
+import { afterTransition } from '../../ui/sequence';
 import { useToast } from '../../ui/toast';
 import { useProjects } from '../projects/api';
 import type { ReportPhotosPayload } from '../projects/outbox';
@@ -34,6 +35,7 @@ export function PhotoCaptureScreen() {
   const t = useT();
   const toast = useToast();
   const router = useRouter();
+  const navigation = useNavigation();
   const outbox = useOutbox();
   const markup = useMarkup();
   const session = useSession();
@@ -49,7 +51,6 @@ export function PhotoCaptureScreen() {
   const [note, setNote] = useState('');
   const projects = useProjects();
   const cases = useCases('');
-  const started = useRef(false);
   const shoot = async () => {
     try { const photo = await takePhoto(); if (photo) setPhotos((list) => [...list, photo].slice(0, 10)); }
     catch (error) {
@@ -61,7 +62,9 @@ export function PhotoCaptureScreen() {
     try { const picked = await choosePhotos(10 - photos.length); setPhotos((list) => [...list, ...picked].slice(0, 10)); }
     catch (error) { if (error instanceof MediaPermissionError) toast.show(t('Allow photo access in Settings to choose photos.'), 'error', { label: t('Settings'), onPress: openSettings }); }
   };
-  useEffect(() => { if (!started.current) { started.current = true; void shoot(); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // The camera opens by itself, but only once this screen's push has finished: presented mid-transition (or on the
+  // closing capture sheet) the camera is torn down with it and iOS stops taking taps.
+  useEffect(() => afterTransition(navigation, () => { void shoot(); }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeProjects = (projects.data?.projects ?? []).filter((project) => project.status === 'active' || project.status === 'on_hold');
   const openCases = (cases.data?.items ?? []).filter((item) => item.status !== 'qualified' && !['cancelled', 'archived'].includes(item.status));

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import { useT } from '../core/i18n';
 import { IconButton, Row, Text } from './primitives';
+import { closeFallbackMs, dismissFallbackMs } from './sequence';
 import { useTheme } from './theme';
 
 const native = Platform.OS !== 'web';
@@ -11,9 +12,14 @@ const native = Platform.OS !== 'web';
 /**
  * A bottom sheet: slides up over a dimmed page, closes by the handle (drag down), the backdrop or the
  * close button. `footer` holds its one primary action, kept above the keyboard.
+ *
+ * Closing is deterministic: the exit animation runs, and whether or not it reports back the sheet leaves
+ * the screen a moment later, so a transparent Modal never lingers to swallow taps. `onClosed` fires once
+ * the native modal has really gone (iOS says so with `onDismiss`); anything that presents something else,
+ * such as the camera or another screen, waits for it.
  */
-export function Sheet({ open, onClose, title, subtitle, children, footer, scroll = true, full }: {
-  open: boolean; onClose: () => void; title?: string; subtitle?: string; children: ReactNode; footer?: ReactNode; scroll?: boolean;
+export function Sheet({ open, onClose, onClosed, title, subtitle, children, footer, scroll = true, full }: {
+  open: boolean; onClose: () => void; onClosed?: () => void; title?: string; subtitle?: string; children: ReactNode; footer?: ReactNode; scroll?: boolean;
   /** Take most of the screen (lists with search). */
   full?: boolean;
 }) {
@@ -25,24 +31,54 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, scroll
   const offset = useRef(new Animated.Value(height)).current;
   const fade = useRef(new Animated.Value(0)).current;
   const closing = useRef(false);
+  // Each open or close is a cycle; a close that finishes after the sheet reopened changes nothing.
+  const cycle = useRef(0);
+  const closedPending = useRef(false);
+  const closedRef = useRef(onClosed);
+  closedRef.current = onClosed;
+
+  const announceClosed = useCallback(() => {
+    if (!closedPending.current) return;
+    closedPending.current = false;
+    closedRef.current?.();
+  }, []);
 
   useEffect(() => {
+    const id = ++cycle.current;
     if (open) {
       closing.current = false;
+      closedPending.current = false;
       setMounted(true);
       offset.setValue(height);
       Animated.parallel([
         Animated.timing(fade, { toValue: 1, duration: theme.motion.slow, useNativeDriver: native }),
         Animated.spring(offset, { toValue: 0, damping: 26, stiffness: 260, mass: 0.9, useNativeDriver: native }),
       ]).start();
-    } else if (mounted) {
-      Animated.parallel([
-        Animated.timing(fade, { toValue: 0, duration: theme.motion.base, useNativeDriver: native }),
-        Animated.timing(offset, { toValue: height, duration: theme.motion.slow, easing: Easing.in(Easing.cubic), useNativeDriver: native }),
-      ]).start(() => setMounted(false));
+      return;
     }
+    if (!mounted) return;
+    let finished = false;
+    const finish = () => {
+      if (finished || cycle.current !== id) return;
+      finished = true;
+      closedPending.current = true;
+      setMounted(false);
+    };
+    Animated.parallel([
+      Animated.timing(fade, { toValue: 0, duration: theme.motion.base, useNativeDriver: native }),
+      Animated.timing(offset, { toValue: height, duration: theme.motion.slow, easing: Easing.in(Easing.cubic), useNativeDriver: native }),
+    ]).start(finish);
+    const fallback = setTimeout(finish, closeFallbackMs(theme.motion.slow));
+    return () => clearTimeout(fallback);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Where the phone never reports the dismissal (Android, the web), the sheet counts as gone right after it unmounts.
+  useEffect(() => {
+    if (mounted || !closedPending.current) return;
+    const timer = setTimeout(announceClosed, dismissFallbackMs(Platform.OS));
+    return () => clearTimeout(timer);
+  }, [mounted, announceClosed]);
 
   const dismiss = () => { if (!closing.current) { closing.current = true; onClose(); } };
   const drag = useRef(PanResponder.create({
@@ -54,12 +90,12 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, scroll
     },
   })).current;
 
-  if (!mounted) return null;
   const body = scroll
     ? <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: theme.space(4), paddingBottom: theme.space(4), gap: theme.space(3) }}>{children}</ScrollView>
     : <View style={{ flexShrink: 1, flexGrow: full ? 1 : 0, paddingHorizontal: theme.space(4), paddingBottom: theme.space(2), gap: theme.space(3) }}>{children}</View>;
-  return <Modal visible transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent navigationBarTranslucent>
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
+  // The Modal stays in the tree with `visible` following `mounted`, so iOS can report when its view controller has gone.
+  return <Modal visible={mounted} transparent animationType="none" onRequestClose={dismiss} onDismiss={announceClosed} statusBarTranslucent navigationBarTranslucent>
+    {mounted ? <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
       <Animated.View style={{ position: 'absolute', top: 0, bottom: 0, start: 0, end: 0, backgroundColor: theme.colors.overlay, opacity: fade }}>
         <Pressable accessibilityRole="button" accessibilityLabel={t('Close')} style={{ flex: 1 }} onPress={dismiss} />
       </Animated.View>
@@ -82,6 +118,6 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, scroll
         {body}
         {footer ? <View style={{ paddingHorizontal: theme.space(4), paddingTop: theme.space(3), paddingBottom: Math.max(insets.bottom, theme.space(4)), gap: theme.space(2), borderTopWidth: 1, borderTopColor: theme.colors.structuralDivider }}>{footer}</View> : null}
       </Animated.View>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingView> : null}
   </Modal>;
 }

@@ -6,6 +6,7 @@ import { captureActions, type CaptureAction } from '../../core/access';
 import { haptic } from '../../core/haptics';
 import { key, useT } from '../../core/i18n';
 import { useSession } from '../../core/session';
+import { deferred } from '../../ui/sequence';
 import { Sheet } from '../../ui/sheet';
 import { IconBadge, Text } from '../../ui/primitives';
 import { Empty } from '../../ui/layout';
@@ -43,12 +44,14 @@ function CaptureSheet({ open, onClose }: { open: boolean; onClose: () => void })
   const router = useRouter();
   const session = useSession();
   const actions = captureActions(session);
-  return <Sheet open={open} onClose={onClose} title={t('Capture')}>
+  // The chosen capture opens once the sheet has gone: its screen may open the camera straight away.
+  const [chosen] = useState(deferred);
+  return <Sheet open={open} onClose={onClose} onClosed={chosen.run} title={t('Capture')}>
     {actions.length ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2) }}>
       {actions.map((action) => {
         const item = ACTIONS[action];
         return <Pressable key={action} accessibilityRole="button" accessibilityLabel={t(item.label)}
-          onPress={() => { haptic.tap(); onClose(); setTimeout(() => router.push(item.href), 160); }}
+          onPress={() => { haptic.tap(); chosen.set(() => router.push(item.href)); onClose(); }}
           style={({ pressed }) => ({ width: '31.5%', flexGrow: 1, minHeight: 96, borderRadius: theme.radius.lg, padding: theme.space(3), gap: theme.space(2), justifyContent: 'space-between',
             backgroundColor: pressed ? theme.colors.surfacePressed : theme.colors.surfaceMuted })}>
           <IconBadge icon={item.icon} tone="action" size={40} />

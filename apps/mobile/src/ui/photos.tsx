@@ -1,41 +1,58 @@
-import { useEffect, useState } from 'react';
-import { Modal, Platform, Pressable, View, useWindowDimensions, type StyleProp, type ImageStyle } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Modal, Platform, Pressable, View, useWindowDimensions, type StyleProp, type ImageStyle, type ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, CloudUpload, ImagePlus, PenLine, Plus, X } from 'lucide-react-native';
+import { Camera, CloudUpload, ImageOff, ImagePlus, PenLine, Plus, X } from 'lucide-react-native';
 import { useAuth } from '../auth/provider';
 import { useApi } from '../core/api';
 import { useT } from '../core/i18n';
 import { choosePhotos, MediaPermissionError, openSettings, takePhoto, type LocalPhoto } from '../core/media';
 import { ActionSheet } from './dialogs';
 import { IconButton, Text } from './primitives';
+import { deferred, dismissFallbackMs } from './sequence';
 import { useToast } from './toast';
 import { useTheme } from './theme';
 
-/** A photo stored in the workspace, fetched with the person's sign-in. `path` is workspace-relative. */
+/**
+ * A photo stored in the workspace, fetched with the person's sign-in. `path` is workspace-relative.
+ * A load that fails tries once more with a fresh token (the first may have expired while the list sat
+ * open), then shows that the photo is unavailable instead of an empty tile.
+ */
 export function AuthImage({ path, style, contentFit = 'cover', accessibilityLabel }: { path: string; style?: StyleProp<ImageStyle>; contentFit?: 'cover' | 'contain'; accessibilityLabel?: string }) {
   const { client } = useAuth();
   const api = useApi();
   const theme = useTheme();
+  const t = useT();
   const [source, setSource] = useState<{ uri: string; headers?: Record<string, string> } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setAttempt(0); setFailed(false); }, [path]);
   useEffect(() => {
     let alive = true;
     let objectUrl: string | null = null;
     void (async () => {
       const authorization = await client.authorization().catch(() => null);
-      if (!authorization || !alive) return;
+      if (!authorization || !alive) { if (alive && !authorization) setFailed(true); return; }
       if (Platform.OS === 'web') {
         // Browsers can't add headers to an <img>; fetch the bytes and show them locally.
         const response = await fetch(api.url(path), { headers: { authorization } }).catch(() => null);
-        if (!response?.ok || !alive) return;
+        if (!alive) return;
+        if (!response?.ok) { setFailed(true); return; }
         objectUrl = URL.createObjectURL(await response.blob());
         setSource({ uri: objectUrl });
       } else setSource({ uri: api.url(path), headers: { authorization } });
     })();
     return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [client, api, path]);
+  }, [client, api, path, attempt]);
+  if (failed) {
+    return <View accessibilityLabel={accessibilityLabel ? `${accessibilityLabel}: ${t('Photo unavailable')}` : t('Photo unavailable')}
+      style={[{ backgroundColor: theme.colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, style as StyleProp<ViewStyle>]}>
+      <ImageOff color={theme.colors.iconSubtle} size={20} strokeWidth={1.8} />
+    </View>;
+  }
   return <Image source={source ?? undefined} style={[{ backgroundColor: theme.colors.surfaceMuted }, style]} contentFit={contentFit} transition={160}
-    accessibilityLabel={accessibilityLabel} cachePolicy="memory-disk" recyclingKey={path} />;
+    accessibilityLabel={accessibilityLabel} cachePolicy="memory-disk" recyclingKey={path}
+    onError={() => { if (attempt === 0) setAttempt(1); else setFailed(true); }} />;
 }
 
 export type PhotoItem = {
@@ -58,6 +75,8 @@ export function PhotoGrid({ photos, onAdd, onRemove, onDraw, max = 10, columns =
   const [open, setOpen] = useState<PhotoItem | null>(null);
   const [width, setWidth] = useState(0);
   const pick = usePhotoPicker();
+  // Drawing opens a full-screen editor: it waits until the viewer has really gone (see ui/sequence.ts).
+  const [afterViewer] = useState(deferred);
   const gap = theme.space(2);
   const size = width ? Math.floor((width - gap * (columns - 1)) / columns) : 0;
   const room = max - photos.length;
@@ -82,7 +101,8 @@ export function PhotoGrid({ photos, onAdd, onRemove, onDraw, max = 10, columns =
       <Text variant="caption" tone="secondary" style={{ textAlign: 'center' }} numberOfLines={2}>{addLabel ?? t('Add photos')}</Text>
     </Pressable> : null}
     {pick.sheet}
-    <PhotoViewer photo={open} onClose={() => setOpen(null)} onDraw={onDraw && open?.uri ? () => { const item = open; setOpen(null); if (item) onDraw(item); } : undefined} />
+    <PhotoViewer photo={open} onClose={() => setOpen(null)} onClosed={afterViewer.run}
+      onDraw={onDraw && open?.uri ? () => { const item = open; afterViewer.set(() => onDraw(item)); setOpen(null); } : undefined} />
   </View>;
 }
 
@@ -111,12 +131,29 @@ export function usePhotoPicker() {
   };
 }
 
-/** One photo, full screen. */
-export function PhotoViewer({ photo, onClose, onDraw }: { photo: PhotoItem | null; onClose: () => void; onDraw?: () => void }) {
+/** One photo, full screen. `onClosed` fires once the modal has really gone (iOS reports it; elsewhere right after). */
+export function PhotoViewer({ photo, onClose, onClosed, onDraw }: { photo: PhotoItem | null; onClose: () => void; onClosed?: () => void; onDraw?: () => void }) {
   const t = useT();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  return <Modal visible={!!photo} animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent>
+  const wasOpen = useRef(false);
+  const closedPending = useRef(false);
+  const closedRef = useRef(onClosed);
+  closedRef.current = onClosed;
+  const announceClosed = useCallback(() => {
+    if (!closedPending.current) return;
+    closedPending.current = false;
+    closedRef.current?.();
+  }, []);
+  useEffect(() => {
+    if (photo) { wasOpen.current = true; closedPending.current = false; return; }
+    if (!wasOpen.current) return;
+    wasOpen.current = false;
+    closedPending.current = true;
+    const timer = setTimeout(announceClosed, dismissFallbackMs(Platform.OS));
+    return () => clearTimeout(timer);
+  }, [photo, announceClosed]);
+  return <Modal visible={!!photo} animationType="fade" onRequestClose={onClose} onDismiss={announceClosed} statusBarTranslucent transparent>
     <View style={{ flex: 1, backgroundColor: '#000000' }}>
       {photo?.uri ? <Image source={{ uri: photo.uri }} style={{ width, height }} contentFit="contain" />
         : photo?.path ? <AuthImage path={photo.path.replace(/[?&]preview=1/, '')} style={{ width, height, backgroundColor: '#000000' }} contentFit="contain" /> : null}
