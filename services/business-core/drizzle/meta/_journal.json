@@ -953,6 +953,13 @@
       "when": 1801740000200,
       "tag": "0241_role_notice_wording",
       "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1801740000300,
+      "tag": "0242_push_on_for_registered_phones",
+      "breakpoints": true
     }
   ]
 }

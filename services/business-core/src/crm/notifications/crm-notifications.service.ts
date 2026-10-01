@@ -143,6 +143,9 @@ export class CrmNotificationsService {
           ON CONFLICT(workspace_id,user_id,installation_id) DO UPDATE SET last_request_id=EXCLUDED.last_request_id,platform=EXCLUDED.platform,token_type=EXCLUDED.token_type,consent_id=EXCLUDED.consent_id,token_hash=EXCLUDED.token_hash,encrypted_token_reference=EXCLUDED.encrypted_token_reference,locale=EXCLUDED.locale,timezone=EXCLUDED.timezone,status='active',last_seen_at=now(),updated_at=now(),version=device_endpoints.version+1
           RETURNING id,installation_id AS "installationId",platform,token_type AS "tokenType",locale,timezone,status,last_seen_at AS "lastSeenAt",version`, [workspaceId, actorUser.userId, input.installationId, input.requestId, input.platform, input.tokenType, consent.rows[0].id, tokenHash, tokenReference, input.locale, input.timezone]);
         await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "notification.device.registered.v1", entityType: "device_endpoint", entityId: String(endpoint.rows[0].id), after: { installationId: input.installationId, platform: input.platform, tokenType: input.tokenType } });
+        // A phone that allows notifications gets pushes, unless the person has chosen otherwise in Me.
+        await client.query(`INSERT INTO notification_preferences(workspace_id,recipient_type,recipient_id,event_type,channel,enabled,quiet_hours) VALUES($1,'user',$2,'*','push',true,'{}'::jsonb)
+          ON CONFLICT(workspace_id,recipient_type,recipient_id,event_type,channel) DO NOTHING`, [workspaceId, actorUser.userId]);
         await Promise.all([...displaced.rows, ...prior.rows].filter((row) => row.tokenReference !== tokenReference).map((row) => this.deviceTokens?.delete(String(row.tokenReference))));
         return { endpoint: endpoint.rows[0] };
       } catch (error) {
