@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, Circle, CircleDot, Minus } from "lucide-react";
-import { Button, Checkbox, FormDialog, IconMenuButton, TextAreaField } from "@/design-system";
+import { Button, Checkbox, ConfirmationDialog, FormDialog, IconMenuButton, InlineNotice, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
 import type { CloseOut, EvaluatedCheck, ProjectDetail, ProjectOverview, ProjectStage } from "@/lib/project-core/types";
@@ -26,6 +26,7 @@ export function ProjectStages({ detail, run, onTeam, plan, today, api }: {
   const format = useProjectFormat();
   const [open, setOpen] = useState<string | null>(null);
   const [reason, setReason] = useState<{ action: "skip_stage" | "reopen_stage"; stage: ProjectStage } | null>(null);
+  const [finishing, setFinishing] = useState<ProjectStage | null>(null);
   const roleLabel = (key: string | null) => detail.roles.find((role) => role.key === key)?.label ?? "";
   const running = detail.project.status === "active";
   const last = detail.stages.at(-1);
@@ -62,13 +63,14 @@ export function ProjectStages({ detail, run, onTeam, plan, today, api }: {
             {stage.checks.map((check) => <CheckRow key={check.key} check={check} stage={stage} run={run} projectId={detail.project.id} onTeam={onTeam} roleLabel={roleLabel} running={running} />)}
           </ul> : null}
           {stage.status === "current" && stage.canWork && running ? <div className={styles.stageActions}>
-            <Button size="compact" variant="primary" isDisabled={!stage.ready} onPress={() => void run("complete_stage", { stageId: stage.id })}>{t("Finish {stage}", { stage: t(stage.name as never) })}</Button>
+            <Button size="compact" variant="primary" isDisabled={!stage.ready} onPress={() => setFinishing(stage)}>{t("Finish {stage}", { stage: t(stage.name as never) })}</Button>
             {!stage.ready ? <span className={styles.muted}>{t("{count} still needed", { count: stage.checks.filter((check) => !check.passed).length })}</span> : null}
           </div> : null}
           {stage === last && closing && api ? <CloseOutList api={api} projectId={detail.project.id} /> : null}
         </li>;
       })}
     </ol>
+    {finishing ? <FinishStageDialog detail={detail} stage={finishing} run={run} onClose={() => setFinishing(null)} /> : null}
     {reason ? <ReasonDialog title={reason.action === "skip_stage" ? t("Skip {stage}", { stage: reason.stage.name }) : t("Go back a stage")}
       label={reason.action === "skip_stage" ? t("Why doesn't it apply") : t("Why")}
       onClose={() => setReason(null)}
@@ -147,4 +149,27 @@ function ReasonDialog({ title, label, onClose, onSave }: { title: string; label:
   return <FormDialog size="md" title={title} onClose={onClose} isDirty={Boolean(text.trim())} isSubmitDisabled={!text.trim()} submitLabel={t("Save")} onSubmit={() => onSave(text.trim())}>
     <TextAreaField label={label} isRequired value={text} onChange={setText} />
   </FormDialog>;
+}
+
+/** Finishing a stage moves the project on, so it asks first and says what comes next. */
+export function FinishStageDialog({ detail, stage, run, onClose }: { detail: ProjectDetail; stage: ProjectStage; run: Run; onClose: () => void }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const following = detail.stages.find((item) => item.position > stage.position && item.status === "upcoming");
+  const name = t(stage.name as never);
+  return <ConfirmationDialog isOpen confirmVariant="primary" isConfirming={busy} title={t("Finish {stage}?", { stage: name })}
+    body={<>{following ? t("The project moves on to {stage}.", { stage: t(following.name as never) }) : t("This is the last stage.")}{error ? <InlineNotice tone="error" message={error} /> : null}</>}
+    confirmLabel={t("Finish {stage}", { stage: name })} onOpenChange={(isOpen) => { if (!isOpen && !busy) onClose(); }}
+    onConfirm={async () => { setBusy(true); setError(""); try { if (await run("complete_stage", { stageId: stage.id }, { inDialog: true })) onClose(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); } finally { setBusy(false); } }} />;
+}
+
+/** Confirming a step is recorded with the person's name, so the header's one-click confirm asks first. */
+export function ConfirmCheckDialog({ stage, checkKey, label, run, onClose }: { stage: ProjectStage; checkKey: string; label: string; run: Run; onClose: () => void }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return <ConfirmationDialog isOpen confirmVariant="primary" isConfirming={busy} title={t("Confirm: {check}", { check: label })}
+    body={<>{t("Your name and the time are recorded.")}{error ? <InlineNotice tone="error" message={error} /> : null}</>} confirmLabel={t("Confirm")} onOpenChange={(isOpen) => { if (!isOpen && !busy) onClose(); }}
+    onConfirm={async () => { setBusy(true); setError(""); try { if (await run("confirm_check", { stageId: stage.id, checkKey }, { inDialog: true })) onClose(); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); } finally { setBusy(false); } }} />;
 }

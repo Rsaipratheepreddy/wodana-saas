@@ -8,7 +8,7 @@ import type { ProjectDetail } from "@/lib/project-core/types";
 import { useProjectFormat, useStatusLabel } from "./format";
 import styles from "./project-core.module.css";
 
-export type ProjectDialog = "team" | "hold" | "resume" | "dates" | "rename" | "cancel" | "reopen";
+export type ProjectDialog = "team" | "hold" | "resume" | "dates" | "rename" | "cancel" | "reopen" | "finish_stage" | "confirm_check";
 type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
 
 /** The one thing to do next on this project, for this person: a command, a dialog, or a link to where it's done. */
@@ -23,11 +23,11 @@ export function useNextAction(detail: ProjectDetail, run: Run, open: (dialog: Pr
   const current = detail.stages.find((stage) => stage.status === "current");
   if (!current) return null;
   // The same words as the stage's own button on the Overview, so one action never has two names.
-  if (current.ready && current.canWork) return { label: t("Finish {stage}", { stage: t(current.name as never) }), press: () => void run("complete_stage", { stageId: current.id }) };
+  if (current.ready && current.canWork) return { label: t("Finish {stage}", { stage: t(current.name as never) }), press: () => open("finish_stage") };
   const check = current.checks.find((item) => !item.passed);
   if (!check) return null;
   switch (check.kind) {
-    case "confirm": return current.canWork ? { label: t("Confirm"), ariaLabel: t("Confirm: {check}", { check: t(check.label as never) }), press: () => void run("confirm_check", { stageId: current.id, checkKey: check.key }) } : null;
+    case "confirm": return current.canWork ? { label: t("Confirm"), ariaLabel: t("Confirm: {check}", { check: t(check.label as never) }), press: () => open("confirm_check") } : null;
     case "lead_assigned": case "role_assigned": return detail.canManage ? { label: t("Name someone"), press: () => open("team") } : null;
     case "payment_verified": return { label: t("Open payments"), href: `${base}/money?view=client` };
     case "material_list_signed_off": return { label: t("Material list"), href: `${base}/scope?view=materials` };

@@ -16,6 +16,7 @@ import { ProjectHeader, useNextAction, type ProjectDialog } from "./project-head
 import { ProjectOverview } from "./project-overview";
 import { ProjectPlan } from "./project-plan";
 import { ProjectScope } from "./project-scope";
+import { ConfirmCheckDialog, FinishStageDialog } from "./project-stages";
 import { ProjectHandoverTab, ProjectMoneyTab } from "./project-tab-views";
 import { ProjectTeam } from "./project-team";
 import { ProjectUpdates } from "./project-updates";
@@ -99,6 +100,8 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
   if (error && !detail) return <div className={styles.page}><ErrorState description={error} onRetry={() => void load()} /></div>;
   if (!detail) return <div className={styles.page}><PageSkeleton variant="detail" tabs={7} /></div>;
   const { project } = detail;
+  const current = detail.stages.find((stage) => stage.status === "current");
+  const pendingCheck = current?.checks.find((check) => !check.passed && check.kind === "confirm");
   const rights = detail.money ?? { costs: detail.canSeeMoney, margin: detail.canSeeMoney, client: detail.canSeeMoney };
   const go = (value: ProjectSection) => move(value, `/workspace/projects/${projectId}${value === "overview" ? "" : `/${value}`}`);
   const details = <ProjectDetails detail={detail} save={save} onReload={() => void load()} onDialog={setDialog} />;
@@ -122,6 +125,8 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
     </div>
     {!panel.inline ? <InspectorSheet isOpen={panel.open} title={t("Details")} size="sm" onOpenChange={(open) => { if (!open) panel.close(); }}>{details}</InspectorSheet> : null}
 
+    {dialog === "finish_stage" && current ? <FinishStageDialog detail={detail} stage={current} run={run} onClose={() => setDialog(null)} /> : null}
+    {dialog === "confirm_check" && current && pendingCheck ? <ConfirmCheckDialog stage={current} checkKey={pendingCheck.key} label={t(pendingCheck.label as never)} run={run} onClose={() => setDialog(null)} /> : null}
     {dialog === "team" ? <ProjectTeam detail={detail} run={run} onClose={() => setDialog(null)} /> : null}
     {dialog === "hold" ? <HoldDialog onClose={() => setDialog(null)} onSave={async (reason, reviewOn) => { await save("hold", { reason, reviewOn }); setDialog(null); }} /> : null}
     {dialog === "resume" ? <ResumeDialog hold={detail.hold ?? null} onClose={() => setDialog(null)} onSave={async (shiftDates) => { await save("resume", { shiftDates }); setDialog(null); }} /> : null}

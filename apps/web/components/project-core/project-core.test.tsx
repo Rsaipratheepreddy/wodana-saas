@@ -89,6 +89,10 @@ describe("projects", () => {
     expect(header).toBeEnabled();
     expect(stage).toBeEnabled();
     await userEvent.click(stage);
+    // Finishing moves the project on, so it asks first and nothing is sent until it's confirmed.
+    const dialog = await screen.findByRole("dialog", { name: "Finish Kickoff?" });
+    expect(posts(fetcher).map((post) => post.action)).toEqual(["confirm_check"]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Finish Kickoff" }));
     await waitFor(() => expect(posts(fetcher).map((post) => [post.action, post.version])).toEqual([["confirm_check", 4], ["complete_stage", 5]]));
     expect(posts(fetcher)[0]).toMatchObject({ stageId: "s0", checkKey: "meeting" });
   });
@@ -231,7 +235,7 @@ describe("projects", () => {
   it("shows what holds the project up, each linked to its list, and the latest activity", async () => {
     mount(() => detail());
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
-    const blockers = await screen.findByRole("region", { name: "What holds it up" });
+    const blockers = await screen.findByRole("region", { name: "Needs attention" });
     expect(within(blockers).getByRole("link", { name: /1 task late/ })).toHaveAttribute("href", `/workspace/projects/${PID}/plan?filter=late`);
     expect(screen.getByRole("region", { name: "Next" })).toHaveTextContent("Kickoff meeting held");
     expect(screen.getByRole("region", { name: "Recent activity" })).toHaveTextContent("Omar Haddad added #4 Measure the kitchen");

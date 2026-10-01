@@ -11760,5 +11760,9 @@
   "Last updated {date}": "Last updated {date}",
   "For sales enquiries": "For sales enquiries",
   "Legal": "Legal",
-  "Legal and contact": "Legal and contact"
+  "Legal and contact": "Legal and contact",
+  "Finish {stage}?": "Finish {stage}?",
+  "The project moves on to {stage}.": "The project moves on to {stage}.",
+  "This is the last stage.": "This is the last stage.",
+  "Your name and the time are recorded.": "Your name and the time are recorded."
 }

@@ -43,13 +43,17 @@ export function ProjectOverview({ api, detail, run, onTeam, refreshKey }: { api:
     </section> : null}
 
     {error && !overview ? <ErrorState description={error} onRetry={() => void load()} /> : !overview ? <Skeleton lines={2} shape="rows" />
-      : running || detail.project.status === "on_hold" ? <section className={styles.blockers} aria-label={t("What holds it up")}>
+      : running || detail.project.status === "on_hold" ? <section className={styles.blockers} aria-label={t("Needs attention")}>
+        <h2>{t("Needs attention")}</h2>
         {overview.blockers.length ? <ul>{overview.blockers.map((blocker) => <BlockerRow key={blocker.key} label={blockerLabel(blocker.key, blocker.count)}
           blocker={blocker.key === "reports_missing" ? { ...blocker, items: blocker.items.map((day) => format.short(day)) } : blocker} />)}</ul>
           : <p className={styles.clear}><CircleCheck aria-hidden="true" size={16} />{t("Nothing is holding the project up.")}</p>}
       </section> : null}
 
-    <ProjectStages detail={detail} run={run} onTeam={onTeam} plan={overview?.stagePlan} today={overview?.today} api={api} />
+    <section className={styles.section} aria-label={t("Stages")}>
+      <h2>{t("Stages")}</h2>
+      <ProjectStages detail={detail} run={run} onTeam={onTeam} plan={overview?.stagePlan} today={overview?.today} api={api} />
+    </section>
 
     {overview ? <div className={styles.glance}>
       <section aria-label={t("Dates")}>
@@ -86,10 +90,9 @@ export function ProjectOverview({ api, detail, run, onTeam, refreshKey }: { api:
 function BlockerRow({ blocker, label }: { blocker: Blocker; label: string }) {
   return <li data-key={blocker.key}>
     <Link href={blocker.href} aria-label={[`${blocker.count} ${label}`, ...blocker.items].join(" · ")}>
-      <span className={styles.blockerCount}>{blocker.count}</span>
-      <span className={styles.blockerLabel}>{label}</span>
+      <span className={styles.blockerHead}><span className={styles.blockerCount}>{blocker.count}</span><span className={styles.blockerLabel}>{label}</span>
+        <ArrowRight aria-hidden="true" size={14} className={styles.blockerGo} /></span>
       {blocker.items.length ? <span className={styles.blockerItems}>{blocker.items.join(" · ")}</span> : null}
-      <ArrowRight aria-hidden="true" size={14} className={styles.blockerGo} />
     </Link>
   </li>;
 }
