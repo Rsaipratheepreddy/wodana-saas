@@ -41,6 +41,15 @@ export const COMPANY_LINKS: MarketingLink[] = [
   { id: "team", href: "/team", icon: UsersRound, label: tKey("Team"), description: tKey("The people behind Wodana") },
 ];
 
+/** The footer's last row: the pages the app store listings link to. Footer only, so they stay out of the menus. */
+export type LegalLink = { id: string; href: string; label: MessageKey };
+
+export const LEGAL_LINKS: LegalLink[] = [
+  { id: "privacy", href: "/privacy", label: tKey("Privacy policy") },
+  { id: "terms", href: "/terms", label: tKey("Terms") },
+  { id: "contact", href: "/contact", label: tKey("Contact") },
+];
+
 export const MARKETING_GROUPS: MarketingGroup[] = [
   { id: "product", label: tKey("Product"), links: PRODUCT_LINKS },
   { id: "solutions", label: tKey("Solutions"), links: SOLUTION_LINKS },

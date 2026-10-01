@@ -5,7 +5,7 @@ import { getServerT } from "@/lib/i18n/server";
 import type { Translate } from "@/lib/i18n/keys";
 import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 import { LandingHeader } from "./landing-header";
-import { COMPANY_LINKS, PRODUCT_LINKS, SOLUTION_LINKS, type MarketingLink } from "./marketing-links";
+import { COMPANY_LINKS, LEGAL_LINKS, PRODUCT_LINKS, SOLUTION_LINKS, type MarketingLink } from "./marketing-links";
 import { MarketingSurface } from "./marketing-surface";
 import styles from "./marketing.module.css";
 
@@ -46,6 +46,9 @@ function MarketingFooter({ t }: { t: Translate }) {
     </div>
     <div className={styles.footerBase}>
       <small>{t("© {year} Wodana", { year: new Date().getFullYear() })}</small>
+      <nav aria-label={t("Legal and contact")} className={styles.footerLegal}>
+        {LEGAL_LINKS.map((link) => <Link href={link.href} key={link.id}>{t(link.label)}</Link>)}
+      </nav>
       <small>{t("Works in English and Arabic, in any currency.")}</small>
     </div>
   </footer>;

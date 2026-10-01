@@ -31,9 +31,14 @@ describe("public pages' hosts", () => {
     await expect(requirePublicHost()).rejects.toThrow("NOT_FOUND");
   });
 
+  const pages = [
+    () => import("@/app/about/page"), () => import("@/app/careers/page"), () => import("@/app/team/page"),
+    () => import("@/app/privacy/page"), () => import("@/app/terms/page"), () => import("@/app/contact/page"),
+  ];
+
   it("guards every public page", async () => {
     host.value = "demo-interiors.wodana.ai";
-    for (const load of [() => import("@/app/about/page"), () => import("@/app/careers/page"), () => import("@/app/team/page")]) {
+    for (const load of pages) {
       const page = (await load()).default as () => Promise<unknown>;
       await expect(page()).rejects.toThrow("REDIRECT /login");
     }
@@ -41,11 +46,11 @@ describe("public pages' hosts", () => {
 
   it("gives each company page its own title and description", async () => {
     const titles: string[] = [];
-    for (const load of [() => import("@/app/about/page"), () => import("@/app/careers/page"), () => import("@/app/team/page")]) {
+    for (const load of pages) {
       const metadata = await (await load()).generateMetadata();
       expect(metadata.description).toBeTruthy();
       titles.push(String(metadata.title));
     }
-    expect(titles).toEqual(["About · Wodana", "Careers · Wodana", "Team · Wodana"]);
+    expect(titles).toEqual(["About · Wodana", "Careers · Wodana", "Team · Wodana", "Privacy policy · Wodana", "Terms of service · Wodana", "Contact · Wodana"]);
   });
 });
