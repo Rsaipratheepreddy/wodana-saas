@@ -88,3 +88,16 @@ export function fit(photoWidth: number, photoHeight: number, frameWidth: number,
   const scale = Math.min(frameWidth / photoWidth, frameHeight / photoHeight);
   return { width: Math.floor(photoWidth * scale), height: Math.floor(photoHeight * scale) };
 }
+
+/**
+ * The size to ask the view capture for, and the pixels that come back. The flattened photo keeps the photo's
+ * own size up to `longEdge`. iOS renders the capture at the screen's scale (a 3x phone turns 2048 points
+ * into 6144 pixels: nine times the memory and a far larger upload), so there the request is in points;
+ * Android and the web take pixels.
+ */
+export function captureSize(photoWidth: number, photoHeight: number, pixelRatio: number, os: string, longEdge = 2048) {
+  const scale = Math.min(1, longEdge / Math.max(photoWidth, photoHeight, 1));
+  const output = { width: Math.max(1, Math.round(photoWidth * scale)), height: Math.max(1, Math.round(photoHeight * scale)) };
+  const ratio = os === 'ios' && pixelRatio > 0 ? pixelRatio : 1;
+  return { output, request: { width: Math.max(1, Math.round(output.width / ratio)), height: Math.max(1, Math.round(output.height / ratio)) } };
+}

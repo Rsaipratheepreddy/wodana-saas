@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { addPoint, arrowHead, decimate, fit, normalise, penPath, toServerStrokes, type Mark } from '../src/features/capture/markup-model';
+import { addPoint, arrowHead, captureSize, decimate, fit, normalise, penPath, toServerStrokes, type Mark } from '../src/features/capture/markup-model';
 
 test('marks live in the photo\'s own coordinates and draw at any size', () => {
   assert.deepEqual(normalise(50, 25, 100, 50), { x: 0.5, y: 0.5 });
@@ -35,4 +35,15 @@ test('the server gets polylines within its limits; arrows become lines and text 
   assert.ok(strokes[0].points.length <= 1500);
   assert.ok(strokes.reduce((sum, stroke) => sum + stroke.points.length, 0) <= 4000);
   assert.equal(toServerStrokes(Array.from({ length: 150 }, () => marks[0])).length, 100);
+});
+
+test('a flattened photo keeps its own pixels, capped at 2048, whatever the screen scale', () => {
+  // iOS renders a capture at the screen scale: ask in points to get the pixels wanted.
+  assert.deepEqual(captureSize(640, 960, 3, 'ios'), { output: { width: 640, height: 960 }, request: { width: 213, height: 320 } });
+  assert.deepEqual(captureSize(4032, 3024, 3, 'ios'), { output: { width: 2048, height: 1536 }, request: { width: 683, height: 512 } });
+  // Android and the web take pixels as they are.
+  assert.deepEqual(captureSize(4032, 3024, 2.75, 'android'), { output: { width: 2048, height: 1536 }, request: { width: 2048, height: 1536 } });
+  assert.deepEqual(captureSize(800, 600, 2, 'web').request, { width: 800, height: 600 });
+  // Nothing degenerate reaches the native capture.
+  assert.deepEqual(captureSize(0, 0, 3, 'ios').request, { width: 1, height: 1 });
 });
