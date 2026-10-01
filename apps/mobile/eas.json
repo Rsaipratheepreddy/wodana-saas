@@ -53,7 +53,8 @@
   "submit": {
     "production": {
       "ios": {
-        "appleTeamId": "MSZ9TCZKAB"
+        "appleTeamId": "MSZ9TCZKAB",
+        "ascAppId": "6801855492"
       },
       "android": {
         "track": "internal",
