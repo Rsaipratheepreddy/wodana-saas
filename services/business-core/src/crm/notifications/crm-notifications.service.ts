@@ -102,7 +102,10 @@ export class CrmNotificationsService {
   // (QS reviews, Finance verifications…). Every query below is bound to the signed-in user as recipient;
   // templates, policies and anyone else's notices keep their permissions.
   notificationSettings(actor: RequestActor, workspaceId: string) {
-    return this.access.asMember(actor, workspaceId, async (client, actorUser) => this.mobileSettings(client, workspaceId, actorUser.userId));
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
+      await this.pushOnForAllowedPhone(client, workspaceId, actorUser.userId);
+      return this.mobileSettings(client, workspaceId, actorUser.userId);
+    });
   }
   recordDeviceConsent(actor: RequestActor, workspaceId: string, input: RecordDeviceConsentDto) {
     return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
@@ -143,9 +146,7 @@ export class CrmNotificationsService {
           ON CONFLICT(workspace_id,user_id,installation_id) DO UPDATE SET last_request_id=EXCLUDED.last_request_id,platform=EXCLUDED.platform,token_type=EXCLUDED.token_type,consent_id=EXCLUDED.consent_id,token_hash=EXCLUDED.token_hash,encrypted_token_reference=EXCLUDED.encrypted_token_reference,locale=EXCLUDED.locale,timezone=EXCLUDED.timezone,status='active',last_seen_at=now(),updated_at=now(),version=device_endpoints.version+1
           RETURNING id,installation_id AS "installationId",platform,token_type AS "tokenType",locale,timezone,status,last_seen_at AS "lastSeenAt",version`, [workspaceId, actorUser.userId, input.installationId, input.requestId, input.platform, input.tokenType, consent.rows[0].id, tokenHash, tokenReference, input.locale, input.timezone]);
         await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "notification.device.registered.v1", entityType: "device_endpoint", entityId: String(endpoint.rows[0].id), after: { installationId: input.installationId, platform: input.platform, tokenType: input.tokenType } });
-        // A phone that allows notifications gets pushes, unless the person has chosen otherwise in Me.
-        await client.query(`INSERT INTO notification_preferences(workspace_id,recipient_type,recipient_id,event_type,channel,enabled,quiet_hours) VALUES($1,'user',$2,'*','push',true,'{}'::jsonb)
-          ON CONFLICT(workspace_id,recipient_type,recipient_id,event_type,channel) DO NOTHING`, [workspaceId, actorUser.userId]);
+        await this.pushOnForAllowedPhone(client, workspaceId, actorUser.userId);
         await Promise.all([...displaced.rows, ...prior.rows].filter((row) => row.tokenReference !== tokenReference).map((row) => this.deviceTokens?.delete(String(row.tokenReference))));
         return { endpoint: endpoint.rows[0] };
       } catch (error) {
@@ -454,6 +455,17 @@ export class CrmNotificationsService {
     ]);
     const pushEnabled = preference.rows[0]?.enabled === true;
     return { pushEnabled, pushAvailable: endpoints.rows.some((row) => row.status === "active"), preference: preference.rows[0] ?? null, consents: consents.rows, devices: endpoints.rows, unreadCount: unread.rows[0]?.count ?? 0 };
+  }
+  /**
+   * A phone that allows notifications gets pushes unless the person has chosen otherwise in Me. Run when a
+   * phone registers and when the app reads its settings, so phones registered before this get it too.
+   */
+  private async pushOnForAllowedPhone(client: PoolClient, workspaceId: string, userId: string) {
+    await client.query(`INSERT INTO notification_preferences(workspace_id,recipient_type,recipient_id,event_type,channel,enabled,quiet_hours)
+      SELECT $1,'user',$2,'*','push',true,'{}'::jsonb WHERE EXISTS (SELECT 1 FROM device_endpoints endpoint JOIN notification_device_consents consent
+        ON consent.id=endpoint.consent_id AND consent.workspace_id=endpoint.workspace_id
+        WHERE endpoint.workspace_id=$1 AND endpoint.user_id=$2 AND endpoint.status='active' AND consent.permission_status IN ('granted','provisional','ephemeral'))
+      ON CONFLICT(workspace_id,recipient_type,recipient_id,event_type,channel) DO NOTHING`, [workspaceId, userId]);
   }
   private async setPushPreferenceWithClient(client: PoolClient, workspaceId: string, userId: string, enabled: boolean) {
     const result = await client.query<Row>(`INSERT INTO notification_preferences(workspace_id,recipient_type,recipient_id,event_type,channel,enabled,quiet_hours) VALUES($1,'user',$2,'*','push',$3,'{}'::jsonb) ON CONFLICT(workspace_id,recipient_type,recipient_id,event_type,channel) DO UPDATE SET enabled=EXCLUDED.enabled,updated_at=now(),version=notification_preferences.version+1 RETURNING id,enabled,version`, [workspaceId, userId, enabled]);
