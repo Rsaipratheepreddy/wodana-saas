@@ -237,7 +237,8 @@ function MessageHistory({ workspaceId, thread, onHide, canShowHidden, after, rev
       {dateOf(entry.at) !== dateOf(entries[index - 1]?.at) ? <div className={styles.dateDivider}><span>{dateOf(entry.at)}</span></div> : null}
       {entry.kind === "event" ? <EventLine event={entry.event} time={inboxTime(entry.at, locale, timeZone)} />
         : entry.kind === "album" ? <PhotoAlbum messages={entry.messages} partyName={partyName} workspaceId={workspaceId} conversationId={String(thread.id)} time={inboxTime(entry.at, locale, timeZone)} />
-        : <MessageBubble message={entry.message} partyName={partyName} workspaceId={workspaceId} conversationId={String(thread.id)} time={inboxTime(entry.at, locale, timeZone)} onHide={onHide} canShowHidden={canShowHidden} />}
+        : <MessageBubble message={entry.message} partyName={partyName} workspaceId={workspaceId} conversationId={String(thread.id)} time={inboxTime(entry.at, locale, timeZone)} onHide={onHide} canShowHidden={canShowHidden}
+          continued={continues(entries[index - 1], entry, dateOf)} />}
     </Fragment>)}
     {!entries.length ? <div className={styles.empty}><MessageCircle size={30} /><p>{t("No messages yet.")}</p></div> : null}
     {after}
@@ -250,14 +251,25 @@ function EventLine({ event, time }: { event: ChatEvent; time: string }) {
   return <p className={styles.systemLine}><span>{t(line.key, { ...line.values, actor: line.values.actor || t("Someone") })}</span><time dateTime={event.createdAt}>{time}</time></p>;
 }
 
-function MessageBubble({ message, partyName, workspaceId, conversationId, time, onHide, canShowHidden = false }: { message: RecordData; partyName: string; workspaceId: string; conversationId: string; time: string; onHide?: (messageId: string, hidden: boolean) => void; canShowHidden?: boolean }) {
+/** Who wrote a message, as a chat reads it: the client, a team member, a note or an automatic message. */
+const authorKey = (message: RecordData) => {
+  const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata as Record<string, unknown> : {};
+  return `${String(message.direction)}|${String(message.senderName ?? "")}|${typeof metadata.automatic === "string" ? metadata.automatic : ""}`;
+};
+/** A message right after another from the same author, the same day and within ten minutes, joins its group without repeating the name. */
+function continues(previous: Entry | undefined, entry: Entry, dateOf: (at: string | undefined) => string) {
+  if (!previous || previous.kind !== "message" || entry.kind !== "message") return false;
+  return authorKey(previous.message) === authorKey(entry.message) && dateOf(previous.at) === dateOf(entry.at) && Date.parse(entry.at) - Date.parse(previous.at) < 600_000;
+}
+
+function MessageBubble({ message, partyName, workspaceId, conversationId, time, onHide, canShowHidden = false, continued = false }: { message: RecordData; partyName: string; workspaceId: string; conversationId: string; time: string; onHide?: (messageId: string, hidden: boolean) => void; canShowHidden?: boolean; continued?: boolean }) {
   const t = useT();
   const direction = String(message.direction);
   const metadata = message.metadata && typeof message.metadata === "object" ? message.metadata as Record<string, unknown> : {};
   const automatic = typeof metadata.automatic === "string" ? metadata.automatic : null;
   const autoReply = automatic === "auto_reply";
   const sender = direction === "inbound" ? partyName : automatic ? t("Automatic") : metadata.sentFromPhone ? t("Sent from phone") : message.authorship === "automation" || message.senderType === "system" ? t("Automation") : String(message.senderName ?? t("Team"));
-  return <article className={styles.message} data-direction={direction} data-automatic={automatic ? true : undefined} aria-label={direction === "inbound" ? t("Contact message") : direction === "internal" ? t("Team note") : t("Your message")}>
+  return <article className={styles.message} data-direction={direction} data-automatic={automatic ? true : undefined} data-continued={continued || undefined} aria-label={direction === "inbound" ? t("Contact message") : direction === "internal" ? t("Team note") : t("Your message")}>
     <span className={styles.messageAvatar}><Avatar name={sender} size="sm" /></span>
     <strong className={styles.messageSender}>{sender}{direction === "internal" ? <span className={styles.noteTag}>{t("Note")}</span> : null}{automatic ? <span className={styles.automaticTag}>{autoReply ? t("Auto reply") : t(CLIENT_EVENT_LABELS[automatic] ?? "Client message")}</span> : null}</strong>
     {message.hiddenAt ? <p className={styles.hiddenText}>{t("Hidden by {name}", { name: String(message.hiddenByName ?? t("Someone")) })}{canShowHidden && onHide ? <> <Button size="compact" variant="quiet" onPress={() => onHide(message.id, false)}>{t("Show again")}</Button></> : null}</p>
