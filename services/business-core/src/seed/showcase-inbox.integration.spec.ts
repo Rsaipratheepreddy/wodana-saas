@@ -93,7 +93,7 @@ integration("showcase inbox seed", () => {
           .map((code) => [code, "approved"]),
       ]);
       expect(templates.rows.find((row) => row.code === "seasonal_offer")?.reason).toMatch(/Marketing category/);
-      expect((await client.query(`SELECT shortcut FROM crm_quick_replies ORDER BY shortcut`)).rows.map((row) => row.shortcut)).toEqual(["floorplan", "handover", "payment", "quotation", "sitevisit", "thanks"]);
+      expect((await client.query(`SELECT shortcut FROM crm_quick_replies ORDER BY shortcut`)).rows.map((row) => row.shortcut)).toEqual(DEFAULT_QUICK_REPLIES.map((reply) => reply.shortcut).sort());
       expect((await inbox.autoReplies({} as never, workspaceId)).workspace).toMatchObject({ greeting: { enabled: true }, away: { enabled: true }, version: 1 });
 
       // A second run finds everything and adds nothing.

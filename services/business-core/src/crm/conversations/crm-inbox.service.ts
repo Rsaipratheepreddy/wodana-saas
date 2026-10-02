@@ -20,6 +20,7 @@ import { inboxLink, unassignedAudience, userOfMembership } from "./inbox/inbox-n
 import { notifyUserInApp } from "../../notifications/default-templates";
 import { ENQUIRY_STAGES, placeholdersAreContiguous, stageFilterSql, TEMPLATE_VARIABLE_SOURCES, templatePlaceholders } from "./inbox/inbox-rules";
 import { resolveTemplateSources } from "./inbox/template-variables";
+import { seedDefaultQuickReplies } from "./inbox/default-quick-replies";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
@@ -259,6 +260,8 @@ export class CrmInboxService {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
       const me = await this.membership(client, workspaceId, actorUser.userId);
       const canManage = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.settings.manage");
+      // A default added to the product after the workspace started arrives here; one the team archived stays archived.
+      await seedDefaultQuickReplies(client, workspaceId);
       const result = await client.query<Row>(
         `SELECT ${REPLY_COLUMNS} FROM crm_quick_replies reply
           WHERE reply.workspace_id = $1 AND (reply.owner_membership_id IS NULL OR reply.owner_membership_id = $2)

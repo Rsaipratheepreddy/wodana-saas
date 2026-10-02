@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { awayDue, decideAutoReply, greetingDue, HUMAN_QUIET_MINUTES, renderAutoReply, unknownAutoReplyFields, withinBusinessHours, zonedParts, type AutoReplyFacts, type AutoReplyRule, type BusinessHours } from "./auto-reply-rules";
 import { DEFAULT_QUICK_REPLIES } from "./default-quick-replies";
+import { TEMPLATE_VARIABLE_SOURCES } from "./inbox-rules";
 
 const HOUR = 3_600_000, DAY = 86_400_000;
 // A Sunday-to-Thursday week and a Monday-to-Friday week, as two region packs would give them.
@@ -120,10 +121,18 @@ describe("the message the client reads", () => {
 });
 
 describe("default quick replies", () => {
-  it("match the migration that seeded existing workspaces and name no tenant, currency or country", () => {
+  it("start with the six migration 0157 seeded and name no tenant, currency or country", () => {
     const sql = readFileSync(join(__dirname, "../../../../drizzle/0157_default_quick_replies.sql"), "utf8");
-    for (const reply of DEFAULT_QUICK_REPLIES) expect(sql).toContain(`('${reply.shortcut}', '${reply.body}')`);
-    expect(DEFAULT_QUICK_REPLIES.map((reply) => reply.shortcut)).toEqual(["thanks", "floorplan", "sitevisit", "quotation", "payment", "handover"]);
+    for (const reply of DEFAULT_QUICK_REPLIES.slice(0, 6)) expect(sql).toContain(`('${reply.shortcut}', '${reply.body}')`);
+    expect(DEFAULT_QUICK_REPLIES.slice(0, 6).map((reply) => reply.shortcut)).toEqual(["thanks", "floorplan", "sitevisit", "quotation", "payment", "handover"]);
     expect(JSON.stringify(DEFAULT_QUICK_REPLIES)).not.toMatch(/AED|INR|USD|Dubai|Emirate|\+971|Palm/i);
+  });
+
+  it("have unique shortcuts and use only fields a chat can fill", () => {
+    const shortcuts = DEFAULT_QUICK_REPLIES.map((reply) => reply.shortcut);
+    expect(new Set(shortcuts).size).toBe(shortcuts.length);
+    for (const shortcut of shortcuts) expect(shortcut).toMatch(/^[a-z]{1,40}$/);
+    const fields = DEFAULT_QUICK_REPLIES.flatMap((reply) => [...reply.body.matchAll(/\{\{([a-z_.]+)\}\}/g)].map((match) => match[1]));
+    for (const field of fields) expect(TEMPLATE_VARIABLE_SOURCES).toContain(field);
   });
 });
