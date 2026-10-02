@@ -28,8 +28,9 @@ export function OpportunityEditDialog({ workspaceId, opportunity, members, onClo
 }) {
   const t = useT();
   // The follow-up reads and writes the workspace's wall clock (its region's zone), like the calendar.
-  const { timeZone } = useDesignSystem();
-  const currency = String(opportunity.currencyCode ?? opportunity.currency_code ?? "");
+  const { timeZone, currency: regionCurrency } = useDesignSystem();
+  // The record's own currency, else the workspace region's (the one the field shows), so amount and currency travel together.
+  const currency = String(opportunity.currencyCode ?? opportunity.currency_code ?? "") || regionCurrency || "";
   const hasValue = opportunity.amount !== undefined;
   const [form, setForm] = useState(() => ({
     title: String(opportunity.title ?? ""), owner: String(opportunity.ownerMembershipId ?? opportunity.owner_membership_id ?? ""),
