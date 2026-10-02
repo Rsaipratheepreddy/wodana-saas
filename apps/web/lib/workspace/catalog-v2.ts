@@ -7,6 +7,8 @@ export type CatalogItemRow = {
   id: string; code: string; name: string; itemType: string; unitCode: string; status: string; version: number;
   categoryId: string | null; categoryName: string | null; values: Record<string, string>;
   sellPrice: { method: string; price: string | null; rate: string | null; currency: string; status: string } | null;
+  /** The item's first picture, for the list's preview. */
+  image?: { id: string; hasPreview: boolean } | null;
 };
 export type ImportRow = { line: number; sheet?: string; category?: string; code?: string; name?: string; unit?: string; supplier?: string; cost?: string; attributes?: Record<string, string> };
 export type ImportPlan = {

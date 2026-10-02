@@ -261,3 +261,7 @@
 .newRows { display: flex; justify-content: center; margin-block-end: var(--wd-space-2); }
 /* The page title and New enquiry sit above the section (S-20). */
 .pageHeader { margin-block-end: var(--wd-space-4); }
+
+/* The source with its channel underneath (Palm Living Enquiry · WhatsApp). */
+.sourceCell { display: grid; gap: var(--wd-space-0-5); justify-items: start; min-inline-size: 0; }
+.sourceCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }

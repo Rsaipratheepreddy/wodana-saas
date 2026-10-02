@@ -13,6 +13,7 @@ import { useAiReady } from "@/lib/workspace/ai-settings";
 import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
 import { CatalogImportDialog } from "./catalog-import-dialog";
 import { CatalogItemInspector } from "./catalog-item-inspector";
+import { catalogImageUrl } from "@/lib/quotation/client";
 import styles from "./catalog-page.module.css";
 
 type T = ReturnType<typeof useT>;
@@ -52,6 +53,10 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
   // Catalog-wide attributes become columns (the first four), so each catalog shows what matters to it.
   const attributeColumns = (structure?.attributes ?? []).filter((attribute) => !attribute.categoryId).slice(0, 3);
   const columns = useMemo<DataGridColumn<CatalogItemRow>[]>(() => [
+    { id: "image", header: t("Photo"), accessorFn: (row) => (row.image ? 1 : 0), size: 84, enableSorting: false, meta: { renderCell: (row) => row.image
+      // eslint-disable-next-line @next/next/no-img-element -- the item's picture, streamed through the signed-in catalog route
+      ? <img className={styles.thumb} src={catalogImageUrl(workspaceId, row.image.id, row.image.hasPreview)} alt="" loading="lazy" />
+      : <span className={styles.thumb} data-empty="" aria-hidden="true" /> } },
     { id: "name", header: t("Item"), accessorFn: (row) => `${row.name} ${row.code}`, size: 260, meta: { primary: true, renderCell: (row) => <span className={styles.itemCell}><strong>{row.name}</strong><small><bdi dir="ltr">{row.code}</bdi> · {typeLabels(t)[row.itemType] ?? row.itemType}</small></span> } },
     { id: "category", header: t("Category"), accessorFn: (row) => row.categoryName ?? "", size: 150, cell: ({ row }) => <TypeChip>{row.original.categoryName}</TypeChip> },
     ...attributeColumns.map((attribute): DataGridColumn<CatalogItemRow> => ({ id: `attr-${attribute.code}`, header: attribute.label, accessorFn: (row) => row.values[attribute.code] ?? "", size: 120, meta: { mobileHidden: true } })),

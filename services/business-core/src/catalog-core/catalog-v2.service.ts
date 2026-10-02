@@ -129,7 +129,9 @@ export class CatalogV2Service {
                 (SELECT jsonb_build_object('method', entry.method, 'price', entry.price::text, 'rate', entry.rate::text, 'currency', book.currency, 'status', entry.status)
                   FROM price_entries entry JOIN price_books book ON book.id = entry.price_book_id
                   WHERE entry.item_id = item.id AND entry.variant_id IS NULL AND entry.status = 'active' AND book.status = 'active'
-                  ORDER BY book.effective_from DESC LIMIT 1) AS "sellPrice"
+                  ORDER BY book.effective_from DESC LIMIT 1) AS "sellPrice",
+                (SELECT jsonb_build_object('id', image.id, 'hasPreview', image.preview_key IS NOT NULL) FROM catalog_item_images image
+                  WHERE image.workspace_id = item.workspace_id AND image.item_id = item.id ORDER BY image.sort_order, image.created_at LIMIT 1) AS "image"
          FROM catalog_items item LEFT JOIN catalog_categories category ON category.id = item.category_id
          WHERE ${where.join(" AND ")} ORDER BY item.name LIMIT $${values.length}`, values);
       const page = rows.rows.slice(0, limit);

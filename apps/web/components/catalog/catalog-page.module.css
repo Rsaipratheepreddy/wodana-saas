@@ -88,3 +88,7 @@
 .images img { inline-size: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
 .images li small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
 .images li :global(.wd-icon-button) { position: absolute; inset-block-start: var(--wd-space-1); inset-inline-end: var(--wd-space-1); background: var(--wd-color-surface); }
+
+/* The item's picture in the list, medium and square; an empty tile when it has none. */
+.thumb { display: block; inline-size: var(--wd-space-16); block-size: var(--wd-space-16); border-radius: var(--wd-radius-sm); object-fit: cover; background: var(--wd-color-surface-muted); border: 1px solid var(--wd-color-border); }
+.thumb[data-empty] { opacity: 0.6; }
