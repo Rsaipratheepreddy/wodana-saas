@@ -7,12 +7,17 @@ import {
   Button, Checkbox, EmailInput, EmptyState, ErrorState, IconMenuButton, InlineNotice, isNoAccessError, NoAccessState, PhoneField, RecordTable, SegmentedControl, Skeleton, TextInput,
   type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { staffPortalApi } from "@/lib/client-portal/client";
+import { commandId, staffPortalApi } from "@/lib/client-portal/client";
 import type { PortalContact } from "@/lib/client-portal/types";
 import { formatPhoneForDisplay, joinPhone, phoneCountry, splitPhone } from "@/lib/phone";
 import styles from "./staff.module.css";
 
-type Draft = { id?: string; version?: number; name: string; country: string; national: string; email: string; role: "approver" | "viewer"; active: boolean; testContact: boolean };
+type Draft = { id?: string; version?: number; name: string; country: string; national: string; email: string; role: "approver" | "viewer"; active: boolean; testContact: boolean;
+  /** An admin gives a demonstration: the contact signs in with the demo code, and no code is sent. */
+  demoAccess?: boolean };
+
+/** The code a demonstration contact signs in with. */
+const DEMO_CODE = "123456";
 
 /**
  * The client contacts of one project: who can sign in to the portal (by mobile number, with an email for
@@ -43,10 +48,20 @@ export function ClientContacts({ workspaceId, caseId, portalUrl, portalEnabled, 
     if (!edit) return;
     setBusy(true); setError("");
     try {
-      await done(t("Saved."), await api.saveContact(caseId, { id: edit.id, version: edit.version, name: edit.name.trim(), phone: joinPhone(edit.country, edit.national),
-        email: edit.email.trim() || null, role: edit.role, active: edit.active, testContact: edit.testContact }));
+      const phone = joinPhone(edit.country, edit.national);
+      const saved = await api.saveContact(caseId, { id: edit.id, version: edit.version, name: edit.name.trim(), phone,
+        email: edit.email.trim() || null, role: edit.role, active: edit.active, testContact: edit.testContact });
+      const added = edit.demoAccess ? saved.contacts.find((contact) => contact.phone === phone && !contact.demoCode) : undefined;
+      await done(t("Saved."), added ? await api.demoCode(caseId, added.id, { commandId: commandId(), version: added.version, code: DEMO_CODE }) : saved);
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
+  };
+  const demo = async (contact: PortalContact, code: string | null) => {
+    const name = contact.confirmedName ?? contact.name;
+    try {
+      await done(code ? t("{name} signs in with the demo code.", { name }) : t("The demo code was cleared."),
+        await api.demoCode(caseId, contact.id, { commandId: commandId(), version: contact.version, code }));
+    } catch (cause) { setError((cause as Error).message); }
   };
   const signOut = async (contact: PortalContact) => {
     try { await done(t("{name} was signed out everywhere.", { name: contact.confirmedName ?? contact.name }), await api.signOut(caseId, contact.id)); }
@@ -67,10 +82,13 @@ export function ClientContacts({ workspaceId, caseId, portalUrl, portalEnabled, 
     { id: "phone", header: t("Mobile"), accessorFn: (row) => formatPhoneForDisplay(row.phone), cell: ({ row }: { row: { original: PortalContact } }) => <bdi dir="ltr">{formatPhoneForDisplay(row.original.phone)}</bdi> },
     { id: "email", header: t("Email"), accessorFn: (row) => row.email ?? "", cell: ({ row }: { row: { original: PortalContact } }) => <bdi dir="ltr">{row.original.email ?? ""}</bdi> },
     { id: "role", header: t("Can"), accessorFn: (row) => (row.role === "approver" ? t("Decide") : t("Read")) },
-    { id: "access", header: t("Access"), accessorFn: (row) => (!row.active ? t("Off") : row.signedIn ? t("Signed in") : row.lastSignedInAt ? t("Signed out") : t("Not yet")) },
+    { id: "access", header: t("Access"), accessorFn: (row) => [!row.active ? t("Off") : row.signedIn ? t("Signed in") : row.lastSignedInAt ? t("Signed out") : t("Not yet"),
+      row.demoCode ? t("Demo access") : ""].filter(Boolean).join(" · ") },
     ...(state.canManage ? [{ id: "actions", header: "", enableSorting: false, cell: ({ row }: { row: { original: PortalContact } }) =>
-      <IconMenuButton ariaLabel={t("Actions for {name}", { name: row.original.name })} items={[{ id: "edit", label: t("Edit") }, ...(row.original.signedIn ? [{ id: "sign-out", label: t("Sign out everywhere") }] : [])]}
-        onAction={(id) => (id === "edit" ? open(row.original) : void signOut(row.original))} /> } as DataGridColumn<PortalContact>] : []),
+      <IconMenuButton ariaLabel={t("Actions for {name}", { name: row.original.name })} items={[{ id: "edit", label: t("Edit") },
+        row.original.demoCode ? { id: "clear-demo", label: t("Clear demo code") } : { id: "demo", label: t("Set demo code") },
+        ...(row.original.signedIn ? [{ id: "sign-out", label: t("Sign out everywhere") }] : [])]}
+        onAction={(id) => (id === "edit" ? open(row.original) : id === "demo" ? void demo(row.original, DEMO_CODE) : id === "clear-demo" ? void demo(row.original, null) : void signOut(row.original))} /> } as DataGridColumn<PortalContact>] : []),
   ];
   return <div className={styles.stack}>
     <div className={styles.toolbar}>
@@ -96,6 +114,7 @@ export function ClientContacts({ workspaceId, caseId, portalUrl, portalEnabled, 
           options={[{ id: "approver", label: t("Decide") }, { id: "viewer", label: t("Read") }]} />
         {edit.id ? <Checkbox isSelected={edit.active} onChange={(active) => setEdit({ ...edit, active })}>{t("Can sign in")}</Checkbox> : null}
         {state.demo ? <Checkbox isSelected={edit.testContact} onChange={(testContact) => setEdit({ ...edit, testContact })}>{t("Test contact (demo code)")}</Checkbox> : null}
+        {!edit.id && !state.demo ? <Checkbox isSelected={edit.demoAccess === true} onChange={(demoAccess) => setEdit({ ...edit, demoAccess })}>{t("Demo access: signs in with {code}", { code: DEMO_CODE })}</Checkbox> : null}
       </div>
     </FormDialog> : null}
   </div>;
