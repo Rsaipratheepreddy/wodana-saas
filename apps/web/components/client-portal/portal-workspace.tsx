@@ -21,8 +21,9 @@ import { PaidForm } from "./forms/paid-form";
 import { QuestionForm } from "./forms/question-form";
 import { usePortalFormat, type PortalFormat } from "./portal-format";
 import { usePortalLabels } from "./portal-labels";
+import { PortalActions, PortalBrand, PortalSupport } from "./portal-frame";
 import styles from "./portal.module.css";
-import { ProjectProfile } from "./project-profile";
+import { ProfileDetails, ProjectProfile } from "./project-profile";
 import { SectionNav, type NavItem, type PortalPage } from "./section-nav";
 import { DecisionsSection } from "./sections/decisions-section";
 import { DocumentsSection } from "./sections/documents-section";
@@ -72,7 +73,7 @@ function badges(project: PortalProject, t: ReturnType<typeof useT>): Partial<Rec
  * balance, team and the sections), and the open section on the other, the Overview first. On a narrow screen the
  * profile is a compact card and the sections one row that scrolls sideways.
  */
-export function PortalWorkspace({ view, site, api, reload }: { view: PortalView; site: PortalSite; api: PortalApi; reload: () => Promise<void> }) {
+export function PortalWorkspace({ view, site, api, reload, onSignOut }: { view: PortalView; site: PortalSite; api: PortalApi; reload: () => Promise<void>; onSignOut?: () => void }) {
   const t = useT();
   const labels = usePortalLabels();
   const format = usePortalFormat(site.region);
@@ -101,13 +102,44 @@ export function PortalWorkspace({ view, site, api, reload }: { view: PortalView;
   const dialog = target ? dialogFor(target, project, { site, customer: view.contact.name, api, format, done, reload, today: view.today, t }) : null;
   const nav = !project.paused && shown.length > 1
     ? <SectionNav items={shown.map((id) => ({ id, label: labels.sections[id], badge: counts[id] }))} current={current} onSelect={go} layout={wide ? "list" : "tabs"} /> : null;
+  const modal = dialog ? <ControlledModalDialog isOpen onOpenChange={(isOpen) => { if (!isOpen) setTarget(null); }} size={target?.kind === "quote" ? "xl" : target?.kind === "board" ? "lg" : "md"} title={dialog.title}>
+    {dialog.body}
+  </ControlledModalDialog> : null;
+  // Wide: a dashboard, like the team's own Wodana. The sidebar holds the brand, the project and its sections; the
+  // top bar names where you are; the Overview opens on the key dates, the balance and the team as cards.
+  if (wide) return <div className={styles.app}>
+    <aside className={styles.appSidebar} aria-label={t("Your project")}>
+      <PortalBrand site={site} />
+      <ProjectProfile project={project} view={view} site={site} format={format} wide showNext={false} open={open} go={go} nav={nav ?? <span />}
+        onProject={(id) => { setProjectId(id); setSection("overview"); setNotice(""); }} />
+      <PortalSupport site={site} />
+    </aside>
+    <div className={styles.appMain}>
+      <header className={styles.appTopbar}>
+        <span className={styles.appCrumb} dir="auto">{project.title}</span>
+        <span className={styles.appCrumbSep} aria-hidden="true">/</span>
+        <strong>{labels.sections[current]}</strong>
+        <PortalActions onSignOut={onSignOut} />
+      </header>
+      <div className={styles.appContent} ref={content}>
+        {project.paused ? <EmptyState illustration="locked" title={t("Your project page is paused")}
+          description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
+          <h2 className={styles.viewTitle} id="portal-view-title">{labels.sections[current]}</h2>
+          {notice ? <InlineNotice tone="success" message={notice} /> : null}
+          {current === "overview" ? <div className={styles.summary}><ProfileDetails project={project} site={site} format={format} today={view.today} go={go} /></div> : null}
+          <section aria-labelledby="portal-view-title" className={styles.view}><Section {...props} /></section>
+        </>}
+      </div>
+    </div>
+    {modal}
+  </div>;
   return <div className={styles.workspace} data-layout={wide ? "wide" : "narrow"}>
     <aside className={styles.aside} aria-label={t("Your project")}>
       <ProjectProfile project={project} view={view} site={site} format={format} wide={wide} showNext={current !== "overview"} open={open} go={go}
-        onProject={(id) => { setProjectId(id); setSection("overview"); setNotice(""); }} nav={wide ? nav : null} />
+        onProject={(id) => { setProjectId(id); setSection("overview"); setNotice(""); }} />
     </aside>
     <div className={styles.content} ref={content}>
-      {wide ? null : nav}
+      {nav}
       {project.paused ? <EmptyState illustration="locked" title={t("Your project page is paused")}
         description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
         <h2 className={styles.viewTitle} id="portal-view-title">{labels.sections[current]}</h2>
@@ -115,9 +147,7 @@ export function PortalWorkspace({ view, site, api, reload }: { view: PortalView;
         <section aria-labelledby="portal-view-title" className={styles.view}><Section {...props} /></section>
       </>}
     </div>
-    {dialog ? <ControlledModalDialog isOpen onOpenChange={(isOpen) => { if (!isOpen) setTarget(null); }} size={target?.kind === "quote" ? "xl" : target?.kind === "board" ? "lg" : "md"} title={dialog.title}>
-      {dialog.body}
-    </ControlledModalDialog> : null}
+    {modal}
   </div>;
 }
 

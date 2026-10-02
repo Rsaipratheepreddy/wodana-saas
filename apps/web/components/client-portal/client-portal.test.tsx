@@ -426,18 +426,18 @@ describe("client portal", () => {
     expect(profile.getByText("Maya")).toBeInTheDocument();
     expect(profile.getByText("Stage 2 of 5 · ⁨Production⁩")).toBeInTheDocument();
     expect(profile.getByRole("progressbar", { name: "How far the project is" })).toHaveAttribute("aria-valuenow", "20");
-    // Key dates: the start, the next stage and the planned handover.
-    const dates = within(profile.getByRole("region", { name: "Key dates" }));
+    // On the Overview, three cards. Key dates: the start, the next stage and the planned handover.
+    const dates = within(screen.getByRole("region", { name: "Key dates" }));
     expect(dates.getByText("Started").nextElementSibling).toHaveTextContent("Sep 1, 2026");
     expect(dates.getByText("Next milestone").nextElementSibling).toHaveTextContent("Installation");
     expect(dates.getByText("Handover").nextElementSibling).toHaveTextContent("Dec 1, 2026 · in 65 days");
     // The balance, exact from the plan, and the next payment (overdue first).
-    const balance = within(profile.getByRole("region", { name: "Payments" }));
+    const balance = within(screen.getByRole("region", { name: "Payments" }));
     expect(balance.getByText("Paid").nextElementSibling).toHaveTextContent("$5,000.00");
     expect(balance.getByText("Still to pay").nextElementSibling).toHaveTextContent("$7,000.00");
     expect(balance.getByText("Before installation")).toBeInTheDocument();
     // The team: each by role, email where there is one, and the firm's own line to call, WhatsApp or email.
-    const team = within(profile.getByRole("region", { name: "Your team" }));
+    const team = within(screen.getByRole("region", { name: "Your team" }));
     expect(team.getByText("Project manager")).toBeInTheDocument();
     expect(team.getByText("Designer · Sales")).toBeInTheDocument();
     expect(team.getByRole("link", { name: "Email Omar Manager" })).toHaveAttribute("href", "mailto:omar@studio.example");
@@ -447,7 +447,7 @@ describe("client portal", () => {
     expect(team.getByRole("link", { name: "Email Studio Interiors" })).toHaveAttribute("href", "mailto:care@studio.example");
     // The Overview beside it doesn't repeat them.
     expect(screen.getAllByRole("region", { name: "Key dates" })).toHaveLength(1);
-    // The sections listed in the side column under the project, with what waits in each; the arrow keys move along them.
+    // The sections listed in the sidebar under the project, with what waits in each; the arrow keys move along them.
     const nav = profile.getByRole("navigation", { name: "Sections" });
     expect(nav).toHaveAttribute("data-layout", "list");
     expect(within(nav).getByRole("button", { name: /^Decisions/ })).toHaveTextContent("1 to decide");
@@ -465,8 +465,8 @@ describe("client portal", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("min-width: 64rem"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
     mount(() => ({ body: view({}, [project({ startDate: "2026-10-04" })]) }));
     render(<PortalApp site={site} />);
-    const profile = within(await screen.findByRole("complementary", { name: "Your project" }));
-    const dates = within(profile.getByRole("region", { name: "Key dates" }));
+    await screen.findByRole("complementary", { name: "Your project" });
+    const dates = within(screen.getByRole("region", { name: "Key dates" }));
     expect(dates.getByText("Starts").nextElementSibling).toHaveTextContent("Oct 4, 2026");
     expect(dates.queryByText("Started")).toBeNull();
   });

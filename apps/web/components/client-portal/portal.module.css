@@ -14,13 +14,14 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--wd-space-3);
-  padding-block: var(--wd-space-4);
+  padding-block: var(--wd-space-2-5);
   padding-inline: var(--wd-phi-3);
+  border-block-end: 1px solid var(--wd-color-border);
   background: var(--wd-color-brand-surface);
 }
 
 .brand { display: flex; align-items: center; gap: var(--wd-space-3); min-inline-size: 0; color: inherit; text-decoration: none; }
-.logo { display: block; block-size: var(--wd-space-16); inline-size: auto; max-inline-size: 16rem; object-fit: contain; }
+.logo { display: block; block-size: var(--wd-space-10); inline-size: auto; max-inline-size: 12rem; object-fit: contain; }
 .brandName {
   overflow: hidden;
   font-family: var(--wd-font-display);
@@ -57,7 +58,8 @@
   font-size: var(--wd-text-sm);
 }
 .support { display: flex; flex-wrap: wrap; gap: var(--wd-space-4); }
-.support a { color: var(--wd-color-text-secondary); text-underline-offset: 0.2em; }
+.support a { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-text-secondary); text-decoration: none; }
+.support a:hover { color: var(--wd-color-text); }
 .powered { font-size: var(--wd-text-xs); color: var(--wd-color-text-tertiary); }
 .footerEnd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-4); }
 .headerEnd { display: flex; align-items: center; gap: var(--wd-space-2); }
@@ -67,17 +69,18 @@
 .title {
   margin: 0;
   font-family: var(--wd-font-display);
-  font-size: var(--wd-text-3xl);
+  font-size: var(--wd-text-2xl);
   font-weight: var(--wd-weight-semibold);
   letter-spacing: var(--wd-workspace-heading-tracking, var(--wd-tracking-tight));
   line-height: var(--wd-leading-tight);
   text-transform: var(--wd-workspace-heading-transform, none);
 }
-.lead { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-lg); line-height: var(--wd-leading-copy); }
+.lead { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-md); line-height: var(--wd-leading-copy); }
 .intro { display: grid; gap: var(--wd-space-2); }
 
 /* Sign-in: one narrow column, one field at a time. */
-.signIn { display: grid; gap: var(--wd-phi-3); max-inline-size: var(--wd-auth-panel-width); inline-size: 100%; margin-inline: auto; }
+/* Sign-in: one clean card in the middle of the page, one field at a time. */
+.signIn { display: grid; gap: var(--wd-phi-3); max-inline-size: var(--wd-auth-panel-width); inline-size: 100%; margin-inline: auto; margin-block: var(--wd-phi-4); padding: var(--wd-phi-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); box-shadow: var(--wd-shadow-sm); }
 .form { display: grid; gap: var(--wd-space-4); }
 .formActions { display: grid; gap: var(--wd-space-3); }
 .formActions > button { inline-size: 100%; min-block-size: var(--wd-button-height-large); }
@@ -332,12 +335,12 @@
 .amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* One-word states; colour reinforces the word, never replaces it. */
-.state { display: inline-flex; align-items: center; gap: var(--wd-space-1); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); white-space: nowrap; }
-.state[data-tone="success"] { color: var(--wd-color-success); }
-.state[data-tone="warning"] { color: var(--wd-color-warning); }
-.state[data-tone="danger"] { color: var(--wd-color-danger); }
-.state[data-tone="info"] { color: var(--wd-color-info); }
-.state[data-tone="neutral"] { color: var(--wd-color-text-secondary); }
+.state { display: inline-flex; align-items: center; gap: var(--wd-space-1); min-block-size: var(--wd-space-6); padding-inline: var(--wd-space-2-5); border-radius: var(--wd-radius-pill); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); white-space: nowrap; }
+.state[data-tone="success"] { background: var(--wd-color-success-subtle); color: var(--wd-color-success); }
+.state[data-tone="warning"] { background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
+.state[data-tone="danger"] { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
+.state[data-tone="info"] { background: var(--wd-color-info-subtle); color: var(--wd-color-info); }
+.state[data-tone="neutral"] { background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); }
 
 /* Home: where the project stands and what's needed now. */
 .stage { display: grid; gap: var(--wd-space-2); }
@@ -460,7 +463,7 @@
   .profile, .profileFoot { padding: var(--wd-space-4); }
 }
 
-/* The side column on a wide screen, like a document app's sidebar: one quiet panel, small type, the sections as a list. */
+/* The side column on a wide screen, like a document app's sidebar: one quiet panel in small type. */
 .profile[data-layout="panel"] { gap: var(--wd-space-3); padding: var(--wd-space-3); border: 0; background: var(--wd-color-surface-subtle); }
 .profile[data-layout="panel"] .profileTitle { font-size: var(--wd-text-md); }
 .profile[data-layout="panel"] .identity { gap: var(--wd-space-1); }
@@ -475,10 +478,84 @@
 .profile[data-layout="panel"] .balance { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-1); }
 .profile[data-layout="panel"] .balance > div { display: flex; justify-content: space-between; align-items: baseline; gap: var(--wd-space-2); }
 .profile[data-layout="panel"] .balance dd { font-size: var(--wd-text-sm); }
-.profile[data-layout="panel"] .sectionNav { margin-inline: calc(var(--wd-space-1) * -1); padding-block-start: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
-.profile[data-layout="panel"] .sectionNav ul { gap: 1px; }
-.profile[data-layout="panel"] .navItem { min-block-size: var(--wd-control-sm); gap: var(--wd-space-2); padding-inline: var(--wd-space-2); font-size: var(--wd-text-sm); }
-.profile[data-layout="panel"] .navItem svg { inline-size: var(--wd-space-4); block-size: var(--wd-space-4); }
-.profile[data-layout="panel"] .navItem[aria-current="page"] { background: var(--wd-color-surface-hover); font-weight: var(--wd-weight-medium); }
-.profile[data-layout="panel"] .navBadge { font-size: var(--wd-text-2xs); }
 .boards, .pins { columns: 13rem; }
+/* Tabs in small type, so every section fits on one row beside the sidebar. */
+.sectionNav[data-layout="tabs"] .navItem { min-block-size: var(--wd-control-md); gap: var(--wd-space-1-5); padding-inline: var(--wd-space-2-5); font-size: var(--wd-text-sm); }
+.sectionNav[data-layout="tabs"] .navItem svg { inline-size: var(--wd-space-4); block-size: var(--wd-space-4); }
+.sectionNav[data-layout="tabs"] .navBadge { font-size: var(--wd-text-2xs); }
+
+/* ---- The signed-in dashboard on a wide screen: sidebar, top bar, content, like the team's own Wodana. ---- */
+.page[data-bare] { display: block; }
+.app { display: grid; grid-template-columns: 15rem minmax(0, 1fr); min-block-size: 100dvh; background: var(--wd-color-canvas); }
+.appSidebar { position: sticky; inset-block-start: 0; display: flex; flex-direction: column; gap: var(--wd-space-4); block-size: 100dvh; overflow-y: auto; scrollbar-width: thin;
+  padding: var(--wd-space-4) var(--wd-space-3); border-inline-end: 1px solid var(--wd-color-border); background: var(--wd-color-sidebar); }
+.appSidebar .brand { padding-inline: var(--wd-space-2); }
+.appSidebar .logo { block-size: var(--wd-space-10); max-inline-size: 10rem; }
+.appSidebar .profile[data-layout="panel"] { padding: 0; background: none; gap: var(--wd-space-3); }
+.appSidebar .identity { padding-inline: var(--wd-space-2); }
+.appSidebar .profileStage { padding-inline: var(--wd-space-2); }
+.appSidebar .sectionNav { padding-block-start: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.appSidebar .sectionNav ul { gap: 1px; }
+.appSidebar .navItem { min-block-size: var(--wd-control-sm); gap: var(--wd-space-2); padding-inline: var(--wd-space-2); border-radius: var(--wd-radius-sm); font-size: var(--wd-text-sm); }
+.appSidebar .navItem svg { inline-size: var(--wd-space-4); block-size: var(--wd-space-4); }
+.appSidebar .navItem[aria-current="page"] { background: var(--wd-color-surface-selected); color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); }
+.appSidebar .navItem[aria-current="page"] svg { color: var(--wd-color-action-primary); }
+.appSidebar .navBadge { font-size: var(--wd-text-2xs); }
+.sideSupport { display: grid; gap: var(--wd-space-1-5); margin-block-start: auto; padding: var(--wd-space-3) var(--wd-space-2) 0; border-block-start: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-xs); }
+.sideSupport a { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); overflow-wrap: anywhere; color: var(--wd-color-text-secondary); text-decoration: none; }
+.sideSupport a:hover { color: var(--wd-color-text); }
+.appMain { display: grid; grid-template-rows: auto 1fr; min-inline-size: 0; }
+.appTopbar { position: sticky; inset-block-start: 0; z-index: var(--wd-z-sticky); display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-space-12);
+  padding-inline: var(--wd-phi-3); border-block-end: 1px solid var(--wd-color-border); background: var(--wd-color-surface); font-size: var(--wd-text-sm); }
+.appTopbar strong { font-weight: var(--wd-weight-semibold); }
+.appTopbar .headerEnd { margin-inline-start: auto; }
+.appCrumb { overflow: hidden; color: var(--wd-color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.appCrumbSep { color: var(--wd-color-text-tertiary); }
+.appContent { display: grid; align-content: start; gap: var(--wd-space-5); inline-size: 100%; max-inline-size: 72rem; padding: var(--wd-phi-3); min-inline-size: 0; }
+/* The Overview opens on three cards: key dates, the balance, the team. */
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--wd-space-3); align-items: start; }
+.summary > .profileBlock { gap: var(--wd-space-2); padding: var(--wd-space-4); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.summary .groupTitle { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.summary .facts { grid-template-columns: minmax(0, 1fr) auto; gap: var(--wd-space-1-5) var(--wd-space-3); font-size: var(--wd-text-sm); }
+.summary .facts dd { text-align: end; font-weight: var(--wd-weight-medium); }
+.summary .balance > div { display: grid; gap: var(--wd-space-0-5); }
+.summary .balance dd { font-size: var(--wd-text-lg); }
+/* Lists sit on one sheet: a bordered card, one divider per row. */
+.app .list { padding-inline: var(--wd-space-4); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.app .group + .group { padding-block-start: var(--wd-space-5); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.app .groupTitle { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+/* ---- The dashboard matches the team's Wodana: its sans font, normal-case headings, 14px type, its sidebar and top bar. ---- */
+.app { font-family: var(--wd-font-sans); font-size: var(--wd-text-sm); color: var(--wd-color-text); }
+.app .viewTitle, .app .profileTitle, .app .groupTitle, .app .brandName, .app .itemTitle, .app .nextPaymentTitle {
+  font-family: var(--wd-font-sans); letter-spacing: normal; text-transform: none; }
+.app .viewTitle { font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); }
+.app .groupTitle { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.app .itemTitle, .app .fileName { font-size: var(--wd-text-sm); }
+.app .itemMeta, .app .muted { font-size: var(--wd-text-xs); }
+.appSidebar { gap: var(--wd-space-3); padding: var(--wd-space-3); border-inline-end-color: var(--wd-color-structural-divider); }
+.appSidebar .brand { min-block-size: var(--wd-space-10); padding-inline: var(--wd-space-2); }
+.appSidebar .profileTitle { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.appSidebar .eyebrow, .appSidebar .identityFacts, .appSidebar .muted { font-size: var(--wd-text-xs); }
+.appSidebar .profileStageTitle { font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); }
+.appSidebar .navItem { min-block-size: 2.1rem; padding-inline: var(--wd-space-2); border-radius: var(--wd-radius-xs); color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-regular); }
+.appSidebar .navItem svg { inline-size: var(--wd-space-4); block-size: var(--wd-space-4); stroke-width: 1.6; color: var(--wd-color-text); }
+.appSidebar .navItem:hover { background: var(--wd-color-sidebar-hover); }
+.appSidebar .navItem[aria-current="page"] { background: var(--wd-color-sidebar-active); color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
+.appSidebar .navItem[aria-current="page"] svg { color: var(--wd-color-text); }
+.appTopbar { min-block-size: 3.25rem; padding-inline: var(--wd-space-6); border-block-end-color: var(--wd-color-structural-divider); background: var(--wd-color-workspace-canvas); }
+.appContent { gap: var(--wd-space-6); padding: var(--wd-space-6); background: var(--wd-color-workspace-canvas); }
+.appMain { background: var(--wd-color-workspace-canvas); }
+/* Overview cards: one label, then label-value rows; nothing nested in a second box. */
+.summary { gap: var(--wd-space-4); }
+.summary > .profileBlock { gap: var(--wd-space-3); padding: var(--wd-space-4) var(--wd-space-5); border-color: var(--wd-color-border); border-radius: var(--wd-radius-md); }
+.summary .facts { gap: var(--wd-space-2) var(--wd-space-4); }
+.summary .facts dt { color: var(--wd-color-text-secondary); white-space: nowrap; }
+.summary .nextPayment { padding: 0; background: none; border-radius: 0; }
+.summary .person { gap: var(--wd-space-2-5); }
+.summary .person :global(.wd-avatar) { inline-size: var(--wd-space-8); block-size: var(--wd-space-8); font-size: var(--wd-text-xs); }
+.summary .contactActions :global(.wd-button) { inline-size: var(--wd-control-sm); block-size: var(--wd-control-sm); min-block-size: var(--wd-control-sm); }
+.app .list { padding-inline: var(--wd-space-4); }
+.app .actionCard { min-block-size: 0; padding: var(--wd-space-3) var(--wd-space-4); border: 1px solid color-mix(in srgb, var(--wd-color-action-primary) 30%, var(--wd-color-border)); }
+.app .actionTitle { font-size: var(--wd-text-sm); }
+.app .quote { font-size: var(--wd-text-md); }

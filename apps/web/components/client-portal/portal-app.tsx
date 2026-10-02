@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DesignSystemProvider, ErrorState, InlineNotice, Skeleton, SkeletonBlock } from "@/design-system";
+import { DesignSystemProvider, ErrorState, InlineNotice, Skeleton, SkeletonBlock, useMediaQuery } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { PortalError, portalApi } from "@/lib/client-portal/client";
 import type { PortalInvite, PortalSite, PortalView } from "@/lib/client-portal/types";
@@ -57,12 +57,15 @@ export function PortalApp({ site, invite = null }: { site: PortalSite; invite?: 
     document.addEventListener("visibilitychange", refresh);
     return () => document.removeEventListener("visibilitychange", refresh);
   }, [load, state.kind]);
+  const wide = useMediaQuery("(min-width: 64rem)");
   const signOut = async () => { await api.logout().catch(() => null); setState({ kind: "signed-out" }); };
+  // Signed in on a wide screen, the portal is a dashboard with its own sidebar and top bar.
+  const dashboard = wide && state.kind === "ready" && state.view.contact.nameConfirmed && state.view.projects.length > 0;
   const style = workspacePrimaryColorStyle({ primaryColor: site.brand.primaryColor, secondaryColor: site.brand.secondaryColor, headingFont: site.brand.headingFont,
     bodyFont: site.brand.bodyFont });
   return <DesignSystemProvider theme="light" locale={site.region.locale} currency={site.region.currency} timeZone={site.region.timeZone} portalContainer={container}
     style={style} data-portal-root>
-    <PortalFrame site={site} onSignOut={state.kind === "ready" ? () => void signOut() : undefined}>
+    <PortalFrame site={site} onSignOut={state.kind === "ready" ? () => void signOut() : undefined} bare={dashboard}>
       {state.kind === "loading" ? <PortalSkeleton /> : null}
       {state.kind === "failed" ? <ErrorState description={state.message} onRetry={() => { setState({ kind: "loading" }); void load(); }} /> : null}
       {state.kind === "signed-out" ? <>
@@ -71,7 +74,7 @@ export function PortalApp({ site, invite = null }: { site: PortalSite; invite?: 
       </> : null}
       {state.kind === "ready" && !state.view.contact.nameConfirmed
         ? <ConfirmName api={api} name={state.view.contact.name} onDone={() => void load()} /> : null}
-      {state.kind === "ready" && state.view.contact.nameConfirmed ? <PortalWorkspace view={state.view} site={site} api={api} reload={load} /> : null}
+      {state.kind === "ready" && state.view.contact.nameConfirmed ? <PortalWorkspace view={state.view} site={site} api={api} reload={load} onSignOut={() => void signOut()} /> : null}
     </PortalFrame>
     <div ref={setContainer} />
   </DesignSystemProvider>;

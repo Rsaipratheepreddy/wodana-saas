@@ -188,7 +188,7 @@ export function ProfileDetails({ project, site, format, today, go }: { project: 
  */
 export function ProjectProfile({ project, view, site, format, wide, showNext, onProject, open, go, nav }: {
   project: PortalProject; view: PortalView; site: PortalSite; format: PortalFormat; wide: boolean;
-  /** The sections, listed under the project in the side column on a wide screen. */
+  /** The sections, listed under the project in the dashboard's sidebar. */
   nav?: React.ReactNode;
   /** Offer the next thing to do (not while the Overview, which lists them all, is open). */
   showNext: boolean; onProject: (id: string) => void; open: Open; go: Go;
@@ -200,7 +200,7 @@ export function ProjectProfile({ project, view, site, format, wide, showNext, on
     {project.paused ? null : <>
       <StageSummary project={project} />
       {nav}
-      <ProfileDetails project={project} site={site} format={format} today={view.today} go={go} />
+      {nav ? null : <ProfileDetails project={project} site={site} format={format} today={view.today} go={go} />}
     </>}
   </div>;
   const next = project.paused || !showNext ? null : project.next[0] ?? null;
