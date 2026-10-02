@@ -186,8 +186,10 @@ export function ProfileDetails({ project, site, format, today, go }: { project: 
  * balance, team) in a column that stays in view. Narrow: one compact card with the project, its stage and progress,
  * and the next thing to do.
  */
-export function ProjectProfile({ project, view, site, format, wide, showNext, onProject, open, go }: {
+export function ProjectProfile({ project, view, site, format, wide, showNext, onProject, open, go, nav }: {
   project: PortalProject; view: PortalView; site: PortalSite; format: PortalFormat; wide: boolean;
+  /** The sections, listed under the project in the side column on a wide screen. */
+  nav?: React.ReactNode;
   /** Offer the next thing to do (not while the Overview, which lists them all, is open). */
   showNext: boolean; onProject: (id: string) => void; open: Open; go: Go;
 }) {
@@ -197,6 +199,7 @@ export function ProjectProfile({ project, view, site, format, wide, showNext, on
     <Identity project={project} view={view} onProject={onProject} />
     {project.paused ? null : <>
       <StageSummary project={project} />
+      {nav}
       <ProfileDetails project={project} site={site} format={format} today={view.today} go={go} />
     </>}
   </div>;

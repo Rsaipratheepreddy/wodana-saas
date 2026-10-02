@@ -447,14 +447,13 @@ describe("client portal", () => {
     expect(team.getByRole("link", { name: "Email Studio Interiors" })).toHaveAttribute("href", "mailto:care@studio.example");
     // The Overview beside it doesn't repeat them.
     expect(screen.getAllByRole("region", { name: "Key dates" })).toHaveLength(1);
-    // The sections as tabs above the open one, with what waits in each; the arrow keys move along them.
-    const nav = screen.getByRole("navigation", { name: "Sections" });
-    expect(profile.queryByRole("navigation", { name: "Sections" })).toBeNull();
-    expect(nav).toHaveAttribute("data-layout", "tabs");
+    // The sections listed in the side column under the project, with what waits in each; the arrow keys move along them.
+    const nav = profile.getByRole("navigation", { name: "Sections" });
+    expect(nav).toHaveAttribute("data-layout", "list");
     expect(within(nav).getByRole("button", { name: /^Decisions/ })).toHaveTextContent("1 to decide");
     expect(within(nav).getByRole("button", { name: /^Payments/ })).toHaveTextContent("1 overdue");
     within(nav).getByRole("button", { name: "Overview" }).focus();
-    await user.keyboard("{ArrowRight}");
+    await user.keyboard("{ArrowDown}");
     expect(within(nav).getByRole("button", { name: "Progress" })).toHaveFocus();
     await user.keyboard("{End}");
     expect(within(nav).getByRole("button", { name: "Messages" })).toHaveFocus();

@@ -97,7 +97,7 @@
 
 /* The project: its profile beside the open section (a card above it on a narrow screen). */
 .workspace { display: grid; align-items: start; gap: var(--wd-phi-4); min-inline-size: 0; }
-.workspace[data-layout="wide"] { grid-template-columns: 17rem minmax(0, 1fr); gap: var(--wd-phi-4); }
+.workspace[data-layout="wide"] { grid-template-columns: 15.5rem minmax(0, 1fr); gap: var(--wd-phi-4); }
 .aside { display: grid; align-content: start; gap: var(--wd-space-4); min-inline-size: 0; }
 /* Wide, the profile stays in view while the section scrolls (clear of the client view's preview bar). */
 .workspace[data-layout="wide"] .aside {
@@ -113,7 +113,7 @@
 .page .viewTitle {
   margin: 0;
   font-family: var(--wd-font-display);
-  font-size: var(--wd-text-xl);
+  font-size: var(--wd-text-lg);
   font-weight: var(--wd-weight-semibold);
   letter-spacing: var(--wd-workspace-heading-tracking, var(--wd-tracking-tight));
   line-height: var(--wd-leading-tight);
@@ -459,3 +459,26 @@
   .page .viewTitle, .page .profileTitle { font-size: var(--wd-text-xl); }
   .profile, .profileFoot { padding: var(--wd-space-4); }
 }
+
+/* The side column on a wide screen, like a document app's sidebar: one quiet panel, small type, the sections as a list. */
+.profile[data-layout="panel"] { gap: var(--wd-space-3); padding: var(--wd-space-3); border: 0; background: var(--wd-color-surface-subtle); }
+.profile[data-layout="panel"] .profileTitle { font-size: var(--wd-text-md); }
+.profile[data-layout="panel"] .identity { gap: var(--wd-space-1); }
+.profile[data-layout="panel"] .identityFacts { font-size: var(--wd-text-xs); }
+.profile[data-layout="panel"] .eyebrow { font-size: var(--wd-text-xs); }
+.profile[data-layout="panel"] .profileStage { gap: var(--wd-space-1-5); padding-block-start: var(--wd-space-3); }
+.profile[data-layout="panel"] .profileStageTitle { font-size: var(--wd-text-sm); }
+.profile[data-layout="panel"] .profileBlock { gap: var(--wd-space-1-5); padding-block-start: var(--wd-space-3); }
+.profile[data-layout="panel"] .groupTitle { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.profile[data-layout="panel"] .facts { grid-template-columns: minmax(0, 1fr) auto; gap: var(--wd-space-1) var(--wd-space-2); font-size: var(--wd-text-sm); }
+.profile[data-layout="panel"] .facts dd { text-align: end; }
+.profile[data-layout="panel"] .balance { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-1); }
+.profile[data-layout="panel"] .balance > div { display: flex; justify-content: space-between; align-items: baseline; gap: var(--wd-space-2); }
+.profile[data-layout="panel"] .balance dd { font-size: var(--wd-text-sm); }
+.profile[data-layout="panel"] .sectionNav { margin-inline: calc(var(--wd-space-1) * -1); padding-block-start: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.profile[data-layout="panel"] .sectionNav ul { gap: 1px; }
+.profile[data-layout="panel"] .navItem { min-block-size: var(--wd-control-sm); gap: var(--wd-space-2); padding-inline: var(--wd-space-2); font-size: var(--wd-text-sm); }
+.profile[data-layout="panel"] .navItem svg { inline-size: var(--wd-space-4); block-size: var(--wd-space-4); }
+.profile[data-layout="panel"] .navItem[aria-current="page"] { background: var(--wd-color-surface-hover); font-weight: var(--wd-weight-medium); }
+.profile[data-layout="panel"] .navBadge { font-size: var(--wd-text-2xs); }
+.boards, .pins { columns: 13rem; }

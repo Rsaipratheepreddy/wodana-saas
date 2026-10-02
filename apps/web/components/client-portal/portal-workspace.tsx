@@ -100,14 +100,14 @@ export function PortalWorkspace({ view, site, api, reload }: { view: PortalView;
   const Section = SECTIONS[current];
   const dialog = target ? dialogFor(target, project, { site, customer: view.contact.name, api, format, done, reload, today: view.today, t }) : null;
   const nav = !project.paused && shown.length > 1
-    ? <SectionNav items={shown.map((id) => ({ id, label: labels.sections[id], badge: counts[id] }))} current={current} onSelect={go} layout="tabs" /> : null;
+    ? <SectionNav items={shown.map((id) => ({ id, label: labels.sections[id], badge: counts[id] }))} current={current} onSelect={go} layout={wide ? "list" : "tabs"} /> : null;
   return <div className={styles.workspace} data-layout={wide ? "wide" : "narrow"}>
     <aside className={styles.aside} aria-label={t("Your project")}>
       <ProjectProfile project={project} view={view} site={site} format={format} wide={wide} showNext={current !== "overview"} open={open} go={go}
-        onProject={(id) => { setProjectId(id); setSection("overview"); setNotice(""); }} />
+        onProject={(id) => { setProjectId(id); setSection("overview"); setNotice(""); }} nav={wide ? nav : null} />
     </aside>
     <div className={styles.content} ref={content}>
-      {nav}
+      {wide ? null : nav}
       {project.paused ? <EmptyState illustration="locked" title={t("Your project page is paused")}
         description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
         <h2 className={styles.viewTitle} id="portal-view-title">{labels.sections[current]}</h2>
