@@ -559,3 +559,20 @@
 .app .actionCard { min-block-size: 0; padding: var(--wd-space-3) var(--wd-space-4); border: 1px solid color-mix(in srgb, var(--wd-color-action-primary) 30%, var(--wd-color-border)); }
 .app .actionTitle { font-size: var(--wd-text-sm); }
 .app .quote { font-size: var(--wd-text-md); }
+
+/* Overview cards, refined: equal heights, an icon by each title, quiet amounts with a paid bar, one rule above the next payment. */
+.summary { align-items: stretch; }
+.summary > .profileBlock { align-content: start; }
+.cardIcon { flex: none; color: var(--wd-color-text-tertiary); }
+.summary .groupTitle { display: inline-flex; align-items: center; gap: var(--wd-space-2); margin-block-end: var(--wd-space-1); color: var(--wd-color-text); }
+.summary .balance { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
+.summary .balance dd { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
+.summary .balance > div:first-child dd { color: var(--wd-color-success); }
+.paidShare { display: grid; gap: var(--wd-space-1); }
+.summary .nextPayment { padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.summary .nextPaymentTitle { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); font-size: var(--wd-text-sm); }
+.summary .people { gap: var(--wd-space-1); }
+.summary .person { padding-block: var(--wd-space-1-5); }
+.summary .person + .person { border-block-start: 1px solid var(--wd-color-structural-divider); }
+.summary .personName { font-size: var(--wd-text-sm); }
+.summary .contactActions :global(.wd-button) { color: var(--wd-color-text-secondary); }

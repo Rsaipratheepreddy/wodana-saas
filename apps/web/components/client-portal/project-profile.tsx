@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, ExternalLink, Mail, MapPin, MessageCircle, Phone, UserRound } from "lucide-react";
+import { CalendarDays, ChevronRight, ExternalLink, Mail, MapPin, MessageCircle, Phone, UserRound, UsersRound, Wallet } from "lucide-react";
 import { Avatar, Button, Progress, SelectField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { stageName } from "@/lib/client-portal/stage-names";
@@ -88,7 +88,7 @@ function KeyDates({ project, format, today }: { project: PortalProject; format: 
   }
   if (!rows.length) return null;
   return <section className={styles.profileBlock} aria-labelledby={`dates-${project.id}`}>
-    <h2 className={styles.groupTitle} id={`dates-${project.id}`}>{t("Key dates")}</h2>
+    <h2 className={styles.groupTitle} id={`dates-${project.id}`}><CalendarDays aria-hidden="true" className={styles.cardIcon} size={15} />{t("Key dates")}</h2>
     <dl className={styles.facts}>{rows.map(([label, value]) => <div className={styles.factRow} key={label}><dt>{label}</dt><dd dir="auto">{value}</dd></div>)}</dl>
   </section>;
 }
@@ -96,6 +96,7 @@ function KeyDates({ project, format, today }: { project: PortalProject; format: 
 /** Paid, still to pay, and the next payment with its Pay link where one exists. */
 function Balance({ project, format, go }: { project: PortalProject; format: PortalFormat; go: Go }) {
   const t = useT();
+  const labels = usePortalLabels();
   const payments = project.payments;
   if (!payments || !payments.milestones.length) return null;
   const money = (value: string | null) => format.money(value, payments.currency);
@@ -103,15 +104,20 @@ function Balance({ project, format, go }: { project: PortalProject; format: Port
     ?? payments.milestones.find((item) => item.status === "upcoming") ?? null;
   const totals = payments.totals;
   return <section className={styles.profileBlock} aria-labelledby={`balance-${project.id}`}>
-    <h2 className={styles.groupTitle} id={`balance-${project.id}`}>{t("Payments")}</h2>
+    <h2 className={styles.groupTitle} id={`balance-${project.id}`}><Wallet aria-hidden="true" className={styles.cardIcon} size={15} />{t("Payments")}</h2>
     {totals ? <dl className={styles.balance}>
       <div><dt>{t("Paid")}</dt><dd className={styles.amount}>{money(totals.paid)}</dd></div>
       <div><dt>{t("Still to pay")}</dt><dd className={styles.amount}>{money(totals.left)}</dd></div>
     </dl> : null}
+    {totals && Number(totals.paid) + Number(totals.left) > 0 ? <div className={styles.paidShare}>
+      <Progress label={t("Paid so far")} value={Math.round((Number(totals.paid) / (Number(totals.paid) + Number(totals.left))) * 100)} />
+      <span className={styles.itemMeta}>{t("{percent}% paid", { percent: Math.round((Number(totals.paid) / (Number(totals.paid) + Number(totals.left))) * 100) })}</span>
+    </div> : null}
     {next ? <div className={styles.nextPayment}>
       <span className={styles.itemText}>
         <span className={styles.muted}>{t("Next payment")}</span>
-        <span className={styles.nextPaymentTitle} dir="auto">{next.title}</span>
+        <span className={styles.nextPaymentTitle} dir="auto">{next.title}{labels.states[next.status]
+          ? <span className={styles.state} data-tone={labels.states[next.status][1]}>{labels.states[next.status][0]}</span> : null}</span>
         <span className={styles.itemMeta}>{[next.left ?? next.amount ? money(next.left ?? next.amount) : "", next.dueDate ? t("due {date}", { date: format.date(next.dueDate) }) : ""]
           .filter(Boolean).join(" · ")}</span>
       </span>
@@ -140,7 +146,7 @@ function Team({ project, site }: { project: PortalProject; site: PortalSite }) {
   const firm = Boolean(site.support.phone || whatsapp || site.support.email);
   if (!team.length && !firm) return null;
   return <section className={styles.profileBlock} aria-labelledby={`team-${project.id}`}>
-    <h2 className={styles.groupTitle} id={`team-${project.id}`}>{t("Your team")}</h2>
+    <h2 className={styles.groupTitle} id={`team-${project.id}`}><UsersRound aria-hidden="true" className={styles.cardIcon} size={15} />{t("Your team")}</h2>
     <ul className={styles.people}>
       {team.map((person) => <li className={styles.person} key={`${person.name}-${person.roles.join("-")}`}>
         <Avatar name={person.name} preset={person.avatar ?? "auto"} roles={person.roles.map((role) => AVATAR_ROLES[role])} seed={person.name} />
@@ -149,8 +155,8 @@ function Team({ project, site }: { project: PortalProject; site: PortalSite }) {
           <span className={styles.itemMeta}>{person.roles.map((role) => roles[role]).join(" · ")}</span>
         </span>
         {person.email ? <span className={styles.contactActions}>
-          <a aria-label={t("Email {name}", { name: person.name })} className="wd-button wd-icon-button" data-size="standard" data-variant="secondary" href={`mailto:${person.email}`}>
-            <Mail aria-hidden="true" size={16} /></a>
+          <a aria-label={t("Email {name}", { name: person.name })} className="wd-button wd-icon-button" data-size="compact" data-variant="quiet" href={`mailto:${person.email}`}>
+            <Mail aria-hidden="true" size={15} /></a>
         </span> : null}
       </li>)}
       {firm ? <li className={styles.person}>
@@ -160,12 +166,12 @@ function Team({ project, site }: { project: PortalProject; site: PortalSite }) {
           {site.support.phone ? <span className={styles.itemMeta}><bdi dir="ltr">{formatPhoneForDisplay(site.support.phone)}</bdi></span> : null}
         </span>
         <span className={styles.contactActions}>
-          {site.support.phone ? <a aria-label={t("Call {name}", { name: site.brand.name })} className="wd-button wd-icon-button" data-size="standard" data-variant="secondary"
-            href={`tel:${site.support.phone}`}><Phone aria-hidden="true" size={16} /></a> : null}
-          {whatsapp ? <a aria-label={t("WhatsApp {name}", { name: site.brand.name })} className="wd-button wd-icon-button" data-size="standard" data-variant="secondary" href={whatsapp}
-            rel="noreferrer" target="_blank"><MessageCircle aria-hidden="true" size={16} /></a> : null}
-          {site.support.email ? <a aria-label={t("Email {name}", { name: site.brand.name })} className="wd-button wd-icon-button" data-size="standard" data-variant="secondary"
-            href={`mailto:${site.support.email}`}><Mail aria-hidden="true" size={16} /></a> : null}
+          {site.support.phone ? <a aria-label={t("Call {name}", { name: site.brand.name })} className="wd-button wd-icon-button" data-size="compact" data-variant="quiet"
+            href={`tel:${site.support.phone}`}><Phone aria-hidden="true" size={15} /></a> : null}
+          {whatsapp ? <a aria-label={t("WhatsApp {name}", { name: site.brand.name })} className="wd-button wd-icon-button" data-size="compact" data-variant="quiet" href={whatsapp}
+            rel="noreferrer" target="_blank"><MessageCircle aria-hidden="true" size={15} /></a> : null}
+          {site.support.email ? <a aria-label={t("Email {name}", { name: site.brand.name })} className="wd-button wd-icon-button" data-size="compact" data-variant="quiet"
+            href={`mailto:${site.support.email}`}><Mail aria-hidden="true" size={15} /></a> : null}
         </span>
       </li> : null}
     </ul>
