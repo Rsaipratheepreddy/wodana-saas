@@ -6,7 +6,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import RedirectResponse
 
-from wodana_intelligence.config import get_settings
 from wodana_intelligence.container import get_google_integration_service
 from wodana_intelligence.integrations.google_service import (
     GoogleIntegrationService,
@@ -23,6 +22,7 @@ from wodana_intelligence.integrations.models import (
     OAuthStartResponse,
     UpdateCalendarEventRequest,
 )
+from wodana_intelligence.integrations.return_origin import web_base
 
 router = APIRouter()
 GoogleService = Annotated[GoogleIntegrationService, Depends(get_google_integration_service)]
@@ -58,7 +58,7 @@ async def oauth_callback(
     code: Optional[str] = Query(default=None),
     error: Optional[str] = Query(default=None),
 ) -> RedirectResponse:
-    base_url = get_settings().web_origin.split(",", 1)[0].rstrip("/")
+    base_url = web_base(await service.return_origin(state))
     try:
         workspace_id, connection_id = await service.complete_oauth(state, code, error)
     except IntegrationFlowError as flow_error:

@@ -3618,7 +3618,9 @@ export class WorkspacesService {
           workspaceId,
           connectionId,
         );
-        if (before.status === status) {
+        // A connection left waiting (the provider's window closed or failed) can start again; its old attempt
+        // goes stale with the version bump, so it can never complete afterwards.
+        if (before.status === status && status !== "pending") {
           throw new ConflictException(`Integration is already ${status}`);
         }
         if (status === "pending" && before.status === "connected") {

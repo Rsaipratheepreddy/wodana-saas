@@ -19,7 +19,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
   const result = await authenticatedBackendFetch(provider === "google_workspace" ? "/integrations/google/oauth/start" : `/integrations/providers/${provider}/oauth/start`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ workspaceId, connectionId, version, ...(provider === "google_workspace" ? { accessMode: "manage", gmailSend: body?.gmailSend === true, driveFiles: body?.driveFiles === true } : {}) }),
+    // Sent back to the address the person started from (checked again by the service).
+    body: JSON.stringify({ workspaceId, connectionId, version, returnOrigin: request.headers.get("origin") ?? "", ...(provider === "google_workspace" ? { accessMode: "manage", gmailSend: body?.gmailSend === true, driveFiles: body?.driveFiles === true } : {}) }),
   }, intelligenceApiUrl);
   if (result.unauthenticated) {
     const response = NextResponse.json({ message: t("Your session has expired. Sign in again.") }, { status: 401 });

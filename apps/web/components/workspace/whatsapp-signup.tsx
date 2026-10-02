@@ -38,6 +38,8 @@ function Signup({ setup, workspaceId, onClose }: { setup: WhatsAppSetup; workspa
     let active = true;
     const initialize = () => { if (active) { window.FB?.init({ appId: setup.appId, version: setup.version, xfbml: false }); setReady(Boolean(window.FB)); } };
     const loadError = () => { if (active) setError(t("Meta could not be loaded. Check your connection and try again.")); };
+    // A blocker can stop Meta's script without an error event: say so instead of a button that never wakes.
+    const slow = setTimeout(() => { if (active && !window.FB) setError(t("Meta's sign-in didn't load. Turn off ad or tracking blockers for this site, then try again.")); }, 10000);
     let script = document.getElementById("wodana-meta-sdk") as HTMLScriptElement | null;
     if (window.FB) initialize();
     else {
@@ -78,6 +80,7 @@ function Signup({ setup, workspaceId, onClose }: { setup: WhatsAppSetup; workspa
     window.addEventListener("wodana-meta-code", codeReceived);
     return () => {
       active = false;
+      clearTimeout(slow);
       if (timer.current) clearTimeout(timer.current);
       script?.removeEventListener("load", initialize);
       script?.removeEventListener("error", loadError);

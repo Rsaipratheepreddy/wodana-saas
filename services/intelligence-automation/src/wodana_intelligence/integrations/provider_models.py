@@ -16,6 +16,8 @@ class ProviderStartRequest(ApiModel):
     workspace_id: UUID
     connection_id: UUID
     version: int = Field(ge=1)
+    # The Wodana address the person started from; checked again before it is used.
+    return_origin: str = Field(default="", max_length=200)
 
 
 class ProviderState(ProviderStartRequest):

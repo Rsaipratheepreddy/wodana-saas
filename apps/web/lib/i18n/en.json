@@ -11768,5 +11768,6 @@
   "Love: {name}": "Love: {name}",
   "Avoid: {name}": "Avoid: {name}",
   "Paid so far": "Paid so far",
-  "{percent}% paid": "{percent}% paid"
+  "{percent}% paid": "{percent}% paid",
+  "Meta's sign-in didn't load. Turn off ad or tracking blockers for this site, then try again.": "Meta's sign-in didn't load. Turn off ad or tracking blockers for this site, then try again."
 }

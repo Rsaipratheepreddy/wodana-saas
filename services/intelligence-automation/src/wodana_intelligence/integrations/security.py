@@ -57,6 +57,8 @@ class RedisStateClient(Protocol):
 
     async def getdel(self, name: str) -> Optional[Union[str, bytes]]: ...
 
+    async def get(self, name: str) -> Optional[Union[str, bytes]]: ...
+
 
 class OAuthStateStore:
     def __init__(self, redis_client: RedisStateClient, ttl_seconds: int = 600) -> None:
@@ -83,6 +85,13 @@ class OAuthStateStore:
         if value is None:
             return None
         return OAuthState.model_validate_json(value)
+
+    async def peek(self, state_id: str) -> Optional[OAuthState]:
+        """Read a state without using it up (to know where to send the person back)."""
+        if not state_id or len(state_id) > 200:
+            return None
+        value = await self._redis.get(self._key(state_id))
+        return OAuthState.model_validate_json(value) if value is not None else None
 
     @staticmethod
     def create_code_verifier() -> str:

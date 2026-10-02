@@ -11,7 +11,6 @@ from fastapi.responses import PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from wodana_intelligence.api.routes.google_workspace import actor_headers
-from wodana_intelligence.config import get_settings
 from wodana_intelligence.container import get_google_integration_service, get_provider_service
 from wodana_intelligence.integrations.gmail_sync import sync_gmail
 from wodana_intelligence.integrations.google_actions import execute_google
@@ -28,6 +27,7 @@ from wodana_intelligence.integrations.provider_models import (
     WhatsAppCompleteRequest,
 )
 from wodana_intelligence.integrations.provider_service import ProviderService
+from wodana_intelligence.integrations.return_origin import web_base
 
 router = APIRouter()
 Service = Annotated[ProviderService, Depends(get_provider_service)]
@@ -62,6 +62,7 @@ async def callback(
 ) -> RedirectResponse:
     result = "connected"
     error_code = ""
+    base = web_base(await service.return_origin(state))
     try:
         if provider == "whatsapp":
             raise IntegrationFlowError("embedded_signup_required", "Use WhatsApp Embedded Signup")
@@ -72,7 +73,6 @@ async def callback(
             exc.code if isinstance(exc, IntegrationFlowError) else "oauth_failed",
         )
     query = urlencode({"provider": provider, "integration": result, "code": error_code})
-    base = get_settings().web_origin.split(",", 1)[0].rstrip("/")
     return RedirectResponse(
         f"{base}/workspace/integrations?{query}",
         status_code=303,

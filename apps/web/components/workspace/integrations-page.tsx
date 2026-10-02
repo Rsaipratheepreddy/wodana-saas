@@ -242,7 +242,7 @@ export function IntegrationsPage({
         renderCell: (connection) => <span className={styles.accountActions}>
           {connection.status === "connected" || connection.status === "degraded"
             ? <Button onPress={() => setToolConnection(connection)} size="compact">{t("Open tools")}</Button>
-            : <Button isDisabled={!initialData.canManage || connection.status === "pending" || !platformReady(connection.provider)} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact">{connection.status === "pending" ? t("Connecting") : t("Connect")}</Button>}
+            : <Button isDisabled={!initialData.canManage || !platformReady(connection.provider)} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact">{connection.status === "pending" ? t("Try again") : t("Connect")}</Button>}
           <IconMenuButton
             ariaLabel={t("Actions for {name}", { name: connection.displayName })}
             items={[
@@ -313,7 +313,10 @@ export function IntegrationsPage({
                   ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="primary">{t("Connect")}</Button>
                   : connection.status === "draft"
                     ? <Button isDisabled={!initialData.canManage} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact" variant="primary">{t("Connect")}</Button>
-                    : <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact">{t("Manage")}</Button>}
+                    : connection.status === "pending"
+                      ? <Button isDisabled={!initialData.canManage || !platformReady(item.provider)} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact" variant="primary">{t("Try again")}</Button>
+                      : <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact">{t("Manage")}</Button>}
+              {connection?.status === "pending" ? <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact" variant="quiet">{t("Manage")}</Button> : null}
               {connection?.status === "draft" ? <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact" variant="quiet">{t("Settings")}</Button> : null}
               {connection && ["connected", "degraded"].includes(connection.status) ? <Button isDisabled={!initialData.canManage || !platformReady(item.provider)} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="quiet">{t("Add account")}</Button> : null}
             </div>

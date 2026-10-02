@@ -29,6 +29,7 @@ class OAuthStartRequest(ApiModel):
     access_mode: GoogleAccessMode = GoogleAccessMode.MANAGE
     gmail_send: bool = False
     drive_files: bool = False
+    return_origin: str = Field(default="", max_length=200)
 
 
 class OAuthStartResponse(ApiModel):
@@ -40,6 +41,7 @@ class OAuthStartResponse(ApiModel):
 class OAuthState(ApiModel):
     workspace_id: UUID
     connection_id: UUID
+    return_origin: str = ""
     expected_version: int = Field(ge=1)
     expected_domain: str
     expected_email: Optional[str] = None

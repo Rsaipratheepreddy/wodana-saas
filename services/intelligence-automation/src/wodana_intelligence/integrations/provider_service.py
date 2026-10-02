@@ -114,6 +114,16 @@ class ProviderService:
             "expiresInSeconds": 600,
         }
 
+    async def return_origin(self, nonce: str) -> str:
+        """Where this sign-in started, before the state is used up; empty when unknown."""
+        if not nonce or len(nonce) > 200:
+            return ""
+        try:
+            value = await self.redis.get(f"wodana:provider-oauth:{nonce}")
+            return ProviderState.model_validate(self.open(value)).return_origin if value else ""
+        except Exception:
+            return ""
+
     async def consume(self, provider: Provider, nonce: str) -> ProviderState:
         if not nonce or len(nonce) > 200:
             raise IntegrationFlowError(

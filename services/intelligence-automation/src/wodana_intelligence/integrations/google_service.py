@@ -107,6 +107,7 @@ class GoogleIntegrationService:
             access_mode=request.access_mode,
             requested_scopes=scopes,
             issued_at=self._state_store.issued_now(),
+            return_origin=request.return_origin,
         )
         try:
             state_id = await self._state_store.issue(oauth_state)
@@ -128,6 +129,14 @@ class GoogleIntegrationService:
             expires_in_seconds=self._state_ttl_seconds,
             connection_version=int(connection["version"]),
         )
+
+    async def return_origin(self, state_id: str) -> str:
+        """Where this sign-in started, before the state is used up; empty when unknown."""
+        try:
+            state = await self._state_store.peek(state_id)
+        except Exception:
+            return ""
+        return state.return_origin if state else ""
 
     async def complete_oauth(
         self,
