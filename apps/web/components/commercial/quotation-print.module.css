@@ -1,5 +1,5 @@
 /* An issued quotation on its own page: the client's view and the printable copy. */
-.page { display: grid; gap: var(--wd-space-4); min-block-size: 100dvh; padding-block: var(--wd-space-6); padding-inline: var(--wd-phi-3); background: var(--wd-color-canvas); }
+.page { display: grid; gap: var(--wd-space-4); align-content: start; min-block-size: 100dvh; padding-block: var(--wd-space-6); padding-inline: var(--wd-phi-3); background: var(--wd-color-canvas); }
 .actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
 .document { display: grid; gap: var(--wd-space-3); inline-size: 100%; max-inline-size: var(--wd-content-wide); margin-inline: auto; }
 .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2); }
