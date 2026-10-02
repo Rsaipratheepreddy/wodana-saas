@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { UserRoundCheck } from "lucide-react";
 import { EditableField, EditableFieldList, FactRow, FormDialog, MenuButton, PersonName, SelectField, TextAreaField, formatDate, useDesignSystem, type ActionItem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest } from "@/lib/pre-project/content";
@@ -82,9 +84,11 @@ export function CaseOverview({ record: initial, workspaceId, members, onUpdated 
     {notice ? <p role="status" className={styles.notice}>{notice}</p> : null}
     <div className={styles.identity}>
       <div><h2>{t("Client details")}</h2>{!manageable && record.status !== "released" ? <span>{t("View only · the case owner or an admin can change details")}</span> : null}</div>
-      {caseActions.length ? <div className={styles.identityActions}>
-        <MenuButton items={caseActions} label={t("Project actions")} onAction={(id) => { setError(""); if (id === "set_phase") setPhase(record.phase); setAction(id as Action); }} />
-      </div> : null}
+      <div className={styles.identityActions}>
+        {/* Who from the client can sign in to the portal, and with what access. */}
+        <Link className="wd-button" data-size="compact" data-variant="secondary" href={`/workspace/pre-projects/cases/${record.id}/client-portal`}><UserRoundCheck aria-hidden="true" size={15} />{t("Client access")}</Link>
+        {caseActions.length ? <MenuButton items={caseActions} label={t("Project actions")} onAction={(id) => { setError(""); if (id === "set_phase") setPhase(record.phase); setAction(id as Action); }} /> : null}
+      </div>
     </div>
     <EditableFieldList className={styles.facts}>
       <FactRow label={t("Client")}>{record.customerName || t("Not specified")}</FactRow>

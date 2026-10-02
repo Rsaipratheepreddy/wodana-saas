@@ -13,7 +13,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { demoCodeInput, endSessions, mobileNumber, portalCodes, setDemoCode, type Grant, type PortalCodes, type PortalContact } from "./portal-auth";
 import { FilePresence, readStored } from "./portal-files";
-import { inviteClient, readClientAccess, revokeClient, type InviteDelivery } from "./portal-invitations";
+import { inviteClient, projectClient, readClientAccess, revokeClient, type InviteDelivery } from "./portal-invitations";
 import { readStaffIssues, triageIssue } from "./portal-issues";
 import { markRead, readStaffThreads } from "./portal-messages";
 import { readStaffBoard, replyBoard, shareBoard } from "./portal-moodboard";
@@ -251,10 +251,26 @@ export class ClientPortalAdminService {
   }
 
   contacts(actor: RequestActor, workspaceId: string, caseId: string) {
-    return this.access.withAnyPermission(actor, workspaceId, ["portal.manage", "pre_projects.view"], async (client, user) => ({
-      contacts: await this.readContacts(client, workspaceId, this.caseId(caseId)),
-      canManage: await this.canManageContacts(client, workspaceId, user.userId), demo: this.demo,
-    }));
+    return this.access.withAnyPermission(actor, workspaceId, ["portal.manage", "pre_projects.view"], async (client, user) => {
+      const id = this.caseId(caseId);
+      const canManage = await this.canManageContacts(client, workspaceId, user.userId);
+      if (canManage) await this.addCaseClient(client, workspaceId, id, user.userId);
+      return { contacts: await this.readContacts(client, workspaceId, id), canManage, demo: this.demo };
+    });
+  }
+
+  /**
+   * The case's own client is its first contact: when a case has none yet, the client from the enquiry (name,
+   * mobile, email) is added as someone who decides. They still need an invite or a code to sign in. Audited.
+   */
+  private async addCaseClient(client: PoolClient, workspaceId: string, caseId: string, userId: string) {
+    if ((await client.query(`SELECT 1 FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 LIMIT 1`, [workspaceId, caseId])).rowCount) return;
+    const found = await projectClient(client, workspaceId, caseId);
+    if (!found?.phone || !/^\+[1-9]\d{7,14}$/.test(found.phone)) return;
+    const grantId = randomUUID();
+    await client.query(`INSERT INTO client_portal_grants (id, workspace_id, case_id, name, phone, email, role, active) VALUES ($1, $2, $3, $4, $5, $6, 'approver', true)`,
+      [grantId, workspaceId, caseId, found.name.slice(0, 160), found.phone, found.email]);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "client_portal.contact_added", entityType: "client_portal_grant", entityId: grantId, after: { caseId, from: "case_client" } });
   }
 
   /** Who names a case's client contacts: portal managers, and whoever sends quotes (portal.contacts.manage). */
