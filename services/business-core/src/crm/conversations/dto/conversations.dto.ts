@@ -160,3 +160,10 @@ export class StopSequenceEnrollmentDto {
 export class ProcessDueSequencesDto {
   @IsOptional() @IsInt() @Min(1) @Max(100) limit = 50;
 }
+
+/** Inbox › Simulate a client message: who writes, from which number, and what they say. */
+export class SimulateWhatsAppDto {
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @IsString() @IsNotEmpty() @MaxLength(40) phone!: string;
+  @IsString() @IsNotEmpty() @MaxLength(4000) text!: string;
+}

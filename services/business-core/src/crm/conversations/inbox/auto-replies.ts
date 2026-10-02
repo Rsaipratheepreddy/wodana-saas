@@ -153,8 +153,10 @@ export async function sendAutoReply(db: Db, input: {
   const number = (await db.query<{ state: string | null }>(
     `SELECT configuration->'health'->>'state' AS state FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
       ORDER BY (id = $2::uuid) DESC, COALESCE((configuration->>'isDefault')::boolean, false) DESC, updated_at DESC LIMIT 1`, [workspaceId, connectionId])).rows[0];
-  if (!number) return { sent: false, reason: "not_connected" };
-  if (number.state === "blocked") return { sent: false, reason: "number_blocked" };
+  // A demonstration chat answers without a number: the reply shows as sent and nothing reaches Meta.
+  const demo = typeof conversation.provider_thread_id === "string" && conversation.provider_thread_id.startsWith("demo:");
+  if (!number && !demo) return { sent: false, reason: "not_connected" };
+  if (number?.state === "blocked" && !demo) return { sent: false, reason: "number_blocked" };
   const consent = (await db.query<{ status: string; expiresAt: Date | null }>(
     `SELECT status, expires_at AS "expiresAt" FROM crm_consents WHERE workspace_id = $1 AND party_id = $2 AND channel IN ('whatsapp', 'all') AND purpose = 'service'
       ORDER BY captured_at DESC LIMIT 1`, [workspaceId, partyId])).rows[0];
@@ -171,7 +173,7 @@ export async function sendAutoReply(db: Db, input: {
   const eventKey = `auto_reply:${inboundMessageId}`;
   const inserted = await db.query(
     `INSERT INTO crm_messages (id, workspace_id, conversation_id, direction, status, authorship, sender_type, sender_id, body_text, metadata)
-     VALUES ($1, $2, $3, 'outbound', 'queued', 'automation', 'system', NULL, $4, $5)
+     VALUES ($1, $2, $3, 'outbound', ${demo ? "'sent'" : "'queued'"}, 'automation', 'system', NULL, $4, $5)
      ON CONFLICT (workspace_id, (metadata->>'eventKey')) WHERE metadata ? 'eventKey' DO NOTHING RETURNING id`,
     [messageId, workspaceId, conversationId, body, { automatic: "auto_reply", autoReply: kind, inReplyTo: inboundMessageId, eventKey, ...(connectionId ? { connectionId } : {}) }]);
   if (!inserted.rowCount) {
@@ -182,6 +184,7 @@ export async function sendAutoReply(db: Db, input: {
     [workspaceId, conversationId, inboundMessageId, messageId, kind]);
   // An auto reply is not a person's answer: the client's wait keeps running.
   await db.query(`UPDATE crm_conversations SET last_message_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, conversationId]);
+  if (demo) return { sent: true, kind, messageId, duplicate: false };
   const notificationId = randomUUID();
   await db.query(
     `INSERT INTO notifications (id, workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status, scheduled_for, subject, body, idempotency_key, correlation_id)

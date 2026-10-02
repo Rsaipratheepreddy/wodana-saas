@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { CheckSquare, MessageCircle, Plus, RefreshCw, Settings2 } from "lucide-react";
+import { CheckSquare, FlaskConical, MessageCircle, Plus, RefreshCw, Settings2 } from "lucide-react";
 import { MessagingMark } from "@/components/brand/messaging-mark";
 import { ProviderMark } from "@/components/brand/provider-mark";
-import { Avatar, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, IconButton, ListTabs, MenuButton, MultiSelectField, SearchInput, SegmentedControl, SelectField, Skeleton, TextInput, ToggleButton, useDesignSystem } from "@/design-system";
+import { Avatar, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, FormDialog, IconButton, ListTabs, MenuButton, MultiSelectField, SearchInput, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput, ToggleButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { ENQUIRY_STAGE_LABELS, nextChatId, snoozePresets, type ChatState, type InboxLabel, type InboxOwner, type InboxSummary, type InboxView } from "@/lib/crm/inbox";
@@ -58,6 +58,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
+  const [simulating, setSimulating] = useState(false);
   const [busy, setBusy] = useState(false), [failure, setFailure] = useState(""), [bulkBusy, setBulkBusy] = useState(false);
   const requestPending = useRef(false), controller = useRef<AbortController | null>(null), cursorRef = useRef(cursor);
   // Unread counts last seen, so a chat that gets a new message while the list refreshes itself plays a soft sound.
@@ -160,6 +161,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
         <header className={styles.listHeading}><h1>{t("Inbox")}</h1><div className={styles.actions}>
           <IconButton aria-label={selecting ? t("Stop selecting") : t("Select chats")} size="compact" onPress={() => { setSelecting((value) => !value); setPicked(new Set()); }}><CheckSquare size={16} /></IconButton>
           <IconButton aria-label={t("Refresh inbox")} size="compact" isLoading={busy} onPress={() => void reload()}><RefreshCw size={16} /></IconButton>
+          {lookups.settings?.canManage ? <IconButton aria-label={t("Simulate a client message (demo)")} size="compact" onPress={() => setSimulating(true)}><FlaskConical size={16} /></IconButton> : null}
           {lookups.settings?.canManage ? <Link aria-label={t("Inbox settings")} className={styles.iconLink} href="/workspace/settings/inbox"><Settings2 aria-hidden="true" size={16} /></Link> : null}
           <IconButton aria-label={t("New conversation")} className={styles.brandButton} variant="primary" size="compact" onPress={() => setCreating(true)}><Plus size={19} /></IconButton>
         </div></header>
@@ -225,6 +227,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
         : <section className={styles.empty} aria-label={t("Conversation messages")}>{emptyState}</section>}
     </div>
     {creating ? <NewChat workspaceId={workspaceId} onClose={() => setCreating(false)} onOpened={(id) => { setCreating(false); setSelected(id); void reload(); }} /> : null}
+    {simulating ? <SimulateMessage workspaceId={workspaceId} onClose={() => setSimulating(false)} onOpened={(id) => { setSimulating(false); setSelected(id); void reload(); }} /> : null}
   </CrmProductShell>;
 }
 
@@ -254,3 +257,30 @@ function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onCl
   </ControlledModalDialog>;
 }
 
+/**
+ * A demonstration: a client's WhatsApp message as if it had just arrived. It goes through the real intake
+ * (client matched or created, owner chosen and told, greeting or away message); its chat is marked Demo, and
+ * replies in it show as sent without reaching WhatsApp. Managers only.
+ */
+function SimulateMessage({ workspaceId, onClose, onOpened }: { workspaceId: string; onClose: () => void; onOpened: (id: string) => void }) {
+  const t = useT();
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return <FormDialog title={t("Simulate a client message (demo)")} description={t("For demonstrations: it arrives like a real WhatsApp message, and replies in this chat are not sent to WhatsApp.")}
+    onClose={onClose} isSubmitting={busy} error={error || undefined} isSubmitDisabled={!phone.trim() || !text.trim()} submitLabel={t("Simulate message")}
+    onSubmit={async () => {
+      setBusy(true); setError("");
+      try {
+        const result = await crmRequest<{ conversationId: string }>(workspaceId, "conversations/demo-whatsapp", "POST", { name: name.trim(), phone: phone.trim(), text: text.trim() });
+        onOpened(result.conversationId);
+      } catch (cause) { setError(cause instanceof Error ? cause.message : t("The message couldn't be simulated.")); }
+      finally { setBusy(false); }
+    }}>
+    <TextInput label={t("Client name")} value={name} onChange={setName} maxLength={120} autoFocus />
+    <TextInput label={t("Mobile number")} value={phone} onChange={setPhone} maxLength={40} inputMode="tel" description={t("With the country code, e.g. +971 50 123 4567")} isRequired />
+    <TextAreaField label={t("Message")} value={text} onChange={setText} maxLength={4000} isRequired />
+  </FormDialog>;
+}

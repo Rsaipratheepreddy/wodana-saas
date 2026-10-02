@@ -11770,5 +11770,11 @@
   "Paid so far": "Paid so far",
   "{percent}% paid": "{percent}% paid",
   "Meta's sign-in didn't load. Turn off ad or tracking blockers for this site, then try again.": "Meta's sign-in didn't load. Turn off ad or tracking blockers for this site, then try again.",
-  "Demo access: signs in with {code}": "Demo access: signs in with {code}"
+  "Demo access: signs in with {code}": "Demo access: signs in with {code}",
+  "Simulate a client message (demo)": "Simulate a client message (demo)",
+  "For demonstrations: it arrives like a real WhatsApp message, and replies in this chat are not sent to WhatsApp.": "For demonstrations: it arrives like a real WhatsApp message, and replies in this chat are not sent to WhatsApp.",
+  "Simulate message": "Simulate message",
+  "The message couldn't be simulated.": "The message couldn't be simulated.",
+  "With the country code, e.g. +971 50 123 4567": "With the country code, e.g. +971 50 123 4567",
+  "Demo": "Demo"
 }

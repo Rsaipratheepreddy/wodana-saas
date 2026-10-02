@@ -10,7 +10,7 @@ import { CrmNotificationsService } from "../notifications/crm-notifications.serv
 import { CrmMessageReceiptService } from "./crm-message-receipt.service";
 import { notifyUserInApp } from "../../notifications/default-templates";
 import { decodeCursor, encodeCursor, normalizeEmail, normalizeLoosePhone, normalizeName, stableHash } from "../shared/crm-types";
-import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSequenceDto, ListConversationsQueryDto, MessageReceiptDto, ProviderInboundMessageDto, ProviderMessageReceiptDto, SequenceVersionDto, StopSequenceEnrollmentDto, UpdateSequenceDto, UpdateConversationDto } from "./dto/conversations.dto";
+import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSequenceDto, ListConversationsQueryDto, MessageReceiptDto, ProviderInboundMessageDto, ProviderMessageReceiptDto, SequenceVersionDto, SimulateWhatsAppDto, StopSequenceEnrollmentDto, UpdateSequenceDto, UpdateConversationDto } from "./dto/conversations.dto";
 import { applyConversationChange, mapConversation, recordChatEvent } from "./inbox/inbox-commands";
 import { INBOX_MEMBERS_SQL, inboxQueue, selectInboxOwner } from "./inbox/inbox-assignment";
 import { cancelScheduledOnReply } from "./inbox/scheduled-cancel";
@@ -182,7 +182,9 @@ export class CrmConversationsService {
       const lastInbound = conversation.last_inbound_at ? new Date(conversation.last_inbound_at as string | Date) : null;
       const fact = facts.rows[0];
       return {
-        ...mapConversation(conversation), canSend, whatsappConnected: Boolean(connection.rowCount),
+        // A demonstration chat (Inbox › Simulate a client message) behaves as connected; nothing reaches Meta.
+        ...mapConversation(conversation), canSend, whatsappConnected: Boolean(connection.rowCount) || isDemoThread(conversation),
+        demo: isDemoThread(conversation),
         partyName: fact?.partyName ?? null, ownerName: fact?.ownerName ?? null, leadReference: fact?.leadReference ?? null,
         labels: labels.rows[0]?.labels ?? [], events: history.rows,
         replyingAs: { businessName: fact?.businessName ?? null, number: connection.rows[0]?.number ?? null, accountName: connection.rows[0]?.accountName ?? null, connectionId: connection.rows[0]?.connectionId ?? null },
@@ -314,6 +316,22 @@ export class CrmConversationsService {
       if (!message.rowCount) return { ignored: true, reason: "message_not_found" };
       return this.recordReceiptWithClient(client, message.rows[0].id, input);
     });
+  }
+
+  /**
+   * A demonstration: a client's WhatsApp message, simulated by a manager, goes through the same intake as a real
+   * one (client matched or created, owner chosen and told, greeting or away message). Its chat is marked demo:
+   * replies in it show as sent and nothing reaches Meta. Audited.
+   */
+  async simulateWhatsApp(actor: RequestActor, workspaceId: string, input: SimulateWhatsAppDto) {
+    const contact = normalizeLoosePhone(input.phone);
+    if (!contact) throw new UnprocessableEntityException("Enter a valid mobile number");
+    await this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.inbox.demo_message.v1", entityType: "crm_conversation",
+        entityId: workspaceId, after: { contact, demo: true } });
+    });
+    return this.ingestProviderMessage({ workspaceId, channel: "whatsapp", providerThreadId: `demo:${contact}`, providerMessageId: `demo:${randomUUID()}`,
+      contact, displayName: input.name?.trim() || undefined, bodyText: input.text.trim(), metadata: { demo: true } });
   }
 
   ingestProviderMessage(input: ProviderInboundMessageDto) {
@@ -782,7 +800,8 @@ export class CrmConversationsService {
       }
     }
     const messageId = randomUUID();
-    const queued = input.direction === "outbound" && conversation.channel !== "internal";
+    // A demonstration chat's replies show as sent and never reach a provider.
+    const queued = input.direction === "outbound" && conversation.channel !== "internal" && !isDemoThread(conversation);
     const inserted = await client.query(
         `INSERT INTO crm_messages
           (id, workspace_id, conversation_id, direction, status, authorship, sender_type,
@@ -1023,4 +1042,10 @@ export class CrmConversationsService {
 
   private async requireParty(client: PoolClient, workspaceId: string, partyId: string) { const result = await client.query(`SELECT 1 FROM crm_parties WHERE id = $1 AND workspace_id = $2 AND status = 'active'`, [partyId, workspaceId]); if (!result.rowCount) throw new UnprocessableEntityException("Party does not exist or is inactive"); }
   private async requireMembership(client: PoolClient, workspaceId: string, membershipId: string) { const result = await client.query(`SELECT 1 FROM workspace_memberships WHERE id = $1 AND workspace_id = $2 AND status = 'active'`, [membershipId, workspaceId]); if (!result.rowCount) throw new UnprocessableEntityException("Member does not exist or is inactive"); }
+}
+
+/** A chat started by Inbox › Simulate a client message: shown and answered like any other, never sent to Meta. */
+export function isDemoThread(conversation: Record<string, unknown> | { provider_thread_id?: unknown; providerThreadId?: unknown }) {
+  const thread = (conversation as Record<string, unknown>).provider_thread_id ?? (conversation as Record<string, unknown>).providerThreadId;
+  return typeof thread === "string" && thread.startsWith("demo:");
 }

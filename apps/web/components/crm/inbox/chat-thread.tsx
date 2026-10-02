@@ -118,7 +118,7 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       <IconButton aria-label={t("Back to inbox")} className={styles.mobileBack} size="compact" onPress={onBack}><ArrowLeft size={18} /></IconButton>
       <Avatar name={String(thread.partyName ?? t("Customer"))} size="md" />
       <div className={styles.headingIdentity}>
-        <h2>{String(thread.partyName ?? t("Customer"))}</h2>
+        <h2>{String(thread.partyName ?? t("Customer"))}{thread.demo === true ? <> <Badge tone="warning">{t("Demo")}</Badge></> : null}</h2>
         <span>{isWhatsApp && replyingAs?.number ? t("Replying as {business} · {number}", { business: replyingAs.businessName ?? "", number: replyingAs.number }) : channelName(thread.channel, t)}{isWhatsApp && (thread.numberHealth === "limited" || thread.numberHealth === "blocked") ? <> <Badge tone={thread.numberHealth === "blocked" ? "danger" : "warning"}>{thread.numberHealth === "blocked" ? t("Blocked by Meta") : t("Limited by Meta")}</Badge></> : null}</span>
         {chatLabels.length ? <span className={styles.headingLabels}>{chatLabels.map((item) => <LabelChip key={item.id} label={item} />)}</span> : null}
       </div>
