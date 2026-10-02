@@ -13,7 +13,7 @@ import { Phone } from "./devices";
 import { FeatureTabs, type FeatureTab } from "./feature-tabs";
 import { SHOTS, shotReady, type Shot } from "./landing-shots";
 import { MarketingFrame } from "./marketing-frame";
-import { SOLUTION_LINKS } from "./marketing-links";
+import { APP_STORE_URL, GOOGLE_PLAY_URL, SOLUTION_LINKS } from "./marketing-links";
 import { Screenshot } from "./screenshot";
 import styles from "./landing.module.css";
 
@@ -263,8 +263,8 @@ export async function LandingPage({ form }: { form: PublicSalesForm }) {
             <Bullet icon={<WifiOff size={18} />}>{t("Keeps working offline and sends when you are back online")}</Bullet>
           </ul>
           <ul aria-label={t("App stores")} className={styles.stores}>
-            <li><Smartphone aria-hidden="true" size={18} /><span>{t("App Store")}</span><span className={styles.soon}>{t("Coming soon")}</span></li>
-            <li><Smartphone aria-hidden="true" size={18} /><span>{t("Google Play")}</span><span className={styles.soon}>{t("Coming soon")}</span></li>
+            <li><a href={APP_STORE_URL} rel="noopener noreferrer" target="_blank"><Smartphone aria-hidden="true" size={18} /><span>{t("App Store")}</span></a></li>
+            <li><a href={GOOGLE_PLAY_URL} rel="noopener noreferrer" target="_blank"><Smartphone aria-hidden="true" size={18} /><span>{t("Google Play")}</span></a></li>
           </ul>
         </div>
         {phones.length ? <div className={styles.devices} data-count={phones.length}>

@@ -277,7 +277,7 @@
 .mobile { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: center; gap: clamp(2rem, 5vw, 5rem); }
 .mobileCopy { display: grid; gap: var(--wd-space-5); }
 .stores { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin: 0; margin-block-start: var(--wd-space-3); padding: 0; list-style: none; }
-.stores li {
+.stores a {
   display: inline-flex;
   align-items: center;
   gap: var(--wd-space-2);
@@ -288,9 +288,10 @@
   color: var(--wd-color-text);
   font-size: var(--wd-text-sm);
   font-weight: var(--wd-weight-semibold);
+  text-decoration: none;
 }
-.soon { color: var(--wd-color-text-tertiary); font-weight: var(--wd-weight-medium); }
-.soon::before { content: "·"; margin-inline-end: var(--wd-space-2); }
+.stores a:hover { background: var(--wd-color-surface-hover); }
+.stores a:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 
 /* Three phones with depth: the middle one in front, the others turned towards it and set back. */
 .devices {

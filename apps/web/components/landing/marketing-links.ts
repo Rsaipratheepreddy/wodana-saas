@@ -55,3 +55,7 @@ export const MARKETING_GROUPS: MarketingGroup[] = [
   { id: "solutions", label: tKey("Solutions"), links: SOLUTION_LINKS },
   { id: "company", label: tKey("Company"), links: COMPANY_LINKS },
 ];
+
+/** The phone app in the stores. */
+export const APP_STORE_URL = "https://apps.apple.com/app/id6801855492";
+export const GOOGLE_PLAY_URL = "https://play.google.com/store/apps/details?id=ai.wodana.mobile";
