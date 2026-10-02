@@ -105,7 +105,8 @@ function Signup({ setup, workspaceId, onClose }: { setup: WhatsAppSetup; workspa
     <p>{t("Each organization uses its own number. Choose an account you administer. An existing WhatsApp Business app number must complete Meta’s coexistence setup.")}</p>
     <Checkbox isSelected={existingApp} isDisabled={busy} onChange={setExistingApp}>{t("I already use the WhatsApp Business app on this number")}</Checkbox>
     {existingApp ? null : <>
-      <TextInput label={t("Registration PIN (only for a new Cloud API sender)")} inputType="password" value={pin} onChange={setPin} isDisabled={busy} />
+      <TextInput label={t("Registration PIN (only for a new Cloud API sender)")} inputType="password" autoComplete="one-time-code" inputMode="numeric" value={pin}
+        onChange={(value) => setPin(value.replace(/\D/g, "").slice(0, 6))} isDisabled={busy} />
       <p>{t("For a new sender, enter a six-digit two-step verification PIN and retain it securely. Continuing authorizes registration if Meta reports that this sender is not connected. Wodana does not save the PIN.")}</p>
     </>}
   </ControlledModalDialog>;

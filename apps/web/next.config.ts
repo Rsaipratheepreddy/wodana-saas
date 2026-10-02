@@ -9,9 +9,11 @@ import { fileURLToPath } from "node:url";
 const sharedEnvPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../.env");
 if (existsSync(sharedEnvPath)) process.loadEnvFile(sharedEnvPath);
 
+// Meta's SDK runs WhatsApp Embedded Signup (Settings › Integrations); nothing else loads from outside.
+const META_SDK = "https://connect.facebook.net";
 const scriptPolicy = process.env.NODE_ENV === "development"
-  ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-  : "script-src 'self' 'unsafe-inline'";
+  ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${META_SDK}`
+  : `script-src 'self' 'unsafe-inline' ${META_SDK}`;
 
 const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
@@ -31,6 +33,8 @@ const securityHeaders = [
       "font-src 'self' data:",
       "style-src 'self' 'unsafe-inline'",
       scriptPolicy,
+      // The SDK's own frames for sign-in, on Meta's domains only.
+      "frame-src 'self' https://www.facebook.com https://web.facebook.com https://staticxx.facebook.com",
       "connect-src 'self' https: wss:",
       "media-src 'self' blob: https:",
       "upgrade-insecure-requests",
