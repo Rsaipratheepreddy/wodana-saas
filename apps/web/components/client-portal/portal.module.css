@@ -35,11 +35,11 @@
 .main {
   display: grid;
   align-content: start;
-  gap: var(--wd-phi-4);
+  gap: var(--wd-phi-3);
   inline-size: 100%;
   max-inline-size: var(--wd-content-wide);
   margin-inline: auto;
-  padding-block: var(--wd-phi-4) var(--wd-phi-5);
+  padding-block: var(--wd-phi-3) var(--wd-phi-4);
   padding-inline: var(--wd-phi-3);
   min-inline-size: 0;
 }
@@ -97,8 +97,8 @@
 
 /* The project: its profile beside the open section (a card above it on a narrow screen). */
 .workspace { display: grid; align-items: start; gap: var(--wd-phi-4); min-inline-size: 0; }
-.workspace[data-layout="wide"] { grid-template-columns: 20rem minmax(0, 1fr); gap: var(--wd-phi-5); }
-.aside { display: grid; align-content: start; gap: var(--wd-phi-3); min-inline-size: 0; }
+.workspace[data-layout="wide"] { grid-template-columns: 17rem minmax(0, 1fr); gap: var(--wd-phi-4); }
+.aside { display: grid; align-content: start; gap: var(--wd-space-4); min-inline-size: 0; }
 /* Wide, the profile stays in view while the section scrolls (clear of the client view's preview bar). */
 .workspace[data-layout="wide"] .aside {
   position: sticky;
@@ -107,13 +107,13 @@
   overflow-y: auto;
   scrollbar-width: thin;
 }
-.content { display: grid; align-content: start; gap: var(--wd-phi-3); min-inline-size: 0; }
+.content { display: grid; align-content: start; gap: var(--wd-space-4); min-inline-size: 0; }
 .view { display: grid; min-inline-size: 0; }
 /* Scoped under .page so it outranks the design system's neutral h2 rule and wears the tenant's heading font. */
 .page .viewTitle {
   margin: 0;
   font-family: var(--wd-font-display);
-  font-size: var(--wd-text-2xl);
+  font-size: var(--wd-text-xl);
   font-weight: var(--wd-weight-semibold);
   letter-spacing: var(--wd-workspace-heading-tracking, var(--wd-tracking-tight));
   line-height: var(--wd-leading-tight);
@@ -121,14 +121,14 @@
 }
 
 /* The profile: the tenant's surface on their canvas, its blocks divided by space and one hairline each. */
-.profile { display: grid; gap: var(--wd-phi-3); min-inline-size: 0; padding: var(--wd-phi-3); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); }
+.profile { display: grid; gap: var(--wd-space-4); min-inline-size: 0; padding: var(--wd-space-4); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
 .identity { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
 .eyebrow { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .page .profileTitle {
   margin: 0;
   overflow-wrap: anywhere;
   font-family: var(--wd-font-display);
-  font-size: var(--wd-text-2xl);
+  font-size: var(--wd-text-xl);
   font-weight: var(--wd-weight-semibold);
   letter-spacing: var(--wd-workspace-heading-tracking, var(--wd-tracking-tight));
   line-height: var(--wd-leading-tight);
@@ -138,9 +138,9 @@
 .identityFacts li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--wd-space-2); overflow-wrap: anywhere; }
 .profileStage { display: grid; gap: var(--wd-space-2); }
 .profileStageTitle { margin: 0; font-size: var(--wd-text-md); font-weight: var(--wd-weight-medium); }
-.profileBlock { display: grid; gap: var(--wd-space-3); min-inline-size: 0; padding-block-start: var(--wd-phi-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
-.profile[data-layout="panel"] .profileStage { padding-block-start: var(--wd-phi-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
-.profileFoot { display: grid; gap: var(--wd-phi-3); padding: var(--wd-phi-3); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); }
+.profileBlock { display: grid; gap: var(--wd-space-2); min-inline-size: 0; padding-block-start: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.profile[data-layout="panel"] .profileStage { padding-block-start: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.profileFoot { display: grid; gap: var(--wd-space-4); padding: var(--wd-space-4); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
 .profileFoot > .profileBlock:first-child { padding-block-start: 0; border-block-start: 0; }
 .factRow { display: contents; }
 .balance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); margin: 0; }
@@ -285,7 +285,7 @@
 }
 .milestones li[data-state="current"] > svg { color: var(--wd-color-action-primary); }
 .milestoneName { overflow-wrap: anywhere; color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
-.section { display: grid; gap: var(--wd-phi-3); min-inline-size: 0; }
+.section { display: grid; gap: var(--wd-space-5); min-inline-size: 0; }
 .group { display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
 /* Scoped under .page so it outranks the design system's neutral h2 rule and wears the tenant's heading font. */
 .page .groupTitle {
@@ -305,8 +305,8 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--wd-space-3);
-  min-block-size: var(--wd-space-16);
-  padding-block: var(--wd-space-3);
+  min-block-size: var(--wd-space-12);
+  padding-block: var(--wd-space-2-5);
   border-block-end: 1px solid var(--wd-color-structural-divider);
 }
 .item:last-child { border-block-end: 0; }
@@ -324,8 +324,8 @@
 .itemButton:hover { background: var(--wd-color-surface-hover); }
 .itemButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 .itemText { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
-.itemTitle { overflow-wrap: anywhere; font-size: var(--wd-text-lg); font-weight: var(--wd-weight-medium); }
-.fileName { display: inline-flex; align-items: center; gap: var(--wd-space-2); overflow-wrap: anywhere; font-size: var(--wd-text-lg); font-weight: var(--wd-weight-medium); }
+.itemTitle { overflow-wrap: anywhere; font-size: var(--wd-text-md); font-weight: var(--wd-weight-medium); }
+.fileName { display: inline-flex; align-items: center; gap: var(--wd-space-2); overflow-wrap: anywhere; font-size: var(--wd-text-md); font-weight: var(--wd-weight-medium); }
 .fileName svg { flex: none; }
 .itemMeta { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .itemEnd { display: flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
@@ -411,7 +411,7 @@
 /* Boards and ideas in staggered columns, like the design team's moodboard: each card keeps its photo's own shape. */
 .boards, .pins { columns: 15rem; column-gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
 .boards > li, .pins > li { break-inside: avoid; margin-block-end: var(--wd-space-4); }
-.card { display: grid; grid-template-rows: auto 1fr; overflow: hidden; border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
+.card { display: grid; grid-template-rows: auto 1fr; overflow: hidden; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
 .cardMedia { display: block; overflow: hidden; aspect-ratio: 4 / 3; padding: 0; border: 0; background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); cursor: pointer; }
 .pins .cardMedia, .boards .cardMedia { aspect-ratio: auto; }
 .pins .cardMedia img, .boards .cardMedia img { block-size: auto; }
