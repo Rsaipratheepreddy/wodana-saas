@@ -237,6 +237,13 @@
 }
 .sectionNav[data-layout="scroll"] .navItem[aria-current="page"] { background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
 .sectionNav[data-layout="scroll"] .navItem[aria-current="page"] svg { color: inherit; }
+/* Tabs across the top of the open section, under the tenant's accent, scrolling sideways when they don't fit. */
+.sectionNav[data-layout="tabs"] { position: sticky; inset-block-start: 0; z-index: var(--wd-z-sticky); overflow-x: auto; scrollbar-width: none; border-block-end: 1px solid var(--wd-color-border); background: var(--wd-color-canvas); }
+.sectionNav[data-layout="tabs"]::-webkit-scrollbar { display: none; }
+.sectionNav[data-layout="tabs"] ul { display: flex; gap: var(--wd-space-1); inline-size: max-content; }
+.sectionNav[data-layout="tabs"] .navItem { grid-template-columns: auto auto auto; gap: var(--wd-space-2); inline-size: auto; padding-inline: var(--wd-space-3); border-radius: 0; border-block-end: 2px solid transparent; background: none; }
+.sectionNav[data-layout="tabs"] .navItem:hover { background: none; color: var(--wd-color-text); }
+.sectionNav[data-layout="tabs"] .navItem[aria-current="page"] { background: none; border-block-end-color: var(--wd-color-action-primary); color: var(--wd-color-text); }
 
 /* The Overview: what's needed as cards to act on, then the latest day, what's coming and the newest papers. */
 .groupHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2); }
@@ -401,11 +408,14 @@
 .fileTile:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 
 /* The moodboard: boards wide, ideas in a grid of cards. */
-.boards { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
-.pins { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+/* Boards and ideas in staggered columns, like the design team's moodboard: each card keeps its photo's own shape. */
+.boards, .pins { columns: 15rem; column-gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
+.boards > li, .pins > li { break-inside: avoid; margin-block-end: var(--wd-space-4); }
 .card { display: grid; grid-template-rows: auto 1fr; overflow: hidden; border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
 .cardMedia { display: block; overflow: hidden; aspect-ratio: 4 / 3; padding: 0; border: 0; background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); cursor: pointer; }
-.pins .cardMedia { aspect-ratio: 1; }
+.pins .cardMedia, .boards .cardMedia { aspect-ratio: auto; }
+.pins .cardMedia img, .boards .cardMedia img { block-size: auto; }
+.pins .cardMedia:not(:has(img)), .boards .cardMedia:not(:has(img)) { min-block-size: 8rem; }
 .cardMedia img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
 .cardMedia:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
 .cardPlaceholder { display: grid; place-content: center; justify-items: center; gap: var(--wd-space-2); block-size: 100%; padding: var(--wd-space-3); overflow: hidden; font-size: var(--wd-text-sm); }
@@ -415,6 +425,9 @@
 .cardActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-1); margin-block-start: var(--wd-space-1); }
 .reactions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
 .reactions :global(.wd-button[aria-pressed="true"]) { background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); }
+.feeling { gap: var(--wd-space-1-5); }
+.reactions .feeling[data-feeling="love"][aria-pressed="true"] { background: var(--wd-color-success-subtle); color: var(--wd-color-success); }
+.reactions .feeling[data-feeling="avoid"][aria-pressed="true"] { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
 
 /* Warranty: one line per room, opened for its items. */
 .disclosure { border-block-end: 1px solid var(--wd-color-structural-divider); }

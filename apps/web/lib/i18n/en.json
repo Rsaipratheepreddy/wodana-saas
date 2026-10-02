@@ -11764,5 +11764,7 @@
   "Finish {stage}?": "Finish {stage}?",
   "The project moves on to {stage}.": "The project moves on to {stage}.",
   "This is the last stage.": "This is the last stage.",
-  "Your name and the time are recorded.": "Your name and the time are recorded."
+  "Your name and the time are recorded.": "Your name and the time are recorded.",
+  "Love: {name}": "Love: {name}",
+  "Avoid: {name}": "Avoid: {name}"
 }

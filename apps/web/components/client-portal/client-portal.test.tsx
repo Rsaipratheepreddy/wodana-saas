@@ -136,9 +136,9 @@ describe("client portal", () => {
     expect(screen.getByText("Dec 1, 2026 · in 65 days")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Material list to sign off/ })).toBeInTheDocument();
     const tabs = screen.getByRole("navigation", { name: "Sections" });
-    // Documents has nothing in it, so it isn't shown; a badge says what waits where (a decision, an overdue payment).
-    expect(within(tabs).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Overview", "Progress", "Decisions1 to decide", "Moodboard", "Payments1 overdue", "Messages"]);
-    expect(tabs).toHaveAttribute("data-layout", "scroll");
+    // Every shared section is a tab, even one with nothing in it yet; a badge says what waits where.
+    expect(within(tabs).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Overview", "Progress", "Decisions1 to decide", "Moodboard", "Payments1 overdue", "Documents", "Messages"]);
+    expect(tabs).toHaveAttribute("data-layout", "tabs");
     expect(within(tabs).getByRole("button", { name: "Overview" })).toHaveAttribute("aria-current", "page");
     await user.click(within(tabs).getByRole("button", { name: /^Payments/ }));
     expect(within(tabs).getByRole("button", { name: /^Payments/ })).toHaveAttribute("aria-current", "page");
@@ -223,7 +223,7 @@ describe("client portal", () => {
     expect(screen.getByRole("heading", { name: "Villa 12" })).toHaveAttribute("dir", "auto");
     expect(screen.getByText("Cabinets are in the factory.")).toHaveAttribute("dir", "auto");
     expect(screen.getByText("Omar Manager")).toHaveAttribute("dir", "auto");
-    expect(screen.getByRole("navigation")).toHaveAttribute("data-layout", "scroll");
+    expect(screen.getByRole("navigation")).toHaveAttribute("data-layout", "tabs");
   });
 
   it("says a finished project is completed (an adjective, not the verb) in Arabic", async () => {
@@ -273,10 +273,10 @@ describe("client portal", () => {
     const user = userEvent.setup();
     render(<PortalApp site={site} />);
     await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /^Moodboard/ }));
-    await user.click(await screen.findByRole("button", { name: "I like Kitchen concept" }));
+    await user.click(await screen.findByRole("button", { name: "Love: Kitchen concept" }));
     await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "react", caseId: "c1", targetKind: "design", targetId: "b1", reaction: "like" })]));
     // Liked already: pressing it again takes the like back.
-    expect(screen.getByRole("button", { name: "I like Warm oak" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Love: Warm oak" })).toHaveAttribute("aria-pressed", "true");
     await user.click(screen.getByRole("button", { name: "Open Warm oak" }));
     const pin = await screen.findByRole("dialog", { name: "Warm oak" });
     expect(within(pin).getByText("Your design team")).toBeInTheDocument();
@@ -447,13 +447,14 @@ describe("client portal", () => {
     expect(team.getByRole("link", { name: "Email Studio Interiors" })).toHaveAttribute("href", "mailto:care@studio.example");
     // The Overview beside it doesn't repeat them.
     expect(screen.getAllByRole("region", { name: "Key dates" })).toHaveLength(1);
-    // The sections down the side, with what waits in each; the arrow keys move along them.
-    const nav = profile.getByRole("navigation", { name: "Sections" });
-    expect(nav).toHaveAttribute("data-layout", "list");
+    // The sections as tabs above the open one, with what waits in each; the arrow keys move along them.
+    const nav = screen.getByRole("navigation", { name: "Sections" });
+    expect(profile.queryByRole("navigation", { name: "Sections" })).toBeNull();
+    expect(nav).toHaveAttribute("data-layout", "tabs");
     expect(within(nav).getByRole("button", { name: /^Decisions/ })).toHaveTextContent("1 to decide");
     expect(within(nav).getByRole("button", { name: /^Payments/ })).toHaveTextContent("1 overdue");
     within(nav).getByRole("button", { name: "Overview" }).focus();
-    await user.keyboard("{ArrowDown}");
+    await user.keyboard("{ArrowRight}");
     expect(within(nav).getByRole("button", { name: "Progress" })).toHaveFocus();
     await user.keyboard("{End}");
     expect(within(nav).getByRole("button", { name: "Messages" })).toHaveFocus();
@@ -479,7 +480,7 @@ describe("client portal", () => {
     expect(card.getByRole("heading", { level: 1, name: "Villa 12" })).toBeInTheDocument();
     // On the Overview the waiting things are cards of their own; elsewhere the card offers the first one.
     expect(card.queryByText("Next for you")).toBeNull();
-    await user.click(within(card.getByRole("navigation", { name: "Sections" })).getByRole("button", { name: "Moodboard" }));
+    await user.click(within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", { name: "Moodboard" }));
     await user.click(card.getByRole("button", { name: /Next for you.*Material list to sign off/ }));
     expect(await screen.findByRole("dialog", { name: "Material list · R1" })).toBeInTheDocument();
   });

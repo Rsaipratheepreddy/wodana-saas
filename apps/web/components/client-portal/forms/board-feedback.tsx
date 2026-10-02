@@ -1,6 +1,6 @@
 "use client";
 
-import { ThumbsDown, ThumbsUp } from "lucide-react";
+import { Heart, ThumbsDown } from "lucide-react";
 import { useState } from "react";
 import { Button, Form, InlineNotice, TextAreaField, ToggleButton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -26,10 +26,10 @@ export function Reactions({ target, reaction, api, onChanged, name }: { target: 
     catch (cause) { setShown(before); setError((cause as Error).message); }
   };
   return <div className={styles.reactions}>
-    <ToggleButton aria-label={t("I like {name}", { name })} isSelected={shown === "like"} size="compact" variant="quiet" onPress={() => void choose("like")}>
-      <ThumbsUp aria-hidden="true" size={16} /></ToggleButton>
-    <ToggleButton aria-label={t("Not for me: {name}", { name })} isSelected={shown === "dislike"} size="compact" variant="quiet" onPress={() => void choose("dislike")}>
-      <ThumbsDown aria-hidden="true" size={16} /></ToggleButton>
+    <ToggleButton aria-label={t("Love: {name}", { name })} className={styles.feeling} data-feeling="love" isSelected={shown === "like"} size="compact" variant="quiet" onPress={() => void choose("like")}>
+      <Heart aria-hidden="true" size={15} />{t("Love")}</ToggleButton>
+    <ToggleButton aria-label={t("Avoid: {name}", { name })} className={styles.feeling} data-feeling="avoid" isSelected={shown === "dislike"} size="compact" variant="quiet" onPress={() => void choose("dislike")}>
+      <ThumbsDown aria-hidden="true" size={15} />{t("Avoid")}</ToggleButton>
     {error ? <span className={styles.itemMeta} role="alert">{error}</span> : null}
   </div>;
 }

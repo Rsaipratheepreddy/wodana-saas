@@ -42,15 +42,9 @@ const DECISION_STEPS = ["quote", "design", "definition", "materials", "handover"
 /** The side column opens from a small laptop up; below it the profile is a card above the sections. */
 const WIDE = "(min-width: 64rem)";
 
-/** A section is shown when it's shared and has something in it (or something the client can do there). */
+/** A section is shown whenever the team shares it; an empty one says what will appear there. */
 function hasContent(project: PortalProject, section: PortalSection) {
-  if (!project.sections[section] || project[section] === null) return false;
-  if (section === "progress") { const p = project.progress!; return Boolean(p.stages.length || p.updates.length || p.photoDays.length || p.cards?.length || p.issues.length || p.canReportIssue); }
-  if (section === "moodboard") { const m = project.moodboard!; return Boolean(m.boards.length || m.pins.length || m.canAdd); }
-  if (section === "payments") return project.payments!.milestones.length > 0;
-  if (section === "documents") return project.documents!.length > 0;
-  if (section === "warranty") return project.warranty!.rooms.length > 0 || project.warranty!.claims.length > 0;
-  return true;
+  return Boolean(project.sections[section]) && project[section] !== null && project[section] !== undefined;
 }
 
 /** Where a link from an email points: ?project=<id>&open=<section>. */
@@ -106,14 +100,14 @@ export function PortalWorkspace({ view, site, api, reload }: { view: PortalView;
   const Section = SECTIONS[current];
   const dialog = target ? dialogFor(target, project, { site, customer: view.contact.name, api, format, done, reload, today: view.today, t }) : null;
   const nav = !project.paused && shown.length > 1
-    ? <SectionNav items={shown.map((id) => ({ id, label: labels.sections[id], badge: counts[id] }))} current={current} onSelect={go} layout={wide ? "list" : "scroll"} /> : null;
+    ? <SectionNav items={shown.map((id) => ({ id, label: labels.sections[id], badge: counts[id] }))} current={current} onSelect={go} layout="tabs" /> : null;
   return <div className={styles.workspace} data-layout={wide ? "wide" : "narrow"}>
     <aside className={styles.aside} aria-label={t("Your project")}>
       <ProjectProfile project={project} view={view} site={site} format={format} wide={wide} showNext={current !== "overview"} open={open} go={go}
         onProject={(id) => { setProjectId(id); setSection("overview"); setNotice(""); }} />
-      {nav}
     </aside>
     <div className={styles.content} ref={content}>
+      {nav}
       {project.paused ? <EmptyState illustration="locked" title={t("Your project page is paused")}
         description={t("Your project team will let you know when it's back. You can still reach them below.")} /> : <>
         <h2 className={styles.viewTitle} id="portal-view-title">{labels.sections[current]}</h2>
