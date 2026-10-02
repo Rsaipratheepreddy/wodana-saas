@@ -92,7 +92,8 @@ function Signup({ setup, workspaceId, onClose }: { setup: WhatsAppSetup; workspa
     if (!window.FB) return;
     if (window.location.protocol !== "https:") { setError(t("Meta sign-in needs HTTPS. Open Wodana using its configured HTTPS address.")); return; }
     setBusy(true); setError(""); pinRef.current = pin; details.current = {};
-    timer.current = setTimeout(() => { setBusy(false); setFinished(true); setError(t("Meta setup timed out. Reload this page and reconnect to start again.")); details.current.submitted = true; }, 180000);
+    // Meta’s steps (business, number, code) take minutes; this stays under the 10-minute sign-in state.
+    timer.current = setTimeout(() => { setBusy(false); setFinished(true); setError(t("Meta setup timed out. Reload this page and reconnect to start again.")); details.current.submitted = true; }, 540000);
     window.FB.login((response) => {
       if (!response.authResponse?.code) { if (timer.current) clearTimeout(timer.current); setError(t("Meta authorization was cancelled. You can try again.")); setBusy(false); return; }
       details.current.code = response.authResponse.code;
