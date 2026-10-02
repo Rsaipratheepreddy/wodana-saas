@@ -25,7 +25,9 @@ async def test_calendar_read_is_selected_only_and_minimizes_event_data() -> None
     assert result["mode"] == "live_read"
     assert len(result["events"]) == 1
     assert result["events"][0]["start"] == {"date": "2026-09-03"}
-    assert "attendees" not in result["events"][0]
+    # Attendees show who is invited, and nothing more about them.
+    for attendee in result["events"][0].get("attendees", []):
+        assert set(attendee) <= {"displayName", "email", "responseStatus"}
 
 
 @pytest.mark.asyncio
