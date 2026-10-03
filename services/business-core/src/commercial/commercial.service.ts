@@ -18,7 +18,7 @@ import {
   importedScopeCatalogLinks,
 } from "./commercial-scope";
 import { quotationTemplateContent } from "./quotation-template";
-import { confirmCommissionAmounts, normalizeCommissionLines, paymentProofLink } from "./deal-submission";
+import { confirmCommissionAmounts, normalizeCommissionLines, opportunityProofPath, paymentProofLink } from "./deal-submission";
 import { sameOffer, validateDeduction } from "./variation-controls";
 import {
   controlledChangeCanRelease,
@@ -226,6 +226,7 @@ export class CommercialService {
       `SELECT c.status,o.id AS "opportunityId",o.status AS "opportunityStatus",
         o.reference AS "opportunityReference",enquiry.reference AS "enquiryReference",
         enquiry.service_type AS "enquiryType",
+        (SELECT proof.id FROM crm_opportunity_payment_proofs proof WHERE proof.workspace_id=o.workspace_id AND proof.opportunity_id=o.id ORDER BY proof.recorded_at DESC LIMIT 1) AS "paymentProofId",
         o.amount AS "opportunityValue",o.title,p.display_name AS "customerName",o.currency_code AS currency,
         (SELECT raw_value FROM crm_contact_points cp WHERE cp.workspace_id=p.workspace_id AND cp.party_id=p.id AND cp.type='email' AND cp.status='active' ORDER BY cp.is_primary DESC,cp.created_at LIMIT 1) AS "customerEmail",
         (SELECT raw_value FROM crm_contact_points cp WHERE cp.workspace_id=p.workspace_id AND cp.party_id=p.id AND cp.type='phone' AND cp.status='active' ORDER BY cp.is_primary DESC,cp.created_at LIMIT 1) AS "customerPhone",
@@ -2634,7 +2635,12 @@ export class CommercialService {
               payment: checklistInput.payment === true,
             };
           const commissionLines = dealInput(() => normalizeCommissionLines(b.commissionLines, acceptedQuoteValue(accepted), accepted.currency));
-          const paymentProofUrl = dealInput(() => paymentProofLink(b.paymentProofUrl, quoteHasVerifiedReceipt(data, accepted.id)));
+          // PLM-122: the payment proof attached on the opportunity (which made it Won) is the Deal File's proof;
+          // a link is needed only when there is neither that nor a Finance-verified receipt.
+          const attachedProof = record.paymentProofId ? opportunityProofPath(workspaceId, String(record.opportunityId), String(record.paymentProofId)) : undefined;
+          const paymentProofUrl = attachedProof && !(typeof b.paymentProofUrl === "string" && b.paymentProofUrl.trim())
+            ? attachedProof
+            : dealInput(() => paymentProofLink(b.paymentProofUrl, quoteHasVerifiedReceipt(data, accepted.id)));
           data.ownerReview = {
             id:
               data.ownerReview?.quoteId === accepted.id
@@ -3041,6 +3047,10 @@ export class CommercialService {
           for (const assetId of files)
             await client.query(`INSERT INTO client_portal_attachments (workspace_id, case_id, asset_id, target_kind, target_id, attached_by) VALUES ($1, $2, $3, 'message', $4, $5)`,
               [workspaceId, caseId, assetId, commentId, user.userId]);
+          // A reply the client reads reaches them (email, or nothing while the portal or its Messages are off); a note stays inside.
+          if (visibility === "client" && !r.decisionRequest)
+            await tellClients(client, { workspaceId, caseId, event: "message_replied", recordId: `message:${commentId}`, title: r.title,
+              note: `${r.title}: ${r.comments.at(-1)!.text || `${files.length} file${files.length === 1 ? "" : "s"}`}` });
         } else if (action === "attach_agreement_file") {
           if (!data.agreement) throw new ConflictException("Save the agreement before attaching its signed documents.");
           if (b.quoteId !== data.agreement.quoteId) throw new ConflictException("The agreement changed. Reopen it before attaching files.");

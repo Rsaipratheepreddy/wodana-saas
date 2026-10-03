@@ -47,8 +47,13 @@ export function normalizeCommissionLines(input: unknown, dealValue: number, curr
   return lines;
 }
 
+/**
+ * Finance confirms the final commission lines. When Sales submitted lines, Finance may correct only their amounts;
+ * when Sales submitted none (the deal was created from the payment proof, PLM-122), Finance adds them.
+ */
 export function confirmCommissionAmounts(provisional: CommissionLine[], input: unknown, dealValue: number, currencyCode?: string) {
   const final = normalizeCommissionLines(input, dealValue, currencyCode);
+  if (!provisional.length) return final;
   if (final.length !== provisional.length || final.some((line, index) => line.recipientName !== provisional[index].recipientName || line.type !== provisional[index].type)) {
     throw new Error("Finance may correct commission amounts; return the submission to Sales to change recipients or types.");
   }
@@ -69,4 +74,9 @@ export function paymentProofLink(input: unknown, receiptVerified = false): strin
   } catch {
     throw new Error("Use a secure HTTPS proof-of-payment link.");
   }
+}
+
+/** Where the web app opens a payment proof attached on the opportunity (PLM-122); kept as the Deal File's proof link. */
+export function opportunityProofPath(workspaceId: string, opportunityId: string, proofId: string) {
+  return `/api/workspace/crm/opportunity-proofs/${opportunityId}/${proofId}?workspaceId=${encodeURIComponent(workspaceId)}`;
 }

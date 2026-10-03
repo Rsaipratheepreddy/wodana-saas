@@ -815,8 +815,8 @@ integration("client portal (plan §6.22)", () => {
       // Every command is audited with the client contact.
       const audits = (await w.client.query("SELECT action, source, actor_user_id, after->>'grantId' AS grant FROM audit_events WHERE workspace_id = $1 AND source = 'client_portal' ORDER BY occurred_at",
         [w.workspaceId])).rows;
-      // Acceptance is the sale: the opportunity is Won and the case moves to Agree, on the client's record.
-      expect(audits).toEqual([{ action: "crm.opportunity.won.v1", source: "client_portal", actor_user_id: null, grant: approver.id },
+      // Acceptance moves the case to Agree, on the client's record; the opportunity is won by its payment proof (PLM-122).
+      expect(audits).toEqual([
         { action: "pre_project.phase_advanced.v1", source: "client_portal", actor_user_id: null, grant: approver.id },
         { action: "client_portal.quote_decision", source: "client_portal", actor_user_id: null, grant: approver.id },
         { action: "client_portal.request", source: "client_portal", actor_user_id: null, grant: approver.id }]);

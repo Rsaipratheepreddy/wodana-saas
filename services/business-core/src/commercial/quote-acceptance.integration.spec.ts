@@ -9,7 +9,7 @@ import { seedDefaultNotificationTemplates } from "../notifications/default-templ
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 
-integration("the client's acceptance is the sale", () => {
+integration("the client's acceptance with a payment proof is the sale", () => {
   let pool: Pool;
   beforeAll(() => {
     const url = new URL(databaseUrl!);
@@ -18,7 +18,7 @@ integration("the client's acceptance is the sale", () => {
   });
   afterAll(() => pool.end());
 
-  async function withCase(phase: string, work: (client: PoolClient, ids: { workspaceId: string; caseId: string; opportunityId: string; partyId: string; wonStageId: string }) => Promise<void>) {
+  async function withCase(phase: string, paid: boolean, work: (client: PoolClient, ids: { workspaceId: string; caseId: string; opportunityId: string; partyId: string; wonStageId: string }) => Promise<void>) {
     const client = await pool.connect();
     const workspaceId = randomUUID(), caseId = randomUUID(), opportunityId = randomUUID(), partyId = randomUUID(), pipelineId = randomUUID(),
       openStageId = randomUUID(), wonStageId = randomUUID(), actor = randomUUID();
@@ -34,6 +34,8 @@ integration("the client's acceptance is the sale", () => {
       await client.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,pipeline_id,stage_id,title,reference,amount,currency_code)
         VALUES($1,$2,$3,$4,$5,'Villa','OPP-1',1000,'AED')`, [opportunityId, workspaceId, partyId, pipelineId, openStageId]);
       await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by,status,phase) VALUES($1,$2,$3,$4,'active',$5)", [caseId, workspaceId, opportunityId, actor, phase]);
+      if (paid) await client.query(`INSERT INTO crm_opportunity_payment_proofs(workspace_id,opportunity_id,kind,storage_key,file_name,mime_type,byte_size,digest,recorded_by)
+        VALUES($1,$2,'receipt','k','receipt.pdf','application/pdf',10,repeat('a',64),$3)`, [workspaceId, opportunityId, actor]);
       await work(client, { workspaceId, caseId, opportunityId, partyId, wonStageId });
     } finally {
       await client.query("ROLLBACK");
@@ -42,7 +44,7 @@ integration("the client's acceptance is the sale", () => {
   }
 
   it("marks the opportunity Won on its Won stage, makes the client a customer and moves the case to Agree, once", async () => {
-    await withCase("price", async (client, ids) => {
+    await withCase("price", true, async (client, ids) => {
       const first = await winOpportunityOnAcceptance(client, { workspaceId: ids.workspaceId, caseId: ids.caseId, quoteNumber: 12, round: "main", actorUserId: null, source: "client_portal" });
       expect(first).toEqual({ won: true, phase: "agree" });
       const opportunity = (await client.query(`SELECT status::text, stage_id AS "stageId", probability::text, outcome_reason AS reason, closed_at IS NOT NULL AS closed FROM crm_opportunities WHERE id = $1`, [ids.opportunityId])).rows[0];
@@ -60,8 +62,16 @@ integration("the client's acceptance is the sale", () => {
     });
   });
 
+  it("leaves the opportunity open without a payment proof (PLM-122) and still moves the case to Agree", async () => {
+    await withCase("price", false, async (client, ids) => {
+      expect(await winOpportunityOnAcceptance(client, { workspaceId: ids.workspaceId, caseId: ids.caseId, quoteNumber: 12, round: "main", actorUserId: null, source: "client_portal" }))
+        .toEqual({ won: false, phase: "agree" });
+      expect((await client.query(`SELECT status::text FROM crm_opportunities WHERE id = $1`, [ids.opportunityId])).rows[0].status).toBe("open");
+    });
+  });
+
   it("tells the Owner in the app that the deal is won, with why (S-23)", async () => {
-    await withCase("price", async (client, ids) => {
+    await withCase("price", true, async (client, ids) => {
       const owner = randomUUID(), membership = randomUUID(), role = randomUUID();
       await client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Olivia Owner')", [owner, `${owner.slice(0, 8)}@example.com`]);
       await client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [membership, ids.workspaceId, owner]);
@@ -76,7 +86,7 @@ integration("the client's acceptance is the sale", () => {
   });
 
   it("keeps a design-fee round in its phase: design comes next", async () => {
-    await withCase("design", async (client, ids) => {
+    await withCase("design", true, async (client, ids) => {
       expect(await winOpportunityOnAcceptance(client, { workspaceId: ids.workspaceId, caseId: ids.caseId, quoteNumber: 3, round: "design", actorUserId: null, source: "user" }))
         .toEqual({ won: true, phase: null });
       expect((await client.query(`SELECT phase FROM pre_project_cases WHERE id = $1`, [ids.caseId])).rows[0].phase).toBe("design");

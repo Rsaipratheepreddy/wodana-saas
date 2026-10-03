@@ -11,10 +11,10 @@ type OpportunityRow = {
 };
 
 /**
- * The client's acceptance is the sale. When a quotation is accepted (in the portal or recorded by staff) the
- * linked opportunity becomes Won, on the pipeline's Won stage, with the quote as the reason; the client becomes
- * a customer, and the planning case moves to Agree (a design-fee round keeps its phase: design comes next).
- * Nobody has to "mark it Won" before submitting the deal. Idempotent: an opportunity already Won is left alone.
+ * When a quotation is accepted (in the portal or recorded by staff) the planning case moves to Agree (a design-fee
+ * round keeps its phase: design comes next). The linked opportunity becomes Won, on the pipeline's Won stage with
+ * the quote as the reason, only when a payment proof already exists (PLM-122); otherwise attaching the proof wins it.
+ * Idempotent: an opportunity already Won, or closed, is left alone.
  * Runs in the caller's tenant transaction and is audited like a manual transition.
  */
 export async function winOpportunityOnAcceptance(db: Db, input: {
@@ -35,7 +35,13 @@ export async function winOpportunityOnAcceptance(db: Db, input: {
       FOR UPDATE OF opportunity`, [input.workspaceId, input.caseId])).rows[0];
   if (!opportunity) return { won: false, phase: null as string | null };
   let won = false;
-  if (opportunity.status !== "won") {
+  // PLM-122: Won is a payment proof. The client's acceptance alone leaves the opportunity open (its quote now reads
+  // as accepted); it is won here only when a proof is already attached or Finance verified a payment.
+  const paid = (await db.query(
+    `SELECT 1 FROM crm_opportunity_payment_proofs WHERE workspace_id = $1 AND opportunity_id = $2
+     UNION ALL SELECT 1 FROM commercial_payments WHERE workspace_id = $1 AND case_id = $3 AND status = 'verified' LIMIT 1`,
+    [input.workspaceId, opportunity.id, input.caseId])).rowCount;
+  if (opportunity.status === "open" && paid) {
     const stage = (await db.query<{ id: string }>(
       `SELECT id FROM crm_pipeline_stages WHERE workspace_id = $1 AND pipeline_id = $2 AND code = 'won' AND status = 'active' ORDER BY position LIMIT 1`,
       [input.workspaceId, opportunity.pipelineId])).rows[0];

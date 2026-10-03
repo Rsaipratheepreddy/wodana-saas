@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { confirmCommissionAmounts, normalizeCommissionLines, paymentProofLink } from "./deal-submission";
+import { confirmCommissionAmounts, normalizeCommissionLines, opportunityProofPath, paymentProofLink } from "./deal-submission";
 
 describe("deal submission evidence", () => {
   it("allows a deal without commission, ignoring rows nobody filled in (M5)", () => {
@@ -36,6 +36,16 @@ describe("deal submission evidence", () => {
     const provisional = normalizeCommissionLines([{ recipientName: "Designer A", type: "designer", basis: "amount", value: 1500 }], 100000);
     expect(confirmCommissionAmounts(provisional, [{ recipientName: "Designer A", type: "designer", basis: "amount", value: 1750 }], 100000)[0].amount).toBe(1750);
     expect(() => confirmCommissionAmounts(provisional, [{ recipientName: "Other", type: "designer", basis: "amount", value: 1750 }], 100000)).toThrow("return the submission");
+  });
+
+  it("lets Finance add the commission lines when Sales submitted none (PLM-122)", () => {
+    expect(confirmCommissionAmounts([], [{ recipientName: "Sales A", type: "sales", basis: "percent", value: 2 }], 50000)).toEqual([
+      { recipientName: "Sales A", type: "sales", basis: "percent", value: 2, amount: 1000 },
+    ]);
+  });
+
+  it("opens the proof attached on the opportunity through the workspace app", () => {
+    expect(opportunityProofPath("ws-1", "opp-1", "proof-1")).toBe("/api/workspace/crm/opportunity-proofs/opp-1/proof-1?workspaceId=ws-1");
   });
 
   it("requires a secure proof link", () => {

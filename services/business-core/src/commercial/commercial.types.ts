@@ -740,6 +740,8 @@ export type CommercialState = {
   title: string;
   opportunityId?: string;
   opportunityStatus?: string;
+  /** The newest payment proof attached on the opportunity (PLM-122): it wins the deal and is the Deal File's proof. */
+  paymentProofId?: string | null;
   opportunityReference?: string | null;
   enquiryReference?: string | null;
   opportunityValue?: number | null;
