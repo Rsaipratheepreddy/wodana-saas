@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { Allow, ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { Allow, ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf, ValidateNested } from "class-validator";
 
 export class TaxonomyOptionDto {
   @IsString() @Matches(/^[a-z][a-z0-9_-]{0,78}$/) code!: string;
@@ -7,6 +7,8 @@ export class TaxonomyOptionDto {
   @IsOptional() @IsInt() @Min(0) position?: number;
   /** Role codes allowed to choose this option by hand (e.g. Self Generated); empty clears the limit, absent keeps it. */
   @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @Matches(/^[A-Za-z0-9_-]{1,60}$/, { each: true }) allowedRoles?: string[];
+  /** An enquiry type's pipeline flow (PLM-121/122); null clears it (basic), absent keeps it. */
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsIn(["furniture", "design", "fit_out", "basic"]) flow?: "furniture" | "design" | "fit_out" | "basic" | null;
 }
 export class CreateTaxonomyDto {
   @IsString() @Matches(/^[a-z][a-z0-9_-]{0,78}$/) code!: string;

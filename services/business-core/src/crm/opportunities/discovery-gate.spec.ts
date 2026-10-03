@@ -9,7 +9,7 @@ describe("stage gate: discovery required (PLM-040)", () => {
   it("refuses the stage and names what is missing", async () => {
     const discovery = { missing: vi.fn().mockResolvedValue([{ key: "floorPlan", label: "Floor plan" }, { key: "area", label: "Area" }]) };
     const service = new CrmOpportunitiesService({} as never, {} as never, undefined, discovery as never);
-    await expect(service["assertEntryRequirements"](client as never, "ws", opportunity, stage)).rejects.toMatchObject({ response: { missing: ["Floor plan", "Area"] } });
+    await expect(service["assertEntryRequirements"](client as never, "ws", opportunity, stage)).rejects.toMatchObject({ response: { missing: [{ key: "discovery:floorPlan", label: "Floor plan" }, { key: "discovery:area", label: "Area" }] } });
     expect(discovery.missing).toHaveBeenCalledWith(client, "ws", "opp-1");
   });
 

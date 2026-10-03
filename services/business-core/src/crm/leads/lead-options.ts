@@ -1,7 +1,7 @@
 import { UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 
-type Option = { id: string; label: string };
+type Option = { id: string; label: string; flow?: string };
 const options = (entries: [string, string][]): Option[] => entries.map(([id, label]) => ({ id, label }));
 export const UNRESOLVED_ENQUIRY_TYPE = "not_sure";
 /** The region choice for anywhere outside the workspace's listed regions. */
@@ -29,7 +29,7 @@ export const DEFAULT_LEAD_OPTIONS = {
 
 export async function loadLeadOptions(client: PoolClient, workspaceId: string) {
   const result = await client.query<{ code: string; options: Option[] }>(`SELECT taxonomy.code,
-    COALESCE(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', choice.code, 'label', choice.label, 'allowedRoles', choice.allowed_role_codes))
+    COALESCE(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', choice.code, 'label', choice.label, 'allowedRoles', choice.allowed_role_codes, 'flow', choice.flow))
       ORDER BY choice.position, choice.label) FILTER (WHERE choice.id IS NOT NULL), '[]'::jsonb) AS options
     FROM crm_taxonomies taxonomy LEFT JOIN crm_taxonomy_options choice ON choice.taxonomy_id=taxonomy.id
       AND choice.workspace_id=taxonomy.workspace_id AND choice.status='active'

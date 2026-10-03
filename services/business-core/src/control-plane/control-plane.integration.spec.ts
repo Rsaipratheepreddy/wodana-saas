@@ -183,7 +183,7 @@ integration("control plane with PostgreSQL", () => {
       `SELECT pipeline.code, pipeline.is_default AS "isDefault", pipeline.status,
               (SELECT count(*)::int FROM crm_pipeline_stages stage WHERE stage.pipeline_id = pipeline.id AND stage.status = 'active') AS stages
          FROM crm_pipelines pipeline WHERE pipeline.workspace_id = $1`, [workspaceId]);
-    expect(pipelines.rows).toEqual([{ code: "sales", isDefault: true, status: "active", stages: 5 }]);
+    expect(pipelines.rows).toEqual([{ code: "sales", isDefault: true, status: "active", stages: 6 }]);
   });
 
   it("lists the account for operators only", async () => {

@@ -47,8 +47,8 @@ integration("default sales pipeline (seeded per workspace)", () => {
       expect((await pipelines(client, workspaceId)).rows).toEqual([{ code: "sales", status: "active", isDefault: true, stages: DEFAULT_SALES_PIPELINE.stages.length }]);
       const stages = await client.query<{ code: string; position: number; probability: string }>(
         `SELECT code, position, probability::text AS probability FROM crm_pipeline_stages WHERE workspace_id = $1 ORDER BY position`, [workspaceId]);
-      expect(stages.rows.map((stage) => stage.code)).toEqual(["qualified", "proposal", "negotiation", "won", "lost"]);
-      expect(stages.rows.map((stage) => Number(stage.probability))).toEqual([20, 50, 75, 100, 0]);
+      expect(stages.rows.map((stage) => stage.code)).toEqual(["qualified", "qualification", "proposal", "negotiation", "won", "lost"]);
+      expect(stages.rows.map((stage) => Number(stage.probability))).toEqual([20, 35, 50, 75, 100, 0]);
     });
   });
 
@@ -57,7 +57,7 @@ integration("default sales pipeline (seeded per workspace)", () => {
       await client.query(`INSERT INTO crm_pipelines (workspace_id, code, name, is_default, status) VALUES ($1, 'sales', 'Old sales', false, 'archived')`, [workspaceId]);
       const seeded = await seedDefaultSalesPipeline(client, workspaceId);
       expect(seeded.created).toBe(true);
-      expect((await pipelines(client, workspaceId)).rows).toEqual([{ code: "sales", status: "active", isDefault: true, stages: 5 }]);
+      expect((await pipelines(client, workspaceId)).rows).toEqual([{ code: "sales", status: "active", isDefault: true, stages: 6 }]);
     });
     await withWorkspace(async (client, workspaceId) => {
       const own = await client.query<{ id: string }>(`INSERT INTO crm_pipelines (workspace_id, code, name, is_default) VALUES ($1, 'design_sales', 'Design sales', true) RETURNING id`, [workspaceId]);

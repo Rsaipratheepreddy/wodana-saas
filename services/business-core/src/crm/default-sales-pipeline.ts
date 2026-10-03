@@ -23,10 +23,12 @@ export const DEFAULT_SALES_PIPELINE: SalesPipelineTemplate = {
   name: "Sales",
   stages: [
     { code: "qualified", name: "New Opportunity", position: 1, probability: 20, forecastCategory: "pipeline", entryRequirements: { owner: true, nextAction: true } },
-    { code: "proposal", name: "Proposal", position: 2, probability: 50, forecastCategory: "best_case", entryRequirements: {} },
-    { code: "negotiation", name: "Negotiation", position: 3, probability: 75, forecastCategory: "commit", entryRequirements: {} },
-    { code: "won", name: "Won", position: 4, probability: 100, forecastCategory: "closed", entryRequirements: {} },
-    { code: "lost", name: "Lost", position: 5, probability: 0, forecastCategory: "closed", entryRequirements: {} },
+    // What each column needs comes from the enquiry type's flow (crm/opportunities/flow-gates.ts).
+    { code: "qualification", name: "Qualified", position: 2, probability: 35, forecastCategory: "pipeline", entryRequirements: {} },
+    { code: "proposal", name: "Proposal", position: 3, probability: 50, forecastCategory: "best_case", entryRequirements: {} },
+    { code: "negotiation", name: "Negotiation", position: 4, probability: 75, forecastCategory: "commit", entryRequirements: {} },
+    { code: "won", name: "Won", position: 5, probability: 100, forecastCategory: "closed", entryRequirements: {} },
+    { code: "lost", name: "Lost", position: 6, probability: 0, forecastCategory: "closed", entryRequirements: {} },
   ],
 };
 

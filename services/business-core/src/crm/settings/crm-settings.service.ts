@@ -1,3 +1,4 @@
+import { OPPORTUNITY_FLOWS } from "../opportunities/flow-gates";
 import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
@@ -33,7 +34,7 @@ export class CrmSettingsService {
 
   list(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client) => {
-      const taxonomies = await client.query(`SELECT taxonomy.id, taxonomy.code, taxonomy.name, taxonomy.status, taxonomy.version, COALESCE(jsonb_agg(jsonb_build_object('id', option.id, 'code', option.code, 'label', option.label, 'position', option.position, 'status', option.status, 'version', option.version) ORDER BY option.position) FILTER (WHERE option.id IS NOT NULL), '[]'::jsonb) AS options FROM crm_taxonomies taxonomy LEFT JOIN crm_taxonomy_options option ON option.taxonomy_id = taxonomy.id AND option.workspace_id = taxonomy.workspace_id WHERE taxonomy.workspace_id = $1 GROUP BY taxonomy.id ORDER BY taxonomy.name`, [workspaceId]);
+      const taxonomies = await client.query(`SELECT taxonomy.id, taxonomy.code, taxonomy.name, taxonomy.status, taxonomy.version, COALESCE(jsonb_agg(jsonb_build_object('id', option.id, 'code', option.code, 'label', option.label, 'position', option.position, 'status', option.status, 'flow', option.flow, 'version', option.version) ORDER BY option.position) FILTER (WHERE option.id IS NOT NULL), '[]'::jsonb) AS options FROM crm_taxonomies taxonomy LEFT JOIN crm_taxonomy_options option ON option.taxonomy_id = taxonomy.id AND option.workspace_id = taxonomy.workspace_id WHERE taxonomy.workspace_id = $1 GROUP BY taxonomy.id ORDER BY taxonomy.name`, [workspaceId]);
       const fields = await client.query(`SELECT id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, visible, position, version FROM crm_custom_field_definitions WHERE workspace_id = $1 ORDER BY entity_type, label`, [workspaceId]);
       const forms = await client.query(`SELECT form.id, form.code, form.name, form.status, form.service_type AS "serviceType", form.version, COALESCE(jsonb_agg(jsonb_build_object('id', question.id, 'key', question.key, 'label', question.label, 'dataType', question.data_type, 'required', question.required, 'position', question.position, 'scoring', question.scoring, 'configuration', question.configuration) ORDER BY question.position) FILTER (WHERE question.id IS NOT NULL), '[]'::jsonb) AS questions FROM crm_qualification_forms form LEFT JOIN crm_qualification_questions question ON question.form_id = form.id AND question.workspace_id = form.workspace_id WHERE form.workspace_id = $1 GROUP BY form.id ORDER BY form.name`, [workspaceId]);
       const views = await client.query(`SELECT id, entity_type AS "entityType", name, owner_membership_id AS "ownerMembershipId", is_shared AS "isShared", definition, version FROM crm_saved_views WHERE workspace_id = $1 ORDER BY entity_type, name`, [workspaceId]);
@@ -50,7 +51,7 @@ export class CrmSettingsService {
       const taxonomy = result.rows[0] as Row;
       const options: Row[] = [];
       for (const [index, option] of (input.options ?? []).entries()) {
-        const created = await client.query(`INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position, allowed_role_codes) VALUES ($1,$2,lower($3),$4,$5,$6) RETURNING id, code, label, position, status, version`, [workspaceId, taxonomy.id, option.code, option.label, option.position ?? index, storedRoleCodes(option.allowedRoles)]);
+        const created = await client.query(`INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position, allowed_role_codes, flow) VALUES ($1,$2,lower($3),$4,$5,$6,$7) RETURNING id, code, label, position, status, flow, version`, [workspaceId, taxonomy.id, option.code, option.label, option.position ?? index, storedRoleCodes(option.allowedRoles), option.flow ?? null]);
         options.push(created.rows[0] as Row);
       }
       const response = { ...taxonomy, options };
@@ -82,16 +83,17 @@ export class CrmSettingsService {
         await client.query(`UPDATE crm_taxonomy_options SET status = 'archived', version = version + 1, updated_at = now() WHERE workspace_id = $1 AND taxonomy_id = $2 AND status = 'active'`, [workspaceId, taxonomyId]);
         for (const [index, option] of input.options.entries()) {
           await client.query(
-            `INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position, status, allowed_role_codes)
-             VALUES ($1,$2,lower($3),$4,$5,'active',$6)
+            `INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position, status, allowed_role_codes, flow)
+             VALUES ($1,$2,lower($3),$4,$5,'active',$6,$8)
              ON CONFLICT (workspace_id, taxonomy_id, code) DO UPDATE SET label = EXCLUDED.label, position = EXCLUDED.position, status = 'active',
                allowed_role_codes = CASE WHEN $7 THEN EXCLUDED.allowed_role_codes ELSE crm_taxonomy_options.allowed_role_codes END,
+               flow = CASE WHEN $9 THEN EXCLUDED.flow ELSE crm_taxonomy_options.flow END,
                version = crm_taxonomy_options.version + 1, updated_at = now()`,
-            [workspaceId, taxonomyId, option.code, option.label, option.position ?? index, storedRoleCodes(option.allowedRoles), option.allowedRoles !== undefined],
+            [workspaceId, taxonomyId, option.code, option.label, option.position ?? index, storedRoleCodes(option.allowedRoles), option.allowedRoles !== undefined, option.flow ?? null, option.flow !== undefined],
           );
         }
       }
-      const options = await client.query(`SELECT id, code, label, position, status, version FROM crm_taxonomy_options WHERE workspace_id = $1 AND taxonomy_id = $2 ORDER BY position, label`, [workspaceId, taxonomyId]);
+      const options = await client.query(`SELECT id, code, label, position, status, flow, version FROM crm_taxonomy_options WHERE workspace_id = $1 AND taxonomy_id = $2 ORDER BY position, label`, [workspaceId, taxonomyId]);
       const response = { ...result.rows[0], options: options.rows };
       await this.revisions.ensureBaseline(client, {
         workspaceId, resourceType: "crm_taxonomy", resourceId: taxonomyId,
@@ -389,7 +391,7 @@ export class CrmSettingsService {
       `SELECT taxonomy.id,taxonomy.code,taxonomy.name,taxonomy.status,taxonomy.version,
               COALESCE(jsonb_agg(jsonb_build_object(
                 'id',option.id,'code',option.code,'label',option.label,'position',option.position,
-                'status',option.status,'version',option.version
+                'status',option.status,'flow',option.flow,'version',option.version
               ) ORDER BY option.position,option.code) FILTER (WHERE option.id IS NOT NULL),'[]'::jsonb) AS options
        FROM crm_taxonomies taxonomy
        LEFT JOIN crm_taxonomy_options option ON option.workspace_id=taxonomy.workspace_id AND option.taxonomy_id=taxonomy.id
@@ -457,12 +459,14 @@ export class CrmSettingsService {
     );
     for (const option of options) {
       await client.query(
-        `INSERT INTO crm_taxonomy_options(workspace_id,taxonomy_id,code,label,position,status)
-         VALUES($1,$2,$3,$4,$5,$6)
+        `INSERT INTO crm_taxonomy_options(workspace_id,taxonomy_id,code,label,position,status,flow)
+         VALUES($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT(workspace_id,taxonomy_id,code) DO UPDATE SET
            label=EXCLUDED.label,position=EXCLUDED.position,status=EXCLUDED.status,
+           flow=CASE WHEN $8 THEN EXCLUDED.flow ELSE crm_taxonomy_options.flow END,
            version=crm_taxonomy_options.version+1,updated_at=now()`,
-        [workspaceId, id, option.code, option.label, option.position, option.status === "archived" ? "archived" : "active"],
+        [workspaceId, id, option.code, option.label, option.position, option.status === "archived" ? "archived" : "active",
+          OPPORTUNITY_FLOWS.includes(option.flow as never) ? option.flow : null, Object.hasOwn(option, "flow")],
       );
     }
   }
