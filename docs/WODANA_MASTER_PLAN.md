@@ -186,7 +186,7 @@ Integrity rules (quantities, money, evidence, tenant isolation) are also never o
 
 | Concept | What it is |
 | --- | --- |
-| **Flow** | A versioned, published template, chosen by the enquiry type (Settings › Sales › Flows). Firms edit flows from enquiry until production starts. Production and delivery flows are read-only in R1. |
+| **Flow** | A versioned, published template, chosen by the enquiry type (main navigation: **Sales › Flows**, next to Enquiries and Pipeline — a first-class screen, not Settings). Firms edit flows from enquiry until production starts. Production and delivery flows are read-only in R1. |
 | **Step** | One card on the flow. It has: a plain name, **who** (a role), **done when** (one check from the catalogue), **needs** (required fields), **deadline**, **tell** (notifications), **client sees it** (yes/no), **optional** (yes/no), and **column** (the pipeline column the job enters when this step completes). |
 | **Branch** | Splits the line on one question: sub-path, package, budget band or client type. Each answer leads to its own steps, and the paths rejoin. |
 | **Job** | An opportunity running a pinned flow version. Its current step is computed from the records. The column is computed from completed steps and is never set by hand. |
@@ -224,7 +224,7 @@ New checks are added in code, once, for every firm.
 2. **Board**
    - Card: client · value · now step · assignee avatar · due/overdue chip.
    - A refused drop shows one small sheet, "To move to *Won*: attach payment proof [Attach]".
-3. **Flow builder** (Settings › Sales › Flows; React Flow, `@xyflow/react`, MIT, styled only with our tokens)
+3. **Flow builder** (**Sales › Flows** in the main navigation; React Flow, `@xyflow/react`, MIT, styled only with our tokens)
    - **Left:** Components, grouped as Contact · Meetings · Sell · Design · Logic. Each shows an icon and a one-line description.
    - **Centre:** a top-to-bottom canvas with snap and auto-layout. Steps are cards showing name, role avatar, check and deadline. The pipeline columns are soft background bands. Branches are drawn as labelled forks.
    - **Right:** properties of the selected card, in plain words with pickers only (no free-text rules).
