@@ -11997,5 +11997,20 @@
   "Which budget band?": "Which budget band?",
   "Which client type?": "Which client type?",
   "Renders": "Renders",
-  "Working hours": "Working hours"
+  "Working hours": "Working hours",
+  "Key facts": "Key facts",
+  "Links": "Links",
+  "Property details": "Property details",
+  "Upload floor plan": "Upload floor plan",
+  "{done} of {total}": "{done} of {total}",
+  "Supply": "Supply",
+  "No phone or email": "No phone or email",
+  "Latest activity": "Latest activity",
+  "See all": "See all",
+  "Log": "Log",
+  "{stage} means we know the client and the property.": "{stage} means we know the client and the property.",
+  "{stage} means the brief is clear enough to plan the intro.": "{stage} means the brief is clear enough to plan the intro.",
+  "{stage} means we have everything to price the work.": "{stage} means we have everything to price the work.",
+  "{stage} means the client has the offer.": "{stage} means the client has the offer.",
+  "{stage} means the client has paid.": "{stage} means the client has paid."
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupRequirements, nowPlan, requirementAction, stepForRequirement, type FunnelStep } from "./now-step";
+import { columnOfStep, groupForRequirement, groupRequirements, nextChecklist, nowPlan, requirementAction, stepForRequirement, type FunnelStep } from "./now-step";
 import type { OpportunityFlowView } from "./opportunity-flow";
 
 const view = (overrides: Partial<OpportunityFlowView> = {}): OpportunityFlowView => ({
@@ -65,4 +65,45 @@ describe("now step mapping (F1)", () => {
     expect(nowPlan({ status: "won", flow: view(), funnel: funnel({ design: "done", quote: "done", deal: "done" }), caseId: "case-1" }).now).toMatchObject({ id: "planning", section: "overview" });
     expect(nowPlan({ status: "lost", flow: view() }).now).toMatchObject({ target: "reopen" });
   });
+
+  it("puts every requirement key in the group whose card and sheet resolve it", () => {
+    for (const key of ["floorPlan", "area", "floorPlanOrArea", "spaces", "propertyLocation", "clientEmail", "discovery:area", "discovery:clientEmail", "somethingNew"]) expect(groupForRequirement(key)).toBe("property");
+    expect(groupForRequirement("discovery:question:budget")).toBe("questions");
+    expect(groupForRequirement("package")).toBe("package");
+    expect(groupForRequirement("introMeeting")).toBe("intro");
+    expect(groupForRequirement("paymentProof")).toBe("payment");
+    for (const key of ["furniturePath", "feasibility", "clientApproval"]) expect(groupForRequirement(key)).toBe("supply");
+    for (const key of ["enquiryType", "clientType", "discovery:clientType"]) expect(groupForRequirement(key)).toBe("client");
+    for (const key of ["quotation", "qsApproval", "designStage:renders"]) expect(groupForRequirement(key)).toBe("planning");
+    expect(columnOfStep("new")).toBe("qualified");
+    expect(columnOfStep("qualified")).toBe("qualification");
+    expect(columnOfStep("proposal")).toBe("proposal");
+  });
+
+  it("lists the next column's needs in line order: done steps of that column and every missing requirement", () => {
+    const line = [
+      { key: "details", name: "Complete the client details", check: "details_complete", column: "qualified", optional: false, state: "current" as const, doneAt: null, doneBy: null, missing: [{ key: "floorPlanOrArea", label: "Floor plan or area" }] },
+      { key: "enquiry_type", name: "Confirm the enquiry type", check: "details_complete", column: "qualification", optional: false, state: "done" as const, doneAt: "2026-10-01T08:00:00.000Z", doneBy: "Sara", missing: [] },
+      { key: "intro_meeting", name: "Hold the intro meeting", check: "intro_meeting_completed", column: "qualification", optional: false, state: "upcoming" as const, doneAt: null, doneBy: null, missing: [{ key: "introMeeting", label: "Intro meeting completed" }] },
+      { key: "package", name: "Choose the design package", check: "package_chosen", column: "qualification", optional: true, state: "done" as const, doneAt: null, doneBy: null, missing: [] },
+      { key: "discovery", name: "Complete discovery", check: "discovery_complete", column: "proposal", optional: false, state: "upcoming" as const, doneAt: null, doneBy: null, missing: [{ key: "discovery:area", label: "Area" }] },
+    ];
+    const list = nextChecklist(view({ line, missing: [{ key: "floorPlanOrArea", label: "Floor plan or area" }, { key: "introMeeting", label: "Intro meeting completed" }] }), "open")!;
+    expect(list).toMatchObject({ column: "Qualified", columnCode: "qualification", why: { key: "{stage} means the brief is clear enough to plan the intro.", values: { stage: "Qualified" } } });
+    expect(list.rows.map((row) => [row.id, row.state, row.group, row.action])).toEqual([
+      ["floorPlanOrArea", "missing", "property", "Add"],
+      ["step:enquiry_type", "done", null, null],
+      ["introMeeting", "missing", "intro", "Book"],
+    ]);
+    expect(list.rows[1]).toMatchObject({ label: "Confirm the enquiry type", doneBy: "Sara" });
+    // Without the line (an older response) the missing requirements still list, each with its action.
+    const bare = nextChecklist(view({ missing: [{ key: "discovery:floorPlan", label: "Floor plan" }, { key: "discovery:question:budget", label: "Budget" }, { key: "paymentProof", label: "Payment proof attached" }] }), "open")!;
+    expect(bare.rows.map((row) => [row.group, row.action, row.target])).toEqual([["property", "Upload", "discovery"], ["questions", "Answer", "discovery"], ["payment", "Attach", "proof"]]);
+    // Ready: nothing missing says so; closed or columnless jobs have no checklist.
+    expect(nextChecklist(view(), "open")).toMatchObject({ rows: [], why: { key: "Everything for {stage} is in place" } });
+    expect(nextChecklist(view(), "won")).toBeNull();
+    expect(nextChecklist(view({ next: null }), "open")).toBeNull();
+    expect(nextChecklist(view({ next: { stageId: "x", name: "Site survey", step: "site_survey" }, missing: [{ key: "contact", label: "Contact logged" }] }), "open")!.why.key).toBe("Needed to move to {stage}");
+  });
 });
+

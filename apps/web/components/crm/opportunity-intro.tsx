@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { CalendarPlus, UserRoundPen } from "lucide-react";
 import { parseDate, parseTime } from "@internationalized/date";
-import { Badge, Button, DateField, FormDialog, FormRow, InlineNotice, SelectField, SettingsRow, SettingsSection, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar } from "@/design-system";
+import { Avatar, Badge, Button, DateField, EditableFieldList, FactRow, FormDialog, FormRow, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows } from "@/lib/crm/client";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -23,56 +23,77 @@ type Member = { id: string; displayName?: string; name?: string };
 
 const DURATIONS = [30, 45, 60, 90, 120];
 
-/** PLM-043 / PLM-088: book the intro meeting in a designer's calendar; that designer stays with the client. */
-export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved, startBooking, onBookingStarted }: {
+/** The intro view: who the designer is, the meeting, and what still blocks booking it. */
+export function useIntro(workspaceId: string, opportunityId: string, enabled = true) {
+  const resource = useCrmResource<IntroView>(workspaceId, enabled ? `opportunities/${opportunityId}/intro` : null);
+  // Only a well-formed intro view is used; anything else waits or shows the error.
+  const view = resource.data && typeof resource.data === "object" && Array.isArray((resource.data as { blockers?: unknown }).blockers) ? resource.data : undefined;
+  return { view, failure: resource.failure, refresh: resource.refresh };
+}
+export type Intro = ReturnType<typeof useIntro>;
+
+/** The meeting's time and place in one line. */
+export function introWhen(intro: NonNullable<IntroView["intro"]>, timeZone: string, locale?: string) {
+  return intro.startsAt && intro.endsAt ? when(intro.startsAt, intro.endsAt, intro.timezone ?? timeZone, locale) : "";
+}
+
+/**
+ * PLM-043 / PLM-088: book the intro meeting in a designer's calendar; that designer stays with the client.
+ * What blocks booking is listed once, on the opportunity's checklist.
+ */
+export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved, startBooking, onBookingStarted, onBlocked, intro: lifted }: {
   workspaceId: string; opportunityId: string; locale?: string; onSaved?: () => void | Promise<void>;
-  /** The Now card asked to book: the booking opens once the view has loaded (when nothing blocks it). */
+  /** The checklist asked to book: the booking opens once the view has loaded (when nothing blocks it). */
   startBooking?: boolean; onBookingStarted?: () => void;
+  /** Asked to book while facts are still missing. */
+  onBlocked?: () => void;
+  /** The view, when the opportunity already reads it. */
+  intro?: Intro;
 }) {
   const t = useT();
-  const resource = useCrmResource<IntroView>(workspaceId, `opportunities/${opportunityId}/intro`);
+  const own = useIntro(workspaceId, opportunityId, !lifted);
+  const source = lifted ?? own;
   const members = useCrmResource<unknown>(workspaceId, "members");
   const [dialog, setDialog] = useState<"book" | "designer" | null>(null);
   const [notice, setNotice] = useState("");
-  // Only a well-formed intro view is used; anything else waits or shows the error.
-  const view = resource.data && typeof resource.data === "object" && Array.isArray((resource.data as { blockers?: unknown }).blockers) ? resource.data : undefined;
+  const view = source.view;
   const canBook = Boolean(view && !view.blockers.length && view.intro?.status !== "pending");
   // Nothing to open (already booked, or facts missing): the request is done.
-  useEffect(() => { if (startBooking && view && !canBook) onBookingStarted?.(); }, [startBooking, view, canBook, onBookingStarted]);
+  useEffect(() => {
+    if (!startBooking || !view || canBook) return;
+    if (view.blockers.length && view.intro?.status !== "pending") onBlocked?.();
+    onBookingStarted?.();
+  }, [startBooking, view, canBook, onBookingStarted, onBlocked]);
   const showBooking = dialog === "book" || Boolean(startBooking && canBook);
   const closeBooking = () => { setDialog(null); if (startBooking) onBookingStarted?.(); };
-  if (resource.failure) return <InlineNotice message={resource.failure} tone="error" />;
-  if (!view) return <Skeleton lines={4} shape="facts" />;
+  if (source.failure) return <InlineNotice message={source.failure} tone="error" />;
+  if (!view) return <Skeleton lines={2} shape="facts" />;
 
   const people = (rows(members.data) as Member[]).map((member) => ({ id: String(member.id), label: String(member.displayName ?? member.name ?? "") })).filter((member) => member.label);
-  const labelOf = (item: { key: string; label: string }) => ({ floorPlan: t("Floor plan"), area: t("Area"), clientEmail: t("Client email") } as Record<string, string>)[item.key] ?? item.label;
   const intro = view.intro;
   const booked = intro && intro.status === "pending";
-  const done = async (message: string) => { closeBooking(); setNotice(message); resource.refresh(); await onSaved?.(); };
+  const done = async (message: string) => { closeBooking(); setNotice(message); source.refresh(); await onSaved?.(); };
 
   return <div className={styles.intro}>
-    {view.blockers.length && !intro ? <InlineNotice tone="info" message={`${t("Add these on Discovery first")}: ${view.blockers.map(labelOf).join(", ")}`} /> : null}
     {notice ? <InlineNotice message={notice} tone="success" /> : null}
-    <SettingsSection actions={!booked ? <Button isDisabled={view.blockers.length > 0} size="compact" variant="primary" onPress={() => setDialog("book")}><CalendarPlus aria-hidden="true" size={14} />{t("Book intro meeting")}</Button> : null} id="intro-meeting" title={t("Intro meeting")}>
-      <SettingsRow label={t("Meeting")}>
+    <EditableFieldList>
+      <FactRow label={t("Meeting")} action={!booked ? <Button isDisabled={view.blockers.length > 0} size="compact" variant="secondary" onPress={() => setDialog("book")}><CalendarPlus aria-hidden="true" size={14} />{t("Book intro meeting")}</Button> : null}>
         {intro?.startsAt && intro.endsAt ? <span className={styles.meeting}>
-          <strong>{when(intro.startsAt, intro.endsAt, intro.timezone ?? view.timezone, locale)}</strong>
+          <strong>{introWhen(intro, view.timezone, locale)}</strong>
           <small>{intro.location?.mode === "online" ? (intro.location.url ? <a href={intro.location.url} rel="noreferrer" target="_blank">{t("Online meeting link")}</a> : t("Online")) : intro.location?.address || t("In person")}</small>
           <Badge tone={intro.status === "completed" ? "success" : intro.status === "cancelled" ? "neutral" : "info"}>{intro.status === "completed" ? t("Held") : intro.status === "cancelled" ? t("Cancelled") : t("Booked")}</Badge>
         </span> : <span className={styles.empty}>{t("Not booked")}</span>}
-      </SettingsRow>
-      <SettingsRow label={t("Designer")}>
-        <span className={styles.designer}>
-          {view.designer ? <strong>{view.designer.name}</strong> : <span className={styles.empty}>{t("Chosen when the intro is booked")}</span>}
-          {view.designer && view.canChangeDesigner ? <Button size="compact" variant="secondary" onPress={() => setDialog("designer")}><UserRoundPen aria-hidden="true" size={13} />{t("Change")}</Button> : null}
-        </span>
-      </SettingsRow>
-    </SettingsSection>
-    {view.history.length > 1 ? <SettingsSection id="designer-history" title={t("Designer changes")}>
-      {view.history.map((entry) => <SettingsRow key={entry.id} label={dateTime(entry.changedAt, locale)}>
-        <span className={styles.change}><strong>{entry.fromName ? `${entry.fromName} → ${entry.toName}` : entry.toName}</strong>{entry.reason ? <small>{entry.reason}</small> : null}{entry.changedByName ? <small>{entry.changedByName}</small> : null}</span>
-      </SettingsRow>)}
-    </SettingsSection> : null}
+      </FactRow>
+      <FactRow label={t("Designer")} action={view.designer && view.canChangeDesigner ? <Button size="compact" variant="quiet" onPress={() => setDialog("designer")}><UserRoundPen aria-hidden="true" size={13} />{t("Change")}</Button> : null}>
+        {view.designer ? <span className={styles.designer}><span aria-hidden="true"><Avatar name={view.designer.name} seed={view.designer.membershipId} size="sm" /></span><strong>{view.designer.name}</strong></span> : <span className={styles.empty}>{t("Chosen when the intro is booked")}</span>}
+      </FactRow>
+      {view.history.length > 1 ? <FactRow label={t("Designer changes")}>
+        <ul className={styles.changes}>{view.history.map((entry) => <li key={entry.id}>
+          <strong>{entry.fromName ? `${entry.fromName} → ${entry.toName}` : entry.toName}</strong>
+          <small>{[dateTime(entry.changedAt, locale), entry.reason, entry.changedByName].filter(Boolean).join(" · ")}</small>
+        </li>)}</ul>
+      </FactRow> : null}
+    </EditableFieldList>
     {showBooking ? <BookIntroDialog workspaceId={workspaceId} opportunityId={opportunityId} people={people} view={view} onClose={closeBooking} onBooked={() => done(t("Intro meeting booked. The designer has been invited."))} /> : null}
     {dialog === "designer" && view.designer ? <ChangeDesignerDialog workspaceId={workspaceId} opportunityId={opportunityId} people={people.filter((person) => person.id !== view.designer!.membershipId)} version={view.designer.version} onClose={() => setDialog(null)} onChanged={() => done(t("Designer changed."))} /> : null}
   </div>;

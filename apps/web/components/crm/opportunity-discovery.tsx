@@ -2,22 +2,31 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DateField, InlineNotice, SelectField, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, DateField, FileUploader, InlineNotice, InspectorSheet, SelectField, Skeleton, Switch, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
 import { crmRequest } from "@/lib/crm/client";
 import { loadDesignSettings, quoteDesignFee, type DesignPackage } from "@/lib/design/packages";
 import { useCrmResource } from "./crm-workbench";
+import { useRequirementNotes } from "./requirement-notes";
 import styles from "./opportunity-discovery.module.css";
 
 type AreaUnit = "sqft" | "sqm";
 type Facts = { area: string | null; areaUnit: AreaUnit | null; spaces: number | null; propertyLocation: string | null; clientEmail: string | null; floorPlanAssetId: string | null; designPackageId: string | null };
 type Question = { key: string; label: string; required: boolean; dataType?: string; options?: Array<{ id: string; label: string }> };
+type FileItem = { id: string; name: string; mimeType: string };
 export type DiscoveryView = {
   facts: Facts; designFee: { amount: string; currency: string } | null; package: { id: string; name: string } | null;
   enquiryType: string | null; clientType: string | null; questions: Question[]; answers: Record<string, unknown>;
-  files: Array<{ id: string; name: string; mimeType: string }>; missing: Array<{ key: string; label: string }>; version: number;
+  files: FileItem[]; missing: Array<{ key: string; label: string }>; version: number;
 };
 type Draft = { area: string; areaUnit: AreaUnit; spaces: string; propertyLocation: string; clientEmail: string; floorPlanAssetId: string; designPackageId: string; answers: Record<string, unknown> };
+/** The parts of discovery a side sheet edits. */
+export type DiscoveryGroup = "property" | "package" | "questions";
+
+export const DISCOVERY_TITLES: Record<DiscoveryGroup, MessageKey> = {
+  property: tKey("Property details"), package: tKey("Design package"), questions: tKey("Intro questions"),
+};
 
 const decimal = (value: string) => value.replace(/[^\d.]/g, "").replace(/^(\d*\.\d{0,2}).*$/, "$1");
 const whole = (value: string) => value.replace(/\D/g, "").slice(0, 3);
@@ -30,6 +39,23 @@ function draftOf(view: DiscoveryView, fallbackUnit: AreaUnit): Draft {
     designPackageId: facts.designPackageId ?? "", answers: { ...view.answers },
   };
 }
+
+/** An answer counts once it holds something. */
+export function answered(value: unknown) {
+  return !(value === undefined || value === null || (typeof value === "string" && !value.trim()) || (Array.isArray(value) && !value.length));
+}
+
+/** PLM-040: the discovery facts, the design packages on offer and the unit areas default to. */
+export function useDiscovery(workspaceId: string, opportunityId: string) {
+  const resource = useCrmResource<DiscoveryView>(workspaceId, `opportunities/${opportunityId}/discovery`);
+  const [packages, setPackages] = useState<DesignPackage[]>([]);
+  useEffect(() => { void loadDesignSettings(workspaceId).then((settings) => setPackages(Array.isArray(settings?.packages) ? settings.packages : [])).catch(() => setPackages([])); }, [workspaceId]);
+  // Only a well-formed discovery view is used; anything else waits or shows the error.
+  const view = resource.data && typeof resource.data === "object" && "facts" in resource.data ? resource.data : undefined;
+  const fallbackUnit: AreaUnit = packages.find((pkg) => pkg.status === "active" && pkg.areaUnit)?.areaUnit ?? "sqm";
+  return { view, failure: resource.failure, refresh: resource.refresh, packages, fallbackUnit };
+}
+export type Discovery = ReturnType<typeof useDiscovery>;
 
 /** Live fee from Business Core's pricing (exact decimals); null until the package has what it is priced on. */
 function useFeePreview(workspaceId: string, pkg: DesignPackage | undefined, draft: Draft | null) {
@@ -48,99 +74,115 @@ function useFeePreview(workspaceId: string, pkg: DesignPackage | undefined, draf
   return fee?.key === key && key ? fee : null;
 }
 
-/** PLM-040: the discovery facts, design package and intro answers that the Design Quote stage requires. */
-export function OpportunityDiscovery({ workspaceId, opportunityId, locale, onSaved }: { workspaceId: string; opportunityId: string; locale?: string; onSaved?: () => void | Promise<void> }) {
-  const t = useT();
-  const resource = useCrmResource<DiscoveryView>(workspaceId, `opportunities/${opportunityId}/discovery`);
-  const [packages, setPackages] = useState<DesignPackage[]>([]);
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState("");
-  const [notice, setNotice] = useState("");
-  useEffect(() => { void loadDesignSettings(workspaceId).then((settings) => setPackages(Array.isArray(settings?.packages) ? settings.packages : [])).catch(() => setPackages([])); }, [workspaceId]);
-  // Only a well-formed discovery view is used; anything else waits or shows the error.
-  const view = resource.data && typeof resource.data === "object" && "facts" in resource.data ? resource.data : undefined;
-  const fallbackUnit: AreaUnit = packages.find((pkg) => pkg.status === "active" && pkg.areaUnit)?.areaUnit ?? "sqm";
-  useEffect(() => { if (view) setDraft(draftOf(view, fallbackUnit)); }, [view, fallbackUnit]);
+export function formatMoney(amount: string, currency: string, locale?: string) {
+  try { return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 2 }).format(amount as unknown as number); } catch { return `${currency} ${amount}`; }
+}
 
+/**
+ * One part of discovery in a side sheet: the property details (with the floor plan uploaded straight into the
+ * enquiry's files), the design package and fee, or the intro questions. Save closes it.
+ */
+export function DiscoverySheet({ workspaceId, opportunityId, leadId, group, discovery, locale, focus, onClose, onSaved }: {
+  workspaceId: string; opportunityId: string; leadId: string | null; group: DiscoveryGroup; discovery: Discovery; locale?: string;
+  /** The requirement that opened the sheet: its field takes focus. */
+  focus?: string;
+  onClose: () => void; onSaved?: () => void | Promise<void>;
+}) {
+  const t = useT();
+  const { view, packages, fallbackUnit } = discovery;
+  const [draft, setDraft] = useState<Draft | null>(() => view ? draftOf(view, fallbackUnit) : null);
+  const [added, setAdded] = useState<FileItem[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [failure, setFailure] = useState("");
+  const notes = useRequirementNotes({ workspaceId, leadId: leadId ?? undefined }, false);
+  useEffect(() => { if (view && !draft) setDraft(draftOf(view, fallbackUnit)); }, [view, draft, fallbackUnit]);
   const fee = useFeePreview(workspaceId, packages.find((item) => item.id === draft?.designPackageId), draft);
   const offered = useMemo(() => packages.filter((pkg) => pkg.status === "active" || pkg.id === view?.facts?.designPackageId), [packages, view?.facts?.designPackageId]);
-  if (resource.failure) return <InlineNotice message={resource.failure} tone="error" />;
-  if (!view || !draft) return <Skeleton lines={5} shape="facts" />;
+  const dirty = Boolean(view && draft && JSON.stringify(draft) !== JSON.stringify(draftOf(view, fallbackUnit)));
 
   const set = <K extends keyof Draft>(key: K) => (value: Draft[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
   const answer = (key: string) => (value: unknown) => setDraft((current) => current ? { ...current, answers: { ...current.answers, [key]: value } } : current);
-  const pkg = packages.find((item) => item.id === draft.designPackageId);
-  const money = (amount: string, currency: string) => { try { return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 2 }).format(amount as unknown as number); } catch { return `${currency} ${amount}`; } };
-  const units = [{ id: "sqft", label: t("sq ft") }, { id: "sqm", label: t("sq m") }];
-  const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(view, fallbackUnit));
+
+  // The floor plan goes into the enquiry's files as its own note, then is chosen here.
+  const upload = async (files: File[]) => {
+    const file = files[0];
+    if (!file || !leadId) return;
+    setUploading(true); setFailure("");
+    try {
+      const noteId = crypto.randomUUID();
+      const asset = await notes.upload(noteId, file, crypto.randomUUID());
+      await notes.save({ id: noteId, version: 0, title: t("Floor plan"), note: "", archived: false, pinned: false, assets: [asset], links: [] });
+      setAdded((current) => [...current, { id: asset.id, name: asset.name, mimeType: asset.mimeType }]);
+      set("floorPlanAssetId")(asset.id);
+    } catch (error) { setFailure(error instanceof Error ? error.message : t("Upload failed.")); }
+    finally { setUploading(false); }
+  };
 
   const save = async () => {
-    setSaving(true); setFailure(""); setNotice("");
+    if (!view || !draft) return;
+    setSaving(true); setFailure("");
     try {
       await crmRequest(workspaceId, `opportunities/${opportunityId}/discovery`, "PUT", {
         version: view.version, area: draft.area || null, areaUnit: draft.area ? draft.areaUnit : null, spaces: draft.spaces ? Number(draft.spaces) : null,
         propertyLocation: draft.propertyLocation.trim() || null, clientEmail: draft.clientEmail.trim() || null,
         floorPlanAssetId: draft.floorPlanAssetId || null, designPackageId: draft.designPackageId || null, answers: draft.answers,
       });
-      setNotice(t("Discovery saved."));
-      resource.refresh();
+      discovery.refresh();
       await onSaved?.();
-    } catch (error) { setFailure(error instanceof Error ? error.message : t("Discovery could not be saved.")); }
+      onClose();
+    } catch (error) { setFailure(error instanceof Error ? translateKnown(t, error.message) : t("Discovery could not be saved.")); }
     finally { setSaving(false); }
   };
 
-  return <div className={styles.discovery}>
-    {failure ? <InlineNotice message={failure} tone="error" /> : null}
-    {notice ? <InlineNotice message={notice} tone="success" /> : null}
-    <SettingsSection id="discovery-property" title={t("Property")}>
-      <SettingsRow label={t("Floor plan")}><div className={styles.control}>
-        {view.files.length
-          ? <SelectField aria-label={t("Floor plan")} items={view.files.map((file) => ({ id: file.id, label: file.name }))} label={null} onSelectionChange={(key) => set("floorPlanAssetId")(String(key ?? ""))} placeholder={t("Choose a file")} selectedKey={draft.floorPlanAssetId || null} />
-          : <span className={styles.empty}>{t("Add the floor plan to the enquiry's files first.")}</span>}
-      </div></SettingsRow>
-      <SettingsRow label={t("Area")}><div className={styles.control}>
-        <span className={styles.pair}>
-          <TextInput aria-label={t("Area")} inputMode="decimal" label={null} onChange={(value) => set("area")(decimal(value))} value={draft.area} />
-          <SelectField aria-label={t("Area unit")} accent="neutral" items={units} label={null} onSelectionChange={(key) => set("areaUnit")(String(key) as AreaUnit)} selectedKey={draft.areaUnit} />
-        </span>
-      </div></SettingsRow>
-      {!pkg || pkg.pricingMethod === "per_space" || draft.spaces ? <SettingsRow label={t("Spaces")}><div className={styles.control}>
-        <TextInput aria-label={t("Spaces")} inputMode="numeric" label={null} onChange={(value) => set("spaces")(whole(value))} value={draft.spaces} />
-      </div></SettingsRow> : null}
-      <SettingsRow label={t("Property location")}><div className={styles.control}>
-        <TextInput aria-label={t("Property location")} label={null} maxLength={240} onChange={set("propertyLocation")} value={draft.propertyLocation} />
-      </div></SettingsRow>
-      <SettingsRow label={t("Client email")}><div className={styles.control}>
-        <TextInput aria-label={t("Client email")} inputType="email" label={null} maxLength={254} onChange={set("clientEmail")} value={draft.clientEmail} />
-      </div></SettingsRow>
-    </SettingsSection>
-    <SettingsSection id="discovery-package" title={t("Design package")}>
-      <SettingsRow label={t("Package")}><div className={styles.control}>
-        {offered.length
-          ? <SelectField aria-label={t("Package")} items={offered.map((item) => ({ id: item.id, label: item.name }))} label={null} onSelectionChange={(key) => set("designPackageId")(String(key ?? ""))} placeholder={t("Choose a package")} selectedKey={draft.designPackageId || null} />
-          : <span className={styles.empty}>{t("No design packages are offered yet.")}</span>}
-      </div></SettingsRow>
-      <SettingsRow label={t("Design fee")}><div className={styles.control}>
-        {(() => { const shown = fee ?? (view.designFee && !dirty ? view.designFee : null); return <strong className={styles.fee} data-empty={!shown || undefined}>{shown ? money(shown.amount, shown.currency) : t("Not priced yet")}</strong>; })()}
-      </div></SettingsRow>
-    </SettingsSection>
-    {view.questions.length ? <SettingsSection id="discovery-questions" title={t("Intro questions")}>
-      {view.questions.map((question) => <SettingsRow key={question.key} label={<>{question.label}{question.required ? <span aria-hidden="true" className={styles.required}> *</span> : null}</>}><div className={styles.control}>
-        <QuestionInput question={question} value={draft.answers[question.key]} onChange={answer(question.key)} />
-      </div></SettingsRow>)}
-    </SettingsSection> : null}
-    <div className={styles.footer}>
-      <Button isDisabled={!dirty} isLoading={saving} size="compact" variant="primary" onPress={() => void save()}>{t("Save")}</Button>
-    </div>
+  const units = [{ id: "sqft", label: t("sq ft") }, { id: "sqm", label: t("sq m") }];
+  const wanted = (focus ?? "").replace(/^discovery:/, "");
+  const first = (field: string) => wanted === field || (field === "area" && wanted === "floorPlanOrArea") || undefined;
+  const pkg = packages.find((item) => item.id === draft?.designPackageId);
+  const files = [...(view?.files ?? []), ...added.filter((file) => !view?.files.some((item) => item.id === file.id))];
+  const footer = <div className="wd-dialog-actions">
+    <Button variant="quiet" onPress={onClose}>{t("Cancel")}</Button>
+    <Button isDisabled={!dirty || uploading} isLoading={saving} variant="primary" onPress={() => void save()}>{t("Save")}</Button>
   </div>;
+  return <InspectorSheet isOpen isDirty={dirty && !saving} size="sm" title={t(DISCOVERY_TITLES[group])} onOpenChange={(open) => { if (!open) onClose(); }} footer={footer}>
+    {failure ? <InlineNotice message={failure} tone="error" /> : null}
+    {discovery.failure ? <InlineNotice message={discovery.failure} tone="error" />
+      : !view || !draft ? <Skeleton lines={5} shape="facts" />
+      : <div className={styles.fields}>
+        {group === "property" ? <>
+          <div className={styles.field}>
+            {files.length ? <SelectField items={files.map((file) => ({ id: file.id, label: file.name }))} label={t("Floor plan")} onSelectionChange={(key) => set("floorPlanAssetId")(String(key ?? ""))} placeholder={t("Choose a file")} selectedKey={draft.floorPlanAssetId || null} />
+              : <span className={styles.label}>{t("Floor plan")}</span>}
+            {leadId ? <FileUploader accept="image/*,application/pdf" appearance="button" label={uploading ? t("Uploading…") : t("Upload floor plan")} multiple={false} onFiles={(picked) => void upload(picked)} /> : null}
+          </div>
+          <div className={styles.pair}>
+            <TextInput autoFocus={first("area")} inputMode="decimal" label={t("Area")} onChange={(value) => set("area")(decimal(value))} value={draft.area} />
+            <SelectField accent="neutral" items={units} label={t("Area unit")} onSelectionChange={(key) => set("areaUnit")(String(key) as AreaUnit)} selectedKey={draft.areaUnit} />
+          </div>
+          {!pkg || pkg.pricingMethod === "per_space" || draft.spaces ? <TextInput autoFocus={first("spaces")} inputMode="numeric" label={t("Spaces")} onChange={(value) => set("spaces")(whole(value))} value={draft.spaces} /> : null}
+          <TextInput autoFocus={first("propertyLocation")} label={t("Property location")} maxLength={240} onChange={set("propertyLocation")} value={draft.propertyLocation} />
+          <TextInput autoFocus={first("clientEmail")} inputType="email" label={t("Client email")} maxLength={254} onChange={set("clientEmail")} value={draft.clientEmail} />
+        </> : null}
+        {group === "package" ? <>
+          {offered.length
+            ? <SelectField items={offered.map((item) => ({ id: item.id, label: item.name }))} label={t("Package")} onSelectionChange={(key) => set("designPackageId")(String(key ?? ""))} placeholder={t("Choose a package")} selectedKey={draft.designPackageId || null} />
+            : <p className={styles.empty}>{t("No design packages are offered yet.")}</p>}
+          <div className={styles.field}>
+            <span className={styles.label}>{t("Design fee")}</span>
+            {(() => { const shown = fee ?? (view.designFee && !dirty ? view.designFee : null); return <strong className={styles.fee} data-empty={!shown || undefined}>{shown ? formatMoney(shown.amount, shown.currency, locale) : t("Not priced yet")}</strong>; })()}
+          </div>
+        </> : null}
+        {group === "questions" ? view.questions.map((question) => <QuestionInput key={question.key} question={question} value={draft.answers[question.key]} onChange={answer(question.key)} />) : null}
+      </div>}
+  </InspectorSheet>;
 }
 
 function QuestionInput({ question, value, onChange }: { question: Question; value: unknown; onChange: (value: unknown) => void }) {
   const t = useT();
-  if (question.options?.length) return <SelectField aria-label={question.label} items={question.options} label={null} onSelectionChange={(key) => onChange(key === null ? null : String(key))} placeholder={t("Choose")} selectedKey={typeof value === "string" ? value : null} />;
-  if (question.dataType === "boolean") return <Switch aria-label={question.label} isSelected={value === true} onChange={onChange}>{value === true ? t("Yes") : t("No")}</Switch>;
-  if (question.dataType === "number") return <TextInput aria-label={question.label} inputMode="decimal" label={null} onChange={(next) => onChange(next === "" ? null : decimal(next))} value={value === null || value === undefined ? "" : String(value)} />;
-  if (question.dataType === "date") return <DateField aria-label={question.label} label={null} onChange={(next) => onChange(next ? next.toString() : null)} value={typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? parseDate(value.slice(0, 10)) : null} />;
-  return <TextInput aria-label={question.label} label={null} onChange={onChange} value={typeof value === "string" ? value : ""} />;
+  const common = { isRequired: question.required, label: question.label };
+  if (question.options?.length) return <SelectField {...common} items={question.options} onSelectionChange={(key) => onChange(key === null ? null : String(key))} placeholder={t("Choose")} selectedKey={typeof value === "string" ? value : null} />;
+  if (question.dataType === "boolean") return <Switch isSelected={value === true} onChange={onChange}>{question.label}</Switch>;
+  if (question.dataType === "number") return <TextInput {...common} inputMode="decimal" onChange={(next) => onChange(next === "" ? null : decimal(next))} value={value === null || value === undefined ? "" : String(value)} />;
+  if (question.dataType === "date") return <DateField {...common} onChange={(next) => onChange(next ? next.toString() : null)} value={typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? parseDate(value.slice(0, 10)) : null} />;
+  return <TextInput {...common} onChange={onChange} value={typeof value === "string" ? value : ""} />;
 }

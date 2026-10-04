@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import { OpportunityIntro, type IntroView } from "./opportunity-intro";
@@ -11,11 +11,11 @@ function stub(view: IntroView) {
 const renderIntro = () => render(<DesignSystemProvider><OpportunityIntro workspaceId="ws" opportunityId="o1" locale="en-GB" /></DesignSystemProvider>);
 
 describe("opportunity intro meeting (PLM-043, PLM-088)", () => {
-  it("waits for the discovery facts before booking", async () => {
+  it("waits for the discovery facts before booking, without listing them again", async () => {
     stub({ ...base, blockers: [{ key: "floorPlan", label: "Floor plan" }, { key: "clientEmail", label: "Client email" }] });
     renderIntro();
-    expect(await screen.findByText("Add these on Discovery first: Floor plan, Client email")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Book intro meeting" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Book intro meeting" })).toBeDisabled();
+    expect(screen.queryByText(/Add these on Discovery first/)).not.toBeInTheDocument();
     expect(screen.getByText("Not booked")).toBeInTheDocument();
   });
 
@@ -29,6 +29,16 @@ describe("opportunity intro meeting (PLM-043, PLM-088)", () => {
     expect(screen.getByText("Dana Designer")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Change" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Book intro meeting" })).not.toBeInTheDocument();
+  });
+
+  it("hands a blocked booking back so the missing facts can be added", async () => {
+    stub({ ...base, blockers: [{ key: "area", label: "Area" }] });
+    const onBlocked = vi.fn();
+    const onBookingStarted = vi.fn();
+    render(<DesignSystemProvider><OpportunityIntro workspaceId="ws" opportunityId="o1" locale="en-GB" startBooking onBlocked={onBlocked} onBookingStarted={onBookingStarted} /></DesignSystemProvider>);
+    await waitFor(() => expect(onBlocked).toHaveBeenCalled());
+    expect(onBookingStarted).toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Book intro meeting" })).not.toBeInTheDocument();
   });
 
   it("hides Change from people who cannot change the designer", async () => {

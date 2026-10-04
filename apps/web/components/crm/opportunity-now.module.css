@@ -1,5 +1,5 @@
-/* The opportunity screen: one header, the progress line, one Now card, then Details · Activity · Files. */
-.opportunity { gap: var(--wd-space-5); }
+/* The opportunity screen: one header; the progress line, the next column's checklist and Details · Activity · Files; the facts beside them. */
+.opportunity { gap: var(--wd-space-4); }
 .header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3) var(--wd-space-6); padding-inline-end: var(--wd-space-8); }
 .identity { display: grid; gap: var(--wd-space-1); min-inline-size: 0; flex: 1 1 20rem; }
 .identity h2 { margin: 0; color: var(--wd-color-text); font-family: var(--wd-font-sans); font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); letter-spacing: normal; line-height: var(--wd-leading-tight); text-transform: none; overflow-wrap: anywhere; }
@@ -11,7 +11,7 @@
 .value[data-empty] { color: var(--wd-color-text-tertiary); font-weight: var(--wd-weight-regular); }
 .headerActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .owner { display: inline-flex; }
-.details { display: grid; gap: var(--wd-space-5); padding-block-start: var(--wd-space-3); }
+.details { display: grid; gap: var(--wd-space-3); padding-block-start: var(--wd-space-3); }
 .factLink { color: var(--wd-color-link); font-size: var(--wd-text-sm); text-decoration: none; }
 .factLink:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
 .history { display: grid; margin: 0; padding: 0; list-style: none; }
@@ -22,22 +22,40 @@
 
 .nowBlock { display: grid; gap: var(--wd-space-2); }
 .now { display: grid; gap: var(--wd-space-3); padding: var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
-.nowMain { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
+.nowHead { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-4); }
+.nowMain { display: grid; gap: var(--wd-space-1); flex: 1 1 16rem; min-inline-size: 0; }
 .nowMain h3 { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
 .why { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .nowMeta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
 .assignee { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); }
 .primary { margin-inline-start: auto; }
 
-.more { display: grid; gap: var(--wd-space-1); }
-.moreToggle { display: inline-flex; align-items: center; justify-self: start; gap: var(--wd-space-1); padding: 0; border: 0; background: none; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-xs); cursor: pointer; }
-.moreToggle:hover { color: var(--wd-color-text); }
-.moreToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
-.moreToggle[aria-expanded="true"] svg { transform: rotate(180deg); }
-.moreList { display: grid; margin: 0; padding: 0; list-style: none; }
-.moreList li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-block-size: var(--wd-space-8); border-block-start: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+/* The next column's checklist: ✓ done with its value, ○ missing with its action; the first missing one is now. */
+.checklist { display: grid; margin: 0; padding: 0; list-style: none; }
+.checklist li { display: flex; align-items: center; gap: var(--wd-space-3); min-block-size: var(--wd-control-standard); padding-block: var(--wd-space-1-5); padding-inline: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.checklist li[data-now] { border-radius: var(--wd-radius-sm); border-block-start-color: transparent; background: var(--wd-color-surface); }
+.checklist li[data-now] + li { border-block-start-color: transparent; }
+.check { display: inline-grid; flex: none; place-items: center; color: var(--wd-color-text-tertiary); }
+.checklist li[data-state="done"] .check { color: var(--wd-color-success); }
+.checklist li[data-now] .check { color: var(--wd-color-action-primary); }
+.rowText { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-0-5) var(--wd-space-2); min-inline-size: 0; }
+.rowLabel { color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.checklist li[data-now] .rowLabel { font-weight: var(--wd-weight-semibold); }
+.checklist li[data-state="done"] .rowLabel { color: var(--wd-color-text-secondary); }
+.rowValue { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rowValue::before { content: "·"; margin-inline-end: var(--wd-space-2); color: var(--wd-color-text-tertiary); }
 
 .then { margin: 0; padding-inline: var(--wd-space-4); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+/* Two columns once there is room: the work on the inline-start, the facts and contacts on the inline-end. */
+.opportunity { container-type: inline-size; }
+.layout { display: grid; gap: var(--wd-space-6); align-items: start; }
+.main { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.side { display: grid; gap: var(--wd-space-5); min-inline-size: 0; }
+@container (min-width: 52rem) {
+  .layout { grid-template-columns: minmax(0, 1fr) 20rem; }
+  .side { padding-inline-start: var(--wd-space-5); border-inline-start: 1px solid var(--wd-color-structural-divider); }
+}
 
 /* Progress line: the flow's columns as dots joined by a hairline. */
 .line { display: grid; grid-template-columns: repeat(var(--steps), minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
@@ -72,6 +90,7 @@
 
 @media (max-width: 40rem) {
   .now { padding: var(--wd-space-3); }
+  .checklist li { flex-wrap: wrap; }
   .primary { flex-basis: 100%; margin-inline-start: 0; }
   .primary :global(.wd-button) { inline-size: 100%; }
   .then { padding-inline: var(--wd-space-3); }

@@ -19,29 +19,48 @@ const steps = [
   { stageId: "proposal", name: "Proposal", step: "proposal", state: "upcoming", optional: false },
   { stageId: "won", name: "Won", step: "won", state: "upcoming", optional: false },
 ];
+const discovery = { version: 2, facts: { area: null, areaUnit: null, spaces: null, propertyLocation: "Marina", clientEmail: "aisha@example.com", floorPlanAssetId: "f1", designPackageId: null },
+  designFee: null, package: null, enquiryType: "full_home", clientType: "homeowner", questions: [], answers: {}, files: [{ id: "f1", name: "plan.pdf", mimeType: "application/pdf" }], missing: [] };
 const pipelines = { data: [{ id: "pipeline-1", name: "Sales", stages: [
   { id: "new", name: "New Opportunity", code: "qualified", status: "active" }, { id: "qualified", name: "Qualified", code: "qualification", status: "active" },
   { id: "proposal", name: "Proposal", code: "proposal", status: "active" }, { id: "won", name: "Won", code: "won", status: "active" }, { id: "lost", name: "Lost", code: "lost", status: "active" },
 ] }] };
 
 describe("CRM opportunity workbench", () => {
-  it("shows one header, one Now card, one progress line and three tabs — no Won button", async () => {
+  it("shows the header, the progress line and everything the next column needs above the tabs, with the facts beside them", async () => {
     const record = { id: "opportunity-1", title: "Villa renovation", status: "open", version: 3, pipelineId: "pipeline-1", stageId: "qualified", stageName: "Qualified", leadId: "lead-1", partyId: "party-1", partyName: "Aisha", ownerMembershipId: "m1", ownerName: "Dana",
+      funnel: [{ key: "enquiry", state: "done", detail: "E-0042", at: null }],
       flow: { flow: "design", steps, done: 1, total: 4, next: { stageId: "proposal", name: "Proposal", step: "proposal" }, missing: [{ key: "discovery:area", label: "Area" }], toWon: [{ key: "discovery:area", label: "Area" }, { key: "paymentProof", label: "Payment proof attached" }], proofs: [], furniture: null, clientApproval: null, negotiationOptional: false } };
-    vi.mocked(crmRequest).mockImplementation(async (_w, path) => path === "opportunities/opportunity-1" ? record : path === "pipelines" ? pipelines : { data: [] });
+    vi.mocked(crmRequest).mockImplementation(async (_w, path) => path === "opportunities/opportunity-1" ? record : path === "pipelines" ? pipelines
+      : path === "opportunities/opportunity-1/discovery" ? discovery : path === "parties/party-1" ? { id: "party-1", contacts: [{ type: "phone", value: "+971501234567", isPrimary: true }, { type: "email", value: "aisha@example.com", isPrimary: true }] } : { data: [] });
+    const user = userEvent.setup();
     render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
-    const now = await screen.findByRole("region", { name: "Fill in the property details" });
-    expect(within(now).getByText("Needed to move to Proposal")).toBeInTheDocument();
-    expect(within(now).getByRole("button", { name: "Fill in details" })).toBeInTheDocument();
+    const next = await screen.findByRole("region", { name: "To move to Proposal" });
+    expect(within(next).getByText("Proposal means we have everything to price the work.")).toBeInTheDocument();
+    expect(within(next).getByRole("button", { name: "Add · Area" })).toHaveAttribute("data-variant", "primary");
     expect(screen.getByRole("heading", { level: 2, name: "Villa renovation" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Aisha" })).toHaveAttribute("href", "/workspace/crm/customers?record=party-1");
+    expect(screen.getAllByRole("link", { name: "Aisha" })[0]).toHaveAttribute("href", "/workspace/crm/customers?record=party-1");
     expect(within(screen.getByRole("list", { name: "Progress" })).getAllByRole("listitem").map((item) => item.getAttribute("data-state"))).toEqual(["done", "current", "upcoming", "upcoming"]);
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Details", "Activity", "Files"]);
     for (const name of ["Change stage", "Progress"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
     // "Won" is only a dot on the progress line, never a button of its own.
     expect(screen.getAllByRole("button", { name: /^Won$/ }).every((button) => button.closest("ol")?.getAttribute("aria-label") === "Progress")).toBe(true);
-    expect(screen.queryByRole("list", { name: "Where this opportunity is" })).not.toBeInTheDocument();
-    expect(screen.getByText("Then: Move to Proposal · Attach payment proof")).toBeInTheDocument();
+    expect(screen.getByText("Then: Attach payment proof")).toBeInTheDocument();
+    // Beside the work: the key facts, the client's contact (call, WhatsApp, email) and the links.
+    const side = screen.getByRole("complementary", { name: "Key facts" });
+    expect(await within(side).findByRole("link", { name: "WhatsApp" })).toHaveAttribute("href", "https://wa.me/971501234567");
+    expect(within(side).getByRole("link", { name: "Email" })).toHaveAttribute("href", "mailto:aisha@example.com");
+    expect(within(side).getByRole("link", { name: "E-0042" })).toHaveAttribute("href", "/workspace/crm/leads?lead=lead-1");
+    // The group the next column needs is unfolded; the others fold away with how complete they are.
+    expect(await screen.findByRole("button", { name: /Property.*3 of 4/ })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /Client.*2 of 2/ })).toHaveAttribute("aria-expanded", "false");
+    // Add opens the property details in a side sheet; Save closes it.
+    await user.click(within(next).getByRole("button", { name: "Add · Area" }));
+    const sheet = await screen.findByRole("dialog", { name: "Property details" });
+    await user.type(within(sheet).getByRole("textbox", { name: "Area" }), "1200");
+    await user.click(within(sheet).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", "opportunities/opportunity-1/discovery", "PUT", expect.objectContaining({ version: 2, area: "1200", clientEmail: "aisha@example.com" })));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Property details" })).not.toBeInTheDocument());
   });
 
   it("keeps Lost, backward stage changes and history in the ⋯ menu", async () => {
@@ -71,7 +90,7 @@ describe("CRM opportunity workbench", () => {
     });
     const user = userEvent.setup();
     render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
-    const now = await screen.findByRole("region", { name: "Mark it Won" });
+    const now = await screen.findByRole("region", { name: "To move to Won" });
     await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", "pipelines", "GET", undefined, expect.anything()));
     await user.click(within(now).getByRole("button", { name: "Mark Won" }));
     const dialog = await screen.findByRole("dialog", { name: "Mark opportunity Won" });
@@ -89,11 +108,12 @@ describe("CRM opportunity workbench", () => {
     vi.mocked(crmRequest).mockImplementation(async (_workspace, path) => path === `opportunities/${record.id}` ? record : { data: [] });
     const user = userEvent.setup();
     render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
-    const card = await screen.findByRole("region", { name: "Attach payment proof" });
-    await user.click(within(card).getByRole("button", { name: "Attach proof" }));
+    const card = await screen.findByRole("region", { name: "To move to Won" });
+    await user.click(within(card).getByRole("button", { name: "Attach · Payment proof attached" }));
     expect(await screen.findByRole("dialog", { name: "Attach payment proof" })).toBeInTheDocument();
-    // The A–E sub-path stays reachable from Details.
+    // The A–E sub-path stays reachable from its Supply card.
     await user.click(screen.getByRole("button", { name: "Close dialog" }));
+    await user.click(await screen.findByRole("button", { name: /Supply/ }));
     await user.click(await screen.findByRole("button", { name: "Change" }));
     expect(await screen.findByRole("dialog", { name: "Furniture sub-path" })).toBeInTheDocument();
   });

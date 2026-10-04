@@ -6,6 +6,12 @@ export type OpportunityFlowCode = "furniture" | "design" | "fit_out" | "basic";
 export type FlowStepState = "done" | "current" | "upcoming";
 export type FurniturePath = "take_home_now" | "in_stock_delivery" | "supplier_order" | "core_collection_factory" | "bespoke";
 export type PaymentProof = { id: string; kind: string; fileName: string; mimeType: string; hasPreview: boolean; note: string | null; recordedAt: string; recordedBy: string | null };
+/** One step of the job's line, as the flow reads it from the records. */
+export type FlowLineStep = {
+  key: string; name: string; check: string; column: string; optional: boolean;
+  state: "done" | "current" | "upcoming" | "skipped"; doneAt: string | null; doneBy: string | null;
+  missing: Array<{ key: string; label: string }>;
+};
 export type OpportunityFlowView = {
   flow: OpportunityFlowCode;
   steps: Array<{ stageId: string; name: string; step: string | null; state: FlowStepState; optional: boolean }>;
@@ -21,6 +27,8 @@ export type OpportunityFlowView = {
   quotationExists: boolean;
   paymentVerified: boolean;
   proofs: PaymentProof[];
+  /** The job's line (each step done or not); absent from older responses. */
+  line?: FlowLineStep[];
 };
 
 export const FLOW_CHOICES: Array<{ id: OpportunityFlowCode; label: MessageKey }> = [

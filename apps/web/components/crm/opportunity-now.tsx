@@ -1,11 +1,12 @@
 "use client";
 
-import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { useId, useState, type CSSProperties } from "react";
 import { Button as AriaButton, Dialog, DialogTrigger, Heading } from "react-aria-components";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, Circle, CircleCheck } from "lucide-react";
 import { Avatar, Badge, Button, PopoverSurface, TooltipBubble, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { groupRequirements, type NowPlan, type NowStep } from "@/lib/crm/now-step";
+import { groupRequirements, type Checklist, type ChecklistRow, type NowPlan, type NowStep } from "@/lib/crm/now-step";
+import { translateKnown } from "@/lib/i18n/keys";
 import type { OpportunityFlowView } from "@/lib/crm/opportunity-flow";
 import styles from "./opportunity-now.module.css";
 
@@ -64,44 +65,59 @@ export function ReassignPopover({ owner, people, onReassign }: { owner: Teammate
 }
 
 /**
- * The one thing to do now: the step as a verb, one line of why, who does it, when, and one primary button.
- * Other needs before the same column fold under "N more"; the next two steps follow greyed.
+ * What the next column needs, all at once: each requirement ✓ done (with its value, or who and when) or ○ missing
+ * with the one action that resolves it. The first missing one is the step now; who does it and by when sit on top.
+ * When nothing is missing, one primary button moves on. After Won or Lost the block names the one next step.
  */
-export function NowCard({ plan, owner, people, due, busy, onAct, onReassign, children }: {
-  plan: NowPlan; owner: Teammate | null; people: Teammate[]; due: string | null; busy: boolean;
-  onAct: (step: NowStep) => void; onReassign?: (membershipId: string) => Promise<void>; children?: ReactNode;
+export function NextActions({ plan, checklist, owner, people, due, busy, onAct, onRow, onReassign, detail }: {
+  plan: NowPlan; checklist: Checklist | null; owner: Teammate | null; people: Teammate[]; due: string | null; busy: boolean;
+  onAct: (step: NowStep) => void; onRow: (row: ChecklistRow) => void; onReassign?: (membershipId: string) => Promise<void>;
+  /** The value a row shows: a done fact, or where a missing one stands. */
+  detail?: (row: ChecklistRow) => string | null;
 }) {
   const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const text = useStepText();
-  const [expanded, setExpanded] = useState(false);
   const titleId = useId();
   const now = plan.now;
-  if (!now) return null;
+  if (!now && !checklist) return null;
+  const rows = checklist?.rows ?? [];
+  const first = rows.find((row) => row.state === "missing") ?? null;
+  const ready = !first;
+  const title = checklist ? t("To move to {stage}", { stage: checklist.column }) : now ? text(now) : "";
+  const why = checklist ? checklist.why : plan.why;
+  const then = plan.then.filter((step) => step.id !== "advance");
+  const rowDetail = (row: ChecklistRow) => detail?.(row)
+    ?? (row.state === "done" ? [row.doneBy, shortDate(row.doneAt, locale, timeZone)].filter(Boolean).join(" · ") || null : null);
   return <div className={styles.nowBlock}>
     <section className={styles.now} aria-labelledby={titleId} data-status={plan.status}>
-      <div className={styles.nowMain}>
-        <h3 id={titleId}>{text(now)}</h3>
-        {plan.why ? <p className={styles.why}>{t(plan.why.key, plan.why.values)}</p> : null}
+      <div className={styles.nowHead}>
+        <div className={styles.nowMain}>
+          <h3 id={titleId}>{title}</h3>
+          {why ? <p className={styles.why}>{t(why.key, why.values)}</p> : null}
+        </div>
+        <div className={styles.nowMeta}>
+          {owner ? <span className={styles.assignee}><span aria-hidden="true"><Avatar name={owner.label} seed={owner.id} size="sm" /></span><span>{owner.label}</span></span>
+            : <span className={styles.assignee}>{t("Unassigned")}</span>}
+          {onReassign && people.length ? <ReassignPopover owner={owner} people={people} onReassign={onReassign} /> : null}
+          {plan.status === "open" ? <DueChip at={due} /> : null}
+          {ready && now ? <span className={styles.primary}><Button size="compact" variant="primary" isLoading={busy} onPress={() => onAct(now)}>{text(now, "short")}</Button></span> : null}
+        </div>
       </div>
-      <div className={styles.nowMeta}>
-        {owner ? <span className={styles.assignee}><span aria-hidden="true"><Avatar name={owner.label} seed={owner.id} size="sm" /></span><span>{owner.label}</span></span>
-          : <span className={styles.assignee}>{t("Unassigned")}</span>}
-        {onReassign && people.length ? <ReassignPopover owner={owner} people={people} onReassign={onReassign} /> : null}
-        {plan.status === "open" ? <DueChip at={due} /> : null}
-        <span className={styles.primary}><Button size="compact" variant="primary" isLoading={busy} onPress={() => onAct(now)}>{text(now, "short")}</Button></span>
-      </div>
-      {plan.more.length ? <div className={styles.more}>
-        <button type="button" className={styles.moreToggle} aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
-          {t("{count} more before {stage}", { count: plan.more.length, stage: plan.column ?? "" })}<ChevronDown aria-hidden="true" size={13} />
-        </button>
-        {expanded ? <ul className={styles.moreList}>{plan.more.map((step) => <li key={step.id}>
-          <span>{text(step)}</span>
-          <Button size="compact" variant="quiet" onPress={() => onAct(step)}>{text(step, "short")}</Button>
-        </li>)}</ul> : null}
-      </div> : null}
-      {children}
+      {rows.length ? <ul className={styles.checklist} aria-label={title}>{rows.map((row) => {
+        const label = translateKnown(t, row.label);
+        const value = rowDetail(row);
+        return <li key={row.id} data-state={row.state} data-now={row === first || undefined}>
+          <span className={styles.check} aria-hidden="true">{row.state === "done" ? <CircleCheck size={16} /> : <Circle size={16} />}</span>
+          <span className={styles.rowText}>
+            <span className={styles.rowLabel}>{label}<span className="wd-visually-hidden"> · {row.state === "done" ? t("Done") : t("Missing")}</span></span>
+            {value ? <span className={styles.rowValue}>{value}</span> : null}
+          </span>
+          {row.state === "missing" && row.action ? <Button aria-label={`${t(row.action)} · ${label}`} size="compact" variant={row === first ? "primary" : "secondary"} isLoading={busy && row === first} onPress={() => onRow(row)}>{t(row.action)}</Button> : null}
+        </li>;
+      })}</ul> : null}
     </section>
-    {plan.then.length ? <p className={styles.then}>{t("Then:")} {plan.then.map((step) => text(step)).join(" · ")}</p> : null}
+    {then.length ? <p className={styles.then}>{t("Then:")} {then.map((step) => text(step)).join(" · ")}</p> : null}
   </div>;
 }
 

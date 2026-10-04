@@ -1,6 +1,6 @@
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { MissingRequirement } from "./client";
-import type { OpportunityFlowView } from "./opportunity-flow";
+import type { OpportunityFlowView, FlowLineStep } from "./opportunity-flow";
 
 /**
  * F1 (plan §5a): one job, one step at a time. What the opportunity's "Now" card and board card show,
@@ -134,4 +134,117 @@ export function nowPlan(input: { flow: OpportunityFlowView | null; status: strin
     ? { id: "win", title: tKey("Mark it Won"), short: tKey("Mark Won"), target: "win", keys: [], fields: [] }
     : moveStep(next.name);
   return { status: "open", now, more: [], column: next.name, then: later.slice(0, 2), why: { key: tKey("Everything for {stage} is in place"), values: { stage: next.name } } };
+}
+
+/* ── The next column's checklist ───────────────────────────────────────────────────────────────────── */
+
+/** The groups an opportunity's facts are kept in: each has one card and, where it is edited here, one side sheet. */
+export type FactGroup = "client" | "property" | "package" | "questions" | "intro" | "supply" | "payment" | "planning" | "deal";
+
+const GROUP_OF: Record<string, FactGroup> = {
+  floorPlan: "property", area: "property", floorPlanOrArea: "property", spaces: "property", propertyLocation: "property", clientEmail: "property", budget: "client",
+  enquiryType: "client", clientType: "client", contact: "client",
+  package: "package", introMeeting: "intro", paymentProof: "payment",
+  furniturePath: "supply", feasibility: "supply", clientApproval: "supply",
+  quotation: "planning", siteVisit: "planning", qsApproval: "planning", quoteSent: "planning", clientAccepted: "planning", paymentVerified: "planning", dealApproved: "planning", materialList: "planning",
+  owner: "deal", nextAction: "deal", amount: "deal", expectedCloseAt: "deal", stakeholders: "deal",
+};
+
+/** The group a requirement key belongs to ("discovery:" keys are the same facts asked again by discovery). */
+export function groupForRequirement(key: string): FactGroup {
+  const bare = key.replace(/^discovery:/, "");
+  if (bare.startsWith("question:")) return "questions";
+  if (bare.startsWith("designStage:")) return "planning";
+  return GROUP_OF[bare] ?? "property";
+}
+
+const GROUP_OF_CHECK: Record<string, FactGroup> = {
+  intro_meeting_completed: "intro", client_type_set: "client", sub_path_chosen: "supply", feasibility_confirmed: "supply", client_approved_on_spot: "supply",
+  package_chosen: "package", payment_proof_attached: "payment", discovery_complete: "property", contact_logged: "client",
+};
+
+/** The short verb on a missing row's button. */
+function rowAction(key: string): MessageKey {
+  const bare = key.replace(/^discovery:/, "");
+  const group = groupForRequirement(key);
+  if (bare === "floorPlan") return tKey("Upload");
+  if (group === "questions") return tKey("Answer");
+  if (group === "intro") return tKey("Book");
+  if (group === "payment") return tKey("Attach");
+  if (bare === "package" || bare === "furniturePath") return tKey("Choose");
+  if (group === "client" && bare !== "contact") return tKey("Open enquiry");
+  if (group === "planning") return tKey("Open Planning");
+  if (bare === "contact") return tKey("Log");
+  return tKey("Add");
+}
+
+export type ChecklistRow = {
+  id: string;
+  state: "done" | "missing";
+  /** The server's label (a requirement) or the firm's step name (a done step): shown through translateKnown. */
+  label: string;
+  keys: string[];
+  group: FactGroup | null;
+  /** Where a missing row is resolved, and its button. */
+  target: RequirementTarget | null;
+  action: MessageKey | null;
+  doneAt: string | null;
+  doneBy: string | null;
+};
+
+export type Checklist = {
+  /** The next column's name, and its code in the flow. */
+  column: string;
+  columnCode: string;
+  why: { key: MessageKey; values?: Record<string, string> };
+  rows: ChecklistRow[];
+};
+
+/** The r30 step names the API keeps for the standard columns, back to the flow's column codes. */
+const COLUMN_OF_STEP: Record<string, string> = { new: "qualified", qualified: "qualification" };
+export function columnOfStep(step: string | null | undefined) {
+  return step ? COLUMN_OF_STEP[step] ?? step : "";
+}
+
+/** One line on what reaching the column means; a firm's own column says what it needs. */
+const WHY: Record<string, MessageKey> = {
+  qualified: tKey("{stage} means we know the client and the property."),
+  qualification: tKey("{stage} means the brief is clear enough to plan the intro."),
+  proposal: tKey("{stage} means we have everything to price the work."),
+  negotiation: tKey("{stage} means the client has the offer."),
+  won: tKey("{stage} means the client has paid."),
+};
+
+function missingRow(item: { key: string; label: string }): ChecklistRow {
+  const step = stepForRequirement(item.key);
+  return { id: item.key, state: "missing", label: item.label, keys: [item.key], group: groupForRequirement(item.key), target: step.target, action: rowAction(item.key), doneAt: null, doneBy: null };
+}
+
+/**
+ * Everything the next column needs, done and not, in the order of the job's line: a done step is one ✓ row
+ * (who and when, where the records say), a missing requirement one ○ row with the action that resolves it.
+ */
+export function nextChecklist(flow: OpportunityFlowView | null, status: string): Checklist | null {
+  if (status !== "open" || !flow?.next) return null;
+  const columnCode = columnOfStep(flow.next.step);
+  const missing = flow.missing ?? [];
+  const missingKeys = new Set(missing.map((item) => item.key));
+  const rows: ChecklistRow[] = [];
+  const listed = new Set<string>();
+  for (const step of (Array.isArray(flow.line) ? flow.line : []) as FlowLineStep[]) {
+    if (step.optional) continue;
+    if (step.state === "done") {
+      if (step.column === columnCode) rows.push({ id: `step:${step.key}`, state: "done", label: step.name, keys: [], group: GROUP_OF_CHECK[step.check] ?? null, target: null, action: null, doneAt: step.doneAt, doneBy: step.doneBy });
+      continue;
+    }
+    for (const item of step.missing ?? []) {
+      if (!missingKeys.has(item.key) || listed.has(item.key)) continue;
+      listed.add(item.key);
+      rows.push(missingRow(missing.find((entry) => entry.key === item.key) ?? item));
+    }
+  }
+  for (const item of missing) if (!listed.has(item.key)) rows.push(missingRow(item));
+  const column = flow.next.name;
+  const why = missing.length ? { key: WHY[columnCode] ?? tKey("Needed to move to {stage}"), values: { stage: column } } : { key: tKey("Everything for {stage} is in place"), values: { stage: column } };
+  return { column, columnCode, why, rows };
 }

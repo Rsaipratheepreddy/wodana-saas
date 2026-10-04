@@ -2,11 +2,11 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CrmRequestError } from "@/lib/crm/client";
-import { missingFrom, requirementAction, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
+import { missingFrom, requirementAction, type FlowLineStep, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
 import { DesignSystemProvider } from "@/design-system";
-import { nowPlan } from "@/lib/crm/now-step";
+import { nextChecklist, nowPlan } from "@/lib/crm/now-step";
 import { StageBlockedSheet } from "./opportunity-flow";
-import { NowCard, ProgressLine } from "./opportunity-now";
+import { NextActions, ProgressLine } from "./opportunity-now";
 
 const flow = (overrides: Partial<OpportunityFlowView> = {}): OpportunityFlowView => ({
   flow: "furniture",
@@ -45,45 +45,66 @@ const design = (overrides: Partial<OpportunityFlowView> = {}) => flow({
 const people = [{ id: "m1", label: "Dana Haddad" }, { id: "m2", label: "Omar Saleh" }];
 const wrap = (node: React.ReactNode) => render(<DesignSystemProvider>{node}</DesignSystemProvider>);
 
-describe("the Now card (F1)", () => {
-  it("shows one step as a verb, why, who, when and one primary button; the rest fold away", async () => {
-    const onAct = vi.fn();
+describe("the next column's checklist", () => {
+  const act = (overrides: Partial<OpportunityFlowView>, extra: { onAct?: () => void; onRow?: () => void; onReassign?: (id: string) => Promise<void>; due?: string | null } = {}) => {
+    const view = design(overrides);
+    return wrap(<NextActions plan={nowPlan({ flow: view, status: "open" })} checklist={nextChecklist(view, "open")} owner={people[0]} people={people} due={extra.due ?? null} busy={false}
+      onAct={extra.onAct ?? vi.fn()} onRow={extra.onRow ?? vi.fn()} onReassign={extra.onReassign} />);
+  };
+
+  it("lists everything the next column needs at once, done and missing, with why, who and when", async () => {
+    const onRow = vi.fn();
     const user = userEvent.setup();
-    wrap(<NowCard plan={nowPlan({ flow: design(), status: "open" })} owner={people[0]} people={people} due="2020-01-02T09:00:00.000Z" busy={false} onAct={onAct} />);
-    const card = screen.getByRole("region", { name: "Book the intro meeting" });
-    expect(within(card).getByText("Needed to move to Qualified")).toBeInTheDocument();
-    expect(within(card).getByText("Dana Haddad")).toBeInTheDocument();
-    expect(within(card).getByText(/Overdue/)).toBeInTheDocument();
-    expect(within(card).getAllByRole("button").filter((button) => button.getAttribute("data-variant") === "primary")).toHaveLength(1);
-    await user.click(within(card).getByRole("button", { name: "Book intro" }));
-    expect(onAct).toHaveBeenCalledWith(expect.objectContaining({ id: "introMeeting", target: "intro" }));
-    // "2 more before Qualified" lists the rest, each with its action.
-    expect(within(card).queryByText("Set the client type")).not.toBeInTheDocument();
-    await user.click(within(card).getByRole("button", { name: "2 more before Qualified" }));
-    expect(within(card).getByText("Set the client type")).toBeInTheDocument();
-    expect(within(card).getByText("Choose the enquiry type")).toBeInTheDocument();
-    expect(screen.getByText("Then: Move to Qualified · Fill in the property details")).toBeInTheDocument();
+    act({ line: [
+      { key: "details", name: "Complete the client details", check: "details_complete", column: "qualified", optional: false, state: "current", doneAt: null, doneBy: null, missing: [{ key: "clientEmail", label: "Client email" }] },
+      { key: "enquiry_type", name: "Confirm the enquiry type", check: "details_complete", column: "qualification", optional: false, state: "done", doneAt: "2026-10-01T08:00:00.000Z", doneBy: "Sara" },
+      { key: "intro_meeting", name: "Hold the intro meeting", check: "intro_meeting_completed", column: "qualification", optional: false, state: "upcoming", doneAt: null, doneBy: null, missing: [{ key: "introMeeting", label: "Intro meeting completed" }] },
+    ].map((step) => ({ missing: [], ...step }) as FlowLineStep), missing: [{ key: "clientEmail", label: "Client email" }, { key: "introMeeting", label: "Intro meeting completed" }] }, { onRow, due: "2020-01-02T09:00:00.000Z" });
+    const block = screen.getByRole("region", { name: "To move to Qualified" });
+    expect(within(block).getByText("Qualified means the brief is clear enough to plan the intro.")).toBeInTheDocument();
+    expect(within(block).getByText("Dana Haddad")).toBeInTheDocument();
+    expect(within(block).getByText(/Overdue/)).toBeInTheDocument();
+    const rows = within(within(block).getByRole("list", { name: "To move to Qualified" })).getAllByRole("listitem");
+    expect(rows.map((row) => [row.getAttribute("data-state"), row.hasAttribute("data-now")])).toEqual([["missing", true], ["done", false], ["missing", false]]);
+    expect(within(rows[1]).getByText(/^Sara · /)).toBeInTheDocument();
+    // One primary action: the first missing row's.
+    expect(within(block).getAllByRole("button").filter((button) => button.getAttribute("data-variant") === "primary")).toHaveLength(1);
+    await user.click(within(rows[0]).getByRole("button", { name: "Add · Client email" }));
+    expect(onRow).toHaveBeenCalledWith(expect.objectContaining({ id: "clientEmail", group: "property", target: "discovery" }));
+    await user.click(within(rows[2]).getByRole("button", { name: "Book · Intro meeting completed" }));
+    expect(onRow).toHaveBeenLastCalledWith(expect.objectContaining({ group: "intro", target: "intro" }));
   });
 
   it("reassigns through the teammate list", async () => {
     const onReassign = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
-    wrap(<NowCard plan={nowPlan({ flow: design(), status: "open" })} owner={people[0]} people={people} due={null} busy={false} onAct={vi.fn()} onReassign={onReassign} />);
+    act({}, { onReassign });
     await user.click(screen.getByRole("button", { name: "Reassign" }));
     const list = await screen.findByRole("dialog", { name: "Reassign" });
     await user.click(within(list).getByRole("button", { name: /Omar Saleh/ }));
     expect(onReassign).toHaveBeenCalledWith("m2");
   });
 
-  it("attaches the payment proof when that is the last need", async () => {
+  it("moves on with one button once nothing is missing", async () => {
     const onAct = vi.fn();
     const user = userEvent.setup();
-    wrap(<NowCard plan={nowPlan({ flow: flow(), status: "open" })} owner={null} people={[]} due={null} busy={false} onAct={onAct} />);
-    const card = screen.getByRole("region", { name: "Attach payment proof" });
-    expect(within(card).getByText("Needed to move to Won")).toBeInTheDocument();
-    expect(within(card).getByText("Unassigned")).toBeInTheDocument();
-    await user.click(within(card).getByRole("button", { name: "Attach proof" }));
-    expect(onAct).toHaveBeenCalledWith(expect.objectContaining({ target: "proof" }));
+    act({ missing: [] }, { onAct });
+    const block = screen.getByRole("region", { name: "To move to Qualified" });
+    expect(within(block).getByText("Everything for Qualified is in place")).toBeInTheDocument();
+    await user.click(within(block).getByRole("button", { name: "Move to Qualified" }));
+    expect(onAct).toHaveBeenCalledWith(expect.objectContaining({ target: "advance" }));
+  });
+
+  it("attaches the payment proof when that is the last need", async () => {
+    const onRow = vi.fn();
+    const user = userEvent.setup();
+    const view = flow();
+    wrap(<NextActions plan={nowPlan({ flow: view, status: "open" })} checklist={nextChecklist(view, "open")} owner={null} people={[]} due={null} busy={false} onAct={vi.fn()} onRow={onRow} />);
+    const block = screen.getByRole("region", { name: "To move to Won" });
+    expect(within(block).getByText("Won means the client has paid.")).toBeInTheDocument();
+    expect(within(block).getByText("Unassigned")).toBeInTheDocument();
+    await user.click(within(block).getByRole("button", { name: "Attach · Payment proof attached" }));
+    expect(onRow).toHaveBeenCalledWith(expect.objectContaining({ target: "proof" }));
   });
 });
 

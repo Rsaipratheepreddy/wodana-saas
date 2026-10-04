@@ -1,9 +1,9 @@
-.discovery { display: flex; flex-direction: column; gap: var(--wd-space-4); }
-.pair { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) 7rem; gap: var(--wd-space-2); inline-size: 100%; }
-.empty { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+/* A discovery side sheet: one column of fields. */
+.fields { display: grid; gap: var(--wd-space-4); }
+.field { display: grid; gap: var(--wd-space-2); justify-items: start; }
+.field > :first-child { justify-self: stretch; }
+.label { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.pair { display: grid; align-items: end; grid-template-columns: minmax(0, 1fr) 7rem; gap: var(--wd-space-2); }
+.empty { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .fee { font-size: var(--wd-text-md); font-variant-numeric: tabular-nums; }
-.fee[data-empty] { font-weight: 400; color: var(--wd-color-text-secondary); }
-.required { color: var(--wd-color-danger); }
-.footer { display: flex; justify-content: flex-end; }
-.control { inline-size: min(100%, 22rem); display: flex; justify-content: flex-start; text-align: start; }
-.control > * { flex: 1 1 auto; min-inline-size: 0; }
+.fee[data-empty] { font-weight: var(--wd-weight-regular); color: var(--wd-color-text-secondary); }
