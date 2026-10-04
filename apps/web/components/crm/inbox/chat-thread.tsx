@@ -186,7 +186,7 @@ function useLiveConversation(workspaceId: string, id: string) {
   return { thread, failure, refresh };
 }
 
-type Entry = { kind: "message"; at: string; message: RecordData } | { kind: "event"; at: string; event: ChatEvent } | { kind: "album"; at: string; messages: RecordData[] };
+export type Entry = { kind: "message"; at: string; message: RecordData } | { kind: "event"; at: string; event: ChatEvent } | { kind: "album"; at: string; messages: RecordData[] };
 
 const isPhoto = (message: RecordData) => message.direction === "inbound" && (message.metadata as Record<string, unknown> | null)?.messageType === "image";
 /** A client's photos sent within two minutes of each other read as one album. */
@@ -206,6 +206,17 @@ function groupPhotos(entries: Entry[]): Entry[] {
   return grouped;
 }
 
+const momentOf = (at: string) => { const time = Date.parse(at); return Number.isFinite(time) ? time : 0; };
+/**
+ * Messages and the chat's history in reading order: oldest at the top, newest at the bottom (by when each
+ * happened, then by id, so pages and refreshes arriving in any order read the same), a client's photo run as one album.
+ */
+export function chatTimeline(messages: RecordData[], events: ChatEvent[]): Entry[] {
+  const idOf = (entry: Entry) => entry.kind === "message" ? String(entry.message.id) : entry.kind === "event" ? entry.event.id : String(entry.messages[0].id);
+  return groupPhotos([...messages.map((message): Entry => ({ kind: "message", at: String(message.createdAt), message })), ...events.map((event): Entry => ({ kind: "event", at: event.createdAt, event }))]
+    .sort((a, b) => momentOf(a.at) - momentOf(b.at) || (idOf(a) < idOf(b) ? -1 : idOf(a) > idOf(b) ? 1 : 0)));
+}
+
 /** Messages and the chat's own history (who resolved, snoozed, assigned or labelled it) in one timeline. */
 function MessageHistory({ workspaceId, thread, onHide, canShowHidden, after, revision = "" }: {
   workspaceId: string; thread: RecordData; onHide?: (messageId: string, hidden: boolean) => void; canShowHidden: boolean;
@@ -223,9 +234,7 @@ function MessageHistory({ workspaceId, thread, onHide, canShowHidden, after, rev
   const entries = useMemo(() => {
     const incoming = (thread.messages ?? []) as RecordData[];
     const messages = [...olderMessages.filter((item) => !incoming.some((next) => next.id === item.id)), ...incoming];
-    const events = (thread.events ?? []) as ChatEvent[];
-    return groupPhotos([...messages.map((message): Entry => ({ kind: "message", at: String(message.createdAt), message })), ...events.map((event): Entry => ({ kind: "event", at: event.createdAt, event }))]
-      .sort((a, b) => Date.parse(a.at) - Date.parse(b.at)));
+    return chatTimeline(messages, (thread.events ?? []) as ChatEvent[]);
   }, [olderMessages, thread.messages, thread.events]);
   useLayoutEffect(() => { const element = scroller.current; if (!element) return; const anchor = olderAnchor.current; if (anchor) element.scrollTop = anchor.top + element.scrollHeight - anchor.height; else if (stayAtBottom.current) element.scrollTop = element.scrollHeight; olderAnchor.current = null; }, [entries]);
   useLayoutEffect(() => { const element = scroller.current; if (element && revision) element.scrollTop = element.scrollHeight; }, [revision]);

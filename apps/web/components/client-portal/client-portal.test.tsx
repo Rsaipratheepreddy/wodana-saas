@@ -412,6 +412,32 @@ describe("client portal", () => {
     await waitFor(() => expect(sent(fetcher, "command")).toEqual([expect.objectContaining({ action: "read_thread", caseId: "c1", requestId: "t1" })]));
     expect(within(dialog).queryByText("Seen by your project team")).toBeNull();
   });
+  it("reads a conversation as a chat: oldest at the top, the client's side at the end, the team at the start, the reply box last", async () => {
+    const thread = { id: "t2", number: 2, title: "Kitchen tiles", detail: "Which grout colour?", status: "open", createdAt: "2026-09-20T09:00:00.000Z", resolution: "", files: [],
+      fromClient: true, author: "Maya", mine: true, lastAt: "2026-09-21T10:00:00.000Z", seenByTeam: true, unread: 0,
+      comments: [
+        { id: "c3", at: "2026-09-21T10:00:00.000Z", text: "Grey it is.", fromClient: true, author: "Maya", mine: true, seen: false, files: [] },
+        { id: "c2", at: "2026-09-20T11:00:00.000Z", text: "Light grey suits the tiles.", fromClient: false, author: null, mine: false, files: [] },
+      ] };
+    mount(() => ({ body: view({}, [project({ messages: { requests: [thread], unread: 0 } })]) }));
+    const user = userEvent.setup();
+    render(<PortalApp site={site} />);
+    await user.click(within(await screen.findByRole("navigation", { name: "Sections" })).getByRole("button", { name: /Messages/ }));
+    await user.click(await screen.findByRole("button", { name: /Kitchen tiles/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Kitchen tiles" });
+    const log = within(dialog).getByRole("log", { name: "Messages" });
+    const bubbles = within(log).getAllByRole("listitem").filter((item) => item.hasAttribute("data-mine"));
+    expect(bubbles.map((item) => item.querySelector("p")?.textContent)).toEqual(["Which grout colour?", "Light grey suits the tiles.", "Grey it is."]);
+    expect(bubbles.map((item) => item.getAttribute("data-mine"))).toEqual(["true", "false", "true"]);
+    expect(bubbles[1]).toHaveTextContent("Your project team");
+    expect(within(bubbles[0]).getByLabelText("Seen by your project team")).toBeInTheDocument();
+    expect(within(bubbles[2]).getByLabelText("Sent")).toBeInTheDocument();
+    // A divider for each day.
+    expect(within(log).getAllByRole("listitem").filter((item) => !item.hasAttribute("data-mine"))).toHaveLength(2);
+    const reply = within(dialog).getByRole("textbox", { name: "Reply" });
+    expect(log.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("keeps the client and project profile beside the section on a wide screen: stage, key dates, balance, the team to contact, and the sections with what waits", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("min-width: 64rem"), media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
     const profiled = project({ address: "Dubai Hills", startDate: "2026-09-01",

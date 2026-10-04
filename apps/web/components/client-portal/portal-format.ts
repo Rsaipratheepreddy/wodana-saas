@@ -28,7 +28,12 @@ export function usePortalFormat(region: PortalSite["region"]) {
     };
     const number = (value: string | number | null | undefined) => (value === null || value === undefined || value === "" ? ""
       : safe(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 4 }).format(String(value) as unknown as number), String(value)));
-    return { locale, money: (value: string | number | null | undefined, currency?: string | null) => isolate(money(value, currency)), date, number };
+    /** The time of day of a moment, in the tenant's time zone. */
+    const time = (value: string | null | undefined) => (value ? safe(() => new Intl.DateTimeFormat(locale, { timeStyle: "short", timeZone: region.timeZone }).format(new Date(value)), "") : "");
+    /** The calendar day of a moment in the tenant's time zone, for grouping (YYYY-MM-DD). */
+    const day = (value: string | null | undefined) => (value ? safe(() => new Intl.DateTimeFormat("en-CA", { timeZone: region.timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
+      .format(new Date(value)), value.slice(0, 10)) : "");
+    return { locale, money: (value: string | number | null | undefined, currency?: string | null) => isolate(money(value, currency)), date, number, time, day };
   }, [language, region.country, region.currency, region.locale, region.timeZone]);
 }
 

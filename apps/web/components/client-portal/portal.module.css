@@ -390,6 +390,23 @@
 .skeleton { display: grid; gap: var(--wd-phi-4); }
 .skeleton > div { display: grid; align-content: start; gap: var(--wd-phi-3); min-inline-size: 0; }
 @media (min-width: 64rem) { .skeleton { grid-template-columns: 20rem minmax(0, 1fr); gap: var(--wd-phi-5); } }
+/* A conversation as a chat: the log scrolls, the reply box stays at the foot. */
+.chat { display: flex; flex-direction: column; gap: var(--wd-space-3); min-inline-size: 0; }
+.chatLog { display: flex; flex-direction: column; gap: var(--wd-space-1); max-block-size: min(60dvh, 36rem); margin: 0; padding: var(--wd-space-3); overflow-y: auto; list-style: none;
+  border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); overscroll-behavior: contain; }
+.chatLog:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.chatDay { align-self: center; margin-block: var(--wd-space-2); }
+.chatDay span { display: inline-block; padding: var(--wd-space-0-5) var(--wd-space-2); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.bubble { display: grid; gap: var(--wd-space-1); align-self: flex-start; min-inline-size: 7rem; max-inline-size: min(85%, 30rem); margin-block-start: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3) var(--wd-space-1-5);
+  border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-lg); border-start-start-radius: var(--wd-radius-2xs); background: var(--wd-color-surface); }
+.bubble[data-mine="true"] { align-self: flex-end; border-color: transparent; border-radius: var(--wd-radius-lg); border-start-end-radius: var(--wd-radius-2xs); background: var(--wd-color-action-primary-subtle); }
+.bubble[data-continued] { margin-block-start: 0; border-radius: var(--wd-radius-lg); }
+.bubbleSender { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
+.bubbleMeta { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-1); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-variant-numeric: tabular-nums; }
+.bubbleMeta svg[data-seen] { color: var(--wd-color-info); }
+.composer { display: grid; gap: var(--wd-space-2); }
+.composerActions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-2); }
+.composerActions > :first-child { flex: 1 1 12rem; min-inline-size: 0; }
 .seen { display: inline-flex; align-items: center; gap: var(--wd-space-1); justify-self: end; margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .itemMeta[data-tone="danger"] { color: var(--wd-color-danger); }
 /* A small icon that stays on the line with its words. */

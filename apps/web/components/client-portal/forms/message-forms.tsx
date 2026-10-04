@@ -1,8 +1,8 @@
 "use client";
 
-import { CheckCheck } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { Button, Form, InlineNotice, TextAreaField, TextInput } from "@/design-system";
+import { Check, CheckCheck } from "lucide-react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Avatar, Button, Form, InlineNotice, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import type { PortalRequest } from "@/lib/client-portal/types";
@@ -34,9 +34,12 @@ export function NewMessage({ caseId, api, onDone }: { caseId: string; api: Porta
   </Form>;
 }
 
+type Bubble = { id: string; at: string; text: string; files: PortalRequest["files"]; fromClient: boolean; author: string | null; mine: boolean; seen: boolean };
+
 /**
- * One conversation: what the client asked, the replies (with files), whether the team has seen their last word,
- * and a reply box. Opening it marks the team's replies read.
+ * One conversation as a chat, oldest at the top: the client's side at the end, the project team at the start,
+ * a divider for each day, the sender once per run of messages, the time and whether the team has seen it, and
+ * the reply box at the foot. It opens at the newest message; opening it marks the team's replies read.
  */
 export function Thread({ request, caseId, api, format, onReplied }: { request: PortalRequest; caseId: string; api: PortalApi; format: PortalFormat; onReplied: () => void }) {
   const t = useT();
@@ -48,6 +51,7 @@ export function Thread({ request, caseId, api, format, onReplied }: { request: P
   const [error, setError] = useState("");
   const [id, setId] = useState(commandId);
   const marked = useRef(false);
+  const log = useRef<HTMLOListElement>(null);
   useEffect(() => {
     if (marked.current || !request.unread) return;
     marked.current = true;
@@ -61,26 +65,49 @@ export function Thread({ request, caseId, api, format, onReplied }: { request: P
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   };
-  const last = request.comments.at(-1);
-  const lastIsMine = !last || last.fromClient;
-  return <div className={styles.sheet}>
-    <ol className={styles.messages}>
-      <li className={styles.message} data-mine="true"><p className={styles.body} dir="auto">{request.detail}</p><FileStrip files={request.files} api={api} />
-        <span className={styles.muted}>{format.date(request.createdAt)}</span></li>
-      {request.comments.map((comment) => <li className={styles.message} data-mine={comment.fromClient} key={comment.id}>
-        <span className={styles.muted}>{comment.fromClient ? t("You") : t("Your project team")}</span>
-        {comment.text ? <p className={styles.body} dir="auto">{comment.text}</p> : null}
-        <FileStrip files={comment.files} api={api} />
-        <span className={styles.muted}>{format.date(comment.at)}</span>
-      </li>)}
+  const openedByClient = request.fromClient ?? true;
+  const bubbles = useMemo(() => {
+    const teamAnswered = request.comments.some((comment) => !comment.fromClient);
+    const opener: Bubble = { id: request.id, at: request.createdAt, text: request.detail, files: request.files, fromClient: openedByClient, author: request.author ?? null,
+      mine: request.mine ?? openedByClient, seen: request.seenByTeam || teamAnswered || request.comments.some((comment) => comment.fromClient && comment.seen) };
+    const replies = request.comments.map((comment): Bubble => ({ id: comment.id, at: comment.at, text: comment.text, files: comment.files, fromClient: comment.fromClient,
+      author: comment.author ?? null, mine: comment.mine ?? comment.fromClient, seen: comment.seen ?? (comment.fromClient ? request.seenByTeam : true) }));
+    // Oldest first, whatever order they arrive in; the same moment keeps its order.
+    return [opener, ...replies].map((bubble, index) => ({ bubble, index }))
+      .sort((a, b) => (a.bubble.at < b.bubble.at ? -1 : a.bubble.at > b.bubble.at ? 1 : a.index - b.index)).map(({ bubble }) => bubble);
+  }, [openedByClient, request]);
+  // Open at the newest message, and follow new ones.
+  useLayoutEffect(() => { const element = log.current; if (element) element.scrollTop = element.scrollHeight; }, [bubbles.length]);
+  const sender = (bubble: Bubble) => (!bubble.fromClient ? t("Your project team") : bubble.mine ? t("You") : bubble.author || t("Your household"));
+  return <div className={styles.chat}>
+    <ol className={styles.chatLog} ref={log} role="log" aria-label={t("Messages")} tabIndex={0}>
+      {bubbles.map((bubble, index) => {
+        const previous = bubbles[index - 1];
+        const newDay = !previous || format.day(previous.at) !== format.day(bubble.at);
+        const continued = Boolean(previous) && !newDay && previous.fromClient === bubble.fromClient && previous.author === bubble.author
+          && Date.parse(bubble.at) - Date.parse(previous.at) < 600_000;
+        return <Fragment key={bubble.id}>
+          {newDay ? <li className={styles.chatDay}><span>{format.date(bubble.at)}</span></li> : null}
+          <li className={styles.bubble} data-mine={bubble.fromClient} data-continued={continued || undefined} aria-label={sender(bubble)}>
+            {!continued ? <span className={styles.bubbleSender}><Avatar name={sender(bubble)} size="sm" />{sender(bubble)}</span> : null}
+            {bubble.text ? <p className={styles.body} dir="auto">{bubble.text}</p> : null}
+            <FileStrip files={bubble.files} api={api} />
+            <span className={styles.bubbleMeta}>
+              <time dateTime={bubble.at}>{format.time(bubble.at)}</time>
+              {bubble.fromClient ? bubble.seen ? <CheckCheck aria-label={t("Seen by your project team")} data-seen="true" size={14} /> : <Check aria-label={t("Sent")} size={14} /> : null}
+            </span>
+          </li>
+        </Fragment>;
+      })}
     </ol>
-    {lastIsMine && request.seenByTeam ? <p className={styles.seen}><CheckCheck aria-hidden="true" size={14} />{t("Seen by your project team")}</p> : null}
     {request.resolution ? <p className={styles.muted} dir="auto">{request.resolution}</p> : null}
-    <Form className={styles.form} onSubmit={(event) => { event.preventDefault(); void send(); }}>
+    <Form className={styles.composer} onSubmit={(event) => { event.preventDefault(); void send(); }}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
       <TextAreaField label={t("Reply")} value={text} onChange={setText} maxLength={6000} />
-      <AttachFiles key={attachKey} caseId={caseId} api={api} onChange={setUploads} onBusy={setUploading} />
-      <div className={styles.choices}><Button type="submit" variant="primary" isLoading={busy} isDisabled={(!text.trim() && !uploads.length) || uploading}>{t("Send")}</Button></div>
+      <div className={styles.composerActions}>
+        <AttachFiles key={attachKey} caseId={caseId} api={api} onChange={setUploads} onBusy={setUploading} />
+        <Button type="submit" variant="primary" isLoading={busy} isDisabled={(!text.trim() && !uploads.length) || uploading}>{t("Send")}</Button>
+      </div>
     </Form>
   </div>;
 }
