@@ -3,6 +3,7 @@ import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CrmInboxService } from "../crm/conversations/crm-inbox.service";
 import { seedShowcaseInbox } from "./showcase-inbox";
+import { DEFAULT_QUICK_REPLIES } from "../crm/conversations/inbox/default-quick-replies";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
