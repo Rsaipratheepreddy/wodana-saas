@@ -3,9 +3,9 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
 import { CrmFlowsService } from "./crm-flows.service";
-import { AssignEnquiryTypeFlowDto, PublishFlowDto, ValidateFlowDto } from "./dto/flow.dto";
+import { AssignEnquiryTypeFlowDto, CreateFlowDto, PublishFlowDto, ValidateFlowDto } from "./dto/flow.dto";
 
-/** Settings › Sales › Flows (plan §5a). */
+/** Flows (plan §5a): the top-level screen above Sales. */
 @ApiTags("crm-flows")
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/crm/flows")
@@ -15,6 +15,12 @@ export class CrmFlowsController {
   @Get()
   list(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
     return this.flows.list(actor, workspaceId);
+  }
+
+  /** A new flow from a starter or a copy of one of the workspace's flows. */
+  @Post()
+  create(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreateFlowDto) {
+    return this.flows.create(actor, workspaceId, input);
   }
 
   @Post("validate")

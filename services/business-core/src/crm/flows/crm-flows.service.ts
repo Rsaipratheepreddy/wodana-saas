@@ -3,18 +3,30 @@ import type { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { recordAudit } from "../../audit/record-audit";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
+import { createHash } from "node:crypto";
 import { flowChecksum, validateFlowDefinition } from "./flow-definition";
 import { ensureStarterFlows } from "./flow-store";
+import { STARTER_FLOWS } from "./starter-flows";
 
 const PERMISSION = "crm.settings.manage";
 
 type FlowRow = { id: string; code: string; name: string; status: string; version: number };
+/**
+ * The code a new flow is stored under (enquiry types point at it): the name in lower-case letters, digits and _,
+ * or a stable hash of the name when it has too few Latin letters (an Arabic name, for instance).
+ */
+export function flowCodeFor(name: string) {
+  const slug = name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_").replace(/^[^a-z]+/, "").slice(0, 40).replace(/_+$/, "");
+  return slug.length >= 2 ? slug : `flow_${createHash("sha256").update(name.trim()).digest("hex").slice(0, 8)}`;
+}
+
 type VersionRow = { id: string; version: number; checksum: string; source: string; publishedAt: Date; publishedBy: string | null; definition?: unknown };
 
 /**
- * Plan §5a, F2/F3: Settings › Sales › Flows. A firm lists its flows, reads a version, validates a draft, publishes a
- * new version (immutable, version-checked, idempotent on replay, audited) and points an enquiry type at a flow.
- * Starter flows are seeded on first read.
+ * Plan §5a, F2/F3: Flows. A firm lists its flows, creates one from a starter or a copy, reads a version, validates a
+ * draft, publishes a new version (immutable, version-checked, idempotent on replay, audited) and points an enquiry
+ * type at a flow. Starter flows are seeded on first read.
  */
 @Injectable()
 export class CrmFlowsService {
@@ -23,8 +35,10 @@ export class CrmFlowsService {
   list(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, PERMISSION, async (client) => {
       await ensureStarterFlows(client, workspaceId);
-      const flows = (await client.query<FlowRow & { latest: VersionRow | null; usedBy: unknown[] }>(
+      const flows = (await client.query<FlowRow & { latest: VersionRow | null; usedBy: unknown[]; runningJobs: number }>(
         `SELECT flow.id, flow.code, flow.name, flow.status, flow.version,
+                (SELECT count(*)::int FROM crm_opportunities job JOIN crm_flow_versions pinned ON pinned.workspace_id = job.workspace_id AND pinned.id = job.flow_version_id
+                  WHERE job.workspace_id = flow.workspace_id AND pinned.flow_id = flow.id AND job.status = 'open') AS "runningJobs",
                 (SELECT jsonb_build_object('id', version.id, 'version', version.version, 'checksum', version.checksum, 'source', version.source,
                                            'publishedAt', version.published_at, 'publishedBy', account.display_name)
                    FROM crm_flow_versions version LEFT JOIN users account ON account.id = version.published_by
@@ -38,6 +52,65 @@ export class CrmFlowsService {
            FROM crm_flows flow WHERE flow.workspace_id = $1 ORDER BY flow.name`,
         [workspaceId])).rows;
       return { data: flows };
+    });
+  }
+
+  /**
+   * A new flow from a starter flow or a copy of a version of one of the workspace's flows. Its first version is the
+   * source definition (validated). The code comes from the name; the same create sent twice returns the flow it made.
+   */
+  async create(actor: RequestActor, workspaceId: string, input: { name: string; starter?: string; sourceFlowId?: string; sourceVersion?: number }) {
+    const name = input.name.trim();
+    if (!name) throw new UnprocessableEntityException("Give the flow a name");
+    if (Boolean(input.starter) === Boolean(input.sourceFlowId)) throw new UnprocessableEntityException("Start from a starter flow or from one of your flows");
+    if (input.sourceVersion !== undefined && !input.sourceFlowId) throw new UnprocessableEntityException("Only a copied flow names a version");
+    return this.access.withPermission(actor, workspaceId, PERMISSION, async (client, user) => {
+      await ensureStarterFlows(client, workspaceId);
+      let definition: unknown;
+      let from: Record<string, unknown>;
+      if (input.starter) {
+        const starter = STARTER_FLOWS[input.starter];
+        if (!starter) throw new UnprocessableEntityException("Choose a starter flow");
+        definition = starter.definition;
+        from = { starter: input.starter };
+      } else {
+        const source = await this.requireFlow(client, workspaceId, input.sourceFlowId!, false);
+        const row = (await client.query<{ version: number; definition: unknown }>(
+          `SELECT version, definition FROM crm_flow_versions WHERE workspace_id = $1 AND flow_id = $2 AND ($3::int IS NULL OR version = $3)
+            ORDER BY version DESC LIMIT 1`, [workspaceId, source.id, input.sourceVersion ?? null])).rows[0];
+        if (!row) throw new NotFoundException("Flow version not found");
+        definition = row.definition;
+        from = { flowId: source.id, version: row.version };
+      }
+      const result = validateFlowDefinition(definition);
+      if (!result.ok) throw new UnprocessableEntityException({ message: "The source flow cannot be copied", errors: result.errors });
+      const checksum = flowChecksum(result.definition);
+      const code = flowCodeFor(name);
+      const existing = (await client.query<FlowRow & { createdBy: string | null; firstChecksum: string | null }>(
+        `SELECT flow.id, flow.code, flow.name, flow.status, flow.version, flow.created_by AS "createdBy",
+                (SELECT version.checksum FROM crm_flow_versions version WHERE version.workspace_id = flow.workspace_id AND version.flow_id = flow.id AND version.version = 1) AS "firstChecksum"
+           FROM crm_flows flow WHERE flow.workspace_id = $1 AND flow.code = $2 FOR UPDATE`, [workspaceId, code])).rows[0];
+      if (existing) {
+        // The same create sent twice: hand back the flow the first one made.
+        if (existing.name === name && existing.firstChecksum === checksum && existing.createdBy === user.userId) {
+          const { createdBy: _createdBy, firstChecksum: _firstChecksum, ...flow } = existing;
+          return { ...flow, created: false };
+        }
+        throw new ConflictException("A flow with this name already exists. Choose another name.");
+      }
+      const flow = (await client.query<FlowRow>(
+        `INSERT INTO crm_flows (workspace_id, code, name, created_by, updated_by) VALUES ($1, $2, $3, $4, $4)
+         ON CONFLICT (workspace_id, code) DO NOTHING RETURNING id, code, name, status, version`, [workspaceId, code, name, user.userId])).rows[0];
+      if (!flow) throw new ConflictException("A flow with this name already exists. Choose another name.");
+      const version = (await client.query<{ id: string }>(
+        `INSERT INTO crm_flow_versions (workspace_id, flow_id, version, definition, checksum, source, published_by)
+         VALUES ($1, $2, 1, $3::jsonb, $4, 'published', $5) RETURNING id`,
+        [workspaceId, flow.id, JSON.stringify(result.definition), checksum, user.userId])).rows[0];
+      await recordAudit(client, {
+        workspaceId, actorUserId: user.userId, action: "crm.flow.created.v1", entityType: "crm_flow", entityId: flow.id,
+        after: { code, name, version: 1, versionId: version.id, checksum, from },
+      });
+      return { ...flow, created: true };
     });
   }
 
@@ -70,7 +143,7 @@ export class CrmFlowsService {
    * Publishes a new version (engine rule 3: a published flow is immutable). `expectedVersion` is the version the
    * editor started from; a replay of the same publish returns the version it created.
    */
-  async publish(actor: RequestActor, workspaceId: string, flowId: string, input: { expectedVersion: number; definition: unknown }) {
+  async publish(actor: RequestActor, workspaceId: string, flowId: string, input: { expectedVersion: number; definition: unknown; name?: string }) {
     const result = validateFlowDefinition(input.definition);
     if (!result.ok) throw new UnprocessableEntityException({ message: "The flow cannot be published", errors: result.errors });
     const checksum = flowChecksum(result.definition);
@@ -86,15 +159,27 @@ export class CrmFlowsService {
         if (latest && current === input.expectedVersion + 1 && latest.checksum === checksum) return this.versionOf(client, workspaceId, latest.id, false);
         throw new ConflictException("This flow changed in another window. Reload and try again.");
       }
-      if (latest?.checksum === checksum) throw new UnprocessableEntityException("Nothing changed since the last version");
+      const name = input.name?.trim() || flow.name;
+      const renamed = name !== flow.name;
+      if (latest?.checksum === checksum) {
+        if (!latest) throw new UnprocessableEntityException("Nothing changed since the last version");
+        // A rename sent twice: the flow already has the name.
+        if (!renamed && input.name !== undefined && input.name.trim() === flow.name) return this.versionOf(client, workspaceId, latest.id, false);
+        if (!renamed) throw new UnprocessableEntityException("Nothing changed since the last version");
+        // Only the name changed: the flow is renamed and its versions stay as they are.
+        await client.query(`UPDATE crm_flows SET name = $3, updated_by = $4 WHERE workspace_id = $1 AND id = $2`, [workspaceId, flowId, name, user.userId]);
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "crm.flow.renamed.v1", entityType: "crm_flow", entityId: flowId, before: { name: flow.name }, after: { name } });
+        return this.versionOf(client, workspaceId, latest.id, false);
+      }
       const created = (await client.query<{ id: string }>(
         `INSERT INTO crm_flow_versions (workspace_id, flow_id, version, definition, checksum, source, published_by)
          VALUES ($1, $2, $3, $4::jsonb, $5, 'published', $6) RETURNING id`,
         [workspaceId, flowId, current + 1, JSON.stringify(result.definition), checksum, user.userId])).rows[0];
-      await client.query(`UPDATE crm_flows SET version = version + 1, updated_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, flowId, user.userId]);
+      await client.query(`UPDATE crm_flows SET version = version + 1, name = $4, updated_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, flowId, user.userId, name]);
       await recordAudit(client, {
         workspaceId, actorUserId: user.userId, action: "crm.flow.published.v1", entityType: "crm_flow", entityId: flowId,
-        before: latest ? { version: latest.version, checksum: latest.checksum } : null, after: { version: current + 1, versionId: created.id, checksum },
+        before: latest ? { version: latest.version, checksum: latest.checksum, ...(renamed ? { name: flow.name } : {}) } : null,
+        after: { version: current + 1, versionId: created.id, checksum, ...(renamed ? { name } : {}) },
       });
       return this.versionOf(client, workspaceId, created.id, true);
     });

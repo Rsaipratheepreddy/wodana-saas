@@ -142,6 +142,43 @@ integration("flows as configuration (plan §5a, F2)", () => {
     });
   });
 
+  it("creates a flow from a starter or a copy: validated, audited, idempotent on replay, refused on a taken name", async () => {
+    await withWorkspace(async (client, { workspaceId, flows }) => {
+      const created = await flows.create(actor, workspaceId, { name: "Villa design", starter: "design" });
+      expect(created).toMatchObject({ code: "villa_design", name: "Villa design", created: true });
+      expect(await flows.create(actor, workspaceId, { name: "Villa design", starter: "design" })).toMatchObject({ id: created.id, created: false });
+      await expect(flows.create(actor, workspaceId, { name: "Villa design", starter: "basic" })).rejects.toMatchObject({ status: 409 });
+      await expect(flows.create(actor, workspaceId, { name: "Furniture", starter: "basic" })).rejects.toMatchObject({ status: 409 });
+      await expect(flows.create(actor, workspaceId, { name: "Both", starter: "basic", sourceFlowId: created.id })).rejects.toMatchObject({ status: 422 });
+      const first = await flows.get(actor, workspaceId, created.id);
+      expect(first.selected).toMatchObject({ version: 1, source: "published", definition: STARTER_FLOWS.design.definition });
+
+      // A copy of a chosen version of one of the workspace's flows.
+      const published = await flows.publish(actor, workspaceId, created.id, { expectedVersion: 1, definition: stricterBasic(), name: "Villa design v2" });
+      expect(published).toMatchObject({ version: 2, created: true });
+      const copy = await flows.create(actor, workspaceId, { name: "فيلا", sourceFlowId: created.id, sourceVersion: 1 });
+      expect(copy.code).toMatch(/^flow_[0-9a-f]{8}$/);
+      expect((await flows.get(actor, workspaceId, copy.id)).selected.definition).toEqual(STARTER_FLOWS.design.definition);
+      await expect(flows.create(actor, workspaceId, { name: "Missing version", sourceFlowId: created.id, sourceVersion: 9 })).rejects.toMatchObject({ status: 404 });
+
+      const listed = (await flows.list(actor, workspaceId)).data as Array<{ id: string; name: string; runningJobs: number }>;
+      expect(listed.find((flow) => flow.id === created.id)).toMatchObject({ name: "Villa design v2", runningJobs: 0 });
+      expect(await audits(client, workspaceId, "crm.flow.created.v1")).toBe(2);
+    });
+  });
+
+  it("renames a flow when only its name changes; the same rename again changes nothing", async () => {
+    await withWorkspace(async (client, { workspaceId, flows }) => {
+      const basic = ((await flows.list(actor, workspaceId)).data as Array<{ id: string; code: string }>).find((flow) => flow.code === "basic")!;
+      const renamed = await flows.publish(actor, workspaceId, basic.id, { expectedVersion: 1, definition: STARTER_FLOWS.basic.definition, name: "Quick sale" });
+      expect(renamed).toMatchObject({ version: 1, created: false });
+      expect(await flows.publish(actor, workspaceId, basic.id, { expectedVersion: 1, definition: STARTER_FLOWS.basic.definition, name: "Quick sale" })).toMatchObject({ version: 1, created: false });
+      await expect(flows.publish(actor, workspaceId, basic.id, { expectedVersion: 1, definition: STARTER_FLOWS.basic.definition })).rejects.toMatchObject({ status: 422 });
+      expect((await flows.get(actor, workspaceId, basic.id)).name).toBe("Quick sale");
+      expect(await audits(client, workspaceId, "crm.flow.renamed.v1")).toBe(1);
+    });
+  });
+
   it("keeps versions immutable and tenants apart (forced RLS for the app role)", async () => {
     await withWorkspace(async (client, { workspaceId }) => {
       await ensureStarterFlows(client, workspaceId);
