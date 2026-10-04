@@ -273,6 +273,8 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         items: [
           { href: "/workspace/crm/leads?section=forms", icon: "documents", id: "crm-campaigns", label: "Campaigns", showInSidebar: false },
           { href: "/workspace/crm/leads?section=assignment", icon: "settings", id: "crm-settings", label: "Settings", showInSidebar: false },
+          // Plan §5a: Flows is its own top-level item, above Sales, for people who manage flows.
+          { href: "/workspace/flows", icon: "automations", id: "flows", label: tKey("Flows"), showInSidebar: false },
         ],
       },
     ],
@@ -367,6 +369,7 @@ export const workspaceNavigation = workspaceModules[0].navigation;
 /** Build the product navigation from the server-authorized destinations. */
 export function productNavigation(modules: WorkspaceModuleDefinition[]): WorkspaceNavigationSection[] {
   const allowed = new Set(modules.flatMap(module => module.navigation.flatMap(group => group.items).filter(item => item.showInSidebar !== false).map(item => item.id)));
+  const reachable = new Set(modules.flatMap(module => module.navigation.flatMap(group => group.items).map(item => item.id)));
   const salesEntry = modules.find(module => module.id === "crm")?.navigation.flatMap(group => group.items).find(item => allowed.has(item.id) && ["crm-overview", "leads", "opportunities", "follow-ups"].includes(item.id));
   const sections: WorkspaceNavigationSection[] = [
     // Daily work: Home (Overview, Tasks, Approvals as tabs), then Calendar and Inbox on their own.
@@ -376,6 +379,7 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
       ...(allowed.has("conversations") ? [{ id: "inbox", label: tKey("Inbox"), href: "/workspace/crm/conversations", icon: "conversations" as const }] : []),
     ] },
     { id: "work", label: tKey("Business"), items: [
+      ...(reachable.has("flows") ? [{ id: "flows", label: tKey("Flows"), href: "/workspace/flows", icon: "automations" as const }] : []),
       ...(salesEntry ? [{ id: "sales", label: tKey("Sales"), href: salesEntry.href, icon: "opportunities" as const }] : []),
       ...(allowed.has("customers") || allowed.has("projects-overview") ? [{ id: "clients", label: tKey("Clients"), href: allowed.has("customers") ? "/workspace/crm/customers" : "/workspace/projects/clients", icon: "customers" as const }] : []),
       ...(allowed.has("pre-projects") ? [{ id: "planning", label: tKey("Planning"), href: "/workspace/pre-projects", icon: "preProjects" as const }] : []),

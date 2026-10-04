@@ -60,6 +60,8 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "crm-reports": [["crm.leads.view"], ["crm.reports.view"]],
   automations: [["crm.leads.view"], ["crm.automations.view"]],
   "crm-settings": [["crm.leads.view"], ["crm.settings.manage"]],
+  // Flows (plan §5a): only people who manage flows; everyone else sees only the result.
+  flows: [["crm.settings.manage"]],
   // Planning
   "pre-projects": [["pre_projects.view"]],
   "pre-project-catalogs": [["catalog.view"]],
@@ -101,6 +103,7 @@ const PATH_ACCESS: Array<[string, AccessRule]> = [
   ["/workspace/purchasing", [PURCHASING_VIEW]],
   ["/workspace/inventory", [STOCK_VIEW]],
   ["/workspace/factory", [FACTORY_VIEW]],
+  ["/workspace/flows", [["crm.settings.manage"]]],
 ];
 
 export function isWorkspaceAdministrator(roles: readonly string[] | null | undefined) {
