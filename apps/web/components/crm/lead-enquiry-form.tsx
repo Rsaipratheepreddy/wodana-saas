@@ -48,6 +48,9 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
   onOpenLead?: (leadId: string) => void;
 }) {
   const t = useT();
+  // Editing an enquiry: the client's name and phones stay as they are unless this person may change them (Sales admins).
+  const identityLocked = Boolean(existing) && initialData.canChangeIdentity === false;
+  const identityHint = t("Only Sales admins can change the client's name or phone");
   const areaLabel = administrativeAreaLabel(countryFromLocale(initialData.defaultLocale));
   const options = initialData.leadOptions;
   const fields = enquiryFields(initialData.enquiryFields, areaLabel);
@@ -221,7 +224,8 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
         onExtract={async ({ text, image }) => fillWithWoddy(initialData.workspaceId, "enquiry", { ...(text ? { text } : {}), ...(image ? { image: await imageForWoddy(image) } : {}) })} /> : null}
     </>}>
       <fieldset className={styles.enquiryFields} disabled={locked}>
-        <CrmPhoneField label={t("Mobile")} required value={contact.mobile ?? ""} onChange={set("mobile")} countryCode={contact.mobileCountryCode ?? ""} onCountryChange={set("mobileCountryCode")} locale={initialData.defaultLocale} />
+        <CrmPhoneField label={t("Mobile")} required value={contact.mobile ?? ""} onChange={set("mobile")} countryCode={contact.mobileCountryCode ?? ""} onCountryChange={set("mobileCountryCode")} locale={initialData.defaultLocale}
+          isReadOnly={identityLocked && Boolean(existing?.party?.mobile)} description={identityLocked && existing?.party?.mobile ? identityHint : undefined} />
         {!existing && matches.length > 0 ? <section className={styles.clientMatch} aria-label={t("Existing client?")} aria-live="polite">
           <strong>{t("Existing client?")}</strong>
           <ClientMatchList label={t("Clients with this mobile or email")} matches={matches} actions={(match) => <>
@@ -232,7 +236,7 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
           </>} />
           <div><Button size="compact" variant={identity?.kind === "new" ? "primary" : "quiet"} aria-pressed={identity?.kind === "new"} isDisabled={locked} onPress={() => setIdentity({ kind: "new" })}>{t("Different person")}</Button></div>
         </section> : checking ? <p className={styles.routingHint} aria-live="polite">{t("Checking for an existing client…")}</p> : null}
-        <TextInput isRequired label={t("Customer name")} value={name} isReadOnly={identity?.kind === "existing"} onChange={set("displayName")} />
+        <TextInput isRequired label={t("Customer name")} value={name} isReadOnly={identity?.kind === "existing" || (identityLocked && Boolean(existing?.party?.displayName))} description={identityLocked && existing?.party?.displayName ? identityHint : undefined} onChange={set("displayName")} />
         <SelectField label={t("Enquiry type")} isRequired items={withExisting(options?.enquiryTypes, existing?.serviceType ?? "")} selectedKey={serviceType || null} onSelectionChange={key => key && setServiceType(String(key))} />
         <FormRow>
           <SelectField label={t("Source")} isRequired placeholder={t("Choose source")} items={withExisting(sourceItems, existing?.source ?? "")} selectedKey={source || null} onSelectionChange={key => chooseSource(String(key ?? ""))} />
@@ -257,7 +261,8 @@ export function LeadEnquiryForm({ initialData, existing, prefill, onClose, onSav
           {shown("budgetRange") ? <SelectField label={t("Budget range")} items={[{ id: "", label: t("Not provided") }, ...withExisting(options?.budgetRanges, existing?.details?.budgetRange ?? "")]} selectedKey={details.budgetRange ?? ""} onSelectionChange={key => setDetail("budgetRange")(String(key ?? ""))} /> : null}
           {shown("summary") ? <TextAreaField label={t("Project description")} value={summary} onChange={setSummary} placeholder={t("What would the customer like to do?")} /> : null}
           <FormRow><TextInput label={t("Company")} value={contact.company ?? ""} onChange={set("company")} /><TextInput label={t("Job position")} value={contact.jobPosition ?? ""} onChange={set("jobPosition")} /></FormRow>
-          <FormRow><CrmPhoneField label={t("Phone")} kind="any" value={contact.phone ?? ""} onChange={set("phone")} countryCode={contact.phoneCountryCode ?? ""} onCountryChange={set("phoneCountryCode")} locale={initialData.defaultLocale} /><TextInput label={t("Website")} value={contact.website ?? ""} onChange={set("website")} /></FormRow>
+          <FormRow><CrmPhoneField label={t("Phone")} kind="any" value={contact.phone ?? ""} onChange={set("phone")} countryCode={contact.phoneCountryCode ?? ""} onCountryChange={set("phoneCountryCode")} locale={initialData.defaultLocale}
+            isReadOnly={identityLocked && Boolean(existing?.party?.phone)} description={identityLocked && existing?.party?.phone ? identityHint : undefined} /><TextInput label={t("Website")} value={contact.website ?? ""} onChange={set("website")} /></FormRow>
           <TextInput label={t("Address")} value={contact.address ?? ""} onChange={set("address")} />
           <TextInput label={t("Campaign")} value={details.campaign ?? ""} onChange={setDetail("campaign")} />
           {!existing && owner !== ROUTING && owner !== UNASSIGNED ? <SelectField label={t("Sales team")} items={[{ id: "", label: t("No team selected") }, ...initialData.queues.filter(q => q.status === "active").map(q => ({ id: q.id, label: q.name }))]} selectedKey={queueId} onSelectionChange={key => setQueue(String(key ?? ""))} /> : null}

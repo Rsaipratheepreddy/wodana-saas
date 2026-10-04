@@ -278,6 +278,8 @@ export type LeadsPageData = {
   canEdit?: boolean;
   /** Whether the signed-in member manages Sales settings (the Sales admin and escalation rules). */
   canManageSales?: boolean;
+  /** May change the client's name and phone (crm.parties.identity); unknown (older pages) counts as yes, the server decides. */
+  canChangeIdentity?: boolean;
   leadOptions?: LeadOptions;
   enquiryFields?: EnquiryFieldsState;
   canView: boolean;

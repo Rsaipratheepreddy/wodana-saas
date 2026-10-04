@@ -246,7 +246,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
         <h2>{String(live.title ?? t("Opportunity"))}</h2>
         <p className={screen.meta}>
           {partyId ? <Link href={`/workspace/crm/customers?record=${partyId}`}>{String(live.partyName ?? t("Customer"))}</Link> : <span>{String(live.partyName ?? t("Customer not set"))}</span>}
-          <span className={screen.value} data-empty={!hasValue || undefined}>{value}</span>
+          {live.valueHidden ? null : <span className={screen.value} data-empty={!hasValue || undefined}>{value}</span>}
           {live.reference ? <span>{String(live.reference)}</span> : null}
         </p>
       </div>
@@ -280,7 +280,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       <aside className={screen.side} aria-label={t("Key facts")}>
         <SideSection title={t("Key facts")}>
           <EditableFieldList layout="stacked" className={screen.facts}>
-            {live.amount === undefined || !resource.data ? <FactRow label={t("Value")}>{value}</FactRow>
+            {live.valueHidden ? null : live.amount === undefined || !resource.data ? <FactRow label={t("Value")}>{value}</FactRow>
               : <EditableField currency={valueCurrency} display={hasValue ? value : undefined} kind="money" label={t("Value")} onReload={resource.refresh}
                 onSave={(next) => patch(next ? { amount: Number(next), currencyCode: valueCurrency } : { amount: null, currencyCode: null })} placeholder={t("Not set")}
                 value={live.amount === null || live.amount === undefined ? "" : String(live.amount)} />}

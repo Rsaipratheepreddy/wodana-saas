@@ -128,6 +128,7 @@
 .wd-editable-value:hover .wd-editable-pen, .wd-editable-value:focus-visible .wd-editable-pen { opacity: 1; }
 @media (hover: none) { .wd-editable-pen { opacity: 0.6; } }
 .wd-editable-empty { color: var(--wd-color-text-tertiary); }
+.wd-editable-lock { display: inline-flex; align-items: center; margin-inline-start: var(--wd-space-1); color: var(--wd-color-icon-subtle); cursor: help; vertical-align: middle; }
 .wd-editable[data-state="saving"] .wd-editable-value { color: var(--wd-color-text-secondary); }
 .wd-editable-status { display: inline-flex; align-items: center; min-inline-size: var(--wd-space-4); }
 .wd-editable-tick { color: var(--wd-color-success); animation: wd-tick-in var(--wd-duration-base) var(--wd-ease-out) both; }

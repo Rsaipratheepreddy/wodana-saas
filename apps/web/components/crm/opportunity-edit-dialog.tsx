@@ -31,7 +31,8 @@ export function OpportunityEditDialog({ workspaceId, opportunity, members, onClo
   const { timeZone, currency: regionCurrency } = useDesignSystem();
   // The record's own currency, else the workspace region's (the one the field shows), so amount and currency travel together.
   const currency = String(opportunity.currencyCode ?? opportunity.currency_code ?? "") || regionCurrency || "";
-  const hasValue = opportunity.amount !== undefined;
+  // A value this person can't see is never sent: the save would need the value permission and would clear it.
+  const hasValue = opportunity.amount !== undefined && !opportunity.valueHidden;
   const [form, setForm] = useState(() => ({
     title: String(opportunity.title ?? ""), owner: String(opportunity.ownerMembershipId ?? opportunity.owner_membership_id ?? ""),
     amount: opportunity.amount === null || opportunity.amount === undefined ? "" : String(opportunity.amount),

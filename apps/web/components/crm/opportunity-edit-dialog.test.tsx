@@ -26,3 +26,17 @@ it("edits with names, the workspace's number format and one close date, and send
   expect(crmRequest).toHaveBeenCalledWith("ws", "opportunities/o1", "PATCH", { version: 3, title: "Villa · Full interior", ownerMembershipId: "m1", amount: 385000, currencyCode: "AED", expectedCloseAt: null, nextActionAt: null });
   expect(onClose).toHaveBeenCalled();
 });
+
+it("never sends a value this person can't see, so Sales without it can still save the rest", async () => {
+  vi.mocked(crmRequest).mockResolvedValue({});
+  const onSaved = vi.fn().mockResolvedValue(undefined);
+  const user = userEvent.setup();
+  render(<WorkspaceRegionProvider locale="en-AE" currency="AED"><DesignSystemProvider><OpportunityEditDialog workspaceId="ws" onClose={vi.fn()} onSaved={onSaved}
+    members={[{ id: "m1", label: "Sara Sales" }]}
+    opportunity={{ id: "o1", version: 4, title: "Villa", amount: null, currencyCode: null, valueHidden: true, ownerMembershipId: "m1" }} /></DesignSystemProvider></WorkspaceRegionProvider>);
+  expect(screen.queryByRole("textbox", { name: "Value" })).toBeNull();
+  await user.type(screen.getByRole("textbox", { name: "Title" }), " fit-out");
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(vi.mocked(crmRequest).mock.calls[0][3]).not.toHaveProperty("amount");
+});

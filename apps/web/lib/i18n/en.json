@@ -12092,5 +12092,7 @@
   "Search enquiry types": "Search enquiry types",
   "in {flow}": "in {flow}",
   "Not sure yet stays in the first column until the enquiry type is known, so it cannot follow a flow": "Not sure yet stays in the first column until the enquiry type is known, so it cannot follow a flow",
-  "Back to Flows": "Back to Flows"
+  "Back to Flows": "Back to Flows",
+  "Only Sales admins can change the client's name or phone": "Only Sales admins can change the client's name or phone",
+  "Change a client's name and phone": "Change a client's name and phone"
 }

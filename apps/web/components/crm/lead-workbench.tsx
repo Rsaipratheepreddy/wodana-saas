@@ -107,6 +107,9 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
   // In place: each change sends the enquiry's details whole (as Edit details does) with the newest version this view saw.
   const [savedVersion, setSavedVersion] = useState(0);
   const canEdit = Boolean(detail) && initialData.canEdit !== false;
+  // The client's name and phones are their identity: Sales sees them with a lock; Sales admins change them.
+  const identityLocked = canEdit && initialData.canChangeIdentity === false;
+  const identityLock = identityLocked ? t("Only Sales admins can change the client's name or phone") : undefined;
   const text = (value: unknown) => typeof value === "string" ? value : value === null || value === undefined ? "" : String(value);
   const saveDetails = async (change: { serviceType?: string; summary?: string; party?: Partial<LeadContact>; details?: Partial<EnquiryDetails> }) => {
     const party = { ...contact, displayName: text(enquiry?.partyName ?? lead.partyName), email: text(enquiry?.primaryEmail ?? contact.email), phone: text(enquiry?.primaryPhone ?? contact.phone), mobile: text(enquiry?.primaryMobile ?? contact.mobile), ...change.party };
@@ -132,7 +135,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
   return <div className={`${styles.workbench} ${styles.enquiryDetail}`} data-tour="enquiry-detail">
     <ResourceState {...resource} retry={resource.refresh} />
     <header className={styles.recordHeader}>
-      <div className={styles.enquiryIdentity}>{enquiryReference && <span className={styles.enquiryReference}>{enquiryReference}</span>}<EditableField canEdit={canEdit} display={customerDisplayName(text(enquiry?.partyName ?? lead.partyName))} heading="h2" isRequired label={t("Customer name")} maxLength={240} onReload={resource.refresh}
+      <div className={styles.enquiryIdentity}>{enquiryReference && <span className={styles.enquiryReference}>{enquiryReference}</span>}<EditableField canEdit={canEdit && !identityLocked} lockedReason={identityLock} display={customerDisplayName(text(enquiry?.partyName ?? lead.partyName))} heading="h2" isRequired label={t("Customer name")} maxLength={240} onReload={resource.refresh}
         onSave={(displayName) => saveDetails({ party: { displayName } })} value={text(enquiry?.partyName ?? lead.partyName)} />{showEnquiryTitle && <p>{enquiryTitle}</p>}<RespondByChip lead={live as { slaStatus?: string | null; slaDueAt?: string | null; slaWarningAt?: string | null }} now={now} /></div>
       <div className={styles.recordActions}>
         {active && !live.isConverted ? <Button size="compact" variant="primary" isDisabled={!detail} onPress={() => setContacting(true)}><PhoneCall size={14} aria-hidden="true" />{t("Log contact")}</Button> : null}
@@ -166,9 +169,9 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
             onReload={resource.refresh} onSave={(serviceType) => saveDetails({ serviceType })} value={text(enquiry?.serviceType ?? lead.serviceType)} />
           <div><dt>{t("Sales team")}</dt><dd>{initialData.queues.find(q => q.id === live.queueId)?.name ?? t("Not assigned")}</dd></div>
           {live.ownershipDueAt ? <div><dt>{t("Reassign if no call or note")}</dt><dd>{dateText(live.ownershipDueAt, zoned)}</dd></div> : null}
-          <EditableField canEdit={canEdit} countryCode={text(contact.mobileCountryCode ?? contact.phoneCountryCode)} display={phoneText(enquiry?.primaryMobile ?? contact.mobile, contact.mobileCountryCode ?? contact.phoneCountryCode)} isRequired kind="phone" label={t("Mobile")}
+          <EditableField canEdit={canEdit && !identityLocked} lockedReason={identityLock} countryCode={text(contact.mobileCountryCode ?? contact.phoneCountryCode)} display={phoneText(enquiry?.primaryMobile ?? contact.mobile, contact.mobileCountryCode ?? contact.phoneCountryCode)} isRequired kind="phone" label={t("Mobile")}
             onReload={resource.refresh} onSave={(mobile, { countryCode }) => saveDetails({ party: { mobile, ...(countryCode ? { mobileCountryCode: countryCode } : {}) } })} value={text(enquiry?.primaryMobile ?? contact.mobile)} />
-          <EditableField canEdit={canEdit} countryCode={text(contact.phoneCountryCode)} display={phoneText(enquiry?.primaryPhone ?? contact.phone)} kind="phone" label={t("Phone")} placeholder={t("Not provided")}
+          <EditableField canEdit={canEdit && !(identityLocked && text(enquiry?.primaryPhone ?? contact.phone))} lockedReason={text(enquiry?.primaryPhone ?? contact.phone) ? identityLock : undefined} countryCode={text(contact.phoneCountryCode)} display={phoneText(enquiry?.primaryPhone ?? contact.phone)} kind="phone" label={t("Phone")} placeholder={t("Not provided")}
             onReload={resource.refresh} onSave={(phone, { countryCode }) => saveDetails({ party: { phone, ...(countryCode ? { phoneCountryCode: countryCode } : {}) } })} value={text(enquiry?.primaryPhone ?? contact.phone)} />
           {shownField("email") ? <EditableField canEdit={canEdit} kind="email" label={t("Email")} maxLength={320} onReload={resource.refresh} onSave={(email) => saveDetails({ party: { email } })} placeholder={t("Not provided")} value={text(enquiry?.primaryEmail ?? contact.email)} /> : null}
           {options?.emirates.length || enquiryDetails.emirate ? <EditableField canEdit={canEdit && Boolean(options?.emirates.length)} display={leadOptionLabel(options?.emirates, enquiryDetails.emirate)} isRequired items={withCurrent(options?.emirates, enquiryDetails.emirate)} kind="select" label={regionLabel}

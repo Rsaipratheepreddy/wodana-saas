@@ -134,4 +134,11 @@ describe("editable field", () => {
     await user.type(input, "250000.5{Enter}");
     expect(save).toHaveBeenCalledWith("250000.5");
   });
+
+  it("shows who may change a locked value instead of an editor", () => {
+    render(wrap(<EditableField canEdit={false} label="Mobile" lockedReason="Only Sales admins can change the client's name or phone" onSave={vi.fn()} value="+971501234567" />));
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("Only Sales admins can change the client's name or phone")).toBeInTheDocument();
+    expect(screen.getByTitle("Only Sales admins can change the client's name or phone")).toBeInTheDocument();
+  });
 });

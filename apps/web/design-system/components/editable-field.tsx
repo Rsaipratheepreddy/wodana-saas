@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
-import { Check, CircleAlert, LoaderCircle, PenLine } from "lucide-react";
+import { Check, CircleAlert, LoaderCircle, Lock, PenLine } from "lucide-react";
 import { parseDate, type DateValue } from "@internationalized/date";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
@@ -36,6 +36,8 @@ export type EditableFieldProps = {
   onReload?: () => void;
   /** Whether this person may change it; false shows plain text (so does a read-only page). */
   canEdit?: boolean;
+  /** Why this person may not change it (who can): shown as a lock beside the value, its reason on hover and to screen readers. */
+  lockedReason?: string;
   isRequired?: boolean;
   validate?: (next: string) => string | null | undefined;
   maxLength?: number;
@@ -53,7 +55,7 @@ type Mode = "idle" | "editing" | "saving" | "saved" | "error";
  * and Retry; a version conflict offers Reload. People who may not change it, and read-only pages (viewing
  * as someone), see plain text.
  */
-export function EditableField({ canEdit = true, countryCode = "", currency, display, heading, isRequired, items = [], kind = "text", label, maxLength, onReload, onSave, placeholder, validate, value }: EditableFieldProps) {
+export function EditableField({ canEdit = true, countryCode = "", currency, display, heading, isRequired, items = [], kind = "text", label, lockedReason, maxLength, onReload, onSave, placeholder, validate, value }: EditableFieldProps) {
   const t = useT();
   const readOnlyReason = useReadOnlyReason();
   const editable = canEdit && !readOnlyReason;
@@ -87,8 +89,10 @@ export function EditableField({ canEdit = true, countryCode = "", currency, disp
   const Heading = heading ?? "span";
   const labelClass = heading ? "wd-visually-hidden" : "wd-editable-label";
 
-  if (!editable) return heading ? <Heading>{reads}</Heading>
-    : <div className="wd-editable" data-readonly=""><Label className={labelClass}>{label}</Label><Cell className="wd-editable-cell">{reads ?? <span className="wd-editable-empty">—</span>}</Cell></div>;
+  const lock = lockedReason && !readOnlyReason
+    ? <span className="wd-editable-lock" title={lockedReason}><Lock aria-hidden="true" size={12} /><span className="wd-visually-hidden">{lockedReason}</span></span> : null;
+  if (!editable) return heading ? <Heading>{reads}{lock}</Heading>
+    : <div className="wd-editable" data-readonly=""><Label className={labelClass}>{label}</Label><Cell className="wd-editable-cell">{reads ?? <span className="wd-editable-empty">—</span>}{lock}</Cell></div>;
 
   const open = () => { setDraft(value); setCountry(countryCode); setProblem(null); setMode("editing"); };
   const cancel = () => { returnFocus.current = true; setProblem(null); setMode("idle"); };
