@@ -248,3 +248,30 @@ export function nextChecklist(flow: OpportunityFlowView | null, status: string):
   const why = missing.length ? { key: WHY[columnCode] ?? tKey("Needed to move to {stage}"), values: { stage: column } } : { key: tKey("Everything for {stage} is in place"), values: { stage: column } };
   return { column, columnCode, why, rows };
 }
+
+type ActivityLike = { status?: unknown; isNextAction?: unknown; dueAt?: unknown; title?: unknown };
+
+/** The pending next follow-up: the pending activity marked as the next action, else the soonest pending one with a due date. */
+export function pendingFollowUp<T extends object>(items: T[]): T | null {
+  const of = (item: T) => item as ActivityLike;
+  const pending = items.filter((item) => of(item).status === "pending");
+  const due = (item: T) => Date.parse(String(of(item).dueAt ?? "")) || Infinity;
+  const soonest = (list: T[]) => [...list].sort((a, b) => due(a) - due(b))[0] ?? null;
+  return soonest(pending.filter((item) => of(item).isNextAction === true)) ?? soonest(pending.filter((item) => due(item) !== Infinity));
+}
+
+/** The title the server gives the follow-up it books with an opportunity; shown as "Follow up with <first name>". */
+const SERVER_FOLLOW_UP_TITLE = "Follow up on opportunity";
+
+/** Whether a follow-up keeps the server's generic title (and so reads better as "Follow up with <client>"). */
+export function isGenericFollowUp(item: object) {
+  const { title: raw } = item as ActivityLike;
+  const title = typeof raw === "string" ? raw.trim() : "";
+  return !title || title === SERVER_FOLLOW_UP_TITLE;
+}
+
+/** The first word of a name ("Amal Rahman" → "Amal"). */
+export function firstName(name: string | null | undefined) {
+  const clean = (name ?? "").trim();
+  return clean.split(/\s+/)[0] ?? clean;
+}

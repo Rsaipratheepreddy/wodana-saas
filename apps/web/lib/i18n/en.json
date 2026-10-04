@@ -4146,6 +4146,8 @@
   "Call {name}": "Call {name}",
   "Meet {name}": "Meet {name}",
   "Follow up with {name}": "Follow up with {name}",
+  "No follow-up booked": "No follow-up booked",
+  "Book a follow-up": "Book a follow-up",
   "Choose a time in the future.": "Choose a time in the future.",
   "Follow-up scheduled": "Follow-up scheduled",
   "Schedule follow-up": "Schedule follow-up",

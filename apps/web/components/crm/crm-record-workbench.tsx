@@ -6,13 +6,13 @@ import { useRouter } from "next/navigation";
 import { caseHref } from "@/lib/pre-project/types";
 import { DiscoverySheet, useDiscovery, type DiscoveryGroup } from "./opportunity-discovery";
 import { introWhen, useIntro } from "./opportunity-intro";
-import { ClientContact, LatestActivity, OpportunityCards, SideSection } from "./opportunity-sections";
+import { ClientContact, OpportunityActivity, OpportunityCards, SideSection } from "./opportunity-sections";
 import { OpportunityEditDialog, localDate } from "./opportunity-edit-dialog";
 import { FurniturePathDialog, PaymentProofDialog, StageBlockedSheet } from "./opportunity-flow";
-import { DueChip, NextActions, ProgressLine, type StageMove } from "./opportunity-now";
+import { FollowUpRow, NextActions, ProgressLine, type StageMove } from "./opportunity-now";
 import type { MissingRequirement } from "@/lib/crm/client";
 import { FURNITURE_PATHS, missingFrom, proofHref, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
-import { groupForRequirement, nextChecklist, nowPlan, type ChecklistRow, type FactGroup, type FunnelStep, type NowStep } from "@/lib/crm/now-step";
+import { firstName, groupForRequirement, isGenericFollowUp, nextChecklist, nowPlan, pendingFollowUp, type ChecklistRow, type FactGroup, type FunnelStep, type NowStep } from "@/lib/crm/now-step";
 import { tKey } from "@/lib/i18n/keys";
 import { RecordAttachments } from "./record-attachments";
 import { SequenceEditor } from "./sequence-editor";
@@ -24,7 +24,8 @@ import { ContactMatchNotice } from "./contact-match-notice";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { CrmScreenId } from "@/lib/crm/screens";
 import { CrmRequestError, crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
-import { ActionDialog, ActivityPanel, CustomerPanel, FactList, ResourceState, choice, options, useCrmResource, type ActionSpec, type FieldSpec } from "./crm-workbench";
+import { activityTitle } from "@/lib/crm/contact";
+import { ActionDialog, CustomerPanel, FactList, ResourceState, addActivityAction, choice, completeActivityAction, options, rescheduleActivityAction, useCrmResource, type ActionSpec, type FieldSpec } from "./crm-workbench";
 import styles from "./crm-workbench.module.css";
 import screen from "./opportunity-now.module.css";
 
@@ -114,7 +115,9 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       submit: outcome === "won" ? t("Confirm win") : t("Confirm loss"),
     });
   };
-  const saved = async () => { resource.refresh(); await onChanged(); };
+  // The opportunity's activities: the sidebar timeline and the follow-up row in the action card.
+  const activities = useCrmResource<unknown>(workspaceId, `activities?${new URLSearchParams({ limit: "100", opportunityId: row.id })}`);
+  const saved = async () => { resource.refresh(); activities.refresh(); await onChanged(); };
   // PLM-121/122: the flow's next step, what blocks it, and the payment proof that wins the deal.
   const flow = (live.flow && typeof live.flow === "object" ? live.flow : null) as OpportunityFlowView | null;
   const [proofOpen, setProofOpen] = useState(false);
@@ -176,8 +179,19 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const leadId = live.leadId ?? live.lead_id;
   const caseLink = (section: string) => caseId ? caseHref(caseId, new URLSearchParams(), section) : "";
   const followUp = typeof (live.nextActionAt ?? live.next_action_at) === "string" ? String(live.nextActionAt ?? live.next_action_at) : null;
+  const activityTarget = { opportunityId: row.id, ...(partyId ? { partyId } : {}), ...(ownerId ? { ownerMembershipId: ownerId } : {}) };
+  const nextTask = pendingFollowUp(rows(activities.data));
+  // Booking a follow-up is offered only when the flow asks for one; that row then stands in for the checklist's own.
+  const needsFollowUp = status === "open" && !nextTask && Boolean(flow?.missing?.some((item) => item.key === "nextAction"));
   const plan = nowPlan({ flow, status, funnel, caseId });
-  const checklist = nextChecklist(flow, status);
+  const fullChecklist = nextChecklist(flow, status);
+  const checklist = fullChecklist && needsFollowUp ? { ...fullChecklist, rows: fullChecklist.rows.filter((item) => item.id !== "nextAction") } : fullChecklist;
+  const clientFirst = firstName(String(live.partyName ?? ""));
+  const followUpRow = status !== "open" ? null
+    : nextTask ? <FollowUpRow title={isGenericFollowUp(nextTask) && clientFirst ? t("Follow up with {name}", { name: clientFirst }) : activityTitle(nextTask, t)} due={String(nextTask.dueAt ?? followUp ?? "")}
+      onComplete={() => setAction(completeActivityAction(t, nextTask))} onReschedule={() => setAction(rescheduleActivityAction(t, nextTask))} />
+    : followUp ? <FollowUpRow title={clientFirst ? t("Follow up with {name}", { name: clientFirst }) : t("Next follow-up")} due={followUp} onReschedule={() => setEditing(true)} />
+    : needsFollowUp ? <FollowUpRow onBook={() => setAction(addActivityAction(t, activityTarget))} /> : null;
   const showIntro = !flow || flow.flow === "design" || flow.flow === "fit_out";
   const discovery = useDiscovery(workspaceId, row.id);
   const intro = useIntro(workspaceId, row.id, showIntro);
@@ -200,7 +214,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   };
   const actOnRow = (item: ChecklistRow) => {
     if (item.target === "intro" && intro.view?.intro?.status === "pending") { unfold("intro"); return; }
-    if (item.group === "client" && item.keys[0] === "contact") { setTab("activity"); return; }
+    if (item.group === "client" && item.keys[0] === "contact") { setAction(addActivityAction(t, activityTarget)); return; }
     if (item.target) act({ id: item.id, title: tKey("Add"), short: tKey("Add"), target: item.target, keys: item.keys, fields: [] });
   };
   const area = discovery.view?.facts.area ? `${new Intl.NumberFormat(locale).format(Number(discovery.view.facts.area))} ${discovery.view.facts.areaUnit === "sqft" ? t("sq ft") : t("sq m")}` : null;
@@ -248,7 +262,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     <div className={screen.layout}>
       <div className={screen.main}>
         {flow ? <ProgressLine flow={flow} status={status} history={stageHistory} /> : null}
-        {resource.data ? <NextActions plan={plan} checklist={checklist} owner={owner} people={owners} due={followUp} busy={advancing || openingCase} onAct={act} onRow={actOnRow} detail={rowDetail}
+        {resource.data ? <NextActions plan={plan} checklist={checklist} owner={owner} people={owners} followUp={followUpRow} busy={advancing || openingCase} onAct={act} onRow={actOnRow} detail={rowDetail}
           onReassign={(membershipId) => patch({ ownerMembershipId: membershipId })} /> : null}
         <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key))} items={[
           { id: "details", label: t("Details"), panel: <div className={screen.details}>
@@ -259,7 +273,6 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
               onClientApproval={(next) => { void saveFlow({ clientApproved: next }).catch((error) => setFlowError(error instanceof Error ? error.message : t("Could not save."))); }}
               bookIntro={bookIntro} onBookingStarted={() => setBookIntro(false)} onIntroBlocked={() => setSheet({ group: "property" })} />
           </div> },
-          { id: "activity", label: t("Activity"), panel: <ActivityPanel workspaceId={workspaceId} opportunityId={row.id} partyId={partyId || undefined} ownerMembershipId={ownerId || undefined} onChanged={saved} /> },
           { id: "files", label: t("Files"), panel: leadId ? <RecordAttachments workspaceId={workspaceId} leadId={String(leadId)} /> : <EmptyState illustration="upload" title={t("No enquiry files")} description={t("Project files live in Planning.")} /> },
         ]} />
       </div>
@@ -272,21 +285,22 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
                 value={live.amount === null || live.amount === undefined ? "" : String(live.amount)} />}
             <EditableField canEdit={Boolean(resource.data)} display={closeDate ? dateText(live.expectedCloseAt ?? live.expected_close_at, { locale, timeZone }) : undefined} kind="date" label={t("Expected close")} onReload={resource.refresh}
               onSave={(date) => patch({ expectedCloseAt: date ? new Date(`${date}T12:00:00`).toISOString() : null })} placeholder={t("Not set")} value={closeDate} />
-            <FactRow label={t("Next follow-up")}>{followUp && status === "open" ? <DueChip at={followUp} /> : dateText(followUp, { locale, timeZone })}</FactRow>
             {flow?.enquiryType ? <FactRow label={t("Enquiry type")}>{flow.enquiryType}</FactRow> : null}
             <FactRow label={t("Sales owner")}>{owner ? <span className={screen.person}><span aria-hidden="true"><Avatar name={owner.label} seed={owner.id} size="sm" /></span>{owner.label}</span> : t("Unassigned")}</FactRow>
             {proof ? <FactRow label={t("Payment proof")}><a className={screen.factLink} href={proofHref(workspaceId, row.id, proof.id)} target="_blank" rel="noopener noreferrer">{t("Attached · {date}", { date: shortDay(proof.recordedAt) })}</a></FactRow> : null}
           </EditableFieldList>
         </SideSection>
         <ClientContact workspaceId={workspaceId} partyId={partyId} partyName={String(live.partyName ?? t("Customer not set"))} />
+        <OpportunityActivity items={rows(activities.data)} loading={activities.loading} failure={activities.failure} retry={activities.refresh}
+          onAdd={resource.data ? () => setAction(addActivityAction(t, activityTarget)) : undefined}
+          onComplete={(item) => setAction(completeActivityAction(t, item))} onReschedule={(item) => setAction(rescheduleActivityAction(t, item))} />
         <SideSection title={t("Links")}>
-          <EditableFieldList layout="stacked">
-            {leadId ? <FactRow label={t("Enquiry")}><Link className={screen.factLink} href={`/workspace/crm/leads?lead=${leadId}`}>{enquiryRef ?? t("Open enquiry")}</Link></FactRow> : null}
-            <FactRow label={t("Planning")}>{caseId ? <Link className={screen.factLink} href={caseLink("overview")}>{t("Open in Planning")}</Link>
-              : <Button size="compact" variant="quiet" isLoading={openingCase} isDisabled={!resource.data || closed && status !== "won"} onPress={() => void openCase()}>{t("Start Planning")}</Button>}</FactRow>
-          </EditableFieldList>
+          <ul className={screen.links}>
+            {leadId ? <li><span>{t("Enquiry")}</span><Link className={screen.factLink} href={`/workspace/crm/leads?lead=${leadId}`}>{enquiryRef ?? t("Open enquiry")}</Link></li> : null}
+            <li><span>{t("Planning")}</span>{caseId ? <Link className={screen.factLink} href={caseLink("overview")}>{t("Open in Planning")}</Link>
+              : <Button size="compact" variant="quiet" isLoading={openingCase} isDisabled={!resource.data || closed && status !== "won"} onPress={() => void openCase()}>{t("Start Planning")}</Button>}</li>
+          </ul>
         </SideSection>
-        <LatestActivity workspaceId={workspaceId} opportunityId={row.id} onSeeAll={() => setTab("activity")} />
       </aside>
     </div>
     {action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={saved} /> : null}

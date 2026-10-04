@@ -1,16 +1,16 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ChevronDown, Mail, MessageCircle, Pencil, Phone } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, Circle, CircleCheck, Mail, MessageCircle, Pencil, Phone, Plus } from "lucide-react";
 import { Badge, Button, EditableFieldList, FactRow, Skeleton, Switch, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { dateText, label, rows, type RecordData } from "@/lib/crm/client";
+import { dateText, label, type RecordData } from "@/lib/crm/client";
 import { activityTitle } from "@/lib/crm/contact";
 import { FURNITURE_PATHS, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
 import type { FactGroup } from "@/lib/crm/now-step";
 import { formatPhoneForDisplay, phoneCountry, whatsappUrl } from "@/lib/phone";
-import { useCrmResource } from "./crm-workbench";
+import { ResourceState, useCrmResource } from "./crm-workbench";
 import { answered, formatMoney, type Discovery, type DiscoveryGroup } from "./opportunity-discovery";
 import { OpportunityIntro, type Intro } from "./opportunity-intro";
 import styles from "./opportunity-sections.module.css";
@@ -158,16 +158,44 @@ export function ClientContact({ workspaceId, partyId, partyName }: { workspaceId
   </SideSection>;
 }
 
-/** The last three things that happened; See all opens the Activity tab. */
-export function LatestActivity({ workspaceId, opportunityId, onSeeAll }: { workspaceId: string; opportunityId: string; onSeeAll: () => void }) {
+const SHOWN = 6;
+
+/** Pending first (soonest due first), then what happened, newest first. */
+export function activityOrder(items: RecordData[]): RecordData[] {
+  const at = (item: RecordData, keys: string[]) => Date.parse(String(keys.map((key) => item[key]).find((value) => typeof value === "string") ?? "")) || 0;
+  const pending = items.filter((item) => item.status === "pending").sort((a, b) => (at(a, ["dueAt"]) || Infinity) - (at(b, ["dueAt"]) || Infinity));
+  const rest = items.filter((item) => item.status !== "pending").sort((a, b) => at(b, ["completedAt", "createdAt", "dueAt"]) - at(a, ["completedAt", "createdAt", "dueAt"]));
+  return [...pending, ...rest];
+}
+
+/** The opportunity's activity in the sidebar: Add activity, then the timeline; six rows, Show all for the rest. */
+export function OpportunityActivity({ items, loading, failure, retry, onAdd, onReschedule, onComplete }: {
+  items: RecordData[]; loading: boolean; failure: string; retry: () => void;
+  onAdd?: () => void; onReschedule: (item: RecordData) => void; onComplete: (item: RecordData) => void;
+}) {
   const t = useT();
   const zoned = useDesignSystem();
-  const resource = useCrmResource<unknown>(workspaceId, `activities?${new URLSearchParams({ limit: "3", opportunityId })}`);
-  const items = rows(resource.data).slice(0, 3);
-  return <SideSection title={t("Latest activity")} action={<Button size="compact" variant="quiet" onPress={onSeeAll}>{t("See all")}</Button>}>
-    {resource.loading ? <Skeleton lines={3} /> : items.length ? <ul className={styles.activity}>{items.map((item) => <li key={item.id}>
-      <span className={styles.value}>{activityTitle(item, t)}</span>
-      <small>{dateText(item.completedAt ?? item.createdAt ?? item.dueAt, zoned)}</small>
-    </li>)}</ul> : <p className={styles.missing}>{t("No activity yet")}</p>}
+  const [all, setAll] = useState(false);
+  const ordered = activityOrder(items);
+  const shown = all ? ordered : ordered.slice(0, SHOWN);
+  return <SideSection title={t("Activity")} action={onAdd ? <Button size="compact" variant="quiet" onPress={onAdd}><Plus aria-hidden="true" size={14} />{t("Add activity")}</Button> : null}>
+    {failure ? <ResourceState loading={false} failure={failure} retry={retry} /> : loading && !items.length ? <Skeleton lines={3} />
+      : shown.length ? <ul className={styles.activity}>{shown.map((item) => {
+        const pending = item.status === "pending";
+        const done = item.status === "completed";
+        const when = pending ? item.dueAt : item.completedAt ?? item.createdAt ?? item.dueAt;
+        return <li key={String(item.id)} data-status={String(item.status ?? "")}>
+          <span className={styles.activityMark} aria-hidden="true">{done ? <CircleCheck size={14} /> : <Circle size={14} />}</span>
+          <span className={styles.activityText}>
+            <span className={styles.value}>{activityTitle(item, t)}</span>
+            <small>{[label(item.type), label(item.status), dateText(when, zoned)].join(" · ")}</small>
+            {pending ? <span className={styles.activityActions}>
+              <Button size="compact" variant="quiet" onPress={() => onComplete(item)}><Check aria-hidden="true" size={13} />{t("Complete")}</Button>
+              <Button size="compact" variant="quiet" onPress={() => onReschedule(item)}><CalendarClock aria-hidden="true" size={13} />{t("Reschedule")}</Button>
+            </span> : null}
+          </span>
+        </li>;
+      })}</ul> : <p className={styles.missing}>{t("No activity yet")}</p>}
+    {ordered.length > SHOWN ? <span className={styles.showAll}><Button size="compact" variant="quiet" onPress={() => setAll((open) => !open)}>{all ? t("Show less") : t("Show all")}</Button></span> : null}
   </SideSection>;
 }

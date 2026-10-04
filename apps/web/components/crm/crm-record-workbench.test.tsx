@@ -41,7 +41,7 @@ describe("CRM opportunity workbench", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Villa renovation" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Aisha" })[0]).toHaveAttribute("href", "/workspace/crm/customers?record=party-1");
     expect(within(screen.getByRole("list", { name: "Progress" })).getAllByRole("listitem").map((item) => item.getAttribute("data-state"))).toEqual(["done", "current", "upcoming", "upcoming"]);
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Details", "Activity", "Files"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Details", "Files"]);
     for (const name of ["Change stage", "Progress"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
     // "Won" is only a dot on the progress line, never a button of its own.
     expect(screen.getAllByRole("button", { name: /^Won$/ }).every((button) => button.closest("ol")?.getAttribute("aria-label") === "Progress")).toBe(true);
@@ -61,6 +61,39 @@ describe("CRM opportunity workbench", () => {
     await user.click(within(sheet).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", "opportunities/opportunity-1/discovery", "PUT", expect.objectContaining({ version: 2, area: "1200", clientEmail: "aisha@example.com" })));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Property details" })).not.toBeInTheDocument());
+  });
+
+  it("leads the action card with the pending follow-up and keeps the activity in the sidebar", async () => {
+    const record = { id: "opportunity-3", title: "Penthouse", status: "open", version: 4, pipelineId: "pipeline-1", stageId: "qualified", stageName: "Qualified", partyId: "party-3", partyName: "Amal Rahman", ownerMembershipId: "m1", ownerName: "Dana",
+      nextActionAt: "2020-09-30T09:00:00.000Z",
+      flow: { flow: "design", steps, done: 1, total: 4, next: { stageId: "proposal", name: "Proposal", step: "proposal" }, missing: [{ key: "discovery:area", label: "Area" }], toWon: [], proofs: [], furniture: null, clientApproval: null, negotiationOptional: false } };
+    const activities = [
+      { id: "a1", type: "meeting", title: "Site visit", status: "completed", completedAt: "2020-09-20T09:00:00.000Z", version: 2 },
+      { id: "a2", type: "task", title: "Follow up on opportunity", status: "pending", dueAt: "2020-09-30T09:00:00.000Z", isNextAction: true, version: 1 },
+      ...Array.from({ length: 6 }, (_, index) => ({ id: `n${index}`, type: "note", title: `Note ${index + 1}`, status: "completed", completedAt: `2020-09-0${index + 1}T09:00:00.000Z`, version: 1 })),
+    ];
+    vi.mocked(crmRequest).mockImplementation(async (_w, path) => path === `opportunities/${record.id}` ? record : path === "pipelines" ? pipelines
+      : String(path).startsWith("activities?") ? { data: activities } : { data: [] });
+    const user = userEvent.setup();
+    render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
+    const next = await screen.findByRole("region", { name: "To move to Proposal" });
+    // The follow-up is a row of its own above the checklist, never a chip beside the owner.
+    expect(await within(next).findByText("Follow up with Amal")).toBeInTheDocument();
+    expect(within(next).getAllByText(/^Overdue · /)).toHaveLength(1);
+    const side = screen.getByRole("complementary", { name: "Key facts" });
+    expect(within(side).queryByText("Next follow-up")).not.toBeInTheDocument();
+    expect(within(side).queryByText("Latest activity")).not.toBeInTheDocument();
+    // The sidebar's Activity: pending first, then newest first; six rows until Show all.
+    const timeline = within(side).getByRole("region", { name: "Activity" });
+    const shown = () => within(timeline).getAllByRole("listitem").map((item) => item.textContent);
+    expect(shown()).toHaveLength(6);
+    expect(shown()[0]).toMatch(/^Follow up on opportunity/);
+    expect(shown()[1]).toMatch(/^Site visit/);
+    await user.click(within(timeline).getByRole("button", { name: "Show all" }));
+    expect(shown()).toHaveLength(8);
+    // Complete in the card opens the same dialog as the timeline's.
+    await user.click(within(next).getByRole("button", { name: "Complete" }));
+    expect(await screen.findByRole("dialog", { name: "Complete activity" })).toBeInTheDocument();
   });
 
   it("keeps Lost, backward stage changes and history in the ⋯ menu", async () => {

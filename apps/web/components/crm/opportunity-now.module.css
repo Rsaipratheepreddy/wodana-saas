@@ -1,4 +1,4 @@
-/* The opportunity screen: one header; the progress line, the next column's checklist and Details · Activity · Files; the facts beside them. */
+/* The opportunity screen: one header; the progress line, the next column's checklist and Details · Files; the facts and activity beside them. */
 .opportunity { gap: var(--wd-space-4); }
 .header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3) var(--wd-space-6); padding-inline-end: var(--wd-space-8); }
 .identity { display: grid; gap: var(--wd-space-1); min-inline-size: 0; flex: 1 1 20rem; }
@@ -12,8 +12,13 @@
 .headerActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .owner { display: inline-flex; }
 .details { display: grid; gap: var(--wd-space-3); padding-block-start: var(--wd-space-3); }
-.factLink { color: var(--wd-color-link); font-size: var(--wd-text-sm); text-decoration: none; }
-.factLink:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+.factLink { color: var(--wd-color-link); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: underline; text-underline-offset: var(--wd-space-0-5); }
+.factLink:hover { color: var(--wd-color-link-hover); }
+.factLink:focus-visible { border-radius: var(--wd-radius-xs); outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+/* Links: one line each, the label then the link. */
+.links { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.links li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-1) var(--wd-space-3); min-block-size: var(--wd-control-sm); }
+.links li > span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .history { display: grid; margin: 0; padding: 0; list-style: none; }
 .history li { display: grid; gap: var(--wd-space-0-5); padding-block: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
 .history li:first-child { border-block-start: 0; }
@@ -44,6 +49,14 @@
 .checklist li[data-state="done"] .rowLabel { color: var(--wd-color-text-secondary); }
 .rowValue { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .rowValue::before { content: "·"; margin-inline-end: var(--wd-space-2); color: var(--wd-color-text-tertiary); }
+
+/* The pending follow-up, above the checklist: its own row on the surface tone, with Reschedule and Complete. */
+.followUp { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); min-block-size: var(--wd-control-standard); padding-block: var(--wd-space-1-5); padding-inline: var(--wd-space-2); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); }
+.followUp .check { color: var(--wd-color-icon); }
+.followUp[data-empty] { background: none; }
+.followUp[data-empty] .rowLabel { color: var(--wd-color-text-secondary); }
+.followUp .rowText { flex: 1 1 14rem; align-items: center; }
+.followUpActions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); margin-inline-start: auto; }
 
 .then { margin: 0; padding-inline: var(--wd-space-4); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 

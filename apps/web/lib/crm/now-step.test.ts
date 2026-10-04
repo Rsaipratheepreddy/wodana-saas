@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { columnOfStep, groupForRequirement, groupRequirements, nextChecklist, nowPlan, requirementAction, stepForRequirement, type FunnelStep } from "./now-step";
+import { columnOfStep, firstName, groupForRequirement, isGenericFollowUp, pendingFollowUp, groupRequirements, nextChecklist, nowPlan, requirementAction, stepForRequirement, type FunnelStep } from "./now-step";
 import type { OpportunityFlowView } from "./opportunity-flow";
 
 const view = (overrides: Partial<OpportunityFlowView> = {}): OpportunityFlowView => ({
@@ -107,3 +107,21 @@ describe("now step mapping (F1)", () => {
   });
 });
 
+
+describe("the pending follow-up", () => {
+  it("is the pending next action, else the soonest pending activity with a due date", () => {
+    const done = { id: "d", status: "completed", isNextAction: true, dueAt: "2026-10-01T09:00:00.000Z" };
+    const later = { id: "l", status: "pending", dueAt: "2026-10-09T09:00:00.000Z" };
+    const sooner = { id: "s", status: "pending", dueAt: "2026-10-05T09:00:00.000Z" };
+    const next = { id: "n", status: "pending", isNextAction: true, dueAt: "2026-10-10T09:00:00.000Z" };
+    expect(pendingFollowUp([done, later, sooner, next])?.id).toBe("n");
+    expect(pendingFollowUp([done, later, sooner])?.id).toBe("s");
+    expect(pendingFollowUp([done, { id: "x", status: "pending" }])).toBeNull();
+  });
+
+  it("names the client when the server's generic title is kept", () => {
+    expect(isGenericFollowUp({ title: "Follow up on opportunity" })).toBe(true);
+    expect(isGenericFollowUp({ title: "Send the revised layout" })).toBe(false);
+    expect(firstName("  Amal Rahman ")).toBe("Amal");
+  });
+});

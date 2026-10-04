@@ -1,8 +1,8 @@
 "use client";
 
-import { useId, useState, type CSSProperties } from "react";
+import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import { Button as AriaButton, Dialog, DialogTrigger, Heading } from "react-aria-components";
-import { Check, Circle, CircleCheck } from "lucide-react";
+import { CalendarClock, CalendarPlus, Check, Circle, CircleCheck } from "lucide-react";
 import { Avatar, Badge, Button, PopoverSurface, TooltipBubble, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { groupRequirements, type Checklist, type ChecklistRow, type NowPlan, type NowStep } from "@/lib/crm/now-step";
@@ -36,6 +36,29 @@ export function DueChip({ at }: { at: string | null | undefined }) {
   return <Badge tone={overdue ? "danger" : "neutral"}>{overdue ? t("Overdue · {date}", { date }) : t("Due {date}", { date })}</Badge>;
 }
 
+/**
+ * The pending next follow-up at the top of the action card: what it is, when it is due (red once overdue),
+ * Complete and Reschedule. With none booked, a quiet Book a follow-up when the flow needs one.
+ */
+export function FollowUpRow({ title, due, onComplete, onReschedule, onBook }: {
+  title?: string; due?: string | null; onComplete?: () => void; onReschedule?: () => void; onBook?: () => void;
+}) {
+  const t = useT();
+  if (!title) return onBook ? <div className={styles.followUp} data-empty="">
+    <span className={styles.check} aria-hidden="true"><CalendarPlus size={16} /></span>
+    <span className={styles.rowText}><span className={styles.rowLabel}>{t("No follow-up booked")}</span></span>
+    <Button size="compact" variant="quiet" onPress={onBook}>{t("Book a follow-up")}</Button>
+  </div> : null;
+  return <div className={styles.followUp}>
+    <span className={styles.check} aria-hidden="true"><CalendarClock size={16} /></span>
+    <span className={styles.rowText}><span className={styles.rowLabel}>{title}</span><DueChip at={due} /></span>
+    <span className={styles.followUpActions}>
+      {onReschedule ? <Button size="compact" variant="quiet" onPress={onReschedule}>{t("Reschedule")}</Button> : null}
+      {onComplete ? <Button size="compact" variant="secondary" onPress={onComplete}><Check aria-hidden="true" size={14} />{t("Complete")}</Button> : null}
+    </span>
+  </div>;
+}
+
 /** The owner and a popover to hand the job to a teammate. */
 export function ReassignPopover({ owner, people, onReassign }: { owner: Teammate | null; people: Teammate[]; onReassign: (membershipId: string) => Promise<void> }) {
   const t = useT();
@@ -66,11 +89,13 @@ export function ReassignPopover({ owner, people, onReassign }: { owner: Teammate
 
 /**
  * What the next column needs, all at once: each requirement ✓ done (with its value, or who and when) or ○ missing
- * with the one action that resolves it. The first missing one is the step now; who does it and by when sit on top.
+ * with the one action that resolves it. The first missing one is the step now; who does it sits on top and the pending follow-up leads the list.
  * When nothing is missing, one primary button moves on. After Won or Lost the block names the one next step.
  */
-export function NextActions({ plan, checklist, owner, people, due, busy, onAct, onRow, onReassign, detail }: {
-  plan: NowPlan; checklist: Checklist | null; owner: Teammate | null; people: Teammate[]; due: string | null; busy: boolean;
+export function NextActions({ plan, checklist, owner, people, followUp, busy, onAct, onRow, onReassign, detail }: {
+  plan: NowPlan; checklist: Checklist | null; owner: Teammate | null; people: Teammate[]; busy: boolean;
+  /** The pending follow-up row, shown above the checklist. */
+  followUp?: ReactNode;
   onAct: (step: NowStep) => void; onRow: (row: ChecklistRow) => void; onReassign?: (membershipId: string) => Promise<void>;
   /** The value a row shows: a done fact, or where a missing one stands. */
   detail?: (row: ChecklistRow) => string | null;
@@ -80,7 +105,7 @@ export function NextActions({ plan, checklist, owner, people, due, busy, onAct, 
   const text = useStepText();
   const titleId = useId();
   const now = plan.now;
-  if (!now && !checklist) return null;
+  if (!now && !checklist && !followUp) return null;
   const rows = checklist?.rows ?? [];
   const first = rows.find((row) => row.state === "missing") ?? null;
   const ready = !first;
@@ -100,10 +125,10 @@ export function NextActions({ plan, checklist, owner, people, due, busy, onAct, 
           {owner ? <span className={styles.assignee}><span aria-hidden="true"><Avatar name={owner.label} seed={owner.id} size="sm" /></span><span>{owner.label}</span></span>
             : <span className={styles.assignee}>{t("Unassigned")}</span>}
           {onReassign && people.length ? <ReassignPopover owner={owner} people={people} onReassign={onReassign} /> : null}
-          {plan.status === "open" ? <DueChip at={due} /> : null}
           {ready && now ? <span className={styles.primary}><Button size="compact" variant="primary" isLoading={busy} onPress={() => onAct(now)}>{text(now, "short")}</Button></span> : null}
         </div>
       </div>
+      {followUp}
       {rows.length ? <ul className={styles.checklist} aria-label={title}>{rows.map((row) => {
         const label = translateKnown(t, row.label);
         const value = rowDetail(row);

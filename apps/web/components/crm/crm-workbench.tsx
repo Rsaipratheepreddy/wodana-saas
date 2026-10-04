@@ -12,6 +12,7 @@ import { useWoddyRecord } from "./woddy-chat";
 import { CrmDateTimeField } from "./crm-date-time-field";
 import { zonedDateTime, zonedDateTimeToIso } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
+import type { Translate } from "@/lib/i18n/keys";
 import { activityTitle } from "@/lib/crm/contact";
 import { formatPhoneForDisplay } from "@/lib/phone";
 
@@ -141,6 +142,21 @@ export const options = (items: RecordData[], name = "name") => items.map((row) =
 
 export type AssignmentEntry = { id: string; at: string; ownerName: string | null; method: string; reason?: string | null };
 
+/** Add an activity (task, call, meeting or note) to a record; the same dialog everywhere activities are listed. */
+export function addActivityAction(t: Translate, target: Record<string, string>): ActionSpec {
+  return { title: t("Add activity"), description: t("A saved note or scheduled call is an internal record. Complete an outbound call only after the customer interaction actually happened."), path: "activities", initial: { ...target, type: "task", isNextAction: true }, fields: [{ key: "type", label: t("Activity"), options: choice(["task", "call", "meeting", "note"]), required: true }, { key: "title", label: t("Title"), required: true }, { key: "dueAt", label: t("Due"), type: "datetime-local" }, { key: "isNextAction", label: t("Make this the next action"), type: "checkbox" }, { key: "description", label: t("Notes"), type: "textarea" }], transform: (v) => { if (v.type === "note") { v.isNextAction = false; v.interactionDirection = "internal"; } if (v.type === "call") v.interactionDirection = "outbound"; if (v.isNextAction && !v.dueAt) throw new Error(t("Choose a due date for the next action.")); return v; } };
+}
+
+/** Move a pending activity to a new due date. */
+export function rescheduleActivityAction(t: Translate, activity: RecordData): ActionSpec {
+  return { title: t("Reschedule activity"), path: `activities/${activity.id}`, method: "PATCH", initial: { version: activity.version }, fields: [{ key: "dueAt", label: t("New due date"), type: "datetime-local", required: true }] };
+}
+
+/** Complete a pending activity with its outcome; a call is confirmed only after it really happened. */
+export function completeActivityAction(t: Translate, activity: RecordData): ActionSpec {
+  return { title: activity.type === "call" ? t("Confirm completed call") : t("Complete activity"), description: activity.type === "call" ? t("Confirm only after a real outbound customer call. This becomes first-response evidence.") : undefined, path: `activities/${activity.id}/complete`, initial: { version: activity.version }, fields: [{ key: "outcome", label: t("Outcome"), required: true }], submit: t("Complete") };
+}
+
 /** Activities and (for enquiries) assignments in one timeline, newest first (PLM-095). */
 export function ActivityPanel({ workspaceId, leadId, partyId, opportunityId, ownerMembershipId, onChanged, assignments = [] }: { workspaceId: string; leadId?: string; partyId?: string; opportunityId?: string; ownerMembershipId?: string | null; onChanged?: () => Promise<void> | void; assignments?: AssignmentEntry[] }) {
   const t = useT();
@@ -155,13 +171,13 @@ export function ActivityPanel({ workspaceId, leadId, partyId, opportunityId, own
   const nextCursor = cursor ?? (resource.data as { nextCursor?: string } | null)?.nextCursor;
   const target = { ...(leadId ? { leadId } : {}), ...(partyId ? { partyId } : {}), ...(opportunityId ? { opportunityId } : {}), ...(ownerMembershipId ? { ownerMembershipId } : {}) };
   return <div className={`${styles.workbench} ${styles.activityPanel}`}>
-    <div className={styles.toolbar}><Button size="compact" className={styles.activityAddAction} onPress={() => setAction({ title: t("Add activity"), description: t("A saved note or scheduled call is an internal record. Complete an outbound call only after the customer interaction actually happened."), path: "activities", initial: { ...target, type: "task", isNextAction: true }, fields: [{ key: "type", label: t("Activity"), options: choice(["task", "call", "meeting", "note"]), required: true }, { key: "title", label: t("Title"), required: true }, { key: "dueAt", label: t("Due"), type: "datetime-local" }, { key: "isNextAction", label: t("Make this the next action"), type: "checkbox" }, { key: "description", label: t("Notes"), type: "textarea" }], transform: (v) => { if (v.type === "note") { v.isNextAction = false; v.interactionDirection = "internal"; } if (v.type === "call") v.interactionDirection = "outbound"; if (v.isNextAction && !v.dueAt) throw new Error(t("Choose a due date for the next action.")); return v; } })}><Plus aria-hidden="true" size={14} />{t("Add activity")}</Button></div>
+    <div className={styles.toolbar}><Button size="compact" className={styles.activityAddAction} onPress={() => setAction(addActivityAction(t, target))}><Plus aria-hidden="true" size={14} />{t("Add activity")}</Button></div>
     <ResourceState {...resource} retry={resource.refresh} />
     {!resource.loading && !resource.failure && !activities.length && !assignments.length ? <p className={styles.empty}>{t("No activities yet. Schedule a follow-up or record a note.")}</p> : null}
     {timelineOf(activities, assignments).map((entry) => entry.kind === "assignment" ? <div className={styles.timelineAssignment} key={`assignment-${entry.item.id}`}>
       <UserRound aria-hidden="true" size={14} />
       <div><strong>{entry.item.ownerName ? t("Assigned to {name}", { name: entry.item.ownerName }) : t("Returned to the queue")}</strong><small>{label(entry.item.method)} · {dateText(entry.item.at)}</small>{entry.item.reason ? <p>{entry.item.reason}</p> : null}</div>
-    </div> : (activity => <div className={styles.row} key={activity.id}><div><strong>{activityTitle(activity, t)}</strong><small>{label(activity.type)}{activity.interactionDirection ? ` · ${label(activity.interactionDirection)}` : ""} · {label(activity.status)} · {dateText(activity.dueAt, zoned)}{activity.isNextAction ? ` · ${t("Next action")}` : ""}</small>{activity.description ? <p>{String(activity.description)}</p> : null}</div>{activity.status === "pending" ? <div className={`${styles.actions} ${styles.activityActions}`}><Button size="compact" onPress={() => setAction({ title: t("Reschedule activity"), path: `activities/${activity.id}`, method: "PATCH", initial: { version: activity.version }, fields: [{ key: "dueAt", label: t("New due date"), type: "datetime-local", required: true }] })}><CalendarClock aria-hidden="true" size={14} />{t("Reschedule")}</Button><Button size="compact" variant="primary" onPress={() => setAction({ title: activity.type === "call" ? t("Confirm completed call") : t("Complete activity"), description: activity.type === "call" ? t("Confirm only after a real outbound customer call. This becomes first-response evidence.") : undefined, path: `activities/${activity.id}/complete`, initial: { version: activity.version }, fields: [{ key: "outcome", label: t("Outcome"), required: true }], submit: t("Complete") })}><Check aria-hidden="true" size={14} />{t("Complete")}</Button></div> : <Badge tone="neutral">{label(activity.status)}</Badge>}</div>)(entry.item))}
+    </div> : (activity => <div className={styles.row} key={activity.id}><div><strong>{activityTitle(activity, t)}</strong><small>{label(activity.type)}{activity.interactionDirection ? ` · ${label(activity.interactionDirection)}` : ""} · {label(activity.status)} · {dateText(activity.dueAt, zoned)}{activity.isNextAction ? ` · ${t("Next action")}` : ""}</small>{activity.description ? <p>{String(activity.description)}</p> : null}</div>{activity.status === "pending" ? <div className={`${styles.actions} ${styles.activityActions}`}><Button size="compact" onPress={() => setAction(rescheduleActivityAction(t, activity))}><CalendarClock aria-hidden="true" size={14} />{t("Reschedule")}</Button><Button size="compact" variant="primary" onPress={() => setAction(completeActivityAction(t, activity))}><Check aria-hidden="true" size={14} />{t("Complete")}</Button></div> : <Badge tone="neutral">{label(activity.status)}</Badge>}</div>)(entry.item))}
     {nextCursor && cursor !== "done" ? <Button size="compact" onPress={async () => { try { const result = await crmRequest<{ data: RecordData[]; nextCursor: string | null }>(workspaceId, `activities?${query}&cursor=${encodeURIComponent(nextCursor)}`); setExtra((old) => [...old, ...result.data.filter((row) => !activities.some((a) => a.id === row.id))]); setCursor(result.nextCursor ?? "done"); } catch (error) { setPageError((error as Error).message); } }}>{t("Load more activities")}</Button> : null}
     {pageError ? <p role="alert">{pageError}</p> : null}
     {action ? <ActionDialog action={action} workspaceId={workspaceId} onClose={() => setAction(null)} onSaved={async () => { setExtra([]); setCursor(null); resource.refresh(); await onChanged?.(); }} /> : null}

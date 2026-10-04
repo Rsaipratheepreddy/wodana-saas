@@ -6,7 +6,7 @@ import { missingFrom, requirementAction, type FlowLineStep, type OpportunityFlow
 import { DesignSystemProvider } from "@/design-system";
 import { nextChecklist, nowPlan } from "@/lib/crm/now-step";
 import { StageBlockedSheet } from "./opportunity-flow";
-import { NextActions, ProgressLine } from "./opportunity-now";
+import { FollowUpRow, NextActions, ProgressLine } from "./opportunity-now";
 
 const flow = (overrides: Partial<OpportunityFlowView> = {}): OpportunityFlowView => ({
   flow: "furniture",
@@ -46,9 +46,9 @@ const people = [{ id: "m1", label: "Dana Haddad" }, { id: "m2", label: "Omar Sal
 const wrap = (node: React.ReactNode) => render(<DesignSystemProvider>{node}</DesignSystemProvider>);
 
 describe("the next column's checklist", () => {
-  const act = (overrides: Partial<OpportunityFlowView>, extra: { onAct?: () => void; onRow?: () => void; onReassign?: (id: string) => Promise<void>; due?: string | null } = {}) => {
+  const act = (overrides: Partial<OpportunityFlowView>, extra: { onAct?: () => void; onRow?: () => void; onReassign?: (id: string) => Promise<void>; followUp?: React.ReactNode } = {}) => {
     const view = design(overrides);
-    return wrap(<NextActions plan={nowPlan({ flow: view, status: "open" })} checklist={nextChecklist(view, "open")} owner={people[0]} people={people} due={extra.due ?? null} busy={false}
+    return wrap(<NextActions plan={nowPlan({ flow: view, status: "open" })} checklist={nextChecklist(view, "open")} owner={people[0]} people={people} followUp={extra.followUp} busy={false}
       onAct={extra.onAct ?? vi.fn()} onRow={extra.onRow ?? vi.fn()} onReassign={extra.onReassign} />);
   };
 
@@ -59,11 +59,12 @@ describe("the next column's checklist", () => {
       { key: "details", name: "Complete the client details", check: "details_complete", column: "qualified", optional: false, state: "current", doneAt: null, doneBy: null, missing: [{ key: "clientEmail", label: "Client email" }] },
       { key: "enquiry_type", name: "Confirm the enquiry type", check: "details_complete", column: "qualification", optional: false, state: "done", doneAt: "2026-10-01T08:00:00.000Z", doneBy: "Sara" },
       { key: "intro_meeting", name: "Hold the intro meeting", check: "intro_meeting_completed", column: "qualification", optional: false, state: "upcoming", doneAt: null, doneBy: null, missing: [{ key: "introMeeting", label: "Intro meeting completed" }] },
-    ].map((step) => ({ missing: [], ...step }) as FlowLineStep), missing: [{ key: "clientEmail", label: "Client email" }, { key: "introMeeting", label: "Intro meeting completed" }] }, { onRow, due: "2020-01-02T09:00:00.000Z" });
+    ].map((step) => ({ missing: [], ...step }) as FlowLineStep), missing: [{ key: "clientEmail", label: "Client email" }, { key: "introMeeting", label: "Intro meeting completed" }] }, { onRow });
     const block = screen.getByRole("region", { name: "To move to Qualified" });
     expect(within(block).getByText("Qualified means the brief is clear enough to plan the intro.")).toBeInTheDocument();
     expect(within(block).getByText("Dana Haddad")).toBeInTheDocument();
-    expect(within(block).getByText(/Overdue/)).toBeInTheDocument();
+    // The follow-up date is not a chip in the header: it has its own row when one is booked.
+    expect(within(block).queryByText(/Overdue|Due /)).not.toBeInTheDocument();
     const rows = within(within(block).getByRole("list", { name: "To move to Qualified" })).getAllByRole("listitem");
     expect(rows.map((row) => [row.getAttribute("data-state"), row.hasAttribute("data-now")])).toEqual([["missing", true], ["done", false], ["missing", false]]);
     expect(within(rows[1]).getByText(/^Sara · /)).toBeInTheDocument();
@@ -73,6 +74,33 @@ describe("the next column's checklist", () => {
     expect(onRow).toHaveBeenCalledWith(expect.objectContaining({ id: "clientEmail", group: "property", target: "discovery" }));
     await user.click(within(rows[2]).getByRole("button", { name: "Book · Intro meeting completed" }));
     expect(onRow).toHaveBeenLastCalledWith(expect.objectContaining({ group: "intro", target: "intro" }));
+  });
+
+  it("leads with the pending follow-up: what, when and Complete or Reschedule", async () => {
+    const onComplete = vi.fn();
+    const onReschedule = vi.fn();
+    const user = userEvent.setup();
+    act({}, { followUp: <FollowUpRow title="Follow up with Amal" due="2020-01-02T09:00:00.000Z" onComplete={onComplete} onReschedule={onReschedule} /> });
+    const block = screen.getByRole("region", { name: "To move to Qualified" });
+    expect(within(block).getByText("Follow up with Amal")).toBeInTheDocument();
+    expect(within(block).getByText(/^Overdue · /)).toBeInTheDocument();
+    // The follow-up row sits above the checklist and does not compete with its one primary action.
+    expect(within(block).getAllByRole("button").filter((button) => button.getAttribute("data-variant") === "primary")).toHaveLength(1);
+    await user.click(within(block).getByRole("button", { name: "Complete" }));
+    expect(onComplete).toHaveBeenCalled();
+    await user.click(within(block).getByRole("button", { name: "Reschedule" }));
+    expect(onReschedule).toHaveBeenCalled();
+  });
+
+  it("offers Book a follow-up only when asked to, and otherwise shows nothing", async () => {
+    const onBook = vi.fn();
+    const user = userEvent.setup();
+    const { unmount } = wrap(<FollowUpRow />);
+    expect(screen.queryByRole("button", { name: "Book a follow-up" })).not.toBeInTheDocument();
+    unmount();
+    wrap(<FollowUpRow onBook={onBook} />);
+    await user.click(screen.getByRole("button", { name: "Book a follow-up" }));
+    expect(onBook).toHaveBeenCalled();
   });
 
   it("reassigns through the teammate list", async () => {
@@ -99,7 +127,7 @@ describe("the next column's checklist", () => {
     const onRow = vi.fn();
     const user = userEvent.setup();
     const view = flow();
-    wrap(<NextActions plan={nowPlan({ flow: view, status: "open" })} checklist={nextChecklist(view, "open")} owner={null} people={[]} due={null} busy={false} onAct={vi.fn()} onRow={onRow} />);
+    wrap(<NextActions plan={nowPlan({ flow: view, status: "open" })} checklist={nextChecklist(view, "open")} owner={null} people={[]} busy={false} onAct={vi.fn()} onRow={onRow} />);
     const block = screen.getByRole("region", { name: "To move to Won" });
     expect(within(block).getByText("Won means the client has paid.")).toBeInTheDocument();
     expect(within(block).getByText("Unassigned")).toBeInTheDocument();

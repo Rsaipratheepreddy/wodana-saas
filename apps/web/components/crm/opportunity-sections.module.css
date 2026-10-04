@@ -27,6 +27,13 @@ a.name:hover { text-decoration: underline; }
 .iconLink { display: inline-grid; place-items: center; inline-size: var(--wd-control-sm); block-size: var(--wd-control-sm); border-radius: var(--wd-radius-sm); color: var(--wd-color-icon); }
 .iconLink:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
 .iconLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
-.activity li { display: grid; gap: var(--wd-space-0-5); }
+.activity li { display: flex; align-items: flex-start; gap: var(--wd-space-2); min-inline-size: 0; }
+.activityMark { display: inline-grid; flex: none; place-items: center; block-size: calc(var(--wd-text-sm) * var(--wd-leading-ui)); color: var(--wd-color-icon-subtle); }
+.activityText { display: grid; flex: 1; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .activity small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.activity li[data-status="pending"] .activityMark { color: var(--wd-color-action-primary); }
+.activity li[data-status="completed"] .activityMark { color: var(--wd-color-success); }
+.activity li[data-status="completed"] .value, .activity li[data-status="cancelled"] .value { color: var(--wd-color-text-secondary); }
+.activityActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); margin-inline-start: calc(var(--wd-space-2) * -1); }
+.showAll { display: flex; margin-inline-start: calc(var(--wd-space-2) * -1); }
 @media (prefers-reduced-motion: reduce) { .toggle svg { transition: none; } }
