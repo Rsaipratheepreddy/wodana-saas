@@ -7,7 +7,9 @@ import { Avatar, Badge, Button, Callout, DataGrid, ControlledModalDialog, FormDi
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import type { CrmRecord, CrmScreenPageData } from "@/lib/crm/screens";
-import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
+import { crmRequest, rows, type MissingRequirement, type RecordData } from "@/lib/crm/client";
+import { missingFrom, type OpportunityFlowView, type RequirementTarget } from "@/lib/crm/opportunity-flow";
+import { PaymentProofDialog, StageBlockedDialog } from "./opportunity-flow";
 import { LinkedRecordWorkbench } from "./crm-record-workbench";
 import { CrmProductShell } from "./crm-product-shell";
 import styles from "./crm-opportunities.module.css";
@@ -75,9 +77,12 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
   const [moveNotice, setMoveNotice] = useState("");
   const [pendingOutcome, setPendingOutcome] = useState<{ recordId: string; stageId: string; status: "won" | "lost" } | null>(null);
   const [outcomeReason, setOutcomeReason] = useState("");
+  // PLM-121/122: a refused move shows what the column needs; Won asks for the payment proof.
+  const [blocked, setBlocked] = useState<{ recordId: string; stage: string; items: MissingRequirement[] } | null>(null);
+  const [proofFor, setProofFor] = useState<string | null>(null);
   // S-5: the board refreshes itself while on screen; a card being moved or decided is left alone.
   const quiet = useRef(false);
-  useEffect(() => { quiet.current = busy || Boolean(moving || dragged || pendingOutcome); });
+  useEffect(() => { quiet.current = busy || Boolean(moving || dragged || pendingOutcome || blocked || proofFor); });
   useEffect(() => {
     const poll = () => {
       if (document.visibilityState !== "visible" || quiet.current || moveLock.current) return;
@@ -117,14 +122,40 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
       setItems(current => current.map(record => record.id === recordId ? { ...record, ...updated, stageId, stageName: target.name } : record));
       setMoveNotice(t("{title} moved to {stage}.", { title: opportunityTitle(item, t), stage: target.name }));
       setPendingOutcome(null); setOutcomeReason("");
+    } catch (error) {
+      const missing = missingFrom(error);
+      // The card stays where it was; the box lists every missing item with its action.
+      if (missing.length) { setBlocked({ recordId, stage: target.name, items: missing }); setPendingOutcome(null); }
+      else setFailure(error instanceof Error ? error.message : t("Could not move the opportunity. Try again."));
+    }
+    finally { moveLock.current = false; setMoving(null); setDragged(null); setDropTarget(null); }
+  };
+
+  /** Won is a payment proof: check what else Won needs, then ask for the proof (or a reason once a payment is verified). */
+  const requestWin = async (recordId: string, stageId: string, stageName: string) => {
+    if (moveLock.current) return;
+    moveLock.current = true; setMoving(recordId); setFailure("");
+    try {
+      const live = await crmRequest<RecordData & { flow?: OpportunityFlowView }>(initialData.workspaceId, `opportunities/${recordId}`);
+      const toWon = live.flow?.toWon ?? [];
+      const others = toWon.filter((item) => item.key !== "paymentProof");
+      if (others.length) setBlocked({ recordId, stage: stageName, items: others });
+      else if (!live.flow || toWon.length) setProofFor(recordId);
+      else { setPendingOutcome({ recordId, stageId, status: "won" }); setOutcomeReason(""); }
     } catch (error) { setFailure(error instanceof Error ? error.message : t("Could not move the opportunity. Try again.")); }
     finally { moveLock.current = false; setMoving(null); setDragged(null); setDropTarget(null); }
+  };
+
+  const resolve = (recordId: string, target: RequirementTarget) => {
+    if (target === "proof") setProofFor(recordId);
+    else setSelectedRecord(recordId);
   };
 
   const requestMove = (recordId: string, stageId: string) => {
     const target = boardColumns.find(column => column.id === stageId);
     if (!target) return;
-    if (target.code === "won" || target.code === "lost") {
+    if (target.code === "won") { void requestWin(recordId, stageId, target.name); return; }
+    if (target.code === "lost") {
       setPendingOutcome({ recordId, stageId, status: target.code });
       setOutcomeReason("");
       return;
@@ -164,7 +195,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
     </div>
     {failure ? <Callout title={t("Could not update pipeline")} tone="warning">{failure}</Callout> : null}
     {moveNotice && <p role="status" className={styles.moveNotice}>{moveNotice}</p>}
-    {layout === "board" && !activePipelines.length && !items.length ? <div className={styles.emptyState}><strong>{t("Your pipeline starts with an enquiry")}</strong><p>{t("Open an enquiry and choose Convert to opportunity. Its customer, owner and follow-up stay connected.")}</p><ol className={styles.stageFlow} aria-label={t("Sales stages")}><li>{t("New Opportunity")}</li><li>{t("Proposal")}</li><li>{t("Negotiation")}</li></ol><p className={styles.flowOutcome}>{t("Then mark the opportunity {won} or {lost}.").split(/(\{won\}|\{lost\})/).map((part, index) => part === "{won}" ? <strong key={index}>{t("Won")}</strong> : part === "{lost}" ? <strong key={index}>{t("Lost")}</strong> : part)}</p></div> : null}
+    {layout === "board" && !activePipelines.length && !items.length ? <div className={styles.emptyState}><strong>{t("Your pipeline starts with an enquiry")}</strong><p>{t("Open an enquiry and choose Convert to opportunity. Its customer, owner and follow-up stay connected.")}</p><ol className={styles.stageFlow} aria-label={t("Sales stages")}><li>{t("New Opportunity")}</li><li>{t("Qualified")}</li><li>{t("Proposal")}</li><li>{t("Negotiation")}</li></ol><p className={styles.flowOutcome}>{t("Then mark the opportunity {won} or {lost}.").split(/(\{won\}|\{lost\})/).map((part, index) => part === "{won}" ? <strong key={index}>{t("Won")}</strong> : part === "{lost}" ? <strong key={index}>{t("Lost")}</strong> : part)}</p></div> : null}
     {layout === "board" && activePipelines.length > 0 && !boardItems.length && <p className={styles.emptyNotice}>{search || assignee || pipelineFilter !== "all" ? t("No opportunities match these filters.") : view === "closed" ? t("No closed opportunities yet.") : view === "open" ? t("No open opportunities yet. Convert one from an enquiry.") : t("No opportunities yet. Convert one from an enquiry.")}</p>}
     {layout === "board" ? <>
       <span id="pipeline-drag-hint" className={styles.srOnly}>{t("Open opportunity. Drag to move stage, or use Alt and the left or right arrow keys.")}</span>
@@ -224,6 +255,11 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
       showToolbar={false}
     />}
     {selectedRecord ? <ControlledModalDialog isOpen title={t("Opportunity details")} hideTitle size="xl" className={styles.opportunityModal} onOpenChange={(open) => { if (!open) setSelectedRecord(undefined); }}><LinkedRecordWorkbench id="opportunities" workspaceId={initialData.workspaceId} recordId={selectedRecord} onChanged={reload} /></ControlledModalDialog> : null}
+    {blocked ? <StageBlockedDialog stageName={blocked.stage} items={blocked.items} onClose={() => setBlocked(null)} onAction={(target) => resolve(blocked.recordId, target)} /> : null}
+    {proofFor ? <PaymentProofDialog workspaceId={initialData.workspaceId} opportunityId={proofFor}
+      loadVersion={async () => Number((await crmRequest<RecordData>(initialData.workspaceId, `opportunities/${proofFor}`)).version)}
+      onClose={() => setProofFor(null)} onWon={() => reload()}
+      onBlocked={(items) => setBlocked({ recordId: proofFor, stage: boardColumns.find((column) => column.code === "won")?.name ?? t("Won"), items })} /> : null}
     {pendingOutcome ? <FormDialog error={failure || undefined} isDirty={Boolean(outcomeReason.trim())} isSubmitDisabled={!outcomeReason.trim()} isSubmitting={Boolean(moving)}
       onClose={() => setPendingOutcome(null)} onSubmit={() => { if (outcomeReason.trim()) void moveDeal(pendingOutcome.recordId, pendingOutcome.stageId, outcomeReason.trim()); }}
       submitLabel={pendingOutcome.status === "won" ? t("Confirm win") : t("Confirm loss")} title={pendingOutcome.status === "won" ? t("Mark opportunity Won") : t("Mark opportunity Lost")}>

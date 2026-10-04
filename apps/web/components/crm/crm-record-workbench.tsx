@@ -7,10 +7,13 @@ import { caseHref } from "@/lib/pre-project/types";
 import { OpportunityDiscovery } from "./opportunity-discovery";
 import { OpportunityIntro } from "./opportunity-intro";
 import { OpportunityEditDialog, localDate } from "./opportunity-edit-dialog";
+import { FurniturePathDialog, NextStepCard, PaymentProofDialog, StageBlockedDialog } from "./opportunity-flow";
+import type { MissingRequirement } from "@/lib/crm/client";
+import { missingFrom, type OpportunityFlowView, type RequirementTarget } from "@/lib/crm/opportunity-flow";
 import { RecordAttachments } from "./record-attachments";
 import { SequenceEditor } from "./sequence-editor";
 import { useWoddyRecord } from "./woddy-chat";
-import { Badge, Button, Callout, EditableField, EmptyState, FillWithWoddy, Tabs, useDesignSystem } from "@/design-system";
+import { Badge, Button, Callout, EditableField, EmptyState, FillWithWoddy, Switch, Tabs, useDesignSystem } from "@/design-system";
 import { useAiReady } from "@/lib/workspace/ai-settings";
 import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
 import { ContactMatchNotice } from "./contact-match-notice";
@@ -112,6 +115,46 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     });
   };
   const saved = async () => { resource.refresh(); await onChanged(); };
+  // PLM-121/122: the flow's next step, what blocks it, and the payment proof that wins the deal.
+  const flow = (live.flow && typeof live.flow === "object" ? live.flow : null) as OpportunityFlowView | null;
+  const [proofOpen, setProofOpen] = useState(false);
+  const [furnitureOpen, setFurnitureOpen] = useState(false);
+  const [blocked, setBlocked] = useState<{ stage: string; items: MissingRequirement[] } | null>(null);
+  const [advancing, setAdvancing] = useState(false);
+  const [flowError, setFlowError] = useState("");
+  const freshVersion = async () => Number((await crmRequest<RecordData>(workspaceId, `opportunities/${row.id}`)).version);
+  const wonStage = activeStages.find(stage => stage.code === "won");
+  const startWin = () => {
+    const others = (flow?.toWon ?? []).filter(item => item.key !== "paymentProof");
+    if (others.length) { setBlocked({ stage: String(wonStage?.name ?? t("Won")), items: others }); return; }
+    if (!flow || flow.toWon.some(item => item.key === "paymentProof")) { setProofOpen(true); return; }
+    startOutcome("won");
+  };
+  const advance = async () => {
+    if (!flow?.next || advancing) return;
+    if (flow.next.step === "won") { startWin(); return; }
+    setAdvancing(true); setFlowError("");
+    try {
+      await crmRequest(workspaceId, `opportunities/${row.id}/transition`, "POST", { version: await freshVersion(), stageId: flow.next.stageId, status: "open" });
+      await saved();
+    } catch (error) {
+      const missing = missingFrom(error);
+      if (missing.length) setBlocked({ stage: flow.next.name, items: missing });
+      else setFlowError(error instanceof Error ? error.message : t("Could not move the opportunity. Try again."));
+    } finally { setAdvancing(false); }
+  };
+  const saveFlow = async (body: Record<string, unknown>) => {
+    await crmRequest(workspaceId, `opportunities/${row.id}/flow`, "PUT", { version: await freshVersion(), ...body });
+    await saved();
+  };
+  const onRequirement = (target: RequirementTarget) => {
+    if (target === "proof") setProofOpen(true);
+    else if (target === "furniture") setFurnitureOpen(true);
+    else if (target === "intro" || target === "discovery") { setTab("progress"); setStep(target); }
+    else if (target === "quote") { if (caseId) router.push(caseLink("quotations")); else void openCase(); }
+    else if (target === "enquiry" && leadId) router.push(`/workspace/crm/leads?lead=${leadId}`);
+    else setEditing(true);
+  };
   // In-place edits: each goes through the opportunity's update with its version (the newest one this view saw).
   const [savedVersion, setSavedVersion] = useState(0);
   const patch = async (body: Record<string, unknown>) => {
@@ -182,9 +225,16 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       <div className={styles.opportunityActions}>
         <Button size="compact" isDisabled={!resource.data} onPress={() => setEditing(true)}><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button>
         {activeWorkingStages.length > 1 || closed ? <Button size="compact" isDisabled={!resource.data || !workingStageId} onPress={startStageChange}><ArrowRightLeft aria-hidden="true" size={14} />{closed ? t("Reopen") : t("Change stage")}</Button> : null}
-        {!closed ? <><Button size="compact" className={styles.opportunityWinAction} isDisabled={!resource.data} onPress={() => startOutcome("won")}><BadgeCheck aria-hidden="true" size={14} />{t("Won")}</Button><Button size="compact" className={styles.opportunityLostAction} isDisabled={!resource.data} onPress={() => startOutcome("lost")}><CircleX aria-hidden="true" size={14} />{t("Lost")}</Button></> : null}
+        {!closed ? <><Button size="compact" className={styles.opportunityWinAction} isDisabled={!resource.data} onPress={startWin}><BadgeCheck aria-hidden="true" size={14} />{t("Won")}</Button><Button size="compact" className={styles.opportunityLostAction} isDisabled={!resource.data} onPress={() => startOutcome("lost")}><CircleX aria-hidden="true" size={14} />{t("Lost")}</Button></> : null}
       </div>
     </section>
+    {flow ? <NextStepCard workspaceId={workspaceId} opportunityId={row.id} flow={flow} status={status} ownerName={live.ownerName ? String(live.ownerName) : null}
+      followUp={typeof (live.nextActionAt ?? live.next_action_at) === "string" ? String(live.nextActionAt ?? live.next_action_at) : null}
+      onAction={onRequirement} onAdvance={() => void advance()} advancing={advancing}
+      extra={<>
+        {flow.flow === "furniture" && !closed ? <Switch isSelected={Boolean(flow.clientApproval)} onChange={(value) => { void saveFlow({ clientApproved: value }).catch((error) => setFlowError(error instanceof Error ? error.message : t("Could not save."))); }}>{t("Client approved on the spot")}</Switch> : null}
+        {flowError ? <Callout title={t("Could not update the opportunity")} tone="warning">{flowError}</Callout> : null}
+      </>} /> : null}
     <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key))} items={[
       { id: "progress", label: t("Progress"), panel: <div className={styles.progress}>
         {funnel.length ? <ol className={styles.funnel} aria-label={t("Where this opportunity is")}>{funnel.map((item) => <li key={item.key} data-state={item.state} data-selected={item.key === shownStep || undefined}>
@@ -198,6 +248,10 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       { id: "activity", label: t("Activity"), panel: <ActivityPanel workspaceId={workspaceId} opportunityId={row.id} partyId={partyId || undefined} ownerMembershipId={ownerId || undefined} onChanged={saved} /> },
       { id: "files", label: t("Files"), panel: leadId ? <RecordAttachments workspaceId={workspaceId} leadId={String(leadId)} /> : <EmptyState illustration="upload" title={t("No enquiry files")} description={t("Project files live in Planning.")} /> },
     ]} />{action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={saved} /> : null}
+    {proofOpen ? <PaymentProofDialog workspaceId={workspaceId} opportunityId={row.id} loadVersion={freshVersion} onClose={() => setProofOpen(false)} onWon={saved}
+      onBlocked={(items) => setBlocked({ stage: String(wonStage?.name ?? t("Won")), items })} /> : null}
+    {furnitureOpen && flow?.furniture ? <FurniturePathDialog flow={flow.furniture} onClose={() => setFurnitureOpen(false)} onSave={saveFlow} /> : null}
+    {blocked ? <StageBlockedDialog stageName={blocked.stage} items={blocked.items} onAction={onRequirement} onClose={() => setBlocked(null)} /> : null}
     {editing ? <OpportunityEditDialog workspaceId={workspaceId} opportunity={{ ...live, version: Math.max(Number(live.version ?? 0), savedVersion) }} members={owners} onClose={() => setEditing(false)} onSaved={saved} /> : null}</div>;
 }
 

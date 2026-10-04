@@ -128,6 +128,29 @@ describe("CrmOpportunities", () => {
     vi.unstubAllGlobals();
   });
 
+  it("asks for the payment proof when a card is dropped on Won without one (PLM-122)", async () => {
+    const data = structuredClone(crmScreenFixture("opportunities"));
+    const record = data.items[0];
+    const pipeline = (data.supporting.pipelines as { id: string; stages: { id: string; name: string; code?: string; status: string; position: number }[] }[])[0];
+    pipeline.stages.push({ id: "won-stage", name: "Won", code: "won", status: "active", position: 3 });
+    const api = vi.mocked(crmRequest);
+    api.mockImplementation(async () => ({ ...record, version: 7, flow: { toWon: [{ key: "furniturePath", label: "Furniture sub-path chosen" }, { key: "paymentProof", label: "Payment proof attached" }] } }));
+    api.mockClear();
+    render(<CrmOpportunities initialData={data} />);
+    const card = within(screen.getByRole("region", { name: "Proposal" })).getByRole("button", { name: /Amira Al Mansoori/ });
+    const transfer = { setData: vi.fn(), getData: () => record.id, effectAllowed: "", dropEffect: "" };
+    fireEvent.dragStart(card, { dataTransfer: transfer });
+    fireEvent.dragOver(screen.getByRole("region", { name: "Won" }), { dataTransfer: transfer });
+    fireEvent.drop(screen.getByRole("region", { name: "Won" }), { dataTransfer: transfer });
+    // Everything else Won needs comes first, each with its action; the card stays where it was.
+    const dialog = await screen.findByRole("dialog", { name: "Can't move to Won yet" });
+    expect(within(dialog).getByText("Furniture sub-path chosen")).toBeInTheDocument();
+    expect(api).not.toHaveBeenCalledWith(data.workspaceId, `opportunities/${record.id}/transition`, "POST", expect.anything());
+    await userEvent.click(within(dialog).getByRole("button", { name: "Got it" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(within(screen.getByRole("region", { name: "Proposal" })).getByRole("button", { name: /Amira Al Mansoori/ })).toBeInTheDocument();
+  });
+
   it("shows a reference once and requires a reason before a Won drop", async () => {
     const data = structuredClone(crmScreenFixture("opportunities"));
     const record = data.items[0];
@@ -137,7 +160,7 @@ describe("CrmOpportunities", () => {
     const api = vi.mocked(crmRequest);
     api.mockImplementation(async (_workspace, _path, method) => method === "POST"
       ? { ...record, status: "won", stageId: "won-stage", version: 8 }
-      : { ...record, version: 7 });
+      : { ...record, version: 7, flow: { toWon: [] } });
     api.mockClear();
     render(<CrmOpportunities initialData={data} />);
 
@@ -148,7 +171,8 @@ describe("CrmOpportunities", () => {
     fireEvent.dragStart(card, { dataTransfer: transfer });
     fireEvent.dragOver(screen.getByRole("region", { name: "Won" }), { dataTransfer: transfer });
     fireEvent.drop(screen.getByRole("region", { name: "Won" }), { dataTransfer: transfer });
-    const dialog = screen.getByRole("dialog", { name: "Mark opportunity Won" });
+    // A payment Finance already verified is the proof: only the reason is asked.
+    const dialog = await screen.findByRole("dialog", { name: "Mark opportunity Won" });
     expect(within(dialog).getByRole("button", { name: "Confirm win" })).toBeDisabled();
     expect(api).not.toHaveBeenCalledWith(data.workspaceId, `opportunities/${record.id}/transition`, "POST", expect.anything());
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Reason" }), "Signed agreement and deposit received");

@@ -28,7 +28,7 @@ it("prepares the standard sales flow only when converting an enquiry, without se
   const writes = fetchMock.mock.calls.filter(([, init]) => init.method === "POST");
   expect(writes).toHaveLength(2);
   expect(writes[0][0]).toContain("/pipelines?");
-  expect(JSON.parse(String(writes[0][1].body)).stages.map((stage: {name:string}) => stage.name)).toEqual(["New Opportunity", "Proposal", "Negotiation", "Won", "Lost"]);
+  expect(JSON.parse(String(writes[0][1].body)).stages.map((stage: {name:string}) => stage.name)).toEqual(["New Opportunity", "Qualified", "Proposal", "Negotiation", "Won", "Lost"]);
   expect(JSON.parse(String(writes[1][1].body))).toMatchObject({ amount: 45000, currencyCode: "AED" });
   expect(writes[1][0]).toContain(`/leads/${data.items[0].id}/qualify`);
 });

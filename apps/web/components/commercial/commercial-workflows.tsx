@@ -614,7 +614,11 @@ export function ApprovalRelease({
   const unfinishedCommission = commissionLines.findIndex((line) => !commissionBlank(line) && !commissionReady(line));
   // A receipt Finance already verified in Wodana is the proof; a link given anyway must be HTTPS.
   const receiptVerified = Boolean(accepted && quoteHasVerifiedReceipt(d, accepted.id));
-  const proofProblem = paymentProofProblem(paymentProofUrl, receiptVerified);
+  // PLM-122: the payment proof attached on the opportunity (it made the deal Won) is the Deal File's proof.
+  const attachedProof = state.paymentProofId && state.opportunityId ? `/api/workspace/crm/opportunity-proofs/${state.opportunityId}/${state.paymentProofId}?workspaceId=${encodeURIComponent(state.workspaceId)}` : "";
+  const proofProblem = paymentProofProblem(paymentProofUrl, receiptVerified || Boolean(attachedProof));
+  // When Sales sent no commission lines, Finance adds them (PLM-122).
+  const financeAddsLines = !submittedCommissions.length;
   const insecureProof = t("Use a secure HTTPS proof-of-payment link.");
   const sendBlocker = unfinishedCommission >= 0 ? t("Finish commission {number} or remove it.", { number: unfinishedCommission + 1 })
     : proofProblem === "missing" ? t("Add a proof-of-payment link.")
@@ -704,7 +708,9 @@ export function ApprovalRelease({
               <h2>{t("2 · Finance verification")}</h2>
               <p className={s.muted}>{t("Submitted by {name}", { name: d.ownerReview.submittedBy })}</p>
               {d.ownerReview.paymentProofUrl ? <a href={d.ownerReview.paymentProofUrl} target="_blank" rel="noopener noreferrer">{t("Open payment proof ↗")}</a> : null}
-              {editableFinanceLines.map((line, index) => <CommissionFields key={`${line.type}-${index}`} fixedRecipient currency={accepted.currency} index={index} line={line} onChange={(update) => updateCommission(index, update, true)} />)}
+              {editableFinanceLines.map((line, index) => <CommissionFields key={`${line.type}-${index}`} fixedRecipient={!financeAddsLines} currency={accepted.currency} index={index} line={line} onChange={(update) => updateCommission(index, update, true)}
+                onRemove={financeAddsLines ? () => setFinanceDraft({ key: reviewKey, lines: editableFinanceLines.filter((_, i) => i !== index) }) : undefined} />)}
+              {financeAddsLines && editableFinanceLines.length < 3 ? <div><Button size="compact" variant="quiet" onPress={() => setFinanceDraft({ key: reviewKey, lines: [...editableFinanceLines, newCommissionLine()] })}><Plus size={14} />{t("Add recipient")}</Button></div> : null}
               <Checkbox isSelected={paymentVerified} onChange={(value) => setPaymentVerification({ key: reviewKey, value })}>{d.ownerReview.paymentProofUrl ? t("I verified the linked proof of payment") : t("I verified the payment receipt")}</Checkbox>
               <TextAreaField label={t("Finance note")} value={decisionNote} onChange={setDecisionNote} placeholder={t("Explain any correction or reason for return.")} />
               {state.canVerifyFinance && <div className={s.formActions}>
@@ -729,9 +735,10 @@ export function ApprovalRelease({
               <h2>{t("1 · Submit Deal File")}</h2>
               {/* The remark of whoever returned it (the owner, or Finance): that is what Sales has to fix. */}
               {d.ownerReview && <p className={s.notice}>{t("Previous decision:")}{" "}{translateKnown(t, statusLabel[d.ownerReview.status] ?? d.ownerReview.status)}. {d.ownerReview.decisionNote ?? d.ownerReview.financeNote}</p>}
-              {state.opportunityStatus !== "won" && <p className={s.notice}>{t("Mark the linked opportunity Won before submitting this Deal File.")}</p>}
-              <TextInput isRequired={!receiptVerified} inputType="url" label={t("Proof-of-payment link")} value={paymentProofUrl} onChange={setPaymentProofUrl} onBlur={() => setProofTouched(true)} placeholder={t("https://…")}
-                isInvalid={proofTouched && proofProblem === "insecure"} errorMessage={proofProblem === "insecure" ? insecureProof : undefined} />
+              {state.opportunityStatus !== "won" && <p className={s.notice}>{t("Attach the payment proof on the opportunity first: that wins it and opens this Deal File.")}</p>}
+              {attachedProof ? <a href={attachedProof} target="_blank" rel="noopener noreferrer">{t("Payment proof attached on the opportunity ↗")}</a> : null}
+              {attachedProof ? null : <TextInput isRequired={!receiptVerified} inputType="url" label={t("Proof-of-payment link")} value={paymentProofUrl} onChange={setPaymentProofUrl} onBlur={() => setProofTouched(true)} placeholder={t("https://…")}
+                isInvalid={proofTouched && proofProblem === "insecure"} errorMessage={proofProblem === "insecure" ? insecureProof : undefined} />}
               {commissionLines.map((line, index) => <CommissionFields key={index} currency={accepted.currency} index={index} line={line}
                 onChange={(update) => updateCommission(index, update)}
                 onRemove={() => setCommissionLines(commissionLines.filter((_, i) => i !== index))} />)}

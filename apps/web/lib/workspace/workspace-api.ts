@@ -40,12 +40,27 @@ export async function workspaceJsonResponse(
 
   const payload = await result.upstream.json().catch(() => null);
   const response = NextResponse.json(
-    result.upstream.ok ? payload : { message: safeBackendMessage(payload, fallback) + (Array.isArray(payload?.missing) && payload.missing.every((item: unknown) => typeof item === "string") ? `: ${payload.missing.join(", ")}` : "") },
+    result.upstream.ok ? payload : { message: safeBackendMessage(payload, fallback) + missingSuffix(payload?.missing), ...missingItems(payload?.missing) },
     { status: result.upstream.status },
   );
   applyRotatedSession(response, result.rotatedSession);
   response.headers.set("cache-control", "no-store");
   return response;
+}
+
+/** What a refused stage move still needs, as plain labels after the message (older readers show only the message). */
+function missingSuffix(missing: unknown) {
+  if (!Array.isArray(missing) || !missing.length) return "";
+  const labels = missing.map((item) => typeof item === "string" ? item : item && typeof item === "object" && typeof (item as { label?: unknown }).label === "string" ? (item as { label: string }).label : null);
+  return labels.every(Boolean) ? `: ${labels.join(", ")}` : "";
+}
+
+/** The same items with their keys, so a screen can offer the action that resolves each one. */
+function missingItems(missing: unknown) {
+  if (!Array.isArray(missing)) return {};
+  const items = missing.flatMap((item) => item && typeof item === "object" && typeof (item as { key?: unknown }).key === "string" && typeof (item as { label?: unknown }).label === "string"
+    ? [{ key: String((item as { key: string }).key).slice(0, 120), label: String((item as { label: string }).label).slice(0, 240) }] : []);
+  return items.length ? { missing: items.slice(0, 50) } : {};
 }
 
 export function invalidRequest(message: string): NextResponse {

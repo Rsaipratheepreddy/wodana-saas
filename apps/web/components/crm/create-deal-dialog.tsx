@@ -45,10 +45,11 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { le
     if (!initialData.canManagePipelines) throw new Error(t("No sales pipeline is set up yet. Ask a workspace administrator to add one in Sales settings."));
     return crmRequest<RecordData>(initialData.workspaceId, "pipelines", "POST", { name: "Sales", code: "sales", isDefault: true, stages: [
       { code: "qualified", name: "New Opportunity", position: 1, probability: 20, forecastCategory: "pipeline", entryRequirements: { owner: true, nextAction: true } },
-      { code: "proposal", name: "Proposal", position: 2, probability: 50, forecastCategory: "best_case", entryRequirements: {} },
-      { code: "negotiation", name: "Negotiation", position: 3, probability: 75, forecastCategory: "commit", entryRequirements: {} },
-      { code: "won", name: "Won", position: 4, probability: 100, forecastCategory: "closed", entryRequirements: {} },
-      { code: "lost", name: "Lost", position: 5, probability: 0, forecastCategory: "closed", entryRequirements: {} },
+      { code: "qualification", name: "Qualified", position: 2, probability: 35, forecastCategory: "pipeline", entryRequirements: {} },
+      { code: "proposal", name: "Proposal", position: 3, probability: 50, forecastCategory: "best_case", entryRequirements: {} },
+      { code: "negotiation", name: "Negotiation", position: 4, probability: 75, forecastCategory: "commit", entryRequirements: {} },
+      { code: "won", name: "Won", position: 5, probability: 100, forecastCategory: "closed", entryRequirements: {} },
+      { code: "lost", name: "Lost", position: 6, probability: 0, forecastCategory: "closed", entryRequirements: {} },
     ] });
   };
   const submit = async () => {

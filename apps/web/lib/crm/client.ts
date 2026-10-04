@@ -7,8 +7,10 @@ export function rows(payload: unknown): RecordData[] {
   const page = payload as Record<string, unknown>;
   return (Array.isArray(page.data) ? page.data : Array.isArray(page.items) ? page.items : Array.isArray(page.rows) ? page.rows : []) as RecordData[];
 }
+export type MissingRequirement = { key: string; label: string };
 export class CrmRequestError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  /** What a refused stage move still needs (PLM-121/122), each with its key. */
+  constructor(message: string, public status: number, public missing: MissingRequirement[] = []) { super(message); }
 }
 export async function crmRequest<T = RecordData>(workspaceId: string, path: string, method = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
   const [resource, search = ""] = path.split("?");
@@ -19,7 +21,7 @@ export async function crmRequest<T = RecordData>(workspaceId: string, path: stri
     ...(method !== "GET" && method !== "DELETE" ? { body: JSON.stringify(body ?? {}) } : {}),
   });
   const result = await response.json().catch(() => null);
-  if (!response.ok) throw new CrmRequestError(result?.message ?? tKey("CRM is unavailable. Please try again."), response.status);
+  if (!response.ok) throw new CrmRequestError(result?.message ?? tKey("CRM is unavailable. Please try again."), response.status, Array.isArray(result?.missing) ? result.missing : []);
   return result as T;
 }
 export function label(value: unknown, fallback: string = tKey("Not set")): string {

@@ -48,7 +48,8 @@ describe("CRM opportunity workbench", () => {
   });
 
   it("derives the Won outcome from the selected stage instead of letting them disagree", async () => {
-    const record = { id: "opportunity-3", title: "Villa renovation", version: 4, status: "open", pipelineId: "pipeline-1", stageId: "proposal", partyName: "Client", ownerName: "Sales owner" };
+    // A payment Finance verified in Planning is the proof (PLM-122), so Won asks only for the reason.
+    const record = { id: "opportunity-3", title: "Villa renovation", version: 4, status: "open", pipelineId: "pipeline-1", stageId: "proposal", partyName: "Client", ownerName: "Sales owner", flow: { toWon: [], steps: [], missing: [], proofs: [], done: 0, total: 0, next: null } };
     vi.mocked(crmRequest).mockImplementation(async (_workspace, path, method) => {
       if (method === "POST") return { ...record, version: 5, status: "won", stageId: "won" };
       if (path === "pipelines") return { data: [{ id: "pipeline-1", name: "Sales", stages: [
@@ -62,7 +63,7 @@ describe("CRM opportunity workbench", () => {
     render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
     await screen.findByRole("button", { name: "Won" });
     await user.click(screen.getByRole("button", { name: "Won" }));
-    const dialog = screen.getByRole("dialog", { name: "Mark opportunity Won" });
+    const dialog = await screen.findByRole("dialog", { name: "Mark opportunity Won" });
     expect(within(dialog).queryByText("Outcome")).not.toBeInTheDocument();
     await user.type(within(dialog).getByRole("textbox", { name: "Win evidence and reference" }), "Signed agreement");
     await user.click(within(dialog).getByRole("button", { name: "Confirm win" }));
@@ -71,6 +72,18 @@ describe("CRM opportunity workbench", () => {
       version: 4, stageId: "won", reason: "Signed agreement", status: "won",
     }));
   });
+  it("asks for the payment proof when Won still needs one", async () => {
+    const record = { id: "opportunity-5", title: "Sofa", version: 2, status: "open", pipelineId: "pipeline-1", stageId: "proposal", partyName: "Client", ownerName: "Sales owner",
+      flow: { flow: "furniture", toWon: [{ key: "paymentProof", label: "Payment proof attached" }], missing: [{ key: "paymentProof", label: "Payment proof attached" }], steps: [], proofs: [], done: 2, total: 5,
+        next: { stageId: "won", name: "Won", step: "won" }, furniture: { path: "take_home_now", feasibility: null, materialsChange: false }, clientApproval: null, negotiationOptional: true } };
+    vi.mocked(crmRequest).mockImplementation(async (_workspace, path) => path === `opportunities/${record.id}` ? record : { data: [] });
+    const user = userEvent.setup();
+    render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
+    const card = await screen.findByRole("region", { name: "Next step" });
+    await user.click(within(card).getByRole("button", { name: "Attach payment proof" }));
+    expect(await screen.findByRole("dialog", { name: "Attach payment proof" })).toBeInTheDocument();
+  });
+
   it("edits the value, owner and expected close in place with the opportunity's version", async () => {
     const record = { id: "opportunity-4", title: "Villa renovation", version: 7, status: "open", amount: "250000.00", currencyCode: "AED", ownerMembershipId: "m1", ownerName: "Dana", partyName: "Client" };
     vi.mocked(crmRequest).mockImplementation(async (_workspace, path, method) => {

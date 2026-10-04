@@ -1,6 +1,7 @@
 import { tKey } from "@/lib/i18n/keys";
 
-export type LeadOption = { id: string; label: string; allowedRoles?: string[] };
+/** `flow` is an enquiry type's pipeline flow (PLM-121/122): furniture, design, fit_out or basic. */
+export type LeadOption = { id: string; label: string; allowedRoles?: string[]; flow?: string | null };
 export const UNRESOLVED_ENQUIRY_TYPE_ID = "not_sure";
 export function hasResolvedEnquiryType(value: string | null | undefined): boolean {
   return Boolean(value?.trim() && value.trim() !== UNRESOLVED_ENQUIRY_TYPE_ID);
