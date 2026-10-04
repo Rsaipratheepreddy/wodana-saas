@@ -119,8 +119,7 @@ describe("CrmOpportunities", () => {
     expect(within(dialog).queryByRole("heading", { name: "Opportunity details" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Close dialog" })).toBeInTheDocument();
     expect(await within(dialog).findByRole("heading", { name: String(record.title) })).toBeInTheDocument();
-    expect(within(dialog).getByRole("tab", { name: "Progress" })).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: /^Design/ }));
+    expect(within(dialog).getByRole("tab", { name: "Details" })).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Start Planning" }));
     await waitFor(() => expect(push).toHaveBeenCalledWith(expect.stringContaining("/cases/exact-case/overview")));
     const start = fetcher.mock.calls.find(([url, init]) => String(url).includes("/api/workspace/pre-projects") && init?.method === "POST");
@@ -143,15 +142,16 @@ describe("CrmOpportunities", () => {
     fireEvent.dragOver(screen.getByRole("region", { name: "Won" }), { dataTransfer: transfer });
     fireEvent.drop(screen.getByRole("region", { name: "Won" }), { dataTransfer: transfer });
     // Everything else Won needs comes first, each with its action; the card stays where it was.
-    const dialog = await screen.findByRole("dialog", { name: "Can't move to Won yet" });
-    expect(within(dialog).getByText("Furniture sub-path chosen")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "To move to Won" });
+    expect(within(dialog).getByText("Choose how it's supplied")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Choose sub-path" })).toBeInTheDocument();
     expect(api).not.toHaveBeenCalledWith(data.workspaceId, `opportunities/${record.id}/transition`, "POST", expect.anything());
-    await userEvent.click(within(dialog).getByRole("button", { name: "Got it" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Close dialog" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(within(screen.getByRole("region", { name: "Proposal" })).getByRole("button", { name: /Amira Al Mansoori/ })).toBeInTheDocument();
   });
 
-  it("shows a reference once and requires a reason before a Won drop", async () => {
+  it("shows the client once and requires a reason before a Won drop", async () => {
     const data = structuredClone(crmScreenFixture("opportunities"));
     const record = data.items[0];
     record.title = String(record.reference);
@@ -165,7 +165,6 @@ describe("CrmOpportunities", () => {
     render(<CrmOpportunities initialData={data} />);
 
     const card = within(screen.getByRole("region", { name: "Proposal" })).getByRole("button", { name: /Amira Al Mansoori/ });
-    expect(within(card).getByText("D-0001")).toBeInTheDocument();
     expect(within(card).getAllByText("Amira Al Mansoori")).toHaveLength(1);
     const transfer = { setData: vi.fn(), getData: () => record.id, effectAllowed: "", dropEffect: "" };
     fireEvent.dragStart(card, { dataTransfer: transfer });
@@ -183,4 +182,18 @@ describe("CrmOpportunities", () => {
     await waitFor(() => expect(within(screen.getByRole("region", { name: "Won" })).getByRole("button", { name: /Amira Al Mansoori/ })).toBeInTheDocument());
   });
 
+  it("shows each open card's step now, its owner's avatar and its follow-up", async () => {
+    const data = structuredClone(crmScreenFixture("opportunities"));
+    const record = data.items[0];
+    record.nextActionAt = "2020-01-02T09:00:00.000Z";
+    vi.mocked(crmRequest).mockImplementation(async (_workspace, path) => path === `opportunities/${record.id}`
+      ? { ...record, flow: { flow: "design", next: { stageId: "x", name: "Qualified", step: "qualified" }, missing: [{ key: "introMeeting", label: "Intro meeting completed" }], toWon: [], steps: [] } }
+      : { ...record, id: String(path), flow: null });
+    render(<CrmOpportunities initialData={data} />);
+    const card = within(screen.getByRole("region", { name: "Proposal" })).getByRole("button", { name: /Amira Al Mansoori/ });
+    expect(await within(card).findByText("Book intro")).toBeInTheDocument();
+    expect(within(card).getByText(/Overdue/)).toBeInTheDocument();
+    expect(within(card).getByText(String(record.ownerName))).toBeInTheDocument();
+    expect(card.querySelector(".wd-avatar")).toHaveAttribute("aria-label", String(record.ownerName));
+  });
 });

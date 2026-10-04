@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarPlus, UserRoundPen } from "lucide-react";
 import { parseDate, parseTime } from "@internationalized/date";
 import { Badge, Button, DateField, FormDialog, FormRow, InlineNotice, SelectField, SettingsRow, SettingsSection, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar } from "@/design-system";
@@ -24,7 +24,11 @@ type Member = { id: string; displayName?: string; name?: string };
 const DURATIONS = [30, 45, 60, 90, 120];
 
 /** PLM-043 / PLM-088: book the intro meeting in a designer's calendar; that designer stays with the client. */
-export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved }: { workspaceId: string; opportunityId: string; locale?: string; onSaved?: () => void | Promise<void> }) {
+export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved, startBooking, onBookingStarted }: {
+  workspaceId: string; opportunityId: string; locale?: string; onSaved?: () => void | Promise<void>;
+  /** The Now card asked to book: the booking opens once the view has loaded (when nothing blocks it). */
+  startBooking?: boolean; onBookingStarted?: () => void;
+}) {
   const t = useT();
   const resource = useCrmResource<IntroView>(workspaceId, `opportunities/${opportunityId}/intro`);
   const members = useCrmResource<unknown>(workspaceId, "members");
@@ -32,6 +36,11 @@ export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved }
   const [notice, setNotice] = useState("");
   // Only a well-formed intro view is used; anything else waits or shows the error.
   const view = resource.data && typeof resource.data === "object" && Array.isArray((resource.data as { blockers?: unknown }).blockers) ? resource.data : undefined;
+  const canBook = Boolean(view && !view.blockers.length && view.intro?.status !== "pending");
+  // Nothing to open (already booked, or facts missing): the request is done.
+  useEffect(() => { if (startBooking && view && !canBook) onBookingStarted?.(); }, [startBooking, view, canBook, onBookingStarted]);
+  const showBooking = dialog === "book" || Boolean(startBooking && canBook);
+  const closeBooking = () => { setDialog(null); if (startBooking) onBookingStarted?.(); };
   if (resource.failure) return <InlineNotice message={resource.failure} tone="error" />;
   if (!view) return <Skeleton lines={4} shape="facts" />;
 
@@ -39,7 +48,7 @@ export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved }
   const labelOf = (item: { key: string; label: string }) => ({ floorPlan: t("Floor plan"), area: t("Area"), clientEmail: t("Client email") } as Record<string, string>)[item.key] ?? item.label;
   const intro = view.intro;
   const booked = intro && intro.status === "pending";
-  const done = async (message: string) => { setDialog(null); setNotice(message); resource.refresh(); await onSaved?.(); };
+  const done = async (message: string) => { closeBooking(); setNotice(message); resource.refresh(); await onSaved?.(); };
 
   return <div className={styles.intro}>
     {view.blockers.length && !intro ? <InlineNotice tone="info" message={`${t("Add these on Discovery first")}: ${view.blockers.map(labelOf).join(", ")}`} /> : null}
@@ -64,7 +73,7 @@ export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved }
         <span className={styles.change}><strong>{entry.fromName ? `${entry.fromName} → ${entry.toName}` : entry.toName}</strong>{entry.reason ? <small>{entry.reason}</small> : null}{entry.changedByName ? <small>{entry.changedByName}</small> : null}</span>
       </SettingsRow>)}
     </SettingsSection> : null}
-    {dialog === "book" ? <BookIntroDialog workspaceId={workspaceId} opportunityId={opportunityId} people={people} view={view} onClose={() => setDialog(null)} onBooked={() => done(t("Intro meeting booked. The designer has been invited."))} /> : null}
+    {showBooking ? <BookIntroDialog workspaceId={workspaceId} opportunityId={opportunityId} people={people} view={view} onClose={closeBooking} onBooked={() => done(t("Intro meeting booked. The designer has been invited."))} /> : null}
     {dialog === "designer" && view.designer ? <ChangeDesignerDialog workspaceId={workspaceId} opportunityId={opportunityId} people={people.filter((person) => person.id !== view.designer!.membershipId)} version={view.designer.version} onClose={() => setDialog(null)} onChanged={() => done(t("Designer changed."))} /> : null}
   </div>;
 }

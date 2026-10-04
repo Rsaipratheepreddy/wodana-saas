@@ -1,6 +1,5 @@
 .discovery { display: flex; flex-direction: column; gap: var(--wd-space-4); }
 .pair { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) 7rem; gap: var(--wd-space-2); inline-size: 100%; }
-.missing { overflow-wrap: anywhere; }
 .empty { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .fee { font-size: var(--wd-text-md); font-variant-numeric: tabular-nums; }
 .fee[data-empty] { font-weight: 400; color: var(--wd-color-text-secondary); }

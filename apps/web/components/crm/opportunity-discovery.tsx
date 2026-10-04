@@ -75,7 +75,6 @@ export function OpportunityDiscovery({ workspaceId, opportunityId, locale, onSav
   const units = [{ id: "sqft", label: t("sq ft") }, { id: "sqm", label: t("sq m") }];
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(view, fallbackUnit));
 
-  const missingLabel = (item: { key: string; label: string }) => ({ floorPlan: t("Floor plan"), area: t("Area"), clientEmail: t("Client email"), propertyLocation: t("Property location"), enquiryType: t("Enquiry type"), clientType: t("Client type"), spaces: t("Spaces") } as Record<string, string>)[item.key] ?? item.label;
   const save = async () => {
     setSaving(true); setFailure(""); setNotice("");
     try {
@@ -92,9 +91,6 @@ export function OpportunityDiscovery({ workspaceId, opportunityId, locale, onSav
   };
 
   return <div className={styles.discovery}>
-    {view.missing.length
-      ? <InlineNotice tone="info" message={<span className={styles.missing}>{t("Needed for Design Quote")}: {view.missing.map((item) => missingLabel(item)).join(", ")}</span>} />
-      : <InlineNotice tone="success" message={t("Ready for Design Quote")} />}
     {failure ? <InlineNotice message={failure} tone="error" /> : null}
     {notice ? <InlineNotice message={notice} tone="success" /> : null}
     <SettingsSection id="discovery-property" title={t("Property")}>

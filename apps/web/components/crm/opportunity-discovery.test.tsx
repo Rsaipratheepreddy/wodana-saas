@@ -27,10 +27,11 @@ function stub(discovery: DiscoveryView) {
 }
 
 describe("opportunity discovery (PLM-040)", () => {
-  it("lists what the Design Quote stage still needs", async () => {
+  it("shows the facts without a separate list of what is missing (the Now card says it)", async () => {
     stub(view());
     render(<DesignSystemProvider><OpportunityDiscovery workspaceId="ws" opportunityId="o1" locale="en-GB" /></DesignSystemProvider>);
-    expect(await screen.findByText(/Needed for Design Quote: Floor plan, Area, Budget range/)).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "Client email" })).toBeInTheDocument();
+    expect(screen.queryByText(/Needed for Design Quote/)).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Client email" })).toHaveValue("client@example.com");
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
@@ -47,10 +48,9 @@ describe("opportunity discovery (PLM-040)", () => {
     expect(put.body).toMatchObject({ version: 0, area: "100", areaUnit: "sqft", clientEmail: "client@example.com", answers: { budget: "200k" } });
   });
 
-  it("shows ready once nothing is missing, with the priced fee", async () => {
+  it("shows the priced fee", async () => {
     stub(view({ missing: [], designFee: { amount: "4000.00", currency: "AED" }, facts: { area: "100", areaUnit: "sqft", spaces: null, propertyLocation: "Marina", clientEmail: "c@example.com", floorPlanAssetId: "f1", designPackageId: "p1" } }));
     render(<DesignSystemProvider><OpportunityDiscovery workspaceId="ws" opportunityId="o1" locale="en-GB" /></DesignSystemProvider>);
-    expect(await screen.findByText("Ready for Design Quote")).toBeInTheDocument();
     expect(await screen.findByText(/4,000\.00/)).toBeInTheDocument();
   });
 });

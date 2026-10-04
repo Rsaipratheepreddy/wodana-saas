@@ -1,28 +1,30 @@
 "use client";
 import { useState } from "react";
-import { ArrowRightLeft, ArrowUpRight, BadgeCheck, Check, CircleX, Pencil } from "lucide-react";
+import { ArrowRight, Pencil } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { caseHref } from "@/lib/pre-project/types";
 import { OpportunityDiscovery } from "./opportunity-discovery";
 import { OpportunityIntro } from "./opportunity-intro";
 import { OpportunityEditDialog, localDate } from "./opportunity-edit-dialog";
-import { FurniturePathDialog, NextStepCard, PaymentProofDialog, StageBlockedDialog } from "./opportunity-flow";
+import { FurniturePathDialog, PaymentProofDialog, StageBlockedSheet } from "./opportunity-flow";
+import { NowCard, ProgressLine, type StageMove } from "./opportunity-now";
 import type { MissingRequirement } from "@/lib/crm/client";
-import { missingFrom, type OpportunityFlowView, type RequirementTarget } from "@/lib/crm/opportunity-flow";
+import { FURNITURE_PATHS, missingFrom, proofHref, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
+import { nowPlan, type FunnelStep, type NowStep } from "@/lib/crm/now-step";
 import { RecordAttachments } from "./record-attachments";
 import { SequenceEditor } from "./sequence-editor";
 import { useWoddyRecord } from "./woddy-chat";
-import { Badge, Button, Callout, EditableField, EmptyState, FillWithWoddy, Switch, Tabs, useDesignSystem } from "@/design-system";
+import { Avatar, Badge, Button, Callout, ControlledModalDialog, EditableField, EditableFieldList, EmptyState, FactRow, FillWithWoddy, IconMenuButton, personDisplayName, Switch, Tabs, useDesignSystem } from "@/design-system";
 import { useAiReady } from "@/lib/workspace/ai-settings";
 import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
 import { ContactMatchNotice } from "./contact-match-notice";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { CrmScreenId } from "@/lib/crm/screens";
 import { CrmRequestError, crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import { ActionDialog, ActivityPanel, CustomerPanel, FactList, ResourceState, choice, options, useCrmResource, type ActionSpec, type FieldSpec } from "./crm-workbench";
 import styles from "./crm-workbench.module.css";
+import screen from "./opportunity-now.module.css";
 
 export function LinkedRecordWorkbench({ id, workspaceId, recordId, onChanged }: { id: CrmScreenId; workspaceId: string; recordId: string; onChanged: () => Promise<void> }) {
   const collection = id === "customers" || id === "organizations" ? "parties" : id;
@@ -73,41 +75,37 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const stages = (pipeline?.stages ?? []) as RecordData[];
   const activeStages = stages.filter(stage => stage.status === "active");
   const activeWorkingStages = activeStages.filter(stage => !["won", "lost"].includes(String(stage.code)));
-  const previousStageId = ((live.stageHistory ?? []) as RecordData[])
-    .map(entry => String(entry.fromStageId ?? ""))
-    .find(stageId => activeWorkingStages.some(stage => stage.id === stageId));
-  const selectedMoveStageId = live.status === "open"
-    ? String(live.stageId ?? live.stage_id ?? activeStages[0]?.id ?? "")
-    : previousStageId ?? String(activeWorkingStages[0]?.id ?? "");
+  const stageHistory = (Array.isArray(live.stageHistory) ? live.stageHistory : []) as Array<StageMove & { id?: string; fromStageName?: string | null; toStageName?: string | null; toStatus?: string | null; reason?: string | null }>;
+  const previousStageId = stageHistory.map(entry => String(entry.fromStageId ?? "")).find(stageId => activeWorkingStages.some(stage => stage.id === stageId));
   const partyId = String(live.partyId ?? live.party_id ?? "");
   const ownerId = String(live.ownerMembershipId ?? live.owner_membership_id ?? "");
   const status = String(live.status ?? "open");
+  const closed = status !== "open";
   const currentStage = stages.find(stage => stage.id === (live.stageId ?? live.stage_id));
   const outcomeMismatch = (currentStage?.code === "won" || currentStage?.code === "lost") && status !== currentStage.code;
   const amount = Number(live.amount);
   const currency = String(live.currencyCode ?? live.currency_code ?? "");
   const hasValue = live.amount !== null && live.amount !== undefined && Number.isFinite(amount) && /^[A-Z]{3}$/.test(currency);
-  const value = hasValue
-    ? new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(amount)
-    : t("Not set");
-  const workingStageId = activeWorkingStages.some(stage => stage.id === selectedMoveStageId)
-    ? selectedMoveStageId : String(activeWorkingStages[0]?.id ?? "");
-  const startStageChange = () => setAction({
-    title: status === "open" ? t("Change stage") : t("Reopen opportunity"),
-    description: status === "open" ? t("Move this opportunity to the next working stage. Mark Won or Lost separately when there is an outcome.") : t("Choose a working stage and schedule the next follow-up."),
-    path: `opportunities/${row.id}/transition`,
-    initial: { version: live.version, stageId: workingStageId },
-    fields: [{ key: "stageId", label: t("Stage"), options: options(activeWorkingStages), required: true }, { key: "reason", label: t("Reason"), required: true }, ...(status !== "open" ? [{ key: "nextActionAt", label: t("Next follow-up"), type: "datetime-local" as const, required: true }] : [])],
-    transform: values => ({ ...values, status: "open" }),
-    submit: status === "open" ? t("Change stage") : t("Reopen opportunity"),
-  });
+  const value = hasValue ? new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(amount) : t("Not set");
+  // Moves forward follow the flow; the menu only goes back (or reopens a closed one).
+  const currentIndex = activeWorkingStages.findIndex(stage => stage.id === (live.stageId ?? live.stage_id));
+  const earlierStages = currentIndex > 0 ? activeWorkingStages.slice(0, currentIndex) : [];
+  const startStageChange = () => {
+    const choices = closed ? activeWorkingStages : earlierStages;
+    const initialStage = closed ? (previousStageId ?? String(activeWorkingStages[0]?.id ?? "")) : String(earlierStages.at(-1)?.id ?? "");
+    setAction({
+      title: closed ? t("Reopen opportunity") : t("Change stage"),
+      path: `opportunities/${row.id}/transition`,
+      initial: { version: live.version, stageId: initialStage },
+      fields: [{ key: "stageId", label: t("Stage"), options: options(choices), required: true }, { key: "reason", label: t("Reason"), required: true }, ...(closed ? [{ key: "nextActionAt", label: t("Next follow-up"), type: "datetime-local" as const, required: true }] : [])],
+      transform: values => ({ ...values, status: "open" }),
+      submit: closed ? t("Reopen opportunity") : t("Change stage"),
+    });
+  };
   const startOutcome = (outcome: "won" | "lost") => {
     const outcomeStage = activeStages.find(stage => stage.code === outcome);
     setAction({
       title: outcome === "won" ? t("Mark opportunity Won") : t("Mark opportunity Lost"),
-      description: outcome === "won"
-        ? t("Record what confirms the win: a signed agreement, downpayment, or full payment. Deal submission and Finance verification are separate steps.")
-        : t("Record why this opportunity was lost so the history and reports remain useful."),
       path: `opportunities/${row.id}/transition`,
       initial: { version: live.version, stageId: outcomeStage?.id ?? live.stageId ?? live.stage_id, status: outcome },
       fields: [{ key: "reason", label: outcome === "won" ? t("Win evidence and reference") : t("Loss reason"), required: true }, ...(outcome === "lost" ? [{ key: "competitor", label: t("Competitor (optional)") }] : [])],
@@ -147,14 +145,6 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     await crmRequest(workspaceId, `opportunities/${row.id}/flow`, "PUT", { version: await freshVersion(), ...body });
     await saved();
   };
-  const onRequirement = (target: RequirementTarget) => {
-    if (target === "proof") setProofOpen(true);
-    else if (target === "furniture") setFurnitureOpen(true);
-    else if (target === "intro" || target === "discovery") { setTab("progress"); setStep(target); }
-    else if (target === "quote") { if (caseId) router.push(caseLink("quotations")); else void openCase(); }
-    else if (target === "enquiry" && leadId) router.push(`/workspace/crm/leads?lead=${leadId}`);
-    else setEditing(true);
-  };
   // In-place edits: each goes through the opportunity's update with its version (the newest one this view saw).
   const [savedVersion, setSavedVersion] = useState(0);
   const patch = async (body: Record<string, unknown>) => {
@@ -169,81 +159,92 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   };
   const owners = rows(members.data).filter((member) => member.status === undefined || member.status === "active")
     .map((member) => ({ id: String(member.id), label: String(member.displayName || member.name || member.email || "") })).filter((member) => member.label);
+  const ownerName = personDisplayName(live.ownerName as string | null);
+  const owner = ownerId && ownerName ? { id: ownerId, label: ownerName } : null;
   const closeDate = localDate(live.expectedCloseAt ?? live.expected_close_at);
   const valueCurrency = /^[A-Z]{3}$/.test(currency) ? currency : regionCurrency;
-  const [tab, setTab] = useState("progress");
-  const [step, setStep] = useState<FunnelStep["key"] | null>(null);
+  const [tab, setTab] = useState("details");
   const [editing, setEditing] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [bookIntro, setBookIntro] = useState(false);
   const funnel = (Array.isArray(live.funnel) ? live.funnel : []) as FunnelStep[];
   const caseId = live.preProjectCaseId ? String(live.preProjectCaseId) : null;
   const leadId = live.leadId ?? live.lead_id;
-  const current = funnel.find((step) => step.state === "current");
-  const shownStep = step ?? current?.key ?? "discovery";
   const caseLink = (section: string) => caseId ? caseHref(caseId, new URLSearchParams(), section) : "";
-  const closed = status !== "open";
-  const stepDetail = (key: FunnelStep["key"]) => funnel.find((item) => item.key === key)?.detail ?? null;
-  const planningAction = caseId ? null : <Button size="compact" variant="primary" isLoading={openingCase} isDisabled={!resource.data || closed} onPress={() => void openCase()}>{t("Start Planning")}</Button>;
-  const stepPanel = (key: FunnelStep["key"]) => {
-    if (key === "discovery") return <OpportunityDiscovery workspaceId={workspaceId} opportunityId={row.id} onSaved={saved} />;
-    if (key === "intro") return <OpportunityIntro workspaceId={workspaceId} opportunityId={row.id} onSaved={saved} />;
-    if (key === "enquiry") return leadId
-      ? <div className={styles.stepPanel}><p>{stepDetail("enquiry") ? t("Enquiry {detail}", { detail: String(stepDetail("enquiry")) }) : t("Enquiry")}</p><Link className={styles.stepLink} href={`/workspace/crm/leads?lead=${leadId}`}>{t("Open enquiry")}<ArrowUpRight aria-hidden="true" size={14} /></Link></div>
-      : <EmptyState illustration="done" title={t("Opened directly")} description={t("This opportunity didn't come from an enquiry.")} />;
-    if (key === "design") return caseId
-      ? <div className={styles.stepPanel}><p><small>{t("Design")}</small>{stepDetail("design") ?? t("Not started")}</p><Link className={styles.stepLink} href={caseLink("designs")}>{t("Open in Planning")}<ArrowUpRight aria-hidden="true" size={14} /></Link></div>
-      : <EmptyState illustration="empty" title={t("Planning hasn't started")} description={t("Requirements, site, design and quotes happen in Planning.")} action={planningAction} />;
-    if (key === "quote") return caseId
-      ? <div className={styles.stepPanel}><p><small>{t("Main quote")}</small>{stepDetail("quote") ?? t("No quote yet")}</p><Link className={styles.stepLink} href={caseLink("quotations")}>{t("Open quotes")}<ArrowUpRight aria-hidden="true" size={14} /></Link></div>
-      : <EmptyState illustration="empty" title={t("Planning hasn't started")} description={t("Quotes are prepared in Planning.")} action={planningAction} />;
-    return live.dealFileReference && caseId
-      ? <div className={styles.stepPanel}><p>{t("Deal File {reference}", { reference: String(live.dealFileReference) })}</p><Link className={styles.stepLink} href={caseLink("approvals")}>{t("Open Deal File {reference}", { reference: String(live.dealFileReference) })}<ArrowUpRight aria-hidden="true" size={14} /></Link></div>
-      : <EmptyState illustration="locked" title={t("No Deal File yet")} description={t("It opens once the client accepts the quote and the deal is approved.")} />;
+  const followUp = typeof (live.nextActionAt ?? live.next_action_at) === "string" ? String(live.nextActionAt ?? live.next_action_at) : null;
+  const plan = nowPlan({ flow, status, funnel, caseId });
+  const showIntro = !flow || flow.flow === "design" || flow.flow === "fit_out";
+  const showDiscovery = showIntro || [plan.now, ...plan.more].some((step) => step?.target === "discovery");
+  const reveal = (sectionId: string) => { setTab("details"); window.setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ block: "start", behavior: "smooth" }), 60); };
+  const act = (step: NowStep) => {
+    if (step.target === "proof") setProofOpen(true);
+    else if (step.target === "furniture") setFurnitureOpen(true);
+    else if (step.target === "intro") { setBookIntro(true); reveal("intro-meeting"); }
+    else if (step.target === "discovery") reveal("discovery-property");
+    else if (step.target === "quote" || step.target === "planning") { if (caseId) router.push(caseLink(step.target === "quote" ? "quotations" : step.section ?? "overview")); else void openCase(); }
+    else if (step.target === "enquiry" && leadId) router.push(`/workspace/crm/leads?lead=${leadId}`);
+    else if (step.target === "advance") void advance();
+    else if (step.target === "win") startWin();
+    else if (step.target === "reopen") startStageChange();
+    else setEditing(true);
   };
-  return <div className={`${styles.workbench} ${styles.opportunityDetail}`}><ResourceState {...resource} retry={resource.refresh} />
-    <header className={styles.opportunityHeader}>
-      <div className={styles.opportunityIdentity}>
-        <div className={styles.opportunityReferences}>{live.reference ? <span className={styles.opportunityReference}>{String(live.reference)}</span> : null}{closed ? <Badge tone={status === "won" ? "success" : "neutral"}>{label(status)}</Badge> : null}</div>
+  const stageChip = status === "won" ? <Badge tone="success">{t("Won")}</Badge> : status === "lost" ? <Badge tone="danger">{t("Lost")}</Badge>
+    : closed ? <Badge>{label(status)}</Badge> : <Badge>{String(live.stageName ?? t("Not set"))}</Badge>;
+  const menu = [
+    ...(!closed ? [{ id: "lost", label: t("Mark as lost"), tone: "danger" as const }] : [{ id: "reopen", label: t("Reopen") }]),
+    ...(!closed && earlierStages.length ? [{ id: "stage", label: t("Change stage") }] : []),
+    { id: "history", label: t("History") },
+  ];
+  const onMenu = (id: string) => { if (id === "lost") startOutcome("lost"); else if (id === "history") setHistoryOpen(true); else startStageChange(); };
+  const pathChoice = FURNITURE_PATHS.find((item) => item.id === flow?.furniture?.path);
+  const proof = flow?.proofs?.[0];
+  const shortDay = (at: string) => dateText(at, { locale, timeZone });
+  return <div className={`${styles.workbench} ${screen.opportunity}`}><ResourceState {...resource} retry={resource.refresh} />
+    <header className={screen.header}>
+      <div className={screen.identity}>
         <h2>{String(live.title ?? t("Opportunity"))}</h2>
-        {partyId ? <Link className={styles.opportunityClient} href={`/workspace/crm/customers?record=${partyId}`}>{String(live.partyName ?? t("Customer"))}</Link> : <p>{String(live.partyName ?? t("Customer not set"))}</p>}
+        <p className={screen.meta}>
+          {partyId ? <Link href={`/workspace/crm/customers?record=${partyId}`}>{String(live.partyName ?? t("Customer"))}</Link> : <span>{String(live.partyName ?? t("Customer not set"))}</span>}
+          <span className={screen.value} data-empty={!hasValue || undefined}>{value}</span>
+          {live.reference ? <span>{String(live.reference)}</span> : null}
+        </p>
       </div>
-      {live.amount === undefined || !resource.data ? <div className={styles.opportunityValue} data-empty={!hasValue || undefined}><small>{t("Value")}</small><strong>{value}</strong></div>
-        : <dl className={styles.opportunityValue} data-empty={!hasValue || undefined} data-layout="stacked"><EditableField currency={valueCurrency} display={hasValue ? value : undefined} kind="money" label={t("Value")} onReload={resource.refresh}
-          onSave={(next) => patch(next ? { amount: Number(next), currencyCode: valueCurrency } : { amount: null, currencyCode: null })} placeholder={t("Not set")}
-          value={live.amount === null || live.amount === undefined ? "" : String(live.amount)} /></dl>}
-    </header>
-    <section className={styles.opportunityOverview} aria-label={t("Opportunity summary")}>
-      <dl className={styles.opportunitySummary} data-layout="stacked">
-        <div><dt>{t("Stage")}</dt><dd>{String(live.stageName ?? t("Not set"))}</dd></div>
-        <EditableField canEdit={Boolean(resource.data)} display={String(live.ownerName ?? t("Unassigned"))} items={owners} kind="select" label={t("Sales owner")} onReload={resource.refresh}
-          onSave={(ownerMembershipId) => patch({ ownerMembershipId: ownerMembershipId || null })} value={ownerId} />
-        <div><dt>{t("Next follow-up")}</dt><dd>{dateText(live.nextActionAt ?? live.next_action_at, { locale, timeZone })}</dd></div>
-        <EditableField canEdit={Boolean(resource.data)} display={closeDate ? dateText(live.expectedCloseAt ?? live.expected_close_at) : undefined} kind="date" label={t("Expected close")} onReload={resource.refresh}
-          onSave={(date) => patch({ expectedCloseAt: date ? new Date(`${date}T12:00:00`).toISOString() : null })} placeholder={t("Not set")} value={closeDate} />
-      </dl>
-      {outcomeMismatch ? <p className={styles.opportunityWarning} role="status">{t("This record is in the {stage} stage but its status is {status}. Review and confirm the outcome.", { stage: String(currentStage?.name), status: label(status) })}</p> : null}
-      {caseError ? <Callout title={t("Could not open Planning")} tone="warning">{caseError}</Callout> : null}
-      <div className={styles.opportunityActions}>
+      <div className={screen.headerActions}>
+        {owner ? <span className={screen.owner} title={owner.label}><Avatar name={owner.label} seed={owner.id} size="sm" /></span> : null}
+        {stageChip}
         <Button size="compact" isDisabled={!resource.data} onPress={() => setEditing(true)}><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button>
-        {activeWorkingStages.length > 1 || closed ? <Button size="compact" isDisabled={!resource.data || !workingStageId} onPress={startStageChange}><ArrowRightLeft aria-hidden="true" size={14} />{closed ? t("Reopen") : t("Change stage")}</Button> : null}
-        {!closed ? <><Button size="compact" className={styles.opportunityWinAction} isDisabled={!resource.data} onPress={startWin}><BadgeCheck aria-hidden="true" size={14} />{t("Won")}</Button><Button size="compact" className={styles.opportunityLostAction} isDisabled={!resource.data} onPress={() => startOutcome("lost")}><CircleX aria-hidden="true" size={14} />{t("Lost")}</Button></> : null}
+        <IconMenuButton ariaLabel={t("More actions")} items={resource.data ? menu : []} onAction={onMenu} />
       </div>
-    </section>
-    {flow ? <NextStepCard workspaceId={workspaceId} opportunityId={row.id} flow={flow} status={status} ownerName={live.ownerName ? String(live.ownerName) : null}
-      followUp={typeof (live.nextActionAt ?? live.next_action_at) === "string" ? String(live.nextActionAt ?? live.next_action_at) : null}
-      onAction={onRequirement} onAdvance={() => void advance()} advancing={advancing}
-      extra={<>
-        {flow.flow === "furniture" && !closed ? <Switch isSelected={Boolean(flow.clientApproval)} onChange={(value) => { void saveFlow({ clientApproved: value }).catch((error) => setFlowError(error instanceof Error ? error.message : t("Could not save."))); }}>{t("Client approved on the spot")}</Switch> : null}
-        {flowError ? <Callout title={t("Could not update the opportunity")} tone="warning">{flowError}</Callout> : null}
-      </>} /> : null}
+    </header>
+    {outcomeMismatch ? <p className={styles.opportunityWarning} role="status">{t("This record is in the {stage} stage but its status is {status}. Review and confirm the outcome.", { stage: String(currentStage?.name), status: label(status) })}</p> : null}
+    {caseError ? <Callout title={t("Could not open Planning")} tone="warning">{caseError}</Callout> : null}
+    {flowError ? <Callout title={t("Could not update the opportunity")} tone="warning">{flowError}</Callout> : null}
+    {flow ? <ProgressLine flow={flow} status={status} history={stageHistory} /> : null}
+    {resource.data ? <NowCard plan={plan} owner={owner} people={owners} due={followUp} busy={advancing || openingCase} onAct={act} onReassign={(membershipId) => patch({ ownerMembershipId: membershipId })} /> : null}
     <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key))} items={[
-      { id: "progress", label: t("Progress"), panel: <div className={styles.progress}>
-        {funnel.length ? <ol className={styles.funnel} aria-label={t("Where this opportunity is")}>{funnel.map((item) => <li key={item.key} data-state={item.state} data-selected={item.key === shownStep || undefined}>
-          <button type="button" title={t("Open {step}", { step: t(FUNNEL_LABELS[item.key]) })} aria-current={item.key === shownStep ? "step" : undefined} onClick={() => setStep(item.key)}>
-            <span className={styles.funnelDot} aria-hidden="true">{item.state === "done" ? <Check size={10} strokeWidth={3} /> : null}</span>
-            <span className={styles.funnelText}><strong>{t(FUNNEL_LABELS[item.key])}</strong><small>{item.detail ?? (item.state === "current" ? t("Next") : t("Not started"))}</small></span>
-          </button>
-        </li>)}</ol> : null}
-        <div className={styles.stepBody}>{stepPanel(shownStep)}</div>
+      { id: "details", label: t("Details"), panel: <div className={screen.details}>
+        <EditableFieldList className={screen.facts}>
+          {live.amount === undefined || !resource.data ? <FactRow label={t("Value")}>{value}</FactRow>
+            : <EditableField currency={valueCurrency} display={hasValue ? value : undefined} kind="money" label={t("Value")} onReload={resource.refresh}
+              onSave={(next) => patch(next ? { amount: Number(next), currencyCode: valueCurrency } : { amount: null, currencyCode: null })} placeholder={t("Not set")}
+              value={live.amount === null || live.amount === undefined ? "" : String(live.amount)} />}
+          <EditableField canEdit={Boolean(resource.data)} display={closeDate ? dateText(live.expectedCloseAt ?? live.expected_close_at, { locale, timeZone }) : undefined} kind="date" label={t("Expected close")} onReload={resource.refresh}
+            onSave={(date) => patch({ expectedCloseAt: date ? new Date(`${date}T12:00:00`).toISOString() : null })} placeholder={t("Not set")} value={closeDate} />
+          <FactRow label={t("Next follow-up")}>{dateText(followUp, { locale, timeZone })}</FactRow>
+          {flow?.enquiryType ? <FactRow label={t("Enquiry type")}>{flow.enquiryType}</FactRow> : null}
+          {leadId ? <FactRow label={t("Enquiry")} action={<Link className={screen.factLink} href={`/workspace/crm/leads?lead=${leadId}`}>{t("Open enquiry")}</Link>}>{funnel.find((step) => step.key === "enquiry")?.detail ?? t("Linked")}</FactRow> : null}
+          <FactRow label={t("Planning")} action={caseId ? <Link className={screen.factLink} href={caseLink("overview")}>{t("Open in Planning")}</Link>
+            : <Button size="compact" variant="quiet" isLoading={openingCase} isDisabled={!resource.data || closed && status !== "won"} onPress={() => void openCase()}>{t("Start Planning")}</Button>}>{caseId ? t("Started") : t("Not started")}</FactRow>
+          {flow?.furniture ? <FactRow label={t("Furniture sub-path")} action={!closed ? <Button size="compact" variant="quiet" onPress={() => setFurnitureOpen(true)}>{pathChoice ? t("Change") : t("Choose")}</Button> : null}>
+            {pathChoice ? `${pathChoice.letter} · ${t(pathChoice.label)}` : t("Not set")}</FactRow> : null}
+          {flow?.furniture?.feasibility ? <FactRow label={t("Feasibility")}>{t("Confirmed · {date}", { date: shortDay(flow.furniture.feasibility.at) })}</FactRow> : null}
+          {flow?.flow === "furniture" && !closed ? <FactRow label={t("Client approved on the spot")}>
+            <Switch aria-label={t("Client approved on the spot")} isSelected={Boolean(flow.clientApproval)} onChange={(next) => { void saveFlow({ clientApproved: next }).catch((error) => setFlowError(error instanceof Error ? error.message : t("Could not save."))); }}>{flow.clientApproval ? t("Yes") : t("No")}</Switch>
+          </FactRow> : null}
+          {proof ? <FactRow label={t("Payment proof")}><a className={screen.factLink} href={proofHref(workspaceId, row.id, proof.id)} target="_blank" rel="noopener noreferrer">{t("Attached · {date}", { date: shortDay(proof.recordedAt) })}</a></FactRow> : null}
+        </EditableFieldList>
+        {showDiscovery ? <OpportunityDiscovery workspaceId={workspaceId} opportunityId={row.id} locale={locale} onSaved={saved} /> : null}
+        {showIntro ? <OpportunityIntro workspaceId={workspaceId} opportunityId={row.id} locale={locale} onSaved={saved} startBooking={bookIntro} onBookingStarted={() => setBookIntro(false)} /> : null}
       </div> },
       { id: "activity", label: t("Activity"), panel: <ActivityPanel workspaceId={workspaceId} opportunityId={row.id} partyId={partyId || undefined} ownerMembershipId={ownerId || undefined} onChanged={saved} /> },
       { id: "files", label: t("Files"), panel: leadId ? <RecordAttachments workspaceId={workspaceId} leadId={String(leadId)} /> : <EmptyState illustration="upload" title={t("No enquiry files")} description={t("Project files live in Planning.")} /> },
@@ -251,12 +252,15 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     {proofOpen ? <PaymentProofDialog workspaceId={workspaceId} opportunityId={row.id} loadVersion={freshVersion} onClose={() => setProofOpen(false)} onWon={saved}
       onBlocked={(items) => setBlocked({ stage: String(wonStage?.name ?? t("Won")), items })} /> : null}
     {furnitureOpen && flow?.furniture ? <FurniturePathDialog flow={flow.furniture} onClose={() => setFurnitureOpen(false)} onSave={saveFlow} /> : null}
-    {blocked ? <StageBlockedDialog stageName={blocked.stage} items={blocked.items} onAction={onRequirement} onClose={() => setBlocked(null)} /> : null}
+    {blocked ? <StageBlockedSheet stageName={blocked.stage} items={blocked.items} onAction={act} onClose={() => setBlocked(null)} /> : null}
+    {historyOpen ? <ControlledModalDialog isOpen size="md" title={t("History")} onOpenChange={setHistoryOpen}>
+      {stageHistory.length ? <ol className={screen.history}>{stageHistory.map((entry, index) => <li key={entry.id ?? index}>
+        <strong>{entry.fromStageName ?? t("Start")}<ArrowRight aria-hidden="true" size={12} />{entry.toStatus === "won" ? t("Won") : entry.toStatus === "lost" ? t("Lost") : entry.toStageName ?? t("Not set")}</strong>
+        <small>{[entry.changedByName, entry.changedAt ? shortDay(entry.changedAt) : null, entry.reason].filter(Boolean).join(" · ")}</small>
+      </li>)}</ol> : <p className={styles.empty}>{t("No changes yet.")}</p>}
+    </ControlledModalDialog> : null}
     {editing ? <OpportunityEditDialog workspaceId={workspaceId} opportunity={{ ...live, version: Math.max(Number(live.version ?? 0), savedVersion) }} members={owners} onClose={() => setEditing(false)} onSaved={saved} /> : null}</div>;
 }
-
-type FunnelStep = { key: "enquiry" | "discovery" | "intro" | "design" | "quote" | "deal"; state: "done" | "current" | "active" | "upcoming"; detail: string | null; at: string | null };
-const FUNNEL_LABELS: Record<FunnelStep["key"], MessageKey> = { enquiry: tKey("Enquiry"), discovery: tKey("Discovery"), intro: tKey("Intro meeting"), design: tKey("Design"), quote: tKey("Quote"), deal: tKey("Deal File") };
 
 function ActivityWorkbench({ workspaceId, row, onChanged }: { workspaceId: string; row: RecordData; onChanged: () => Promise<void> }) {
   const t = useT();

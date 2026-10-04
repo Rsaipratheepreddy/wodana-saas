@@ -1,0 +1,81 @@
+/* The opportunity screen: one header, the progress line, one Now card, then Details · Activity · Files. */
+.opportunity { gap: var(--wd-space-5); }
+.header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3) var(--wd-space-6); padding-inline-end: var(--wd-space-8); }
+.identity { display: grid; gap: var(--wd-space-1); min-inline-size: 0; flex: 1 1 20rem; }
+.identity h2 { margin: 0; color: var(--wd-color-text); font-family: var(--wd-font-sans); font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); letter-spacing: normal; line-height: var(--wd-leading-tight); text-transform: none; overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-1) var(--wd-space-2); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.meta > * + *::before { content: "·"; margin-inline-end: var(--wd-space-2); color: var(--wd-color-text-tertiary); }
+.meta a { color: inherit; text-decoration: none; }
+.meta a:hover { color: var(--wd-color-text); text-decoration: underline; }
+.value { color: var(--wd-color-text); font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); }
+.value[data-empty] { color: var(--wd-color-text-tertiary); font-weight: var(--wd-weight-regular); }
+.headerActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.owner { display: inline-flex; }
+.details { display: grid; gap: var(--wd-space-5); padding-block-start: var(--wd-space-3); }
+.factLink { color: var(--wd-color-link); font-size: var(--wd-text-sm); text-decoration: none; }
+.factLink:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+.history { display: grid; margin: 0; padding: 0; list-style: none; }
+.history li { display: grid; gap: var(--wd-space-0-5); padding-block: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.history li:first-child { border-block-start: 0; }
+.history strong { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.history small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+.nowBlock { display: grid; gap: var(--wd-space-2); }
+.now { display: grid; gap: var(--wd-space-3); padding: var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
+.nowMain { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
+.nowMain h3 { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
+.why { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.nowMeta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
+.assignee { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.primary { margin-inline-start: auto; }
+
+.more { display: grid; gap: var(--wd-space-1); }
+.moreToggle { display: inline-flex; align-items: center; justify-self: start; gap: var(--wd-space-1); padding: 0; border: 0; background: none; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-xs); cursor: pointer; }
+.moreToggle:hover { color: var(--wd-color-text); }
+.moreToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
+.moreToggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.moreList { display: grid; margin: 0; padding: 0; list-style: none; }
+.moreList li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-block-size: var(--wd-space-8); border-block-start: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+
+.then { margin: 0; padding-inline: var(--wd-space-4); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+/* Progress line: the flow's columns as dots joined by a hairline. */
+.line { display: grid; grid-template-columns: repeat(var(--steps), minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
+.line li { position: relative; min-inline-size: 0; }
+.line li + li::before { content: ""; position: absolute; z-index: 0; inset-block-start: calc(var(--wd-space-1) + var(--wd-space-2)); inset-inline: calc(-50% + var(--wd-space-3)) calc(50% + var(--wd-space-3)); block-size: 1px; background: var(--wd-color-border-strong); }
+.line li[data-state="done"] + li::before { background: var(--wd-color-success); }
+.line li > span { display: block; }
+.dot { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: var(--wd-space-1); inline-size: 100%; padding: var(--wd-space-1); border: 0; border-radius: var(--wd-radius-sm); background: none; color: var(--wd-color-text-secondary); font: inherit; cursor: pointer; }
+.dot[data-hovered] { background: var(--wd-color-surface-hover); }
+.dot[data-focus-visible] { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.mark { display: grid; place-items: center; inline-size: var(--wd-space-4); block-size: var(--wd-space-4); border: 1.5px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-round); background: var(--wd-color-surface); color: var(--wd-color-text-inverse); }
+.line li[data-state="done"] .mark { border-color: var(--wd-color-success); background: var(--wd-color-success); }
+.line li[data-state="current"] .mark { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary); box-shadow: inset 0 0 0 3px var(--wd-color-surface); }
+.dotLabel { display: grid; color: inherit; font-size: var(--wd-text-2xs); line-height: var(--wd-leading-tight); text-align: center; overflow-wrap: anywhere; }
+.dotLabel small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); }
+.line li[data-state="current"] .dotLabel { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); }
+.line li[data-state="done"] .dotLabel { color: var(--wd-color-text); }
+
+.dotPanel { display: grid; gap: var(--wd-space-2); max-inline-size: calc(var(--wd-space-24) * 3); padding: var(--wd-space-3); outline: none; }
+.dotHeading { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.dotPanel ul { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.tip { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); }
+
+/* Reassign: the teammates, each with their avatar. */
+.people { display: grid; gap: var(--wd-space-1); min-inline-size: calc(var(--wd-space-24) * 2); max-block-size: calc(var(--wd-space-24) * 3); padding: var(--wd-space-1); overflow-y: auto; outline: none; }
+.people ul { display: grid; margin: 0; padding: 0; list-style: none; }
+.person { display: flex; align-items: center; gap: var(--wd-space-2); inline-size: 100%; min-block-size: var(--wd-control-sm); padding-inline: var(--wd-space-2); border: 0; border-radius: var(--wd-radius-sm); background: none; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); text-align: start; cursor: pointer; }
+.person[data-hovered], .person[data-focus-visible] { background: var(--wd-color-surface-hover); }
+.person[aria-current] { font-weight: var(--wd-weight-semibold); }
+.personName { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+.failure { margin: 0; padding: var(--wd-space-2); color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
+
+@media (max-width: 40rem) {
+  .now { padding: var(--wd-space-3); }
+  .primary { flex-basis: 100%; margin-inline-start: 0; }
+  .primary :global(.wd-button) { inline-size: 100%; }
+  .then { padding-inline: var(--wd-space-3); }
+  /* Only the step you are on is named; the other dots name themselves on tap. */
+  .line li:not([data-state="current"]) .dotLabel { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .line li[data-state="current"] .dotLabel { overflow-wrap: normal; }
+}

@@ -8,8 +8,10 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import type { CrmRecord, CrmScreenPageData } from "@/lib/crm/screens";
 import { crmRequest, rows, type MissingRequirement, type RecordData } from "@/lib/crm/client";
-import { missingFrom, type OpportunityFlowView, type RequirementTarget } from "@/lib/crm/opportunity-flow";
-import { PaymentProofDialog, StageBlockedDialog } from "./opportunity-flow";
+import { missingFrom, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
+import { nowPlan, type FunnelStep, type NowStep } from "@/lib/crm/now-step";
+import { PaymentProofDialog, StageBlockedSheet } from "./opportunity-flow";
+import { DueChip, useStepText } from "./opportunity-now";
 import { LinkedRecordWorkbench } from "./crm-record-workbench";
 import { CrmProductShell } from "./crm-product-shell";
 import styles from "./crm-opportunities.module.css";
@@ -98,6 +100,30 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
     document.addEventListener("visibilitychange", onVisible);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
   }, [initialData.workspaceId]);
+  // Each open card shows its step now, read from the opportunity's detail once per version.
+  const stepText = useStepText();
+  const [nowSteps, setNowSteps] = useState<Record<string, { version: string; step: NowStep | null }>>({});
+  const asked = useRef(new Set<string>());
+  useEffect(() => {
+    const wanted = items.filter((item) => item.status === "open" && !asked.current.has(`${item.id}:${String(item.version ?? "")}`)).slice(0, 60);
+    if (!wanted.length) return;
+    let cancelled = false;
+    const queue = [...wanted];
+    const worker = async () => {
+      for (let item = queue.shift(); item && !cancelled; item = queue.shift()) {
+        const version = String(item.version ?? "");
+        asked.current.add(`${item.id}:${version}`);
+        try {
+          const detail = await crmRequest<RecordData & { flow?: OpportunityFlowView; funnel?: FunnelStep[] }>(initialData.workspaceId, `opportunities/${item.id}`);
+          if (!detail || typeof detail !== "object") continue;
+          const step = nowPlan({ flow: detail.flow && typeof detail.flow === "object" ? detail.flow : null, status: String(detail.status ?? item.status), funnel: detail.funnel, caseId: detail.preProjectCaseId ? String(detail.preProjectCaseId) : null }).now;
+          setNowSteps((current) => ({ ...current, [item!.id]: { version, step } }));
+        } catch { /* the card simply shows no step */ }
+      }
+    };
+    void Promise.all([worker(), worker(), worker()]);
+    return () => { cancelled = true; };
+  }, [items, initialData.workspaceId]);
   const [layout, setLayout] = useState<"board" | "list">("board");
   const [search, setSearch] = useState("");
   const [assignee, setAssignee] = useState("");
@@ -146,8 +172,8 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
     finally { moveLock.current = false; setMoving(null); setDragged(null); setDropTarget(null); }
   };
 
-  const resolve = (recordId: string, target: RequirementTarget) => {
-    if (target === "proof") setProofFor(recordId);
+  const resolve = (recordId: string, step: NowStep) => {
+    if (step.target === "proof") setProofFor(recordId);
     else setSelectedRecord(recordId);
   };
 
@@ -208,27 +234,24 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
           <header><h2><i aria-hidden="true" />{column.name}</h2><span className={styles.count} aria-label={t("{count} loaded opportunities", { count: cards.length })}>{cards.length}</span></header>
           {pipelines.length > 1 && pipelineFilter === "all" && <small className={styles.pipelineName}>{column.pipelineName}</small>}
           <div className={`${styles.cardStack} wd-scroll-quiet`}>{cards.map(item => {
-            const owner = personDisplayName(item.ownerName as string | null) || t("Unassigned");
-            const overdue = item.status === "open" && typeof item.nextActionAt === "string" && Date.parse(item.nextActionAt) < Date.now();
+            const owner = personDisplayName(item.ownerName as string | null);
             const title = opportunityTitle(item, t);
             const customer = String(item.partyName ?? "").trim();
-            const reference = opportunityReference(item);
             const value = moneyLabel(item, locale);
             const outcomeMismatch = (column.code === "won" || column.code === "lost") && item.status !== column.code;
-            const dueText = `${overdue ? t("Overdue") : t("Follow-up")} ${item.nextActionAt ? dateLabel(item.nextActionAt, locale, timeZone, t) : t("needed")}`;
+            const now = item.status === "open" ? nowSteps[item.id]?.step ?? null : null;
             return <button type="button" className={styles.boardCard} key={item.id} draggable={item.status === "open" && !moving} aria-busy={moving === item.id} data-dragging={dragged === item.id || undefined}
               aria-describedby="pipeline-drag-hint"
               onDragStart={event => { setDragged(item.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); }}
               onDragEnd={() => { setDragged(null); setDropTarget(null); }}
               onKeyDown={event => { if (event.altKey && (event.key === "ArrowRight" || event.key === "ArrowLeft")) { event.preventDefault(); const stages = boardColumns.filter(stage => stage.pipelineId === String(item.pipelineId ?? item.pipeline_id)); const index = stages.findIndex(stage => stage.id === String(item.stageId ?? item.stage_id)); const next = stages[index + (event.key === "ArrowRight" ? 1 : -1)]; if (next) requestMove(item.id, next.id); } }} onClick={() => setSelectedRecord(item.id)}>
-              {reference && <span className={styles.cardReference}>{reference}</span>}
               <strong>{title}</strong>
               {outcomeMismatch && <span className={styles.cardWarning}>{t("Status is {status} — review outcome", { status: String(item.status).replaceAll("_", " ") })}</span>}
-              {customer && customer !== title && <span className={styles.cardCustomer}><span>{t("Client")}</span>{customer}</span>}
-              {value && <span className={styles.cardValue}><span>{t("Value")}</span><b>{value}</b></span>}
+              {(customer && customer !== title) || value ? <span className={styles.cardMeta}>{customer && customer !== title ? <span>{customer}</span> : null}{value ? <b>{value}</b> : null}</span> : null}
+              {now ? <span className={styles.cardNow}>{stepText(now, "short")}</span> : null}
               <footer>
-                {item.status === "open" && <span className={styles.cardDue} data-overdue={overdue || undefined} data-missing={!item.nextActionAt || undefined} title={dueText}><CalendarClock size={12} aria-hidden="true" /><span>{overdue ? t("Overdue") : t("Follow-up")}</span>{item.nextActionAt ? dateLabel(item.nextActionAt, locale, timeZone, t) : t("needed")}</span>}
-                <span className={styles.owner} title={owner}><span className={styles.assignedLabel}>{t("Assigned to")}</span><span aria-hidden="true"><Avatar name={owner} size="sm" /></span><span className={styles.ownerName}>{owner}</span></span>
+                {item.status === "open" ? (typeof item.nextActionAt === "string" ? <DueChip at={item.nextActionAt} /> : <span className={styles.cardNoDue}>{t("No follow-up")}</span>) : <span />}
+                <span className={styles.owner} title={owner || t("Unassigned")}><span aria-hidden="true"><Avatar name={owner || t("Unassigned")} seed={owner ? String(item.ownerMembershipId ?? owner) : undefined} size="sm" /></span><span className={styles.srOnly}>{owner || t("Unassigned")}</span></span>
               </footer>
             </button>;
           })}</div>
@@ -255,7 +278,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
       showToolbar={false}
     />}
     {selectedRecord ? <ControlledModalDialog isOpen title={t("Opportunity details")} hideTitle size="xl" className={styles.opportunityModal} onOpenChange={(open) => { if (!open) setSelectedRecord(undefined); }}><LinkedRecordWorkbench id="opportunities" workspaceId={initialData.workspaceId} recordId={selectedRecord} onChanged={reload} /></ControlledModalDialog> : null}
-    {blocked ? <StageBlockedDialog stageName={blocked.stage} items={blocked.items} onClose={() => setBlocked(null)} onAction={(target) => resolve(blocked.recordId, target)} /> : null}
+    {blocked ? <StageBlockedSheet stageName={blocked.stage} items={blocked.items} onClose={() => setBlocked(null)} onAction={(step) => resolve(blocked.recordId, step)} /> : null}
     {proofFor ? <PaymentProofDialog workspaceId={initialData.workspaceId} opportunityId={proofFor}
       loadVersion={async () => Number((await crmRequest<RecordData>(initialData.workspaceId, `opportunities/${proofFor}`)).version)}
       onClose={() => setProofFor(null)} onWon={() => reload()}

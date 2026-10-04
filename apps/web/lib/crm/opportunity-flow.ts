@@ -56,18 +56,8 @@ export const PROOF_KINDS: Array<{ id: string; label: MessageKey }> = [
   { id: "other", label: tKey("Other") },
 ];
 
-/** What resolves a missing requirement: where the person goes or what opens. */
-export type RequirementTarget = "proof" | "furniture" | "intro" | "discovery" | "quote" | "enquiry" | "edit";
-export function requirementAction(key: string): { target: RequirementTarget; label: MessageKey } {
-  if (key === "paymentProof") return { target: "proof", label: tKey("Attach payment proof") };
-  if (key === "furniturePath") return { target: "furniture", label: tKey("Choose sub-path") };
-  if (key === "feasibility") return { target: "furniture", label: tKey("Confirm feasibility") };
-  if (key === "introMeeting") return { target: "intro", label: tKey("Book intro") };
-  if (key === "quotation") return { target: "quote", label: tKey("Prepare quotation") };
-  if (key === "enquiryType" || key === "clientType") return { target: "enquiry", label: tKey("Edit enquiry") };
-  if (["owner", "nextAction", "amount", "expectedCloseAt", "stakeholders"].includes(key)) return { target: "edit", label: tKey("Edit opportunity") };
-  return { target: "discovery", label: tKey("Fill in discovery") };
-}
+/** The requirement → step mapping lives in one place. */
+export { requirementAction, type RequirementTarget } from "./now-step";
 
 /** The requirement labels the server sends, kept here so they are translated. */
 export const REQUIREMENT_LABELS: MessageKey[] = [
