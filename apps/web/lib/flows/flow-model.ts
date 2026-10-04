@@ -40,16 +40,26 @@ export type FlowBranch = { key: string; question: BranchQuestion; after: string;
 export type FlowDefinition = { schema: 1; columns: string[]; steps: FlowStep[]; branches: FlowBranch[] };
 export type FlowValidationError = { path: string; message: string };
 
-export type FlowUse = { id: string; code: string; label: string; version: number };
+/** An enquiry type and the flow it follows. `assigned` is false when it names no flow and so runs the basic flow by default. */
+export type FlowUse = { id: string; code: string; label: string; version: number; assigned?: boolean };
 export type FlowSummary = {
   id: string; code: string; name: string; status: string; version: number; runningJobs?: number;
-  latest: { id: string; version: number; source: "starter" | "published"; publishedAt: string; publishedBy: string | null } | null;
+  latest: { id: string; version: number; source: "starter" | "published"; publishedAt: string; publishedBy: string | null; steps?: string[] } | null;
   usedBy: FlowUse[];
 };
 export type FlowDetail = {
   id: string; code: string; name: string; status: string; version: number;
   selected: { version: number; publishedAt?: string; publishedBy?: string | null; source?: string; definition: FlowDefinition };
 };
+/** A ready-made flow from the template library (`GET crm/flows/templates`). */
+export type FlowTemplate = { key: string; name: string; description: string; group: string; suggestedEnquiryTypes: string[]; stepCount: number };
+export const TEMPLATE_GROUPS = ["Furniture", "Interior design", "Fit-out", "Other"] as const;
+/** The name with a number after it when the firm already has a flow by that name (names must be unique). */
+export function uniqueFlowName(base: string, flows: Array<{ name: string }>): string {
+  const taken = new Set(flows.map((flow) => flow.name.trim().toLocaleLowerCase()));
+  if (!taken.has(base.trim().toLocaleLowerCase())) return base;
+  for (let index = 2; ; index += 1) if (!taken.has(`${base} ${index}`.toLocaleLowerCase())) return `${base} ${index}`;
+}
 export type RoleOption = { code: string; name: string };
 export type AnswerOption = { value: string; label: string; letter?: string };
 export type AnswerOptions = Partial<Record<BranchQuestion, AnswerOption[]>>;

@@ -3,129 +3,124 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { ArrowRight, ChevronDown, Pencil, Plus } from "lucide-react";
 import {
-  Avatar, Button, ControlledModalDialog, EmptyState, Form, NoAccessState, PageHeader, RecordTable, SelectField, TextInput, TypeChip,
+  Avatar, Button, ConfirmationDialog, EmptyState, ErrorState, IconMenuButton, MenuButton, NoAccessState, PageHeader, TypeChip,
   formatDate, formatNumber, useDesignSystem, useToast,
 } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
 import type { FlowSummary, FlowUse } from "@/lib/flows/flow-model";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { tKey, translateKnown } from "@/lib/i18n/keys";
+import { translateKnown } from "@/lib/i18n/keys";
+import { NewFlowDialog } from "./new-flow-dialog";
 import styles from "./flows.module.css";
 
-/** The starter flows every workspace can begin from (plan §5a). */
-export const STARTERS = [
-  { code: "furniture", name: tKey("Furniture") },
-  { code: "design", name: tKey("Design") },
-  { code: "fit_out", name: tKey("Fit-out") },
-  { code: "basic", name: tKey("Basic") },
-];
+export { NewFlowDialog, STARTERS } from "./new-flow-dialog";
 
-type EnquiryTypeRow = FlowUse & { flowId: string };
+/** An enquiry type with the flow it follows; `assigned` false means it names no flow and runs the basic one. */
+type TypeRow = FlowUse & { flowId: string; assigned: boolean };
+type Move = { row: TypeRow; flowId: string };
 
-/** Flows (plan §5a, F3): the firm's flows, which enquiry type follows which, and a way to start a new one. */
-export function FlowsListPage({ canManage, flows: initial, workspaceId }: { canManage: boolean; flows: FlowSummary[]; workspaceId: string }) {
+/** Flows (plan §5a, F3): one card per flow with the enquiry types it is used for; a way to start a new one. */
+export function FlowsListPage({ canManage, flows: initial, loadError = false, workspaceId }: { canManage: boolean; flows: FlowSummary[]; loadError?: boolean; workspaceId: string }) {
   const t = useT();
   const toast = useToast();
+  const router = useRouter();
   const { locale, timeZone } = useDesignSystem();
   const [flows, setFlows] = useState(initial);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
-  const enquiryTypes = useMemo<EnquiryTypeRow[]>(() => flows.flatMap((flow) => flow.usedBy.map((use) => ({ ...use, flowId: flow.id })))
+  const [confirming, setConfirming] = useState<Move | null>(null);
+  const types = useMemo<TypeRow[]>(() => flows.flatMap((flow) => flow.usedBy.map((use) => ({ ...use, flowId: flow.id, assigned: use.assigned !== false })))
     .sort((a, b) => a.label.localeCompare(b.label, locale)), [flows, locale]);
-  const flowItems = flows.filter((flow) => flow.status === "active").map((flow) => ({ id: flow.id, label: flow.name }));
+  const targets = flows.filter((flow) => flow.status === "active");
+  const nameOf = (flowId: string) => flows.find((flow) => flow.id === flowId)?.name ?? "";
+  const unassigned = types.filter((row) => !row.assigned);
 
   if (!canManage) return <NoAccessState area={t("Flows")} />;
 
-  async function assign(row: EnquiryTypeRow, flowId: string) {
-    if (flowId === row.flowId) return;
+  async function move({ row, flowId }: Move) {
+    if (flowId === row.flowId && row.assigned) return;
     setSaving(row.id);
     try {
       const updated = await crmRequest<{ version: number }>(workspaceId, `flows/${flowId}/enquiry-types/${row.id}`, "PUT", { version: row.version });
       setFlows((current) => current.map((flow) => ({
         ...flow,
-        usedBy: flow.id === flowId ? [...flow.usedBy, { id: row.id, code: row.code, label: row.label, version: updated.version }]
-          : flow.usedBy.filter((use) => use.id !== row.id),
+        usedBy: [...flow.usedBy.filter((use) => use.id !== row.id),
+          ...(flow.id === flowId ? [{ id: row.id, code: row.code, label: row.label, version: updated.version, assigned: true }] : [])],
       })));
-      toast.push({ tone: "success", title: t("Saved"), message: t("{type} now follows {flow}", { type: row.label, flow: flows.find((flow) => flow.id === flowId)?.name ?? "" }) });
+      toast.push({ tone: "success", title: t("Saved"), message: t("{type} now follows {flow}", { type: row.label, flow: nameOf(flowId) }) });
     } catch (error) {
       toast.push({ tone: "danger", title: t("Not saved"), message: translateKnown(t, error instanceof Error ? error.message : t("Please try again.")) });
     } finally {
       setSaving(null);
+      setConfirming(null);
     }
   }
+
+  /** The "Move to …" menu on a chip: every other active flow. */
+  const moveMenu = (row: TypeRow) => <IconMenuButton
+    ariaLabel={t("Move {type}", { type: row.label })} icon={<ChevronDown aria-hidden="true" size={14} />}
+    items={targets.filter((flow) => flow.id !== row.flowId || !row.assigned).map((flow) => ({ id: flow.id, label: t("Move to {name}", { name: flow.name }), isDisabled: saving === row.id }))}
+    onAction={(flowId) => void move({ row, flowId })} />;
+  const chip = (row: TypeRow) => <li className={styles.typeChip} key={row.id}><TypeChip typeKey={row.code}>{row.label}</TypeChip>{moveMenu(row)}</li>;
 
   const action = <Button onPress={() => setCreating(true)} variant="primary"><Plus aria-hidden="true" size={16} />{t("New flow")}</Button>;
   return <div className={styles.page}>
-    <PageHeader actions={action} title={t("Flows")} />
-    {!flows.length ? <EmptyState action={action} title={t("No flows yet")} /> : <RecordTable
-      ariaLabel={t("Flows")} data={flows} getRowId={(flow) => flow.id} rowNumbers={false} selectable={false} showFooter={false} showToolbar={false} wrapText
-      columns={[
-        { id: "name", header: t("Flow"), size: 240, accessorFn: (flow) => flow.name, meta: { primary: true, interactive: true },
-          cell: ({ row: { original: flow } }) => <Link className={styles.flowLink} href={`/workspace/flows/${flow.id}`}>{flow.name}</Link> },
-        { id: "usedBy", header: t("Used by"), size: 300, accessorFn: (flow) => flow.usedBy.map((use) => use.label).join(", "),
-          cell: ({ row: { original: flow } }) => flow.usedBy.length
-            ? <span className={styles.chips}>{flow.usedBy.map((use) => <TypeChip key={use.id} typeKey={use.code}>{use.label}</TypeChip>)}</span>
-            : <span className={styles.muted}>{t("Not used")}</span> },
-        { id: "jobs", header: t("Running jobs"), size: 130, accessorFn: (flow) => flow.runningJobs ?? 0, meta: { align: "end", mobileHidden: true },
-          cell: ({ row: { original: flow } }) => <span className={styles.number}>{formatNumber(flow.runningJobs ?? 0, { locale })}</span> },
-        { id: "latest", header: t("Latest version"), size: 260, accessorFn: (flow) => flow.latest?.version ?? 0, meta: { mobileHidden: true },
-          cell: ({ row: { original: flow } }) => flow.latest ? <span className={styles.version}>
-            <span className={styles.versionNumber}>{t("v{version}", { version: flow.latest.version })}</span>
-            {flow.latest.publishedBy ? <Avatar name={flow.latest.publishedBy} seed={flow.latest.publishedBy} size="sm" /> : null}
-            <span className={styles.muted}>{flow.latest.source === "starter" ? t("Starter") : formatDate(flow.latest.publishedAt, { locale, timeZone })}</span>
-          </span> : null },
-      ]} />}
-    {enquiryTypes.length ? <section aria-labelledby="flows-enquiry-types" className={styles.section}>
-      <h2 className={styles.sectionTitle} id="flows-enquiry-types">{t("Enquiry types")}</h2>
-      <RecordTable
-        ariaLabel={t("Enquiry types")} data={enquiryTypes} getRowId={(row) => row.id} rowNumbers={false} selectable={false} showFooter={false} showToolbar={false} wrapText
-        columns={[
-          { id: "type", header: t("Enquiry type"), size: 240, accessorFn: (row) => row.label, meta: { primary: true },
-            cell: ({ row: { original: row } }) => <TypeChip typeKey={row.code}>{row.label}</TypeChip> },
-          { id: "flow", header: t("Follows"), size: 280, accessorFn: (row) => flows.find((flow) => flow.id === row.flowId)?.name ?? "", meta: { interactive: true },
-            cell: ({ row: { original: row } }) => <span className={styles.selectCell}><SelectField
-              accent="neutral" aria-label={t("Flow for {type}", { type: row.label })} isDisabled={saving === row.id} items={flowItems}
-              label={<span className="wd-visually-hidden">{t("Flow for {type}", { type: row.label })}</span>}
-              onSelectionChange={(key) => { if (key) void assign(row, String(key)); }} selectedKey={row.flowId} /></span> },
-        ]} />
+    <PageHeader actions={loadError ? undefined : action} title={t("Flows")} />
+    {loadError ? <ErrorState onRetry={() => router.refresh()} />
+      : !flows.length ? <EmptyState action={action} title={t("No flows yet")} />
+      : <ul aria-label={t("Flows")} className={styles.flowCards}>{flows.map((flow) => {
+        const steps = flow.latest?.steps ?? [];
+        const used = types.filter((row) => row.flowId === flow.id && row.assigned);
+        const addable = types.filter((row) => !(row.flowId === flow.id && row.assigned));
+        return <li className={styles.flowCard} key={flow.id}>
+          <Link className={styles.flowHead} href={`/workspace/flows/${flow.id}`}>
+            <h2 className={styles.flowTitle}>{flow.name}</h2>
+            {steps.length ? <span className={styles.summary}>
+              <span>{t("{count} steps", { count: steps.length })}</span><span aria-hidden="true">·</span>
+              <span>{steps[0]}</span>{steps.length > 1 ? <><ArrowRight aria-label={t("to")} size={12} /><span>{steps.at(-1)}</span></> : null}
+            </span> : null}
+          </Link>
+          <p className={styles.meta}>
+            <span>{t("{count} running jobs", { count: formatNumber(flow.runningJobs ?? 0, { locale }) })}</span>
+            {flow.latest ? <>
+              <span className={styles.version}>{t("v{version}", { version: flow.latest.version })}</span>
+              <span className={styles.published}>
+                {flow.latest.publishedBy ? <Avatar name={flow.latest.publishedBy} seed={flow.latest.publishedBy} size="sm" /> : null}
+                {flow.latest.source === "starter" ? t("Starter") : formatDate(flow.latest.publishedAt, { locale, timeZone })}
+              </span>
+            </> : null}
+          </p>
+          <section aria-label={t("Used for")} className={styles.usedFor}>
+            <h3 className={styles.usedForTitle}>{t("Used for")}</h3>
+            <ul className={styles.chips}>
+              {used.map(chip)}
+              {addable.length && flow.status === "active" ? <li><MenuButton
+                items={addable.map((row) => ({ id: row.id, label: row.assigned ? t("{type} (in {flow})", { type: row.label, flow: nameOf(row.flowId) }) : row.label, isDisabled: saving === row.id }))}
+                label={<><Plus aria-hidden="true" size={14} />{t("Add enquiry type")}</>} size="compact"
+                onAction={(id) => {
+                  const row = addable.find((item) => item.id === id);
+                  if (!row) return;
+                  if (row.assigned) setConfirming({ row, flowId: flow.id });
+                  else void move({ row, flowId: flow.id });
+                }} /></li> : null}
+            </ul>
+          </section>
+          <div className={styles.flowActions}>
+            <Link className={`wd-button ${styles.editLink}`} data-size="compact" data-variant="quiet" href={`/workspace/flows/${flow.id}`}><Pencil aria-hidden="true" size={14} />{t("Edit flow")}</Link>
+          </div>
+        </li>;
+      })}</ul>}
+    {!loadError && unassigned.length ? <section aria-label={t("Not in a flow yet")} className={styles.strip}>
+      <h2 className={styles.usedForTitle}>{t("Not in a flow yet")}</h2>
+      <ul className={styles.chips}>{unassigned.map(chip)}</ul>
     </section> : null}
+    {confirming ? <ConfirmationDialog
+      body={t("New {type} enquiries will follow {to} instead of {from}.", { type: confirming.row.label, to: nameOf(confirming.flowId), from: nameOf(confirming.row.flowId) })}
+      confirmLabel={t("Move")} confirmVariant="primary" isConfirming={saving === confirming.row.id} isOpen
+      onConfirm={() => void move(confirming)} onOpenChange={(open) => { if (!open) setConfirming(null); }}
+      title={t("Move {type} to {flow}?", { type: confirming.row.label, flow: nameOf(confirming.flowId) })} /> : null}
     {creating ? <NewFlowDialog flows={flows} onClose={() => setCreating(false)} workspaceId={workspaceId} /> : null}
   </div>;
-}
-
-/** A new flow starts from a starter or a copy of one of the firm's flows; it opens in the builder. */
-export function NewFlowDialog({ flows, onClose, workspaceId }: { flows: FlowSummary[]; onClose: () => void; workspaceId: string }) {
-  const t = useT();
-  const router = useRouter();
-  const [name, setName] = useState("");
-  const [source, setSource] = useState<string>("starter:design");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const sources = [
-    ...STARTERS.map((starter) => ({ id: `starter:${starter.code}`, label: t("{name} (starter)", { name: t(starter.name) }) })),
-    ...flows.filter((flow) => flow.status === "active").map((flow) => ({ id: `flow:${flow.id}`, label: t("Copy of {name}", { name: flow.name }) })),
-  ];
-  async function submit() {
-    if (!name.trim()) { setError(t("Give the flow a name")); return; }
-    setBusy(true);
-    setError(null);
-    const [kind, value] = source.split(":");
-    try {
-      const created = await crmRequest<{ id: string }>(workspaceId, "flows", "POST", kind === "starter" ? { name: name.trim(), starter: value } : { name: name.trim(), sourceFlowId: value });
-      router.push(`/workspace/flows/${created.id}`);
-    } catch (failure) {
-      setError(translateKnown(t, failure instanceof Error ? failure.message : t("Please try again.")));
-      setBusy(false);
-    }
-  }
-  return <ControlledModalDialog
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button><Button isLoading={busy} onPress={() => void submit()} variant="primary">{t("Create flow")}</Button></div>}
-    isDirty={Boolean(name.trim())} isOpen onOpenChange={(open) => { if (!open) onClose(); }} title={t("New flow")}>
-    <Form errorSummary={false} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-      <TextInput autoFocus errorMessage={error ?? undefined} isInvalid={Boolean(error)} isRequired label={t("Name")} onChange={setName} value={name} />
-      <SelectField items={sources} label={t("Start from")} onSelectionChange={(key) => { if (key) setSource(String(key)); }} selectedKey={source} />
-    </Form>
-  </ControlledModalDialog>;
 }

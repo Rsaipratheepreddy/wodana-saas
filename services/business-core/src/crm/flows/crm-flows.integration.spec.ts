@@ -84,10 +84,12 @@ integration("flows as configuration (plan §5a, F2)", () => {
     await withWorkspace(async (client, { workspaceId, flows }) => {
       await ensureStarterFlows(client, workspaceId);
       await ensureStarterFlows(client, workspaceId);
-      const listed = (await flows.list(actor, workspaceId)).data as Array<{ code: string; latest: { version: number; source: string }; usedBy: Array<{ code: string }> }>;
+      const listed = (await flows.list(actor, workspaceId)).data as Array<{ code: string; latest: { version: number; source: string; steps: string[] }; usedBy: Array<{ code: string; assigned: boolean }> }>;
       expect(listed.map((flow) => flow.code).sort()).toEqual(["basic", "design", "fit_out", "furniture"]);
       expect(listed.every((flow) => flow.latest.version === 1 && flow.latest.source === "starter")).toBe(true);
       expect(listed.find((flow) => flow.code === "basic")?.usedBy.map((option) => option.code)).toEqual(["architecture"]);
+      expect(listed.find((flow) => flow.code === "basic")?.usedBy[0].assigned).toBe(true);
+      expect(listed.every((flow) => flow.latest.steps.length > 0 && flow.latest.steps.every((name) => typeof name === "string"))).toBe(true);
       expect(await audits(client, workspaceId, "crm.flow.seeded.v1")).toBe(4);
     });
   });

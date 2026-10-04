@@ -6,7 +6,7 @@ import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/au
 import { meetsRule } from "@/lib/workspace/access";
 import type { AnswerOptions, FlowDetail, FlowSummary, RoleOption } from "./flow-model";
 
-export type FlowsPageData = { canManage: boolean; workspaceId: string; flows: FlowSummary[] };
+export type FlowsPageData = { canManage: boolean; workspaceId: string; flows: FlowSummary[]; loadError?: boolean };
 export type FlowBuilderData = FlowsPageData & {
   flow: FlowDetail | null;
   roles: RoleOption[];
@@ -40,8 +40,9 @@ async function session() {
 export async function getFlowsPageData(): Promise<FlowsPageData> {
   const { canManage, workspaceId, get } = await session();
   if (!canManage) return { canManage, workspaceId, flows: [] };
-  const flows = await get<{ data: FlowSummary[] }>("crm/flows");
-  return { canManage, workspaceId, flows: flows.data };
+  // A failed read shows the page's error state with a retry, not the route's error screen.
+  const flows = await get<{ data: FlowSummary[] } | null>("crm/flows", null);
+  return { canManage, workspaceId, flows: flows?.data ?? [], loadError: !flows };
 }
 
 export async function getFlowBuilderData(flowId: string): Promise<FlowBuilderData> {

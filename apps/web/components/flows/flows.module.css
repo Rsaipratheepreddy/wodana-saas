@@ -1,18 +1,44 @@
 /* Flows (plan §5a, F3): the list and the builder. Tokens only; logical properties only. */
 
-/* ── List ───────────────────────────────────────────────────────────────── */
-.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; max-inline-size: 72rem; }
-.flowLink { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); text-decoration: none; }
-.flowLink:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
-.flowLink:focus-visible { border-radius: var(--wd-radius-xs); outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
-.chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); min-inline-size: 0; }
-.muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
-.number { font-variant-numeric: tabular-nums; }
-.version { display: inline-flex; align-items: center; gap: var(--wd-space-2); }
-.versionNumber { font-weight: var(--wd-weight-medium); font-variant-numeric: tabular-nums; }
-.section { display: grid; gap: var(--wd-space-3); margin-block-start: var(--wd-space-4); }
-.sectionTitle { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
-.selectCell { display: block; max-inline-size: 18rem; }
+/* ── List: one card per flow ────────────────────────────────────────────── */
+.page { display: grid; align-content: start; gap: var(--wd-space-5); padding: var(--wd-space-6); min-inline-size: 0; max-inline-size: 72rem; }
+.flowCards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
+.flowCard { display: grid; align-content: start; gap: var(--wd-space-4); min-inline-size: 0; padding: var(--wd-space-5); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-subtle); }
+.flowHead { display: grid; gap: var(--wd-space-1); min-inline-size: 0; border-radius: var(--wd-radius-sm); color: var(--wd-color-text); text-decoration: none; }
+.flowHead:hover .flowTitle { color: var(--wd-color-link-hover); text-decoration: underline; }
+.flowHead:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.flowTitle { margin: 0; font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
+.summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.summary svg { flex: none; color: var(--wd-color-icon); }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-3); margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+.version { color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-medium); }
+.published { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); }
+.usedFor { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
+.usedForTitle { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; margin: 0; padding: 0; list-style: none; }
+.chips > li { min-inline-size: 0; max-inline-size: 100%; }
+.typeChip { display: inline-flex; align-items: center; gap: var(--wd-space-0-5); }
+.typeChip :global(.wd-type-chip) { min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; line-height: var(--wd-leading-tight); padding-block: var(--wd-space-0-5); }
+.typeChip :global(.wd-icon-button) { flex: none; }
+.flowActions { display: flex; justify-content: flex-end; }
+.editLink { color: var(--wd-color-action-primary); }
+.strip { display: grid; gap: var(--wd-space-2); padding-block-start: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); }
+
+/* ── New flow picker ────────────────────────────────────────────────────── */
+.picker { display: grid; gap: var(--wd-space-5); min-inline-size: 0; }
+.pickerGroup { display: grid; gap: var(--wd-space-2); }
+.pickerTitle { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
+.options { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.option { display: grid; align-content: start; gap: var(--wd-space-1-5); box-sizing: border-box; inline-size: 100%; block-size: 100%; padding: var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; text-align: start; cursor: pointer; }
+.option:hover:not(:disabled) { border-color: var(--wd-color-border-strong); background: var(--wd-color-surface-hover); }
+.option:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.option:disabled { cursor: default; opacity: 0.6; }
+.option[aria-busy] { opacity: 1; border-color: var(--wd-color-action-primary); }
+.optionHead { display: flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-icon); }
+.optionHead strong { flex: 1; min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); overflow-wrap: anywhere; }
+.optionText { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: var(--wd-leading-tight); }
+.optionMeta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.optionMeta :global(.wd-tag) { white-space: normal; }
 
 /* ── Builder frame ──────────────────────────────────────────────────────── */
 .builder { display: grid; grid-template-rows: auto minmax(0, 1fr); block-size: calc(100dvh - var(--wd-topbar-height)); min-block-size: 32rem; background: var(--wd-color-surface); }
@@ -130,6 +156,8 @@
 }
 @media (max-width: 48rem) {
   .page { padding: var(--wd-space-4); }
+  .flowCards { grid-template-columns: minmax(0, 1fr); }
+  .flowCard { padding: var(--wd-space-4); }
   .builder { display: block; block-size: auto; min-block-size: 0; }
   .topBar { flex-wrap: wrap; }
   .actions, .workArea { display: none; }

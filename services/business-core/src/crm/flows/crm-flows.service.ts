@@ -41,10 +41,15 @@ export class CrmFlowsService {
                 (SELECT count(*)::int FROM crm_opportunities job JOIN crm_flow_versions pinned ON pinned.workspace_id = job.workspace_id AND pinned.id = job.flow_version_id
                   WHERE job.workspace_id = flow.workspace_id AND pinned.flow_id = flow.id AND job.status = 'open') AS "runningJobs",
                 (SELECT jsonb_build_object('id', version.id, 'version', version.version, 'checksum', version.checksum, 'source', version.source,
-                                           'publishedAt', version.published_at, 'publishedBy', account.display_name)
+                                           'publishedAt', version.published_at, 'publishedBy', account.display_name,
+                                           -- The main line's step names, in order, so the list can say what the flow does.
+                                           'steps', (SELECT COALESCE(jsonb_agg(item.step->>'name' ORDER BY item.position), '[]'::jsonb)
+                                                       FROM jsonb_array_elements(COALESCE(version.definition->'steps', '[]'::jsonb)) WITH ORDINALITY AS item(step, position)))
                    FROM crm_flow_versions version LEFT JOIN users account ON account.id = version.published_by
                   WHERE version.workspace_id = flow.workspace_id AND version.flow_id = flow.id ORDER BY version.version DESC LIMIT 1) AS latest,
-                COALESCE((SELECT jsonb_agg(jsonb_build_object('id', choice.id, 'code', choice.code, 'label', choice.label, 'version', choice.version) ORDER BY choice.position, choice.label)
+                COALESCE((SELECT jsonb_agg(jsonb_build_object('id', choice.id, 'code', choice.code, 'label', choice.label, 'version', choice.version,
+                                                    -- False when the type names no active flow and so runs the basic flow by default.
+                                                    'assigned', choice.flow = flow.code) ORDER BY choice.position, choice.label)
                    FROM crm_taxonomy_options choice JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = choice.workspace_id AND taxonomy.id = choice.taxonomy_id AND taxonomy.code = 'enquiry_type'
                   WHERE choice.workspace_id = flow.workspace_id AND choice.status = 'active'
                     AND (choice.flow = flow.code
