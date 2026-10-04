@@ -30,15 +30,23 @@ async function reads(db: Db, workspaceId: string, caseId: string, grantId: strin
   return new Map(rows.map((row) => [row.threadId, { client: row.client ? new Date(row.client).toISOString() : null, team: row.team ? new Date(row.team).toISOString() : null }]));
 }
 
-/** A request thread: the team's replies are "your project team", never a person's name. */
-export function portalRequest(request: ChangeRequest, grant: Grant) {
+/**
+ * A request thread, oldest message first: who opened it (the client's side, or the team), then the client-visible replies.
+ * The team's replies are "your project team", never a person's name; the client's side reads by name.
+ */
+export function portalRequest(request: ChangeRequest, grant: Grant, raisedByClient = request.raisedBy?.client ?? false) {
+  const fromClient = (comment: ChangeRequest["comments"][number]) => (comment as { fromClient?: boolean }).fromClient ?? comment.author === grant.name;
   return {
     id: request.id, number: request.number, title: request.title, detail: request.detail, status: request.status, createdAt: request.createdAt,
     resolution: request.resolution,
-    comments: request.comments.filter((comment) => comment.visibility === "client").map((comment) => ({
-      id: comment.id, at: comment.at, text: comment.text,
-      fromClient: (comment as { fromClient?: boolean }).fromClient ?? comment.author === grant.name,
-    })),
+    fromClient: raisedByClient,
+    author: raisedByClient ? request.raisedBy?.name ?? null : null,
+    mine: raisedByClient && (!request.raisedBy?.name || request.raisedBy.name === grant.name),
+    comments: request.comments.filter((comment) => comment.visibility === "client")
+      .map((comment, index) => ({ comment, index }))
+      .sort((a, b) => (a.comment.at < b.comment.at ? -1 : a.comment.at > b.comment.at ? 1 : a.index - b.index))
+      .map(({ comment }) => ({ id: comment.id, at: comment.at, text: comment.text, fromClient: fromClient(comment), author: fromClient(comment) ? comment.author : null,
+        mine: fromClient(comment) && comment.author === grant.name })),
   };
 }
 
@@ -46,13 +54,22 @@ export function portalRequest(request: ChangeRequest, grant: Grant) {
 export async function readMessages(db: Db, workspaceId: string, grant: Grant, caseId: string, commercial: CommercialData) {
   const seen = await reads(db, workspaceId, caseId, contactId(grant));
   const files = await readAttachments(db, workspaceId, caseId, ["message"]);
+  // Conversations someone on the client's side started in the portal (older ones carry no raiser of their own).
+  const raised = new Set((await db.query<{ requestId: string }>(
+    `SELECT command.result->>'requestId' AS "requestId" FROM client_portal_commands command
+       JOIN client_portal_grants grant_row ON grant_row.workspace_id = command.workspace_id AND grant_row.id = command.grant_id
+      WHERE command.workspace_id = $1 AND grant_row.case_id = $2 AND command.action IN ('request', 'progress_question') AND command.result ? 'requestId'`,
+    [workspaceId, caseId])).rows.map((row) => row.requestId));
   const requests = commercial.requests.filter((request) => !request.decisionRequest).map((request) => {
-    const thread = portalRequest(request, grant);
-    const comments = thread.comments.map((comment) => ({ ...comment, files: files.get(`message:${comment.id}`) ?? [] }));
+    const thread = portalRequest(request, grant, request.raisedBy?.client ?? raised.has(request.id));
     const read = seen.get(request.id);
-    const team = comments.filter((comment) => !comment.fromClient);
-    const lastClient = [request.createdAt, ...comments.filter((comment) => comment.fromClient).map((comment) => comment.at)].sort().at(-1) ?? request.createdAt;
+    const team = thread.comments.filter((comment) => !comment.fromClient);
     const lastTeam = team.map((comment) => comment.at).sort().at(-1) ?? null;
+    // The team has seen a client message once they opened the thread after it, or answered after it.
+    const seenAt = [read?.team ?? null, lastTeam].filter((at): at is string => Boolean(at)).sort().at(-1) ?? null;
+    const comments = thread.comments.map((comment) => ({ ...comment, files: files.get(`message:${comment.id}`) ?? [],
+      seen: comment.fromClient ? Boolean(seenAt && seenAt >= comment.at) : true }));
+    const lastClient = [...(thread.fromClient ? [request.createdAt] : []), ...comments.filter((comment) => comment.fromClient).map((comment) => comment.at)].sort().at(-1) ?? request.createdAt;
     return {
       ...thread,
       files: files.get(`message:${request.id}`) ?? [],

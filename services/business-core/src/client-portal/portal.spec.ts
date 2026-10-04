@@ -56,6 +56,20 @@ describe("client portal rules", () => {
     expect(JSON.stringify(projected)).not.toMatch(/Dana Designer|Check budget|owner/);
   });
 
+  it("reads a conversation oldest first, and says whether the client's side or the team opened it", () => {
+    const grant = { id: "g", caseId: "c", name: "Maya", role: "approver" as const, email: null, confirmed: true, demo: false };
+    const request = { id: "r", number: 1, title: "Socket", detail: "One more?", status: "open", owner: "", dueDate: "", resolution: "", createdAt: "2026-10-01T08:00:00.000Z",
+      raisedBy: { name: "Maya", client: true },
+      comments: [{ id: "late", author: "Dana Designer", at: "2026-10-02T09:00:00.000Z", text: "Done", visibility: "client" },
+        { id: "early", author: "Maya", at: "2026-10-01T09:00:00.000Z", text: "Any news?", visibility: "client", fromClient: true },
+        { id: "same", author: "Dana Designer", at: "2026-10-02T09:00:00.000Z", text: "Photos next", visibility: "client" }] } as unknown as ChangeRequest;
+    const projected = portalRequest(request, grant);
+    expect(projected.comments.map((comment) => comment.id)).toEqual(["early", "late", "same"]);
+    expect(projected).toMatchObject({ fromClient: true, author: "Maya" });
+    expect(projected.comments.map((comment) => comment.author)).toEqual(["Maya", null, null]);
+    expect(portalRequest({ ...request, raisedBy: undefined } as ChangeRequest, grant)).toMatchObject({ fromClient: false, author: null });
+  });
+
   it("names the client's team (project manager, designer, sales) by name, work email and drawn avatar only, each role to its first holder", () => {
     const team = portalTeam([
       { role: "manager", membershipId: "m1", name: "Omar Manager", email: "omar@studio.example", avatar: "project_manager-m" },
