@@ -60,6 +60,19 @@ export async function latestFlowVersion(db: Db, workspaceId: string, code: strin
   return row ? resolved(row) : null;
 }
 
+/** True when the workspace's flow with this code was copied (directly or through earlier copies) from `ancestorId`. */
+async function splitFrom(db: Db, workspaceId: string, code: string, ancestorId: string) {
+  const row = (await db.query(
+    `WITH RECURSIVE lineage(id, parent, depth) AS (
+       SELECT id, split_from_flow_id, 0 FROM crm_flows WHERE workspace_id = $1 AND code = $2
+       UNION ALL
+       SELECT flow.id, flow.split_from_flow_id, lineage.depth + 1 FROM crm_flows flow JOIN lineage ON flow.id = lineage.parent
+        WHERE flow.workspace_id = $1 AND lineage.depth < 20)
+     SELECT 1 FROM lineage WHERE parent = $3 LIMIT 1`,
+    [workspaceId, code, ancestorId])).rowCount;
+  return Boolean(row);
+}
+
 export async function flowVersionById(db: Db, workspaceId: string, versionId: string): Promise<ResolvedFlow | null> {
   const row = (await db.query<VersionRow>(
     `SELECT ${VERSION_COLUMNS} FROM crm_flow_versions version JOIN crm_flows flow ON flow.workspace_id = version.workspace_id AND flow.id = version.flow_id
@@ -81,6 +94,8 @@ export async function opportunityFlow(db: Db, input: { workspaceId: string; oppo
   if (pinnedVersionId) {
     const pinned = await flowVersionById(db, workspaceId, pinnedVersionId);
     if (pinned && pinned.code === code) return pinned;
+    // The type's flow was split from the one the job pinned (one enquiry type, one flow): the job keeps its version.
+    if (pinned?.flowId && await splitFrom(db, workspaceId, code, pinned.flowId)) return pinned;
   }
   await ensureStarterFlows(db, workspaceId);
   const latest = await latestFlowVersion(db, workspaceId, code) ?? (code === "basic" ? null : await latestFlowVersion(db, workspaceId, "basic"));

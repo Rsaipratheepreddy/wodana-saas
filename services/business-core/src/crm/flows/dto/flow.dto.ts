@@ -24,8 +24,3 @@ export class CreateFlowDto {
   /** The version to copy (the latest when omitted); a version the flow does not have is refused. */
   @IsOptional() @IsInt() @Min(1) @Max(1_000_000) sourceVersion?: number;
 }
-
-export class AssignEnquiryTypeFlowDto {
-  /** The enquiry type's version. */
-  @IsInt() @Min(1) version!: number;
-}

@@ -9,6 +9,7 @@ import { ArchiveSettingDto, CreateCustomFieldDto, CreateQualificationFormDto, Cr
 import { ConfigurationRevisionsService, type ConfigurationResourceType } from "../../workspaces/configuration-revisions.service";
 import type { RestoreConfigurationRevisionDto } from "../../workspaces/dto/restore-configuration-revision.dto";
 import { normaliseRoleCodes } from "../../workspaces/role-vocabulary";
+import { ensureEnquiryTypeFlows } from "../flows/enquiry-type-flows";
 
 type Row = Record<string, unknown>;
 
@@ -54,6 +55,8 @@ export class CrmSettingsService {
         const created = await client.query(`INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position, allowed_role_codes, flow) VALUES ($1,$2,lower($3),$4,$5,$6,$7) RETURNING id, code, label, position, status, flow, version`, [workspaceId, taxonomy.id, option.code, option.label, option.position ?? index, storedRoleCodes(option.allowedRoles), option.flow ?? null]);
         options.push(created.rows[0] as Row);
       }
+      // One enquiry type, one flow: every new type gets its own steps (from Basic).
+      if (taxonomy.code === "enquiry_type") await ensureEnquiryTypeFlows(client, workspaceId, { actorUserId: actorUser.userId, fromBasic: new Set(options.map((option) => String(option.id))) });
       const response = { ...taxonomy, options };
       await this.revisions.record(client, {
         workspaceId, resourceType: "crm_taxonomy", resourceId: String(taxonomy.id),
@@ -92,6 +95,12 @@ export class CrmSettingsService {
             [workspaceId, taxonomyId, option.code, option.label, option.position ?? index, storedRoleCodes(option.allowedRoles), option.allowedRoles !== undefined, option.flow ?? null, option.flow !== undefined],
           );
         }
+      }
+      if (input.options && before.code === "enquiry_type") {
+        // One enquiry type, one flow: a type added here gets its own steps (from Basic); the others keep theirs.
+        const known = new Set((before.options as Row[]).map((option) => String(option.code)));
+        const added = await client.query<{ id: string }>(`SELECT id FROM crm_taxonomy_options WHERE workspace_id = $1 AND taxonomy_id = $2 AND NOT (code = ANY($3::text[]))`, [workspaceId, taxonomyId, [...known]]);
+        await ensureEnquiryTypeFlows(client, workspaceId, { actorUserId: actorUser.userId, fromBasic: new Set(added.rows.map((row) => row.id)) });
       }
       const options = await client.query(`SELECT id, code, label, position, status, flow, version FROM crm_taxonomy_options WHERE workspace_id = $1 AND taxonomy_id = $2 ORDER BY position, label`, [workspaceId, taxonomyId]);
       const response = { ...result.rows[0], options: options.rows };
@@ -347,7 +356,10 @@ export class CrmSettingsService {
         workspaceId, resourceType, resourceId: id, sourceVersion: Number(before.version),
         snapshot: before, actorUserId: actorUser.userId,
       });
-      if (type === "taxonomy") await this.restoreTaxonomy(client, workspaceId, id, input.version, before, revision.snapshot);
+      if (type === "taxonomy") {
+        await this.restoreTaxonomy(client, workspaceId, id, input.version, before, revision.snapshot);
+        if (before.code === "enquiry_type") await ensureEnquiryTypeFlows(client, workspaceId, { actorUserId: actorUser.userId });
+      }
       else if (type === "custom-field") await this.restoreCustomField(client, workspaceId, id, input.version, before, revision.snapshot);
       else await this.restoreQualificationForm(client, workspaceId, id, input.version, before, revision.snapshot);
       const after = await this.settingSnapshot(client, workspaceId, type, id);

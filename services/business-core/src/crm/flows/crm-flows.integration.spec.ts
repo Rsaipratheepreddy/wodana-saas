@@ -131,39 +131,6 @@ integration("flows as configuration (plan §5a, F2)", () => {
     });
   });
 
-  it("points an enquiry type at another flow; its jobs re-pin to that flow", async () => {
-    await withWorkspace(async (client, { workspaceId, optionId, newOpportunity, flows }) => {
-      const id = await newOpportunity();
-      expect((await loadFlowFacts(client, workspaceId, id)).flow).toBe("basic");
-      const furniture = ((await flows.list(actor, workspaceId)).data as Array<{ id: string; code: string }>).find((flow) => flow.code === "furniture")!;
-      await expect(flows.assignEnquiryType(actor, workspaceId, furniture.id, optionId, { version: 99 })).rejects.toMatchObject({ status: 409 });
-      const option = (await client.query("SELECT version FROM crm_taxonomy_options WHERE id = $1", [optionId])).rows[0];
-      expect(await flows.assignEnquiryType(actor, workspaceId, furniture.id, optionId, { version: option.version })).toMatchObject({ flow: "furniture" });
-      const facts = await loadFlowFacts(client, workspaceId, id);
-      expect(facts.flow).toBe("furniture");
-      expect((await opportunity(client, id)).flowVersionId).toBe(facts.flowDefinition.versionId);
-    });
-  });
-
-  it("keeps Not sure yet out of every flow, and takes a type out of a flow", async () => {
-    await withWorkspace(async (client, { workspaceId, optionId, flows }) => {
-      const notSure = randomUUID();
-      await client.query(`INSERT INTO crm_taxonomy_options(id,workspace_id,taxonomy_id,code,label,flow)
-        SELECT $1,$2,taxonomy_id,'not_sure','Not sure yet','basic' FROM crm_taxonomy_options WHERE id = $3`, [notSure, workspaceId, optionId]);
-      const listed = async () => (await flows.list(actor, workspaceId)).data as Array<{ id: string; code: string; usedBy: Array<{ code: string; assigned: boolean }> }>;
-      expect((await listed()).flatMap((flow) => flow.usedBy.map((use) => use.code))).toEqual(["architecture"]);
-      const design = (await listed()).find((flow) => flow.code === "design")!;
-      await expect(flows.assignEnquiryType(actor, workspaceId, design.id, notSure, { version: 1 })).rejects.toMatchObject({ status: 422 });
-
-      const basic = (await listed()).find((flow) => flow.code === "basic")!;
-      const option = (await client.query("SELECT version FROM crm_taxonomy_options WHERE id = $1", [optionId])).rows[0];
-      await expect(flows.unassignEnquiryType(actor, workspaceId, basic.id, optionId, { version: 99 })).rejects.toMatchObject({ status: 409 });
-      expect(await flows.unassignEnquiryType(actor, workspaceId, basic.id, optionId, { version: option.version })).toMatchObject({ flow: null, version: option.version + 1 });
-      expect((await listed()).find((flow) => flow.code === "basic")?.usedBy).toMatchObject([{ code: "architecture", assigned: false }]);
-      expect(await audits(client, workspaceId, "crm.enquiry_type.flow_changed.v1")).toBe(1);
-    });
-  });
-
   it("creates a flow from a starter or a copy: validated, audited, idempotent on replay, refused on a taken name", async () => {
     await withWorkspace(async (client, { workspaceId, flows }) => {
       const created = await flows.create(actor, workspaceId, { name: "Villa design", starter: "design" });

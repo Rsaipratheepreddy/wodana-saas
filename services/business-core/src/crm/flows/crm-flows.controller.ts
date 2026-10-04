@@ -1,11 +1,11 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Put, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
 import { CrmFlowsService } from "./crm-flows.service";
-import { AssignEnquiryTypeFlowDto, CreateFlowDto, PublishFlowDto, ValidateFlowDto } from "./dto/flow.dto";
+import { CreateFlowDto, PublishFlowDto, ValidateFlowDto } from "./dto/flow.dto";
 
-/** Flows (plan §5a): the top-level screen above Sales. */
+/** Flows (plan §5a): how each enquiry type stores its steps. The product screen is Enquiry types. */
 @ApiTags("crm-flows")
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/crm/flows")
@@ -43,18 +43,5 @@ export class CrmFlowsController {
   @Post(":flowId/versions")
   publish(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("flowId", ParseUUIDPipe) flowId: string, @Body() input: PublishFlowDto) {
     return this.flows.publish(actor, workspaceId, flowId, input);
-  }
-
-  @Put(":flowId/enquiry-types/:optionId")
-  assign(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("flowId", ParseUUIDPipe) flowId: string,
-    @Param("optionId", ParseUUIDPipe) optionId: string, @Body() input: AssignEnquiryTypeFlowDto) {
-    return this.flows.assignEnquiryType(actor, workspaceId, flowId, optionId, input);
-  }
-
-  /** Takes the enquiry type out of this flow; `version` is the enquiry type's version (DELETE carries no body). */
-  @Delete(":flowId/enquiry-types/:optionId")
-  unassign(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("flowId", ParseUUIDPipe) flowId: string,
-    @Param("optionId", ParseUUIDPipe) optionId: string, @Query("version", ParseIntPipe) version: number) {
-    return this.flows.unassignEnquiryType(actor, workspaceId, flowId, optionId, { version });
   }
 }

@@ -3,28 +3,17 @@ import type { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { recordAudit } from "../../audit/record-audit";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
-import { createHash } from "node:crypto";
 import { flowChecksum, validateFlowDefinition } from "./flow-definition";
 import { ensureStarterFlows } from "./flow-store";
+import { ensureEnquiryTypeFlows, flowCodeFor } from "./enquiry-type-flows";
 import { FLOW_TEMPLATES, flowTemplate } from "./flow-templates";
 import { STARTER_FLOWS } from "./starter-flows";
 import { UNRESOLVED_ENQUIRY_TYPE } from "../leads/lead-options";
 
 const PERMISSION = "crm.settings.manage";
-/** Refusal for pointing the "Not sure yet" placeholder at a flow; the web shows it as is (an en.json key). */
-export const NOT_SURE_IN_FLOW = "Not sure yet stays in the first column until the enquiry type is known, so it cannot follow a flow";
+export { flowCodeFor };
 
 type FlowRow = { id: string; code: string; name: string; status: string; version: number };
-/**
- * The code a new flow is stored under (enquiry types point at it): the name in lower-case letters, digits and _,
- * or a stable hash of the name when it has too few Latin letters (an Arabic name, for instance).
- */
-export function flowCodeFor(name: string) {
-  const slug = name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_").replace(/^[^a-z]+/, "").slice(0, 40).replace(/_+$/, "");
-  return slug.length >= 2 ? slug : `flow_${createHash("sha256").update(name.trim()).digest("hex").slice(0, 8)}`;
-}
-
 type VersionRow = { id: string; version: number; checksum: string; source: string; publishedAt: Date; publishedBy: string | null; definition?: unknown };
 
 /**
@@ -37,8 +26,8 @@ export class CrmFlowsService {
   constructor(private readonly access: WorkspaceAccessService) {}
 
   list(actor: RequestActor, workspaceId: string) {
-    return this.access.withPermission(actor, workspaceId, PERMISSION, async (client) => {
-      await ensureStarterFlows(client, workspaceId);
+    return this.access.withPermission(actor, workspaceId, PERMISSION, async (client, user) => {
+      await ensureEnquiryTypeFlows(client, workspaceId, { actorUserId: user?.userId });
       const flows = (await client.query<FlowRow & { latest: VersionRow | null; usedBy: unknown[]; runningJobs: number }>(
         `SELECT flow.id, flow.code, flow.name, flow.status, flow.version,
                 (SELECT count(*)::int FROM crm_opportunities job JOIN crm_flow_versions pinned ON pinned.workspace_id = job.workspace_id AND pinned.id = job.flow_version_id
@@ -142,17 +131,7 @@ export class CrmFlowsService {
   get(actor: RequestActor, workspaceId: string, flowId: string, version?: number) {
     return this.access.withPermission(actor, workspaceId, PERMISSION, async (client) => {
       await ensureStarterFlows(client, workspaceId);
-      const flow = await this.requireFlow(client, workspaceId, flowId, false);
-      const versions = (await client.query<VersionRow>(
-        `SELECT version.id, version.version, version.checksum, version.source, version.published_at AS "publishedAt", account.display_name AS "publishedBy"
-           FROM crm_flow_versions version LEFT JOIN users account ON account.id = version.published_by
-          WHERE version.workspace_id = $1 AND version.flow_id = $2 ORDER BY version.version DESC`,
-        [workspaceId, flowId])).rows;
-      const wanted = version ?? versions[0]?.version;
-      const selected = (await client.query<{ definition: unknown }>(
-        `SELECT definition FROM crm_flow_versions WHERE workspace_id = $1 AND flow_id = $2 AND version = $3`, [workspaceId, flowId, wanted])).rows[0];
-      if (!selected) throw new NotFoundException("Flow version not found");
-      return { ...flow, versions, selected: { ...versions.find((item) => item.version === wanted), definition: selected.definition } };
+      return loadFlowDetail(client, workspaceId, flowId, version);
     });
   }
 
@@ -170,19 +149,19 @@ export class CrmFlowsService {
    */
   async publish(actor: RequestActor, workspaceId: string, flowId: string, input: { expectedVersion: number; definition: unknown; name?: string }) {
     const result = validateFlowDefinition(input.definition);
-    if (!result.ok) throw new UnprocessableEntityException({ message: "The flow cannot be published", errors: result.errors });
+    if (!result.ok) throw new UnprocessableEntityException({ message: "These steps cannot be published", errors: result.errors });
     const checksum = flowChecksum(result.definition);
     return this.access.withPermission(actor, workspaceId, PERMISSION, async (client, user) => {
       await ensureStarterFlows(client, workspaceId);
       const flow = await this.requireFlow(client, workspaceId, flowId, true);
-      if (flow.status !== "active") throw new UnprocessableEntityException("Restore the flow before publishing it");
+      if (flow.status !== "active") throw new UnprocessableEntityException("Restore the enquiry type before publishing its steps");
       const latest = (await client.query<{ id: string; version: number; checksum: string }>(
         `SELECT id, version, checksum FROM crm_flow_versions WHERE workspace_id = $1 AND flow_id = $2 ORDER BY version DESC LIMIT 1`, [workspaceId, flowId])).rows[0];
       const current = latest?.version ?? 0;
       if (current !== input.expectedVersion) {
         // The same publish sent twice: hand back what the first one created.
         if (latest && current === input.expectedVersion + 1 && latest.checksum === checksum) return this.versionOf(client, workspaceId, latest.id, false);
-        throw new ConflictException("This flow changed in another window. Reload and try again.");
+        throw new ConflictException("These steps changed in another window. Reload and try again.");
       }
       const name = input.name?.trim() || flow.name;
       const renamed = name !== flow.name;
@@ -210,58 +189,6 @@ export class CrmFlowsService {
     });
   }
 
-  /** Points an enquiry type at a flow (version-checked against the enquiry type, audited). New jobs of that type follow it. */
-  assignEnquiryType(actor: RequestActor, workspaceId: string, flowId: string, optionId: string, input: { version: number }) {
-    return this.access.withPermission(actor, workspaceId, PERMISSION, async (client, user) => {
-      const flow = await this.requireFlow(client, workspaceId, flowId, false);
-      if (flow.status !== "active") throw new UnprocessableEntityException("Choose an active flow");
-      const before = await this.lockEnquiryType(client, workspaceId, optionId);
-      if (before.code === UNRESOLVED_ENQUIRY_TYPE) throw new UnprocessableEntityException(NOT_SURE_IN_FLOW);
-      if (before.flow === flow.code) return { ...before, flowId };
-      if (before.version !== input.version) throw new ConflictException("This enquiry type changed in another window. Reload and try again.");
-      const after = (await client.query<{ id: string; code: string; label: string; flow: string; version: number }>(
-        `UPDATE crm_taxonomy_options SET flow = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND version = $4
-         RETURNING id, code, label, flow, version`, [workspaceId, optionId, flow.code, input.version])).rows[0];
-      if (!after) throw new ConflictException("This enquiry type changed in another window. Reload and try again.");
-      await recordAudit(client, {
-        workspaceId, actorUserId: user.userId, action: "crm.enquiry_type.flow_changed.v1", entityType: "crm_taxonomy_option", entityId: optionId,
-        before: { flow: before.flow }, after: { flow: after.flow, flowId },
-      });
-      return { ...after, flowId };
-    });
-  }
-
-  /**
-   * Takes an enquiry type out of a flow (version-checked, audited): it names no flow and so runs the basic flow, and the
-   * list shows it under "Not in a flow yet". Idempotent: a type that is not in this flow is returned unchanged.
-   */
-  unassignEnquiryType(actor: RequestActor, workspaceId: string, flowId: string, optionId: string, input: { version: number }) {
-    return this.access.withPermission(actor, workspaceId, PERMISSION, async (client, user) => {
-      const flow = await this.requireFlow(client, workspaceId, flowId, false);
-      const before = await this.lockEnquiryType(client, workspaceId, optionId);
-      if (before.flow !== flow.code) return { ...before, flowId: null };
-      if (before.version !== input.version) throw new ConflictException("This enquiry type changed in another window. Reload and try again.");
-      const after = (await client.query<{ id: string; code: string; label: string; flow: null; version: number }>(
-        `UPDATE crm_taxonomy_options SET flow = NULL, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND version = $3
-         RETURNING id, code, label, flow, version`, [workspaceId, optionId, input.version])).rows[0];
-      if (!after) throw new ConflictException("This enquiry type changed in another window. Reload and try again.");
-      await recordAudit(client, {
-        workspaceId, actorUserId: user.userId, action: "crm.enquiry_type.flow_changed.v1", entityType: "crm_taxonomy_option", entityId: optionId,
-        before: { flow: before.flow }, after: { flow: null },
-      });
-      return { ...after, flowId: null };
-    });
-  }
-
-  private async lockEnquiryType(client: PoolClient, workspaceId: string, optionId: string) {
-    const row = (await client.query<{ id: string; code: string; label: string; flow: string | null; version: number }>(
-      `SELECT choice.id, choice.code, choice.label, choice.flow, choice.version FROM crm_taxonomy_options choice
-         JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = choice.workspace_id AND taxonomy.id = choice.taxonomy_id AND taxonomy.code = 'enquiry_type'
-        WHERE choice.workspace_id = $1 AND choice.id = $2 FOR UPDATE OF choice`, [workspaceId, optionId])).rows[0];
-    if (!row) throw new NotFoundException("Enquiry type not found");
-    return row;
-  }
-
   private async requireFlow(client: PoolClient, workspaceId: string, flowId: string, lock: boolean) {
     const flow = (await client.query<FlowRow>(
       `SELECT id, code, name, status, version FROM crm_flows WHERE workspace_id = $1 AND id = $2${lock ? " FOR UPDATE" : ""}`, [workspaceId, flowId])).rows[0];
@@ -275,4 +202,20 @@ export class CrmFlowsService {
       [workspaceId, versionId])).rows[0];
     return { ...row, created };
   }
+}
+
+/** A flow with its versions and the definition of one version (the latest when none is named). */
+export async function loadFlowDetail(client: PoolClient, workspaceId: string, flowId: string, version?: number) {
+  const flow = (await client.query<FlowRow>(`SELECT id, code, name, status, version FROM crm_flows WHERE workspace_id = $1 AND id = $2`, [workspaceId, flowId])).rows[0];
+  if (!flow) throw new NotFoundException("Flow not found");
+  const versions = (await client.query<VersionRow>(
+    `SELECT version.id, version.version, version.checksum, version.source, version.published_at AS "publishedAt", account.display_name AS "publishedBy"
+       FROM crm_flow_versions version LEFT JOIN users account ON account.id = version.published_by
+      WHERE version.workspace_id = $1 AND version.flow_id = $2 ORDER BY version.version DESC`,
+    [workspaceId, flowId])).rows;
+  const wanted = version ?? versions[0]?.version;
+  const selected = (await client.query<{ definition: unknown }>(
+    `SELECT definition FROM crm_flow_versions WHERE workspace_id = $1 AND flow_id = $2 AND version = $3`, [workspaceId, flowId, wanted])).rows[0];
+  if (!selected) throw new NotFoundException("Flow version not found");
+  return { ...flow, versions, selected: { ...versions.find((item) => item.version === wanted), definition: selected.definition } };
 }
