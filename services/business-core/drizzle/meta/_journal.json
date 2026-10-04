@@ -974,6 +974,13 @@
       "when": 1801740000500,
       "tag": "0244_crm_flows",
       "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1801740000600,
+      "tag": "0245_sales_edit_opportunities",
+      "breakpoints": true
     }
   ]
 }

@@ -6,15 +6,16 @@ const workspaceId = "f81e8362-8d08-440a-89dd-06ec7a8b46e7";
 const leadId = "62000000-0000-4000-8000-000000000001";
 const actor: RequestActor = { subject: "local:sales", provider: "local", email: "sales@example.com", displayName: "Sales" };
 
-function service(before: { source: string; channel: string }) {
-  const query = vi.fn(async (sql: string) => {
+function service(before: { source: string; channel: string; party_name?: string }, options: { storedMobile?: string; identity?: boolean } = {}) {
+  const query = vi.fn(async (sql: string, params?: unknown[]) => {
     if (sql.includes("FROM crm_taxonomies")) return { rowCount: 0, rows: [] }; // default lead options
+    if (sql.startsWith("SELECT normalized_value, raw_value FROM crm_contact_points") && options.storedMobile && params?.[2] === "mobile") return { rowCount: 1, rows: [{ normalized_value: options.storedMobile, raw_value: options.storedMobile }] };
     if (sql.includes("FROM crm_leads lead")) return { rowCount: 1, rows: [{ version: 2, party_id: "p1", enquiry_id: "e1", title: "T", reference: "E-1", summary: "", service_type: "not_sure", details: {}, ...before }] };
     if (sql.includes("RETURNING version")) return { rowCount: 1, rows: [{ version: 3 }] };
     return { rowCount: 0, rows: [] };
   });
   const record = vi.fn();
-  const access = { withPermission: vi.fn(async (_a, _w, _p, work) => work({ query }, { userId: "u1" })) };
+  const access = { withPermission: vi.fn(async (_a, _w, _p, work) => work({ query }, { userId: "u1" })), hasPermission: vi.fn(async () => options.identity ?? false) };
   const intake = new CrmIntakeService({} as never, access as never, { record } as never, {} as never);
   return { intake, query, record };
 }
@@ -46,5 +47,23 @@ describe("editing an enquiry's source and channel", () => {
     const { intake, query } = service({ source: "instagram", channel: "dm" });
     await intake.updateDetails(actor, workspaceId, leadId, base as never);
     expect(enquiryUpdate(query)?.slice(5)).toEqual(["instagram", "dm"]);
+  });
+});
+
+describe("the client's name and phone on an enquiry", () => {
+  const locked = "Only Sales admins can change the client's name or phone";
+  it("refuses Sales a new name or mobile, and keeps their other edits", async () => {
+    const named = { source: "company", channel: "call", party_name: "Amira" };
+    await expect(service(named).intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, displayName: "Amira K." } } as never)).rejects.toThrow(locked);
+    await expect(service(named, { storedMobile: "+971501234567" }).intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, mobile: "+971559999999" } } as never)).rejects.toThrow(locked);
+    const { intake, query } = service(named, { storedMobile: "+971501234567" });
+    await intake.updateDetails(actor, workspaceId, leadId, { ...base, summary: "Kitchen and two baths" } as never);
+    expect(enquiryUpdate(query)?.[2]).toBe("Kitchen and two baths");
+  });
+
+  it("lets a Sales admin change them", async () => {
+    const { intake, query } = service({ source: "company", channel: "call", party_name: "Amira" }, { identity: true });
+    await intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, displayName: "Amira K." } } as never);
+    expect(query.mock.calls.some(([sql]) => String(sql).startsWith("UPDATE crm_parties SET display_name"))).toBe(true);
   });
 });

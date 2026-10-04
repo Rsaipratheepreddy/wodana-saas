@@ -98,4 +98,14 @@ describe("firm kit role templates", () => {
     expect(kitMigration).toMatch(/code = 'interior_studio'[\s\S]*NOT \(configuration \? 'roleTemplates'\)/);
     expect(kitMigration).not.toMatch(/interior_studio[^;]*site_supervisor/);
   });
+
+  it("lets Sales edit an opportunity (value included) but not the client's name or phone", () => {
+    const sales = roleTemplatesFor(["sales"])[0].permissions;
+    const upgrade = readFileSync(resolve(migrationsDir, "0245_sales_edit_opportunities.sql"), "utf8");
+    const granted = [...upgrade.slice(upgrade.lastIndexOf("role.code = 'sales'")).matchAll(/'([a-z_.]+)'/g)].map((match) => match[1]).filter((code) => code !== "sales");
+    expect(granted.length).toBeGreaterThan(0);
+    for (const code of ["crm.opportunities.manage", "crm.opportunities.sensitive_values", "crm.activities.manage", "crm.leads.manage", ...granted]) expect(sales).toContain(code);
+    expect(sales).not.toContain("crm.parties.identity");
+  });
 });
+

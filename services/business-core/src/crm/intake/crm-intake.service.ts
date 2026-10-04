@@ -13,6 +13,7 @@ import { DatabaseService } from "../../database/database.service";
 import { ensureJobForSource } from "../../jobs/job-identity.store";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
+import { assertClientIdentityChange, nameChanged, phoneChanged } from "../shared/client-identity-lock";
 import {
   canonicalHash,
   correlationId,
@@ -75,12 +76,16 @@ export class CrmIntakeService {
       const found = await client.query(`SELECT lead.version, lead.party_id, lead.enquiry_id, enquiry.title,
         enquiry.reference, enquiry.summary, enquiry.service_type, enquiry.source, enquiry.channel, enquiry.details,
         CASE WHEN enquiry.referral_kind IS NULL THEN NULL ELSE jsonb_build_object('name', enquiry.referral_name, 'contact', enquiry.referral_contact,
-          'membershipId', enquiry.referral_membership_id, 'option', enquiry.referral_option) END AS referral FROM crm_leads lead
+          'membershipId', enquiry.referral_membership_id, 'option', enquiry.referral_option) END AS referral,
+        (SELECT party.display_name FROM crm_parties party WHERE party.workspace_id=lead.workspace_id AND party.id=lead.party_id) AS party_name FROM crm_leads lead
         JOIN crm_enquiries enquiry ON enquiry.id=lead.enquiry_id AND enquiry.workspace_id=lead.workspace_id
         WHERE lead.workspace_id=$1 AND lead.id=$2 FOR UPDATE OF lead, enquiry`, [workspaceId, leadId]);
       if (!found.rowCount) throw new NotFoundException("Lead not found");
       const before = found.rows[0];
       if (Number(before.version) !== input.version) throw new ConflictException("Lead changed; reload before saving");
+      // The client's name and phones are their identity: only those who may change it do (Sales edits everything else).
+      await assertClientIdentityChange(this.access, client, workspaceId, actorUser.userId, nameChanged(before.party_name, party.displayName)
+        || await this.phonesChanged(client, workspaceId, before.party_id, party));
       await validateLeadOptions(client, workspaceId, input, { serviceType: before.service_type, details: before.details });
       if (input.source && input.source !== before.source) await assertSourceAllowed(client, workspaceId, actorUser.userId, input.source);
       await assertCustomerType(client, workspaceId, input.details?.customerType ?? before.details?.customerType);
@@ -124,6 +129,19 @@ export class CrmIntakeService {
         before, after: { serviceType: input.serviceType, summary: input.summary, source, channel, details, referral } });
       return { id: leadId, version: result.rows[0].version };
     });
+  }
+
+  /** Whether the edit changes a mobile or phone the client already has (adding a missing one is not a change). */
+  private async phonesChanged(client: PoolClient, workspaceId: string, partyId: string, party: { mobile?: string | null; phone?: string | null }) {
+    for (const [label, raw] of [["mobile", party.mobile], ["phone", party.phone]] as const) {
+      const prior = await client.query<{ normalized_value: string | null; raw_value: string | null }>(`SELECT normalized_value, raw_value FROM crm_contact_points WHERE workspace_id=$1 AND party_id=$2
+        AND type='phone'::crm_contact_point_type AND status='active' AND (label=$3 OR (label IS NULL AND $3<>'mobile'))
+        ORDER BY is_primary DESC, created_at LIMIT 1`, [workspaceId, partyId, label]);
+      const stored = prior.rows[0];
+      if (!stored) continue;
+      if (phoneChanged(stored.normalized_value ?? stored.raw_value, raw?.trim() || null)) return true;
+    }
+    return false;
   }
 
   listEnquiries(actor: RequestActor, workspaceId: string, query: ListEnquiriesQueryDto) {

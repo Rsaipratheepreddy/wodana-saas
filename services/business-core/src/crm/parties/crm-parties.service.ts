@@ -10,6 +10,7 @@ import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
+import { assertClientIdentityChange, nameChanged, phoneChanged } from "../shared/client-identity-lock";
 import {
   decodeCursor,
   encodeCursor,
@@ -223,6 +224,7 @@ export class CrmPartiesService {
     return this.access.withPermission(actor, workspaceId, "crm.parties.manage", async (client, actorUser) => {
       const before = await this.partyAggregate(client, workspaceId, partyId, true);
       if (before.status !== "active") throw new ConflictException("Only active parties can be edited");
+      await assertClientIdentityChange(this.access, client, workspaceId, actorUser.userId, nameChanged(before.displayName as string | null, input.displayName));
       if (input.ownerMembershipId) {
         await this.requireMembership(client, workspaceId, input.ownerMembershipId);
       }
@@ -330,6 +332,11 @@ export class CrmPartiesService {
       if (Number(before.version) !== input.version) throw new ConflictException("Contact point changed; reload and try again");
       const type = String(before.type);
       const rawValue = input.value?.trim() ?? String(before.raw_value);
+      // A phone is part of the client's identity: changing or archiving one is for those who may change it.
+      if (type === "phone" && before.status === "active") {
+        await assertClientIdentityChange(this.access, client, workspaceId, actorUser.userId,
+          input.status === "archived" || phoneChanged(String(before.normalized_value ?? before.raw_value ?? ""), rawValue));
+      }
       const { normalizedValue, invalidReason } = this.normalizeContact(type, rawValue);
       const nextVerified = input.status === "archived" ? false : input.isVerified ?? Boolean(before.is_verified);
       if (nextVerified && (!normalizedValue || invalidReason)) throw new UnprocessableEntityException("An invalid contact point cannot be verified");

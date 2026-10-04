@@ -683,6 +683,8 @@ export class CrmOpportunitiesService {
     ]) {
       if (Object.hasOwn(redacted, key)) redacted[key] = null;
     }
+    // Says the value exists but is not shown, so an edit never sends (and clears) a value this person can't see.
+    redacted.valueHidden = true;
     return redacted;
   }
 
