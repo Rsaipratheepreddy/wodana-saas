@@ -178,6 +178,79 @@ Rules:
 
 Integrity rules (quantities, money, evidence, tenant isolation) are also never overridable. Everything else is a **guided warning** that an authorized role can override with a reason; the override is recorded and reported.
 
+### 5a. Flows: one job, one line, configured by the firm
+
+**Promise to the user:** every screen answers three questions: *what is happening now*, *who does it*, *what comes next*. One step at a time, plain words, and a real face on every step.
+
+**Concepts.** Keep these four and no others.
+
+| Concept | What it is |
+| --- | --- |
+| **Flow** | A versioned, published template, chosen by the enquiry type (Settings › Sales › Flows). Firms edit flows from enquiry until production starts. Production and delivery flows are read-only in R1. |
+| **Step** | One card on the flow. It has: a plain name, **who** (a role), **done when** (one check from the catalogue), **needs** (required fields), **deadline**, **tell** (notifications), **client sees it** (yes/no), **optional** (yes/no), and **column** (the pipeline column the job enters when this step completes). |
+| **Branch** | Splits the line on one question: sub-path, package, budget band or client type. Each answer leads to its own steps, and the paths rejoin. |
+| **Job** | An opportunity running a pinned flow version. Its current step is computed from the records. The column is computed from completed steps and is never set by hand. |
+
+**Check catalogue.** Product-defined, read from real records, never typed in. The flow only chooses among these:
+- contact logged · details complete (fields chosen per step) · intro meeting completed · client type set · sub-path chosen · feasibility confirmed · package chosen · discovery complete · site visit recorded;
+- quote exists · QS approved · quote sent · client accepted · client approved on the spot · payment proof attached · payment verified · deal approved;
+- design stage done (by name) · material list signed off.
+
+New checks are added in code, once, for every firm.
+
+**Engine rules** (never configurable):
+1. A move forward must pass every step in between. Moves backward and to Lost are always allowed and audited.
+2. **Won ⇔ payment proof attached** (PLM-122), in every flow. The publisher rejects a flow without it.
+3. A published flow is immutable. Edits create a new version. Running jobs keep their version unless an admin migrates them, previewing the effect per job first.
+4. The interpreter falls back to the built-in starter flows when a workspace has none, so nothing breaks while firms configure.
+5. Every step completion, skip (with reason) and reassignment is an audited event. Notifications use the module's branded templates.
+
+**Starter flows.** Each one is equivalent to the gates live since r30, with tests proving it.
+- Furniture: a branch on sub-path A–E. A–D auto-qualify; E needs feasibility; Negotiation is optional.
+- Design: details → intro → qualified → package/discovery → design quote → accepted → payment proof.
+- Fit-out: details → intro → site visit → QS-priced quote → accepted → payment proof.
+- Basic: payment proof only.
+
+**UI. This is our USP.** Calm, one thing at a time, real avatars.
+
+1. **Opportunity screen**
+   - Header: title · client · value · owner avatar · one stage chip · **Edit** · **⋯** (Lost, history).
+   - There is **no Won button**: Won is the result of the payment proof step.
+   - One **Now card**: the step name as a verb ("Book the intro meeting"), one line of why ("Needed to move to Qualified"), the assignee avatar with a **Reassign** popover (people list with avatars), the due date, and **one primary button**.
+   - Under it, "Then" shows the next two steps greyed.
+   - One **progress line** of dots (✓ done with the doer's avatar on hover, ● now, ○ next). Clicking a dot shows that step's needs.
+   - Tabs: Details · Activity · Files.
+   - Removed: stage pills, the Progress tab timeline, the info box, and the Won/Change stage buttons.
+2. **Board**
+   - Card: client · value · now step · assignee avatar · due/overdue chip.
+   - A refused drop shows one small sheet, "To move to *Won*: attach payment proof [Attach]".
+3. **Flow builder** (Settings › Sales › Flows; React Flow, `@xyflow/react`, MIT, styled only with our tokens)
+   - **Left:** Components, grouped as Contact · Meetings · Sell · Design · Logic. Each shows an icon and a one-line description.
+   - **Centre:** a top-to-bottom canvas with snap and auto-layout. Steps are cards showing name, role avatar, check and deadline. The pipeline columns are soft background bands. Branches are drawn as labelled forks.
+   - **Right:** properties of the selected card, in plain words with pickers only (no free-text rules).
+   - **Top bar:** flow name · used by (enquiry types) · **Preview** (simulate a job: click "complete" step by step and watch the Now card, the board column and the client portal update side by side) · **Publish** (runs the validator: no dead ends, Won has the proof, every step has a role, every branch answer leads somewhere).
+   - Keyboard accessible, RTL, and a mobile read-only view.
+4. **My steps** (home): steps waiting on me, overdue first, one button each.
+
+**Delivery plan.** Each phase ships alone. Nothing live breaks: the starter flows reproduce today's gates first.
+
+| Phase | Build | Owner | Done when |
+| --- | --- | --- | --- |
+| F1 | Opportunity screen and board card on the current gates | Opus | Interior Design shows one Now card; the duplicated progress UI is gone; tests pass |
+| F2 | `crm_flows` and `crm_flow_versions` (definition JSON = configuration; forced RLS); enquiry type → flow; job pins the version; the interpreter replaces the hard-coded gates; starter flows seeded per workspace on first read | Opus | Equivalence tests: starter flows give the same results as r30 gates for every flow × stage |
+| F3 | Flow builder: palette, canvas, properties, validator, versioned publish | Opus (canvas, validator) + Fable (palette metadata, en.json keys, component tests) | A firm changes the Design flow, publishes, and a new job follows it |
+| F4 | Preview simulator; "My steps"; deadlines and notifications per step; portal "Waiting for you" follows client steps | Opus + Fable | Preview matches live behaviour; reminders fire |
+
+**Brief template for Fable tasks:**
+- Exact files to touch.
+- The data shape.
+- The labels (verbatim, for en.json).
+- The tests to add and the commands to run.
+- An explicit "do not change" list.
+- A one-screenshot acceptance check.
+
+Fable never designs UI or logic: it implements a brief Opus wrote and Opus reviews the diff.
+
 ---
 
 ## 6. Module specifications
