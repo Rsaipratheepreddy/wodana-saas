@@ -19,6 +19,7 @@ import { CrmLeadsModule } from "./crm/leads/crm-leads.module";
 import { CrmActivitiesModule } from "./crm/activities/crm-activities.module";
 import { CrmConversationsModule } from "./crm/conversations/crm-conversations.module";
 import { CrmOpportunitiesModule } from "./crm/opportunities/crm-opportunities.module";
+import { CrmFlowsModule } from "./crm/flows/crm-flows.module";
 import { CrmTodayModule } from "./crm/today/crm-today.module";
 import { CrmReportingModule } from "./crm/reporting/crm-reporting.module";
 import { CrmSettingsModule } from "./crm/settings/crm-settings.module";
@@ -72,6 +73,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
     CrmActivitiesModule,
     CrmConversationsModule,
     CrmOpportunitiesModule,
+    CrmFlowsModule,
     CrmTodayModule,
     CrmReportingModule,
     CrmSettingsModule,
