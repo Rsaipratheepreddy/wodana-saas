@@ -241,6 +241,41 @@ New checks are added in code, once, for every firm.
 | F3 | Flow builder: palette, canvas, properties, validator, versioned publish | Opus (canvas, validator) + Fable (palette metadata, en.json keys, component tests) | A firm changes the Design flow, publishes, and a new job follows it |
 | F4 | Preview simulator; "My steps"; deadlines and notifications per step; portal "Waiting for you" follows client steps | Opus + Fable | Preview matches live behaviour; reminders fire |
 
+### 5b. Client communication: three places, one job each
+
+| Place | Job | Who sees it |
+| --- | --- | --- |
+| **WhatsApp Inbox** | The front door: new leads until an enquiry exists | Sales Admin team and the assigned owner only |
+| **Job room (staff) ⇄ client portal** | Everything about one job, sorted by type: questions, decisions, documents, updates, payments | The job team, each person added when their step starts (Sales → Designer → PM); the client sees only client-visible items |
+| **WhatsApp / email** | The doorbell: "1 new update, 1 question → open your portal" | The client |
+
+There are no WhatsApp groups. A known client's WhatsApp message is filed into their job and the job owner is told.
+
+**Portal home is a feed.**
+- **Top:** a stage line and "Waiting for you" action cards.
+- **Daily status rings:** one per day, holding that day's photos and video.
+- **Card feed, newest first.** Card types:
+  - **Progress:** a carousel, with "Looks good" / "Ask about this".
+  - **Document:** a preview thumbnail, title, type chip, status, and View / Download. Never a bare link.
+  - **Decision:** Approve / Request changes.
+  - **Payment:** amount, due date, Pay / Upload proof.
+  - **Question for you:** answered with options or text.
+  - **Meeting:** with "Add to calendar".
+  - **Milestone.**
+- **"Ask a question":** routed to the owner of the current stage.
+- **Tabs:** Home · Questions & chat · Documents · Payments · Design.
+
+**Inbox.**
+- A compact search icon, and the chips Unassigned · Mine · Team · Closed.
+- Visibility per role: own / team / manage.
+- "File into job" on any chat.
+
+**Order.**
+1. **P1, portal cards.** Fable builds the presentational cards; Opus reviews them.
+2. **P2, portal feed + Q&A + daily status.** Opus.
+3. **P3, job room + stage routing + notifications.** Opus.
+4. **P4, inbox visibility and compact UX.** Opus.
+
 **Brief template for Fable tasks:**
 - Exact files to touch.
 - The data shape.
