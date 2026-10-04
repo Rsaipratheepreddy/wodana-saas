@@ -17,7 +17,13 @@ export class CrmFlowsController {
     return this.flows.list(actor, workspaceId);
   }
 
-  /** A new flow from a starter or a copy of one of the workspace's flows. */
+  /** The template library a firm picks from when it creates a flow. Declared before `:flowId`. */
+  @Get("templates")
+  templates(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.flows.templates(actor, workspaceId);
+  }
+
+  /** A new flow from a starter, a library template or a copy of one of the workspace's flows. */
   @Post()
   create(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreateFlowDto) {
     return this.flows.create(actor, workspaceId, input);

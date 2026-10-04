@@ -6,6 +6,7 @@ import { loadFlowFacts } from "../opportunities/flow-facts";
 import { CrmFlowsService } from "./crm-flows.service";
 import type { FlowDefinition } from "./flow-definition";
 import { ensureStarterFlows } from "./flow-store";
+import { FLOW_TEMPLATES } from "./flow-templates";
 import { STARTER_FLOWS } from "./starter-flows";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -164,6 +165,21 @@ integration("flows as configuration (plan §5a, F2)", () => {
       const listed = (await flows.list(actor, workspaceId)).data as Array<{ id: string; name: string; runningJobs: number }>;
       expect(listed.find((flow) => flow.id === created.id)).toMatchObject({ name: "Villa design v2", runningJobs: 0 });
       expect(await audits(client, workspaceId, "crm.flow.created.v1")).toBe(2);
+    });
+  });
+
+  it("creates a flow from a library template: validated, audited with its source, idempotent on replay", async () => {
+    await withWorkspace(async (client, { workspaceId, flows }) => {
+      const template = FLOW_TEMPLATES.find((item) => item.key === "fit_out_joinery")!;
+      const created = await flows.create(actor, workspaceId, { name: "Joinery", templateKey: template.key });
+      expect(created).toMatchObject({ code: "joinery", name: "Joinery", version: 1, created: true });
+      expect(await flows.create(actor, workspaceId, { name: "Joinery", templateKey: template.key })).toMatchObject({ id: created.id, created: false });
+      await expect(flows.create(actor, workspaceId, { name: "Joinery", templateKey: "renovation" })).rejects.toMatchObject({ status: 409 });
+      await expect(flows.create(actor, workspaceId, { name: "Unknown", templateKey: "missing" })).rejects.toMatchObject({ status: 422 });
+      expect((await flows.get(actor, workspaceId, created.id)).selected.definition).toEqual(template.definition);
+      const audit = (await client.query(`SELECT after FROM audit_events WHERE workspace_id = $1 AND action = 'crm.flow.created.v1'`, [workspaceId])).rows;
+      expect(audit).toHaveLength(1);
+      expect(audit[0].after).toMatchObject({ code: "joinery", version: 1, from: { template: "fit_out_joinery" } });
     });
   });
 

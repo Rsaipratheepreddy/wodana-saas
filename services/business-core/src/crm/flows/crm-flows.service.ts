@@ -6,6 +6,7 @@ import { WorkspaceAccessService } from "../../workspaces/workspace-access.servic
 import { createHash } from "node:crypto";
 import { flowChecksum, validateFlowDefinition } from "./flow-definition";
 import { ensureStarterFlows } from "./flow-store";
+import { FLOW_TEMPLATES, flowTemplate } from "./flow-templates";
 import { STARTER_FLOWS } from "./starter-flows";
 
 const PERMISSION = "crm.settings.manage";
@@ -55,14 +56,24 @@ export class CrmFlowsService {
     });
   }
 
+  /** The template library a new flow can start from (product content, the same for every firm). */
+  templates(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, PERMISSION, async () => ({
+      data: FLOW_TEMPLATES.map(({ key, name, description, group, suggestedEnquiryTypes, definition }) =>
+        ({ key, name, description, group, suggestedEnquiryTypes, stepCount: definition.steps.length, definition })),
+    }));
+  }
+
   /**
-   * A new flow from a starter flow or a copy of a version of one of the workspace's flows. Its first version is the
-   * source definition (validated). The code comes from the name; the same create sent twice returns the flow it made.
+   * A new flow from a starter flow, a library template or a copy of a version of one of the workspace's flows. Its
+   * first version is the source definition (validated). The code comes from the name; the same create sent twice
+   * returns the flow it made.
    */
-  async create(actor: RequestActor, workspaceId: string, input: { name: string; starter?: string; sourceFlowId?: string; sourceVersion?: number }) {
+  async create(actor: RequestActor, workspaceId: string, input: { name: string; starter?: string; templateKey?: string; sourceFlowId?: string; sourceVersion?: number }) {
     const name = input.name.trim();
     if (!name) throw new UnprocessableEntityException("Give the flow a name");
-    if (Boolean(input.starter) === Boolean(input.sourceFlowId)) throw new UnprocessableEntityException("Start from a starter flow or from one of your flows");
+    if ([input.starter, input.templateKey, input.sourceFlowId].filter(Boolean).length !== 1)
+      throw new UnprocessableEntityException("Start from a starter flow, a template or one of your flows");
     if (input.sourceVersion !== undefined && !input.sourceFlowId) throw new UnprocessableEntityException("Only a copied flow names a version");
     return this.access.withPermission(actor, workspaceId, PERMISSION, async (client, user) => {
       await ensureStarterFlows(client, workspaceId);
@@ -73,6 +84,11 @@ export class CrmFlowsService {
         if (!starter) throw new UnprocessableEntityException("Choose a starter flow");
         definition = starter.definition;
         from = { starter: input.starter };
+      } else if (input.templateKey) {
+        const template = flowTemplate(input.templateKey);
+        if (!template) throw new UnprocessableEntityException("Choose a template");
+        definition = template.definition;
+        from = { template: input.templateKey };
       } else {
         const source = await this.requireFlow(client, workspaceId, input.sourceFlowId!, false);
         const row = (await client.query<{ version: number; definition: unknown }>(

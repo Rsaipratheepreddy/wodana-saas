@@ -21,8 +21,18 @@ describe("creating a flow", () => {
     const service = new CrmFlowsService(access);
     const actor = {} as never;
     await expect(service.create(actor, "w", { name: " ", starter: "basic" })).rejects.toThrow(/name/);
-    await expect(service.create(actor, "w", { name: "New" })).rejects.toThrow(/starter flow or from one of your flows/);
-    await expect(service.create(actor, "w", { name: "New", starter: "basic", sourceFlowId: "f" })).rejects.toThrow(/starter flow or from one of your flows/);
+    await expect(service.create(actor, "w", { name: "New" })).rejects.toThrow(/starter flow, a template or one of your flows/);
+    await expect(service.create(actor, "w", { name: "New", starter: "basic", sourceFlowId: "f" })).rejects.toThrow(/starter flow, a template or one of your flows/);
+    await expect(service.create(actor, "w", { name: "New", templateKey: "basic", starter: "basic" })).rejects.toThrow(/starter flow, a template or one of your flows/);
+    await expect(service.create(actor, "w", { name: "New", templateKey: "basic", sourceFlowId: "f" })).rejects.toThrow(/starter flow, a template or one of your flows/);
     await expect(service.create(actor, "w", { name: "New", starter: "basic", sourceVersion: 2 })).rejects.toThrow(/version/);
+  });
+
+  it("lists the template library with its step counts", async () => {
+    const access = { withPermission: (_actor: unknown, _workspace: string, permission: string, work: () => unknown) => { expect(permission).toBe("crm.settings.manage"); return work(); } } as never;
+    const { data } = await new CrmFlowsService(access).templates({} as never, "w");
+    expect(data.length).toBeGreaterThan(10);
+    expect(data.find((template) => template.key === "fit_out_joinery")).toMatchObject({ group: "Fit-out", stepCount: 10, suggestedEnquiryTypes: ["Joinery only", "Renovation / fit-out"] });
+    expect(Object.keys(data[0]).sort()).toEqual(["definition", "description", "group", "key", "name", "stepCount", "suggestedEnquiryTypes"]);
   });
 });
