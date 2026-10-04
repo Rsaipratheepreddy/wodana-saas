@@ -207,6 +207,10 @@ export class BriefService {
         await client.query(`INSERT INTO pre_project_brief_entries(workspace_id,case_id,id,kind,title,room_id,note,category,priority,scope_status,review_status,quantity,unit,reference_url,avoid,source,created_by,updated_by)
           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)`, [workspaceId,caseId,input.id,...fields,userId]);
       }
+      // A new moodboard pin is meant for the client: it shows in their portal unless the team keeps it to themselves.
+      if (!current.rowCount && input.kind === "inspiration" && input.sharedWithClient !== false)
+        await client.query(`INSERT INTO pre_project_moodboard_shares (workspace_id, case_id, entry_id, shared_by) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id, entry_id) DO NOTHING`,
+          [workspaceId, caseId, input.id, userId]);
       await client.query(`UPDATE pre_project_brief_entries SET note_document=$4,pinned=$5,archived_at=CASE WHEN $6 THEN COALESCE(archived_at,now()) ELSE NULL END WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.id,document ?? null,pinned,archived]);
       // The reason goes with the decision; an included requirement needs none.
       if (input.scopeNote !== undefined || input.scopeStatus === 'included')

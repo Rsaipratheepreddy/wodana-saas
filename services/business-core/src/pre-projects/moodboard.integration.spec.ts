@@ -42,6 +42,11 @@ integration("moodboard pins and requirement links", () => {
       const saved = await service.saveEntry(actor, workspaceId, caseId, { ...base, id: pin, version: 0, kind: "inspiration", title: "Warm oak", referenceUrl: "https://www.instagram.com/p/abc/", source: "client", requirementIds: [kitchen, wardrobe] } as never) as { requirementIds: string[]; board: unknown };
       expect(new Set(saved.requirementIds)).toEqual(new Set([kitchen, wardrobe]));
       expect(saved.board).toBeNull();
+      // A new pin is shown to the client by default; one the team keeps to themselves isn't, and an edit never changes it.
+      const teamOnly = randomUUID();
+      await service.saveEntry(actor, workspaceId, caseId, { ...base, id: teamOnly, version: 0, kind: "inspiration", title: "Reference only", sharedWithClient: false } as never);
+      const shares = async () => (await client.query("SELECT entry_id FROM pre_project_moodboard_shares WHERE workspace_id=$1 AND case_id=$2", [workspaceId, caseId])).rows.map((row) => row.entry_id);
+      expect(await shares()).toEqual([pin]);
 
       await expect(service.saveEntry(actor, workspaceId, caseId, { ...base, id: randomUUID(), version: 0, kind: "requirement", title: "Bad", requirementIds: [kitchen] } as never)).rejects.toThrow(/Only moodboard items/);
       await expect(service.saveMoodboardLayout(actor, workspaceId, caseId, [{ entryId: kitchen, x: 0, y: 0, width: 240, z: 1, sentiment: "love" }])).rejects.toThrow(/moodboard items/);
@@ -54,6 +59,7 @@ integration("moodboard pins and requirement links", () => {
       // Clearing the links keeps the pin.
       const cleared = await service.saveEntry(actor, workspaceId, caseId, { ...base, id: pin, version: 1, kind: "inspiration", title: "Warm oak", referenceUrl: "https://www.instagram.com/p/abc/", source: "client", requirementIds: [] } as never) as { requirementIds: string[] };
       expect(cleared.requirementIds).toEqual([]);
+      expect(await shares()).toEqual([pin]);
     } finally {
       await client.query("ROLLBACK");
       client.release();

@@ -4,9 +4,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, ExternalLink, Heart, ImagePlus, Link2, Maximize2, StickyNote, ThumbsDown, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Eye, EyeOff, Heart, ImagePlus, Link2, Maximize2, MessageCircle, StickyNote, ThumbsDown, X } from "lucide-react";
 import { PlatformMark } from "@/components/brand/platform-mark";
-import { Badge, Button, EmptyState, FormDialog, IconButton, InlineNotice, MenuButton, MultiSelectField, SegmentedControl, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
+import { Avatar, Badge, Button, EmptyState, FormDialog, IconButton, InlineNotice, MenuButton, MultiSelectField, SegmentedControl, SelectField, Switch, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { ClientFeedback, FeedbackSignals, feedbackFor, useClientBoard, type ClientBoard } from "@/components/client-activity/client-feedback";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type CaseRoom, type ScopeEntry } from "@/lib/pre-project/content";
@@ -46,6 +46,13 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
     : entry.source === "client" ? (clientName || t("Client")) : (entry.createdByName || t("Team"));
   const client = useClientBoard(workspaceId, caseId);
   const shared = (entry: ScopeEntry) => Boolean(client.board?.shared.includes(entry.id));
+  const [sharing, setSharing] = useState<string | null>(null);
+  /** Shows one team pin to the client, or keeps it to the team. */
+  const toggleShared = async (entry: ScopeEntry) => {
+    setSharing(entry.id); setError("");
+    try { await client.share([entry.id], !shared(entry)); } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not save.")); }
+    setSharing(null);
+  };
   /** The client sees pins the team shared and the ones someone on their side added. */
   const seenByClient = (entry: ScopeEntry) => Boolean(entry.fromClient) || shared(entry);
   useEffect(() => {
@@ -83,7 +90,10 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
   };
   const create = async (draft: Partial<ScopeEntry>) => {
     const entry: ScopeEntry = { ...blankEntry(room === "all" ? null : room), kind: "inspiration", category: "Inspiration", source: "team", requirementIds: [], ...draft };
-    return saveEntry(entry);
+    const saved = await saveEntry(entry);
+    // A new pin is shown to the client straight away; the board says so once it's reloaded.
+    void client.load();
+    return saved;
   };
   const uploadPhotos = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -126,11 +136,13 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
       </div> : null}
     </div>
     {error ? <InlineNotice message={error} tone="error" /> : null}
+    {client.board && client.board.portalOpen === false ? <InlineNotice message={t("The client portal doesn't show the moodboard yet. Turn it on in Settings › Client portal.")} /> : null}
     {client.board?.boards.length ? <SharedBoards caseId={caseId} client={client} /> : null}
     {!entries.length ? <div className={styles.empty}><EmptyState illustration="upload" title={t("Start the moodboard")} description={t("Add photos, Instagram or Pinterest links, videos and notes the client loves, or wants to avoid.")} /></div>
       : !visible.length ? <div className={styles.empty}><EmptyState illustration="search" title={t("Nothing matches these filters")} description={t("Try another room, feeling or person.")} action={filtered ? <Button size="compact" onPress={() => { setRoom("all"); setFeeling("all"); setSource("all"); }}>{t("Clear filters")}</Button> : undefined} /></div>
       : <div className={styles.content} data-panel={selectedEntry ? "open" : undefined}><div className={styles.grid}>{visible.map((entry) => <PinCard key={entry.id} entry={entry} room={roomName(entry)} addedBy={addedBy(entry)} requirementNames={(entry.requirementIds ?? []).map((id) => requirementName.get(id)).filter((name): name is string => Boolean(name))}
-        assetUrl={assetUrl} selected={selected === entry.id} canEdit={canEdit} signals={<FeedbackSignals board={client.board} kind="pin" id={entry.id} shown={shared(entry)} />} onOpen={() => setSelected(entry.id)} onView={(index) => setViewing({ entryId: entry.id, index })} onFeeling={(value) => void markFeeling(entry, value)} />)}</div>
+        assetUrl={assetUrl} selected={selected === entry.id} canEdit={canEdit}
+        signals={<ClientSignals board={client.board} entry={entry} shown={shared(entry)} busy={sharing === entry.id} onToggle={() => void toggleShared(entry)} />} onOpen={() => setSelected(entry.id)} onView={(index) => setViewing({ entryId: entry.id, index })} onFeeling={(value) => void markFeeling(entry, value)} />)}</div>
       {selectedEntry ? <PinPanel key={selectedEntry.id} entry={selectedEntry} client={client} shared={shared(selectedEntry)} seenByClient={seenByClient(selectedEntry)} roomContext={{ workspaceId, caseId, rooms: caseRooms, canEdit }} onRoomAdded={(added) => setCaseRooms((current) => [...current, added])} requirements={requirements} canEdit={canEdit} addedBy={addedBy(selectedEntry)} assetUrl={assetUrl}
       onClose={() => setSelected(null)} onView={(index) => setViewing({ entryId: selectedEntry.id, index })}
       onFeeling={(value) => void markFeeling(selectedEntry, value)}
@@ -178,10 +190,15 @@ function PinCard({ entry, room, addedBy, requirementNames, assetUrl, selected, c
       </span> : null}
     </button>
     <footer className={styles.cardFoot}>
-      <span className={styles.chip} data-feeling={feeling}>{feeling === "avoid" ? t("Avoid") : t("Love")}</span>
-      {entry.fromClient ? <Badge className={styles.fromClient} tone="info">{t("From client")}</Badge> : null}
-      <span className={styles.byline} title={addedBy}>{entry.source === "client" ? t("From {name}", { name: addedBy }) : t("Added by {name}", { name: addedBy })}</span>
-      <FeelingToggle value={feeling} canEdit={canEdit} onChange={onFeeling} />
+      <span className={styles.author}>
+        <Avatar name={addedBy} size="sm" />
+        <span className={styles.byline} title={addedBy}>{entry.source === "client" ? t("From {name}", { name: addedBy }) : t("Added by {name}", { name: addedBy })}</span>
+        {entry.fromClient ? <Badge className={styles.fromClient} tone="info">{t("From client")}</Badge> : null}
+      </span>
+      <span className={styles.footRow}>
+        <span className={styles.chip} data-feeling={feeling}>{feeling === "avoid" ? t("Avoid") : t("Love")}</span>
+        <FeelingToggle value={feeling} canEdit={canEdit} onChange={onFeeling} />
+      </span>
       {signals}
     </footer>
   </article>;
@@ -230,7 +247,7 @@ function PinPanel({ entry, client, shared, seenByClient, roomContext, onRoomAdde
         <FeelingToggle value={feeling} canEdit={canEdit} onChange={onFeeling} />
       </div>
       <p className={styles.byline}>{entry.source === "client" ? t("From {name}", { name: addedBy }) : t("Added by {name}", { name: addedBy })}</p>
-      {client.board && !entry.fromClient ? <Switch isSelected={shared} isDisabled={!client.board.canEdit || sharing} onChange={(show) => void share(show)}>{t("Show in the client portal")}</Switch> : null}
+      {client.board && !entry.fromClient ? <Switch isSelected={shared} isDisabled={!client.board.canEdit || sharing} onChange={(show) => void share(show)}>{t("Visible to client")}</Switch> : null}
       {client.board && (seenByClient || feedback.comments.length || feedback.likes.length || feedback.dislikes.length)
         ? <ClientFeedback board={client.board} kind="pin" id={entry.id} canReply={client.board.canEdit && seenByClient} onReply={client.reply} /> : null}
       <TextInput isDisabled={!canEdit} isRequired label={t("Title")} maxLength={240} onChange={set("title")} value={draft.title} errorMessage={!draft.title.trim() ? t("Give the pin a title.") : undefined} />
@@ -247,6 +264,29 @@ function PinPanel({ entry, client, shared, seenByClient, roomContext, onRoomAdde
         : <><Button size="compact" variant="quiet" isDisabled={busy} onPress={() => setConfirmRemove(true)}>{t("Remove")}</Button><span className={styles.spacer} /><Button size="compact" isDisabled={busy} onPress={requestClose}>{t("Cancel")}</Button><Button size="compact" variant="primary" isDisabled={!dirty || !draft.title.trim() || !validLink} isLoading={busy} onPress={() => void run(() => onSave(draft))}>{t("Save")}</Button></>}
     </footer> : null}
   </aside>;
+}
+
+/**
+ * What the client sees of a pin and what they said: "Visible to client · date" or "Team only" (a toggle for the
+ * team's pins), the client's Love or Avoid, and the comments. The client's own pins are always theirs to see.
+ */
+function ClientSignals({ board, entry, shown, busy, onToggle }: { board: ClientBoard["board"]; entry: ScopeEntry; shown: boolean; busy: boolean; onToggle: () => void }) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
+  if (!board) return null;
+  const { likes, dislikes, comments } = feedbackFor(board, "pin", entry.id);
+  const at = board.sharedAt?.[entry.id];
+  const visibleLabel = at ? t("Visible to client · {date}", { date: new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short" }).format(new Date(at)) }) : t("Visible to client");
+  const label = shown ? visibleLabel : t("Team only");
+  const icon = shown ? <Eye aria-hidden="true" size={13} /> : <EyeOff aria-hidden="true" size={13} />;
+  return <span className={styles.signals}>
+    {entry.fromClient ? null : board.canEdit
+      ? <button type="button" className={styles.visibility} data-shown={shown || undefined} aria-pressed={shown} disabled={busy} title={shown ? t("Hide from the client") : t("Show to the client")} onClick={onToggle}>{icon}{label}</button>
+      : <span className={styles.visibility} data-shown={shown || undefined}>{icon}{label}</span>}
+    {likes.length ? <span className={styles.reaction} data-reaction="love" title={likes.join(", ")}><Heart aria-hidden="true" size={12} />{likes.length > 1 ? t("Client loves · {count}", { count: likes.length }) : t("Client loves")}</span> : null}
+    {dislikes.length ? <span className={styles.reaction} data-reaction="avoid" title={dislikes.join(", ")}><ThumbsDown aria-hidden="true" size={12} />{dislikes.length > 1 ? t("Client avoids · {count}", { count: dislikes.length }) : t("Client avoids")}</span> : null}
+    {comments.length ? <span className={styles.comments} aria-label={comments.length === 1 ? t("1 comment") : t("{count} comments", { count: comments.length })}><MessageCircle aria-hidden="true" size={12} />{comments.length}</span> : null}
+  </span>;
 }
 
 /** The concept and material boards the client sees in the portal, with their reactions and comments; each opens in Design to reply. */

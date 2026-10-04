@@ -60,6 +60,8 @@ export class SaveBriefEntryDto {
   @IsIn(["team", "client"]) source!: string;
   @IsArray() @ArrayMaxSize(20) @ArrayUnique() @IsUUID(undefined, { each: true }) assetIds!: string[];
   @IsOptional() @IsArray() @ArrayMaxSize(30) @ArrayUnique() @IsUUID(undefined, { each: true }) requirementIds?: string[];
+  /** A new moodboard pin is shown in the client's portal unless the team keeps it to themselves (false). */
+  @IsOptional() @IsBoolean() sharedWithClient?: boolean;
 }
 
 export class MoodboardPinDto {

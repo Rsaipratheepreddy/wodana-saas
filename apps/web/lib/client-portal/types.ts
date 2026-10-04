@@ -79,7 +79,10 @@ export type PortalDocument = { id: string; kind: "agreement" | "design" | "hando
 
 export type PortalRequest = {
   id: string; number: number; title: string; detail: string; status: string; createdAt: string; resolution: string; files: PortalFile[];
-  comments: Array<{ id: string; at: string; text: string; fromClient: boolean; files: PortalFile[] }>;
+  /** Whether the client's side opened the conversation (else the team did), who, and whether it was this contact. */
+  fromClient?: boolean; author?: string | null; mine?: boolean;
+  /** Oldest first. `author` names someone on the client's side (the team is never named); `seen` says the team has seen a client message. */
+  comments: Array<{ id: string; at: string; text: string; fromClient: boolean; author?: string | null; mine?: boolean; seen?: boolean; files: PortalFile[] }>;
   /** Team replies the client hasn't opened yet. */
   unread: number;
   /** The team opened or answered the thread after the client's last message. */
@@ -217,6 +220,10 @@ export type StaffBoardComment = { id: string; targetKind: "pin" | "design"; targ
 export type StaffMoodboard = {
   /** Moodboard pins (brief entry ids) shown in the client's portal. */
   shared: string[];
+  /** When each shown pin was shared with the client, by pin. */
+  sharedAt?: Record<string, string>;
+  /** Whether the client can see the moodboard at all (the portal is on and shows it for this project). */
+  portalOpen?: boolean;
   reactions: Array<{ targetKind: "pin" | "design"; targetId: string; reaction: "like" | "dislike"; by: string; at: string }>;
   comments: StaffBoardComment[];
   /** Concept and material boards the client can see (design version ids). */

@@ -92,7 +92,7 @@ describe("moodboard with the client portal", () => {
     { ...base, id: "t2", kind: "inspiration", title: "Brass handles" },
   ] as unknown as ScopeEntry[];
   const shared: StaffMoodboard = {
-    shared: ["t2"], canEdit: true,
+    shared: ["t2"], sharedAt: { t2: "2026-10-03T09:00:00.000Z" }, portalOpen: true, canEdit: true,
     reactions: [{ targetKind: "pin", targetId: "t2", reaction: "like", by: "Aisha Al Mansoori", at: "2026-09-20T09:00:00.000Z" },
       { targetKind: "pin", targetId: "t2", reaction: "dislike", by: "Omar Al Mansoori", at: "2026-09-20T10:00:00.000Z" }],
     comments: [{ id: "m1", targetKind: "pin", targetId: "t2", text: "Could these be matte?", at: "2026-09-20T11:00:00.000Z", fromClient: true, author: "Aisha Al Mansoori" }],
@@ -117,21 +117,22 @@ describe("moodboard with the client portal", () => {
   it("marks what the client sees, what they added, their likes and comments, and the boards they see", async () => {
     mount();
     const brass = card("Brass handles");
-    expect(await within(brass).findByText("Shown to the client")).toBeInTheDocument();
-    expect(within(brass).getByLabelText("1 like")).toHaveAttribute("title", "Aisha Al Mansoori");
-    expect(within(brass).getByLabelText("1 dislike")).toBeInTheDocument();
+    expect(await within(brass).findByRole("button", { name: /^Visible to client · (3 Oct|Oct 3)$/ })).toHaveAttribute("aria-pressed", "true");
+    expect(within(brass).getByText("Client loves")).toHaveAttribute("title", "Aisha Al Mansoori");
+    expect(within(brass).getByText("Client avoids")).toHaveAttribute("title", "Omar Al Mansoori");
     expect(within(brass).getByLabelText("1 comment")).toBeInTheDocument();
     const terrazzo = card("Terrazzo floor");
     expect(terrazzo).toHaveTextContent("From client");
     expect(terrazzo).toHaveTextContent("From Omar Al Mansoori");
-    expect(within(card("Walnut slats")).queryByText("Shown to the client")).not.toBeInTheDocument();
+    expect(within(card("Walnut slats")).getByRole("button", { name: "Team only" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(terrazzo).queryByRole("button", { name: /Team only|Visible to client/ })).not.toBeInTheDocument();
     const boards = screen.getByRole("region", { name: "Boards the client sees" });
     expect(within(boards).getByRole("link", { name: /Living room concept/ })).toHaveAttribute("href", "/workspace/pre-projects/cases/c1/designs?file=d1");
   });
 
   it("shows who liked and disliked a pin and its comments, and answers the client", async () => {
     const fetcher = mount();
-    await within(card("Brass handles")).findByText("Shown to the client");
+    await within(card("Brass handles")).findByRole("button", { name: /Visible to client/ });
     fireEvent.click(screen.getByRole("button", { name: "Open details for Brass handles" }));
     const panel = screen.getByRole("complementary", { name: "Pin details" });
     const feedback = within(panel).getByRole("region", { name: "Client feedback" });
@@ -149,14 +150,14 @@ describe("moodboard with the client portal", () => {
 
   it("shows or hides a pin in the portal from its details, and the pins in view from the toolbar", async () => {
     const fetcher = mount();
-    await within(card("Brass handles")).findByText("Shown to the client");
+    await within(card("Brass handles")).findByRole("button", { name: /Visible to client/ });
     fireEvent.click(screen.getByRole("button", { name: "Open details for Walnut slats" }));
     const panel = screen.getByRole("complementary", { name: "Pin details" });
     // Not shown yet, so there's nothing to reply to.
     expect(within(panel).queryByRole("textbox", { name: "Reply to the client" })).not.toBeInTheDocument();
-    await userEvent.click(within(panel).getByRole("switch", { name: "Show in the client portal" }));
+    await userEvent.click(within(panel).getByRole("switch", { name: "Visible to client" }));
     await waitFor(() => expect(portalPosts(fetcher).at(-1)).toEqual({ url: "/api/client-portal-admin/cases/c1/moodboard/share", body: { entryIds: ["t1"], shared: true } }));
-    expect(await within(card("Walnut slats")).findByText("Shown to the client")).toBeInTheDocument();
+    expect(await within(card("Walnut slats")).findByRole("button", { name: "Visible to client" })).toBeInTheDocument();
     expect(within(panel).getByRole("textbox", { name: "Reply to the client" })).toBeInTheDocument();
     // Both team pins are shown now; the client's own pin is always theirs, so the toolbar hides the two.
     await userEvent.click(screen.getByRole("button", { name: /Client portal/ }));
@@ -173,6 +174,21 @@ describe("moodboard with the client portal", () => {
     expect(panel).toHaveTextContent("Terrazzo floor");
     expect(panel).toHaveTextContent("From client");
     expect(await within(panel).findByRole("textbox", { name: "Reply to the client" })).toBeInTheDocument();
-    expect(within(panel).queryByRole("switch", { name: "Show in the client portal" })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("switch", { name: "Visible to client" })).not.toBeInTheDocument();
+  });
+
+  it("shows or hides a pin from the chip on its card", async () => {
+    const fetcher = mount();
+    await userEvent.click(await within(card("Walnut slats")).findByRole("button", { name: "Team only" }));
+    await waitFor(() => expect(portalPosts(fetcher).at(-1)).toEqual({ url: "/api/client-portal-admin/cases/c1/moodboard/share", body: { entryIds: ["t1"], shared: true } }));
+    await userEvent.click(await within(card("Walnut slats")).findByRole("button", { name: "Visible to client" }));
+    await waitFor(() => expect(portalPosts(fetcher).at(-1)).toEqual({ url: "/api/client-portal-admin/cases/c1/moodboard/share", body: { entryIds: ["t1"], shared: false } }));
+    expect(await within(card("Walnut slats")).findByRole("button", { name: "Team only" })).toBeInTheDocument();
+  });
+
+  it("says when the client portal doesn't show the moodboard", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () => (url.startsWith("/api/client-portal-admin/") ? { ...shared, portalOpen: false } : {}) })));
+    render(<DesignSystemProvider><MoodboardPage initialData={{ ...data, entries: pins }} /></DesignSystemProvider>);
+    expect(await screen.findByText(/doesn't show the moodboard yet/)).toBeInTheDocument();
   });
 });

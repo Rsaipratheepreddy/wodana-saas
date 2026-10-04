@@ -6,6 +6,7 @@ import type { Grant } from "./portal-auth";
 import { grantFor, type DecisionContext } from "./portal-decisions";
 import { contactId, ownUploads, type FilePresence } from "./portal-files";
 import { caseTeam, caseTitle, tellClients, tellStaff } from "./portal-notices";
+import { effectiveSections, readPortalSettings, readProjectAccess } from "./portal-settings";
 
 type Db = Pick<PoolClient, "query">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -250,8 +251,15 @@ export async function readStaffBoard(db: Db, workspaceId: string, caseId: string
        LEFT JOIN users person ON person.id = comment.author_user_id
       WHERE comment.workspace_id = $1 AND comment.case_id = $2 ORDER BY comment.created_at, comment.id`, [workspaceId, caseId])).rows;
   const boards = (await sharedBoards(db, workspaceId, caseId)).map((board) => ({ id: board.id, designId: board.designId, title: board.title, number: board.number, room: board.room }));
+  // Whether the client can see the moodboard at all: the portal is on and its moodboard is shown for this project.
+  const settings = await readPortalSettings(db, workspaceId);
+  const projectId = (await db.query<{ id: string }>(`SELECT id FROM delivery_projects WHERE workspace_id = $1 AND case_id = $2 AND started_at IS NOT NULL ORDER BY started_at DESC LIMIT 1`,
+    [workspaceId, caseId])).rows[0]?.id;
+  const access = projectId ? await readProjectAccess(db, workspaceId, projectId) : null;
   return {
+    portalOpen: settings.enabled && !access?.paused && effectiveSections(settings, access).moodboard,
     shared: shared.map((item) => item.entryId),
+    sharedAt: Object.fromEntries(shared.map((item) => [item.entryId, new Date(item.sharedAt).toISOString()])),
     reactions: reactions.map((item) => ({ ...item, at: new Date(item.at).toISOString() })),
     comments: notes.map((item) => ({ ...item, at: new Date(item.at).toISOString() })),
     boards,

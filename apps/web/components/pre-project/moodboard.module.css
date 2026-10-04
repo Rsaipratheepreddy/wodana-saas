@@ -53,6 +53,18 @@
 .chip { display: inline-flex; align-items: center; min-block-size: var(--wd-space-6); padding: 0 var(--wd-space-2-5); border-radius: var(--wd-radius-pill); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); white-space: nowrap; }
 .chip[data-feeling="love"] { background: var(--wd-color-success-subtle); color: var(--wd-color-text); border: 1px solid var(--wd-color-border-strong); }
 .chip[data-feeling="avoid"] { background: var(--wd-color-danger); color: var(--wd-color-text-inverse); border: 1px solid var(--wd-color-danger); }
+.author { display: flex; align-items: center; gap: var(--wd-space-2); inline-size: 100%; min-inline-size: 0; }
+.footRow { display: inline-flex; align-items: center; gap: var(--wd-space-2); }
+.signals { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); inline-size: 100%; }
+.visibility { display: inline-flex; align-items: center; gap: var(--wd-space-1); min-block-size: var(--wd-space-6); padding: 0 var(--wd-space-2); border: 1px dashed var(--wd-color-border-strong); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); white-space: nowrap; }
+.visibility[data-shown] { border-style: solid; border-color: transparent; background: var(--wd-color-info-subtle); color: var(--wd-color-text); }
+button.visibility { cursor: pointer; }
+button.visibility:hover:not(:disabled) { border-color: var(--wd-color-text-secondary); }
+button.visibility:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.reaction { display: inline-flex; align-items: center; gap: var(--wd-space-1); min-block-size: var(--wd-space-6); padding: 0 var(--wd-space-2); border-radius: var(--wd-radius-pill); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); white-space: nowrap; }
+.reaction[data-reaction="love"] { background: var(--wd-color-success-subtle); color: var(--wd-color-text); }
+.reaction[data-reaction="avoid"] { background: var(--wd-color-danger-subtle); color: var(--wd-color-text); }
+.comments { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
 .byline { flex: 1 1 auto; min-inline-size: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: 1.35; overflow-wrap: anywhere; }
 
 .feelingToggle { display: inline-flex; flex: none; gap: var(--wd-space-0-5); padding: var(--wd-space-0-5); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); }
@@ -111,14 +123,10 @@
   .content[data-panel] { grid-template-columns: minmax(0, 1fr); }
   .panel { position: fixed; inset: auto 0 0 0; z-index: var(--wd-z-overlay); max-block-size: 80dvh; border-radius: var(--wd-radius-lg) var(--wd-radius-lg) 0 0; }
 }
-/* Card footer: feeling and toggle on one row, the name beneath, never cut off. */
-.cardFoot { display: grid; grid-template-columns: auto 1fr auto; row-gap: var(--wd-space-1); }
-.cardFoot > .chip { grid-column: 1; grid-row: 1; justify-self: start; }
-.cardFoot > .feelingToggle { grid-column: 3; grid-row: 1; }
-.cardFoot > .byline { grid-column: 1 / -1; grid-row: 2; }
-/* A pin the client added in the portal, and the client's likes and comments beneath the name. */
-.cardFoot > .fromClient { grid-column: 2; grid-row: 1; justify-self: start; }
-.cardFoot > ul { grid-column: 1 / -1; }
+/* Card footer: who added it, the feeling with its toggle, then what the client sees and said. */
+.cardFoot { display: grid; grid-template-columns: minmax(0, 1fr); row-gap: var(--wd-space-2); }
+.cardFoot > .footRow { justify-content: space-between; }
+.author .byline { flex: 1 1 auto; }
 
 /* The boards the client sees in the portal: one line each, opening the design. */
 .boards { display: grid; gap: var(--wd-space-2); }
