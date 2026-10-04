@@ -1,7 +1,7 @@
 import { OpportunityDiscoveryService } from "./discovery.service";
 import { opportunityFunnel } from "./opportunity-funnel";
 import { flowSummary, loadFlowFacts, paymentProofs, pipelineStages } from "./flow-facts";
-import { moveBlockers } from "./flow-gates";
+import { flowAsks, moveBlockers } from "../flows/flow-interpreter";
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException, Optional } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
@@ -224,7 +224,7 @@ export class CrmOpportunitiesService {
         forecastHistory: canViewSensitiveValues ? snapshots.rows : snapshots.rows.map((row) => this.presentOpportunity(row as Row, false)),
         projectLink: project.rows[0] ?? null,
         funnel: await opportunityFunnel(client, workspaceId, opportunityId, this.discovery ? (await this.discovery.missing(client, workspaceId, opportunityId)).length : null),
-        flow: await this.flowView(client, workspaceId, opportunity),
+        flow: await this.flowView(client, workspaceId, opportunity, actorUser.userId),
       };
     });
   }
@@ -383,7 +383,7 @@ export class CrmOpportunitiesService {
     if (targetStatus === "open" && !nextActionAt && !before.paused_reason) throw new UnprocessableEntityException("Schedule the next action when reopening an opportunity");
     if (targetStatus === "open" || targetStatus === "won") await this.assertEntryRequirements(client, workspaceId, { ...before, next_action_at: nextActionAt }, targetStage);
     // PLM-121/122: one step at a time, by what the enquiry type's flow needs at every column passed.
-    await this.assertFlowGates(client, workspaceId, before, targetStage, targetStatus);
+    await this.assertFlowGates(client, workspaceId, before, targetStage, targetStatus, actorUser.userId);
     const result = await client.query(
       `UPDATE crm_opportunities SET stage_id = $1, status = $2::crm_opportunity_status,
          probability = CASE WHEN $2 = 'won' THEN 100 WHEN $2 IN ('lost', 'abandoned') THEN 0 ELSE $3::numeric END,
@@ -414,26 +414,27 @@ export class CrmOpportunitiesService {
     return this.presentOpportunity(response, canViewSensitiveValues);
   }
 
-  private async assertFlowGates(client: PoolClient, workspaceId: string, before: Row, targetStage: Row, targetStatus: string) {
+  private async assertFlowGates(client: PoolClient, workspaceId: string, before: Row, targetStage: Row, targetStatus: string, actorUserId: string) {
     if (String(before.status) !== "open" && targetStatus === "open") return; // reopening goes back
     const stages = await pipelineStages(client, workspaceId, String(before.pipeline_id));
     const from = stages.find((stage) => stage.id === before.stage_id) ?? { code: "", position: -1 };
-    const facts = await loadFlowFacts(client, workspaceId, String(before.id), this.discovery);
+    const facts = await loadFlowFacts(client, workspaceId, String(before.id), this.discovery, { actorUserId });
+    // The job's pinned flow decides what every column passed needs (plan §5a, engine rules 1–2).
     const missing = moveBlockers({
-      facts, from, to: { code: String(targetStage.code), position: Number(targetStage.position) },
+      definition: facts.flowDefinition.definition, facts, from, to: { code: String(targetStage.code), position: Number(targetStage.position) },
       firstPosition: stages[0]?.position ?? 0, stages, targetStatus,
     });
     if (missing.length) throw new UnprocessableEntityException({ message: "Stage requirements are not met", missing: missing.map(({ key, label }) => ({ key, label })) });
   }
 
   /** PLM-121/122: the opportunity's flow, its step line, what the next column needs, and the flow's own facts. */
-  private async flowView(client: PoolClient, workspaceId: string, opportunity: Row) {
-    const facts = await loadFlowFacts(client, workspaceId, String(opportunity.id), this.discovery);
+  private async flowView(client: PoolClient, workspaceId: string, opportunity: Row, actorUserId: string) {
+    const facts = await loadFlowFacts(client, workspaceId, String(opportunity.id), this.discovery, { actorUserId });
     const stages = await pipelineStages(client, workspaceId, String(opportunity.pipeline_id));
     return {
       ...flowSummary({ facts, stages, currentStageId: String(opportunity.stage_id), status: String(opportunity.status) }),
       enquiryType: facts.enquiryTypeLabel ?? facts.enquiryType,
-      furniture: facts.flow === "furniture" ? {
+      furniture: flowAsks(facts.flowDefinition.definition, "sub_path_chosen") ? {
         path: facts.furniturePath,
         feasibility: facts.feasibilityAt ? { at: facts.feasibilityAt, by: facts.feasibilityBy } : null,
         materialsChange: facts.materialsChange,

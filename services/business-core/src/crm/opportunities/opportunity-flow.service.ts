@@ -7,6 +7,7 @@ import { WorkspaceAccessService } from "../../workspaces/workspace-access.servic
 import { CrmEventsService } from "../shared/crm-events.service";
 import { CrmOpportunitiesService } from "./crm-opportunities.service";
 import { OpportunityDiscoveryService } from "./discovery.service";
+import { flowAsks } from "../flows/flow-interpreter";
 import { loadFlowFacts } from "./flow-facts";
 import { FURNITURE_PATHS, PAYMENT_PROOF_KINDS, type FurniturePath, type PaymentProofKind } from "./flow-gates";
 
@@ -40,9 +41,10 @@ export class OpportunityFlowService {
       const before = await this.lock(client, workspaceId, opportunityId);
       if (Number(before.version) !== input.version) throw new ConflictException("Opportunity changed; reload and try again");
       if (before.status !== "open") throw new UnprocessableEntityException("Reopen the opportunity before changing it");
-      const facts = await loadFlowFacts(client, workspaceId, opportunityId, this.discovery);
+      const facts = await loadFlowFacts(client, workspaceId, opportunityId, this.discovery, { actorUserId: user.userId });
       const touchesFurniture = input.furniturePath !== undefined || input.feasibilityConfirmed !== undefined || input.materialsChange !== undefined;
-      if (touchesFurniture && facts.flow !== "furniture") throw new UnprocessableEntityException("Only furniture enquiries have a sub-path");
+      // The sub-path belongs to flows that ask for it (the furniture starter does).
+      if (touchesFurniture && !flowAsks(facts.flowDefinition.definition, "sub_path_chosen")) throw new UnprocessableEntityException("Only furniture enquiries have a sub-path");
       if (input.furniturePath !== undefined && input.furniturePath !== null && !FURNITURE_PATHS.includes(input.furniturePath)) throw new UnprocessableEntityException("Choose a furniture sub-path");
       const path = input.furniturePath !== undefined ? input.furniturePath : before.furniture_path as FurniturePath | null;
       // Feasibility is a bespoke question; it is cleared when the sub-path changes away from bespoke.
