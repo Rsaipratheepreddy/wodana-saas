@@ -2,20 +2,21 @@
 
 import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, Camera, DoorOpen, FileText, Pencil, PenLine, Plus, Ruler } from "lucide-react";
-import { Badge, Button, EmptyState, InlineNotice, SelectField } from "@/design-system";
+import { AlertTriangle, CalendarPlus, Camera, DoorOpen, ExternalLink, Eye, FileText, Pencil, PenLine, Plus } from "lucide-react";
+import { Badge, Button, EmptyState, IconButton, InlineNotice, InspectorSheet, SelectField, Tabs, useDesignSystem, type StatusTone } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type CaseRoom, type ItemDimension, type ScopeEntry } from "@/lib/pre-project/content";
-import { newSiteRecord, sitePayload, type SiteData, type SiteRecord } from "@/lib/pre-project/site";
+import { newSiteRecord, siteLabel, sitePayload, type SiteData, type SiteRecord } from "@/lib/pre-project/site";
 import { AssetMarkup } from "./asset-markup";
 import { RoomPicker } from "./room-manager";
-import { SiteRecordEditor } from "./site-record-editor";
+import { measuredDimensions, SiteRecordEditor } from "./site-record-editor";
 import styles from "./site-workspace.module.css";
 
 const paths = { visit: "visits", measurement: "measurements", observation: "observations" } as const;
 const NO_ROOM = "no-room";
 type Area = { id: string; roomId: string | null; name: string };
 type Photo = { entry: ScopeEntry; asset: CaseAsset };
+type DetailTab = "details" | "photos" | "notes";
 
 /** The measurements every room needs; the surveyor fills what applies. Units follow the record. */
 export function roomDimensions(unit = "m"): ItemDimension[] {
@@ -23,9 +24,10 @@ export function roomDimensions(unit = "m"): ItemDimension[] {
 }
 
 /**
- * Site: everything gathered on site, room by room. Photos and plans (drawn on straight after
- * upload), the room's measurements and the issues spotted, with the visits on top. It starts
- * empty: the surveyor adds each room (from the catalog) as they reach it.
+ * Site: everything gathered on site, a card per room: its measurement state, key dimensions, photos and
+ * plans (drawn on straight after upload) and the issues spotted, with the visits on top. A card opens the
+ * room's sheet (details, photos, notes); Edit opens the measurement form. It starts empty: the surveyor adds
+ * each room (from the catalog) as they reach it.
  */
 export function SiteWorkspace({ initialData, initialSite, locale }: { initialData: CaseContent; initialSite: SiteData; locale?: string }) {
   const t = useT();
@@ -40,6 +42,8 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
   const [notice, setNotice] = useState("");
   const [picking, setPicking] = useState(false);
   const [started, setStarted] = useState<string[]>([]);
+  const [detail, setDetail] = useState<{ areaId: string; tab: DetailTab } | null>(null);
+  const { locale: designLocale } = useDesignSystem();
   const upload = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
   const { workspaceId, caseId, canEdit } = data;
@@ -109,8 +113,20 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
   };
   const addIssue = (area: Area) => setEditing({ ...newSiteRecord("observation", site.timezone, area.roomId), title: "" });
 
-  const dimensionText = (record?: SiteRecord) => (record?.dimensions ?? []).filter((d) => d.measured != null || d.approximate != null).map((d) => `${d.name} ${d.measured ?? d.approximate} ${d.unit}`);
-  const when = (iso?: string, zone?: string) => { if (!iso) return ""; try { return new Intl.DateTimeFormat(locale, { timeZone: zone ?? site.timezone, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return iso; } };
+  const dimensionText = (record?: SiteRecord) => measuredDimensions(record?.dimensions).map((d) => `${d.name} ${d.measured ?? d.approximate} ${d.unit}`);
+  const when = (iso?: string, zone?: string) => { if (!iso) return ""; try { return new Intl.DateTimeFormat(locale ?? designLocale, { timeZone: zone ?? site.timezone, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return iso; } };
+  const shortDate = (iso?: string | null) => { if (!iso) return ""; try { return new Intl.DateTimeFormat(locale ?? designLocale, { timeZone: site.timezone, day: "numeric", month: "short" }).format(new Date(iso)); } catch { return ""; } };
+  /** The room's measurement state as a chip: its status, with the day it got there. */
+  const measureChip = (record?: SiteRecord) => {
+    if (!record) return { tone: "neutral" as const, label: t("Not measured") };
+    const day = shortDate(record.status === "verified" ? record.verifiedAt ?? record.updatedAt : record.updatedAt);
+    const label = siteLabel(t, record.status);
+    return { tone: record.status === "verified" ? "success" as const : record.status === "recheck" ? "warning" as const : record.status === "measured" ? "info" as const : "neutral" as const,
+      label: day ? t("{status} · {date}", { status: label, date: day }) : label };
+  };
+  const detailArea = detail ? areas.find((area) => area.id === detail.areaId) ?? null : null;
+  /** Leave the room's sheet, then act (a form or the drawing tool opens on its own). */
+  const fromDetail = (action: () => void) => { setDetail(null); action(); };
 
   return <section className={styles.page} aria-label={t("Site")}>
     <div className={styles.toolbar}>
@@ -131,55 +147,99 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
       </button>)}
     </section> : null}
 
-    {shown.map((area) => {
+    {shown.length ? <ul className={styles.rooms} aria-label={t("Rooms")}>{shown.map((area) => {
       const photos = photosIn(area); const measurement = roomMeasurement(area); const issues = issuesIn(area); const dims = dimensionText(measurement);
       const open = issues.filter((issue) => issue.status !== "resolved").length;
-      return <section className={styles.room} key={area.id} id={`site-room-${area.id}`} aria-label={area.name}>
+      const chip = area.roomId ? measureChip(measurement) : null;
+      return <li key={area.id}><article className={styles.room} id={`site-room-${area.id}`} aria-label={area.name}>
         <header className={styles.roomHead}>
-          <h3><DoorOpen aria-hidden="true" size={16} />{area.name}</h3>
-          <span className={styles.stats}>
-            <span data-done={photos.length > 0 || undefined}><Camera aria-hidden="true" size={13} />{photos.length === 1 ? t("1 photo") : t("{count} photos", { count: photos.length })}</span>
-            {area.roomId ? <span data-done={dims.length > 0 || undefined}><Ruler aria-hidden="true" size={13} />{dims.length ? t("Measured") : t("Not measured")}</span> : null}
-            {issues.length ? <span data-warn={open > 0 || undefined}><AlertTriangle aria-hidden="true" size={13} />{issues.length === 1 ? t("1 issue") : t("{count} issues", { count: issues.length })}</span> : null}
+          <button type="button" className={styles.roomName} onClick={() => setDetail({ areaId: area.id, tab: "details" })}><DoorOpen aria-hidden="true" size={16} /><span>{area.name}</span></button>
+          <span className={styles.quickActions}>
+            <IconButton aria-label={t("View {name}", { name: area.name })} size="compact" variant="quiet" onPress={() => setDetail({ areaId: area.id, tab: "details" })}><Eye size={15} /></IconButton>
+            {canEdit && area.roomId ? <IconButton aria-label={measurement ? t("Edit measurements of {name}", { name: area.name }) : t("Measure {name}", { name: area.name })} size="compact" variant="quiet" onPress={() => measure(area)}><Pencil size={15} /></IconButton> : null}
+            {canEdit ? <IconButton aria-label={t("Add photos to {name}", { name: area.name })} size="compact" variant="quiet" isDisabled={busy === `upload:${area.id}`} onPress={() => pickFiles(area)}><Camera size={15} /></IconButton> : null}
           </span>
-          {canEdit ? <span className={styles.actions}>
-            <Button size="compact" isLoading={busy === `upload:${area.id}`} onPress={() => pickFiles(area)}><Camera aria-hidden="true" size={14} />{t("Add photos")}</Button>
-            {area.roomId ? <Button size="compact" onPress={() => measure(area)}><Ruler aria-hidden="true" size={14} />{measurement ? t("Edit measurements") : t("Measure")}</Button> : null}
-            <Button size="compact" onPress={() => addIssue(area)}><Plus aria-hidden="true" size={14} />{t("Issue")}</Button>
-          </span> : null}
         </header>
-
-        {photos.length ? <ul className={styles.photos}>{photos.map((photo) => <li key={photo.entry.id} className={styles.photo}>
-          {photo.asset.mimeType.startsWith("image/") ? <a href={assetUrl(photo.asset, false)} target="_blank" rel="noreferrer" aria-label={t("Open {name}", { name: photo.entry.title })}>
-            <Image alt="" height={240} src={assetUrl(photo.asset)} unoptimized width={320} />
-          </a> : <a className={styles.pdf} href={assetUrl(photo.asset, false)} target="_blank" rel="noreferrer"><FileText aria-hidden="true" size={22} /><span>{photo.asset.name}</span></a>}
-          <span className={styles.photoFoot}>
-            <span className={styles.photoName}>{photo.entry.title}</span>
-            {photo.entry.assets.length > 1 ? <Badge tone="info">{t("Marked")}</Badge> : null}
-            {canEdit && photo.asset.mimeType.startsWith("image/") ? <Button aria-label={t("Draw on {name}", { name: photo.entry.title })} size="compact" variant="quiet" onPress={() => { setQueue([]); setMarking(photo); }}><PenLine aria-hidden="true" size={14} /></Button> : null}
-          </span>
-        </li>)}</ul> : <button type="button" className={styles.drop} disabled={!canEdit} onClick={() => pickFiles(area)}>
-          <Camera aria-hidden="true" size={18} /><span>{canEdit ? t("Add photos of every wall, and any plan") : t("No photos yet")}</span>
-        </button>}
-
-        {dims.length || issues.length ? <div className={styles.details}>
-          {dims.length ? <button type="button" className={styles.dimensions} onClick={() => measure(area)} disabled={!canEdit}>
-            <Ruler aria-hidden="true" size={14} />{dims.map((text) => <span key={text}>{text}</span>)}{canEdit ? <Pencil aria-hidden="true" size={12} className={styles.editIcon} /> : null}
-          </button> : null}
-          {issues.length ? <ul className={styles.issues}>{issues.map((issue) => <li key={issue.id}><button type="button" onClick={() => setEditing(issue)} data-status={issue.status}>
-            <AlertTriangle aria-hidden="true" size={14} /><strong>{issue.title}</strong>{issue.note ? <span className={styles.issueNote}>{issue.note}</span> : null}
-            <Badge tone={issue.status === "resolved" ? "success" : "warning"}>{issue.status === "resolved" ? t("Resolved") : t("Open")}</Badge>
-          </button></li>)}</ul> : null}
-        </div> : null}
-      </section>;
-    })}
+        {chip ? <span className={styles.roomState}><Badge tone={chip.tone}>{chip.label}</Badge></span> : null}
+        <dl className={styles.facts}>
+          {area.roomId ? <div><dt>{t("Dimensions")}</dt><dd>{dims.length ? <>{dims.slice(0, 3).join(" · ")}{dims.length > 3 ? ` · ${t("+{count} more", { count: dims.length - 3 })}` : ""}</> : <span className={styles.none}>{t("None yet")}</span>}</dd></div> : null}
+          <div><dt>{t("Photos")}</dt><dd>{photos.length}</dd></div>
+          <div><dt>{t("Issues")}</dt><dd>{issues.length ? <span data-warn={open > 0 || undefined}>{open ? t("{count} open", { count: open }) : t("All resolved")}</span> : 0}</dd></div>
+          {measurement?.note ? <div><dt>{t("Notes")}</dt><dd className={styles.clamp}>{measurement.note}</dd></div> : null}
+        </dl>
+        {photos.length ? <ul className={styles.thumbs} aria-label={t("Photos")}>{photos.slice(0, 4).map((photo, index) => <li key={photo.entry.id}>
+          <button type="button" className={styles.thumb} aria-label={t("Open {name}", { name: photo.entry.title })} onClick={() => setDetail({ areaId: area.id, tab: "photos" })}>
+            {photo.asset.mimeType.startsWith("image/") ? <Image alt="" height={120} src={assetUrl(photo.asset)} unoptimized width={160} /> : <FileText aria-hidden="true" size={20} />}
+            {index === 3 && photos.length > 4 ? <span className={styles.more}>+{photos.length - 4}</span> : null}
+          </button>
+        </li>)}</ul> : canEdit ? <button type="button" className={styles.drop} onClick={() => pickFiles(area)}>
+          <Camera aria-hidden="true" size={16} /><span>{t("Add photos of every wall, and any plan")}</span>
+        </button> : null}
+      </article></li>;
+    })}</ul> : null}
 
     {!areas.length ? <EmptyState illustration="upload" title={t("Nothing captured on site yet")} description={t("Add each room as you reach it, then its photos, measurements and issues.")}
       action={canEdit ? <Button size="compact" variant="primary" onPress={() => setPicking(true)}><Plus aria-hidden="true" size={14} />{t("Add room")}</Button> : undefined} /> : null}
+    {detailArea ? <RoomDetail area={detailArea} tab={detail!.tab} onTab={(tab) => setDetail({ areaId: detailArea.id, tab })} onClose={() => setDetail(null)} canEdit={canEdit}
+      chip={detailArea.roomId ? measureChip(roomMeasurement(detailArea)) : null} measurement={roomMeasurement(detailArea)} photos={photosIn(detailArea)} issues={issuesIn(detailArea)} assetUrl={assetUrl}
+      onMeasure={() => fromDetail(() => measure(detailArea))} onAddPhotos={() => fromDetail(() => pickFiles(detailArea))} onAddIssue={() => fromDetail(() => addIssue(detailArea))}
+      onIssue={(issue) => fromDetail(() => setEditing(issue))} onDraw={(photo) => fromDetail(() => { setQueue([]); setMarking(photo); })} /> : null}
     {picking ? <RoomPicker data={data} exclude={areas.map((area) => area.id)} onClose={() => setPicking(false)} onPick={startRoom} /> : null}
 
     {marking ? <AssetMarkup workspaceId={workspaceId} caseId={caseId} asset={marking.asset} assetUrl={assetUrl} onClose={nextMarkup} onSaved={(marked) => void markupSaved(marking, marked).catch((failure: Error) => setError(failure.message))} /> : null}
     {editing ? <SiteRecordEditor key={editing.id} initial={editing} data={data} site={site} onClose={() => setEditing(null)} onRoomAdded={(room) => setData((current) => ({ ...current, rooms: [...current.rooms, room] }))}
       onSave={async (record, version) => { upsertRecord(await caseRequest<SiteRecord>(workspaceId, caseId, `site/${paths[record.kind]}`, "PUT", sitePayload(record, version))); setEditing(null); setNotice(t("Saved.")); }} /> : null}
   </section>;
+}
+
+/** One room's sheet: its measurements, photos and notes, with the room's actions at its foot. */
+function RoomDetail({ area, tab, onTab, onClose, canEdit, chip, measurement, photos, issues, assetUrl, onMeasure, onAddPhotos, onAddIssue, onIssue, onDraw }: {
+  area: Area; tab: DetailTab; onTab: (tab: DetailTab) => void; onClose: () => void; canEdit: boolean; chip: { tone: StatusTone; label: string } | null; measurement?: SiteRecord;
+  photos: Photo[]; issues: SiteRecord[]; assetUrl: (asset: CaseAsset, preview?: boolean) => string;
+  onMeasure: () => void; onAddPhotos: () => void; onAddIssue: () => void; onIssue: (issue: SiteRecord) => void; onDraw: (photo: Photo) => void;
+}) {
+  const t = useT();
+  const dims = measuredDimensions(measurement?.dimensions);
+  // The usual basis (the site opening) goes unsaid; only a different one is named.
+  const basis = (value: string) => value === "finished_item" ? t("Finished item") : t("Fabrication / cut size");
+  const qualifiers = (d: ItemDimension) => [d.measured == null ? t("Approximate") : null, d.basis !== "site_opening" ? basis(d.basis) : null, d.source === "client" ? t("Client supplied") : null].filter(Boolean).join(" · ");
+  const details = <div className={styles.sheetSection}>
+    {chip ? <Badge tone={chip.tone}>{chip.label}</Badge> : null}
+    {area.roomId ? dims.length ? <dl className={styles.dimensionList}>{dims.map((d) => <div key={d.id}>
+      <dt>{d.name}</dt>
+      <dd><strong>{d.measured ?? d.approximate} {d.unit}</strong>{qualifiers(d) ? <span>{qualifiers(d)}</span> : null}</dd>
+    </div>)}</dl> : <EmptyState illustration={null} title={t("Not measured yet")} action={canEdit ? <Button size="compact" variant="primary" onPress={onMeasure}>{t("Measure")}</Button> : undefined} />
+      : <p className={styles.none}>{t("Files here aren't in a room.")}</p>}
+  </div>;
+  const photoPanel = photos.length ? <ul className={styles.sheetPhotos}>{photos.map((photo) => <li key={photo.entry.id} className={styles.photo}>
+    {photo.asset.mimeType.startsWith("image/") ? <a href={assetUrl(photo.asset, false)} target="_blank" rel="noreferrer" aria-label={t("Open {name}", { name: photo.entry.title })}>
+      <Image alt="" height={240} src={assetUrl(photo.asset)} unoptimized width={320} />
+    </a> : <a className={styles.pdf} href={assetUrl(photo.asset, false)} target="_blank" rel="noreferrer"><FileText aria-hidden="true" size={22} /><span>{photo.asset.name}</span></a>}
+    <span className={styles.photoFoot}>
+      <span className={styles.photoName}>{photo.entry.title}</span>
+      {photo.entry.assets.length > 1 ? <Badge tone="info">{t("Marked")}</Badge> : null}
+      {canEdit && photo.asset.mimeType.startsWith("image/") ? <IconButton aria-label={t("Draw on {name}", { name: photo.entry.title })} size="compact" variant="quiet" onPress={() => onDraw(photo)}><PenLine size={14} /></IconButton>
+        : <a className={styles.openOriginal} href={assetUrl(photo.asset, false)} target="_blank" rel="noreferrer" aria-label={t("Open {name}", { name: photo.asset.name })}><ExternalLink aria-hidden="true" size={14} /></a>}
+    </span>
+  </li>)}</ul> : <EmptyState illustration={null} title={t("No photos yet")} action={canEdit ? <Button size="compact" variant="primary" onPress={onAddPhotos}><Camera aria-hidden="true" size={14} />{t("Add photos")}</Button> : undefined} />;
+  const notes = <div className={styles.sheetSection}>
+    {measurement?.note ? <p className={styles.note}>{measurement.note}</p> : null}
+    {issues.length ? <ul className={styles.issues}>{issues.map((issue) => <li key={issue.id}><button type="button" onClick={() => onIssue(issue)} data-status={issue.status}>
+      <AlertTriangle aria-hidden="true" size={14} /><strong>{issue.title}</strong>{issue.note ? <span className={styles.issueNote}>{issue.note}</span> : null}
+      <Badge tone={issue.status === "resolved" ? "success" : "warning"}>{issue.status === "resolved" ? t("Resolved") : t("Open")}</Badge>
+    </button></li>)}</ul> : null}
+    {!measurement?.note && !issues.length ? <EmptyState illustration={null} title={t("No notes or issues yet")} action={canEdit ? <Button size="compact" variant="primary" onPress={onAddIssue}><Plus aria-hidden="true" size={14} />{t("Issue")}</Button> : undefined} /> : null}
+  </div>;
+  return <InspectorSheet isOpen onOpenChange={(open) => { if (!open) onClose(); }} size="lg" title={area.name}
+    footer={canEdit ? <div className={styles.sheetActions}>
+      <Button size="compact" onPress={onAddIssue}><Plus aria-hidden="true" size={14} />{t("Issue")}</Button>
+      <Button size="compact" onPress={onAddPhotos}><Camera aria-hidden="true" size={14} />{t("Add photos")}</Button>
+      {area.roomId ? <Button size="compact" variant="primary" onPress={onMeasure}><Pencil aria-hidden="true" size={14} />{measurement ? t("Edit measurements") : t("Measure")}</Button> : null}
+    </div> : undefined}>
+    <Tabs selectedKey={tab} onSelectionChange={(key) => onTab(key as DetailTab)} items={[
+      { id: "details", label: t("Details"), panel: details },
+      { id: "photos", label: t("Photos"), count: photos.length || undefined, panel: photoPanel },
+      { id: "notes", label: t("Notes"), count: issues.length || undefined, panel: notes },
+    ]} />
+  </InspectorSheet>;
 }

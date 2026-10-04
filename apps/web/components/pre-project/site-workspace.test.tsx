@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import type { CaseContent, ScopeEntry } from "@/lib/pre-project/content";
@@ -16,39 +16,54 @@ const site = { timezone: "UTC", members: [], canVerify: true, items: [
 ] } as unknown as SiteData;
 const renderSite = () => render(<DesignSystemProvider><SiteWorkspace initialData={data} initialSite={site} /></DesignSystemProvider>);
 
-describe("site, room by room", () => {
-  it("shows each room with its photos, measurements and issues", () => {
+describe("site, a card per room", () => {
+  it("shows each room as a card: its state, key dimensions, photos and issues, with quick actions", () => {
     renderSite();
-    const kitchen = screen.getByRole("region", { name: "Kitchen" });
-    expect(kitchen).toHaveTextContent("1 photo");
-    expect(kitchen).toHaveTextContent("Measured");
-    expect(kitchen).toHaveTextContent("1 issue");
-    expect(kitchen).toHaveTextContent("Wall A 4.2 m");
-    expect(kitchen).toHaveTextContent("Ceiling height 2.9 m");
-    expect(within(kitchen).getByText("Marked")).toBeInTheDocument();
-    expect(within(kitchen).getByRole("button", { name: "Edit measurements" })).toBeInTheDocument();
-    expect(within(kitchen).getByRole("button", { name: /Crack above window/ })).toHaveTextContent("Open");
+    const kitchen = screen.getByRole("article", { name: "Kitchen" });
+    expect(kitchen).toHaveTextContent("Awaiting verification");
+    expect(kitchen).toHaveTextContent("Wall A 4.2 m · Ceiling height 2.9 m");
+    expect(kitchen).toHaveTextContent("Photos1");
+    expect(kitchen).toHaveTextContent("Issues1 open");
+    expect(within(kitchen).getByRole("button", { name: "View Kitchen" })).toBeInTheDocument();
+    expect(within(kitchen).getByRole("button", { name: "Edit measurements of Kitchen" })).toBeInTheDocument();
+    expect(within(kitchen).getByRole("button", { name: "Add photos to Kitchen" })).toBeInTheDocument();
+    expect(within(kitchen).getByRole("button", { name: "Open Wall A" })).toBeInTheDocument();
+  });
+
+  it("opens a room's sheet with its details, photos and notes, and edits from there with the existing form", async () => {
+    renderSite();
+    fireEvent.click(within(screen.getByRole("article", { name: "Kitchen" })).getByRole("button", { name: "View Kitchen" }));
+    const sheet = await screen.findByRole("dialog", { name: "Kitchen" });
+    expect(sheet).toHaveTextContent("Ceiling height");
+    expect(sheet).toHaveTextContent("2.9 m");
+    fireEvent.click(within(sheet).getByRole("tab", { name: /Photos/ }));
+    expect(await within(sheet).findByText("Marked")).toBeInTheDocument();
+    fireEvent.click(within(sheet).getByRole("tab", { name: /Notes/ }));
+    expect(await within(sheet).findByRole("button", { name: /Crack above window/ })).toHaveTextContent("Open");
+    fireEvent.click(within(sheet).getByRole("button", { name: "Edit measurements" }));
+    expect(await screen.findByRole("dialog", { name: "Edit measurements" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Kitchen" })).not.toBeInTheDocument());
   });
 
   it("lists only rooms with something captured, and keeps roomless files apart without room measurements", () => {
     renderSite();
-    expect(screen.queryByRole("region", { name: "Master bedroom" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Whole project")).not.toBeInTheDocument();
-    const loose = screen.getByRole("region", { name: "Not in a room" });
-    expect(loose).toHaveTextContent("plan.pdf");
-    expect(within(loose).queryByRole("button", { name: "Measure" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Master bedroom" })).not.toBeInTheDocument();
+    const loose = screen.getByRole("article", { name: "Not in a room" });
+    expect(within(loose).getByRole("button", { name: "Open Floor plan" })).toBeInTheDocument();
+    expect(within(loose).queryByRole("button", { name: /Measure|Edit measurements/ })).not.toBeInTheDocument();
     expect(loose).not.toHaveTextContent("Not measured");
   });
 
   it("starts empty and adds rooms from the catalog, not a pre-filled list", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ items: [{ id: "k9", name: "Guest bathroom", catalogName: "Rooms" }] }) })));
     render(<DesignSystemProvider><SiteWorkspace initialData={{ ...data, entries: [] }} initialSite={{ ...site, items: [] }} /></DesignSystemProvider>);
-    expect(screen.queryByRole("region", { name: "Kitchen" })).not.toBeInTheDocument();
+    expect(screen.getByText("Nothing captured on site yet")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add room" }));
     fireEvent.click(await screen.findByRole("button", { name: "Master bedroom" }));
-    const bedroom = await screen.findByRole("region", { name: "Master bedroom" });
+    const bedroom = await screen.findByRole("article", { name: "Master bedroom" });
     expect(within(bedroom).getByRole("button", { name: /Add photos of every wall/ })).toBeInTheDocument();
     expect(bedroom).toHaveTextContent("Not measured");
+    expect(within(bedroom).getByRole("button", { name: "Measure Master bedroom" })).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 
