@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  canMove, canRemove, definitionToGraph, graphToDefinition, insertBranch, insertStep, moveStep, nodeOrder, problemsFor, removeNode,
+  BAND_GAP, canMove, canRemove, definitionToGraph, graphToDefinition, insertBranch, insertStep, moveStep, nodeOrder, problemsFor, removeNode,
   updateBranch, updateStep, type FlowDefinition, type FlowStep,
 } from "./flow-model";
 
@@ -64,6 +64,24 @@ describe("definition ⇄ graph", () => {
     const ltr = definitionToGraph(twoLanes()).nodes.find((node) => node.id === "intro")!;
     const rtl = definitionToGraph(twoLanes(), { rtl: true }).nodes.find((node) => node.id === "intro")!;
     expect(rtl.position.x).toBe(-ltr.position.x - ltr.width);
+  });
+
+  it("keeps the same gap between bands, wraps every card in its band and spaces cards by their measured height", () => {
+    const design: FlowDefinition = { schema: 1, columns: COLUMNS, branches: [], steps: [
+      step("details", "details_complete", "qualified", { needs: ["clientEmail"] }), step("enquiry", "details_complete", "qualification", { needs: ["enquiryType"] }),
+      step("intro", "intro_meeting_completed", "qualification"), step("quote", "quote_exists", "proposal"), proof,
+    ] };
+    const { nodes } = definitionToGraph(design, { heights: { details: 150, intro: 140 } });
+    const bands = nodes.filter((node) => node.type === "band");
+    expect(bands.map((band) => band.id)).toEqual(["band:qualified", "band:qualification", "band:proposal", "band:won"]);
+    for (let index = 1; index < bands.length; index += 1) expect(bands[index].position.y - (bands[index - 1].position.y + bands[index - 1].height)).toBe(BAND_GAP);
+    const at = (id: string) => nodes.find((node) => node.id === id)!;
+    expect(at("enquiry").position.y).toBeGreaterThanOrEqual(at("details").position.y + 150);
+    for (const card of nodes.filter((node) => node.type === "step")) {
+      const band = bands.find((item) => (item.data as { column: string }).column === (card.data as { step: FlowStep }).step.column)!;
+      expect(card.position.y).toBeGreaterThan(band.position.y);
+      expect(card.position.y + card.height).toBeLessThan(band.position.y + band.height);
+    }
   });
 
   it("reads nodes in order for the keyboard: a step, its branch, each answer's steps, then the line", () => {

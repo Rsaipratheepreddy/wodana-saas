@@ -6,17 +6,18 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CircleAlert, Play, Redo2, Undo2, X } from "lucide-react";
 import {
-  Avatar, Button, ConfirmationDialog, EditableField, IconButton, NoAccessState, TooltipBubble, TypeChip, useMediaQuery, useToast,
+  Avatar, Button, ConfirmationDialog, EditableField, IconButton, NoAccessState, TooltipBubble, useMediaQuery, useToast,
 } from "@/design-system";
 import { CrmRequestError, crmRequest } from "@/lib/crm/client";
 import {
-  QUESTION_LABELS, insertBranch, insertStep, locate, moveStep, problemsFor, removeNode, roleName, updateBranch, updateStep,
+  QUESTION_LABELS, flowUses, insertBranch, insertStep, locate, moveStep, problemsFor, removeNode, roleName, updateBranch, updateStep,
   checkMeta, type AnswerOptions, type FlowCheck, type FlowDefinition, type FlowDetail, type FlowProblem, type FlowSummary,
   type FlowValidationError, type RoleOption,
 } from "@/lib/flows/flow-model";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
 import { FlowCanvas } from "./flow-canvas";
+import { TypeLabel } from "./enquiry-type-pills";
 import { BranchIcon, CHECK_ICONS } from "./flow-icons";
 import { BRANCH, FlowPalette } from "./flow-palette";
 import { FlowProperties } from "./flow-properties";
@@ -55,7 +56,7 @@ function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }
   const readOnly = useMediaQuery("(max-width: 48rem)");
   const { definition, name } = history.present;
   const dirty = name !== baseline.name || JSON.stringify(definition) !== JSON.stringify(baseline.definition);
-  const usedBy = flows.find((item) => item.id === flow.id)?.usedBy ?? [];
+  const usedBy = flowUses(flows.find((item) => item.id === flow.id)?.usedBy ?? []);
   const problemIds = useMemo(() => new Set((problems ?? []).flatMap((problem) => problem.nodeId ? [problem.nodeId] : [])), [problems]);
   const selected = selectedId && locate(definition, selectedId) ? selectedId : null;
 
@@ -72,7 +73,12 @@ function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }
   const redo = useCallback(() => setHistory((current) => current.future.length
     ? { past: [...current.past, current.present], present: current.future[0], future: current.future.slice(1), tag: null } : current), []);
 
-  // Undo and redo anywhere on the page, except while typing in a field (the field keeps its own undo).
+  const back = "/workspace/flows";
+  /** Back to the Flows list, asking first when there are unpublished changes. */
+  const leave = useCallback(() => { if (dirty) setLeaving(back); else router.push(back); }, [dirty, router]);
+
+  // Undo and redo anywhere on the page, except while typing in a field (the field keeps its own undo). Esc clears the
+  // selection, and with nothing selected (and no dialog or menu open) returns to the Flows list.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -80,10 +86,14 @@ function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }
       const mod = event.metaKey || event.ctrlKey;
       if (mod && event.key.toLowerCase() === "z") { event.preventDefault(); if (event.shiftKey) redo(); else undo(); }
       else if (mod && event.key.toLowerCase() === "y") { event.preventDefault(); redo(); }
+      else if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector("[role='dialog'], [role='alertdialog'], .wd-popover")) {
+        if (selectedId) setSelectedId(null);
+        else leave();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
+  }, [undo, redo, leave, selectedId]);
 
   // Unpublished changes are lost on leaving: the browser asks first.
   useEffect(() => {
@@ -150,16 +160,15 @@ function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }
     }
   }
 
-  const back = "/workspace/flows";
   const previewButton = <Button intent="read" isDisabled><Play aria-hidden="true" size={15} />{t("Preview")}</Button>;
   return <div className={styles.builder}>
     <header className={styles.topBar}>
-      <Link aria-label={t("Flows")} className={styles.backLink} href={back}
+      <Link aria-label={t("Back to Flows")} className={styles.backLink} href={back}
         onClick={(event) => { if (dirty) { event.preventDefault(); setLeaving(back); } }}><ArrowLeft aria-hidden="true" size={16} /></Link>
       <div className={styles.title}>
         <EditableField canEdit={!readOnly} heading="h1" isRequired label={t("Flow name")} maxLength={120} onSave={(next) => commit({ name: next.trim() || name })} value={name} />
       </div>
-      {usedBy.length ? <span aria-label={t("Used by")} className={styles.chips} role="group">{usedBy.map((use) => <TypeChip key={use.id} typeKey={use.code}>{use.label}</TypeChip>)}</span> : null}
+      {usedBy.length ? <span aria-label={t("Used by")} className={styles.chips} role="group">{usedBy.map((use) => <TypeLabel code={use.code} key={use.id} label={use.label} />)}</span> : null}
       <span className={styles.spacer} />
       <div className={styles.actions}>
         <span className={styles.versionTag}>{t("v{version}", { version })}</span>

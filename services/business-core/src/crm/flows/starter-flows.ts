@@ -10,7 +10,7 @@ export const SALES_COLUMNS = ["qualified", "qualification", "proposal", "negotia
 const step = (key: string, name: string, role: string, check: FlowStepDefinition["check"], column: string, extra: Partial<FlowStepDefinition> = {}): FlowStepDefinition =>
   ({ key, name, role, check, column, ...extra });
 
-const enquiryType = step("enquiry_type", "Confirm the enquiry type", "sales", "details_complete", "qualification", { needs: ["enquiryType"] });
+const enquiryType = step("enquiry_type", "Choose the enquiry type", "sales", "details_complete", "qualification", { needs: ["enquiryType"] });
 const paymentProof = step("payment_proof", "Attach the payment proof", "sales", "payment_proof_attached", "won", { clientVisible: true });
 
 /** Design and fit-out share their gates since r30; their optional steps differ. */

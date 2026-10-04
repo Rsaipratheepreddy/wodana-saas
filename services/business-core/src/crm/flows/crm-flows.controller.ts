@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Put, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
@@ -49,5 +49,12 @@ export class CrmFlowsController {
   assign(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("flowId", ParseUUIDPipe) flowId: string,
     @Param("optionId", ParseUUIDPipe) optionId: string, @Body() input: AssignEnquiryTypeFlowDto) {
     return this.flows.assignEnquiryType(actor, workspaceId, flowId, optionId, input);
+  }
+
+  /** Takes the enquiry type out of this flow; `version` is the enquiry type's version (DELETE carries no body). */
+  @Delete(":flowId/enquiry-types/:optionId")
+  unassign(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("flowId", ParseUUIDPipe) flowId: string,
+    @Param("optionId", ParseUUIDPipe) optionId: string, @Query("version", ParseIntPipe) version: number) {
+    return this.flows.unassignEnquiryType(actor, workspaceId, flowId, optionId, { version });
   }
 }

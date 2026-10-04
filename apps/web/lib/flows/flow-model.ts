@@ -1,4 +1,5 @@
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
+import { UNRESOLVED_ENQUIRY_TYPE_ID } from "@/lib/crm/lead-options";
 
 /**
  * Plan §5a, F3: the flow builder's model. The draft is a flow definition (the same shape the business service
@@ -42,6 +43,8 @@ export type FlowValidationError = { path: string; message: string };
 
 /** An enquiry type and the flow it follows. `assigned` is false when it names no flow and so runs the basic flow by default. */
 export type FlowUse = { id: string; code: string; label: string; version: number; assigned?: boolean };
+/** The enquiry types a flow can be used for: never "Not sure yet", the placeholder that cannot leave the first column (PLM-007). */
+export const flowUses = (uses: FlowUse[]) => uses.filter((use) => use.code !== UNRESOLVED_ENQUIRY_TYPE_ID);
 export type FlowSummary = {
   id: string; code: string; name: string; status: string; version: number; runningJobs?: number;
   latest: { id: string; version: number; source: "starter" | "published"; publishedAt: string; publishedBy: string | null; steps?: string[] } | null;
@@ -185,11 +188,16 @@ export function allSteps(definition: FlowDefinition): FlowStep[] {
 // ── The canvas graph ─────────────────────────────────────────────────────────────────────────────────────────────
 
 export const NODE_WIDTH = 288;
+/** A card's height until the canvas has measured it. */
 export const NODE_HEIGHT = 120;
-const ROW = 168;
-const BRANCH_ROW = 152;
+/** The space between two cards, one under the other (the line between them runs through it). */
+const ROW_GAP = 48;
+const BRANCH_GAP = 32;
 const SLOT = NODE_WIDTH + 48;
 const ANSWER_WIDTH = 120;
+/** Bands: the gap between two neighbouring bands, and room beside the cards for the column name. */
+export const BAND_GAP = 16;
+const BAND_LABEL = 136;
 
 export type StepNodeData = { kind: "step"; step: FlowStep };
 export type BranchNodeData = { kind: "branch"; branch: Omit<FlowBranch, "answers" | "after" | "rejoin">; answers: string[] };
@@ -205,14 +213,16 @@ export const branchWidth = (answers: number) => Math.max(NODE_WIDTH, answers * A
 /**
  * Top-to-bottom auto-layout: the main line down the centre; a branch is a wide card with one exit per answer, its
  * answers' steps in lanes beside the line, and the paths rejoin at the next main step. In right-to-left the
- * picture is mirrored. Pipeline columns become bands behind the steps that enter them.
+ * picture is mirrored. Pipeline columns become bands behind the steps that enter them. `heights` are the cards'
+ * measured heights (by node id), so a taller card pushes the ones below it down instead of overlapping them.
  */
-export function definitionToGraph(definition: FlowDefinition, options: { rtl?: boolean } = {}): { nodes: GraphNode[]; edges: GraphEdge[] } {
+export function definitionToGraph(definition: FlowDefinition, options: { rtl?: boolean; heights?: Record<string, number> } = {}): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
+  const height = (id: string) => options.heights?.[id] ?? NODE_HEIGHT;
   const centre = (offset: number, width: number) => (options.rtl ? -offset : offset) - width / 2;
   const stepNode = (step: FlowStep, offset: number, y: number): GraphNode =>
-    ({ id: step.key, type: "step", position: { x: centre(offset, NODE_WIDTH), y }, width: NODE_WIDTH, height: NODE_HEIGHT, data: { kind: "step", step } });
+    ({ id: step.key, type: "step", position: { x: centre(offset, NODE_WIDTH), y }, width: NODE_WIDTH, height: height(step.key), data: { kind: "step", step } });
   let y = 0;
   let previous: string | null = null;
   const link = (source: string, target: string, data: GraphEdge["data"], sourceHandle?: string) =>
@@ -225,15 +235,15 @@ export function definitionToGraph(definition: FlowDefinition, options: { rtl?: b
       for (const end of open.ends) link(end.id, step.key, end.answer ? { kind: "rejoin", answer: end.answer } : { kind: "rejoin" }, end.handle);
       open = null;
     } else if (previous) link(previous, step.key, { kind: "next" });
-    y += ROW;
+    y += height(step.key) + ROW_GAP;
     previous = step.key;
     const branch = definition.branches.find((item) => item.after === step.key);
     if (!branch) continue;
     const width = branchWidth(branch.answers.length);
-    nodes.push({ id: branch.key, type: "branch", position: { x: centre(0, width), y }, width, height: NODE_HEIGHT,
+    nodes.push({ id: branch.key, type: "branch", position: { x: centre(0, width), y }, width, height: height(branch.key),
       data: { kind: "branch", branch: { key: branch.key, question: branch.question }, answers: branch.answers.map((answer) => answer.value) } });
     link(step.key, branch.key, { kind: "next" });
-    y += BRANCH_ROW;
+    y += height(branch.key) + BRANCH_GAP;
     const ends: Array<{ id: string; handle?: string; answer?: string }> = [];
     const count = branch.answers.length;
     let longest = 0;
@@ -242,42 +252,66 @@ export function definitionToGraph(definition: FlowDefinition, options: { rtl?: b
       // Under its own exit on the branch card, but clear of the line down the middle and of the other exits.
       const exit = (index - (count - 1) / 2) * (branchWidth(count) / Math.max(count, 1));
       const offset = Math.sign(exit) * Math.max(Math.abs(exit), count > 2 ? SLOT - 24 : SLOT / 2 + 12);
+      let laneY = y;
       answer.steps.forEach((laneStep, depth) => {
-        nodes.push(stepNode(laneStep, offset, y + depth * ROW));
+        nodes.push(stepNode(laneStep, offset, laneY));
+        laneY += height(laneStep.key) + ROW_GAP;
         if (depth === 0) link(branch.key, laneStep.key, { kind: "answer", answer: answer.value }, answer.value);
         else link(answer.steps[depth - 1].key, laneStep.key, { kind: "next" });
       });
       ends.push({ id: answer.steps.at(-1)!.key });
-      longest = Math.max(longest, answer.steps.length);
+      longest = Math.max(longest, laneY - y);
     });
     if (!count) ends.push({ id: branch.key });
-    y += longest ? longest * ROW : ROW / 2;
+    y += longest || (NODE_HEIGHT + ROW_GAP) / 2;
     open = { branch, ends };
     previous = null;
   }
   return { nodes: [...bands(definition, nodes), ...nodes], edges };
 }
 
-/** One soft band per pipeline column, behind the steps that enter it; neighbouring bands never overlap. */
+/**
+ * Soft bands behind the cards, one per run of rows whose steps enter the same pipeline column. Bands follow the rows
+ * top to bottom, never overlap and keep the same gap between them, so their rounded corners never touch.
+ */
 function bands(definition: FlowDefinition, nodes: GraphNode[]): GraphNode[] {
   if (!nodes.length) return [];
-  const pad = 24;
+  const pad = (ROW_GAP - BAND_GAP) / 2;
   // Room on both sides for the column name, which sits at the band's inline start in either direction.
-  const minX = Math.min(...nodes.map((node) => node.position.x)) - 2 * pad - 120;
-  const maxX = Math.max(...nodes.map((node) => node.position.x + node.width)) + 2 * pad + 120;
-  const ranges = definition.columns.flatMap((column) => {
-    const inColumn = nodes.filter((node) => node.data.kind === "step" && node.data.step.column === column);
-    if (!inColumn.length) return [];
-    return [{ column, top: Math.min(...inColumn.map((node) => node.position.y)) - pad, bottom: Math.max(...inColumn.map((node) => node.position.y + node.height)) + pad }];
-  }).sort((a, b) => a.top - b.top);
-  for (let index = 1; index < ranges.length; index += 1) {
-    const [before, after] = [ranges[index - 1], ranges[index]];
-    if (after.top < before.bottom) { const middle = (before.bottom + after.top) / 2; before.bottom = middle - 4; after.top = middle + 4; }
+  const minX = Math.min(...nodes.map((node) => node.position.x)) - pad - BAND_LABEL;
+  const maxX = Math.max(...nodes.map((node) => node.position.x + node.width)) + pad + BAND_LABEL;
+  // A row is the cards that start at the same height; it belongs to the column most of its steps enter (a branch
+  // card has no column of its own and stays with the row above it).
+  const rows = [...new Set(nodes.map((node) => node.position.y))].sort((a, b) => a - b).map((top) => {
+    const inRow = nodes.filter((node) => node.position.y === top);
+    const columns = inRow.flatMap((node) => node.data.kind === "step" ? [node.data.step.column] : []);
+    const column = columns.sort((a, b) => columns.filter((item) => item === b).length - columns.filter((item) => item === a).length
+      || definition.columns.indexOf(a) - definition.columns.indexOf(b))[0] ?? null;
+    return { top, bottom: Math.max(...inRow.map((node) => node.position.y + node.height)), column };
+  });
+  const runs: Array<{ column: string; top: number; bottom: number }> = [];
+  for (const row of rows) {
+    const last = runs.at(-1);
+    if (last && (row.column === null || row.column === last.column)) last.bottom = Math.max(last.bottom, row.bottom);
+    else if (row.column !== null) runs.push({ column: row.column, top: row.top, bottom: row.bottom });
   }
-  return ranges.map((range) => ({
-    id: `band:${range.column}`, type: "band", position: { x: minX, y: range.top }, width: maxX - minX, height: Math.max(range.bottom - range.top, pad),
-    data: { kind: "band", column: range.column },
-  }));
+  const placed = runs.map((run) => ({ column: run.column, top: run.top - pad, bottom: run.bottom + pad }));
+  for (let index = 1; index < placed.length; index += 1) {
+    const [before, after] = [placed[index - 1], placed[index]];
+    if (after.top - before.bottom >= BAND_GAP) continue;
+    const middle = (runs[index - 1].bottom + runs[index].top) / 2;
+    before.bottom = middle - BAND_GAP / 2;
+    after.top = middle + BAND_GAP / 2;
+  }
+  const seen = new Map<string, number>();
+  return placed.map((band) => {
+    const count = seen.get(band.column) ?? 0;
+    seen.set(band.column, count + 1);
+    return {
+      id: count ? `band:${band.column}:${count + 1}` : `band:${band.column}`, type: "band" as const, position: { x: minX, y: band.top },
+      width: maxX - minX, height: band.bottom - band.top, data: { kind: "band" as const, column: band.column },
+    };
+  });
 }
 
 /**

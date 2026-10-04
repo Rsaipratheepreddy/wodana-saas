@@ -36,7 +36,7 @@ const DETAILS: FlowField[] = ["enquiryType", "clientEmail", "propertyLocation", 
 const firstContact = () => step("first_contact", "Make first contact", "sales", "contact_logged", "qualified", { deadline: { amount: 1, unit: "working_hours" } });
 /** What conversion and the intro meeting need: floor plan or an estimated size, client email, location, enquiry type. */
 const details = () => step("details", "Complete the client details", "sales", "details_complete", "qualified", { needs: [...DETAILS] });
-const enquiryType = () => step("enquiry_type", "Confirm the enquiry type", "sales", "details_complete", "qualification", { needs: ["enquiryType"] });
+const enquiryType = () => step("enquiry_type", "Choose the enquiry type", "sales", "details_complete", "qualification", { needs: ["enquiryType"] });
 const introMeeting = () => step("intro_meeting", "Hold the intro meeting", "sales", "intro_meeting_completed", "qualification", { clientVisible: true });
 const clientType = () => step("client_type", "Set the client type", "sales", "client_type_set", "qualification");
 

@@ -3,15 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ArrowRight, ChevronDown, Pencil, Plus } from "lucide-react";
+import { ArrowRight, Pencil, Plus } from "lucide-react";
 import {
-  Avatar, Button, ConfirmationDialog, EmptyState, ErrorState, IconMenuButton, MenuButton, NoAccessState, PageHeader, TypeChip,
-  formatDate, formatNumber, useDesignSystem, useToast,
+  Avatar, Button, ConfirmationDialog, EmptyState, ErrorState, NoAccessState, PageHeader, formatDate, formatNumber, useDesignSystem, useToast,
 } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
-import type { FlowSummary, FlowUse } from "@/lib/flows/flow-model";
+import { flowUses, type FlowSummary, type FlowUse } from "@/lib/flows/flow-model";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
+import { AddEnquiryType, EnquiryTypePill } from "./enquiry-type-pills";
 import { NewFlowDialog } from "./new-flow-dialog";
 import styles from "./flows.module.css";
 
@@ -20,6 +20,7 @@ export { NewFlowDialog, STARTERS } from "./new-flow-dialog";
 /** An enquiry type with the flow it follows; `assigned` false means it names no flow and runs the basic one. */
 type TypeRow = FlowUse & { flowId: string; assigned: boolean };
 type Move = { row: TypeRow; flowId: string };
+const REMOVE = "remove";
 
 /** Flows (plan §5a, F3): one card per flow with the enquiry types it is used for; a way to start a new one. */
 export function FlowsListPage({ canManage, flows: initial, loadError = false, workspaceId }: { canManage: boolean; flows: FlowSummary[]; loadError?: boolean; workspaceId: string }) {
@@ -31,7 +32,8 @@ export function FlowsListPage({ canManage, flows: initial, loadError = false, wo
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<Move | null>(null);
-  const types = useMemo<TypeRow[]>(() => flows.flatMap((flow) => flow.usedBy.map((use) => ({ ...use, flowId: flow.id, assigned: use.assigned !== false })))
+  // "Not sure yet" never follows a flow (PLM-007): it is left out even if old data names one.
+  const types = useMemo<TypeRow[]>(() => flows.flatMap((flow) => flowUses(flow.usedBy).map((use) => ({ ...use, flowId: flow.id, assigned: use.assigned !== false })))
     .sort((a, b) => a.label.localeCompare(b.label, locale)), [flows, locale]);
   const targets = flows.filter((flow) => flow.status === "active");
   const nameOf = (flowId: string) => flows.find((flow) => flow.id === flowId)?.name ?? "";
@@ -58,12 +60,34 @@ export function FlowsListPage({ canManage, flows: initial, loadError = false, wo
     }
   }
 
-  /** The "Move to …" menu on a chip: every other active flow. */
-  const moveMenu = (row: TypeRow) => <IconMenuButton
-    ariaLabel={t("Move {type}", { type: row.label })} icon={<ChevronDown aria-hidden="true" size={14} />}
-    items={targets.filter((flow) => flow.id !== row.flowId || !row.assigned).map((flow) => ({ id: flow.id, label: t("Move to {name}", { name: flow.name }), isDisabled: saving === row.id }))}
-    onAction={(flowId) => void move({ row, flowId })} />;
-  const chip = (row: TypeRow) => <li className={styles.typeChip} key={row.id}><TypeChip typeKey={row.code}>{row.label}</TypeChip>{moveMenu(row)}</li>;
+  /** Takes a type out of its flow: it names no flow, runs the basic flow and shows under "Not in a flow yet". */
+  async function remove(row: TypeRow) {
+    setSaving(row.id);
+    try {
+      const updated = await crmRequest<{ version: number }>(workspaceId, `flows/${row.flowId}/enquiry-types/${row.id}?version=${row.version}`, "DELETE");
+      const basic = flows.find((flow) => flow.code === "basic");
+      setFlows((current) => current.map((flow) => ({
+        ...flow,
+        usedBy: [...flow.usedBy.filter((use) => use.id !== row.id),
+          ...(flow.id === basic?.id ? [{ id: row.id, code: row.code, label: row.label, version: updated.version, assigned: false }] : [])],
+      })));
+      toast.push({ tone: "success", title: t("Saved"), message: t("{type} is no longer in {flow}", { type: row.label, flow: nameOf(row.flowId) }) });
+    } catch (error) {
+      toast.push({ tone: "danger", title: t("Not saved"), message: translateKnown(t, error instanceof Error ? error.message : t("Please try again.")) });
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  /** A type's pill: move it to another active flow, or take it out of this one. */
+  const pill = (row: TypeRow) => <li key={row.id}><EnquiryTypePill
+    code={row.code} isDisabled={saving === row.id} label={row.label}
+    items={[
+      ...targets.filter((flow) => flow.id !== row.flowId || !row.assigned)
+        .map((flow) => ({ id: flow.id, label: row.assigned ? t("Move to {name}", { name: flow.name }) : t("Add to {name}", { name: flow.name }) })),
+      ...(row.assigned ? [{ id: REMOVE, label: t("Remove from this flow") }] : []),
+    ]}
+    onAction={(id) => void (id === REMOVE ? remove(row) : move({ row, flowId: id }))} /></li>;
 
   const action = <Button onPress={() => setCreating(true)} variant="primary"><Plus aria-hidden="true" size={16} />{t("New flow")}</Button>;
   return <div className={styles.page}>
@@ -94,18 +118,16 @@ export function FlowsListPage({ canManage, flows: initial, loadError = false, wo
           </p>
           <section aria-label={t("Used for")} className={styles.usedFor}>
             <h3 className={styles.usedForTitle}>{t("Used for")}</h3>
-            <ul className={styles.chips}>
-              {used.map(chip)}
-              {addable.length && flow.status === "active" ? <li><MenuButton
-                items={addable.map((row) => ({ id: row.id, label: row.assigned ? t("{type} (in {flow})", { type: row.label, flow: nameOf(row.flowId) }) : row.label, isDisabled: saving === row.id }))}
-                label={<><Plus aria-hidden="true" size={14} />{t("Add enquiry type")}</>} size="compact"
-                onAction={(id) => {
-                  const row = addable.find((item) => item.id === id);
-                  if (!row) return;
-                  if (row.assigned) setConfirming({ row, flowId: flow.id });
-                  else void move({ row, flowId: flow.id });
-                }} /></li> : null}
-            </ul>
+            {used.length ? <ul className={styles.chips}>{used.map(pill)}</ul> : null}
+            {addable.length && flow.status === "active" ? <div><AddEnquiryType
+              choices={addable.map((row) => ({ id: row.id, code: row.code, label: row.label, ...(row.assigned ? { flowName: nameOf(row.flowId) } : {}) }))}
+              isDisabled={saving !== null}
+              onPick={(id) => {
+                const row = addable.find((item) => item.id === id);
+                if (!row) return;
+                if (row.assigned) setConfirming({ row, flowId: flow.id });
+                else void move({ row, flowId: flow.id });
+              }} /></div> : null}
           </section>
           <div className={styles.flowActions}>
             <Link className={`wd-button ${styles.editLink}`} data-size="compact" data-variant="quiet" href={`/workspace/flows/${flow.id}`}><Pencil aria-hidden="true" size={14} />{t("Edit flow")}</Link>
@@ -114,7 +136,7 @@ export function FlowsListPage({ canManage, flows: initial, loadError = false, wo
       })}</ul>}
     {!loadError && unassigned.length ? <section aria-label={t("Not in a flow yet")} className={styles.strip}>
       <h2 className={styles.usedForTitle}>{t("Not in a flow yet")}</h2>
-      <ul className={styles.chips}>{unassigned.map(chip)}</ul>
+      <ul className={styles.chips}>{unassigned.map(pill)}</ul>
     </section> : null}
     {confirming ? <ConfirmationDialog
       body={t("New {type} enquiries will follow {to} instead of {from}.", { type: confirming.row.label, to: nameOf(confirming.flowId), from: nameOf(confirming.row.flowId) })}

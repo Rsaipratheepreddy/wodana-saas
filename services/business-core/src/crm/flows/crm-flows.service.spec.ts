@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CrmFlowsService, flowCodeFor } from "./crm-flows.service";
+import { CrmFlowsService, NOT_SURE_IN_FLOW, flowCodeFor } from "./crm-flows.service";
 
 describe("creating a flow", () => {
   it("stores the flow under a code made from its name", () => {
@@ -34,5 +34,46 @@ describe("creating a flow", () => {
     expect(data.length).toBeGreaterThan(10);
     expect(data.find((template) => template.key === "fit_out_joinery")).toMatchObject({ group: "Fit-out", stepCount: 10, suggestedEnquiryTypes: ["Joinery only", "Renovation / fit-out"] });
     expect(Object.keys(data[0]).sort()).toEqual(["definition", "description", "group", "key", "name", "stepCount", "suggestedEnquiryTypes"]);
+  });
+});
+
+describe("pointing enquiry types at flows", () => {
+  /** A fake transaction: the flow, then the enquiry type the test names; any write fails the test. */
+  const serviceWith = (option: { code: string; flow: string | null }) => {
+    const queries: string[] = [];
+    const client = {
+      query: async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes("FROM crm_flows")) return { rows: [{ id: "f", code: "design", name: "Design", status: "active", version: 1 }] };
+        if (sql.includes("FROM crm_taxonomy_options")) return { rows: [{ id: "o", label: "Not Sure Yet", version: 3, ...option }] };
+        throw new Error(`unexpected write: ${sql}`);
+      },
+    };
+    const access = { withPermission: (_a: unknown, _w: string, _p: string, work: (c: unknown, u: unknown) => unknown) => work(client, { userId: "u" }) } as never;
+    return { service: new CrmFlowsService(access), queries };
+  };
+
+  it("refuses to put Not sure yet in a flow with a clear 422, before writing anything", async () => {
+    const { service } = serviceWith({ code: "not_sure", flow: null });
+    await expect(service.assignEnquiryType({} as never, "w", "f", "o", { version: 3 })).rejects.toMatchObject({ status: 422, message: NOT_SURE_IN_FLOW });
+  });
+
+  it("lists flows without the Not sure yet placeholder", async () => {
+    const queries: Array<{ sql: string; values: unknown[] }> = [];
+    // Every starter is already present, so only the list query runs after the check.
+    const client = { query: async (sql: string, values: unknown[] = []) => {
+      queries.push({ sql, values });
+      return { rows: sql.includes(`AS "usedBy"`) ? [] : ["basic", "design", "fit_out", "furniture"].map((code) => ({ code })) };
+    } };
+    const access = { withPermission: (_a: unknown, _w: string, _p: string, work: (c: unknown) => unknown) => work(client) } as never;
+    await new CrmFlowsService(access).list({} as never, "w");
+    const listed = queries.find((query) => query.sql.includes(`AS "usedBy"`))!;
+    expect(listed.sql).toContain("choice.code <> $2");
+    expect(listed.values).toEqual(["w", "not_sure"]);
+  });
+
+  it("leaves a type that is not in the flow alone when it is taken out", async () => {
+    const { service } = serviceWith({ code: "kitchen", flow: "furniture" });
+    expect(await service.unassignEnquiryType({} as never, "w", "f", "o", { version: 3 })).toMatchObject({ flow: "furniture", flowId: null });
   });
 });

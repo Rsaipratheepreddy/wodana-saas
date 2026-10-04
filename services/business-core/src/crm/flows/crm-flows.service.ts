@@ -8,8 +8,11 @@ import { flowChecksum, validateFlowDefinition } from "./flow-definition";
 import { ensureStarterFlows } from "./flow-store";
 import { FLOW_TEMPLATES, flowTemplate } from "./flow-templates";
 import { STARTER_FLOWS } from "./starter-flows";
+import { UNRESOLVED_ENQUIRY_TYPE } from "../leads/lead-options";
 
 const PERMISSION = "crm.settings.manage";
+/** Refusal for pointing the "Not sure yet" placeholder at a flow; the web shows it as is (an en.json key). */
+export const NOT_SURE_IN_FLOW = "Not sure yet stays in the first column until the enquiry type is known, so it cannot follow a flow";
 
 type FlowRow = { id: string; code: string; name: string; status: string; version: number };
 /**
@@ -49,14 +52,15 @@ export class CrmFlowsService {
                   WHERE version.workspace_id = flow.workspace_id AND version.flow_id = flow.id ORDER BY version.version DESC LIMIT 1) AS latest,
                 COALESCE((SELECT jsonb_agg(jsonb_build_object('id', choice.id, 'code', choice.code, 'label', choice.label, 'version', choice.version,
                                                     -- False when the type names no active flow and so runs the basic flow by default.
-                                                    'assigned', choice.flow = flow.code) ORDER BY choice.position, choice.label)
+                                                    'assigned', COALESCE(choice.flow = flow.code, false)) ORDER BY choice.position, choice.label)
                    FROM crm_taxonomy_options choice JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = choice.workspace_id AND taxonomy.id = choice.taxonomy_id AND taxonomy.code = 'enquiry_type'
-                  WHERE choice.workspace_id = flow.workspace_id AND choice.status = 'active'
+                  -- "Not sure yet" is the placeholder that cannot leave the first column (PLM-007): never in a flow.
+                  WHERE choice.workspace_id = flow.workspace_id AND choice.status = 'active' AND choice.code <> $2
                     AND (choice.flow = flow.code
                          -- An unset or unknown flow runs the basic flow.
                          OR (flow.code = 'basic' AND NOT EXISTS (SELECT 1 FROM crm_flows other WHERE other.workspace_id = choice.workspace_id AND other.code = choice.flow AND other.status = 'active')))), '[]'::jsonb) AS "usedBy"
            FROM crm_flows flow WHERE flow.workspace_id = $1 ORDER BY flow.name`,
-        [workspaceId])).rows;
+        [workspaceId, UNRESOLVED_ENQUIRY_TYPE])).rows;
       return { data: flows };
     });
   }
@@ -211,11 +215,8 @@ export class CrmFlowsService {
     return this.access.withPermission(actor, workspaceId, PERMISSION, async (client, user) => {
       const flow = await this.requireFlow(client, workspaceId, flowId, false);
       if (flow.status !== "active") throw new UnprocessableEntityException("Choose an active flow");
-      const before = (await client.query<{ id: string; code: string; label: string; flow: string | null; version: number }>(
-        `SELECT choice.id, choice.code, choice.label, choice.flow, choice.version FROM crm_taxonomy_options choice
-           JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = choice.workspace_id AND taxonomy.id = choice.taxonomy_id AND taxonomy.code = 'enquiry_type'
-          WHERE choice.workspace_id = $1 AND choice.id = $2 FOR UPDATE OF choice`, [workspaceId, optionId])).rows[0];
-      if (!before) throw new NotFoundException("Enquiry type not found");
+      const before = await this.lockEnquiryType(client, workspaceId, optionId);
+      if (before.code === UNRESOLVED_ENQUIRY_TYPE) throw new UnprocessableEntityException(NOT_SURE_IN_FLOW);
       if (before.flow === flow.code) return { ...before, flowId };
       if (before.version !== input.version) throw new ConflictException("This enquiry type changed in another window. Reload and try again.");
       const after = (await client.query<{ id: string; code: string; label: string; flow: string; version: number }>(
@@ -228,6 +229,37 @@ export class CrmFlowsService {
       });
       return { ...after, flowId };
     });
+  }
+
+  /**
+   * Takes an enquiry type out of a flow (version-checked, audited): it names no flow and so runs the basic flow, and the
+   * list shows it under "Not in a flow yet". Idempotent: a type that is not in this flow is returned unchanged.
+   */
+  unassignEnquiryType(actor: RequestActor, workspaceId: string, flowId: string, optionId: string, input: { version: number }) {
+    return this.access.withPermission(actor, workspaceId, PERMISSION, async (client, user) => {
+      const flow = await this.requireFlow(client, workspaceId, flowId, false);
+      const before = await this.lockEnquiryType(client, workspaceId, optionId);
+      if (before.flow !== flow.code) return { ...before, flowId: null };
+      if (before.version !== input.version) throw new ConflictException("This enquiry type changed in another window. Reload and try again.");
+      const after = (await client.query<{ id: string; code: string; label: string; flow: null; version: number }>(
+        `UPDATE crm_taxonomy_options SET flow = NULL, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND version = $3
+         RETURNING id, code, label, flow, version`, [workspaceId, optionId, input.version])).rows[0];
+      if (!after) throw new ConflictException("This enquiry type changed in another window. Reload and try again.");
+      await recordAudit(client, {
+        workspaceId, actorUserId: user.userId, action: "crm.enquiry_type.flow_changed.v1", entityType: "crm_taxonomy_option", entityId: optionId,
+        before: { flow: before.flow }, after: { flow: null },
+      });
+      return { ...after, flowId: null };
+    });
+  }
+
+  private async lockEnquiryType(client: PoolClient, workspaceId: string, optionId: string) {
+    const row = (await client.query<{ id: string; code: string; label: string; flow: string | null; version: number }>(
+      `SELECT choice.id, choice.code, choice.label, choice.flow, choice.version FROM crm_taxonomy_options choice
+         JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = choice.workspace_id AND taxonomy.id = choice.taxonomy_id AND taxonomy.code = 'enquiry_type'
+        WHERE choice.workspace_id = $1 AND choice.id = $2 FOR UPDATE OF choice`, [workspaceId, optionId])).rows[0];
+    if (!row) throw new NotFoundException("Enquiry type not found");
+    return row;
   }
 
   private async requireFlow(client: PoolClient, workspaceId: string, flowId: string, lock: boolean) {

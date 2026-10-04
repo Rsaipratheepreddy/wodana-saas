@@ -3,11 +3,14 @@ import {
 } from "@/lib/flows/flow-model";
 import { tKey, type Translate } from "@/lib/i18n/keys";
 
-/** "Done when …" in plain words: the check, with the design stage or the details it names. */
+/** "Done when …" in plain words: the check, with the design stage it names, or the details that must be filled in. */
 export function doneWhen(step: FlowStep, t: Translate): string {
+  if (step.check === "details_complete" && step.needs?.length) {
+    const fields = step.needs.map((field) => t(FIELD_LABELS[field]));
+    return fields.length === 1 ? t("Done when: {field} is filled in", { field: fields[0] }) : t("Done when: {fields} are filled in", { fields: fields.join(", ") });
+  }
   const check = t(checkMeta(step.check).label);
-  const detail = step.check === "design_stage_done" && step.designStage ? t(DESIGN_STAGE_LABELS[step.designStage])
-    : step.check === "details_complete" && step.needs?.length ? step.needs.map((field) => t(FIELD_LABELS[field])).join(", ") : null;
+  const detail = step.check === "design_stage_done" && step.designStage ? t(DESIGN_STAGE_LABELS[step.designStage]) : null;
   return t("Done when: {check}", { check: detail ? `${check} · ${detail}` : check });
 }
 

@@ -1,8 +1,8 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
-import { Background, Controls, Handle, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
-import { createContext, memo, useContext, useEffect, useMemo, useRef, type DragEvent, type KeyboardEvent } from "react";
+import { Background, Controls, Handle, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeChange, type NodeProps } from "@xyflow/react";
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Clock, Eye } from "lucide-react";
 import { Avatar, useDesignSystem } from "@/design-system";
 import {
@@ -71,10 +71,14 @@ const BranchNode = memo(function BranchNode({ data, selected }: NodeProps<Node<B
   </div>;
 });
 
+/** The steps in a band are what moves a job into that column, so the band says so. */
 const BandNode = memo(function BandNode({ data }: NodeProps<Node<BandNodeData>>) {
+  const t = useT();
   const { columnNames } = useContext(CanvasContext);
   const { direction } = useDesignSystem();
-  return <div className={styles.band} dir={direction}><span className={styles.bandLabel}>{columnLabel(data.column, columnNames)}</span></div>;
+  return <div className={styles.band} dir={direction}>
+    <span className={styles.bandLabel}>{t("Moves to {column}", { column: columnLabel(data.column, columnNames) })}</span>
+  </div>;
 });
 
 const nodeTypes = { step: StepNode, branch: BranchNode, band: BandNode };
@@ -99,7 +103,13 @@ export function FlowCanvas({ answerOptions, columnNames, definition, focusId, on
   const { direction } = useDesignSystem();
   const flow = useReactFlow<CanvasNode>();
   const wrapper = useRef<HTMLDivElement>(null);
-  const graph = useMemo(() => definitionToGraph(definition, { rtl: direction === "rtl" }), [definition, direction]);
+  // Cards grow with their text: once measured, the layout spaces them by their real heights.
+  const [heights, setHeights] = useState<Record<string, number>>({});
+  const graph = useMemo(() => definitionToGraph(definition, { rtl: direction === "rtl", heights }), [definition, direction, heights]);
+  const measured = useCallback((changes: NodeChange<CanvasNode>[]) => {
+    const sizes = changes.flatMap((change) => change.type === "dimensions" && change.dimensions && !change.id.startsWith("band:") ? [[change.id, Math.ceil(change.dimensions.height)] as const] : []);
+    if (sizes.length) setHeights((current) => sizes.some(([id, height]) => current[id] !== height) ? { ...current, ...Object.fromEntries(sizes) } : current);
+  }, []);
   const nodes = useMemo<CanvasNode[]>(() => graph.nodes.map((node) => ({
     id: node.id, type: node.type, position: node.position, data: node.data, width: node.width, height: node.type === "band" ? node.height : undefined,
     selected: node.id === selectedId, draggable: false, connectable: false,
@@ -172,7 +182,7 @@ export function FlowCanvas({ answerOptions, columnNames, definition, focusId, on
           void instance.setViewport({ x: box.width / 2 - (left + width / 2) * zoom, y: 32 - Math.min(...graph.nodes.map((node) => node.position.y)) * zoom, zoom });
         }}
         maxZoom={1.6} minZoom={0.25} nodes={nodes} nodesConnectable={false} nodesDraggable={false} nodesFocusable nodeTypes={nodeTypes}
-        onNodeClick={(_event, node) => { if (node.type !== "band") onSelect(node.id); }} onPaneClick={() => onSelect(null)} panOnScroll
+        onNodeClick={(_event, node) => { if (node.type !== "band") onSelect(node.id); }} onNodesChange={measured} onPaneClick={() => onSelect(null)} panOnScroll
         selectionOnDrag={false} snapGrid={[16, 16]} snapToGrid zoomOnDoubleClick={false}>
         <Background className={styles.dots} gap={16} size={1} />
         <Controls className={styles.controls} position={direction === "rtl" ? "bottom-right" : "bottom-left"} showInteractive={false} />

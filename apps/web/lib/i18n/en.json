@@ -12082,5 +12082,15 @@
   "Architecture (to be defined)": "Architecture (to be defined)",
   "A placeholder until the firm agrees its architecture steps.": "A placeholder until the firm agrees its architecture steps.",
   "Architecture": "Architecture",
-  "Payment proof only, for work without its own flow.": "Payment proof only, for work without its own flow."
+  "Payment proof only, for work without its own flow.": "Payment proof only, for work without its own flow.",
+  "Moves to {column}": "Moves to {column}",
+  "Done when: {field} is filled in": "Done when: {field} is filled in",
+  "Done when: {fields} are filled in": "Done when: {fields} are filled in",
+  "Add to {name}": "Add to {name}",
+  "Remove from this flow": "Remove from this flow",
+  "{type} is no longer in {flow}": "{type} is no longer in {flow}",
+  "Search enquiry types": "Search enquiry types",
+  "in {flow}": "in {flow}",
+  "Not sure yet stays in the first column until the enquiry type is known, so it cannot follow a flow": "Not sure yet stays in the first column until the enquiry type is known, so it cannot follow a flow",
+  "Back to Flows": "Back to Flows"
 }

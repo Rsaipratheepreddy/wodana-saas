@@ -8,7 +8,7 @@ import { canOpen } from "@/lib/workspace/access";
 import { updateBranch, updateStep, type FlowDefinition, type FlowSummary } from "@/lib/flows/flow-model";
 import { FlowProperties } from "./flow-properties";
 import { FlowsListPage } from "./flows-list-page";
-import { FlowStepsList } from "./flow-builder";
+import { FlowBuilder, FlowStepsList } from "./flow-builder";
 import { FlowPalette } from "./flow-palette";
 
 const push = vi.fn();
@@ -84,11 +84,14 @@ describe("Flows list", () => {
     expect(within(within(card("Basic")).getByRole("region", { name: "Used for" })).queryByText("Kitchen only")).toBeNull();
   });
 
-  it("moves an enquiry type to another flow from its chip", async () => {
+  it("moves an enquiry type to another flow from its pill, which is one menu button", async () => {
     const fetcher = stubFetch((_, init) => init.method === "PUT" ? { body: { id: "x", version: 5 } } : undefined);
     render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
-    await userEvent.click(within(card("Design")).getByRole("button", { name: "Move Interior design" }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to Basic" }));
+    const usedFor = within(card("Design")).getByRole("region", { name: "Used for" });
+    expect(within(usedFor).getAllByRole("button")).toHaveLength(2); // the pill and "Add enquiry type"
+    await userEvent.click(within(usedFor).getByRole("button", { name: "Interior design" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Move to Basic", "Remove from this flow"]);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Move to Basic" }));
     const [url, init] = put(fetcher)[0];
     expect(url).toBe(`/api/workspace/crm/data/flows/${basic}/enquiry-types/${interior}?workspaceId=${workspaceId}`);
     expect(JSON.parse(String(init.body))).toEqual({ version: 4 });
@@ -96,20 +99,44 @@ describe("Flows list", () => {
     expect(within(within(card("Basic")).getByRole("region", { name: "Used for" })).getByText("Interior design")).toBeInTheDocument();
   });
 
-  it("adds an enquiry type to a flow, asking first when it is in another flow", async () => {
+  it("takes an enquiry type out of its flow", async () => {
+    const fetcher = stubFetch((_, init) => init.method === "DELETE" ? { body: { id: "x", version: 5, flow: null } } : undefined);
+    render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
+    await userEvent.click(within(card("Design")).getByRole("button", { name: "Interior design" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Remove from this flow" }));
+    const [url] = (fetcher.mock.calls as unknown as Array<[string, RequestInit]>).find(([, init]) => init?.method === "DELETE")!;
+    expect(url).toBe(`/api/workspace/crm/data/flows/${design}/enquiry-types/${interior}?version=4&workspaceId=${workspaceId}`);
+    expect(await screen.findByText("Interior design is no longer in Design")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Not in a flow yet" })).getByRole("button", { name: "Interior design" })).toBeInTheDocument();
+    expect(within(card("Design")).queryByText("Interior design")).toBeNull();
+  });
+
+  it("adds an enquiry type from a searchable list, asking first when it is in another flow", async () => {
     const fetcher = stubFetch((_, init) => init.method === "PUT" ? { body: { id: "x", version: 9 } } : undefined);
     render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
-    await userEvent.click(within(card("Basic")).getByRole("button", { name: /Add enquiry type/ }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Interior design (in Design)" }));
+    await userEvent.click(within(card("Basic")).getByRole("button", { name: "Add enquiry type" }));
+    const picker = await screen.findByRole("dialog", { name: "Add enquiry type" });
+    await userEvent.type(within(picker).getByRole("searchbox"), "inter");
+    expect(within(picker).getAllByRole("menuitem")).toHaveLength(1);
+    await userEvent.click(within(picker).getByRole("menuitem", { name: /Interior design.*in Design/ }));
     expect(put(fetcher)).toHaveLength(0);
     const dialog = await screen.findByRole("dialog", { name: "Move Interior design to Basic?" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Move" }));
     expect(put(fetcher)[0][0]).toContain(`flows/${basic}/enquiry-types/${interior}`);
 
-    await userEvent.click(within(card("Design")).getByRole("button", { name: /Add enquiry type/ }));
+    await userEvent.click(within(card("Design")).getByRole("button", { name: "Add enquiry type" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Kitchen only" }));
     expect(put(fetcher)[1][0]).toContain(`flows/${design}/enquiry-types/${kitchen}`);
     expect(screen.queryByRole("region", { name: "Not in a flow yet" })).toBeNull();
+  });
+
+  it("never offers Not sure yet for a flow, even when old data names one", async () => {
+    const notSure = { id: "66666666-6666-4666-8666-666666666666", code: "not_sure", label: "Not sure yet", version: 1 };
+    const withPlaceholder = flows.map((flow) => ({ ...flow, usedBy: [...flow.usedBy, { ...notSure, assigned: flow.code === "design" }] }));
+    render(wrap(<FlowsListPage canManage flows={withPlaceholder} workspaceId={workspaceId} />));
+    expect(screen.queryByText("Not sure yet")).toBeNull();
+    await userEvent.click(within(card("Basic")).getByRole("button", { name: "Add enquiry type" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).not.toContainEqual(expect.stringContaining("Not sure yet"));
   });
 
   it("creates a new flow from a template, grouped in the picker, and opens it", async () => {
@@ -233,5 +260,17 @@ describe("Components and the phone view", () => {
     expect(list).toHaveTextContent("Done when: Intro meeting completed");
     expect(list).toHaveTextContent("Which client type?");
     expect(list).toHaveTextContent("End user");
+  });
+});
+
+describe("Flow builder", () => {
+  it("returns to the Flows list on Esc when nothing is selected", async () => {
+    const definition: FlowDefinition = { schema: 1, columns: ["qualified", "won"], branches: [],
+      steps: [{ key: "payment_proof", name: "Attach the payment proof", role: "sales", check: "payment_proof_attached", column: "won" }] };
+    render(wrap(<FlowBuilder answerOptions={{}} canManage columnNames={{}} flows={flows} roles={[]} workspaceId={workspaceId}
+      flow={{ id: basic, code: "basic", name: "Basic", status: "active", version: 1, selected: { version: 1, definition } }} />));
+    expect(screen.getByRole("link", { name: "Back to Flows" })).toHaveAttribute("href", "/workspace/flows");
+    await userEvent.keyboard("{Escape}");
+    expect(push).toHaveBeenCalledWith("/workspace/flows");
   });
 });
