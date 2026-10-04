@@ -419,6 +419,8 @@
 .wd-field[data-disabled] { opacity: 0.52; }
 .wd-input { flex: 1; min-inline-size: 0; border: 0; outline: 0; padding-inline: var(--wd-space-3); background: transparent; color: var(--wd-ink); font-size: var(--wd-text-md); }
 .wd-root .wd-input:focus-visible, .wd-root .wd-textarea:focus-visible, .wd-root .wd-comment-composer textarea:focus-visible, .wd-root .wd-comment-reply-box textarea:focus-visible, .wd-root .wd-nav-search input:focus-visible { outline: 0; }
+/* A field frame shows the focus ring itself, so the input inside never draws a second box (also in dialogs rendered outside .wd-root). */
+:is(.wd-input-group, .wd-search-field, .wd-date-group, .wd-textarea-frame) :is(input, textarea):focus-visible, .wd-input:focus-visible { outline: 0; }
 .wd-input::placeholder, .wd-textarea::placeholder { color: var(--wd-faint); }
 .wd-input-affix { min-inline-size: var(--wd-control-lg); display: inline-flex; align-items: center; justify-content: center; padding-inline: var(--wd-space-3); border-inline-end: 1px solid var(--wd-line); background: transparent; color: var(--wd-muted); font-size: var(--wd-text-sm); font-weight: 500; }
 .wd-input-affix[data-side="end"] { border-inline-start: 1px solid var(--wd-line); border-inline-end: 0; }
