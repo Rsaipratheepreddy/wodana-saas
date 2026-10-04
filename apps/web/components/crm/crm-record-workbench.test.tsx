@@ -64,7 +64,7 @@ describe("CRM opportunity workbench", () => {
   });
 
   it("leads the action card with the pending follow-up and keeps the activity in the sidebar", async () => {
-    const record = { id: "opportunity-3", title: "Penthouse", status: "open", version: 4, pipelineId: "pipeline-1", stageId: "qualified", stageName: "Qualified", partyId: "party-3", partyName: "Amal Rahman", ownerMembershipId: "m1", ownerName: "Dana",
+    const record = { id: "opportunity-3", title: "Penthouse", status: "open", version: 4, pipelineId: "pipeline-1", stageId: "qualified", stageName: "Qualified", partyId: "party-3", partyName: "Yusuf Haddad", ownerMembershipId: "m1", ownerName: "Amal Staff",
       nextActionAt: "2020-09-30T09:00:00.000Z",
       flow: { flow: "design", steps, done: 1, total: 4, next: { stageId: "proposal", name: "Proposal", step: "proposal" }, missing: [{ key: "discovery:area", label: "Area" }], toWon: [], proofs: [], furniture: null, clientApproval: null, negotiationOptional: false } };
     const activities = [
@@ -78,7 +78,9 @@ describe("CRM opportunity workbench", () => {
     render(<DesignSystemProvider><CrmRecordWorkbench id="opportunities" workspaceId="workspace-1" onChanged={vi.fn()} row={record} /></DesignSystemProvider>);
     const next = await screen.findByRole("region", { name: "To move to Proposal" });
     // The follow-up is a row of its own above the checklist, never a chip beside the owner.
-    expect(await within(next).findByText("Follow up with Amal")).toBeInTheDocument();
+    // It names the client (the opportunity's party), never the sales owner.
+    expect(await within(next).findByText("Follow up with Yusuf")).toBeInTheDocument();
+    expect(within(next).queryByText("Follow up with Amal")).not.toBeInTheDocument();
     expect(within(next).getAllByText(/^Overdue · /)).toHaveLength(1);
     const side = screen.getByRole("complementary", { name: "Key facts" });
     expect(within(side).queryByText("Next follow-up")).not.toBeInTheDocument();

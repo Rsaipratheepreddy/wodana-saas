@@ -186,7 +186,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const plan = nowPlan({ flow, status, funnel, caseId });
   const fullChecklist = nextChecklist(flow, status);
   const checklist = fullChecklist && needsFollowUp ? { ...fullChecklist, rows: fullChecklist.rows.filter((item) => item.id !== "nextAction") } : fullChecklist;
-  const clientFirst = firstName(String(live.partyName ?? ""));
+  // The client (the opportunity's party), never the sales owner; without a client name the task keeps its own title.
+  const clientFirst = firstName(String(live.partyName ?? live.party_name ?? ""));
   const followUpRow = status !== "open" ? null
     : nextTask ? <FollowUpRow title={isGenericFollowUp(nextTask) && clientFirst ? t("Follow up with {name}", { name: clientFirst }) : activityTitle(nextTask, t)} due={String(nextTask.dueAt ?? followUp ?? "")}
       onComplete={() => setAction(completeActivityAction(t, nextTask))} onReschedule={() => setAction(rescheduleActivityAction(t, nextTask))} />
