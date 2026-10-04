@@ -68,7 +68,8 @@ import {
 } from "./workspace-terminology";
 import { ConfigurationRevisionsService } from "./configuration-revisions.service";
 import { invitationGreetingName, placeholderDisplayName } from "./invitation-recipient";
-import { parseRoleTemplateCodes, roleTemplatesFor } from "./role-templates";
+import { parseRoleTemplateCodes, ROLE_TEMPLATE_CODES, roleTemplatesFor } from "./role-templates";
+import { describeAccess, expandAccess } from "./access-levels";
 import { parseSalesPipelineTemplate, seedDefaultSalesPipeline } from "../crm/default-sales-pipeline";
 import { seedKitPaymentPlan } from "../commercial/default-payment-plan";
 import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
@@ -2709,7 +2710,8 @@ export class WorkspacesService {
          ORDER BY role.is_system DESC, role.name`,
         [workspaceId],
       );
-      return roles.rows;
+      // A custom role keeping a template's code was built from it and can be reset to it.
+      return roles.rows.map((role) => ({ ...role, templateCode: !role.isSystem && ROLE_TEMPLATE_CODES.includes(role.code) ? role.code : null }));
     });
   }
 
@@ -2755,6 +2757,25 @@ export class WorkspacesService {
     );
   }
 
+  /** Nobody edits themselves out of Roles & permissions: their other roles must still let them change roles. */
+  private async assertKeepsOwnRoleAccess(client: PoolClient, workspaceId: string, userId: string, roleId: string, nextCodes: readonly string[]) {
+    const ROLE_EDITING = ["workspace.roles.manage", "module.roles.edit"];
+    if (nextCodes.some((code) => ROLE_EDITING.includes(code))) return;
+    const held = await client.query<{ fromThisRole: boolean; elsewhere: boolean }>(
+      `SELECT bool_or(assigned.role_id = $3) AS "fromThisRole",
+              bool_or(assigned.role_id <> $3 AND permission.code = ANY($4::text[])) AS elsewhere
+         FROM workspace_memberships membership
+         JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
+         JOIN role_permissions granted ON granted.role_id = assigned.role_id
+         JOIN permissions permission ON permission.id = granted.permission_id
+        WHERE membership.workspace_id = $1 AND membership.user_id = $2 AND membership.status = 'active'
+          AND permission.code = ANY($4::text[])`,
+      [workspaceId, userId, roleId, ROLE_EDITING]);
+    if (held.rows[0]?.fromThisRole && !held.rows[0]?.elsewhere) {
+      throw new ConflictException("You can't remove your own access to roles and permissions. Ask another owner or administrator.");
+    }
+  }
+
   /** Two roles never share a name (ignoring case and spaces): people pick roles by name in Invite and Access. */
   private async assertRoleNameFree(client: PoolClient, workspaceId: string, name: string, exceptRoleId?: string) {
     const taken = await client.query(
@@ -2763,11 +2784,31 @@ export class WorkspacesService {
     if (taken.rowCount) throw new ConflictException(`A role named ${name.trim()} already exists. Choose another name, or change that role.`);
   }
 
+  /**
+   * Roles & permissions by module: one level per module plus advanced extras, expanded to permission codes with
+   * the shared model (access-levels.json). Version-checked and audited like any role change.
+   */
+  async setRoleAccess(actor: RequestActor, workspaceId: string, roleId: string, input: { version: number; levels?: Record<string, unknown>; extras?: unknown }) {
+    const permissionCodes = expandAccess(input);
+    return this.updateRole(actor, workspaceId, roleId, { version: input.version, permissionCodes } as UpdateRoleDto,
+      { action: "role.access_updated", details: { access: describeAccess(permissionCodes) } });
+  }
+
+  /** A role built from a template gets the template's permissions back (and Woddy, which every staff role has). */
+  async resetRoleToTemplate(actor: RequestActor, workspaceId: string, roleId: string, version: number) {
+    const role = await this.access.withAnyPermission(actor, workspaceId, ["module.roles.edit", "workspace.roles.manage"], (client) => this.requireRole(client, workspaceId, roleId));
+    const template = role.isSystem ? undefined : roleTemplatesFor([String(role.code)])[0];
+    if (!template) throw new UnprocessableEntityException("This role was not built from a template");
+    return this.updateRole(actor, workspaceId, roleId, { version, permissionCodes: [...new Set([...template.permissions, "ai.suggestions.use"])].sort() } as UpdateRoleDto,
+      { action: "role.reset_to_template", details: { template: template.code } });
+  }
+
   async updateRole(
     actor: RequestActor,
     workspaceId: string,
     roleId: string,
     input: UpdateRoleDto,
+    audit: { action: string; details: Record<string, unknown> } = { action: "role.updated", details: {} },
   ) {
     return this.access.withAnyPermission(
       actor,
@@ -2793,6 +2834,7 @@ export class WorkspacesService {
           : await this.resolvePermissions(client, input.permissionCodes);
         if (input.permissionCodes !== undefined) {
           await this.assertRoleDelegation(client, workspaceId, actorUser.userId, input.permissionCodes);
+          await this.assertKeepsOwnRoleAccess(client, workspaceId, actorUser.userId, roleId, input.permissionCodes);
         }
         const updated = await client.query(
           `UPDATE roles
@@ -2818,16 +2860,17 @@ export class WorkspacesService {
         }
         const response = {
           ...updated.rows[0],
-          permissions: input.permissionCodes ?? before.permissions,
+          permissions: [...(input.permissionCodes ?? before.permissions as string[])].sort(),
+          templateCode: ROLE_TEMPLATE_CODES.includes(String(updated.rows[0].code)) ? updated.rows[0].code : null,
         } as Record<string, unknown>;
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
-          action: "role.updated",
+          action: audit.action,
           entityType: "role",
           entityId: roleId,
           before,
-          after: response,
+          after: { ...response, ...audit.details },
         });
         return response;
       },

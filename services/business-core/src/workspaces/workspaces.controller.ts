@@ -37,6 +37,7 @@ import { UpdateCompanyProfileDto } from "./dto/update-company-profile.dto";
 import { UpdateLegalEntityDto } from "./dto/update-legal-entity.dto";
 import { UpdateMemberDto } from "./dto/update-member.dto";
 import { UpdateRoleDto } from "./dto/update-role.dto";
+import { SetRoleAccessDto } from "./dto/set-role-access.dto";
 import { UpdateWorkspaceDto } from "./dto/update-workspace.dto";
 import { UpdateWorkspaceSettingsDto } from "./dto/update-workspace-settings.dto";
 import { UpdateWorkspaceTerminologyDto } from "./dto/update-workspace-terminology.dto";
@@ -504,6 +505,30 @@ export class WorkspacesController {
     @Body() input: UpdateRoleDto,
   ) {
     return this.workspaces.updateRole(actor, workspaceId, roleId, input);
+  }
+
+  @Put(":workspaceId/roles/:roleId/access")
+  @ApiOperation({ summary: "Set a custom role's access by module: a level per module and advanced permissions" })
+  @ApiOkResponse({ type: RoleResponseDto })
+  setRoleAccess(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("roleId", ParseUUIDPipe) roleId: string,
+    @Body() input: SetRoleAccessDto,
+  ) {
+    return this.workspaces.setRoleAccess(actor, workspaceId, roleId, input);
+  }
+
+  @Post(":workspaceId/roles/:roleId/reset-to-template")
+  @ApiOperation({ summary: "Give a role built from a template its template's permissions back" })
+  @ApiOkResponse({ type: RoleResponseDto })
+  resetRoleToTemplate(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("roleId", ParseUUIDPipe) roleId: string,
+    @Body() input: VersionDto,
+  ) {
+    return this.workspaces.resetRoleToTemplate(actor, workspaceId, roleId, input.version);
   }
 
   @Delete(":workspaceId/roles/:roleId")

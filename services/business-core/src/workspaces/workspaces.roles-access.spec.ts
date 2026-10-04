@@ -16,7 +16,7 @@ describe("workspace role catalogue access", () => {
     const access = { withAnyPermission: vi.fn(async (_actor, _workspaceId, _permissions, work) => work(client)) };
     const service = new WorkspacesService({} as never, {} as never, access as never, {} as never, {} as never);
 
-    await expect(service.listRoles(actor, workspaceId)).resolves.toEqual([{ id: "role-1", code: "studio_lead" }]);
+    await expect(service.listRoles(actor, workspaceId)).resolves.toEqual([{ id: "role-1", code: "studio_lead", templateCode: null }]);
     expect(access.withAnyPermission).toHaveBeenCalledWith(actor, workspaceId, [
       "module.roles.read", "module.roles.write", "module.roles.edit", "module.roles.delete", "workspace.roles.manage",
       "module.members.read", "module.members.write", "module.members.edit", "module.members.delete", "workspace.members.manage",
