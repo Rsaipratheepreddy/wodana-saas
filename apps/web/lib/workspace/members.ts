@@ -11,6 +11,8 @@ export type WorkspaceRole = {
   teamCount?: number;
   pendingInvitationCount?: number;
   permissions: string[];
+  /** The template a custom role was built from (it can be reset to it); null otherwise. */
+  templateCode?: string | null;
 };
 
 export type WorkspaceMember = {

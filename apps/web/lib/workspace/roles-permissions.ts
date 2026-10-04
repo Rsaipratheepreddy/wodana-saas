@@ -190,15 +190,22 @@ export function roleSentence(description: string | null | undefined, fallback: s
 export type RoleMemberSummary = {
   id: string;
   displayName: string;
+  email?: string;
   avatarPreset?: string | null;
   photoUrl?: string | null;
+  /** Every role the person has, direct and through their teams. */
   roles: string[];
+  /** The roles given to the person directly (the ones Members can add or remove), with the member's version. */
+  directRoles?: string[];
+  version?: number;
 };
 
 export type RolesPermissionsPageData = {
   canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  /** May add people to a role or take it away (People: edit members). */
+  canEditMembers?: boolean;
   delegablePermissions: string[] | null;
   memberCount: number | null;
   /** Active people with their role codes (direct and inherited), when the reader may see members. */
@@ -249,6 +256,10 @@ const FIXTURE_PERMISSION_CODES = [
   "projects.view", "projects.manage", "projects.report", "projects.review", "projects.buy",
   "projects.schedule.view", "projects.schedule.manage", "projects.schedule.override",
   "hrms.self", "hrms.team", "hrms.manage", "hrms.evidence", "ai.suggestions.use",
+  "workspace.view_as", "projects.costs.view", "projects.funds_override", "purchasing.view", "purchasing.manage", "purchasing.approve",
+  "vendors.approve", "stock.view", "stock.manage", "stock.receive", "stock.adjust", "stock.inspect",
+  "factory.view", "factory.manage", "factory.report", "factory.approve",
+  "payables.view", "payables.manage", "payables.approve", "receivables.view", "receivables.manage", "accounting.manage",
 ] as const;
 
 export const workspacePermissionFixture: WorkspacePermissionDefinition[] = FIXTURE_PERMISSION_CODES.map((code) => ({
@@ -265,10 +276,11 @@ export const rolesPermissionsFixture: RolesPermissionsPageData = {
   canCreate: true,
   canEdit: true,
   canDelete: true,
+  canEditMembers: true,
   delegablePermissions: null,
   memberCount: 1,
   members: [
-    { id: "00000000-0000-4000-8000-000000000011", displayName: "Olivia (QA Owner)", avatarPreset: null, photoUrl: null, roles: ["owner"] },
+    { id: "00000000-0000-4000-8000-000000000011", displayName: "Olivia (QA Owner)", avatarPreset: null, photoUrl: null, roles: ["owner"], directRoles: ["owner"], version: 1 },
   ],
   permissions: workspacePermissionFixture,
   roles: [
