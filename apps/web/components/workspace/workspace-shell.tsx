@@ -59,7 +59,7 @@ export function WorkspaceShell({ banner, children, modules, user, workspaces, un
   return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={workspacePrimaryColorStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name} workspaceId={workspaces[0]?.id}><RememberProvider scope={workspaces[0]?.id && (user.id ?? user.email) ? `${user.id ?? user.email}:${workspaces[0].id}` : null}><WorkspaceShellContent banner={banner} canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces} access={access}>{children}</WorkspaceShellContent></RememberProvider></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
 }
 
-const FLOW_BUILDER = /^\/workspace\/flows\/[0-9a-f-]{36}\/?$/i;
+const FLOW_BUILDER = /^\/workspace\/enquiry-types\/[0-9a-f-]{36}\/?$/i;
 
 function WorkspaceShellContent({ banner, children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace, access }: WorkspaceShellProps) {
   const t = useT();
@@ -111,7 +111,7 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
 
 
 
-  // The quote builder, the flow builder and the client view take the whole screen: the client view shows the portal as
+  // The quote builder, the steps builder and the client view take the whole screen: the client view shows the portal as
   // the client does; the builders are focused editors with their own slim top bar and a way back.
   if (preProjectRoute?.section === "quotations" && builderSearch.has("quote") || pathname.startsWith("/workspace/client-view/") || FLOW_BUILDER.test(pathname)) {
     return <div className={styles.shell} data-workspace-theme={theme} style={{...workspacePrimaryColorStyle(workspaces[0]),display:"block",minHeight:"100dvh"}}><main data-tour="page-content">{banner}{children}</main></div>;

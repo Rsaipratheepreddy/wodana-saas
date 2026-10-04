@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider, ToastProvider } from "@/design-system";
 import { productNavigation, workspaceModules } from "@/components/workspace/workspace-navigation";
 import { canOpen } from "@/lib/workspace/access";
-import { updateBranch, updateStep, type FlowDefinition, type FlowSummary } from "@/lib/flows/flow-model";
+import { updateBranch, updateStep, type EnquiryTypeSummary, type FlowDefinition } from "@/lib/flows/flow-model";
 import { FlowProperties } from "./flow-properties";
-import { FlowsListPage } from "./flows-list-page";
+import { EnquiryTypesPage } from "./enquiry-types-page";
 import { FlowBuilder, FlowStepsList } from "./flow-builder";
 import { FlowPalette } from "./flow-palette";
 
@@ -15,30 +15,26 @@ const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace: vi.fn(), refresh: vi.fn() }) }));
 
 const workspaceId = "e56299c6-3da3-402a-a9ac-3995bb37b9d4";
-const design = "11111111-1111-4111-8111-111111111111";
-const basic = "22222222-2222-4222-8222-222222222222";
 const interior = "33333333-3333-4333-8333-333333333333";
 const kitchen = "55555555-5555-4555-8555-555555555555";
-const flows: FlowSummary[] = [
-  { id: basic, code: "basic", name: "Basic", status: "active", version: 1, runningJobs: 0,
-    latest: { id: "v1", version: 1, source: "starter", publishedAt: "2026-09-30T09:00:00Z", publishedBy: null, steps: ["New opportunity", "Won"] },
-    usedBy: [{ id: kitchen, code: "kitchen_only", label: "Kitchen only", version: 2, assigned: false }] },
-  { id: design, code: "design", name: "Design", status: "active", version: 3, runningJobs: 12,
-    latest: { id: "v3", version: 3, source: "published", publishedAt: "2026-10-02T09:00:00Z", publishedBy: "Maya Admin", steps: ["New opportunity", "Intro meeting", "Won"] },
-    usedBy: [{ id: interior, code: "interior_design", label: "Interior design", version: 4, assigned: true }] },
+const types: EnquiryTypeSummary[] = [
+  { id: interior, code: "interior_design", label: "Interior design", color: 2, status: "active", version: 4, flowId: "11111111-1111-4111-8111-111111111111", runningJobs: 12,
+    latest: { id: "v3", version: 3, source: "published", publishedAt: "2026-10-02T09:00:00Z", publishedBy: "Maya Admin", steps: ["Complete the client details", "Hold the intro meeting", "Attach the payment proof"] } },
+  { id: kitchen, code: "kitchen_only", label: "Kitchen only", color: null, status: "active", version: 2, flowId: "22222222-2222-4222-8222-222222222222", runningJobs: 0,
+    latest: { id: "v1", version: 1, source: "starter", publishedAt: "2026-09-30T09:00:00Z", publishedBy: null, steps: ["Choose the enquiry type", "Attach the payment proof"] } },
 ];
 const wrap = (node: React.ReactNode) => <DesignSystemProvider locale="en-US" timeZone="UTC"><ToastProvider>{node}</ToastProvider></DesignSystemProvider>;
 
 afterEach(() => { vi.unstubAllGlobals(); push.mockReset(); });
 
-describe("Flows navigation", () => {
-  it("puts Flows above Sales, only for people who manage flows", () => {
+describe("Enquiry types navigation", () => {
+  it("puts Enquiry types above Sales, only for people who manage them", () => {
     const scoped = (permissions: string[]) => workspaceModules.map((module) => ({ ...module, navigation: module.navigation.map((section) => ({ ...section, items: section.items.filter((item) => canOpen(item.id, { permissions, roles: ["member"] })) })) }));
     const items = (permissions: string[]) => productNavigation(scoped(permissions)).flatMap((section) => section.items.map((item) => item.id));
     const manager = items(["crm.settings.manage", "crm.leads.view"]);
-    expect(manager.indexOf("flows")).toBeGreaterThanOrEqual(0);
-    expect(manager.indexOf("flows")).toBe(manager.indexOf("sales") - 1);
-    expect(items(["crm.leads.view"])).not.toContain("flows");
+    expect(manager.indexOf("enquiry-types")).toBeGreaterThanOrEqual(0);
+    expect(manager.indexOf("enquiry-types")).toBe(manager.indexOf("sales") - 1);
+    expect(items(["crm.leads.view"])).not.toContain("enquiry-types");
   });
 });
 
@@ -51,95 +47,72 @@ function stubFetch(route: Route) {
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 }
-const put = (fetcher: ReturnType<typeof stubFetch>) => (fetcher.mock.calls as unknown as Array<[string, RequestInit]>).filter(([, init]) => init?.method === "PUT");
+const calls = (fetcher: ReturnType<typeof stubFetch>, method: string) => (fetcher.mock.calls as unknown as Array<[string, RequestInit]>).filter(([, init]) => init?.method === method);
 const card = (name: string) => screen.getByRole("link", { name: new RegExp(`^${name}`) }).closest("li")!;
 
-describe("Flows list", () => {
-  it("shows one card per flow: name, steps, running jobs, version and the enquiry types it is used for", () => {
-    render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
-    expect(screen.getByRole("heading", { level: 1, name: "Flows" })).toBeInTheDocument();
+describe("Enquiry types list", () => {
+  it("shows one card per type: colour and name, steps, running jobs, version and Edit steps; never a flow", () => {
+    render(wrap(<EnquiryTypesPage canManage types={types} workspaceId={workspaceId} />));
+    expect(screen.getByRole("heading", { level: 1, name: "Enquiry types" })).toBeInTheDocument();
     expect(screen.queryByRole("table")).toBeNull();
-    const designCard = card("Design");
-    expect(within(designCard).getByRole("heading", { level: 2, name: "Design" })).toBeInTheDocument();
-    expect(designCard).toHaveTextContent("3 steps");
-    expect(designCard).toHaveTextContent("New opportunity");
-    expect(designCard).toHaveTextContent("12 running jobs");
-    expect(designCard).toHaveTextContent("v3");
-    expect(within(designCard).getByRole("img", { name: "Maya Admin" })).toBeInTheDocument();
-    expect(within(within(designCard).getByRole("region", { name: "Used for" })).getByText("Interior design")).toBeInTheDocument();
-    expect(card("Basic")).toHaveTextContent("Starter");
-    expect(screen.getAllByRole("button", { name: "New flow" })).toHaveLength(1);
+    const interiorCard = card("Interior design");
+    expect(within(interiorCard).getByRole("heading", { level: 2, name: "Interior design" })).toBeInTheDocument();
+    expect(interiorCard.querySelector("[data-hue='2']")).not.toBeNull();
+    expect(interiorCard).toHaveTextContent("3 steps");
+    expect(interiorCard).toHaveTextContent("Complete the client details");
+    expect(interiorCard).toHaveTextContent("Attach the payment proof");
+    expect(interiorCard).toHaveTextContent("12 running jobs");
+    expect(interiorCard).toHaveTextContent("Version 3");
+    expect(within(interiorCard).getByRole("img", { name: "Maya Admin" })).toBeInTheDocument();
+    expect(within(interiorCard).getByRole("link", { name: "Edit steps" })).toHaveAttribute("href", `/workspace/enquiry-types/${interior}`);
+    expect(within(interiorCard).getByRole("link", { name: /^Interior design/ })).toHaveAttribute("href", `/workspace/enquiry-types/${interior}`);
+    expect(card("Kitchen only")).toHaveTextContent("Starter");
+    expect(screen.getAllByRole("button", { name: "New enquiry type" })).toHaveLength(1);
+    expect(screen.getByText("Not sure yet — stays in New Opportunity until a type is chosen.")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/flow/i);
   });
 
-  it("opens the builder from the card and from Edit flow", () => {
-    render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
-    const designCard = card("Design");
-    expect(within(designCard).getByRole("link", { name: /^Design/ })).toHaveAttribute("href", `/workspace/flows/${design}`);
-    expect(within(designCard).getByRole("link", { name: "Edit flow" })).toHaveAttribute("href", `/workspace/flows/${design}`);
+  it("renames a type from its menu (version-checked)", async () => {
+    const fetcher = stubFetch((_, init) => init.method === "PATCH" ? { body: { ...types[0], label: "Interiors", version: 5 } } : undefined);
+    render(wrap(<EnquiryTypesPage canManage types={types} workspaceId={workspaceId} />));
+    await userEvent.click(screen.getByRole("button", { name: "More actions for Interior design" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Rename", "Change colour", "Archive"]);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const dialog = await screen.findByRole("dialog", { name: "Rename Interior design" });
+    const name = within(dialog).getByRole("textbox", { name: /Name/ });
+    await userEvent.clear(name);
+    await userEvent.type(name, "Interiors");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    const [url, init] = calls(fetcher, "PATCH")[0];
+    expect(url).toBe(`/api/workspace/crm/data/enquiry-types/${interior}?workspaceId=${workspaceId}`);
+    expect(JSON.parse(String(init.body))).toEqual({ version: 4, label: "Interiors" });
+    expect(await screen.findByRole("heading", { level: 2, name: "Interiors" })).toBeInTheDocument();
   });
 
-  it("lists enquiry types that name no flow under Not in a flow yet", () => {
-    render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
-    expect(within(screen.getByRole("region", { name: "Not in a flow yet" })).getByText("Kitchen only")).toBeInTheDocument();
-    expect(within(within(card("Basic")).getByRole("region", { name: "Used for" })).queryByText("Kitchen only")).toBeNull();
+  it("changes a type's colour", async () => {
+    const fetcher = stubFetch((_, init) => init.method === "PATCH" ? { body: { ...types[1], color: 5, version: 3 } } : undefined);
+    render(wrap(<EnquiryTypesPage canManage types={types} workspaceId={workspaceId} />));
+    await userEvent.click(screen.getByRole("button", { name: "More actions for Kitchen only" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Change colour" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change colour of Kitchen only" });
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Colour 5" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(JSON.parse(String(calls(fetcher, "PATCH")[0][1].body))).toEqual({ version: 2, color: 5 });
   });
 
-  it("moves an enquiry type to another flow from its pill, which is one menu button", async () => {
-    const fetcher = stubFetch((_, init) => init.method === "PUT" ? { body: { id: "x", version: 5 } } : undefined);
-    render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
-    const usedFor = within(card("Design")).getByRole("region", { name: "Used for" });
-    expect(within(usedFor).getAllByRole("button")).toHaveLength(2); // the pill and "Add enquiry type"
-    await userEvent.click(within(usedFor).getByRole("button", { name: "Interior design" }));
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Move to Basic", "Remove from this flow"]);
-    await userEvent.click(screen.getByRole("menuitem", { name: "Move to Basic" }));
-    const [url, init] = put(fetcher)[0];
-    expect(url).toBe(`/api/workspace/crm/data/flows/${basic}/enquiry-types/${interior}?workspaceId=${workspaceId}`);
-    expect(JSON.parse(String(init.body))).toEqual({ version: 4 });
-    expect(await screen.findByText("Interior design now follows Basic")).toBeInTheDocument();
-    expect(within(within(card("Basic")).getByRole("region", { name: "Used for" })).getByText("Interior design")).toBeInTheDocument();
+  it("archives a type after asking; it leaves the list", async () => {
+    const fetcher = stubFetch((_, init) => init.method === "PATCH" ? { body: { ...types[1], status: "archived", version: 3 } } : undefined);
+    render(wrap(<EnquiryTypesPage canManage types={types} workspaceId={workspaceId} />));
+    await userEvent.click(screen.getByRole("button", { name: "More actions for Kitchen only" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
+    const dialog = await screen.findByRole("dialog", { name: "Archive Kitchen only?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+    expect(JSON.parse(String(calls(fetcher, "PATCH")[0][1].body))).toEqual({ version: 2, status: "archived" });
+    expect(await screen.findByText("Archived")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^Kitchen only/ })).toBeNull();
   });
 
-  it("takes an enquiry type out of its flow", async () => {
-    const fetcher = stubFetch((_, init) => init.method === "DELETE" ? { body: { id: "x", version: 5, flow: null } } : undefined);
-    render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
-    await userEvent.click(within(card("Design")).getByRole("button", { name: "Interior design" }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Remove from this flow" }));
-    const [url] = (fetcher.mock.calls as unknown as Array<[string, RequestInit]>).find(([, init]) => init?.method === "DELETE")!;
-    expect(url).toBe(`/api/workspace/crm/data/flows/${design}/enquiry-types/${interior}?version=4&workspaceId=${workspaceId}`);
-    expect(await screen.findByText("Interior design is no longer in Design")).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Not in a flow yet" })).getByRole("button", { name: "Interior design" })).toBeInTheDocument();
-    expect(within(card("Design")).queryByText("Interior design")).toBeNull();
-  });
-
-  it("adds an enquiry type from a searchable list, asking first when it is in another flow", async () => {
-    const fetcher = stubFetch((_, init) => init.method === "PUT" ? { body: { id: "x", version: 9 } } : undefined);
-    render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
-    await userEvent.click(within(card("Basic")).getByRole("button", { name: "Add enquiry type" }));
-    const picker = await screen.findByRole("dialog", { name: "Add enquiry type" });
-    await userEvent.type(within(picker).getByRole("searchbox"), "inter");
-    expect(within(picker).getAllByRole("menuitem")).toHaveLength(1);
-    await userEvent.click(within(picker).getByRole("menuitem", { name: /Interior design.*in Design/ }));
-    expect(put(fetcher)).toHaveLength(0);
-    const dialog = await screen.findByRole("dialog", { name: "Move Interior design to Basic?" });
-    await userEvent.click(within(dialog).getByRole("button", { name: "Move" }));
-    expect(put(fetcher)[0][0]).toContain(`flows/${basic}/enquiry-types/${interior}`);
-
-    await userEvent.click(within(card("Design")).getByRole("button", { name: "Add enquiry type" }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Kitchen only" }));
-    expect(put(fetcher)[1][0]).toContain(`flows/${design}/enquiry-types/${kitchen}`);
-    expect(screen.queryByRole("region", { name: "Not in a flow yet" })).toBeNull();
-  });
-
-  it("never offers Not sure yet for a flow, even when old data names one", async () => {
-    const notSure = { id: "66666666-6666-4666-8666-666666666666", code: "not_sure", label: "Not sure yet", version: 1 };
-    const withPlaceholder = flows.map((flow) => ({ ...flow, usedBy: [...flow.usedBy, { ...notSure, assigned: flow.code === "design" }] }));
-    render(wrap(<FlowsListPage canManage flows={withPlaceholder} workspaceId={workspaceId} />));
-    expect(screen.queryByText("Not sure yet")).toBeNull();
-    await userEvent.click(within(card("Basic")).getByRole("button", { name: "Add enquiry type" }));
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).not.toContainEqual(expect.stringContaining("Not sure yet"));
-  });
-
-  it("creates a new flow from a template, grouped in the picker, and opens it", async () => {
+  it("creates a type with its name, colour and steps from a template, then opens its steps", async () => {
     const fetcher = stubFetch((url, init) => {
       if (url.includes("flows/templates")) return { body: [
         { key: "showroom", name: "Showroom sale", description: "Walk-in furniture sale", group: "Furniture", suggestedEnquiryTypes: ["Loose furniture"], stepCount: 6, definition: {} },
@@ -148,40 +121,44 @@ describe("Flows list", () => {
       if (init.method === "POST") return { body: { id: "44444444-4444-4444-8444-444444444444", created: true } };
       return undefined;
     });
-    render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
-    await userEvent.click(screen.getByRole("button", { name: "New flow" }));
-    const dialog = await screen.findByRole("dialog", { name: "New flow" });
+    render(wrap(<EnquiryTypesPage canManage types={types} workspaceId={workspaceId} />));
+    await userEvent.click(screen.getByRole("button", { name: "New enquiry type" }));
+    const dialog = await screen.findByRole("dialog", { name: "New enquiry type" });
     const furniture = await within(dialog).findByRole("region", { name: "Furniture" });
     expect(furniture).toHaveTextContent("6 steps");
-    expect(furniture).toHaveTextContent("Loose furniture");
-    expect(within(dialog).getByRole("region", { name: "Start from a copy of an existing flow" })).toHaveTextContent("Design");
-    expect(within(dialog).queryByRole("region", { name: "Starters" })).toBeNull();
+    expect(within(dialog).getByRole("region", { name: "Copy steps from another type" })).toHaveTextContent("Interior design");
+    // A name comes first.
     await userEvent.click(within(furniture).getByRole("button", { name: /Showroom sale/ }));
-    const [url, init] = (fetcher.mock.calls as unknown as Array<[string, RequestInit]>).find(([, request]) => request?.method === "POST")!;
-    expect(url).toBe(`/api/workspace/crm/data/flows?workspaceId=${workspaceId}`);
-    expect(JSON.parse(String(init.body))).toEqual({ templateKey: "showroom", name: "Showroom sale" });
-    expect(push).toHaveBeenCalledWith("/workspace/flows/44444444-4444-4444-8444-444444444444");
+    expect(calls(fetcher, "POST")).toHaveLength(0);
+    expect(within(dialog).getByText("Give the enquiry type a name")).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Name/ }), "Loose furniture");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Colour 4" }));
+    await userEvent.click(within(furniture).getByRole("button", { name: /Showroom sale/ }));
+    const [url, init] = calls(fetcher, "POST")[0];
+    expect(url).toBe(`/api/workspace/crm/data/enquiry-types?workspaceId=${workspaceId}`);
+    expect(JSON.parse(String(init.body))).toEqual({ label: "Loose furniture", color: 4, templateKey: "showroom" });
+    expect(push).toHaveBeenCalledWith("/workspace/enquiry-types/44444444-4444-4444-8444-444444444444");
   });
 
-  it("falls back to the starters when there is no template library, with a name of its own", async () => {
-    const fetcher = stubFetch((_, init) => init.method === "POST" ? { body: { id: "44444444-4444-4444-8444-444444444444", created: true } } : undefined);
-    render(wrap(<FlowsListPage canManage flows={flows} workspaceId={workspaceId} />));
-    await userEvent.click(screen.getByRole("button", { name: "New flow" }));
-    const starters = await screen.findByRole("region", { name: "Starters" });
-    await userEvent.click(within(starters).getByRole("button", { name: /Design/ }));
-    const [, init] = (fetcher.mock.calls as unknown as Array<[string, RequestInit]>).find(([, request]) => request?.method === "POST")!;
-    expect(JSON.parse(String(init.body))).toEqual({ starter: "design", name: "Design 2" });
+  it("copies another type's steps, or starts blank", async () => {
+    const fetcher = stubFetch((url, init) => init.method === "POST" ? { body: { id: "44444444-4444-4444-8444-444444444444", created: true } } : undefined);
+    render(wrap(<EnquiryTypesPage canManage types={types} workspaceId={workspaceId} />));
+    await userEvent.click(screen.getByRole("button", { name: "New enquiry type" }));
+    const dialog = await screen.findByRole("dialog", { name: "New enquiry type" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Name/ }), "Wardrobes");
+    await userEvent.click(within(within(dialog).getByRole("region", { name: "Copy steps from another type" })).getByRole("button", { name: /Interior design/ }));
+    expect(JSON.parse(String(calls(fetcher, "POST")[0][1].body))).toMatchObject({ label: "Wardrobes", copyFromTypeId: interior });
   });
 
-  it("shows the error state with a retry when the flows could not be loaded", () => {
-    render(wrap(<FlowsListPage canManage flows={[]} loadError workspaceId={workspaceId} />));
+  it("shows the error state with a retry when the types could not be loaded", () => {
+    render(wrap(<EnquiryTypesPage canManage loadError types={[]} workspaceId={workspaceId} />));
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "New flow" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New enquiry type" })).toBeNull();
   });
 
   it("tells people without the permission that they cannot open it", () => {
-    render(wrap(<FlowsListPage canManage={false} flows={[]} workspaceId={workspaceId} />));
-    expect(screen.queryByRole("button", { name: "New flow" })).toBeNull();
+    render(wrap(<EnquiryTypesPage canManage={false} types={[]} workspaceId={workspaceId} />));
+    expect(screen.queryByRole("button", { name: "New enquiry type" })).toBeNull();
   });
 });
 
@@ -263,14 +240,21 @@ describe("Components and the phone view", () => {
   });
 });
 
-describe("Flow builder", () => {
-  it("returns to the Flows list on Esc when nothing is selected", async () => {
+describe("Steps builder", () => {
+  it("names the enquiry type with its colour, publishes changes, and returns to Enquiry types on Esc", async () => {
     const definition: FlowDefinition = { schema: 1, columns: ["qualified", "won"], branches: [],
       steps: [{ key: "payment_proof", name: "Attach the payment proof", role: "sales", check: "payment_proof_attached", column: "won" }] };
-    render(wrap(<FlowBuilder answerOptions={{}} canManage columnNames={{}} flows={flows} roles={[]} workspaceId={workspaceId}
-      flow={{ id: basic, code: "basic", name: "Basic", status: "active", version: 1, selected: { version: 1, definition } }} />));
-    expect(screen.getByRole("link", { name: "Back to Flows" })).toHaveAttribute("href", "/workspace/flows");
+    render(wrap(<FlowBuilder answerOptions={{}} canManage columnNames={{}} roles={[]} workspaceId={workspaceId}
+      flow={{ id: "11111111-1111-4111-8111-111111111111", code: "interior_design", name: "Interior design", status: "active", version: 3, selected: { version: 3, definition },
+        enquiryType: { id: interior, code: "interior_design", label: "Interior design", color: 2, status: "active", version: 4 } }} />));
+    const title = screen.getByRole("heading", { level: 1, name: "Interior design" });
+    expect(title.querySelector("[data-hue='2']")).not.toBeNull();
+    expect(screen.getByText("Version 3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Publish changes" })).toBeDisabled();
+    // The top bar names the type only: no flow, no "used by".
+    expect(title.closest("header")!.textContent).not.toMatch(/flow|used by/i);
+    expect(screen.getByRole("link", { name: "Back to Enquiry types" })).toHaveAttribute("href", "/workspace/enquiry-types");
     await userEvent.keyboard("{Escape}");
-    expect(push).toHaveBeenCalledWith("/workspace/flows");
+    expect(push).toHaveBeenCalledWith("/workspace/enquiry-types");
   });
 });

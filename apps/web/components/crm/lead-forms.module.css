@@ -79,6 +79,8 @@
 .optionList > :global(.wd-button) { justify-self: start; }
 .optionRow { display: flex; align-items: end; gap: var(--wd-space-2); }
 .optionRow > :first-child { flex: 1; }
+/* An enquiry type's "Edit steps" sits beside its name, on the input's line. */
+.stepsLink { flex: none; min-inline-size: 7rem; }
 .savesTo { display: flex; align-items: end; gap: var(--wd-space-2); }
 .savesTo > :first-child { flex: 1; min-inline-size: 0; }
 .cardFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-3); padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }

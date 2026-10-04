@@ -84,8 +84,8 @@ function routeTable() {
     { id: "notifications", label: "Notifications", href: "/workspace/notifications", parent: "home", paths: ["/workspace/notifications"] },
 
     // Business
-    { id: "flows", label: "Flows", href: "/workspace/flows", nav: "flows", paths: ["/workspace/flows"] },
-    { id: "flow", label: "Flow", href: "/workspace/flows", parent: "flows", record: true, pattern: new RegExp(`^/workspace/flows/${UUID}$`, "i") },
+    { id: "enquiry-types", label: "Enquiry types", href: "/workspace/enquiry-types", nav: "enquiry-types", paths: ["/workspace/enquiry-types", "/workspace/flows"] },
+    { id: "enquiry-type", label: "Enquiry type", href: "/workspace/enquiry-types", parent: "enquiry-types", record: true, pattern: new RegExp(`^/workspace/enquiry-types/${UUID}$`, "i") },
     { id: "sales", label: "Sales", href: "/workspace/crm", nav: "sales", paths: ["/workspace/crm"] },
     { id: "enquiries", label: "Enquiries", href: "/workspace/crm/leads", parent: "sales", paths: ["/workspace/crm/leads"] },
     { id: "campaigns", label: "Campaigns", href: "/workspace/crm/leads?section=forms", parent: "sales", paths: ["/workspace/crm/leads"], query: { section: ["forms", "sources"] } },

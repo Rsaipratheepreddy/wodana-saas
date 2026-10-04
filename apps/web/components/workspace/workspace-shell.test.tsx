@@ -41,14 +41,14 @@ describe("WorkspaceShell theme", () => {
     view.rerender(<WorkspaceShell {...shellProps}><p>Project list</p></WorkspaceShell>);
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).not.toHaveTextContent("Jumeirah Garden Villa");
   });
-  it("gives the flow builder the whole screen: no sidebar and no top bar; the flows list keeps them", () => {
-    route.pathname = "/workspace/flows/12345678-1234-4234-8234-123456789abc";
+  it("gives the steps builder the whole screen: no sidebar and no top bar; the enquiry types list keeps them", () => {
+    route.pathname = "/workspace/enquiry-types/12345678-1234-4234-8234-123456789abc";
     const view = render(<WorkspaceShell {...shellProps}><p>Builder</p></WorkspaceShell>);
     expect(screen.getByText("Builder")).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
-    route.pathname = "/workspace/flows";
-    view.rerender(<WorkspaceShell {...shellProps}><p>Flows list</p></WorkspaceShell>);
+    route.pathname = "/workspace/enquiry-types";
+    view.rerender(<WorkspaceShell {...shellProps}><p>Enquiry types list</p></WorkspaceShell>);
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeInTheDocument();
   });
   it("keeps the main workspace navigation visible inside CRM", () => {

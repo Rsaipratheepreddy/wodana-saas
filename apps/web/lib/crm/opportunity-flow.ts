@@ -31,22 +31,6 @@ export type OpportunityFlowView = {
   line?: FlowLineStep[];
 };
 
-export const FLOW_CHOICES: Array<{ id: OpportunityFlowCode; label: MessageKey }> = [
-  { id: "design", label: tKey("Design") },
-  { id: "fit_out", label: tKey("Fit-out") },
-  { id: "furniture", label: tKey("Furniture") },
-  { id: "basic", label: tKey("Basic") },
-];
-
-/** A flow suggested from an enquiry type's name; the administrator confirms it. */
-export function suggestedFlow(text: string): OpportunityFlowCode {
-  const value = text.toLowerCase();
-  if (/furniture/.test(value) && !/design/.test(value)) return "furniture";
-  if (/design|concept/.test(value)) return "design";
-  if (/fit[\s_-]?out|renovation|joinery/.test(value)) return "fit_out";
-  return "basic";
-}
-
 export const FURNITURE_PATHS: Array<{ id: FurniturePath; letter: string; label: MessageKey; description: MessageKey; lead: MessageKey }> = [
   { id: "take_home_now", letter: "A", label: tKey("Take home now"), description: tKey("From the showroom floor, leaves with the client"), lead: tKey("Same day") },
   { id: "in_stock_delivery", letter: "B", label: tKey("In-stock delivery"), description: tKey("In stock, delivered to the client"), lead: tKey("Days") },

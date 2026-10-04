@@ -6,18 +6,18 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CircleAlert, Play, Redo2, Undo2, X } from "lucide-react";
 import {
-  Avatar, Button, ConfirmationDialog, EditableField, IconButton, NoAccessState, TooltipBubble, useMediaQuery, useToast,
+  Avatar, Button, ConfirmationDialog, IconButton, NoAccessState, TooltipBubble, useToast,
 } from "@/design-system";
 import { CrmRequestError, crmRequest } from "@/lib/crm/client";
 import {
-  QUESTION_LABELS, flowUses, insertBranch, insertStep, locate, moveStep, problemsFor, removeNode, roleName, updateBranch, updateStep,
-  checkMeta, type AnswerOptions, type FlowCheck, type FlowDefinition, type FlowDetail, type FlowProblem, type FlowSummary,
+  QUESTION_LABELS, insertBranch, insertStep, locate, moveStep, problemsFor, removeNode, roleName, updateBranch, updateStep,
+  checkMeta, type AnswerOptions, type FlowCheck, type FlowDefinition, type FlowDetail, type FlowProblem,
   type FlowValidationError, type RoleOption,
 } from "@/lib/flows/flow-model";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
 import { FlowCanvas } from "./flow-canvas";
-import { TypeLabel } from "./enquiry-type-pills";
+import { TypeDot } from "./enquiry-type-colors";
 import { BranchIcon, CHECK_ICONS } from "./flow-icons";
 import { BRANCH, FlowPalette } from "./flow-palette";
 import { FlowProperties } from "./flow-properties";
@@ -29,18 +29,18 @@ type History = { past: Draft[]; present: Draft; future: Draft[]; tag: string | n
 const LIMIT = 100;
 
 export type FlowBuilderProps = {
-  answerOptions: AnswerOptions; canManage: boolean; columnNames: Record<string, string>; flow: FlowDetail | null; flows: FlowSummary[];
+  answerOptions: AnswerOptions; canManage: boolean; columnNames: Record<string, string>; flow: FlowDetail | null;
   roles: RoleOption[]; workspaceId: string;
 };
 
-/** Flows › a flow (plan §5a, F3): the builder. The draft stays in the browser until it is published as a new version. */
+/** Enquiry types › a type (plan §5a, F3): the builder for its steps. The draft stays in the browser until it is published as a new version. */
 export function FlowBuilder(props: FlowBuilderProps) {
   const t = useT();
-  if (!props.canManage || !props.flow) return <NoAccessState area={t("Flows")} />;
+  if (!props.canManage || !props.flow) return <NoAccessState area={t("Enquiry types")} />;
   return <ReactFlowProvider><Builder {...props} flow={props.flow} /></ReactFlowProvider>;
 }
 
-function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }: FlowBuilderProps & { flow: FlowDetail }) {
+function Builder({ answerOptions, columnNames, flow, roles, workspaceId }: FlowBuilderProps & { flow: FlowDetail }) {
   const t = useT();
   const toast = useToast();
   const router = useRouter();
@@ -52,11 +52,10 @@ function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }
   const [problems, setProblems] = useState<FlowProblem[] | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [leaving, setLeaving] = useState<string | null>(null);
-  // Phones get the read-only list (plan §5a); the builder is for larger screens.
-  const readOnly = useMediaQuery("(max-width: 48rem)");
   const { definition, name } = history.present;
+  // The enquiry type these steps belong to (older responses carry only the flow's name).
+  const type = flow.enquiryType ?? { code: flow.code, label: flow.name, color: null };
   const dirty = name !== baseline.name || JSON.stringify(definition) !== JSON.stringify(baseline.definition);
-  const usedBy = flowUses(flows.find((item) => item.id === flow.id)?.usedBy ?? []);
   const problemIds = useMemo(() => new Set((problems ?? []).flatMap((problem) => problem.nodeId ? [problem.nodeId] : [])), [problems]);
   const selected = selectedId && locate(definition, selectedId) ? selectedId : null;
 
@@ -73,12 +72,12 @@ function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }
   const redo = useCallback(() => setHistory((current) => current.future.length
     ? { past: [...current.past, current.present], present: current.future[0], future: current.future.slice(1), tag: null } : current), []);
 
-  const back = "/workspace/flows";
-  /** Back to the Flows list, asking first when there are unpublished changes. */
+  const back = "/workspace/enquiry-types";
+  /** Back to Enquiry types, asking first when there are unpublished changes. */
   const leave = useCallback(() => { if (dirty) setLeaving(back); else router.push(back); }, [dirty, router]);
 
   // Undo and redo anywhere on the page, except while typing in a field (the field keeps its own undo). Esc clears the
-  // selection, and with nothing selected (and no dialog or menu open) returns to the Flows list.
+  // selection, and with nothing selected (and no dialog or menu open) returns to Enquiry types.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -146,11 +145,11 @@ function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }
         if (first) select(first, true);
         return;
       }
-      const published = await crmRequest<{ version: number; created: boolean }>(workspaceId, `flows/${flow.id}/versions`, "POST", { expectedVersion: version, definition, name: name.trim() });
+      const published = await crmRequest<{ version: number; created: boolean }>(workspaceId, `flows/${flow.id}/versions`, "POST", { expectedVersion: version, definition });
       setProblems(null);
       setBaseline({ name, definition });
       setVersion(published.version);
-      toast.push({ tone: "success", title: published.created ? t("Version {version} published", { version: published.version }) : t("Name saved"), message: name });
+      toast.push({ tone: "success", title: t("Version {version} published", { version: published.version }), message: type.label });
       router.refresh();
     } catch (error) {
       const message = error instanceof CrmRequestError || error instanceof Error ? error.message : t("Please try again.");
@@ -163,19 +162,18 @@ function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }
   const previewButton = <Button intent="read" isDisabled><Play aria-hidden="true" size={15} />{t("Preview")}</Button>;
   return <div className={styles.builder}>
     <header className={styles.topBar}>
-      <Link aria-label={t("Back to Flows")} className={styles.backLink} href={back}
+      <Link aria-label={t("Back to Enquiry types")} className={styles.backLink} href={back}
         onClick={(event) => { if (dirty) { event.preventDefault(); setLeaving(back); } }}><ArrowLeft aria-hidden="true" size={16} /></Link>
       <div className={styles.title}>
-        <EditableField canEdit={!readOnly} heading="h1" isRequired label={t("Flow name")} maxLength={120} onSave={(next) => commit({ name: next.trim() || name })} value={name} />
+        <h1><TypeDot code={type.code} color={type.color} />{type.label}</h1>
       </div>
-      {usedBy.length ? <span aria-label={t("Used by")} className={styles.chips} role="group">{usedBy.map((use) => <TypeLabel code={use.code} key={use.id} label={use.label} />)}</span> : null}
       <span className={styles.spacer} />
       <div className={styles.actions}>
-        <span className={styles.versionTag}>{t("v{version}", { version })}</span>
+        <span className={styles.versionTag}>{t("Version {version}", { version })}</span>
         <IconButton aria-label={t("Undo")} isDisabled={!history.past.length} onPress={undo}><Undo2 size={16} /></IconButton>
         <IconButton aria-label={t("Redo")} isDisabled={!history.future.length} onPress={redo}><Redo2 size={16} /></IconButton>
         <TooltipBubble content={t("Coming next")}>{previewButton}</TooltipBubble>
-        <Button isDisabled={!dirty} isLoading={publishing} onPress={() => void publish()} variant="primary">{t("Publish")}</Button>
+        <Button isDisabled={!dirty} isLoading={publishing} onPress={() => void publish()} variant="primary">{t("Publish changes")}</Button>
       </div>
     </header>
     <div className={styles.workArea}>
@@ -189,7 +187,7 @@ function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }
             <IconButton aria-label={t("Close")} onPress={() => setProblems(null)}><X size={15} /></IconButton></header>
           <ul>{problems.map((problem, index) => {
             const at = problem.nodeId ? locate(definition, problem.nodeId) : null;
-            const label = at?.kind === "branch" ? t(QUESTION_LABELS[at.branch.question]) : at ? at.step.name : t("Whole flow");
+            const label = at?.kind === "branch" ? t(QUESTION_LABELS[at.branch.question]) : at ? at.step.name : t("All steps");
             return <li key={`${problem.path}-${index}`}>
               <button className={styles.problemRow} disabled={!at} onClick={() => { if (problem.nodeId) select(problem.nodeId, true); }} type="button">
                 <strong>{label}</strong><span>{translateKnown(t, problem.message)}</span>
@@ -214,7 +212,7 @@ function Builder({ answerOptions, columnNames, flow, flows, roles, workspaceId }
   </div>;
 }
 
-/** The phone view: the flow as a read-only list of steps, branches with their answers' steps. */
+/** The phone view: the steps as a read-only list of steps, branches with their answers' steps. */
 export function FlowStepsList({ answerOptions, definition, roles }: { answerOptions: AnswerOptions; definition: FlowDefinition; roles: RoleOption[] }) {
   const t = useT();
   const card = (step: FlowDefinition["steps"][number]) => {

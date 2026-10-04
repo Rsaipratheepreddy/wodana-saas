@@ -1,5 +1,4 @@
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
-import { UNRESOLVED_ENQUIRY_TYPE_ID } from "@/lib/crm/lead-options";
 
 /**
  * Plan §5a, F3: the flow builder's model. The draft is a flow definition (the same shape the business service
@@ -41,28 +40,23 @@ export type FlowBranch = { key: string; question: BranchQuestion; after: string;
 export type FlowDefinition = { schema: 1; columns: string[]; steps: FlowStep[]; branches: FlowBranch[] };
 export type FlowValidationError = { path: string; message: string };
 
-/** An enquiry type and the flow it follows. `assigned` is false when it names no flow and so runs the basic flow by default. */
-export type FlowUse = { id: string; code: string; label: string; version: number; assigned?: boolean };
-/** The enquiry types a flow can be used for: never "Not sure yet", the placeholder that cannot leave the first column (PLM-007). */
-export const flowUses = (uses: FlowUse[]) => uses.filter((use) => use.code !== UNRESOLVED_ENQUIRY_TYPE_ID);
-export type FlowSummary = {
-  id: string; code: string; name: string; status: string; version: number; runningJobs?: number;
+/** A colour a firm picks for an enquiry type: one of the six chart hues. */
+export type TypeColor = 1 | 2 | 3 | 4 | 5 | 6;
+export const TYPE_COLORS: TypeColor[] = [1, 2, 3, 4, 5, 6];
+/** An enquiry type with a summary of its steps (`GET crm/enquiry-types`). "Not sure yet" is never listed. */
+export type EnquiryTypeSummary = {
+  id: string; code: string; label: string; color: TypeColor | null; status: string; version: number; flowId: string | null; runningJobs?: number;
   latest: { id: string; version: number; source: "starter" | "published"; publishedAt: string; publishedBy: string | null; steps?: string[] } | null;
-  usedBy: FlowUse[];
 };
 export type FlowDetail = {
   id: string; code: string; name: string; status: string; version: number;
   selected: { version: number; publishedAt?: string; publishedBy?: string | null; source?: string; definition: FlowDefinition };
+  /** The enquiry type these steps belong to (`GET crm/enquiry-types/:id`). */
+  enquiryType?: { id: string; code: string; label: string; color: TypeColor | null; status: string; version: number };
 };
-/** A ready-made flow from the template library (`GET crm/flows/templates`). */
+/** Ready-made steps from the template library (`GET crm/flows/templates`). */
 export type FlowTemplate = { key: string; name: string; description: string; group: string; suggestedEnquiryTypes: string[]; stepCount: number };
 export const TEMPLATE_GROUPS = ["Furniture", "Interior design", "Fit-out", "Other"] as const;
-/** The name with a number after it when the firm already has a flow by that name (names must be unique). */
-export function uniqueFlowName(base: string, flows: Array<{ name: string }>): string {
-  const taken = new Set(flows.map((flow) => flow.name.trim().toLocaleLowerCase()));
-  if (!taken.has(base.trim().toLocaleLowerCase())) return base;
-  for (let index = 2; ; index += 1) if (!taken.has(`${base} ${index}`.toLocaleLowerCase())) return `${base} ${index}`;
-}
 export type RoleOption = { code: string; name: string };
 export type AnswerOption = { value: string; label: string; letter?: string };
 export type AnswerOptions = Partial<Record<BranchQuestion, AnswerOption[]>>;

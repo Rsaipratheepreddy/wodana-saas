@@ -273,8 +273,8 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         items: [
           { href: "/workspace/crm/leads?section=forms", icon: "documents", id: "crm-campaigns", label: "Campaigns", showInSidebar: false },
           { href: "/workspace/crm/leads?section=assignment", icon: "settings", id: "crm-settings", label: "Settings", showInSidebar: false },
-          // Plan §5a: Flows is its own top-level item, above Sales, for people who manage flows.
-          { href: "/workspace/flows", icon: "automations", id: "flows", label: tKey("Flows"), showInSidebar: false },
+          // Plan §5a: Enquiry types is its own top-level item, above Sales, for people who manage their steps.
+          { href: "/workspace/enquiry-types", icon: "automations", id: "enquiry-types", label: tKey("Enquiry types"), showInSidebar: false },
         ],
       },
     ],
@@ -379,7 +379,7 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
       ...(allowed.has("conversations") ? [{ id: "inbox", label: tKey("Inbox"), href: "/workspace/crm/conversations", icon: "conversations" as const }] : []),
     ] },
     { id: "work", label: tKey("Business"), items: [
-      ...(reachable.has("flows") ? [{ id: "flows", label: tKey("Flows"), href: "/workspace/flows", icon: "automations" as const }] : []),
+      ...(reachable.has("enquiry-types") ? [{ id: "enquiry-types", label: tKey("Enquiry types"), href: "/workspace/enquiry-types", icon: "automations" as const }] : []),
       ...(salesEntry ? [{ id: "sales", label: tKey("Sales"), href: salesEntry.href, icon: "opportunities" as const }] : []),
       ...(allowed.has("customers") || allowed.has("projects-overview") ? [{ id: "clients", label: tKey("Clients"), href: allowed.has("customers") ? "/workspace/crm/customers" : "/workspace/projects/clients", icon: "customers" as const }] : []),
       ...(allowed.has("pre-projects") ? [{ id: "planning", label: tKey("Planning"), href: "/workspace/pre-projects", icon: "preProjects" as const }] : []),
