@@ -1,5 +1,5 @@
-/* The opportunity screen: one header; the progress line, the next column's checklist and Details · Files; the facts and activity beside them. */
-.opportunity { gap: var(--wd-space-4); }
+/* The opportunity screen: one header; the progress line and the next column's checklist; beside them a sidebar with Overview · Details · Files. */
+.frame { gap: var(--wd-space-4); }
 .header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3) var(--wd-space-6); padding-inline-end: var(--wd-space-8); }
 .identity { display: grid; gap: var(--wd-space-1); min-inline-size: 0; flex: 1 1 20rem; }
 .identity h2 { margin: 0; color: var(--wd-color-text); font-family: var(--wd-font-sans); font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); letter-spacing: normal; line-height: var(--wd-leading-tight); text-transform: none; overflow-wrap: anywhere; }
@@ -11,7 +11,6 @@
 .value[data-empty] { color: var(--wd-color-text-tertiary); font-weight: var(--wd-weight-regular); }
 .headerActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .owner { display: inline-flex; }
-.details { display: grid; gap: var(--wd-space-3); padding-block-start: var(--wd-space-3); }
 .factLink { color: var(--wd-color-link); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: underline; text-underline-offset: var(--wd-space-0-5); }
 .factLink:hover { color: var(--wd-color-link-hover); }
 .factLink:focus-visible { border-radius: var(--wd-radius-xs); outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
@@ -60,14 +59,21 @@
 
 .then { margin: 0; padding-inline: var(--wd-space-4); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 
-/* Two columns once there is room: the work on the inline-start, the facts and contacts on the inline-end. */
-.opportunity { container-type: inline-size; }
+/* Two columns once there is room: the work on the inline-start, the sidebar's tabs on the inline-end.
+   In a frame of fixed height (the opportunity modal) each column scrolls on its own; the sidebar's tab bar stays on top. */
+.opportunity { container-type: inline-size; block-size: 100%; }
 .layout { display: grid; gap: var(--wd-space-6); align-items: start; }
-.main { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
-.side { display: grid; gap: var(--wd-space-5); min-inline-size: 0; }
+.main { display: grid; align-content: start; gap: var(--wd-space-4); min-inline-size: 0; }
+.side { min-inline-size: 0; }
+.overview { display: grid; gap: var(--wd-space-5); }
+.side :global(.wd-tab-scroll) { position: sticky; z-index: 1; inset-block-start: 0; background: var(--wd-color-surface); }
+.side :global(.wd-tab-list) { gap: var(--wd-space-4); }
 @container (min-width: 52rem) {
-  .layout { grid-template-columns: minmax(0, 1fr) 20rem; }
-  .side { padding-inline-start: var(--wd-space-5); border-inline-start: 1px solid var(--wd-color-structural-divider); }
+  .opportunity > .frame { display: flex; flex-direction: column; block-size: 100%; }
+  .layout { flex: 1 1 auto; min-block-size: 0; grid-template-columns: minmax(0, 1fr) 25rem; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  .main, .side { min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .main { padding-block-end: var(--wd-space-4); }
+  .side { padding-inline: var(--wd-space-5) var(--wd-space-2); border-inline-start: 1px solid var(--wd-color-structural-divider); scrollbar-gutter: stable; }
 }
 
 /* Progress line: the flow's columns as dots joined by a hairline. */

@@ -49,7 +49,7 @@ export type CardsProps = {
   bookIntro: boolean; onBookingStarted: () => void; onIntroBlocked: () => void;
 };
 
-/** The opportunity's facts in groups: Client · Property · Design package · Intro questions · Intro meeting · Supply. */
+/** The opportunity's facts in groups (the sidebar's Details): Client · Property · Design package · Intro questions · Intro meeting · Supply; each label above its value. */
 export function OpportunityCards(props: CardsProps) {
   const t = useT();
   const { discovery, flow, isOpen, onToggle, onEdit, closed, locale } = props;
@@ -72,13 +72,13 @@ export function OpportunityCards(props: CardsProps) {
   return <div className={styles.cards}>
     <FactCard id="client" title={t("Client")} open={isOpen("client")} onToggle={() => onToggle("client")} {...(view ? count([enquiryType, clientType].filter(Boolean).length, 2) : {})}
       action={props.leadId ? <Link className={styles.link} href={`/workspace/crm/leads?lead=${props.leadId}`}>{t("Open enquiry")}</Link> : null}>
-      {view ? <EditableFieldList>
+      {view ? <EditableFieldList layout="stacked">
         <FactRow label={t("Enquiry type")}>{enquiryType ? label(enquiryType) : <Missing />}</FactRow>
         <FactRow label={t("Client type")}>{clientType ? label(clientType) : <Missing />}</FactRow>
       </EditableFieldList> : loading}
     </FactCard>
     <FactCard id="property" title={t("Property")} open={isOpen("property")} onToggle={() => onToggle("property")} action={edit("property")} {...(view ? count(property.filter(Boolean).length, property.length) : {})}>
-      {facts ? <EditableFieldList>
+      {facts ? <EditableFieldList layout="stacked">
         <FactRow label={t("Floor plan")}>{floorPlan ? floorPlan.name : <Missing />}</FactRow>
         <FactRow label={t("Area")}>{area ?? <Missing />}</FactRow>
         {facts.spaces ? <FactRow label={t("Spaces")}>{String(facts.spaces)}</FactRow> : null}
@@ -87,14 +87,14 @@ export function OpportunityCards(props: CardsProps) {
       </EditableFieldList> : discovery.failure ? <p className={styles.missing}>{discovery.failure}</p> : loading}
     </FactCard>
     {props.showPackage ? <FactCard id="package" title={t("Design package")} open={isOpen("package")} onToggle={() => onToggle("package")} action={edit("package")} {...(view ? count(view.package ? 1 : 0, 1) : {})}>
-      {view ? <EditableFieldList>
+      {view ? <EditableFieldList layout="stacked">
         <FactRow label={t("Package")}>{view.package?.name ?? <Missing />}</FactRow>
         <FactRow label={t("Design fee")}>{view.designFee ? formatMoney(view.designFee.amount, view.designFee.currency, locale) : <span className={styles.missing}>{t("Not priced yet")}</span>}</FactRow>
       </EditableFieldList> : loading}
     </FactCard> : null}
     {questions.length ? <FactCard id="questions" title={t("Intro questions")} open={isOpen("questions")} onToggle={() => onToggle("questions")} action={edit("questions")}
       {...count(questions.filter((question) => answered(view?.answers[question.key])).length, questions.length)}>
-      <EditableFieldList>{questions.map((question) => {
+      <EditableFieldList layout="stacked">{questions.map((question) => {
         const value = view?.answers[question.key];
         return <FactRow key={question.key} label={question.label}>{answered(value) ? (typeof value === "boolean" ? (value ? t("Yes") : t("No")) : question.options?.find((option) => option.id === value)?.label ?? String(value)) : <Missing />}</FactRow>;
       })}</EditableFieldList>
@@ -105,7 +105,7 @@ export function OpportunityCards(props: CardsProps) {
     </FactCard> : null}
     {flow?.furniture ? <FactCard id="supply" title={t("Supply")} open={isOpen("supply")} onToggle={() => onToggle("supply")} {...count([flow.furniture.path, flow.furniture.path !== "bespoke" || flow.furniture.feasibility].filter(Boolean).length, 2)}
       action={!closed ? <Button size="compact" variant="quiet" onPress={props.onFurniture}><Pencil aria-hidden="true" size={13} />{pathChoice ? t("Change") : t("Choose")}</Button> : null}>
-      <EditableFieldList>
+      <EditableFieldList layout="stacked">
         <FactRow label={t("Furniture sub-path")}>{pathChoice ? `${pathChoice.letter} · ${t(pathChoice.label)}` : <Missing />}</FactRow>
         {flow.furniture.feasibility ? <FactRow label={t("Feasibility")}>{t("Confirmed · {date}", { date: dateText(flow.furniture.feasibility.at, { locale }) })}</FactRow> : null}
         {flow.flow === "furniture" && !closed ? <FactRow label={t("Client approved on the spot")}>

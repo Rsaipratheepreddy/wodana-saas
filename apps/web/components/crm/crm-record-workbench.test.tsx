@@ -27,7 +27,7 @@ const pipelines = { data: [{ id: "pipeline-1", name: "Sales", stages: [
 ] }] };
 
 describe("CRM opportunity workbench", () => {
-  it("shows the header, the progress line and everything the next column needs above the tabs, with the facts beside them", async () => {
+  it("shows the header, the progress line and everything the next column needs, with Overview · Details · Files in the sidebar", async () => {
     const record = { id: "opportunity-1", title: "Villa renovation", status: "open", version: 3, pipelineId: "pipeline-1", stageId: "qualified", stageName: "Qualified", leadId: "lead-1", partyId: "party-1", partyName: "Aisha", ownerMembershipId: "m1", ownerName: "Dana",
       funnel: [{ key: "enquiry", state: "done", detail: "E-0042", at: null }],
       flow: { flow: "design", steps, done: 1, total: 4, next: { stageId: "proposal", name: "Proposal", step: "proposal" }, missing: [{ key: "discovery:area", label: "Area" }], toWon: [{ key: "discovery:area", label: "Area" }, { key: "paymentProof", label: "Payment proof attached" }], proofs: [], furniture: null, clientApproval: null, negotiationOptional: false } };
@@ -41,19 +41,21 @@ describe("CRM opportunity workbench", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Villa renovation" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Aisha" })[0]).toHaveAttribute("href", "/workspace/crm/customers?record=party-1");
     expect(within(screen.getByRole("list", { name: "Progress" })).getAllByRole("listitem").map((item) => item.getAttribute("data-state"))).toEqual(["done", "current", "upcoming", "upcoming"]);
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Details", "Files"]);
     for (const name of ["Change stage", "Progress"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
     // "Won" is only a dot on the progress line, never a button of its own.
     expect(screen.getAllByRole("button", { name: /^Won$/ }).every((button) => button.closest("ol")?.getAttribute("aria-label") === "Progress")).toBe(true);
     expect(screen.getByText("Then: Attach payment proof")).toBeInTheDocument();
-    // Beside the work: the key facts, the client's contact (call, WhatsApp, email) and the links.
+    // Beside the work: the sidebar's tabs; Overview has the key facts, the client's contact (call, WhatsApp, email) and the links.
     const side = screen.getByRole("complementary", { name: "Key facts" });
+    expect(within(side).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Overview", "Details", "Files"]);
+    expect(within(next).queryByRole("tab")).not.toBeInTheDocument();
     expect(await within(side).findByRole("link", { name: "WhatsApp" })).toHaveAttribute("href", "https://wa.me/971501234567");
     expect(within(side).getByRole("link", { name: "Email" })).toHaveAttribute("href", "mailto:aisha@example.com");
     expect(within(side).getByRole("link", { name: "E-0042" })).toHaveAttribute("href", "/workspace/crm/leads?lead=lead-1");
-    // The group the next column needs is unfolded; the others fold away with how complete they are.
-    expect(await screen.findByRole("button", { name: /Property.*3 of 4/ })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: /Client.*2 of 2/ })).toHaveAttribute("aria-expanded", "false");
+    // Details: the group the next column needs is unfolded; the others fold away with how complete they are.
+    await user.click(within(side).getByRole("tab", { name: "Details" }));
+    expect(await within(side).findByRole("button", { name: /Property.*3 of 4/ })).toHaveAttribute("aria-expanded", "true");
+    expect(within(side).getByRole("button", { name: /Client.*2 of 2/ })).toHaveAttribute("aria-expanded", "false");
     // Add opens the property details in a side sheet; Save closes it.
     await user.click(within(next).getByRole("button", { name: "Add · Area" }));
     const sheet = await screen.findByRole("dialog", { name: "Property details" });
@@ -61,6 +63,9 @@ describe("CRM opportunity workbench", () => {
     await user.click(within(sheet).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(crmRequest).toHaveBeenCalledWith("workspace-1", "opportunities/opportunity-1/discovery", "PUT", expect.objectContaining({ version: 2, area: "1200", clientEmail: "aisha@example.com" })));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Property details" })).not.toBeInTheDocument());
+    // Edit on a Details card opens the same sheet.
+    await user.click(within(within(side).getByRole("region", { name: "Property" })).getByRole("button", { name: "Edit" }));
+    expect(await screen.findByRole("dialog", { name: "Property details" })).toBeInTheDocument();
   });
 
   it("leads the action card with the pending follow-up and keeps the activity in the sidebar", async () => {
@@ -148,6 +153,7 @@ describe("CRM opportunity workbench", () => {
     expect(await screen.findByRole("dialog", { name: "Attach payment proof" })).toBeInTheDocument();
     // The A–E sub-path stays reachable from its Supply card.
     await user.click(screen.getByRole("button", { name: "Close dialog" }));
+    await user.click(screen.getByRole("tab", { name: "Details" }));
     await user.click(await screen.findByRole("button", { name: /Supply/ }));
     await user.click(await screen.findByRole("button", { name: "Change" }));
     expect(await screen.findByRole("dialog", { name: "Furniture sub-path" })).toBeInTheDocument();

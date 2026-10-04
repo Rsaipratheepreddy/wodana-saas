@@ -9,7 +9,7 @@
 :global([dir="rtl"]) .toggle svg { transform: rotate(90deg); }
 .card[data-open] .toggle svg { transform: none; }
 .toggle h4 { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
-.cardBody { padding: 0 var(--wd-space-4) var(--wd-space-3); }
+.cardBody { padding: 0 var(--wd-space-3) var(--wd-space-3); }
 .cardBody[hidden] { display: none; }
 .missing { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .link { color: var(--wd-color-link); font-size: var(--wd-text-sm); text-decoration: none; white-space: nowrap; }
