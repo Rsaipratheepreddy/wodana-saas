@@ -12102,7 +12102,6 @@
   "Access by module": "Access by module",
   "{module} access": "{module} access",
   "Advanced": "Advanced",
-  "{count} more permissions": "{count} more permissions",
   "{module} permissions": "{module} permissions",
   "Included in {level}": "Included in {level}",
   "Choose a person": "Choose a person",
@@ -12119,5 +12118,7 @@
   "Reset to template?": "Reset to template?",
   "Open Members": "Open Members",
   "Choose an access level for each module.": "Choose an access level for each module.",
-  "No access": "No access"
+  "No access": "No access",
+  "{count} more permissions": "{count} more permissions",
+  "Enquiry types & automations": "Enquiry types & automations"
 }

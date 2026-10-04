@@ -20,7 +20,7 @@ export const LEVEL_LABELS: Record<AccessLevel, MessageKey> = {
 };
 
 export const MODULE_LABELS: Record<string, MessageKey> = {
-  sales: tKey("Sales"), inbox: tKey("Inbox"), flows: tKey("Flows"), planning: tKey("Planning"), quotations: tKey("Quotations"),
+  sales: tKey("Sales"), inbox: tKey("Inbox"), flows: tKey("Enquiry types & automations"), planning: tKey("Planning"), quotations: tKey("Quotations"),
   projects: tKey("Projects"), purchasing: tKey("Purchasing"), inventory: tKey("Inventory"), factory: tKey("Factory"),
   finance: tKey("Finance"), people: tKey("People"), settings: tKey("Settings"), woddy: tKey("Woddy"),
 };
