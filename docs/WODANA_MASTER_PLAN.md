@@ -4,6 +4,7 @@
 **This file is the only working plan.** It replaces `WODANA_PRODUCT_BLUEPRINT.md`, `WODANA_TASKS.md` and every dated plan/release note (they move to `docs/archive/` in M0). Palm business facts come from `docs/projects/PALM_LIVING_CONTEXT_2026-09-25.md` and `docs/qa-projects/palm-flow-v2-acceptance.md`; where this plan and those conflict, those win for Palm and this file is corrected.
 
 Contents
+0. Delivery roadmap (single plan, executed in order)
 1. The honest position and release strategy
 2. Product principles: minimal, productive, connected
 3. Roles and separation of duties
@@ -16,6 +17,92 @@ Contents
 10. Monday release (R1): scope, weekend work, go/no-go, rollback
 11. Competitive position vs Dzylo
 12. Decisions required
+
+---
+
+## 0. Delivery roadmap: one plan, executed in order (5 Oct 2026)
+
+This section supersedes every earlier schedule in this file. §5a, §5b and §5c remain the design references.
+
+### 0.1 Inputs, all covered
+- **Palm tracker:** 128 items (PLM-001…128). An audit on 5 Oct found 60 built, 45 partial, 20 missing and 3 needing a decision, plus the "Enquiry Types Flow" tab and the Furniture A–E paths.
+- **Shyam's 14 points:**
+  1. audit trail
+  2. cash
+  3. P&L
+  4. vendor payments
+  5. payment approvals
+  6. corporate card
+  7. overheads
+  8. BOQ → purchase
+  9. every expense
+  10. auto-trigger and allocation
+  11. reminders and escalation
+  12. warranty reminders
+  13. quotation numbering
+  14. change requests
+- **Owner feedback:**
+  - Notion-calm UI; strict table, tab, form and card rules; settings inside each module.
+  - Planning list, project, site and overview screens.
+  - Daily progress and PDFs.
+  - Client portal: documents as cards, design comments both ways, warranty, feed.
+  - Inbox scale and visibility; WhatsApp groups replaced.
+  - Woddy as an agent; My day.
+  - Materials and decisions ledger; Canva.
+  - Robust notifications with consent; vendor portal (onboarding, KYC, bidding); mobile app.
+- **Meeting, 2 Oct:** onboard up to the design close first; the enquiry type drives the steps; the inbox is the sales-admin front door; no WhatsApp groups.
+
+### 0.2 Where we implement Palm's process more robustly than asked
+
+| Palm asks | We build |
+| --- | --- |
+| Won when the payment proof is attached (PLM-122) | Attaching the proof creates the Deal File in the same action. AI reads the amount, date and reference; Finance verifies; the Owner approves and locks it. One record, no re-typing. |
+| Material list sign-off (PLM-054), "client said X, now Y" | A **materials and decisions ledger**: every choice has a source, a time, evidence and a client confirmation. A change creates a new version with its price and time impact. Procurement is blocked until the list is locked. |
+| Finance Requests board (PLM-107–110) | One **approval-policy engine** (amount thresholds, ordered approvers, Owner for large amounts, escalation) shared by invoice, refund and payable requests, POs, payments, discounts and change requests. There is no separate board to maintain. |
+| Proposal 1 / Proposal 2 (PLM-103) | Two rounds inside one job, each with its own value, approval and Won date, reported once each (PLM-009). |
+| Shared calendars design@ / logistic@ (PLM-090/091) | Team calendars inside Wodana synced with Google, without depending on shared mailbox logins. |
+| WhatsApp groups | Inbox = front door → job room ⇄ client portal; WhatsApp only as the doorbell (§5b). |
+| Reminders per item | One deadline engine for every step, task, approval, quote and payment: due-soon → overdue → escalation after N (default 3). Delivery runs with retries, fallback, consent and a health page. |
+| Enquiry types and paths | Each enquiry type owns its steps (built), extended past Won into planning and production stages per type. |
+
+### 0.3 Phases (strictly one after another; each ends verified on production)
+
+| # | Phase | Scope | Exit check |
+| --- | --- | --- | --- |
+| P0 | **Stabilise** | Baseline r39 clean; fix failing tests (project-core date); e2e smokes (palm-flow, funnel) green; Palm demo data reset; triage the WIP stash 5 Oct (reuse only reviewed parts) | All suites green on HEAD |
+| P1 | **Design foundation** | §5c D components and guard tests; apply to every list, tab, form and card; sentence-case titles; settings sheets inside modules (locations in Sales) | Before/after screenshots of every list and form; guard tests fail on violations |
+| P2 | **Lead → enquiry** | PLM-025, 026, 029, 092, 096, 116, 024, 127, 100 · inbox front door, role visibility, File into job · consent captured on forms and portal | Live: form → lead with the right source/channel; duplicate → linked; inbox visibility per role |
+| P3 | **Opportunity → Won → Deal File** | PLM-009, 066, 099, 101, 103, 106, 123, 082, 084, 085, 044, 080, 081 · proof → automatic Deal File · approval-policy engine · quotation numbering (13) · document audit trail (1) | Live: each enquiry type path end to end to an approved Deal File |
+| P4 | **Design delivery + client portal** | PLM-049, 050, 051, 053, 128, 054 · materials ledger · design comments shared with the client · Canva · change requests (14) · portal revamp (feed, document cards, Q&A, warranty) | **Milestone A: CeCe onboarding up to the design close.** Tracker rows verified and updated. |
+| P5 | **Daily operations and communication** | My day · deadline/escalation/auto-assign engine (10, 11) · notification robustness and health · daily progress rebuild · one PDF template · Woddy agent panel | Live: reminders fire and escalate; daily report → client feed |
+| P6 | **Money** | Shyam 2–9 · PLM-067, 102, 107–113 · collections · P&L · cash · corporate card import | Live: P&L of a demo project reconciles to its records |
+| P7 | **Production and procurement** | PLM-045, 046, 055–065, 068–074, 083, 086, 089–091, 098, 124–126 · BOQ → purchase · vendor portal (onboarding, KYC, bidding, PO acknowledgement) · Shopify core collection | Live: Furniture A–E and fit-out through delivery |
+| P8 | **Reports, warranty, mobile** | PLM-104, 105 · warranty reminders (12) · mobile app parity (site, daily progress, approvals, My day) | **Milestone B: full handover.** |
+
+### 0.4 How each phase is executed, to keep bugs out
+1. **Spec first:** journey, fields, rules, screens and edge cases written into §6 for the module, then reviewed.
+2. **Build:** one owner agent per phase (Opus for logic and UI; Fable only for mechanical sub-tasks, with an exact brief). At most two agents run at once, never in the same code area.
+3. **Gate:** unit + integration + e2e smoke tests; token and lint guards; typechecks.
+4. **Deploy, then verify live:** click through each acceptance case on plm.wodana.ai, with screenshots.
+5. **Tracker:** only verified items are marked Done, each with a one-line comment for Palm.
+6. **Short release note** to the owner. Nothing starts in the next phase before the current one is verified.
+
+### 0.5 Decisions needed from Palm
+1. PLM-009: how Won is reported for Proposal 2.
+2. PLM-024: who can see internal notes.
+3. PLM-029: Digital Marketing lead format.
+4. The ODG / Architecture path.
+5. Interior Design flow mapping (Enquiry Types Flow tab).
+6. Finance approvers and amount thresholds.
+7. Refund timelines.
+8. List of entities, licences and TRNs.
+9. Calendar choice: Wodana calendars or Google shared calendars.
+
+### 0.6 Handover
+- Per-role training scripts and short videos on real data.
+- Admin guide (enquiry types, steps, roles, approvals, notifications).
+- Data import (clients, catalogue, suppliers).
+- Go-live checklist, backup and restore test, support window.
 
 ---
 
