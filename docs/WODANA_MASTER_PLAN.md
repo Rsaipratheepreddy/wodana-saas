@@ -26,7 +26,7 @@ This section supersedes every earlier schedule in this file. §5a, §5b and §5c
 
 ### 0.1 Inputs, all covered
 - **Palm tracker:** 128 items (PLM-001…128). An audit on 5 Oct found 60 built, 45 partial, 20 missing and 3 needing a decision, plus the "Enquiry Types Flow" tab and the Furniture A–E paths.
-- **Shyam's 14 points:**
+- **A second client's 14 points** (Shyam's notes; not Palm), so the product must serve both firms generically:
   1. audit trail
   2. cash
   3. P&L
@@ -75,7 +75,7 @@ This section supersedes every earlier schedule in this file. §5a, §5b and §5c
 | P3 | **Opportunity → Won → Deal File** | PLM-009, 066, 099, 101, 103, 106, 123, 082, 084, 085, 044, 080, 081 · proof → automatic Deal File · approval-policy engine · quotation numbering (13) · document audit trail (1) | Live: each enquiry type path end to end to an approved Deal File |
 | P4 | **Design delivery + client portal** | PLM-049, 050, 051, 053, 128, 054 · materials ledger · design comments shared with the client · Canva · change requests (14) · portal revamp (feed, document cards, Q&A, warranty) | **Milestone A: CeCe onboarding up to the design close.** Tracker rows verified and updated. |
 | P5 | **Daily operations and communication** | My day · deadline/escalation/auto-assign engine (10, 11) · notification robustness and health · daily progress rebuild · one PDF template · Woddy agent panel | Live: reminders fire and escalate; daily report → client feed |
-| P6 | **Money** | Shyam 2–9 · PLM-067, 102, 107–113 · collections · P&L · cash · corporate card import | Live: P&L of a demo project reconciles to its records |
+| P6 | **Money: Wodana Books** | own double-entry books (E7) · second client's points 2–9 · PLM-067, 102, 107–113 · collections · P&L · cash · corporate card import | Live: P&L of a demo project reconciles to its records |
 | P7 | **Production and procurement** | PLM-045, 046, 055–065, 068–074, 083, 086, 089–091, 098, 124–126 · BOQ → purchase · vendor portal (onboarding, KYC, bidding, PO acknowledgement) · Shopify core collection | Live: Furniture A–E and fit-out through delivery |
 | P8 | **Reports, warranty, mobile** | PLM-104, 105 · warranty reminders (12) · mobile app parity (site, daily progress, approvals, My day) | **Milestone B: full handover.** |
 
@@ -109,7 +109,7 @@ Each engine is built and tested once; modules only configure it. No module keeps
 | **E4 Reminders and notifications** | Due-soon → overdue → escalate after N; delivery over in-app/push/email/WhatsApp with consent, retries, fallback, digest, quiet hours; health page; owner copies | every deadline and event |
 | **E5 Documents and decisions** | Every file and decision versioned, with who/when/source/evidence; previews and cards; client-visible flag; Canva and PDF templates; audit trail | quotes, designs, BOQ, drawings, agreements, invoices, materials ledger, change requests, handover, warranty |
 | **E6 Conversations** | One thread model with internal notes and client-visible messages; inbox (front door) → job room ⇄ portal; questions routed by stage; WhatsApp as doorbell | inbox, job room, portal, vendor portal |
-| **E7 Money ledger** | Every money movement (client receipts, invoices, vendor bills and payments, expenses, cash, card lines, overheads) on one ledger by job and company → P&L, collections, cash, payables | finance, projects, deals, procurement, QuickBooks |
+| **E7 Wodana Books (own accounting)** | A true **double-entry general ledger** under every money movement: chart of accounts per region pack, journals posted automatically from receipts, invoices, vendor bills and payments, expenses, cash, card lines, payroll and overheads; per entity/branch with its TRN or GST number; bank feeds/statement import and reconciliation; AR/AP ageing; VAT/GST returns per region pack; period close and lock; P&L, balance sheet, cash flow, trial balance, project P&L. QuickBooks/Zoho become optional exports for firms whose accountant insists. | finance, projects, deals, procurement, payroll |
 | **E8 AI agent (Woddy)** | Reads the record and context, proposes plans and actions as confirmation cards; never acts without a person; audited | every screen (side panel), My day briefing, extraction (payment proofs, chats → decisions) |
 
 Phases P1–P8 first build or consolidate the engine a module needs, then the module's screens on top. A module may not ship its own variant of an engine.
