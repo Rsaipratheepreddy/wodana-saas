@@ -1530,6 +1530,9 @@ integration("projects core (plan §6.10)", () => {
   });
 
   it("follows an order through: per-line confirmation, late orders chased and reminded weekly, the rest of a line cancelled and reordered elsewhere, and pack sizes", async () => {
+    // Dates the test needs to be in the future, whatever day it runs: a chased date and a later one.
+    const ahead = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+    const chasedTo = ahead(30), handlesDue = ahead(60);
     await world(async (w) => {
       const { core, projectId, company, vendor, buyer, manager } = await buying(w);
       let detail = await core.get(actor, w.workspaceId, projectId);
@@ -1555,9 +1558,9 @@ integration("projects core (plan §6.10)", () => {
 
       // The supplier confirms 8 m² of slab for the 20th and the handles for the end of October.
       state = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "confirm", supplierReference: "SO-77", version: state.order.version, lines: [
-        { lineId: slab.id, promisedDate: "2026-09-20", confirmedQuantity: "8" }, { lineId: handles.id, promisedDate: "2026-10-30" }] });
+        { lineId: slab.id, promisedDate: "2026-09-20", confirmedQuantity: "8" }, { lineId: handles.id, promisedDate: handlesDue }] });
       expect(state.order).toMatchObject({ status: "confirmed", promisedDate: "2026-09-20", supplierReference: "SO-77" });
-      expect(state.lines.map((line) => [line.promisedDate, line.confirmedQuantity, line.due])).toEqual([["2026-09-20", "8.0000", "2026-09-20"], ["2026-10-30", null, "2026-10-30"]]);
+      expect(state.lines.map((line) => [line.promisedDate, line.confirmedQuantity, line.due])).toEqual([["2026-09-20", "8.0000", "2026-09-20"], [handlesDue, null, handlesDue]]);
       await expect(buyer.orders.command(actor, w.workspaceId, orderId, { action: "confirm", version: state.order.version, lines: [{ lineId: slab.id, confirmedQuantity: "11" }] }))
         .rejects.toThrow(/can't confirm more/);
       expect((await buyer.receiving.deliveries(actor, w.workspaceId)).expected.map((order) => [order.number, order.due])).toEqual([[state.order.number, "2026-09-20"]]);
@@ -1570,9 +1573,9 @@ integration("projects core (plan §6.10)", () => {
       expect(late).toEqual(["email", "in_app"]);
       // Chased: the late slab moves to its new date; the handles keep theirs; nothing is late any more.
       await expect(buyer.orders.command(actor, w.workspaceId, orderId, { action: "chase", version: state.order.version })).rejects.toThrow(/what the supplier said/);
-      state = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "chase", note: "Container held at port", promisedDate: "2026-10-05", version: state.order.version });
-      expect(state.lines.map((line) => line.due)).toEqual(["2026-10-05", "2026-10-30"]);
-      expect(state.events.at(-1)).toMatchObject({ kind: "chased", detail: { note: "Container held at port", promisedDate: "2026-10-05" } });
+      state = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "chase", note: "Container held at port", promisedDate: chasedTo, version: state.order.version });
+      expect(state.lines.map((line) => line.due)).toEqual([chasedTo, handlesDue]);
+      expect(state.events.at(-1)).toMatchObject({ kind: "chased", detail: { note: "Container held at port", promisedDate: chasedTo } });
       expect((await processPurchasingDeadlines(w.client, w.workspaceId)).sent).toBe(0);
 
       // The two m² the supplier can't make are cancelled and ordered from another supplier, linked to this line.
