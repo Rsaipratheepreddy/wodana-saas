@@ -288,6 +288,61 @@ Fable never designs UI or logic: it implements a brief Opus wrote and Opus revie
 
 ---
 
+### 5c. Unified product revamp (owner + Palm feedback, 5 Oct 2026)
+
+**Diagnosis.** Each screen invents its own layout. Tables, tabs, filters, cards, forms and gaps differ from page to page. Settings hold things people look for inside the module (e.g. locations). Funnels run in parallel. People are confused.
+
+**Bar:** Notion-grade calm. One way to do each thing, everywhere.
+
+**D. Design system: strict rules, enforced by components and tests**
+1. **Page shell:**
+   - Sticky header: one title, at most one primary action top-end.
+   - Toolbar: search icon, *used* filters only, view switch, ⋯.
+   - Content.
+   - No uppercase titles, no decorative chrome.
+2. **Table:**
+   - Compact rows (40px).
+   - First column = name + one muted secondary line.
+   - Status as one semantic chip.
+   - Owner as an avatar.
+   - Numbers right-aligned.
+   - Row click opens the record.
+   - No horizontal scroll at ≥1280px; columns hide by priority.
+   - Unused filters hidden; saved views as tabs only when they hold data.
+3. **Tabs:** under the title, never more than 6; the active tab is bold with an underline; counts shown only when actionable.
+4. **Forms:**
+   - Single column, max ~40rem, label above field, equal field heights.
+   - Sections divided by a hairline and a section title.
+   - Save bottom-end.
+   - Errors listed at the top and on each field.
+   - Side sheet for edits; dialogs only for confirmations.
+5. **Cards:**
+   - One radius, one padding, one shadow.
+   - Header (title + chip + action) · body · footer.
+   - Grids of equal heights.
+6. **Spacing:** the 4px grid inside components, φ rhythm between sections. One gap scale per page type.
+7. **Record detail:** main column = the next step (action card); sidebar = Overview · Details · Files. The same anatomy for opportunity, case, project, order, vendor.
+8. **Settings live in the module:** each module has its own "⋯ › Settings" sheet (Sales: enquiry types, sources, locations; Projects: stages, roles; Finance: approvals, numbering). Global Settings keeps only workspace, branding, billing and integrations.
+
+**F. Features (Shyam's 14 points + Palm tracker + owner)**
+1. **Document audit trail:** created/updated/uploaded by and at, plus version history on every document (quotes, designs, BOQ, approvals).
+2. **Money:** cash monitoring (cash in, issued, used; project + company), a project P&L (revenue, purchases, expenses, vendor payments, allocated overheads), vendor payment monitoring (bills, paid, pending, due), configurable payment approval levels, a corporate card expense feed with reconciliation, complete expense capture per project and category, and overhead allocation rules.
+3. **BOQ → internal material purchase requirement** → procurement planning.
+4. **Automation:** auto-trigger and auto-allocate work on flow events; reminders by team with escalation after N reminders (default 3); warranty-period visit reminders to client and manager; deadline alerts before due.
+5. **Notifications:** consent captured per contact and channel (WhatsApp/email/SMS); a quiet-hours and digest preference; templates per event; WhatsApp only with consent.
+6. **Quotation numbering:** prefix/suffix/sequence per entity; upload external quotation documents.
+7. **Change requests:** design revision + price impact + timeline/handover impact, with approval and history.
+8. **Vendor portal:** vendor onboarding form, KYC documents with expiry, bank details approval, price requests and bidding (sealed, compare, award), PO acknowledgement and delivery dates.
+9. **Woddy as an agent:** a side panel that acts on the current record with tools ("AI proposes, people confirm"), shows its plan and steps, and remembers context per record.
+10. **Client portal:** a feed, typed cards, document cards (never bare links), warranty claims, design comments that both sides can make (threaded, pinned to the image), and Q&A routed by stage (§5b).
+11. **Site flow and mobile:** site visit → measurements → photos → checklist as one guided flow on web and app. Locations configured in Sales.
+12. **Enquiry-type steps editor:** follows CeCe's tracker per type (Enquiry Types Flow tab), not generic jargon.
+
+**Order:**
+- **R1:** D (foundation components + Planning table + forms) ∥ portal revamp ∥ money (cash, P&L, vendor payments, approvals) ∥ automation + notifications + consent.
+- **R2:** projects/site/overview revamp on D ∥ vendor portal ∥ Woddy agent ∥ settings-in-module ∥ change requests + quotation numbering + audit trail.
+- **R3:** mobile app parity; corporate card integration.
+
 ## 6. Module specifications
 
 Every module lists: purpose · records (tables) · states · key rules · edge cases · events → notifications · screens (minimal) · AI · acceptance tests. Money is `numeric(20,4)` and quantities `numeric(18,4)` in every module.
