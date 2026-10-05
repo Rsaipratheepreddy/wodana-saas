@@ -10,6 +10,8 @@ import { CrmEventsService } from "../shared/crm-events.service";
 import { assignDesignerToCase } from "./dedicated-designer";
 import { OpportunityDiscoveryService } from "./discovery.service";
 import { checkIntroSlot, introBlockers, meetingLocation, meetingWhen, type MeetingMode } from "./intro-meeting.domain";
+import { loadEnquiryFacts, requirementContext, requirementProblems } from "../leads/enquiry-problems";
+import { teamRolesForType } from "../leads/lead-team";
 
 export type BookIntroInput = {
   designerMembershipId: string; startsAt: string; endsAt: string; timezone: string; mode: MeetingMode;
@@ -40,8 +42,13 @@ export class IntroMeetingService {
     return this.access.withPermissions(actor, workspaceId, ["crm.opportunities.manage", "crm.activities.manage"], async (client, user) => {
       const opportunity = await this.opportunity(client, workspaceId, opportunityId, true);
       if (opportunity.status !== "open") throw new ConflictException("Reopen the opportunity before booking a meeting");
-      const blockers = introBlockers(await this.discovery.missing(client, workspaceId, opportunityId));
-      if (blockers.length) throw new UnprocessableEntityException(`Add these on Discovery first: ${blockers.map((item) => item.label).join(", ")}`);
+      const blockers = await this.blockers(client, workspaceId, opportunity);
+      if (blockers.discovery.length || blockers.enquiry.length) {
+        // PLM-092: every blocker at once, each with its field.
+        const message = [blockers.discovery.length ? `Add these on Discovery first: ${blockers.discovery.map((item) => item.label).join(", ")}` : "",
+          blockers.enquiry.length ? `Complete the enquiry: ${blockers.enquiry.map((item) => item.label).join(", ")}` : ""].filter(Boolean).join(". ");
+        throw new UnprocessableEntityException({ statusCode: 422, error: "Unprocessable Entity", message, missing: [...blockers.discovery, ...blockers.enquiry] });
+      }
       const slotError = checkIntroSlot(input);
       if (slotError) throw new UnprocessableEntityException(slotError);
 
@@ -131,7 +138,8 @@ export class IntroMeetingService {
          JOIN workspace_memberships target_member ON target_member.id = history.to_membership_id JOIN users target ON target.id = target_member.user_id
          LEFT JOIN users actor ON actor.id = history.changed_by
         WHERE history.workspace_id = $1 AND history.opportunity_id = $2 ORDER BY history.changed_at DESC`, [workspaceId, opportunityId])).rows;
-    const blockers = introBlockers(await this.discovery.missing(client, workspaceId, opportunityId));
+    const found = await this.blockers(client, workspaceId, await this.opportunity(client, workspaceId, opportunityId, false));
+    const blockers = [...found.discovery, ...found.enquiry];
     const timezone = (await client.query<{ timezone: string }>(`SELECT default_timezone AS timezone FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.timezone ?? "UTC";
     return { designer: designer ? { membershipId: designer.membershipId, name: designer.name, version: designer.version } : null, intro, history, blockers, timezone, canChangeDesigner };
   }
@@ -185,6 +193,21 @@ export class IntroMeetingService {
       `SELECT designer.membership_id AS "membershipId", account.display_name AS name, designer.intro_activity_id AS "introActivityId", designer.version
          FROM crm_opportunity_designer designer JOIN workspace_memberships membership ON membership.id = designer.membership_id JOIN users account ON account.id = membership.user_id
         WHERE designer.workspace_id = $1 AND designer.opportunity_id = $2${lock ? " FOR UPDATE OF designer" : ""}`, [workspaceId, opportunityId])).rows[0] ?? null;
+  }
+
+  /**
+   * What blocks the intro: the Discovery facts (PLM-043) and the fields the enquiry type requires before the intro
+   * (PLM-096, gate `book_intro`). The client email counts once: a Discovery email satisfies the enquiry's.
+   */
+  private async blockers(client: PoolClient, workspaceId: string, opportunity: Opportunity) {
+    const discovery = introBlockers(await this.discovery.missing(client, workspaceId, opportunity.id));
+    if (!opportunity.leadId) return { discovery, enquiry: [] };
+    const discoveryEmail = !discovery.some((item) => item.key === "clientEmail");
+    const facts = await loadEnquiryFacts(client, workspaceId, opportunity.leadId, discoveryEmail ? "on discovery" : null);
+    if (!facts) return { discovery, enquiry: [] };
+    const context = await requirementContext(client, workspaceId, facts.serviceType, await teamRolesForType(client, workspaceId, facts.serviceType));
+    const enquiry = requirementProblems(facts, context, "book_intro").filter((item) => !(item.key === "email" && !discoveryEmail));
+    return { discovery, enquiry };
   }
 
   private async opportunity(client: PoolClient, workspaceId: string, opportunityId: string, lock: boolean): Promise<Opportunity> {

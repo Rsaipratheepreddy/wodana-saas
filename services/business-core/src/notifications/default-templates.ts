@@ -327,6 +327,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "crm.template_status", channel: "in_app", subject: "Template {{name}} is {{status}}", body: "{{reason}}", variables: ["name", "status", "reason"] },
   { code: "crm.inbox_mention", channel: "in_app", subject: "{{actor}} mentioned you", body: "{{clientName}}: {{summary}}", variables: ["actor", "clientName", "summary"] },
   { code: "crm.inbox_unassigned", channel: "in_app", subject: "{{clientName}} is waiting", body: "Nobody could take this new chat. Assign it.", variables: ["clientName"] },
+  // "File into job": the job's owner hears that a chat now belongs to their job (crm-inbox.service.ts fileIntoJob).
+  { code: "crm.inbox_filed", channel: "in_app", subject: "A chat with {{clientName}} is in {{job}}", body: "{{actor}} filed it into your job. New messages from them reach you here.", variables: ["clientName", "job", "actor"] },
   // A message someone scheduled ("Send later") could not go at its time: they are told why.
   { code: "crm.inbox_scheduled_cancelled", channel: "in_app", subject: "{{clientName}} replied first", body: "Your scheduled message was cancelled so it doesn't land on top of their reply: \"{{preview}}\"", variables: ["clientName", "preview"] },
   { code: "crm.inbox_scheduled_failed", channel: "in_app", subject: "Your message to {{clientName}} wasn't sent", body: "{{reason}}", variables: ["clientName", "reason"] },
@@ -570,7 +572,7 @@ export const PUSH_NOTICES: ReadonlySet<string> = new Set([
   "quotation.review_requested", "design.review_requested",
   "crm.lead_assigned", "crm.lead_taken_over_to", "crm.conversation_assigned",
   // Team inbox: a client wrote in a chat that is yours (one notice per chat), or someone mentioned you in a note.
-  "crm.inbox_message", "crm.inbox_mention", "crm.inbox_scheduled_failed",
+  "crm.inbox_message", "crm.inbox_mention", "crm.inbox_scheduled_failed", "crm.inbox_filed",
 ]);
 
 /**

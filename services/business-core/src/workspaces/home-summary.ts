@@ -1,6 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { readWaitingApprovals, type HomeApprovalAccess } from "./home-approvals";
+import { visibleSql, type InboxViewer } from "../crm/conversations/inbox/inbox-visibility";
 
 // Structural copy of HomeSummary in packages/contracts/src/home.ts (business-core does not depend on contracts).
 export type HomeFocusSource =
@@ -31,6 +32,8 @@ export type HomeSummaryAccess = {
   followUps: boolean;
   /** crm.communications.view: client messages waiting for a reply. */
   replies: boolean;
+  /** The inbox reach (plan §5b): only chats within it wait on the person. Without it, every chat counts. */
+  inbox?: InboxViewer;
   /** crm.leads.view */
   leads: boolean;
   /** crm.leads.assign: every open enquiry nobody owns also waits on them. */
@@ -159,6 +162,7 @@ async function readDueNow(db: Db, person: Person, clock: Clock, access: HomeSumm
          JOIN crm_parties party ON party.workspace_id = conversation.workspace_id AND party.id = conversation.party_id
         WHERE conversation.workspace_id = $1 AND conversation.status = 'open' AND conversation.last_inbound_at IS NOT NULL
           AND (conversation.owner_membership_id = $2 OR conversation.owner_membership_id IS NULL)
+          ${access.inbox ? `AND ${visibleSql(access.inbox, "$2::uuid")}` : ""}
           AND NOT EXISTS (SELECT 1 FROM crm_messages outbound WHERE outbound.workspace_id = conversation.workspace_id
             AND outbound.conversation_id = conversation.id AND outbound.direction = 'outbound'
             AND outbound.status IN ('sent', 'delivered', 'read') AND outbound.created_at >= conversation.last_inbound_at)

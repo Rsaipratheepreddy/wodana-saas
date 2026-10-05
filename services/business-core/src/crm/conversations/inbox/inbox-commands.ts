@@ -7,7 +7,7 @@ import { snoozeProblem, type ConversationState } from "./inbox-rules";
 
 type Db = Pick<PoolClient, "query">;
 export type ConversationRow = Record<string, unknown>;
-export type ChatEventKind = "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked" | "blocked" | "unblocked" | "hidden" | "unhidden";
+export type ChatEventKind = "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked" | "blocked" | "unblocked" | "hidden" | "unhidden" | "filed" | "unfiled";
 export type ChatEventMethod = "manual" | "bulk" | "relationship" | "queue" | "client_replied" | "schedule" | "enquiry" | "quiet";
 
 export type ConversationChange = {
@@ -92,9 +92,13 @@ export async function applyConversationChange(db: Db, events: CrmEventsService, 
             resolved_at = CASE WHEN $3::varchar = 'closed' THEN COALESCE(CASE WHEN status = 'closed' THEN resolved_at END, now()) ELSE NULL END,
             owner_membership_id = $5::uuid,
             assigned_at = CASE WHEN $5::uuid IS NULL THEN NULL WHEN owner_membership_id IS DISTINCT FROM $5::uuid THEN now() ELSE assigned_at END,
-            lead_id = $6::uuid, subject = $7::varchar, version = version + 1, updated_at = now()
+            lead_id = $6::uuid, subject = $7::varchar, version = version + 1, updated_at = now(),
+            -- Linking an enquiry to a chat that is in no job files it there (one way in: "File into job").
+            job_kind = CASE WHEN $8::boolean AND job_id IS NULL AND $6::uuid IS NOT NULL THEN 'enquiry' ELSE job_kind END,
+            job_id = CASE WHEN $8::boolean AND job_id IS NULL AND $6::uuid IS NOT NULL THEN $6::uuid ELSE job_id END,
+            filed_at = CASE WHEN $8::boolean AND job_id IS NULL AND $6::uuid IS NOT NULL THEN now() ELSE filed_at END
       WHERE workspace_id = $1 AND id = $2 RETURNING *`,
-    [workspaceId, conversationId, status, snoozedUntil, owner, leadId, subject],
+    [workspaceId, conversationId, status, snoozedUntil, owner, leadId, subject, leadChanged],
   );
   const after = updated.rows[0];
   const method = input.method === "enquiry" ? "enquiry" : input.method;

@@ -32,6 +32,7 @@ describe("CRM lead qualification presentation", () => {
       if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry", externalEventId: "lead-ad-42", correlationId: "correlation-42" }], rowCount: 1 };
       if (sql.includes("FROM crm_attribution_touches")) return { rows: [{ id: "touch", source: "instagram", medium: "shared_link", campaign: "summer" }], rowCount: 1 };
       if (sql.includes("FROM crm_identity_candidates candidate")) return { rows: [], rowCount: 0 };
+      if (/workspace_sales_settings|crm_lead_team|crm_taxonomy_options|AND user_id = \$2 AND status = 'active' LIMIT 1/.test(sql)) return { rows: [], rowCount: 0 };
       throw new Error(`Unexpected query: ${sql}`);
     });
     const access = {
@@ -80,6 +81,7 @@ describe("CRM lead qualification presentation", () => {
         || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")
         || sql.includes("FROM crm_identity_candidates candidate")) return { rows: [], rowCount: 0 };
       if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry" }], rowCount: 1 };
+      if (/workspace_sales_settings|crm_lead_team|crm_taxonomy_options|AND user_id = \$2 AND status = 'active' LIMIT 1/.test(sql)) return { rows: [], rowCount: 0 };
       throw new Error(`Unexpected query: ${sql}`);
     });
     const access = {
@@ -107,6 +109,7 @@ describe("CRM lead qualification presentation", () => {
         || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")
         || sql.includes("FROM crm_identity_candidates candidate")) return { rows: [], rowCount: 0 };
       if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry" }], rowCount: 1 };
+      if (/workspace_sales_settings|crm_lead_team|crm_taxonomy_options|AND user_id = \$2 AND status = 'active' LIMIT 1/.test(sql)) return { rows: [], rowCount: 0 };
       throw new Error(`Unexpected query: ${sql}`);
     });
     const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })), hasPermission: vi.fn().mockResolvedValue(false) };

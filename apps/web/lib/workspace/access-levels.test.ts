@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACCESS_MODULES, MODULE_LABELS, accessChanges, describeAccess, expandAccess, levelPermissions, modulePermissions, offeredLevels, withExtra, withLevel } from "./access-levels";
+import { ACCESS_MODULES, MODULE_LABELS, accessChanges, describeAccess, expandAccess, levelLabel, levelPermissions, modulePermissions, offeredLevels, withExtra, withLevel } from "./access-levels";
 import { workspacePermissionFixture } from "./roles-permissions";
 
 describe("access levels on the web", () => {
@@ -8,6 +8,16 @@ describe("access levels on the web", () => {
     const mapped = ACCESS_MODULES.flatMap(modulePermissions);
     expect(new Set(mapped).size).toBe(mapped.length);
     expect(workspacePermissionFixture.map((permission) => permission.code).filter((code) => !mapped.includes(code))).toEqual([]);
+  });
+
+  it("names the Inbox levels Own chats · Team chats · Manage and keeps the shared names elsewhere", () => {
+    expect(levelLabel("inbox", "view")).toBe("Own chats");
+    expect(levelLabel("inbox", "edit")).toBe("Team chats");
+    expect(levelLabel("inbox", "none")).toBe("No access");
+    expect(levelLabel("sales", "edit")).toBe("Edit");
+    expect(describeAccess(["crm.communications.view", "crm.communications.send"]).levels.inbox).toBe("view");
+    expect(describeAccess(["crm.communications.view", "crm.communications.send", "crm.inbox.team"]).levels.inbox).toBe("edit");
+    expect(expandAccess({ levels: { inbox: "manage" }, extras: [] })).toEqual(["crm.communications.send", "crm.communications.view", "crm.consent.manage", "crm.inbox.manage", "crm.inbox.team"]);
   });
 
   it("round-trips a role through levels and extras", () => {

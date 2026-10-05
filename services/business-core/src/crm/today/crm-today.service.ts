@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
+import { loadInboxViewer, visibleSql } from "../conversations/inbox/inbox-visibility";
 
 @Injectable()
 export class CrmTodayService {
@@ -15,6 +16,8 @@ export class CrmTodayService {
       const timezone = workspace.rows[0]?.default_timezone ?? "UTC";
       const canReadCustomers = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.parties.view");
       const canAssign = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.leads.assign");
+      // A client waiting for a reply shows only when the chat is within the person's inbox reach (plan §5b).
+      const inbox = await loadInboxViewer((permission) => this.access.hasPermission(client, workspaceId, actorUser.userId, permission));
       const summary = await client.query(`SELECT
         (SELECT count(*)::int FROM crm_leads WHERE workspace_id=$1 AND status IN ('new','attempting_contact','connected','nurturing','paused')) AS "activeLeads",
         (SELECT count(*)::int FROM crm_leads WHERE workspace_id=$1 AND owner_membership_id IS NULL AND status IN ('new','attempting_contact','connected','nurturing','paused')) AS "unassignedLeads",
@@ -82,6 +85,7 @@ export class CrmTodayService {
                  AND outbound.created_at >= conversation.last_inbound_at
              )
              AND ($2::uuid IS NULL OR conversation.owner_membership_id = $2 OR conversation.owner_membership_id IS NULL)
+             AND ${visibleSql(inbox, "$2::uuid")}
            UNION ALL
            SELECT 2, 'sla_breach', sla.id, party.display_name,
                   'Response SLA breached', sla.due_at, '/crm/leads/' || lead.id,

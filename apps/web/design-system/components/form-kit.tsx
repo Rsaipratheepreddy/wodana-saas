@@ -8,6 +8,7 @@ import { translateKnown } from "@/lib/i18n/keys";
 import { Button } from "./actions";
 import { submitOnModEnter, type FormFieldMarkers } from "./form-context";
 import { Form } from "./forms";
+import { ProblemSummary, type SaveProblem } from "./form-summary";
 import { ControlledModalDialog, useDialogClose } from "./overlays";
 
 /* ── Layout ─────────────────────────────────────────────────────────────────────────────────────────── */
@@ -235,6 +236,15 @@ export type FormDialogProps = {
   /** An error the caller shows itself (a load failure, or a save it reports). */
   error?: ReactNode;
   errorTitle?: string;
+  /** PLM-092: every problem a save found (the caller's own checks and the server's `missing`), listed at the top, each linked to its field. */
+  problems?: Array<SaveProblem & { text?: string }>;
+  /** Shown with the problems (a "Fill missing" action). */
+  problemActions?: ReactNode;
+  /**
+   * `caller`: the caller checks every field itself on submit and lists all problems at once in `problems` (the browser
+   * does not stop the save at the first empty required field). Default `browser`.
+   */
+  validation?: "browser" | "caller";
   /** Sits above the fields: an assistant ("Fill with Woddy"), a record context line. */
   lead?: ReactNode;
   formId?: string;
@@ -257,7 +267,7 @@ const FIRST_FIELD = "input:not([type=hidden]):not([disabled]):not([aria-hidden=t
  */
 export function FormDialog({
   autoFocus = true, cancelLabel, children, closeOnSuccess = false, conflict, description, draft, error, errorTitle, fieldMarkers, formClassName, formId: formIdProp,
-  hideSubmit, isDirty = false, isDismissable, isOpen = true, isSubmitDisabled, isSubmitting: externalBusy = false, lead, onClose, onSubmit, secondaryAction, size, submitLabel, submitVariant, title,
+  hideSubmit, problemActions, problems, validation = "browser", isDirty = false, isDismissable, isOpen = true, isSubmitDisabled, isSubmitting: externalBusy = false, lead, onClose, onSubmit, secondaryAction, size, submitLabel, submitVariant, title,
 }: FormDialogProps) {
   const t = useT();
   const generated = useId();
@@ -299,12 +309,13 @@ export function FormDialog({
   const closeNow = (open: boolean) => { if (!open) onClose(); };
   return <ControlledModalDialog description={description} footer={<DialogFooter cancelLabel={cancelLabel} formId={formId} hideSubmit={hideSubmit} isSubmitDisabled={isSubmitDisabled || conflicted} isSubmitting={submitting} secondary={secondaryAction} submitLabel={submitLabel} submitVariant={submitVariant} />}
     isDirty={isDirty && !submitting} isDismissable={isDismissable ?? !submitting} isOpen={isOpen} keepsDraft={Boolean(draft)} onKeyDown={(event) => submitOnModEnter(event, form.current)} onOpenChange={closeNow} size={size} title={title}>
-    <Form className={formClassName} fieldMarkers={fieldMarkers} id={formId} onSubmit={(event) => void submit(event)} ref={form}>
+    <Form className={formClassName} errorSummary={validation === "browser"} fieldMarkers={fieldMarkers} id={formId} noValidate={validation === "caller" || undefined} onSubmit={(event) => void submit(event)} ref={form}>
       {draft?.restored ? <DraftNotice onDiscard={draft.discard} /> : null}
       {conflicted && conflict ? <FormConflictBanner
         onKeepMine={conflict.onKeepMine ? async () => { await conflict.onKeepMine!(); setConflicted(false); setResubmit((count) => count + 1); } : undefined}
         onReload={async () => { await conflict.onReload(); draft?.clear(); setConflicted(false); }} /> : null}
-      {failure || error ? <FormError title={errorTitle ?? t("Not saved")}>{failure ?? error}</FormError> : null}
+      {problems?.length && !failure ? <ProblemSummary actions={problemActions} problems={problems} title={errorTitle} />
+        : failure || error ? <FormError title={errorTitle ?? t("Not saved")}>{failure ?? error}</FormError> : null}
       {lead}
       {children}
     </Form>

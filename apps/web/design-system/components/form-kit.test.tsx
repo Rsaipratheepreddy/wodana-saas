@@ -7,6 +7,7 @@ import { DesignSystemProvider, WorkspaceRegionProvider } from "../foundations/pr
 import { workingCalendar } from "../foundations/working-days";
 import { ComboboxField, DateField, Form, TextAreaField, TextInput } from "./forms";
 import { FormDialog, FormNotSaved, MoreDetails, useFormDraft } from "./form-kit";
+import { readSaveProblems } from "./form-summary";
 import { ControlledModalDialog } from "./overlays";
 import { MoneyField, parseMoneyText } from "./money-field";
 import { PhoneField, PhoneNumberField } from "./phone-field";
@@ -324,5 +325,36 @@ describe("phone number field", () => {
     render(wrap(<Phone />));
     await user.type(screen.getByRole("textbox", { name: /Client phone/ }), "501234567");
     expect(changes.at(-1)).toBe("+971501234567");
+  });
+});
+
+describe("every problem at once (PLM-092)", () => {
+  function Dialog({ onSubmit }: { onSubmit: () => void }) {
+    const [problems, setProblems] = useState<Array<{ key: string; label: string }>>([]);
+    return <FormDialog title="Edit enquiry" submitLabel="Save" onClose={() => undefined} validation="caller" problems={problems} errorTitle="Enquiry not saved"
+      onSubmit={() => { onSubmit(); setProblems(readSaveProblems({ message: "x", missing: [{ key: "email", label: "Enter the client's email" }, { key: "address", label: "Enter the address" }, { bad: true }] })); throw new FormNotSaved(); }}>
+      <TextInput isRequired label="Customer name" name="displayName" />
+      <TextInput label="Email" name="email" isInvalid={problems.some((item) => item.key === "email")} />
+      <TextInput label="Address" name="address" />
+    </FormDialog>;
+  }
+  it("lists the server's problems in one box, links each to its field, and lets a caller check required fields itself", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(wrap(<Dialog onSubmit={onSubmit} />));
+    // `caller` validation: an empty required field doesn't stop the save before the caller sees it.
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSubmit).toHaveBeenCalledOnce();
+    const box = await screen.findByRole("alert");
+    expect(box).toHaveTextContent("Enquiry not saved");
+    expect(within(box).getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByRole("textbox", { name: "Email" })).toHaveAttribute("aria-invalid", "true");
+    await user.click(within(box).getByRole("button", { name: "Enter the address" }));
+    expect(screen.getByRole("textbox", { name: "Address" })).toHaveFocus();
+  });
+  it("reads only well-formed problems from a refused save", () => {
+    expect(readSaveProblems(null)).toEqual([]);
+    expect(readSaveProblems({ missing: "no" })).toEqual([]);
+    expect(readSaveProblems({ missing: [{ key: "a", label: "A" }, { key: 1 }] })).toEqual([{ key: "a", label: "A" }]);
   });
 });

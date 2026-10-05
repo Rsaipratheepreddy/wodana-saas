@@ -18,7 +18,17 @@ export type LeadOptions = {
   referralPartners?: LeadOption[];
   /** The signed-in member's role and team codes, lower-case (sent with the options). */
   roleKeys?: string[];
+  /** PLM-100: the team roles each enquiry type asks for (by enquiry type id), from the type's own steps. */
+  teamRoles?: Record<string, string[]>;
+  /** PLM-096: the fields each enquiry type requires, and from which gate (by enquiry type id, then field key). */
+  requirements?: Record<string, Record<string, RequiredAt>>;
 };
+/** From which gate a field is required (create < convert < book the intro), or never. */
+export type RequiredAt = "create" | "convert" | "book_intro" | "never";
+/** One team role tagged on an enquiry: a member, or Not applicable for this enquiry type, with who set it and when. */
+export type LeadTeamEntry = { role: string; membershipId: string | null; name: string | null; notApplicable: boolean; setAt: string; setByName: string | null; version: number };
+/** The choice that says a role is not needed for this enquiry. */
+export const TEAM_NOT_APPLICABLE = "not_applicable";
 
 /**
  * One role vocabulary: a member's roles and teams, lower-case, where a team role (`team_sales`) and its

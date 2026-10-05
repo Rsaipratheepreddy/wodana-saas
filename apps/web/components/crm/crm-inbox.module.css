@@ -260,3 +260,42 @@
 .scheduledItem[data-state="failed"] header, .scheduledItem[data-state="failed"] > small { color: var(--wd-color-danger); }
 .scheduledItem p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .scheduledActions { display: flex; justify-content: flex-end; gap: var(--wd-space-1); }
+
+/* Front door (plan §5b): the chips are the page tabs; search and filters in the toolbar; dense rows. */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
+.toolbarActions { display: flex; align-items: center; gap: var(--wd-space-1); margin-inline-start: auto; }
+.notice { margin: var(--wd-space-2) var(--wd-space-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.threadItems { padding: var(--wd-space-2) var(--wd-space-2) var(--wd-space-2); }
+.inbox .threadItem { min-block-size: var(--wd-space-13); padding: var(--wd-space-2) var(--wd-space-2-5); margin-block-end: var(--wd-space-0-5); border-radius: var(--wd-radius-sm); background: transparent; gap: var(--wd-space-2-5); align-items: flex-start; }
+.inbox .threadItem:hover { background: var(--wd-color-surface-muted); }
+.inbox .threadItem[aria-pressed="true"] { background: var(--chat-soft); }
+.inbox .threadItem > :global(.wd-avatar) { margin-block-start: var(--wd-space-0-5); }
+.threadCopy { gap: var(--wd-space-0-5); }
+.inbox .threadTop strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.threadItem[data-unread] .threadTop strong, .threadItem[data-unread] .preview { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); }
+.inbox .preview { font-size: var(--wd-text-xs); }
+.inbox .unread { min-inline-size: var(--wd-space-2); inline-size: var(--wd-space-2); block-size: var(--wd-space-2); padding: 0; border-radius: var(--wd-radius-pill); background: var(--chat-accent); }
+.ownerAvatar { flex-shrink: 0; display: inline-grid; place-items: center; inline-size: var(--wd-space-6); block-size: var(--wd-space-6); margin-block-start: var(--wd-space-0-5); }
+.noOwner { inline-size: var(--wd-space-5); block-size: var(--wd-space-5); border-radius: var(--wd-radius-pill); border: 1px dashed var(--wd-color-border-strong); }
+.jobChip { display: inline-flex; align-items: center; gap: var(--wd-space-1); max-inline-size: 100%; min-block-size: var(--wd-space-5); padding-inline: var(--wd-space-1-5); border-radius: var(--wd-radius-2xs); background: var(--wd-color-info-subtle); color: var(--wd-color-info); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
+a.jobChip:hover { text-decoration: underline; text-underline-offset: 2px; }
+.stateBar[data-tone="suggestion"] { justify-content: flex-start; background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); }
+.stateBar[data-tone="suggestion"] > span { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+
+/* E6-1: who reads the message being written, always in view. */
+.audience { display: inline-flex; align-items: center; gap: var(--wd-space-1); min-inline-size: 0; padding: var(--wd-space-0-5) var(--wd-space-2); border-radius: var(--wd-radius-pill); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); overflow-wrap: anywhere; }
+.audience[data-audience="client"] { background: var(--wd-color-info-subtle); color: var(--wd-color-info); }
+.audience[data-audience="internal"] { background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
+
+/* Woddy beside the chat: one line, one action; the suggested replies are chips above the reply box. */
+.woddyLine { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin: 0 var(--wd-space-3) var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.woddyLine svg { flex-shrink: 0; color: var(--chat-accent); }
+.woddyLine p { flex: 1; min-inline-size: 0; margin: 0; display: flex; flex-wrap: wrap; gap: var(--wd-space-1) var(--wd-space-2); line-height: 1.5; }
+.woddyLine p > span:first-child { color: var(--wd-color-text); }
+.woddyHint { color: var(--chat-accent); font-weight: var(--wd-weight-semibold); }
+.woddyLine small { inline-size: 100%; color: var(--wd-color-danger); }
+.suggestedReplies { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); margin: 0 var(--wd-space-3); padding: var(--wd-space-2) var(--wd-space-3) 0; background: var(--wd-color-surface-muted); }
+.suggestedReplies button { padding: var(--wd-space-1) var(--wd-space-2); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-xs); cursor: pointer; }
+.suggestedReplies button:hover { border-color: var(--chat-accent); color: var(--chat-accent); }
+.suggestedReplies button:focus-visible { outline: 2px solid var(--chat-accent); outline-offset: 2px; }
+@media (max-width: 48rem) { .woddyLine, .suggestedReplies { margin-inline: var(--wd-space-2); } }

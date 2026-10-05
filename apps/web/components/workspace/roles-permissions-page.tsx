@@ -8,7 +8,7 @@ import type { WorkspaceRole } from "@/lib/workspace/members";
 import {
   ACCESS_LEVELS,
   ACCESS_MODULES,
-  LEVEL_LABELS,
+  levelLabel,
   MODULE_LABELS,
   accessChanges,
   describeAccess,
@@ -197,7 +197,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   const levelHint = (module: AccessModule, level: AccessLevel) => {
     const name = t(MODULE_LABELS[module.id]);
     if (level === "none") return t("No access to {module}", { module: name });
-    return `${t(LEVEL_LABELS[level])}: ${levelPermissions(module, level).map((code) => permissionLabel(code, t)).join(", ")}`;
+    return `${t(levelLabel(module.id, level))}: ${levelPermissions(module, level).map((code) => permissionLabel(code, t)).join(", ")}`;
   };
   const toggleOpen = (moduleId: string) => setOpen((current) => { const next = new Set(current); if (next.has(moduleId)) next.delete(moduleId); else next.add(moduleId); return next; });
 
@@ -215,7 +215,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
         <div className={styles.moduleRow}>
           <span className={styles.moduleName}>{name}</span>
           <SegmentedControl isDisabled={!isEditable} label={t("{module} access", { module: name })} value={level}
-            options={ACCESS_LEVELS.map((option) => ({ id: option, label: t(LEVEL_LABELS[option]), description: levelHint(module, option),
+            options={ACCESS_LEVELS.map((option) => ({ id: option, label: t(levelLabel(module.id, option)), description: levelHint(module, option),
               isDisabled: !offered.includes(option) || !levelPermissions(module, option).every(canGrant) }))}
             onChange={(next) => setDraft(withLevel(draft, module.id, next as AccessLevel))} />
           <button aria-controls={panelId} aria-expanded={expanded} className={styles.advancedToggle} onClick={() => toggleOpen(module.id)} type="button">
@@ -227,7 +227,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
             <Checkbox isDisabled={!isEditable || included.has(code) || !canGrant(code)} isSelected={included.has(code) || draft.extras.includes(code)}
               onChange={(granted) => setDraft(withExtra(draft, code, granted))}>
               <span>{permissionLabel(code, t)}</span>
-              {included.has(code) ? <small className={styles.included}>{t("Included in {level}", { level: t(LEVEL_LABELS[level]) })}</small> : null}
+              {included.has(code) ? <small className={styles.included}>{t("Included in {level}", { level: t(levelLabel(module.id, level)) })}</small> : null}
             </Checkbox>
           </li>)}
         </ul>

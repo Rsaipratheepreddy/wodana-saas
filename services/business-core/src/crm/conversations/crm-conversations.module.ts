@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { BrandAssetStorageService } from "../../workspaces/brand-asset-storage.service";
 import { WorkspacesModule } from "../../workspaces/workspaces.module";
+import { AiGatewayModule } from "../../ai-gateway/ai-gateway.module";
 import { CrmNotificationsModule } from "../notifications/crm-notifications.module";
 import { CrmMessageReceiptModule } from "./crm-message-receipt.module";
 import { CrmAttachmentTargetsController, CrmAttachmentsController, InternalCrmAttachmentsController } from "./crm-attachments.controller";
@@ -14,7 +15,7 @@ import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
 import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
 
 @Module({
-  imports: [WorkspacesModule, CrmNotificationsModule, CrmMessageReceiptModule],
+  imports: [WorkspacesModule, CrmNotificationsModule, CrmMessageReceiptModule, AiGatewayModule],
   controllers: [CrmInboxController, InternalCrmInboxController, CrmConversationsController, InternalCrmConversationsController, CrmAttachmentsController, CrmAttachmentTargetsController, InternalCrmAttachmentsController],
   providers: [CrmConversationsService, CrmInboxService, CrmWhatsAppTemplatesService, CrmPaymentRemindersService, CrmAttachmentsService, CrmScheduledMessagesService, BrandAssetStorageService],
   exports: [CrmConversationsService, CrmInboxService, CrmScheduledMessagesService],

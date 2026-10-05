@@ -40,6 +40,7 @@
 .contactActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); margin-inline-start: calc(-1 * var(--wd-space-1-5)); }
 .contactHint { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .linkedOpportunities { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.beforeConverting { display: grid; gap: var(--wd-space-1); margin: 0; padding-inline-start: var(--wd-space-5); font-size: var(--wd-text-sm); color: var(--wd-color-text); }
 .linkedOpportunity { display: flex; align-items: center; gap: var(--wd-space-3); flex-wrap: wrap; }
 .linkedOpportunity .link { display: inline-flex; align-items: center; gap: var(--wd-space-1); min-inline-size: 0; max-inline-size: 100%; }
 .linkedOpportunity .link svg { flex: none; }

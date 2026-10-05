@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, FileX, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, FileX, FolderInput, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
 import { Avatar, Badge, Button, FormDialog, IconButton, IconMenuButton, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
-import { attachmentUrl, CLIENT_EVENT_LABELS, channelName, eventLine, fileSizeText, snoozePresets, type ChatAttachment, type ChatContext, type ChatEvent, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
+import { attachmentUrl, CLIENT_EVENT_LABELS, channelName, eventLine, fileSizeText, jobHref, jobName, snoozePresets, type ChatAttachment, type ChatContext, type ChatEvent, type ConversationJob, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -18,6 +19,7 @@ import { useWoddyPrivateAsk, WoddyPrivateReplies } from "@/components/woddy/wodd
 import { LabelChip, useNow } from "./inbox-parts";
 import styles from "../crm-inbox.module.css";
 import { SaveToProject } from "./save-to-project";
+import { JobSuggestion, SuggestedReplies, useChatInsights, WoddyLine } from "./chat-insights";
 
 type ChatPage = { data: RecordData[]; nextCursor: string | null };
 const timeout = () => AbortSignal.timeout(20_000);
@@ -28,9 +30,11 @@ export type ThreadLookups = { labels: InboxLabel[]; owners: InboxOwner[]; quickR
  * One chat: who owns it, its state (Open, Snoozed, Resolved) and labels in the header, the messages with the
  * chat's own history between them, and the composer. `onDone` opens the next chat after Resolve or Snooze.
  */
-export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBack, onChanged, onDone, lookups, registerActions }: {
+export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBack, onChanged, onDone, onLeft, lookups, registerActions }: {
   workspaceId: string; id: string; draft: string; onDraftChange: (value: string) => void; onBack: () => void;
   onChanged: () => Promise<void>; onDone: () => void; lookups: ThreadLookups;
+  /** The chat left the person's reach (filed into a job whose team they are not on): the list says where it went. */
+  onLeft?: (message: string) => void;
   /** The list's keyboard shortcuts act on the open chat through these. */
   registerActions?: (actions: { resolve: () => void } | null) => void;
 }) {
@@ -45,6 +49,8 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
   const picked = useWoddy()?.selection ?? null;
   const woddy = useWoddyPrivateAsk(workspaceId, { surface: "inbox", context: { type: "conversation", id }, selection: picked?.type === "conversation" ? picked : null }, onDraftChange);
   const [context, setContext] = useState<ChatContext | null>(null);
+  const lastMessageId = ((thread?.messages ?? []) as RecordData[]).at(-1)?.id ?? null;
+  const insights = useChatInsights(workspaceId, id, lastMessageId ? String(lastMessageId) : null);
   const [busy, setBusy] = useState(false), [failure, setFailure] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [customSnooze, setCustomSnooze] = useState(false);
@@ -68,6 +74,19 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     catch (error) { setFailure(error instanceof Error ? error.message : t("The chat could not be updated.")); }
     finally { saving.current = false; setBusy(false); }
   }, [thread, workspaceId, id, refresh, onChanged, onDone, t]);
+  // "File into job": the chat belongs to one of the contact's jobs; `null` takes it out again.
+  const file = useCallback(async (job: Pick<ConversationJob, "kind" | "id"> | null) => {
+    if (saving.current || !thread) return;
+    saving.current = true; setBusy(true); setFailure("");
+    try {
+      const result = await crmRequest<{ job: ConversationJob | null; visible?: boolean }>(workspaceId, `conversations/${id}/job`, "PUT", { version: thread.version, kind: job?.kind ?? null, id: job?.id }, timeout());
+      // Filed into a job whose team the person is not on: the chat is the job team's now (plan §5b).
+      if (result.visible === false) { onLeft?.(result.job ? t("Filed into {job}. Its team has the chat now.", { job: jobName(result.job) }) : t("The chat was filed.")); return; }
+      await refresh(); await loadContext(); await onChanged();
+    }
+    catch (error) { setFailure(error instanceof Error ? error.message : t("The chat could not be filed.")); }
+    finally { saving.current = false; setBusy(false); }
+  }, [thread, workspaceId, id, refresh, loadContext, onChanged, onLeft, t]);
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const command = useCallback(async (path: string, body: Record<string, unknown>, fallback: string) => {
     setBusy(true); setFailure("");
@@ -113,6 +132,14 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
   ];
   const activeLabels = lookups.labels.filter((item) => item.status !== "archived");
   const applied = new Set(chatLabels.map((item) => item.id));
+  const job = (thread.job ?? context?.job ?? null) as ConversationJob | null;
+  // Every job of the contact the chat can be filed into, the current one left out.
+  const jobItems = [
+    ...(context?.enquiries ?? []).map((item) => ({ id: `enquiry:${item.id}`, label: t("Enquiry {name}", { name: item.reference }) })),
+    ...(context?.opportunities ?? []).map((item) => ({ id: `opportunity:${item.id}`, label: t("Opportunity {name}", { name: jobName(item) }) })),
+    ...(context?.projects ?? []).map((item) => ({ id: `project:${item.id}`, label: t("Project {name}", { name: item.name }) })),
+  ].filter((item) => item.id !== (job ? `${job.kind}:${job.id}` : ""));
+  const fileItems = [...jobItems, ...(job ? [{ id: "none", label: t("Take out of job") }] : [])];
   return <div className={styles.conversation}><section aria-label={t("Chat messages")} className={styles.thread}>
     <header className={styles.threadHeading}>
       <IconButton aria-label={t("Back to inbox")} className={styles.mobileBack} size="compact" onPress={onBack}><ArrowLeft size={18} /></IconButton>
@@ -120,10 +147,15 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       <div className={styles.headingIdentity}>
         <h2>{String(thread.partyName ?? t("Customer"))}{thread.demo === true ? <> <Badge tone="warning">{t("Demo")}</Badge></> : null}</h2>
         <span>{isWhatsApp && replyingAs?.number ? t("Replying as {business} · {number}", { business: replyingAs.businessName ?? "", number: replyingAs.number }) : channelName(thread.channel, t)}{isWhatsApp && (thread.numberHealth === "limited" || thread.numberHealth === "blocked") ? <> <Badge tone={thread.numberHealth === "blocked" ? "danger" : "warning"}>{thread.numberHealth === "blocked" ? t("Blocked by Meta") : t("Limited by Meta")}</Badge></> : null}</span>
-        {chatLabels.length ? <span className={styles.headingLabels}>{chatLabels.map((item) => <LabelChip key={item.id} label={item} />)}</span> : null}
+        {chatLabels.length || job ? <span className={styles.headingLabels}>
+          {job ? <Link className={styles.jobChip} href={jobHref(job)}><FolderInput aria-hidden="true" size={11} />{t("Filed into {job}", { job: jobName(job) })}</Link> : null}
+          {chatLabels.map((item) => <LabelChip key={item.id} label={item} />)}
+        </span> : null}
       </div>
       <div className={styles.actions}>
         {thread.canSend ? <MenuButton size="compact" label={String(thread.ownerName ?? t("Unassigned"))} items={ownerItems} onAction={(key) => void change({ ownerMembershipId: key === "unassign" ? null : key })} /> : null}
+        {thread.canSend && fileItems.length ? <IconMenuButton ariaLabel={job ? t("Change job") : t("File into job")} icon={<FolderInput aria-hidden="true" size={15} />} items={fileItems}
+          onAction={(key) => { if (key === "none") void file(null); else { const [kind, jobId] = key.split(":", 2); void file({ kind: kind as ConversationJob["kind"], id: jobId }); } }} /> : null}
         {thread.canSend && activeLabels.length ? <IconMenuButton ariaLabel={t("Labels")} icon={<Tag aria-hidden="true" size={15} />} items={activeLabels.map((item) => ({ id: item.id, label: applied.has(item.id) ? t("Remove {label}", { label: item.name }) : item.name }))}
           onAction={(key) => void setLabels(applied.has(key) ? [...applied].filter((labelId) => labelId !== key) : [...applied, key])} /> : null}
         {thread.canSend && status !== "closed" ? <MenuButton size="compact" label={status === "snoozed" ? t("Snoozed") : t("Snooze")} items={[...presets.map((preset) => ({ id: preset.id, label: t(preset.label) })), { id: "custom", label: t("Pick a date and time…") }, ...(status === "snoozed" ? [{ id: "wake", label: t("Wake now") }] : [])]}
@@ -139,16 +171,20 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
     {loadFailure || failure ? <p className={styles.error} role="alert">{failure || loadFailure} {loadFailure ? <Button size="compact" variant="quiet" onPress={() => void refresh()}>{t("Retry")}</Button> : null}</p> : null}
     {thread.blockedAt ? <p className={styles.stateBar} data-tone="danger"><Ban aria-hidden="true" size={14} />{thread.spamAt ? t("Blocked as spam: messages are kept, nobody is told.") : t("Blocked: messages are kept, nobody is told.")}</p> : null}
     {status === "snoozed" && thread.snoozedUntil ? <p className={styles.stateBar}><Clock3 aria-hidden="true" size={14} />{t("Snoozed until {time}", { time: new Intl.DateTimeFormat(locale, { timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(String(thread.snoozedUntil))) })}</p> : null}
+    {thread.canSend ? <JobSuggestion context={context} busy={busy} onFile={(suggested) => void file(suggested)} /> : null}
+    <WoddyLine workspaceId={workspaceId} thread={thread} context={context} insights={insights} owners={owners} membershipId={lookups.membershipId}
+      onCreated={async (leadId) => { await file({ kind: "enquiry", id: leadId }); }} />
     <MessageHistory workspaceId={workspaceId} thread={thread} onHide={thread.canSend ? hide : undefined} canShowHidden={Boolean(thread.canManage)}
       revision={woddy.turns.map((turn) => `${turn.id}:${turn.state}`).join(",")}
       after={<><ScheduledMessages workspaceId={workspaceId} conversationId={id} items={(thread.scheduledMessages ?? []) as ScheduledMessage[]} canSend={Boolean(thread.canSend)}
         windowClosesAt={(thread.windowClosesAt as string | null) ?? null} onChanged={async () => { await refresh(); await onChanged(); }} />
         <WoddyPrivateReplies workspaceId={workspaceId} turns={woddy.turns} onDismiss={woddy.dismiss} draftPlaced /></>} />
+    {thread.canSend && !blocked ? <SuggestedReplies insights={insights} variables={context?.variables ?? {}} onPick={onDraftChange} /> : null}
     <InboxComposer workspaceId={workspaceId} thread={thread} now={now} blocked={blocked} draft={draft} onDraftChange={onDraftChange} variables={context?.variables ?? {}}
       lookups={{ quickReplies: lookups.quickReplies, templates: lookups.templates, owners, canManage: Boolean(lookups.settings?.canManage) }}
       onSent={async () => { await refresh(); await onChanged(); }} onAskWoddy={woddy.ask} woddyBusy={woddy.asking} />
   </section>
-    {detailsOpen ? <InspectorSheet isOpen title={t("Contact details")} onOpenChange={setDetailsOpen} size="sm"><ChatContextPanel workspaceId={workspaceId} thread={thread} context={context} owners={owners} membershipId={lookups.membershipId} onLinked={async () => { await refresh(); await loadContext(); await onChanged(); }} /></InspectorSheet> : null}
+    {detailsOpen ? <InspectorSheet isOpen title={t("Contact details")} onOpenChange={setDetailsOpen} size="sm"><ChatContextPanel workspaceId={workspaceId} thread={thread} context={context} owners={owners} membershipId={lookups.membershipId} onFile={(job) => file(job)} /></InspectorSheet> : null}
     {customSnooze ? <CustomSnooze timeZone={timeZone} onClose={() => setCustomSnooze(false)} onSnooze={async (until) => { setCustomSnooze(false); await change({ status: "snoozed", snoozedUntil: until }, true); }} /> : null}
     {confirmationDialog}
   </div>;

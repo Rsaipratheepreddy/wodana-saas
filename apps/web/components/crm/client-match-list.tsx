@@ -9,13 +9,17 @@ import { formatPhoneForDisplay } from "@/lib/crm/phone";
 import styles from "./client-match-list.module.css";
 
 /** Existing clients a new enquiry may belong to: mobile, email, latest enquiry and its owner (LF-1, S-3). */
-export function ClientMatchList({ matches, actions, label }: { matches: ClientMatch[]; actions: (match: ClientMatch) => ReactNode; label: string }) {
+export function ClientMatchList({ matches, actions, label, reason }: { matches: ClientMatch[]; actions: (match: ClientMatch) => ReactNode; label: string;
+  /** Why this person matched, in one line ("Same mobile, different name spelling"). */
+  reason?: (match: ClientMatch) => string | null;
+}) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   return <ul className={styles.list} aria-label={label}>
     {matches.map((match) => <li key={match.candidateId ?? match.partyId} className={styles.item}>
       <div className={styles.facts}>
         <strong>{customerDisplayName(match.name)}</strong>
+        {reason?.(match) ? <span className={styles.reason}>{reason(match)}</span> : null}
         <span>{[match.mobile ? formatPhoneForDisplay(match.mobile) : null, match.email].filter(Boolean).join(" · ") || t("No contact details")}</span>
         {match.reference ? <span className={styles.enquiry}>
           <Badge tone={match.open ? "info" : "neutral"}>{match.open ? t("Open") : t("Closed")}</Badge>

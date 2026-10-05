@@ -14,7 +14,9 @@ import { NextStepCard, RecordColumns, RecordFrame, RecordHeader, RecordPanel, Re
 import { initialQualificationValues, qualificationAnswerText, qualificationFields, qualificationValues, type QualificationQuestion } from "@/lib/crm/qualification-fields";
 import { LeadAssignmentDialog } from "./lead-assignment-dialog";
 import { LeadEnquiryForm } from "./lead-enquiry-form";
-import { hasResolvedEnquiryType, leadOptionLabel, type EnquiryDetails, type LeadContact } from "@/lib/crm/lead-options";
+import { hasResolvedEnquiryType, leadOptionLabel, TEAM_NOT_APPLICABLE, type EnquiryDetails, type LeadContact, type LeadTeamEntry } from "@/lib/crm/lead-options";
+import { problemText, teamRoleLabel } from "@/lib/crm/enquiry-requirements";
+import type { SaveProblem } from "@/design-system";
 import { formatPhoneForDisplay, phoneCountry, whatsappUrl } from "@/lib/crm/phone";
 import { customerDisplayName } from "@/lib/crm/customer-name";
 import { RecordAttachments } from "./record-attachments";
@@ -51,7 +53,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
   const { workspaceId } = initialData;
   const [contacting, setContacting] = useState(false);
   const resource = useCrmResource<RecordData>(workspaceId, `leads/${lead.id}`);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<"edit" | "complete" | false>(false);
   const [stageEditing, setStageEditing] = useState(false);
   const [selectedStage, setSelectedStage] = useState("");
   const [activityRevision, setActivityRevision] = useState(0);
@@ -76,6 +78,13 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
   const needsEnquiryType = !hasResolvedEnquiryType(String(enquiry?.serviceType ?? lead.serviceType ?? ""));
   const attribution = (enquiry?.attribution ?? []) as RecordData[];
   const enquiryDetails = (enquiry?.details ?? lead.details ?? {}) as EnquiryDetails;
+  // PLM-096: what the enquiry type still needs before converting; PLM-100: the team tagged on it, per the type's roles.
+  const conversion = (detail?.conversion ?? null) as { ready: boolean; missing: SaveProblem[] } | null;
+  const conversionMissing = conversion && !conversion.ready ? conversion.missing : [];
+  const team = (detail?.team ?? []) as LeadTeamEntry[];
+  const teamRoles = [...new Set([...((detail?.teamRoles ?? []) as string[]), ...team.map((entry) => entry.role)])];
+  // PLM-024: the notes come only to those who may read them.
+  const notesVisible = detail?.notesVisible !== false;
   const fieldList = enquiryFields(initialData.enquiryFields, "");
   const shownField = (key: string) => isShown(fieldList, key);
   const ownFields = fieldList.filter((field) => field.custom && field.visible);
@@ -111,12 +120,12 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
   const identityLocked = canEdit && initialData.canChangeIdentity === false;
   const identityLock = identityLocked ? t("Only Sales admins can change the client's name or phone") : undefined;
   const text = (value: unknown) => typeof value === "string" ? value : value === null || value === undefined ? "" : String(value);
-  const saveDetails = async (change: { serviceType?: string; summary?: string; party?: Partial<LeadContact>; details?: Partial<EnquiryDetails> }) => {
+  const saveDetails = async (change: { serviceType?: string; summary?: string; party?: Partial<LeadContact>; details?: Partial<EnquiryDetails>; team?: Array<{ role: string; membershipId?: string | null; notApplicable?: boolean }> }) => {
     const party = { ...contact, displayName: text(enquiry?.partyName ?? lead.partyName), email: text(enquiry?.primaryEmail ?? contact.email), phone: text(enquiry?.primaryPhone ?? contact.phone), mobile: text(enquiry?.primaryMobile ?? contact.mobile), ...change.party };
     const details = Object.fromEntries((["emirate", "area", "location", "customerType", "budgetRange", "campaign", "internalNotes"] as const).map((key) => [key, text(change.details && key in change.details ? change.details[key] : enquiryDetails[key])]));
     try {
       const result = await crmRequest<RecordData>(workspaceId, `leads/${lead.id}/details`, "PATCH", {
-        version: Math.max(Number(version ?? 0), savedVersion), serviceType: change.serviceType ?? text(enquiry?.serviceType ?? lead.serviceType), summary: change.summary ?? text(enquiry?.summary), party, details });
+        version: Math.max(Number(version ?? 0), savedVersion), serviceType: change.serviceType ?? text(enquiry?.serviceType ?? lead.serviceType), summary: change.summary ?? text(enquiry?.summary), party, details, ...(change.team ? { team: change.team } : {}) });
       if (result?.version) setSavedVersion(Number(result.version));
       await saved();
     } catch (cause) {
@@ -139,13 +148,16 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
       <ul className={styles.linkedOpportunities}>{opportunities.map(opportunity => <li key={opportunity.id} className={styles.linkedOpportunity}><Link className={styles.link} href={`/workspace/crm/opportunities?record=${opportunity.id}`} onClick={openRecord}><span className={styles.dealLinkText}>{opportunity.title && String(opportunity.title) !== enquiryReference ? String(opportunity.title) : t("Open opportunity")}</span><ArrowUpRight size={13} aria-hidden="true" /></Link>{opportunity.preProjectCaseId && opportunity.dealFileReference ? <Link className={styles.link} href={`/workspace/pre-projects/cases/${opportunity.preProjectCaseId}/approvals`} onClick={openRecord}>{t("Deal File {reference}", { reference: String(opportunity.dealFileReference) })} <ArrowUpRight size={13} aria-hidden="true" /></Link> : null}</li>)}</ul>
     </NextStepCard>
     : canContact || (canCreateDeal && onQualify) ? <NextStepCard tour="enquiry-next-step"
-      title={needsEnquiryType ? t("Choose an enquiry type") : t("Ready to move forward?")}
-      why={needsEnquiryType ? t("Replace Not Sure Yet with the actual enquiry type before qualification or conversion.") : qualificationState?.form && !qualificationState.ready ? t("Complete qualification before conversion.") : t("Convert to an opportunity when the client's requirements are clear.")}
+      title={needsEnquiryType ? t("Choose an enquiry type") : conversionMissing.length ? t("Before converting") : t("Ready to move forward?")}
+      why={needsEnquiryType ? t("Replace Not Sure Yet with the actual enquiry type before qualification or conversion.") : conversionMissing.length ? undefined : qualificationState?.form && !qualificationState.ready ? t("Complete qualification before conversion.") : t("Convert to an opportunity when the client's requirements are clear.")}
       meta={<>
         {canContact ? <Button size="compact" variant={canCreateDeal && onQualify ? "secondary" : "primary"} isDisabled={!detail} onPress={() => setContacting(true)}><PhoneCall size={14} aria-hidden="true" />{t("Log contact")}</Button> : null}
         {questions.length && canCreateDeal ? <Button size="compact" isDisabled={!detail || live.status === "qualified"} onPress={() => setAction({ title: qualificationState?.form?.name ?? t("Qualification"), path: `leads/${lead.id}/qualification`, method: "PUT", initial: initialQualificationValues(questions, answers), fields: configuredFields, transform: values => ({ version, values: qualificationValues(questions, values) }) })}>{t("Qualification")}</Button> : null}
-        {detail && canCreateDeal && onQualify ? needsEnquiryType ? <Button size="compact" variant="primary" onPress={() => setEditing(true)}>{t("Edit enquiry type")}</Button> : <Button size="compact" variant="primary" isDisabled={Boolean(qualificationState?.form && !qualificationState.ready)} onPress={() => onQualify(live)}>{t("Convert to opportunity")}</Button> : null}
+        {detail && canCreateDeal && onQualify ? needsEnquiryType ? <Button size="compact" variant="primary" onPress={() => setEditing("edit")}>{t("Edit enquiry type")}</Button>
+          : conversionMissing.length ? <Button size="compact" variant="primary" onPress={() => setEditing("complete")}>{t("Complete details")}</Button>
+          : <Button size="compact" variant="primary" isDisabled={Boolean(qualificationState?.form && !qualificationState.ready)} onPress={() => onQualify(live)}>{t("Convert to opportunity")}</Button> : null}
       </>}>
+      {!needsEnquiryType && conversionMissing.length ? <ul className={styles.beforeConverting} aria-label={t("Before converting")}>{conversionMissing.map((item) => <li key={item.key}>{problemText(item, t, { regionLabel })}</li>)}</ul> : null}
       {canContact ? (primaryPhone || primaryEmail) ? <div className={styles.contactActions}>
         {primaryPhone && <Button size="compact" variant="quiet" onPress={() => openContact(`tel:${primaryPhone.replace(/[^\d+*#,;]/g, "")}`)}><Phone size={14} aria-hidden="true" />{t("Call")}</Button>}
         {primaryPhone && <Button size="compact" variant="quiet" isDisabled={!whatsappLink} onPress={() => { if (whatsappLink) openContact(whatsappLink); }}><MessageCircle size={14} aria-hidden="true" />{t("WhatsApp")}</Button>}
@@ -171,7 +183,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
         onSave={(displayName) => saveDetails({ party: { displayName } })} value={text(enquiry?.partyName ?? lead.partyName)} />}
       meta={enquiryReference || showEnquiryTitle || live.slaDueAt ? <>{enquiryReference ? <span className={styles.enquiryReference}>{enquiryReference}</span> : null}{showEnquiryTitle ? <span>{enquiryTitle}</span> : null}<RespondByChip lead={live as { slaStatus?: string | null; slaDueAt?: string | null; slaWarningAt?: string | null }} now={now} /></> : null}
       actions={<>
-        <Button size="compact" isDisabled={!detail} onPress={() => setEditing(true)}><Pencil size={14} aria-hidden="true" />{t("Edit details")}</Button>
+        <Button size="compact" isDisabled={!detail} onPress={() => setEditing("edit")}><Pencil size={14} aria-hidden="true" />{t("Edit details")}</Button>
         {/* Junk from a form (S-13): closed as spam, out of reports, and the contact blocked. */}
         {menu.length ? <IconMenuButton ariaLabel={t("More actions")} items={detail ? menu : []} onAction={() => setAction({ title: t("Mark as spam"), path: `leads/${lead.id}/spam`, method: "POST", submit: t("Mark as spam"),
           description: t("This closes the enquiry as spam and blocks the number, unless the client has other work with you."), submitVariant: "danger",
@@ -205,6 +217,14 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
             <EditableFieldList layout="stacked">
               <EditableField canEdit={canEdit} display={leadOptionLabel(options?.enquiryTypes, text(enquiry?.serviceType ?? lead.serviceType))} items={withCurrent(options?.enquiryTypes, text(enquiry?.serviceType ?? lead.serviceType))} kind="select" label={t("Enquiry type")}
                 onReload={resource.refresh} onSave={(serviceType) => saveDetails({ serviceType })} value={text(enquiry?.serviceType ?? lead.serviceType)} />
+              {teamRoles.map((role) => {
+                const tagged = team.find((entry) => entry.role === role);
+                return <EditableField key={role} canEdit={canEdit && !live.isConverted} kind="select" label={teamRoleLabel(role, t)} placeholder={t("Not tagged")}
+                  items={[...initialData.members.filter((member) => member.status === "active").map((member) => ({ id: member.id, label: member.displayName || member.email })), { id: TEAM_NOT_APPLICABLE, label: t("Not applicable") }]}
+                  display={tagged ? <>{tagged.notApplicable ? t("Not applicable") : tagged.name}{tagged.setByName ? <small className={styles.contactHint}> · {t("{name} · {date}", { name: tagged.setByName, date: dateText(tagged.setAt, zoned) })}</small> : null}</> : undefined}
+                  onReload={resource.refresh} onSave={(choice) => saveDetails({ team: [{ role, ...(choice === TEAM_NOT_APPLICABLE ? { notApplicable: true } : { membershipId: choice || null }) }] })}
+                  value={tagged ? (tagged.notApplicable ? TEAM_NOT_APPLICABLE : tagged.membershipId ?? "") : ""} />;
+              })}
               <EditableField canEdit={canEdit && !identityLocked} lockedReason={identityLock} countryCode={text(contact.mobileCountryCode ?? contact.phoneCountryCode)} display={phoneText(enquiry?.primaryMobile ?? contact.mobile, contact.mobileCountryCode ?? contact.phoneCountryCode)} isRequired kind="phone" label={t("Mobile")}
                 onReload={resource.refresh} onSave={(mobile, { countryCode }) => saveDetails({ party: { mobile, ...(countryCode ? { mobileCountryCode: countryCode } : {}) } })} value={text(enquiry?.primaryMobile ?? contact.mobile)} />
               <EditableField canEdit={canEdit && !(identityLocked && text(enquiry?.primaryPhone ?? contact.phone))} lockedReason={text(enquiry?.primaryPhone ?? contact.phone) ? identityLock : undefined} countryCode={text(contact.phoneCountryCode)} display={phoneText(enquiry?.primaryPhone ?? contact.phone)} kind="phone" label={t("Phone")} placeholder={t("Not provided")}
@@ -235,7 +255,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
               <EditableField canEdit={canEdit} label={t("Address")} maxLength={500} onReload={resource.refresh} onSave={(address) => saveDetails({ party: { address } })} placeholder={t("Not provided")} value={text(contact.address)} />
               {ownFields.map((field) => <FactRow key={field.custom!.id} label={field.label}>{customValueText(lead.customFields?.[field.custom!.id])}</FactRow>)}
               {configuredFields.filter(field => answers[field.key] !== undefined).map(field => <FactRow key={field.key} label={field.label}>{qualificationAnswerText(answers[field.key])}</FactRow>)}
-              <EditableField canEdit={canEdit} kind="multiline" label={t("Internal notes")} maxLength={10000} onReload={resource.refresh} onSave={(internalNotes) => saveDetails({ details: { internalNotes } })} placeholder={t("Not provided")} value={text(enquiryDetails.internalNotes)} />
+              {notesVisible ? <EditableField canEdit={canEdit} kind="multiline" label={t("Internal notes")} maxLength={10000} onReload={resource.refresh} onSave={(internalNotes) => saveDetails({ details: { internalNotes } })} placeholder={t("Not provided")} value={text(enquiryDetails.internalNotes)} /> : null}
             </EditableFieldList>
           </SideSection>
           <SideSection title={t("Source")}>
@@ -254,7 +274,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify, onOpenR
         { id: "files", label: t("Files"), panel: <RecordAttachments workspaceId={workspaceId} leadId={lead.id} /> },
       ]} />
 
-    {editing && detail ? <LeadEnquiryForm initialData={initialData} existing={{ id: lead.id, version, reference: String(enquiry?.reference ?? lead.reference ?? ""), title: String(enquiry?.title ?? lead.title), summary: String(enquiry?.summary ?? ""), serviceType: String(enquiry?.serviceType ?? lead.serviceType ?? ""), details: enquiryDetails, source: String(enquiry?.source ?? lead.source ?? ""), channel: String(enquiry?.channel ?? lead.channel ?? ""), referral: (enquiry?.referral ?? null) as never, party: { ...contact, displayName: String(enquiry?.partyName ?? lead.partyName), email: String(enquiry?.primaryEmail ?? contact.email ?? ""), phone: String(enquiry?.primaryPhone ?? contact.phone ?? ""), mobile: String(enquiry?.primaryMobile ?? contact.mobile ?? "") }, customFields: lead.customFields }} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await saved(); }} /> : null}
+    {editing && detail ? <LeadEnquiryForm initialData={initialData} existing={{ id: lead.id, version, reference: String(enquiry?.reference ?? lead.reference ?? ""), title: String(enquiry?.title ?? lead.title), summary: String(enquiry?.summary ?? ""), serviceType: String(enquiry?.serviceType ?? lead.serviceType ?? ""), details: enquiryDetails, source: String(enquiry?.source ?? lead.source ?? ""), channel: String(enquiry?.channel ?? lead.channel ?? ""), referral: (enquiry?.referral ?? null) as never, party: { ...contact, displayName: String(enquiry?.partyName ?? lead.partyName), email: String(enquiry?.primaryEmail ?? contact.email ?? ""), phone: String(enquiry?.primaryPhone ?? contact.phone ?? ""), mobile: String(enquiry?.primaryMobile ?? contact.mobile ?? "") }, customFields: lead.customFields, team, notesVisible }} initialProblems={editing === "complete" ? conversionMissing : undefined} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await saved(); }} /> : null}
     {scheduling && <NewFollowUpDialog workspaceId={workspaceId} initialLead={{ ...live }} onClose={() => setScheduling(false)} onCreated={async () => { await saved(); setScheduling(false); }} />}
     {contacting && <LogContactDialog workspaceId={workspaceId} slaPolicies={initialData.slaPolicies} lead={{ id: lead.id, version: Number(version), name: customerDisplayName(lead.partyName) }} onClose={() => setContacting(false)} onLogged={async () => { setContacting(false); await saved(); }} />}
     {assigning && <LeadAssignmentDialog lead={live} members={salesOwnerChoices(initialData)} workspaceId={workspaceId} onClose={() => setAssigning(false)} onSaved={saved} />}

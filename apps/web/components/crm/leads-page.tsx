@@ -26,7 +26,9 @@ import {
   formatDate,
   useConfirmationDialog,
   useDesignSystem,
+  type SaveProblem,
 } from "@/design-system";
+import { CrmRequestError } from "@/lib/crm/client";
 import { CRM_LEAD_TRANSITIONS, leadStage, leadStageLabel, salesOwnerChoices, type CrmLeadListItem, type CrmLeadStatus, type LeadsPageData } from "@/lib/crm/leads";
 import { Avatar } from "@/design-system/components/avatar";
 import styles from "./leads-page.module.css";
@@ -147,6 +149,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const [savingLeadId, setSavingLeadId] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<LeadMove | null>(null);
   const [qualificationLead, setQualificationLead] = useState<CrmLeadListItem | null>(null);
+  const [convertProblems, setConvertProblems] = useState<SaveProblem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const mutationInFlight = useRef(false);
   const [cardLead, setCardLead] = useState<CrmLeadListItem | null>(null);
@@ -353,7 +356,9 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
       setConverted({ name: customerDisplayName(lead.partyName), id: String(record.id) });
       await reloadLeads();
     } catch (error) {
-      setFailure(error instanceof Error ? translateKnown(t, error.message) : t("Could not convert the enquiry."));
+      // PLM-096: what the enquiry type still needs shows in the conversion dialog, every item at once.
+      if (error instanceof CrmRequestError && error.missing.length) setConvertProblems(error.missing);
+      else setFailure(error instanceof Error ? translateKnown(t, error.message) : t("Could not convert the enquiry."));
       setQualificationLead(lead);
     } finally { setConvertingId(null); }
   };
@@ -501,7 +506,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
         {pendingMove && pendingLead ? <MoveLeadDialog lead={pendingLead} move={pendingMove} saving={Boolean(savingLeadId)} onClose={() => setPendingMove(null)} onSave={(details) => saveMove(pendingMove, details)} /> : null}
         {bulk ? <EnquiryBulkDialog mode={bulk.mode} rows={bulk.rows} initialData={initialData} onClose={() => setBulk(null)}
           onDone={async (summary) => { setStatusMessage(summary); setBulkRound((round) => round + 1); await reloadLeads(); }} /> : null}
-        {qualificationLead ? <CreateDealDialog lead={qualificationLead} initialData={initialData} onClose={() => setQualificationLead(null)} onCreated={async record => {
+        {qualificationLead ? <CreateDealDialog lead={qualificationLead} initialData={initialData} initialProblems={convertProblems} onClose={() => { setQualificationLead(null); setConvertProblems([]); }} onCreated={async record => {
           setStatusMessage(t("{name}: opportunity created.", { name: customerDisplayName(qualificationLead.partyName) }));
           setQualificationLead(null); setCardLead(null);
           router.push(`/workspace/crm/opportunities?record=${encodeURIComponent(record.id)}`);

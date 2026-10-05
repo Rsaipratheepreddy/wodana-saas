@@ -26,7 +26,9 @@ function service(newOwnerUserId: string) {
     if (sql.includes("INSERT INTO notifications")) return { rows: [], rowCount: 1 };
     return { rows: [], rowCount: 0 };
   });
-  const access = { withPermission: vi.fn(async (_actor: unknown, _ws: string, _code: string, work: (client: unknown, user: { userId: string }) => unknown) => work({ query }, { userId: actorUserId })) };
+  const access = { withPermission: vi.fn(async (_actor: unknown, _ws: string, _code: string, work: (client: unknown, user: { userId: string }) => unknown) => work({ query }, { userId: actorUserId })),
+    // An inbox manager (plan §5b): every chat is within reach.
+    hasPermission: vi.fn(async (_client: unknown, _ws: string, _user: string, code: string) => code === "crm.inbox.manage") };
   const instance = new CrmConversationsService({} as never, access as never, { record: vi.fn() } as never, {} as never);
   return { instance, calls };
 }

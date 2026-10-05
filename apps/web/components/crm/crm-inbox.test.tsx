@@ -211,17 +211,21 @@ describe("CRM inbox", () => {
   it("filters chats by their record's stage, and the view counts follow", async () => {
     const user = userEvent.setup(), { data, record, fetcher } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     await screen.findByText("Hello there");
-    const stage = await screen.findByRole("group", { name: "Stage" });
-    await user.click(within(stage).getByRole("combobox"));
-    await user.click(await screen.findByRole("option", { name: "Project · Joinery" }));
+    await user.click(await screen.findByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Stage: Project · Joinery" }));
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("stage=project%3Ajoinery"))).toBe(true));
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("inbox/summary?") && String(url).includes("stage=project%3Ajoinery"))).toBe(true));
-    expect(within(stage).getByText("Project · Joinery")).toBeInTheDocument();
+    // A filter in use is a removable chip.
+    const inUse = screen.getByRole("group", { name: "Filters in use" });
+    expect(inUse).toHaveTextContent("Stage: Project · Joinery");
+    await user.click(within(inUse).getByRole("button", { name: "Remove filter Stage: Project · Joinery" }));
+    expect(screen.queryByRole("group", { name: "Filters in use" })).not.toBeInTheDocument();
   });
   it("resolves several chats at once", async () => {
     const user = userEvent.setup(), { data, record, posted } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     await screen.findByText("Hello there");
-    await user.click(screen.getByRole("button", { name: "Select chats" }));
+    await user.click(screen.getByRole("button", { name: "Inbox options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Select chats" }));
     await user.click(screen.getByRole("checkbox", { name: "Select Everyday contact" }));
     await user.click(screen.getByRole("checkbox", { name: "Select Email person" }));
     const bar = screen.getByRole("toolbar", { name: "Bulk actions" });
@@ -285,8 +289,8 @@ describe("CRM inbox", () => {
       numbers: [{ connectionId: A, number: "+1 555 0100", accountName: null, isDefault: true }, { connectionId: B, number: "+1 555 0200", accountName: "Showroom", isDefault: false }] } } });
     render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     expect((await screen.findAllByText("+1 555 0200 · Showroom")).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole("button", { name: /Number/ }));
-    await user.click(await screen.findByRole("option", { name: "+1 555 0200 · Showroom" }));
+    await user.click(await screen.findByRole("button", { name: "Filter" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Number: +1 555 0200 · Showroom" }));
     await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes(`connectionId=${B}`))).toBe(true));
   });
 
@@ -336,5 +340,88 @@ describe("CRM inbox", () => {
     const [sent] = posted("/messages");
     expect(sent).toEqual({ direction: "outbound", purpose: "service", bodyText: "Our plan", attachmentId: uploads[0].split("/")[6].split("?")[0], clientMessageId: expect.any(String) });
     expect(screen.queryByText("Plan.pdf")).not.toBeInTheDocument();
+  });
+
+  it("shows only the chips the person's inbox level can fill, with the search in the toolbar", async () => {
+    const user = userEvent.setup();
+    const { data, record, fetcher } = setup({}, { payloads: { "inbox/summary": { mine: 2, unassigned: 0, team: 3, all: 3, snoozed: 0, closed: 5, unreadForMe: 1, membershipId: ME, scope: "own" } } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    const chips = await screen.findByRole("group", { name: "Inbox views" });
+    await waitFor(() => expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Mine2", "Team3", "Closed"]));
+    expect(screen.queryByRole("button", { name: /Unassigned/ })).not.toBeInTheDocument();
+    await user.type(screen.getByRole("searchbox", { name: "Search inbox" }), "Noura");
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("search=Noura"))).toBe(true));
+    await user.click(within(chips).getByRole("button", { name: /Closed/ }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=closed") && !String(url).includes("view="))).toBe(true));
+  });
+
+  it("gives someone with no inbox only their jobs' chats: Team and Closed, nothing to start", async () => {
+    const { data, record, fetcher } = setup({ canSend: false }, { payloads: { "inbox/summary": { mine: 0, unassigned: 0, team: 1, all: 1, snoozed: 0, unreadForMe: 0, membershipId: ME, scope: "job" } } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    const chips = await screen.findByRole("group", { name: "Inbox views" });
+    await waitFor(() => expect(within(chips).getAllByRole("button").map((chip) => chip.textContent)).toEqual(["Team1", "Closed"]));
+    // Team, for the job's team, is every open chat of their jobs (owned or not).
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("conversations?") && String(url).includes("status=open") && !String(url).includes("view="))).toBe(true));
+    expect(screen.queryByRole("button", { name: "New conversation" })).not.toBeInTheDocument();
+  });
+
+  it("always says who a message goes to: the client on a reply, only the team on a note", async () => {
+    const user = userEvent.setup(), { data, record } = setup(); render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    const input = await screen.findByRole("textbox", { name: "Message" });
+    expect(input).toHaveAccessibleDescription(/To Everyday contact · WhatsApp/);
+    await user.click(screen.getByRole("radio", { name: "Note" }));
+    const note = screen.getByRole("textbox", { name: "Note" });
+    expect(note).toHaveAccessibleDescription(/Internal · only the team/);
+    expect(screen.queryByText(/To Everyday contact/)).not.toBeInTheDocument();
+  });
+
+  it("closes a chat the person filed into a job whose team they are not on, and says where it went", async () => {
+    const user = userEvent.setup();
+    const lead = "50000000-0000-4000-8000-000000000001";
+    const job = { kind: "enquiry", id: lead, reference: "E-1042", title: "Villa" };
+    const { data, record, fetcher } = setup({}, { context: { enquiries: [{ id: lead, reference: "E-1042", title: "Villa", status: "connected", createdAt: new Date().toISOString(), ownerName: "Sara Khan" }], job: null, suggestedJob: job } });
+    const base = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (url: string, init?: RequestInit) => init?.method === "PUT" && String(url).includes("/job")
+      ? { ok: true, status: 200, json: async () => ({ conversationId: record.id, job, version: 4, changed: true, visible: false }) } : base(url, init));
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    await user.click(within((await screen.findByText("Known contact · E-1042 · Villa")).closest("p")!).getByRole("button", { name: "File into job" }));
+    expect(await screen.findByText("Filed into E-1042 · Villa. Its team has the chat now.")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Message" })).not.toBeInTheDocument();
+  });
+
+  it("files a chat into the contact's job from the proposal, and shows where it is filed", async () => {
+    const user = userEvent.setup();
+    const lead = "50000000-0000-4000-8000-000000000001";
+    const context = { enquiries: [{ id: lead, reference: "E-1042", title: "Villa", status: "connected", createdAt: new Date().toISOString(), ownerName: "Sara Khan" }], job: null,
+      suggestedJob: { kind: "enquiry", id: lead, reference: "E-1042", title: "Villa" } };
+    const { data, record, posted } = setup({}, { context });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    expect(await screen.findByText("Known contact · E-1042 · Villa")).toBeInTheDocument();
+    // The proposal's button files it; the header's menu lists every job of the contact.
+    await user.click(within(screen.getByText("Known contact · E-1042 · Villa").closest("p")!).getByRole("button", { name: "File into job" }));
+    await waitFor(() => expect(posted("/job", "PUT")).toEqual([{ version: 3, kind: "enquiry", id: lead }]));
+  });
+
+  it("shows the filed job on the row and in the thread, with a way out of it", async () => {
+    const job = { kind: "enquiry", id: "50000000-0000-4000-8000-000000000001", reference: "E-1042", title: "Villa" };
+    const { data, record } = setup({ job }, { context: { job, enquiries: [] } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    expect(await screen.findByRole("link", { name: "Filed into E-1042 · Villa" })).toHaveAttribute("href", `/workspace/crm/leads?lead=${job.id}`);
+    expect(screen.getByRole("button", { name: "Change job" })).toBeInTheDocument();
+    expect(screen.getAllByText("E-1042").length).toBeGreaterThan(0);
+  });
+
+  it("shows Woddy's line with Create enquiry for a new contact, and a suggested reply fills the draft without sending", async () => {
+    const user = userEvent.setup();
+    const insights = { conversationId: "x", summary: "Wants a kitchen renovation in Al Barsha, asks for a site visit.", suggestedEnquiryType: { id: "fit_out", label: "Fit-out" },
+      summaryForEnquiry: "Kitchen renovation", suggestedReplies: [{ id: "q1", shortcut: "address", body: "Hi {{contact.first_name}}, our studio is on Beach Road." }], source: "ai" };
+    const { data, record, fetcher } = setup({ partyId: "60000000-0000-4000-8000-000000000001" }, { payloads: { [`conversations/${crmScreenFixture("conversations").items[0].id}/insights`]: insights } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    expect(await screen.findByText("Wants a kitchen renovation in Al Barsha, asks for a site visit.")).toBeInTheDocument();
+    expect(screen.getByText("Looks like Fit-out")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create enquiry" })).toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "Suggested replies" })).getByRole("button", { name: "/address" }));
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("Hi Noura, our studio is on Beach Road.");
+    expect(fetcher.mock.calls.filter(([url, init]) => String(url).endsWith("/messages") && init?.method === "POST")).toHaveLength(0);
   });
 });

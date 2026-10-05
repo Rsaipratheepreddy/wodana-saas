@@ -1,4 +1,7 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import type { PoolClient } from "pg";
+import { DEFAULT_REQUIREMENTS, isRequirableKey, loadRequirementRows, REQUIRED_AT, rulesByType, type RequiredAt } from "../leads/enquiry-problems";
+import { loadLeadOptions, UNRESOLVED_ENQUIRY_TYPE } from "../leads/lead-options";
 import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
@@ -40,6 +43,74 @@ export class EnquiryFieldsService {
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.enquiry_field.visibility_changed.v1", entityType: "crm_enquiry_field_settings", entityId: workspaceId, after: { key, ...result.rows[0] } });
       return { key, ...result.rows[0] };
     });
+  }
+
+  /**
+   * PLM-096: the fields each enquiry type requires, and from which gate (create, convert, book the intro). `rules`
+   * are the effective rules (product defaults for a type the firm has not configured); `versions` the stored rows.
+   */
+  requirements(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.view", (client) => this.requirementState(client, workspaceId));
+  }
+
+  /**
+   * Sets one field's requirement for several enquiry types at once: validated, version-checked per row, idempotent
+   * (an unchanged value writes nothing) and audited. A type's first save stores its whole default set with it.
+   */
+  async setRequirement(actor: RequestActor, workspaceId: string, fieldKey: string, input: { types: Array<{ enquiryType: string; requiredAt: string; version: number }> }) {
+    if (!isRequirableKey(fieldKey)) throw new NotFoundException("This field can't be required here");
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
+      const options = await loadLeadOptions(client, workspaceId);
+      const types = new Set(options.enquiryTypes.map((type) => type.id).filter((id) => id !== UNRESOLVED_ENQUIRY_TYPE));
+      if (fieldKey.startsWith("cf:")) {
+        const field = await client.query(`SELECT 1 FROM crm_custom_field_definitions WHERE workspace_id = $1 AND id = $2 AND entity_type = 'enquiry' AND status = 'active'`, [workspaceId, fieldKey.slice(3)]);
+        if (!field.rowCount) throw new NotFoundException("This field is no longer in use");
+      }
+      for (const entry of input.types) {
+        if (!types.has(entry.enquiryType)) throw new UnprocessableEntityException(`Unknown enquiry type: ${entry.enquiryType}`);
+        if (!(REQUIRED_AT as readonly string[]).includes(entry.requiredAt)) throw new UnprocessableEntityException("Choose when the field is required");
+        // The enquiry form saves the firm's own fields after the enquiry exists, so they can't be required to create it.
+        if (fieldKey.startsWith("cf:") && entry.requiredAt === "create") throw new UnprocessableEntityException("A custom field can be required from conversion on");
+      }
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('crm_enquiry_requirements:' || $1::text, 0))`, [workspaceId]);
+      const before = await loadRequirementRows(client, workspaceId);
+      const stored = (type: string) => before.filter((row) => row.enquiryType === type);
+      const changes: Array<{ enquiryType: string; from: RequiredAt | null; to: RequiredAt }> = [];
+      for (const entry of input.types) {
+        const rows = stored(entry.enquiryType);
+        const current = rows.find((row) => row.fieldKey === fieldKey);
+        const effective = rulesByType(before, [entry.enquiryType])[entry.enquiryType][fieldKey] ?? "never";
+        if (effective === entry.requiredAt) continue;
+        if ((current?.version ?? 0) !== entry.version) throw new ConflictException("These requirements changed. Reload and try again");
+        if (!rows.length) {
+          // The type's first save: its defaults become rows, so nothing it relied on changes silently.
+          for (const [key, at] of Object.entries(DEFAULT_REQUIREMENTS)) if (key !== fieldKey) {
+            await client.query(`INSERT INTO crm_enquiry_requirements (workspace_id, enquiry_type, field_key, required_at, updated_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+              [workspaceId, entry.enquiryType, key, at, user.userId]);
+          }
+        }
+        const saved = current
+          ? await client.query(`UPDATE crm_enquiry_requirements SET required_at = $4, version = version + 1, updated_by = $5, updated_at = now()
+              WHERE workspace_id = $1 AND enquiry_type = $2 AND field_key = $3 AND version = $6`, [workspaceId, entry.enquiryType, fieldKey, entry.requiredAt, user.userId, entry.version])
+          : await client.query(`INSERT INTO crm_enquiry_requirements (workspace_id, enquiry_type, field_key, required_at, updated_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+              [workspaceId, entry.enquiryType, fieldKey, entry.requiredAt, user.userId]);
+        if (!saved.rowCount) throw new ConflictException("These requirements changed. Reload and try again");
+        changes.push({ enquiryType: entry.enquiryType, from: effective, to: entry.requiredAt as RequiredAt });
+      }
+      if (changes.length) {
+        await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.enquiry_requirements.updated.v1", entityType: "workspace", entityId: workspaceId,
+          before: { fieldKey, types: changes.map(({ enquiryType, from }) => ({ enquiryType, requiredAt: from })) }, after: { fieldKey, types: changes.map(({ enquiryType, to }) => ({ enquiryType, requiredAt: to })) } });
+      }
+      return this.requirementState(client, workspaceId);
+    });
+  }
+
+  private async requirementState(client: PoolClient, workspaceId: string) {
+    const options = await loadLeadOptions(client, workspaceId);
+    const rows = await loadRequirementRows(client, workspaceId);
+    const versions: Record<string, Record<string, number>> = {};
+    for (const row of rows) versions[row.enquiryType] = { ...(versions[row.enquiryType] ?? {}), [row.fieldKey]: Number(row.version) };
+    return { rules: rulesByType(rows, options.enquiryTypes.map((type) => type.id)), versions };
   }
 
   /** Staff set or clear an enquiry's own-field values; the enquiry is reached through its lead. */

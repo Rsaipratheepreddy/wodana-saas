@@ -1002,6 +1002,20 @@
       "when": 1801740000900,
       "tag": "0248_workspace_grid_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1801740001100,
+      "tag": "0250_inbox_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1801740001200,
+      "tag": "0251_enquiry_team_requirements",
+      "breakpoints": true
     }
   ]
 }

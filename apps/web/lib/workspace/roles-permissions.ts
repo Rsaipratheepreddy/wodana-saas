@@ -90,6 +90,10 @@ const ACTION_LABELS: Record<string, MessageKey> = {
 
 const EXACT_LABELS: Record<string, MessageKey> = {
   "ai.suggestions.use": tKey("Use AI suggestions"),
+  "crm.communications.view": tKey("See own chats"),
+  "crm.communications.send": tKey("Answer chats"),
+  "crm.inbox.team": tKey("See the unassigned queue and the team's chats"),
+  "crm.inbox.manage": tKey("See every chat and manage the inbox"),
   "commercial.deal.approve": tKey("Approve deal file"),
   "commercial.estimate": tKey("Approve QS quotation estimate"),
   "commercial.finance.verify": tKey("Verify payment evidence"),
@@ -244,7 +248,7 @@ const FIXTURE_PERMISSION_CODES = [
   "crm.leads.view", "crm.leads.manage", "crm.leads.assign",
   "crm.opportunities.view", "crm.opportunities.manage", "crm.opportunities.transition", "crm.opportunities.sensitive_values",
   "crm.activities.view", "crm.activities.manage", "crm.automations.view", "crm.automations.manage", "crm.automations.publish",
-  "crm.communications.view", "crm.communications.send", "crm.consent.manage", "crm.notifications.view", "crm.notifications.manage",
+  "crm.communications.view", "crm.communications.send", "crm.inbox.team", "crm.inbox.manage", "crm.consent.manage", "crm.notifications.view", "crm.notifications.manage",
   "crm.privacy.erase", "crm.reports.view", "crm.settings.manage", "jobs.repair", "jobs.stage.manage",
   "pre_projects.view", "pre_projects.create", "pre_projects.edit", "pre_projects.manage_lifecycle",
   "pre_projects.review_designs", "pre_projects.record_client_design_decisions", "pre_projects.verify_measurements",

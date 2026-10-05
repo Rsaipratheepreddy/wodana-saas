@@ -88,6 +88,15 @@ export class EnquiryFieldVisibilityDto {
   @IsBoolean() visible!: boolean;
   @IsInt() @Min(0) version!: number;
 }
+/** PLM-096: one enquiry type's requirement for a field: from which gate it is required, or never. */
+export class EnquiryTypeRequirementDto {
+  @IsString() @IsNotEmpty() @MaxLength(100) enquiryType!: string;
+  @IsIn(["create", "convert", "book_intro", "never"]) requiredAt!: string;
+  @IsInt() @Min(0) version!: number;
+}
+export class EnquiryRequirementDto {
+  @IsArray() @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => EnquiryTypeRequirementDto) types!: EnquiryTypeRequirementDto[];
+}
 export class EnquiryFieldValuesDto {
   @IsObject() values!: Record<string, unknown>;
 }

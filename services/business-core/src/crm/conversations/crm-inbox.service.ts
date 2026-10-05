@@ -16,11 +16,15 @@ import { readAutoReplyScopes, workspaceHours } from "./inbox/auto-replies";
 import { AUTO_REPLY_FIELDS, unknownAutoReplyFields, validTimeZone } from "./inbox/auto-reply-rules";
 import { INBOX_MEMBERS_SQL } from "./inbox/inbox-assignment";
 import { applyConversationChange, recordChatEvent, type ConversationChange } from "./inbox/inbox-commands";
-import { inboxLink, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
+import { inboxLink, noticeAssigned, unassignedAudience, userOfMembership } from "./inbox/inbox-notices";
 import { notifyUserInApp } from "../../notifications/default-templates";
 import { ENQUIRY_STAGES, placeholdersAreContiguous, stageFilterSql, TEMPLATE_VARIABLE_SOURCES, templatePlaceholders } from "./inbox/inbox-rules";
 import { resolveTemplateSources } from "./inbox/template-variables";
 import { seedDefaultQuickReplies } from "./inbox/default-quick-replies";
+import { conversationVisible, INBOX_MANAGE, INBOX_READ, JOB_KINDS, JOB_SQL, jobLabel, loadInboxViewer, onJobTeam, rankQuickReplies, requireJobForChat, suggestJob, visibleSql, type InboxViewer, type JobKind } from "./inbox/inbox-visibility";
+import { AiGatewayService } from "../../ai-gateway/ai-gateway.service";
+import { loadLeadOptions } from "../leads/lead-options";
+import { isDemoThread } from "./crm-conversations.service";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
@@ -40,6 +44,7 @@ export class CrmInboxService {
     private readonly access: WorkspaceAccessService,
     private readonly events: CrmEventsService,
     @Optional() private readonly config?: ConfigService,
+    @Optional() private readonly ai?: AiGatewayService,
   ) {}
 
   /** The WhatsApp pre-flight checklist in Settings → Inbox (SP-7). */
@@ -57,7 +62,7 @@ export class CrmInboxService {
   whatsappTest(actor: RequestActor, workspaceId: string, input: { phone: string }) {
     const phone = String(input.phone ?? "").replace(/[\s().-]/g, "");
     if (!E164.test(phone)) throw new BadRequestException("Enter the number in international format, like +15551234567.");
-    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
+    return this.access.withAnyPermission(actor, workspaceId, [...INBOX_MANAGE], async (client, user) => {
       const recent = await client.query(`SELECT 1 FROM audit_events WHERE workspace_id = $1 AND action = 'crm.whatsapp.test_sent' AND occurred_at > now() - interval '1 minute' LIMIT 1`, [workspaceId]);
       if (recent.rowCount) throw new ConflictException("A test was sent a moment ago. Try again in a minute.");
       if (!this.config) throw new UnprocessableEntityException("WhatsApp delivery isn't configured here.");
@@ -68,24 +73,27 @@ export class CrmInboxService {
     });
   }
 
-  /** Open chats per view (Team is null for someone in no queue) and the Snoozed and Resolved totals. */
+  /**
+   * The chips' counts inside the person's scope (plan §5b): Unassigned, Mine, Team (everyone's assigned chats I
+   * may see), the Snoozed and Closed totals, and the scope itself so the inbox shows only the chips it can fill.
+   */
   summary(actor: RequestActor, workspaceId: string, stage?: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
+    return this.access.withAnyPermission(actor, workspaceId, INBOX_READ, async (client, actorUser) => {
       const me = await this.membership(client, workspaceId, actorUser.userId);
+      const viewer = await this.viewer(client, workspaceId, actorUser.userId);
+      const scope = viewer.scope;
       const values: unknown[] = [workspaceId, me];
       // The counts follow the stage filter, so each view says how many of its chats are at those stages.
       const stageSql = stage ? stageFilterSql(stage.split(",").slice(0, 30), (value) => { values.push(value); return `$${values.length}`; }) : null;
       const result = await client.query<Row>(
         `SELECT count(*) FILTER (WHERE status = 'open' AND owner_membership_id = $2)::int AS mine,
                 count(*) FILTER (WHERE status = 'open' AND owner_membership_id IS NULL)::int AS unassigned,
-                CASE WHEN EXISTS (SELECT 1 FROM crm_effective_queue_members WHERE workspace_id = $1 AND membership_id = $2)
-                     THEN count(*) FILTER (WHERE status = 'open' AND owner_membership_id IN (
-                       SELECT teammate.membership_id FROM crm_effective_queue_members teammate WHERE teammate.workspace_id = $1 AND teammate.queue_id IN (
-                         SELECT mine.queue_id FROM crm_effective_queue_members mine WHERE mine.workspace_id = $1 AND mine.membership_id = $2)))::int END AS team,
+                count(*) FILTER (WHERE status = 'open' AND owner_membership_id IS NOT NULL)::int AS team,
                 count(*) FILTER (WHERE status = 'open')::int AS "all",
                 count(*) FILTER (WHERE status = 'snoozed')::int AS snoozed,
+                count(*) FILTER (WHERE status = 'closed')::int AS closed,
                 count(*) FILTER (WHERE status = 'open' AND unread_count > 0 AND (owner_membership_id = $2 OR owner_membership_id IS NULL))::int AS "unreadForMe"
-           FROM crm_conversations conversation WHERE workspace_id = $1${stageSql ? ` AND ${stageSql}` : ""}`,
+           FROM crm_conversations conversation WHERE conversation.workspace_id = $1 AND ${visibleSql(viewer, "$2")}${stageSql ? ` AND ${stageSql}` : ""}`,
         values,
       );
       // The connected WhatsApp numbers: with two or more, the inbox can show one number's chats.
@@ -94,7 +102,7 @@ export class CrmInboxService {
                 COALESCE((configuration->>'isDefault')::boolean, false) AS "isDefault"
            FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
           ORDER BY COALESCE((configuration->>'isDefault')::boolean, false) DESC, created_at, id`, [workspaceId]);
-      return { ...result.rows[0], membershipId: me, numbers: numbers.rows };
+      return { ...result.rows[0], membershipId: me, scope, numbers: numbers.rows };
     });
   }
 
@@ -137,7 +145,9 @@ export class CrmInboxService {
   bulk(actor: RequestActor, workspaceId: string, input: BulkConversationsDto) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.send", async (client, actorUser) => {
       const ids = [...new Set(input.conversationIds)];
-      const found = await client.query<Row>(`SELECT * FROM crm_conversations WHERE workspace_id = $1 AND id = ANY($2::uuid[]) ORDER BY id FOR UPDATE`, [workspaceId, ids]);
+      const viewer = await this.viewer(client, workspaceId, actorUser.userId);
+      const found = await client.query<Row>(`SELECT * FROM crm_conversations conversation WHERE conversation.workspace_id = $1 AND conversation.id = ANY($2::uuid[]) AND ${visibleSql(viewer, "$3")} ORDER BY id FOR UPDATE`,
+        [workspaceId, ids, await this.membership(client, workspaceId, actorUser.userId)]);
       if (found.rowCount !== ids.length) throw new NotFoundException("Some chats were not found");
       if ((input.action === "label" || input.action === "unlabel") && !input.labelId) throw new UnprocessableEntityException("Choose a label");
       if (input.action === "label") await this.requireActiveLabel(client, workspaceId, input.labelId!);
@@ -164,6 +174,7 @@ export class CrmInboxService {
    */
   blockConversation(actor: RequestActor, workspaceId: string, conversationId: string, input: BlockConversationDto) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.send", async (client, actorUser) => {
+      await this.requireVisible(client, workspaceId, conversationId, actorUser.userId);
       const chat = (await client.query<{ partyId: string | null }>(`SELECT party_id AS "partyId" FROM crm_conversations WHERE workspace_id = $1 AND id = $2`, [workspaceId, conversationId])).rows[0];
       if (!chat) throw new NotFoundException("Conversation not found");
       if (!chat.partyId) throw new UnprocessableEntityException("This chat has no client to block");
@@ -182,7 +193,8 @@ export class CrmInboxService {
 
   /** Hides a message from Wodana's views (it stays on the client's phone); only an administrator shows it again. */
   hideMessage(actor: RequestActor, workspaceId: string, conversationId: string, messageId: string, input: HideMessageDto) {
-    return this.access.withPermission(actor, workspaceId, input.hidden ? "crm.communications.send" : "crm.settings.manage", async (client, actorUser) => {
+    return this.access.withAnyPermission(actor, workspaceId, input.hidden ? ["crm.communications.send"] : [...INBOX_MANAGE], async (client, actorUser) => {
+      await this.requireVisible(client, workspaceId, conversationId, actorUser.userId);
       const before = (await client.query<{ hiddenAt: Date | null }>(`SELECT hidden_at AS "hiddenAt" FROM crm_messages WHERE workspace_id = $1 AND conversation_id = $2 AND id = $3 FOR UPDATE`, [workspaceId, conversationId, messageId])).rows[0];
       if (!before) throw new NotFoundException("Message not found");
       if (Boolean(before.hiddenAt) === input.hidden) return { messageId, hidden: input.hidden };
@@ -197,6 +209,7 @@ export class CrmInboxService {
   /** The chat's labels become exactly these (safe to repeat). */
   setConversationLabels(actor: RequestActor, workspaceId: string, conversationId: string, input: SetConversationLabelsDto) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.send", async (client, actorUser) => {
+      await this.requireVisible(client, workspaceId, conversationId, actorUser.userId);
       const chat = await client.query(`SELECT 1 FROM crm_conversations WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, conversationId]);
       if (!chat.rowCount) throw new NotFoundException("Conversation not found");
       const wanted = [...new Set(input.labelIds)];
@@ -221,7 +234,7 @@ export class CrmInboxService {
   }
 
   createLabel(actor: RequestActor, workspaceId: string, input: CreateLabelDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+    return this.access.withAnyPermission(actor, workspaceId, [...INBOX_MANAGE], async (client, actorUser) => {
       const name = input.name.trim().replace(/\s+/g, " ");
       const existing = await client.query<Row>(`SELECT ${LABEL_COLUMNS} FROM crm_conversation_labels WHERE workspace_id = $1 AND lower(btrim(name)) = lower($2) AND status = 'active'`, [workspaceId, name]);
       if (existing.rowCount) {
@@ -236,7 +249,7 @@ export class CrmInboxService {
 
   /** Rename, recolour, archive or restore; labels are archived, never deleted, so history keeps its words. */
   updateLabel(actor: RequestActor, workspaceId: string, labelId: string, input: UpdateLabelDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+    return this.access.withAnyPermission(actor, workspaceId, [...INBOX_MANAGE], async (client, actorUser) => {
       const before = await client.query<Row>(`SELECT ${LABEL_COLUMNS} FROM crm_conversation_labels WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, labelId]);
       if (!before.rowCount) throw new NotFoundException("Label not found");
       const current = before.rows[0];
@@ -259,7 +272,7 @@ export class CrmInboxService {
   quickReplies(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
       const me = await this.membership(client, workspaceId, actorUser.userId);
-      const canManage = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.settings.manage");
+      const canManage = await this.hasAny(client, workspaceId, actorUser.userId, INBOX_MANAGE);
       // A default added to the product after the workspace started arrives here; one the team archived stays archived.
       await seedDefaultQuickReplies(client, workspaceId);
       const result = await client.query<Row>(
@@ -271,8 +284,8 @@ export class CrmInboxService {
   }
 
   createQuickReply(actor: RequestActor, workspaceId: string, input: CreateQuickReplyDto) {
-    const permission = input.scope === "workspace" ? "crm.settings.manage" : "crm.communications.send";
-    return this.access.withPermission(actor, workspaceId, permission, async (client, actorUser) => {
+    const permissions = input.scope === "workspace" ? [...INBOX_MANAGE] : ["crm.communications.send"];
+    return this.access.withAnyPermission(actor, workspaceId, permissions, async (client, actorUser) => {
       const owner = input.scope === "personal" ? await this.membership(client, workspaceId, actorUser.userId) : null;
       const shortcut = input.shortcut.trim().toLowerCase();
       const body = input.body.trim();
@@ -298,7 +311,7 @@ export class CrmInboxService {
       const found = await client.query<Row>(`SELECT ${REPLY_COLUMNS} FROM crm_quick_replies reply WHERE reply.workspace_id = $1 AND reply.id = $2 FOR UPDATE`, [workspaceId, replyId]);
       if (!found.rowCount) throw new NotFoundException("Quick reply not found");
       const before = found.rows[0];
-      if (before.scope === "workspace" && !(await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.settings.manage"))) throw new ForbiddenException("Only a sales administrator can change the team's quick replies");
+      if (before.scope === "workspace" && !(await this.hasAny(client, workspaceId, actorUser.userId, INBOX_MANAGE))) throw new ForbiddenException("Only a sales administrator can change the team's quick replies");
       if (before.scope === "personal" && before.ownerMembershipId !== await this.membership(client, workspaceId, actorUser.userId)) throw new ForbiddenException("This quick reply belongs to someone else");
       const shortcut = input.shortcut?.trim().toLowerCase() ?? String(before.shortcut);
       const body = input.body?.trim() ?? String(before.body);
@@ -323,7 +336,7 @@ export class CrmInboxService {
   }
 
   updateSettings(actor: RequestActor, workspaceId: string, input: UpdateInboxSettingsDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+    return this.access.withAnyPermission(actor, workspaceId, [...INBOX_MANAGE], async (client, actorUser) => {
       const before = await client.query<Row>(`SELECT auto_assign AS "autoAssign", queue_id AS "queueId", signature_enabled AS "signatureEnabled", auto_resolve_days AS "autoResolveDays", version FROM crm_inbox_settings WHERE workspace_id = $1 FOR UPDATE`, [workspaceId]);
       const current = before.rows[0] ?? { autoAssign: true, queueId: null, signatureEnabled: false, autoResolveDays: DEFAULT_AUTO_RESOLVE_DAYS, version: 0 };
       const queueId = input.queueId ?? null;
@@ -352,7 +365,7 @@ export class CrmInboxService {
 
   /** Saves one scope (the workspace, or one number) as a whole; safe to repeat, version-checked and audited. */
   updateAutoReplies(actor: RequestActor, workspaceId: string, input: UpdateAutoRepliesDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+    return this.access.withAnyPermission(actor, workspaceId, [...INBOX_MANAGE], async (client, actorUser) => {
       const connectionId = input.connectionId ?? null;
       if (connectionId) {
         const number = await client.query(`SELECT 1 FROM integration_connections WHERE workspace_id = $1 AND id = $2 AND provider = 'whatsapp' AND status = 'connected'`, [workspaceId, connectionId]);
@@ -402,7 +415,7 @@ export class CrmInboxService {
 
   /** A number goes back to the workspace's auto replies (its own are removed); safe to repeat. */
   removeAutoRepliesOverride(actor: RequestActor, workspaceId: string, connectionId: string, input: RemoveAutoRepliesDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+    return this.access.withAnyPermission(actor, workspaceId, [...INBOX_MANAGE], async (client, actorUser) => {
       const found = await client.query<{ id: string; version: number }>(`SELECT id, version FROM crm_auto_reply_settings WHERE workspace_id = $1 AND connection_id = $2 FOR UPDATE`, [workspaceId, connectionId]);
       const row = found.rows[0];
       if (!row) return this.readAutoReplies(client, workspaceId, actorUser.userId);
@@ -444,7 +457,7 @@ export class CrmInboxService {
 
   /** Which field fills each {{n}} of a template (every language of the template shares it). */
   setTemplateVariables(actor: RequestActor, workspaceId: string, templateId: string, input: SetTemplateVariablesDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+    return this.access.withAnyPermission(actor, workspaceId, [...INBOX_MANAGE], async (client, actorUser) => {
       const template = await client.query<{ code: string; body: string }>(`SELECT code, body_template AS body FROM notification_templates WHERE workspace_id = $1 AND id = $2 AND channel = 'whatsapp'`, [workspaceId, templateId]);
       if (!template.rowCount) throw new NotFoundException("Template not found");
       const { code, body } = template.rows[0];
@@ -474,11 +487,13 @@ export class CrmInboxService {
    * variable value for templates and quick replies, filled from those records.
    */
   context(actor: RequestActor, workspaceId: string, conversationId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
-      const chat = await client.query<Row>(`SELECT id, party_id, lead_id FROM crm_conversations WHERE workspace_id = $1 AND id = $2`, [workspaceId, conversationId]);
+    return this.access.withAnyPermission(actor, workspaceId, INBOX_READ, async (client, actorUser) => {
+      await this.requireVisible(client, workspaceId, conversationId, actorUser.userId);
+      const chat = await client.query<Row>(`SELECT conversation.id, conversation.party_id, conversation.lead_id, conversation.job_kind, conversation.job_id, ${JOB_SQL()} AS job FROM crm_conversations conversation WHERE conversation.workspace_id = $1 AND conversation.id = $2`, [workspaceId, conversationId]);
       if (!chat.rowCount) throw new NotFoundException("Conversation not found");
       const partyId = (chat.rows[0].party_id as string | null) ?? null;
       const leadId = (chat.rows[0].lead_id as string | null) ?? null;
+      const job = (chat.rows[0].job as Record<string, unknown> | null) ?? null;
       const can = async (permission: string) => this.access.hasPermission(client, workspaceId, actorUser.userId, permission);
       const party = partyId ? (await client.query<Row>(
         `SELECT party.id, party.display_name AS name, party.type,
@@ -487,14 +502,14 @@ export class CrmInboxService {
            FROM crm_parties party WHERE party.workspace_id = $1 AND party.id = $2`, [workspaceId, partyId])).rows[0] ?? null : null;
       const name = (alias: string) => `coalesce(nullif(btrim(${alias}.display_name), ''), ${alias}.primary_email)`;
       const enquiries = partyId && await can("crm.leads.view") ? (await client.query(
-        `SELECT lead.id, enquiry.reference, lead.status, lead.created_at AS "createdAt", ${name("owner_user")} AS "ownerName"
+        `SELECT lead.id, enquiry.reference, enquiry.title, lead.status, lead.created_at AS "createdAt", lead.updated_at AS "updatedAt", ${name("owner_user")} AS "ownerName"
            FROM crm_leads lead JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
            LEFT JOIN workspace_memberships owner ON owner.workspace_id = lead.workspace_id AND owner.id = lead.owner_membership_id
            LEFT JOIN users owner_user ON owner_user.id = owner.user_id
           WHERE lead.workspace_id = $1 AND (lead.party_id = $2 OR lead.id = $3::uuid)
           ORDER BY (lead.id IS NOT DISTINCT FROM $3::uuid) DESC, lead.created_at DESC LIMIT 5`, [workspaceId, partyId, leadId])).rows : null;
       const opportunities = partyId && await can("crm.opportunities.view") ? (await client.query(
-        `SELECT opportunity.id, opportunity.reference, opportunity.title, opportunity.status, stage.name AS "stageName", ${name("owner_user")} AS "ownerName"
+        `SELECT opportunity.id, opportunity.reference, opportunity.title, opportunity.status, opportunity.updated_at AS "updatedAt", stage.name AS "stageName", ${name("owner_user")} AS "ownerName"
            FROM crm_opportunities opportunity
            LEFT JOIN crm_pipeline_stages stage ON stage.workspace_id = opportunity.workspace_id AND stage.id = opportunity.stage_id
            LEFT JOIN workspace_memberships owner ON owner.workspace_id = opportunity.workspace_id AND owner.id = opportunity.owner_membership_id
@@ -502,7 +517,7 @@ export class CrmInboxService {
           WHERE opportunity.workspace_id = $1 AND opportunity.party_id = $2
           ORDER BY (opportunity.status = 'open') DESC, opportunity.updated_at DESC LIMIT 5`, [workspaceId, partyId])).rows : null;
       const projects = partyId && await can("projects.view") ? (await client.query(
-        `SELECT project.id, project.reference, project.name, project.status, project.promise_date AS "promiseDate",
+        `SELECT project.id, project.reference, project.name, project.status, project.promise_date AS "promiseDate", project.updated_at AS "updatedAt",
                 (SELECT ${name("manager_user")} FROM project_assignments assignment JOIN workspace_memberships manager ON manager.workspace_id = assignment.workspace_id AND manager.id = assignment.membership_id
                    JOIN users manager_user ON manager_user.id = manager.user_id
                   WHERE assignment.workspace_id = project.workspace_id AND assignment.project_id = project.id AND assignment.is_manager AND assignment.active LIMIT 1) AS "managerName"
@@ -512,8 +527,146 @@ export class CrmInboxService {
              WHERE pc.workspace_id = $1 AND opportunity.party_id = $2)
           ORDER BY (project.status = 'active') DESC, project.created_at DESC LIMIT 3`, [workspaceId, partyId])).rows : null;
       const variables = await resolveTemplateSources(client, { workspaceId, partyId, leadId, staffUserId: actorUser.userId, config: this.config }, TEMPLATE_VARIABLE_SOURCES);
-      return { conversationId, leadId, party, enquiries, opportunities, projects, variables };
+      // Not filed yet, but the contact has a live job: the inbox proposes it (the person confirms).
+      type Known = { id: string; status: string; updatedAt: Date | string | null };
+      const suggested = job ? null : suggestJob([
+        ...((projects ?? []) as Known[]).map((item) => ({ kind: "project" as const, ...item })),
+        ...((opportunities ?? []) as Known[]).map((item) => ({ kind: "opportunity" as const, ...item })),
+        ...((enquiries ?? []) as Known[]).map((item) => ({ kind: "enquiry" as const, ...item })),
+      ]);
+      const suggestedJob = suggested ? (() => {
+        const list = (suggested.kind === "project" ? projects : suggested.kind === "opportunity" ? opportunities : enquiries) as Array<Record<string, unknown>>;
+        const record = list.find((item) => item.id === suggested.id)!;
+        return { kind: suggested.kind, id: suggested.id, reference: (record.reference as string | null) ?? null, title: String(record.title ?? record.name ?? "") };
+      })() : null;
+      return { conversationId, leadId, party, enquiries, opportunities, projects, variables, job, suggestedJob };
     });
+  }
+
+  /**
+   * "File into job" (plan §5b, §6.5a): the chat belongs to one of the contact's jobs (enquiry, opportunity or
+   * project) from now on, and that job's team sees it; the intake queue no longer does. Later messages from the
+   * contact reach the job (its activity and its owner). A chat whose owner is not on the job's team goes to the
+   * job's owner. `kind: null` takes the chat out of its job, back to the intake. Idempotent (a replay changes
+   * nothing), version-checked, a history line and an audit event each time; the job's owner is told.
+   */
+  fileIntoJob(actor: RequestActor, workspaceId: string, conversationId: string, input: { kind: JobKind | null; id?: string; version: number }) {
+    return this.access.withPermission(actor, workspaceId, "crm.communications.send", async (client, actorUser) => {
+      if (input.kind && !(JOB_KINDS as readonly string[]).includes(input.kind)) throw new UnprocessableEntityException("Choose an enquiry, an opportunity or a project");
+      if (input.kind && !input.id) throw new UnprocessableEntityException("Choose the job");
+      const found = await client.query<Row>(`SELECT * FROM crm_conversations WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, conversationId]);
+      const before = found.rows[0];
+      if (!before) throw new NotFoundException("Conversation not found");
+      const me = await this.membership(client, workspaceId, actorUser.userId);
+      const viewer = await this.viewer(client, workspaceId, actorUser.userId);
+      const current = async () => (await client.query<Row>(`SELECT ${JOB_SQL()} AS job, conversation.version FROM crm_conversations conversation WHERE conversation.workspace_id = $1 AND conversation.id = $2`, [workspaceId, conversationId])).rows[0];
+      const visible = async () => conversationVisible(client, workspaceId, conversationId, viewer, me);
+      const same = (before.job_kind ?? null) === (input.kind ?? null) && (before.job_id ?? null) === (input.kind ? input.id : null);
+      const reachable = await visible();
+      // Already there: nothing changes and no version is needed. A replay of the person's own filing answers the
+      // same even once the chat has left their reach (it now belongs to the job's team).
+      if (same && (reachable || before.filed_by === actorUser.userId)) {
+        const row = await current();
+        return { conversationId, job: row?.job ?? null, version: Number(row?.version), changed: false, visible: reachable };
+      }
+      if (!reachable) throw new NotFoundException("Conversation not found");
+      if (input.kind && !viewer.jobKinds.includes(input.kind)) throw new ForbiddenException("You cannot open that kind of job");
+      if (Number(before.version) !== input.version) throw new ConflictException("Conversation changed; refresh before trying again");
+      const job = input.kind ? await requireJobForChat(client, workspaceId, before, input.kind, input.id!) : null;
+      await client.query(
+        `UPDATE crm_conversations SET job_kind = $3::varchar, job_id = $4::uuid, filed_at = CASE WHEN $3::varchar IS NULL THEN NULL ELSE now() END, filed_by = CASE WHEN $3::varchar IS NULL THEN NULL ELSE $5::uuid END,
+                lead_id = CASE WHEN $3::varchar = 'enquiry' THEN $4::uuid ELSE lead_id END, version = version + 1, updated_at = now()
+          WHERE workspace_id = $1 AND id = $2`, [workspaceId, conversationId, job?.kind ?? null, job?.id ?? null, actorUser.userId]);
+      await recordChatEvent(client, { workspaceId, conversationId, kind: job ? "filed" : "unfiled", actorUserId: actorUser.userId, method: "manual", reason: job ? jobLabel(job) : null, leadId: job?.kind === "enquiry" ? job.id : null });
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: job ? "crm.conversation.filed.v1" : "crm.conversation.unfiled.v1", entityType: "crm_conversation", entityId: conversationId,
+        before: { jobKind: before.job_kind ?? null, jobId: before.job_id ?? null }, after: job ? { jobKind: job.kind, jobId: job.id } : { jobKind: null, jobId: null } });
+      if (job?.ownerMembershipId) {
+        const facts = await client.query<{ clientName: string | null; actorName: string | null }>(
+          `SELECT (SELECT display_name FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "clientName",
+                  (SELECT coalesce(nullif(btrim(display_name), ''), primary_email) FROM users WHERE id = $3) AS "actorName"`, [workspaceId, before.party_id ?? null, actorUser.userId]);
+        const clientName = facts.rows[0]?.clientName ?? "a client";
+        const owner = (before.owner_membership_id as string | null) ?? null;
+        // Nobody owns the chat, or its owner is not on the job's team: the job's owner answers it from now on.
+        const handOver = owner !== job.ownerMembershipId && (!owner || !(await onJobTeam(client, workspaceId, job.kind, job.id, owner)))
+          && Boolean((await client.query(`SELECT 1 FROM (${INBOX_MEMBERS_SQL}) inbox WHERE inbox."membershipId" = $2`, [workspaceId, job.ownerMembershipId])).rowCount);
+        if (handOver) {
+          const updated = await client.query<{ version: number }>(`UPDATE crm_conversations SET owner_membership_id = $3, assigned_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2 RETURNING version`, [workspaceId, conversationId, job.ownerMembershipId]);
+          await recordChatEvent(client, { workspaceId, conversationId, kind: "assigned", actorUserId: actorUser.userId, ownerMembershipId: job.ownerMembershipId, previousOwnerMembershipId: owner, method: "relationship", reason: "Owns the job this chat was filed into" });
+          await noticeAssigned(client, { workspaceId, conversationId, leadId: job.kind === "enquiry" ? job.id : null, ownerMembershipId: job.ownerMembershipId, actorUserId: actorUser.userId, client: clientName, assignedBy: facts.rows[0]?.actorName ?? "A teammate", version: Number(updated.rows[0]?.version) });
+        } else {
+          const jobOwner = await userOfMembership(client, workspaceId, job.ownerMembershipId);
+          if (jobOwner && jobOwner.userId !== actorUser.userId) await notifyUserInApp(client, { workspaceId, recipientUserId: jobOwner.userId, code: "crm.inbox_filed", eventType: "crm.inbox.filed", deepLink: inboxLink(conversationId),
+            variables: { clientName, job: jobLabel(job), actor: facts.rows[0]?.actorName ?? "A teammate" }, idempotencyKey: `crm:inbox:filed:${conversationId}:${Number(before.version) + 1}` });
+        }
+      }
+      const row = await current();
+      return { conversationId, job: row?.job ?? null, version: Number(row?.version), changed: true, visible: await visible() };
+    });
+  }
+
+  /**
+   * Woddy beside a chat ("AI proposes, people confirm"): one line on what the client wants, the enquiry type it
+   * reads from the messages (to prefill Create enquiry) and the quick replies that fit. The replies are ranked
+   * without a model; the summary needs the workspace's AI and is left out when it is off, out of credits or slow.
+   * Nothing is sent or saved by this call; the AI gateway logs and charges the model call.
+   */
+  insights(actor: RequestActor, workspaceId: string, conversationId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
+      await this.requireVisible(client, workspaceId, conversationId, actorUser.userId);
+      const chat = (await client.query<Row>(`SELECT id, party_id, lead_id, job_kind, channel, provider_thread_id FROM crm_conversations WHERE workspace_id = $1 AND id = $2`, [workspaceId, conversationId])).rows[0];
+      if (!chat) throw new NotFoundException("Conversation not found");
+      const messages = await client.query<{ direction: string; text: string | null; at: Date }>(
+        `SELECT direction, body_text AS text, created_at AS at FROM crm_messages
+          WHERE workspace_id = $1 AND conversation_id = $2 AND direction IN ('inbound', 'outbound') AND hidden_at IS NULL AND body_text IS NOT NULL
+          ORDER BY created_at DESC, id DESC LIMIT 16`, [workspaceId, conversationId]);
+      const thread = messages.rows.reverse().map((row) => ({ from: row.direction === "inbound" ? "client" : "us", text: String(row.text).slice(0, 600) }));
+      const lastInbound = [...thread].reverse().find((row) => row.from === "client")?.text ?? null;
+      const replies = await client.query<{ id: string; shortcut: string; body: string; status: string }>(
+        `SELECT reply.id, reply.shortcut, reply.body, reply.status FROM crm_quick_replies reply
+          WHERE reply.workspace_id = $1 AND reply.status = 'active' AND (reply.owner_membership_id IS NULL OR reply.owner_membership_id = $2::uuid) ORDER BY reply.owner_membership_id NULLS FIRST, reply.shortcut`,
+        [workspaceId, await this.membership(client, workspaceId, actorUser.userId)]);
+      const hasEnquiry = Boolean(chat.lead_id) || Boolean(chat.party_id && (await client.query(`SELECT 1 FROM crm_leads WHERE workspace_id = $1 AND party_id = $2 LIMIT 1`, [workspaceId, chat.party_id])).rowCount);
+      const suggestedReplies = rankQuickReplies(replies.rows, { lastInbound, hasEnquiry }).map(({ id, shortcut, body }) => ({ id, shortcut, body }));
+      const enquiryTypes = (await loadLeadOptions(client, workspaceId)).enquiryTypes.map((option) => ({ id: option.id, label: option.label }));
+      let summary: string | null = null, suggestedEnquiryType: { id: string; label: string } | null = null, summaryForEnquiry: string | null = null, source: "ai" | "rules" = "rules";
+      if (this.ai && thread.some((row) => row.from === "client") && !isDemoThread(chat)) {
+        try {
+          const answer = await this.ai.run(actor, workspaceId, {
+            feature: "inbox.insights", maxTokens: 400,
+            system: "You help an interior design and fit-out firm's sales team read a client chat. Answer with JSON {\"summary\": string, \"enquiryTypeId\": string|null, \"enquirySummary\": string}. summary: one plain sentence (max 140 characters) on what the client wants and what is open now. enquiryTypeId: the id of the enquiry type that fits best from the list, or null when unsure. enquirySummary: two sentences, in the client's words, for the enquiry record.",
+            prompt: JSON.stringify({ enquiryTypes, messages: thread }),
+            validate: (value) => {
+              const row = value as Record<string, unknown>;
+              if (!row || typeof row.summary !== "string") throw new UnprocessableEntityException("No summary");
+              const typeId = typeof row.enquiryTypeId === "string" && enquiryTypes.some((option) => option.id === row.enquiryTypeId) ? row.enquiryTypeId : null;
+              return { summary: row.summary.trim().slice(0, 200), typeId, enquirySummary: typeof row.enquirySummary === "string" ? row.enquirySummary.trim().slice(0, 600) : null };
+            },
+          });
+          summary = answer.summary || null; summaryForEnquiry = answer.enquirySummary; source = "ai";
+          suggestedEnquiryType = answer.typeId ? enquiryTypes.find((option) => option.id === answer.typeId) ?? null : null;
+          await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.inbox.insights.v1", entityType: "crm_conversation", entityId: conversationId, after: { summary, enquiryTypeId: suggestedEnquiryType?.id ?? null } });
+        } catch {
+          // The chat works without Woddy: no summary, the ranked replies stay.
+        }
+      }
+      return { conversationId, summary, suggestedEnquiryType, summaryForEnquiry: summaryForEnquiry ?? lastInbound, suggestedReplies, source };
+    });
+  }
+
+  private async hasAny(client: PoolClient, workspaceId: string, userId: string, permissions: readonly string[]) {
+    for (const permission of permissions) if (await this.access.hasPermission(client, workspaceId, userId, permission)) return true;
+    return false;
+  }
+
+  /** The person's inbox reach (plan §5b), from the permissions they hold. */
+  private viewer(client: PoolClient, workspaceId: string, userId: string): Promise<InboxViewer> {
+    return loadInboxViewer((permission) => this.access.hasPermission(client, workspaceId, userId, permission));
+  }
+
+  /** A chat outside the person's scope does not exist for them. */
+  private async requireVisible(client: PoolClient, workspaceId: string, conversationId: string, userId: string) {
+    const viewer = await this.viewer(client, workspaceId, userId);
+    if (!(await conversationVisible(client, workspaceId, conversationId, viewer, await this.membership(client, workspaceId, userId)))) throw new NotFoundException("Conversation not found");
   }
 
   /** The worker's run: snoozed chats whose time has come are open again, and their owner is told. */
@@ -555,7 +708,7 @@ export class CrmInboxService {
     return {
       autoAssign: row ? row.autoAssign === true : true, queueId: (row?.queueId as string | null) ?? null, signatureEnabled: row?.signatureEnabled === true,
       autoResolveDays: row ? Number(row.autoResolveDays) : DEFAULT_AUTO_RESOLVE_DAYS,
-      version: Number(row?.version ?? 0), canManage: await this.access.hasPermission(client, workspaceId, userId, "crm.settings.manage"),
+      version: Number(row?.version ?? 0), canManage: await this.hasAny(client, workspaceId, userId, INBOX_MANAGE),
       queues: queues.rows, whatsapp: { connected: Boolean(number.rowCount), number: number.rows[0]?.number ?? null, accountName: number.rows[0]?.accountName ?? null, health: number.rows[0]?.health ?? null, quality: number.rows[0]?.quality ?? null, limit: number.rows[0]?.limit ?? null },
       seats: seats.rows[0]?.seats ?? 0, businessName: business.rows[0]?.name ?? null,
       workday: { start: calendar.rows[0]?.dayStart ?? null, days: calendar.rows[0]?.workingDays ?? null },
@@ -572,7 +725,7 @@ export class CrmInboxService {
     const business = await client.query<{ name: string }>(`SELECT coalesce(nullif(btrim(branding.display_name), ''), workspace.name) AS name FROM workspaces workspace LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id WHERE workspace.id = $1`, [workspaceId]);
     const hours = await workspaceHours(client, workspaceId);
     return {
-      canManage: await this.access.hasPermission(client, workspaceId, userId, "crm.settings.manage"),
+      canManage: await this.hasAny(client, workspaceId, userId, INBOX_MANAGE),
       businessName: business.rows[0]?.name ?? null,
       workspace: scopes.workspace,
       numbers: numbers.rows.map((row) => ({ ...row, override: scopes.numbers.find((scope) => scope.connectionId === row.connectionId) ?? null })),

@@ -163,6 +163,8 @@ export class UpdateSalesSettingsDto {
   @IsOptional() @IsInt() @Min(1) @Max(1440) clientReviewMinutes?: number;
   @IsOptional() @IsInt() @Min(1) @Max(730) duplicateWindowDays?: number;
   @IsOptional() @IsUUID() salesAdminMembershipId?: string | null;
+  /** PLM-024: who reads internal notes. */
+  @IsOptional() @IsIn(["team", "sales"]) internalNotesVisibility?: "team" | "sales";
 }
 
 export class LogContactDto {

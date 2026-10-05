@@ -36,6 +36,9 @@ import { addSlaMinutes, normalizeSlaSchedule, SlaSchedule, SlaScheduleValidation
 import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvaluation } from "./qualification-evidence";
 import { hasResolvedEnquiryType } from "./lead-options";
+import { loadEnquiryFacts, requirementContext, requirementProblems } from "./enquiry-problems";
+import { readLeadTeam, teamRolesForType } from "./lead-team";
+import { canReadNotes, isNotesField, notesReader, redactNotes } from "./internal-notes";
 import {
   formatDeadline, leadFacts, leadLink, loadSalesSettings, memberPerson, refreshUnownedEscalation,
   salesEscalationRecipients, tell, workspaceClock,
@@ -510,7 +513,10 @@ export class CrmLeadsService {
         values,
       );
       const hasMore = result.rows.length > query.limit;
-      const data = hasMore ? result.rows.slice(0, query.limit) : result.rows;
+      const page = hasMore ? result.rows.slice(0, query.limit) : result.rows;
+      // PLM-024: internal notes only for those who may read them.
+      const reader = await notesReader(client, workspaceId, user.userId, await this.access.hasPermission(client, workspaceId, user.userId, "crm.leads.assign"), page.map((row) => String(row.id)));
+      const data = page.map((row) => ({ ...row, details: redactNotes(row.details, canReadNotes(reader, { id: row.id, ownerMembershipId: row.ownerMembershipId })) }));
       const last = data.at(-1) as { id: string; createdAt: Date } | undefined;
       return {
         data,
@@ -523,9 +529,9 @@ export class CrmLeadsService {
 
   /** PLM-094: who changed what, from what, to what and when, for the enquiry, its lead and its client. Read-only. */
   history(actor: RequestActor, workspaceId: string, leadId: string, limit = 200) {
-    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
-      const lead = await client.query<{ enquiryId: string | null; partyId: string | null }>(
-        `SELECT enquiry_id AS "enquiryId", party_id AS "partyId" FROM crm_leads WHERE workspace_id = $1 AND id = $2`, [workspaceId, leadId]);
+    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client, actorUser) => {
+      const lead = await client.query<{ enquiryId: string | null; partyId: string | null; ownerMembershipId: string | null }>(
+        `SELECT enquiry_id AS "enquiryId", party_id AS "partyId", owner_membership_id AS "ownerMembershipId" FROM crm_leads WHERE workspace_id = $1 AND id = $2`, [workspaceId, leadId]);
       if (!lead.rowCount) throw new NotFoundException("Enquiry not found");
       const ids = [leadId, lead.rows[0].enquiryId, lead.rows[0].partyId].filter(Boolean);
       const events = await client.query<{ id: string; action: string; entityType: string; before: unknown; after: unknown; occurredAt: Date; actorName: string | null; source: string }>(
@@ -536,8 +542,12 @@ export class CrmLeadsService {
            AND event.entity_type IN ('crm_lead', 'crm_enquiry', 'crm_party')
          ORDER BY event.occurred_at DESC LIMIT $3`,
         [workspaceId, ids, Math.min(Math.max(limit, 1), 500)]);
+      // PLM-024: a change to the internal notes is history only for those who may read them.
+      const reader = await notesReader(client, workspaceId, actorUser.userId, await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.leads.assign"), [leadId]);
+      const notesVisible = canReadNotes(reader, { id: leadId, ownerMembershipId: lead.rows[0].ownerMembershipId });
       return events.rows
-        .map((event) => ({ id: event.id, action: event.action, entityType: event.entityType, at: event.occurredAt, by: event.actorName ?? (event.source === "user" ? null : "Wodana"), changes: fieldChanges(event.before, event.after) }))
+        .map((event) => ({ id: event.id, action: event.action, entityType: event.entityType, at: event.occurredAt, by: event.actorName ?? (event.source === "user" ? null : "Wodana"),
+          changes: fieldChanges(event.before, event.after).filter((change) => notesVisible || !isNotesField(change.field)) }))
         .filter((event) => event.changes.length);
     });
   }
@@ -618,9 +628,24 @@ export class CrmLeadsService {
         ? null
         : await evaluateQualification(client, workspaceId, leadId);
       const clientMatches = await this.pendingClientMatches(client, workspaceId, lead.enquiry_id);
+      // PLM-024: the internal notes, in the details and in the original submission, only for those who may read them.
+      const reader = await notesReader(client, workspaceId, actorUser.userId, await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.leads.assign"), [leadId]);
+      const notesVisible = canReadNotes(reader, { id: leadId, ownerMembershipId: lead.owner_membership_id as string | null });
+      const enquiryRow = enquiry.rows[0] ? {
+        ...enquiry.rows[0], details: redactNotes(enquiry.rows[0].details, notesVisible),
+        originalSubmission: enquiry.rows[0].originalSubmission && typeof enquiry.rows[0].originalSubmission === "object"
+          ? { ...enquiry.rows[0].originalSubmission, details: redactNotes(enquiry.rows[0].originalSubmission.details, notesVisible) } : enquiry.rows[0].originalSubmission,
+      } : enquiry.rows[0];
+      // PLM-096 / PLM-100: what the enquiry still needs before converting, and the team tagged on it.
+      const teamRoles = await teamRolesForType(client, workspaceId, enquiryRow?.serviceType ?? null);
+      const converted = opportunities.rows.length > 0 || lead.status === "qualified";
+      const facts = converted ? null : await loadEnquiryFacts(client, workspaceId, leadId);
+      const conversionMissing = facts ? requirementProblems(facts, await requirementContext(client, workspaceId, facts.serviceType, teamRoles), "convert") : [];
       return {
-        ...this.mapLead(lead), ownerName: owner.rows[0]?.ownerName ?? null, enquiry: { ...enquiry.rows[0], attribution: attribution.rows }, opportunities: opportunities.rows,
-        clientMatches,
+        ...this.mapLead(lead), ownerName: owner.rows[0]?.ownerName ?? null, enquiry: { ...enquiryRow, attribution: attribution.rows }, opportunities: opportunities.rows,
+        clientMatches, notesVisible,
+        team: await readLeadTeam(client, workspaceId, leadId), teamRoles,
+        conversion: { ready: !conversionMissing.length, missing: conversionMissing },
         qualification: qualification.rows, assignments: assignments.rows, sla: sla.rows,
         qualificationState: {
           ready: qualificationState ? qualificationState.ready : true,
@@ -846,7 +871,7 @@ export class CrmLeadsService {
   }
 
   /** The Sales rules the timers read (S-1, S-2, S-3, S-10): one row per workspace, version-checked and audited. */
-  updateSalesSettings(actor: RequestActor, workspaceId: string, input: { version: number; takeoverCap?: number; unownedEscalationMinutes?: number; clientReviewMinutes?: number; duplicateWindowDays?: number; salesAdminMembershipId?: string | null }) {
+  updateSalesSettings(actor: RequestActor, workspaceId: string, input: { version: number; takeoverCap?: number; unownedEscalationMinutes?: number; clientReviewMinutes?: number; duplicateWindowDays?: number; salesAdminMembershipId?: string | null; internalNotesVisibility?: "team" | "sales" }) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
       const before = await loadSalesSettings(client, workspaceId);
       if (before.version !== input.version) throw new ConflictException("Sales settings changed; reload and try again");
@@ -860,17 +885,18 @@ export class CrmLeadsService {
         clientReviewMinutes: input.clientReviewMinutes ?? before.clientReviewMinutes,
         duplicateWindowDays: input.duplicateWindowDays ?? before.duplicateWindowDays,
         salesAdminMembershipId: input.salesAdminMembershipId === undefined ? before.salesAdminMembershipId : input.salesAdminMembershipId,
+        internalNotesVisibility: input.internalNotesVisibility ?? before.internalNotesVisibility,
       };
       const saved = await client.query(
-        `INSERT INTO workspace_sales_settings (workspace_id, takeover_cap, unowned_escalation_minutes, client_review_minutes, duplicate_window_days, sales_admin_membership_id, updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+        `INSERT INTO workspace_sales_settings (workspace_id, takeover_cap, unowned_escalation_minutes, client_review_minutes, duplicate_window_days, sales_admin_membership_id, updated_by, internal_notes_visibility)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$9)
          ON CONFLICT (workspace_id) DO UPDATE SET takeover_cap=EXCLUDED.takeover_cap, unowned_escalation_minutes=EXCLUDED.unowned_escalation_minutes,
            client_review_minutes=EXCLUDED.client_review_minutes, duplicate_window_days=EXCLUDED.duplicate_window_days,
-           sales_admin_membership_id=EXCLUDED.sales_admin_membership_id, updated_by=EXCLUDED.updated_by,
+           sales_admin_membership_id=EXCLUDED.sales_admin_membership_id, updated_by=EXCLUDED.updated_by, internal_notes_visibility=EXCLUDED.internal_notes_visibility,
            version=workspace_sales_settings.version+1, updated_at=now()
          WHERE workspace_sales_settings.version=$8
          RETURNING version`,
-        [workspaceId, next.takeoverCap, next.unownedEscalationMinutes, next.clientReviewMinutes, next.duplicateWindowDays, next.salesAdminMembershipId, actorUser.userId, input.version]);
+        [workspaceId, next.takeoverCap, next.unownedEscalationMinutes, next.clientReviewMinutes, next.duplicateWindowDays, next.salesAdminMembershipId, actorUser.userId, input.version, next.internalNotesVisibility]);
       if (!saved.rowCount) throw new ConflictException("Sales settings changed; reload and try again");
       const after = await loadSalesSettings(client, workspaceId);
       await this.events.record(client, {

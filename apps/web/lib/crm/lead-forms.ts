@@ -5,7 +5,9 @@ export type LeadFormQuestion = {
   field?: string; options: { id: string; label: string }[];
 };
 export type LeadFormSchema = { title: string; description: string; source: string; channel: string; questions: LeadFormQuestion[] };
-export type LeadFormRecord = { id: string; token: string; draft: LeadFormSchema; published: LeadFormSchema | null; status: string; version: number; updatedAt: string };
+export type LeadFormRecord = { id: string; token: string; draft: LeadFormSchema; published: LeadFormSchema | null; status: string; version: number; updatedAt: string;
+  /** PLM-116: submissions the form has brought in. */
+  submissions?: number };
 export type PublicEnquiryForm = Pick<LeadFormSchema, "title" | "description" | "questions"> & {
   revision: string;
   consentLabel: string;

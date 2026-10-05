@@ -52,7 +52,7 @@ describe("CRM intake idempotency integrity", () => {
     for (const [change, message] of [
       [{ party: { displayName: "Asha Rao", mobile: "" } }, "mobile number"],
       [{ serviceType: "" }, "enquiry type"],
-      [{ details: { emirate: "" } }, "emirate"],
+      [{ details: { emirate: "" } }, "region"],
     ] as const) {
       await expect(instance["ingest"]({ query } as never, "workspace", null, "integration", `${intakeMethod}-${message}`, undefined,
         intake({ intakeMethod, ...change }) as never)).rejects.toThrow(message);

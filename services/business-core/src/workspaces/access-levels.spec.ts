@@ -38,7 +38,7 @@ describe("access levels", () => {
       const access = describeAccess(template.permissions);
       expect(expandAccess(access), template.code).toEqual([...template.permissions].sort());
     }
-    expect(describeAccess(ROLE_TEMPLATES.find((template) => template.code === "sales")!.permissions).levels).toMatchObject({ sales: "edit", inbox: "edit", planning: "view", purchasing: "none" });
+    expect(describeAccess(ROLE_TEMPLATES.find((template) => template.code === "sales")!.permissions).levels).toMatchObject({ sales: "edit", inbox: "view", planning: "view", purchasing: "none" });
   });
 
   it("refuses an unknown module, a level the module doesn't offer and malformed extras", () => {
@@ -46,6 +46,9 @@ describe("access levels", () => {
     expect(() => expandAccess({ levels: { sales: "owner" } })).toThrow("sales has no owner level");
     expect(() => expandAccess({ levels: { woddy: "manage" } })).toThrow("woddy has no manage level");
     expect(() => expandAccess({ levels: {}, extras: "crm.leads.view" })).toThrow("Extras must be permission codes");
-    expect(expandAccess({ levels: { inbox: "edit" }, extras: ["crm.parties.export"] })).toEqual(["crm.communications.send", "crm.communications.view", "crm.parties.export"]);
+    expect(expandAccess({ levels: { inbox: "edit" }, extras: ["crm.parties.export"] })).toEqual(["crm.communications.send", "crm.communications.view", "crm.inbox.team", "crm.parties.export"]);
+    // Inbox levels (plan §5b): Own chats sees and answers; Team chats adds the queue and the team; Manage adds every chat and the settings.
+    expect(expandAccess({ levels: { inbox: "view" } })).toEqual(["crm.communications.send", "crm.communications.view"]);
+    expect(expandAccess({ levels: { inbox: "manage" } })).toEqual(["crm.communications.send", "crm.communications.view", "crm.consent.manage", "crm.inbox.manage", "crm.inbox.team"]);
   });
 });

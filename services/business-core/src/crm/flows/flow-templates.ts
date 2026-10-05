@@ -156,7 +156,8 @@ export const FLOW_TEMPLATES: readonly FlowTemplate[] = [
     name: "Concept package",
     description: "Mood boards, concepts and a material list per space, paid up front.",
     group: "Interior design",
-    suggestedEnquiryTypes: ["Interior design", "Concepts / early ideas"],
+    // PLM-127: concept clients are Interior design with the Concept package chosen after the intro; no separate type.
+    suggestedEnquiryTypes: ["Interior design"],
     definition: line([firstContact(), details(), introMeeting(), clientType(), ...designRound()]),
   },
   {

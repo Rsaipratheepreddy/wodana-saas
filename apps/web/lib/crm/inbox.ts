@@ -10,13 +10,47 @@ export function channelName(channel: unknown, t: Translate): string {
 
 /** The team inbox's vocabulary, shared with business-core (crm/conversations/inbox/inbox-rules.ts). */
 export type InboxView = "mine" | "unassigned" | "team" | "all";
+/**
+ * Who sees which chats (plan §5b): own chats, the team's and the unassigned intake, every chat, or (with no
+ * inbox) only the chats filed into the person's jobs. The server enforces it; the web only picks the chips.
+ */
+export type InboxScope = "own" | "team" | "manage" | "job";
+/** The list's chips: each is one view at one state. */
+export type InboxChip = "unassigned" | "mine" | "team" | "snoozed" | "closed";
+const CHIP_QUERIES: Record<InboxChip, { view: InboxView; status: ChatState }> = {
+  unassigned: { view: "unassigned", status: "open" }, mine: { view: "mine", status: "open" }, team: { view: "team", status: "open" },
+  snoozed: { view: "all", status: "snoozed" }, closed: { view: "all", status: "closed" },
+};
+/** The query a chip asks for. With no inbox, Team is every open chat of the person's jobs, owned or not. */
+export function chipQuery(chip: InboxChip, scope: InboxScope | undefined): { view: InboxView; status: ChatState } {
+  return chip === "team" && scope === "job" ? { view: "all", status: "open" } : CHIP_QUERIES[chip];
+}
+/** The chips a level offers: own chats have no queue to look at; the job's team has only its jobs' chats. */
+export function chipsFor(scope: InboxScope | undefined): InboxChip[] {
+  if (scope === "job") return ["team", "closed"];
+  return scope === "own" ? ["mine", "team", "snoozed", "closed"] : ["unassigned", "mine", "team", "snoozed", "closed"];
+}
+export type JobKind = "enquiry" | "opportunity" | "project";
+/** The enquiry, opportunity or project a chat is filed into. */
+export type ConversationJob = { kind: JobKind; id: string; reference: string | null; title: string };
+export function jobHref(job: Pick<ConversationJob, "kind" | "id">) {
+  return job.kind === "enquiry" ? `/workspace/crm/leads?lead=${job.id}` : job.kind === "opportunity" ? `/workspace/crm/opportunities?record=${job.id}` : `/workspace/projects/${job.id}/overview`;
+}
+export function jobName(job: Pick<ConversationJob, "reference" | "title">) {
+  return [job.reference, job.title].filter((part) => part && part.trim()).join(" · ");
+}
+/** Woddy beside a chat: a one-line summary, the enquiry type it reads, the quick replies that fit. */
+export type InboxInsights = {
+  conversationId: string; summary: string | null; suggestedEnquiryType: { id: string; label: string } | null; summaryForEnquiry: string | null;
+  suggestedReplies: Array<{ id: string; shortcut: string; body: string }>; source: "ai" | "rules";
+};
 export type ChatState = "open" | "snoozed" | "closed";
 export type LabelColor = "viz-1" | "viz-2" | "viz-3" | "viz-4" | "viz-5" | "viz-6";
 export const LABEL_COLORS: LabelColor[] = ["viz-1", "viz-2", "viz-3", "viz-4", "viz-5", "viz-6"];
 
 export type InboxLabel = { id: string; name: string; color: LabelColor; status?: "active" | "archived"; version?: number; openChats?: number };
 export type InboxOwner = { id: string; displayName: string; openChats: number; away: boolean; isMe: boolean };
-export type InboxSummary = { mine: number; unassigned: number; team: number | null; all: number; snoozed: number; unreadForMe: number; membershipId: string | null;
+export type InboxSummary = { mine: number; unassigned: number; team: number | null; all: number; snoozed: number; closed?: number; unreadForMe: number; membershipId: string | null; scope?: InboxScope;
   /** The connected WhatsApp numbers; with two or more the inbox can show one number's chats. */
   numbers?: Array<{ connectionId: string; number: string | null; accountName: string | null; isDefault: boolean }> };
 export type QuickReply = { id: string; shortcut: string; body: string; status: "active" | "archived"; version: number; scope: "workspace" | "personal"; canEdit: boolean };
@@ -37,7 +71,7 @@ export type InboxSettings = {
   workday: { start: string | null; days: number[] | null };
 };
 export type ChatEvent = {
-  id: string; kind: "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked" | "blocked" | "unblocked" | "hidden" | "unhidden";
+  id: string; kind: "resolved" | "reopened" | "snoozed" | "woke" | "assigned" | "unassigned" | "labelled" | "unlabelled" | "linked" | "blocked" | "unblocked" | "hidden" | "unhidden" | "filed" | "unfiled";
   method: string | null; reason: string | null; snoozedUntil: string | null; createdAt: string;
   actorName: string | null; ownerName: string | null; labelName: string | null; labelColor: LabelColor | null;
 };
@@ -48,6 +82,9 @@ export type ChatContext = {
   opportunities: Array<{ id: string; reference: string; title: string; status: string; stageName: string | null; ownerName: string | null }> | null;
   projects: Array<{ id: string; reference: string | null; name: string; status: string; promiseDate: string | null; managerName: string | null }> | null;
   variables: Partial<Record<TemplateSource, string | null>>;
+  job?: ConversationJob | null;
+  /** Not filed yet, but the contact has a live job: proposed, confirmed by the person. */
+  suggestedJob?: ConversationJob | null;
 };
 
 export const TEMPLATE_SOURCES = [
@@ -286,5 +323,7 @@ export function eventLine(event: ChatEvent): { key: MessageKey; values: Record<s
     case "unblocked": return { key: tKey("{actor} unblocked this number"), values: { actor } };
     case "hidden": return { key: tKey("{actor} hid a message"), values: { actor } };
     case "unhidden": return { key: tKey("{actor} showed a hidden message again"), values: { actor } };
+    case "filed": return { key: tKey("{actor} filed this chat into {job}"), values: { actor, job: event.reason ?? "" } };
+    case "unfiled": return { key: tKey("{actor} took this chat out of its job"), values: { actor } };
   }
 }

@@ -22,8 +22,10 @@ export class LeadFormsService {
 
   list(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async client => {
-      const result = await client.query(`SELECT id, token, draft, published, status, version, updated_at AS "updatedAt"
-        FROM crm_lead_forms WHERE workspace_id=$1 ORDER BY updated_at DESC`, [workspaceId]);
+      // PLM-116: each form with how many submissions it has brought in.
+      const result = await client.query(`SELECT id, token, draft, published, status, version, updated_at AS "updatedAt",
+          (SELECT count(*)::int FROM crm_intake_events intake WHERE intake.workspace_id = form.workspace_id AND intake.original_payload->>'formId' = form.id::text) AS submissions
+        FROM crm_lead_forms form WHERE workspace_id=$1 ORDER BY updated_at DESC`, [workspaceId]);
       const choices = await loadLeadOptions(client, workspaceId);
       return { data: result.rows.map(row => ({ ...row, draft: completeLeadForm(row.draft as LeadFormSchema, choices) })) };
     });

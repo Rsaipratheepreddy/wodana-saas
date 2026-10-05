@@ -104,6 +104,13 @@ export class RemoveAutoRepliesDto {
   @Type(() => Number) @IsInt() @Min(1) version!: number;
 }
 
+/** "File into job": the enquiry, opportunity or project the chat belongs to; `kind: null` takes it out. */
+export class FileIntoJobDto {
+  @IsOptional() @IsIn(["enquiry", "opportunity", "project", null]) kind: "enquiry" | "opportunity" | "project" | null = null;
+  @IsOptional() @IsUUID() id?: string;
+  @Type(() => Number) @IsInt() @Min(1) version!: number;
+}
+
 export class WakeSnoozedDto {
   @IsOptional() @IsInt() @Min(1) @Max(100) limit = 50;
 }

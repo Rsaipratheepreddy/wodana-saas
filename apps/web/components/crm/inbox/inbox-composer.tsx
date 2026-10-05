@@ -2,10 +2,10 @@
 
 import { useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { CalendarClock, FileText, Paperclip, Send, StickyNote, X, Zap } from "lucide-react";
+import { CalendarClock, FileText, Lock, Paperclip, Send, StickyNote, UserRound, X, Zap } from "lucide-react";
 import { Badge, Button, EmptyState, IconButton, SearchInput, SegmentedControl, TextInput, useConfirmationDialog, useDesignSystem, useReadOnlyReason, FormDialog } from "@/design-system";
 import { crmRequest, type RecordData } from "@/lib/crm/client";
-import { ATTACH_ACCEPT, attachProblem, fileSizeText, fillQuickReply, fillTemplate, quickReplyQuery, renderTemplate, sendableKind, sendableTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_STATUS, uploadAttachment, windowLeft, type ChatContext, type InboxOwner, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
+import { ATTACH_ACCEPT, attachProblem, channelName, fileSizeText, fillQuickReply, fillTemplate, quickReplyQuery, renderTemplate, sendableKind, sendableTemplate, TEMPLATE_SOURCE_LABELS, TEMPLATE_STATUS, uploadAttachment, windowLeft, type ChatContext, type InboxOwner, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { woddyInstruction } from "@/lib/woddy/agent";
 import { submitChatOnEnter } from "../chat-composer";
@@ -58,6 +58,8 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
   const left = windowLeft(thread.windowClosesAt ?? (Number.isFinite(inboundAt) ? new Date(inboundAt + 86_400_000).toISOString() : null), now);
   const windowClosed = isWhatsApp && left <= 0;
   const needsTemplate = mode === "reply" && windowClosed;
+  const internal = mode === "note" || thread.channel === "internal";
+  const clientName = String(thread.partyName ?? "").trim() || t("the client");
   const replyBlocked = mode === "reply" ? blocked : !thread.canSend ? blocked : "";
   const instruction = onAskWoddy ? woddyInstruction(draft) : null;
   const query = instruction === null ? quickReplyQuery(draft) : null;
@@ -144,6 +146,9 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
   }}>
     <div className={styles.composerTools}>
       {thread.channel !== "internal" ? <SegmentedControl label={t("Message type")} value={mode} onChange={(value) => { setMode(value as "reply" | "note"); setFailure(""); }} options={[{ id: "reply", label: t("Reply") }, { id: "note", label: t("Note") }]} /> : null}
+      {/* E6-1: who reads this message, always in view. A note stays with the team and never reaches the client or the portal. */}
+      {internal ? <span className={styles.audience} data-audience="internal" id={`audience-${id}`}><Lock aria-hidden="true" size={12} />{t("Internal · only the team")}</span>
+        : <span className={styles.audience} data-audience="client" id={`audience-${id}`}><UserRound aria-hidden="true" size={12} />{t("To {name} · {channel}", { name: clientName, channel: channelName(thread.channel, t) })}</span>}
       {mode === "reply" && isWhatsApp && left > 0 && !replyBlocked ? <span className={styles.windowChip}>{t("Window closes in {time}", { time: left >= 3_600_000 ? t("{count} h", { count: Math.floor(left / 3_600_000) }) : t("{count} m", { count: Math.max(1, Math.floor(left / 60_000)) }) })}</span> : null}
       <span className={styles.toolSpacer} />
       {mode === "reply" && isWhatsApp ? <Button size="compact" variant="quiet" isDisabled={Boolean(replyBlocked)} onPress={() => setPicking(true)}><FileText aria-hidden="true" size={15} />{t("Templates")}</Button> : null}
@@ -170,7 +175,7 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
         placeholder={file ? t("Add a caption") : mode === "note" ? t("Note for the team · @ to mention") : t("Type a message · / for quick replies")}
         role={popup.length ? "combobox" : undefined} aria-expanded={popup.length ? true : undefined} aria-controls={popup.length ? `suggest-${id}` : undefined}
         aria-activedescendant={popup.length ? `suggest-${id}-${Math.min(highlight, popup.length - 1)}` : undefined} aria-autocomplete={popup.length ? "list" : undefined}
-        onChange={(event) => { onDraftChange(event.target.value); setNotice(""); setHighlight(0); }} onKeyDown={onKeyDown} aria-describedby={`message-help-${id}`} />
+        onChange={(event) => { onDraftChange(event.target.value); setNotice(""); setHighlight(0); }} onKeyDown={onKeyDown} aria-describedby={`audience-${id} message-help-${id}`} />
       {canSendLater ? <IconButton aria-label={t("Send later")} className={styles.attachButton} size="compact" variant="quiet" isDisabled={!draft.trim() || busy} onPress={() => setLater({ bodyText: draft.trim() })}><CalendarClock size={17} /></IconButton> : null}
       <Button className={styles.sendButton} aria-label={instruction !== null ? t("Ask Woddy") : mode === "note" ? t("Add note") : t("Send message")} variant="primary" type="submit" isDisabled={(!draft.trim() && !file) || (instruction === null ? Boolean(replyBlocked) : woddyBusy || !instruction)} isLoading={busy || (instruction !== null && woddyBusy)}><Send data-directional="true" size={19} /></Button>
     </div> : null}

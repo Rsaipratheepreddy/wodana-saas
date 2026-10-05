@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Callout, DateField, FormDialog, MoneyField, MoreDetails, SelectField, TextInput, useDesignSystem, useWorkingCalendar } from "@/design-system";
-import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
+import { Callout, DateField, FormDialog, FormNotSaved, MoneyField, MoreDetails, SelectField, TextInput, useDesignSystem, useWorkingCalendar, type SaveProblem } from "@/design-system";
+import { CrmRequestError, crmRequest, rows, type RecordData } from "@/lib/crm/client";
+import { problemText } from "@/lib/crm/enquiry-requirements";
+import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { zonedDateTime, zonedDateTimeToIso } from "@/lib/crm/zoned-time";
 import { salesOwnerChoices, type CrmLeadListItem, type CrmPipeline, type LeadsPageData } from "@/lib/crm/leads";
@@ -12,8 +14,14 @@ import { CrmDateTimeField } from "./crm-date-time-field";
 import { useCrmResource } from "./crm-workbench";
 import styles from "./create-deal-dialog.module.css";
 
-export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { lead: CrmLeadListItem; initialData: LeadsPageData; onClose: () => void; onCreated: (record: RecordData) => Promise<void> }) {
+export function CreateDealDialog({ lead, initialData, onClose, onCreated, initialProblems }: { lead: CrmLeadListItem; initialData: LeadsPageData; onClose: () => void; onCreated: (record: RecordData) => Promise<void>;
+  /** PLM-096: what the enquiry still needs, when a quick conversion was refused. */
+  initialProblems?: SaveProblem[];
+}) {
   const t = useT();
+  // PLM-092: a refused conversion names everything the enquiry type still needs, at once.
+  const [problems, setProblems] = useState<SaveProblem[]>(initialProblems ?? []);
+  const regionLabel = t(administrativeAreaLabel(countryFromLocale(initialData.defaultLocale)) as never);
   const resource = useCrmResource<unknown>(initialData.workspaceId, "pipelines");
   const pipelines = (resource.data ? rows(resource.data) as unknown as CrmPipeline[] : initialData.pipelines).filter(p => p.status === "active");
   const pipeline = pipelines.find(p => p.isDefault) ?? pipelines[0];
@@ -61,15 +69,20 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { le
     if (!nextActionAt) throw new Error(t("Choose the next follow-up date and time."));
     if (amount && !/^[A-Z]{3}$/.test(currency)) throw new Error(t("Set your workspace currency in Company settings before adding a value."));
     const salesPipeline = pipeline ?? await ensurePipeline();
+    setProblems([]);
     const result = await crmRequest(initialData.workspaceId, `leads/${lead.id}/qualify`, "POST", {
       partyId: lead.partyId, leadVersion: lead.version, pipelineId: salesPipeline.id, ownerMembershipId: owner, title: title.trim(),
       nextActionAt, ...(closeDate ? { expectedCloseAt: new Date(`${closeDate}T12:00`).toISOString() } : {}),
       ...(amount ? { amount: Number(amount), currencyCode: currency.trim().toUpperCase() } : {}),
+    }).catch((error: unknown) => {
+      if (error instanceof CrmRequestError && error.missing.length) { setProblems(error.missing); throw new FormNotSaved(); }
+      throw error;
     });
     setSaved(true);
     try { await onCreated(result); } catch { setFailure(t("Opportunity created. Close this window and open Pipeline to find it. Do not submit again.")); }
   };
-  return <FormDialog cancelLabel={saved ? t("Close") : undefined} description={lead.partyName} error={failure || undefined} errorTitle={t("Opportunity created")} hideSubmit={saved}
+  return <FormDialog cancelLabel={saved ? t("Close") : undefined} description={lead.partyName} error={failure || undefined} errorTitle={problems.length ? t("Complete the enquiry before converting") : t("Opportunity created")} hideSubmit={saved}
+    problems={problems.map((item) => ({ ...item, text: problemText(item, t, { regionLabel }) }))}
     isDirty={dirty} isSubmitDisabled={!members.length || needsEnquiryType} onClose={onClose} onSubmit={submit} submitLabel={t("Convert to opportunity")} title={t("Convert to opportunity")}
     lead={<>
       {needsEnquiryType && <Callout tone="warning" title={t("Enquiry type needed")}>{t("This enquiry is marked Not Sure Yet. Open Edit details and choose its actual type before conversion.")}</Callout>}

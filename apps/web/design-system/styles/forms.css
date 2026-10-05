@@ -39,6 +39,7 @@
 .wd-form-banner > strong { flex: 1 1 12rem; align-self: center; }
 .wd-form-banner span { color: var(--wd-color-text); overflow-wrap: anywhere; }
 .wd-form-summary ul { display: flex; flex-wrap: wrap; gap: var(--wd-space-1) var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.wd-form-summary ul[data-layout="list"] { display: grid; gap: var(--wd-space-1); }
 .wd-form-summary li button, .wd-text-button {
   padding: 0; border: 0; background: transparent; color: var(--wd-color-link); font: inherit; cursor: pointer;
   text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 0.2em;

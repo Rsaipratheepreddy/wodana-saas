@@ -44,6 +44,9 @@ import { recordClientMessageSkipped, sendClientEvent } from "../conversations/in
 import { loadSalesSettings, salesSchedule } from "../leads/sales-attention";
 import { addSlaMinutes } from "../leads/sla-schedule";
 import { memberRoleKeys } from "../../workspaces/role-vocabulary";
+import { teamRolesByEnquiryType, teamRolesForType, writeLeadTeam } from "../leads/lead-team";
+import { loadRequirementRows, ProblemList, requirementContext, requirementProblems, rulesByType, type EnquiryFacts } from "../leads/enquiry-problems";
+import { canReadNotes, notesReader, redactNotes } from "../leads/internal-notes";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -58,16 +61,42 @@ export class CrmIntakeService {
 
   /** The workspace's choices, and the caller's roles and teams in the one role vocabulary (sources limited to roles compare against them). */
   options(actor: RequestActor, workspaceId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client, actorUser) => ({
-      ...await loadLeadOptions(client, workspaceId),
-      roleKeys: await memberRoleKeys(client, workspaceId, actorUser.userId),
-    }));
+    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client, actorUser) => {
+      const options = await loadLeadOptions(client, workspaceId);
+      return {
+        ...options,
+        // PLM-100: the team roles each enquiry type asks for, from its own steps.
+        teamRoles: await teamRolesByEnquiryType(client, workspaceId, options.enquiryTypes),
+        // PLM-096: the fields each enquiry type requires, and from which gate.
+        requirements: rulesByType(await loadRequirementRows(client, workspaceId), options.enquiryTypes.map((type) => type.id)),
+        roleKeys: await memberRoleKeys(client, workspaceId, actorUser.userId),
+      };
+    });
+  }
+
+  /** PLM-096: what the enquiry form must hold when it is created or saved, for its enquiry type (gate `create`). */
+  private async createProblems(client: PoolClient, workspaceId: string, input: Pick<CreateIntakeEventDto, "serviceType" | "summary" | "party" | "details" | "team">) {
+    const answered = new Set((input.team ?? []).filter((entry) => entry.membershipId || entry.notApplicable).map((entry) => entry.role));
+    const details = (input.details ?? {}) as unknown as Record<string, unknown>;
+    const text = (value: unknown) => typeof value === "string" ? value : null;
+    const facts: EnquiryFacts = {
+      serviceType: input.serviceType ?? null, summary: input.summary ?? null, email: text(input.party?.email),
+      area: text(details.area) || text(details.location), address: text(input.party?.address), budgetRange: text(details.budgetRange), customerType: text(details.customerType),
+      team: answered, custom: new Set(),
+    };
+    const roles = await teamRolesForType(client, workspaceId, input.serviceType ?? null);
+    return requirementProblems(facts, await requirementContext(client, workspaceId, input.serviceType ?? null, roles), "create");
   }
 
   updateDetails(actor: RequestActor, workspaceId: string, leadId: string, input: UpdateLeadDetailsDto) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
-      if (!input.party?.displayName?.trim()) throw new UnprocessableEntityException("Enter a customer name");
-      if (!input.party.mobile?.trim()) throw new UnprocessableEntityException("Enter a mobile number");
+      // PLM-092: every problem at once, each with its field; PLM-096: what this enquiry type requires from the start.
+      new ProblemList()
+        .when(!input.party?.displayName?.trim(), "displayName", "Enter a customer name")
+        .when(!input.party?.mobile?.trim(), "mobile", "Enter a mobile number")
+        .when(input.party?.email?.trim() && !/^\S+@\S+\.\S+$/.test(input.party.email.trim()), "email", "Enter a valid email")
+        .addAll(await this.createProblems(client, workspaceId, input as never))
+        .throwIfAny();
       const workspaceCountry = needsWorkspacePhoneCountry(input.party)
         ? countryFromLocale((await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [workspaceId])).rows[0]?.defaultLocale)
         : undefined;
@@ -92,7 +121,10 @@ export class CrmIntakeService {
       const nextSource = input.source ?? before.source, nextChannel = input.source ? input.channel! : before.channel;
       // Keep the stored referrer when the edit does not touch it; re-check it when the source or referrer changes.
       const referral = input.referral || input.source ? await resolveReferral(client, workspaceId, nextSource, nextChannel, input.referral ?? before.referral) : undefined;
-      const details = { ...before.details, ...input.details, contact: party };
+      // PLM-024: someone who can't read the internal notes can't change them either; they stay as they are.
+      const leadOwner = (await client.query<{ owner: string | null }>(`SELECT owner_membership_id AS owner FROM crm_leads WHERE workspace_id=$1 AND id=$2`, [workspaceId, leadId])).rows[0]?.owner ?? null;
+      const notesVisible = canReadNotes(await this.notesReaderFor(client, workspaceId, actorUser.userId, [leadId]), { id: leadId, ownerMembershipId: leadOwner });
+      const details = { ...before.details, ...redactNotes(input.details, notesVisible), contact: party };
       const source = input.source ?? before.source, channel = input.source ? input.channel : before.channel;
       await client.query(`UPDATE crm_enquiries SET summary=$3, service_type=$4, details=$5, source=$6, channel=$7,
         version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2`,
@@ -123,10 +155,12 @@ export class CrmIntakeService {
         if (value) await client.query(`INSERT INTO crm_contact_points (workspace_id,party_id,type,label,raw_value,normalized_value,country_code,is_primary,invalid_reason)
           VALUES ($1,$2,$3::crm_contact_point_type,$4,$5,$6,$7,false,$8)`, [workspaceId, before.party_id, type, label, value, normalized, label === "mobile" ? party.mobileCountryCode ?? null : label === "phone" ? party.phoneCountryCode ?? null : null, normalized ? null : "unresolved_phone"]);
       }
+      // PLM-100: the team tagged on the enquiry (a member per role, or Not applicable).
+      const teamChanged = await writeLeadTeam(client, workspaceId, leadId, input.team, actorUser.userId);
       const result = await client.query(`UPDATE crm_leads SET version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2 RETURNING version`, [workspaceId, leadId]);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user",
         action: "crm.lead.details_updated.v1", entityType: "crm_lead", entityId: leadId,
-        before, after: { serviceType: input.serviceType, summary: input.summary, source, channel, details, referral } });
+        before, after: { serviceType: input.serviceType, summary: input.summary, source, channel, details, referral, ...(teamChanged.length ? { team: input.team } : {}) } });
       return { id: leadId, version: result.rows[0].version };
     });
   }
@@ -145,7 +179,7 @@ export class CrmIntakeService {
   }
 
   listEnquiries(actor: RequestActor, workspaceId: string, query: ListEnquiriesQueryDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client, actorUser) => {
       const cursor = this.intakeCursor(query.cursor);
       const values: unknown[] = [workspaceId];
       const clauses = ["enquiry.workspace_id = $1"];
@@ -179,7 +213,10 @@ export class CrmIntakeService {
         values,
       );
       const hasMore = result.rows.length > query.limit;
-      const data = hasMore ? result.rows.slice(0, query.limit) : result.rows;
+      const page = hasMore ? result.rows.slice(0, query.limit) : result.rows;
+      // PLM-024: internal notes only for those who may read them.
+      const reader = await this.notesReaderFor(client, workspaceId, actorUser.userId, page.map((row) => row.leadId).filter(Boolean));
+      const data = page.map((row) => ({ ...row, details: redactNotes(row.details, canReadNotes(reader, { id: row.leadId, ownerMembershipId: row.ownerMembershipId })) }));
       const last = data.at(-1) as { id: string; receivedAt: Date } | undefined;
       return {
         data,
@@ -191,7 +228,7 @@ export class CrmIntakeService {
   }
 
   getEnquiry(actor: RequestActor, workspaceId: string, enquiryId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client, actorUser) => {
       const result = await client.query<Record<string, unknown>>(
         `SELECT enquiry.id, enquiry.party_id AS "partyId", party.display_name AS "partyName",
                 enquiry.intake_event_id AS "intakeEventId", enquiry.reference, enquiry.details, enquiry.title, enquiry.summary,
@@ -221,8 +258,14 @@ export class CrmIntakeService {
          ORDER BY touched_at, id`,
         [workspaceId, enquiryId],
       );
-      return { ...result.rows[0], attribution: attribution.rows };
+      const lead = result.rows[0].lead as { id?: string; ownerMembershipId?: string | null } | null;
+      const reader = await this.notesReaderFor(client, workspaceId, actorUser.userId, lead?.id ? [lead.id] : []);
+      return { ...result.rows[0], details: redactNotes(result.rows[0].details, canReadNotes(reader, { id: lead?.id, ownerMembershipId: lead?.ownerMembershipId })), attribution: attribution.rows };
     });
+  }
+
+  private async notesReaderFor(client: PoolClient, workspaceId: string, userId: string, leadIds: string[]) {
+    return notesReader(client, workspaceId, userId, await this.access.hasPermission(client, workspaceId, userId, "crm.leads.assign"), leadIds);
   }
 
   list(actor: RequestActor, workspaceId: string, query: ListIntakeQueryDto) {
@@ -276,7 +319,7 @@ export class CrmIntakeService {
   }
 
   get(actor: RequestActor, workspaceId: string, intakeEventId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client, actorUser) => {
       const result = await client.query(`SELECT id,status,source,channel,original_payload AS payload,version,
         resolution_type AS "resolutionType",resolved_party_id AS "resolvedPartyId",
         resolved_at AS "resolvedAt",resolution_evidence AS "resolutionEvidence"
@@ -291,7 +334,13 @@ export class CrmIntakeService {
         JOIN crm_parties party ON party.id = candidate.candidate_party_id AND party.workspace_id = candidate.workspace_id
         WHERE candidate.workspace_id = $1 AND candidate.intake_event_id = $2
         ORDER BY candidate.score DESC,candidate.id`, [workspaceId, intakeEventId]);
-      return { ...result.rows[0], candidates: candidates.rows };
+      // PLM-024: the submission's internal notes follow the enquiry's rule.
+      const lead = (await client.query<{ id: string; ownerMembershipId: string | null }>(
+        `SELECT lead.id, lead.owner_membership_id AS "ownerMembershipId" FROM crm_enquiries enquiry JOIN crm_leads lead ON lead.workspace_id = enquiry.workspace_id AND lead.enquiry_id = enquiry.id
+          WHERE enquiry.workspace_id = $1 AND enquiry.intake_event_id = $2 LIMIT 1`, [workspaceId, intakeEventId])).rows[0];
+      const visible = canReadNotes(await this.notesReaderFor(client, workspaceId, actorUser.userId, lead ? [lead.id] : []), { id: lead?.id, ownerMembershipId: lead?.ownerMembershipId });
+      const payload = result.rows[0].payload;
+      return { ...result.rows[0], payload: payload && typeof payload === "object" ? { ...payload, details: redactNotes(payload.details, visible) } : payload, candidates: candidates.rows };
     });
   }
 
@@ -492,8 +541,11 @@ export class CrmIntakeService {
     if (input.workspaceId && input.workspaceId !== workspaceId) {
       throw new BadRequestException("Body workspaceId does not match route workspaceId");
     }
-    if (!input.party?.displayName?.trim()) throw new UnprocessableEntityException("Enter a customer name");
-    if (input.party.email?.trim() && !/^\S+@\S+\.\S+$/.test(input.party.email.trim())) throw new UnprocessableEntityException("Email address is invalid");
+    // PLM-092: every problem at once, each with its field.
+    new ProblemList()
+      .when(!input.party?.displayName?.trim(), "displayName", "Enter a customer name")
+      .when(input.party?.email?.trim() && !/^\S+@\S+\.\S+$/.test(input.party.email.trim()), "email", "Email address is invalid")
+      .throwIfAny();
     const requestHash = canonicalHash(input);
     const legacyRequestHash = stableHash(input);
     const existing = await client.query<{ id: string; payload_hash: string; payload_hash_version: number }>(
@@ -507,9 +559,13 @@ export class CrmIntakeService {
       }
       return this.intakeResult(client, workspaceId, existing.rows[0].id);
     }
-    if (!input.party.mobile?.trim()) throw new UnprocessableEntityException("Enter a mobile number");
-    if (!input.serviceType?.trim()) throw new UnprocessableEntityException("Select an enquiry type");
-    if (!input.details?.emirate?.trim()) throw new UnprocessableEntityException("Select an emirate");
+    const problems = new ProblemList()
+      .when(!input.party.mobile?.trim(), "mobile", "Enter a mobile number")
+      .when(!input.serviceType?.trim(), "serviceType", "Select an enquiry type")
+      .when(!input.details?.emirate?.trim(), "emirate", "Select the region");
+    // Staff entry is checked against what its enquiry type requires from the start; a form or import is the sender's.
+    if (sourceActor === "user" && input.intakeMethod !== "import") problems.addAll(await this.createProblems(client, workspaceId, input));
+    problems.throwIfAny();
     await validateLeadOptions(client, workspaceId, input);
     const submittedParty = input.party;
     const workspaceCountry = needsWorkspacePhoneCountry(input.party)
@@ -537,6 +593,7 @@ export class CrmIntakeService {
       details: input.details ?? {},
       assignment: input.assignment,
       referral: input.referral,
+      ...(input.team?.length ? { team: input.team } : {}),
     };
     // A provider may retry concurrently or use a new request key for the same event.
     // Avoid a uniqueness exception: PostgreSQL would abort the transaction before
@@ -829,6 +886,8 @@ export class CrmIntakeService {
        VALUES ($1, $2, $3, $4)`,
       [leadId, workspaceId, enquiryId, input.partyId],
     );
+    // PLM-100: the team tagged at intake (a member or Not applicable per role) travels with the enquiry.
+    if (Array.isArray(original.team)) await writeLeadTeam(client, workspaceId, leadId, original.team, actorUserId);
     await ensureJobForSource(client, workspaceId, { type: "lead", id: leadId }, actorUserId);
     const reference = String(enquiry.rows[0]?.reference ?? "");
     const clientName = String(original.party?.displayName ?? "");

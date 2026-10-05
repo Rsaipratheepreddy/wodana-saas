@@ -39,6 +39,12 @@ describe("the flow template library", () => {
     expect(text).not.toMatch(/\b(AED|INR|USD|EUR|GBP|SAR|Dubai|UAE|Emirate|India|Palm|ODG)\b/i);
   });
 
+  it("suggests no Concepts / early ideas enquiry type: a concept client is Interior design with the Concept package (PLM-127)", () => {
+    const suggested = FLOW_TEMPLATES.flatMap((template) => template.suggestedEnquiryTypes.map((type) => type.toLowerCase()));
+    expect(suggested.some((type) => type.includes("concept") || type.includes("early ideas"))).toBe(false);
+    expect(flowTemplate("design_concept")?.suggestedEnquiryTypes).toEqual(["Interior design"]);
+  });
+
   it("finds a template by key and refuses an unknown one", () => {
     expect(flowTemplate("furniture_bespoke")?.name).toBe("Bespoke furniture");
     expect(flowTemplate("missing")).toBeUndefined();

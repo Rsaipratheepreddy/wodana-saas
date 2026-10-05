@@ -1,4 +1,5 @@
 import { MemberProfileService } from "./member-profile.service";
+import { loadInboxViewer } from "../crm/conversations/inbox/inbox-visibility";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 import { seedDefaultQuickReplies } from "../crm/conversations/inbox/default-quick-replies";
 import { acceptPendingInvitation } from "./invitation-acceptance";
@@ -1218,8 +1219,9 @@ export class WorkspacesService {
       ] as const;
       const granted = await Promise.all(codes.map((code) => this.access.hasPermission(client, workspaceId, user.userId, code)));
       const can = (code: (typeof codes)[number]) => granted[codes.indexOf(code)];
+      const inbox = await loadInboxViewer((permission) => this.access.hasPermission(client, workspaceId, user.userId, permission));
       return readHomeSummary(client, { workspaceId, membershipId: membership.rows[0].id, userId: user.userId }, {
-        followUps: can("crm.activities.view"), replies: can("crm.communications.view"), leads: can("crm.leads.view"),
+        followUps: can("crm.activities.view"), replies: can("crm.communications.view"), inbox, leads: can("crm.leads.view"),
         assignLeads: can("crm.leads.assign"), planning: can("pre_projects.view"), projects: can("projects.view") || can("projects.manage"),
         manageProjects: can("projects.manage"), receivables: can("receivables.view"), purchasing: can("purchasing.view"), factory: can("factory.view"),
         approvals: {

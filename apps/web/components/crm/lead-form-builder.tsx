@@ -2,8 +2,10 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { ArrowLeft, Download, Eye, FileText, LayoutTemplate, Plus, QrCode, RefreshCw, Trash2, Upload } from "lucide-react";
-import { Badge, Button, Callout, ControlledModalDialog, DataGrid, DesignSystemProvider, EmptyState, FormSection, IconButton, InspectorSheet, isNoAccessError, NoAccessNotice, SearchInput, SegmentedControl, SelectField, Tabs, formatDate, useConfirmationDialog, useDesignSystem, useMediaQuery, type StatusTone } from "@/design-system";
+import { ArrowLeft, Copy, Download, Eye, FileText, LayoutTemplate, Pencil, Plus, QrCode, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Badge, Button, Callout, ControlledModalDialog, DataGrid, DesignSystemProvider, EmptyState, FormSection, IconButton, InspectorSheet, isNoAccessError, NoAccessNotice, SearchInput, SegmentedControl, SelectField, Tabs, formatDate, useConfirmationDialog, useDesignSystem, useMediaQuery, type DataGridColumn, type StatusTone } from "@/design-system";
+import { leadOptionLabel } from "@/lib/crm/lead-options";
+import { translateKnown } from "@/lib/i18n/keys";
 import type { LeadsPageData } from "@/lib/crm/leads";
 import { type LeadFormRecord, type LeadFormSchema } from "@/lib/crm/lead-forms";
 import { LEAD_FORM_TEMPLATES, applyLeadFormTemplate, type LeadFormTemplate } from "@/lib/crm/lead-form-templates";
@@ -212,28 +214,45 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
   const shownResponses = responses.filter(entry => (responseFilter === "all" || (responseFilter === "review" ? entry.status === "duplicate_candidate" : Boolean(entry.leadId)))
     && (!query || [entry.reference ?? "", entry.name, ...entry.answers.map(answer => answerText(answer.value))].some(value => value.toLowerCase().includes(query))));
   const visibleForms = forms.filter(form => form.draft.title.toLowerCase().includes(search.trim().toLowerCase()));
+  // PLM-116: one list of every form with where its enquiries land, its submissions, the link to copy and the QR code.
+  const live = (form: LeadFormRecord) => form.published ?? form.draft;
+  const formLink = (form: LeadFormRecord) => typeof window === "undefined" ? "" : `${window.location.origin}/enquiry/${form.token}`;
+  const copyLink = (form: LeadFormRecord) => navigator.clipboard.writeText(formLink(form)).then(() => { setError(""); setNotice(t("Form link copied.")); }).catch(() => setError(t("Select and copy the text manually.")));
+  const downloadQr = async (form: LeadFormRecord) => {
+    try {
+      const qr = await import("qrcode");
+      const link = document.createElement("a");
+      link.href = await qr.toDataURL(formLink(form), { width: 600, margin: 4, errorCorrectionLevel: "M" });
+      link.download = `enquiry-form-qr-${live(form).title.replace(/[^\w-]+/g, "-").toLowerCase()}.png`;
+      link.click();
+    } catch { setError(t("QR code could not be generated.")); }
+  };
+  const published = (form: LeadFormRecord) => form.status === "published";
+  const formColumns: DataGridColumn<LeadFormRecord>[] = [
+    { id: "title", accessorFn: form => form.draft.title, header: t("Form"), size: 260, meta: { primary: true }, cell: ({ row: { original: form } }) => <span className={styles.formName}><strong>{form.draft.title}</strong><small>{t("Updated {date}", { date: formatDate(form.updatedAt, { locale, timeZone }) })}</small></span> },
+    { id: "status", accessorFn: form => form.status, header: t("Status"), size: 120, cell: ({ row: { original: form } }) => <Badge tone={published(form) ? "success" : "neutral"}>{formStatusLabels[form.status] ? t(formStatusLabels[form.status]) : form.status}</Badge> },
+    { id: "source", accessorFn: form => translateKnown(t, leadOptionLabel(options?.sources, live(form).source)), header: t("Source"), size: 150 },
+    { id: "channel", accessorFn: form => translateKnown(t, leadOptionLabel(options?.channels[live(form).source], live(form).channel)), header: t("Channel"), size: 150 },
+    { id: "submissions", accessorFn: form => form.submissions ?? 0, header: t("Submissions"), size: 120, meta: { align: "end" } },
+    { id: "actions", header: t("Actions"), size: 200, enableSorting: false, meta: { align: "end" }, cell: ({ row: { original: form } }) => <span className={styles.rowActions}>
+      {published(form) ? <>
+        <IconButton size="compact" aria-label={t("Copy link to {title}", { title: form.draft.title })} onPress={() => void copyLink(form)}><Copy size={15} /></IconButton>
+        <IconButton size="compact" aria-label={t("Download QR for {title}", { title: form.draft.title })} onPress={() => void downloadQr(form)}><Download size={15} /></IconButton>
+        <IconButton size="compact" aria-label={t("Share {title}", { title: form.draft.title })} onPress={() => setSharing(form)}><QrCode size={15} /></IconButton>
+      </> : <small className={styles.hint}>{t("Publish to share")}</small>}
+      <IconButton size="compact" aria-label={t("Edit form {title}", { title: form.draft.title })} isDisabled={busy} onPress={() => open(form)}><Pencil size={15} /></IconButton>
+      {form.status === "draft" && !form.published ? <IconButton size="compact" aria-label={t("Delete the draft {title}", { title: form.draft.title })} isDisabled={busy} onPress={() => removeDraft(form)}><Trash2 size={15} /></IconButton> : null}
+    </span> },
+  ];
 
   return <section className={styles.forms} aria-label={t("Enquiry form builder")}>
     {error && (isNoAccessError(error) ? <NoAccessNotice area={t("Forms")} /> : <Callout title={t("Forms")} tone="danger">{error}{!record && !loading && <Button size="compact" onPress={() => { setLoading(true); setError(""); setReload(value => value + 1); }}>{t("Retry loading forms")}</Button>}</Callout>)}
     {notice && <p role="status" className={styles.notice}>{notice}</p>}
     {!record || !draft ? <>
       <div className={styles.formListToolbar}><SearchInput label={t("Search forms")} value={search} onChange={setSearch} /><Button variant="primary" size="compact" onPress={() => setPicking(true)} isDisabled={busy}><Plus size={15} />{t("New form")}</Button></div>
-      {loading ? <p role="status">{t("Loading forms…")}</p> : <div className={styles.formGallery} aria-label={t("Enquiry forms")}>
-        {visibleForms.map(form => <article className={styles.formTile} key={form.id}>
-          <button type="button" className={styles.formTileOpen} onClick={() => open(form)} aria-label={t("Edit form {title}", { title: form.draft.title })}>
-            <span className={styles.formTilePreview}>{branding?.logoUrl && <Image src={branding.logoUrl} alt="" width={96} height={36} unoptimized />}<span>{form.draft.title}</span><i /><i /><i /></span>
-          </button>
-          <footer className={styles.formTileFooter}>
-            <FileText size={17} aria-hidden="true" />
-            <span><strong>{form.draft.title}</strong><small>{t("Updated {date}", { date: formatDate(form.updatedAt, { locale, timeZone }) })}</small></span>
-            <Badge tone={form.status === "published" ? "success" : "neutral"}>{formStatusLabels[form.status] ? t(formStatusLabels[form.status]) : form.status}</Badge>
-            {form.status === "published" && <IconButton size="compact" aria-label={t("Share {title}", { title: form.draft.title })} onPress={() => setSharing(form)}><QrCode size={15} /></IconButton>}
-            {form.status === "draft" && !form.published && <IconButton size="compact" aria-label={t("Delete the draft {title}", { title: form.draft.title })} isDisabled={busy} onPress={() => removeDraft(form)}><Trash2 size={15} /></IconButton>}
-          </footer>
-        </article>)}
-        {!forms.length && <EmptyState title={t("No forms yet")} description={t("Start from a template; every submission becomes an enquiry.")} action={<Button size="compact" variant="primary" onPress={() => void create()}>{t("Create default enquiry form")}</Button>} />}
-        {forms.length > 0 && !visibleForms.length && <p>{t("No matching forms.")}</p>}
-      </div>}
+      <DataGrid ariaLabel={t("Enquiry forms")} columns={formColumns} data={visibleForms} getRowId={form => form.id} onRowAction={open} isLoading={loading} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} keepEmptyTable={false}
+        emptyContent={forms.length ? <EmptyState title={t("No matching forms.")} description={t("Try another search.")} />
+          : <EmptyState title={t("No forms yet")} description={t("Start from a template; every submission becomes an enquiry.")} action={<Button size="compact" variant="primary" onPress={() => void create()}>{t("Create default enquiry form")}</Button>} />} />
     </> : <>
       <header className={styles.toolbar}>
         <div className={styles.toolbarTitle}><IconButton aria-label={t("Back to forms")} size="compact" isDisabled={busy} onPress={requestCloseForm}><ArrowLeft size={17} /></IconButton><span className={styles.editorName}>{draft.title}</span><Badge tone={status.tone} aria-live="polite">{status.label}</Badge></div>

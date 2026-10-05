@@ -8,7 +8,7 @@ import { CrmInboxService } from "./crm-inbox.service";
 import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
 import { SendPaymentReminderDto, SubmitStarterPackDto, TemplateSubmittedDto, UpdateClientMessageDto, UpdateFollowUpTimingDto, UpdatePaymentReminderScheduleDto, WhatsAppTemplateSyncDto } from "./dto/whatsapp-templates.dto";
 import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
-import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, HideMessageDto, CreateQuickReplyDto, RemoveAutoRepliesDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateAutoRepliesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto, WhatsappTestDto } from "./dto/inbox.dto";
+import { BlockConversationDto, BulkConversationsDto, CreateLabelDto, FileIntoJobDto, HideMessageDto, CreateQuickReplyDto, RemoveAutoRepliesDto, SetConversationLabelsDto, SetTemplateVariablesDto, UpdateAutoRepliesDto, UpdateInboxSettingsDto, UpdateLabelDto, UpdateQuickReplyDto, WakeSnoozedDto, WhatsappTestDto } from "./dto/inbox.dto";
 
 type Ws = string;
 
@@ -46,6 +46,8 @@ export class CrmInboxController {
   @Get("inbox/templates") templates(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws) { return this.inbox.templates(actor, workspaceId); }
   @Put("inbox/templates/:templateId/variables") setTemplateVariables(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("templateId", ParseUUIDPipe) templateId: string, @Body() input: SetTemplateVariablesDto) { return this.inbox.setTemplateVariables(actor, workspaceId, templateId, input); }
   @Put("conversations/:conversationId/labels") setLabels(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() input: SetConversationLabelsDto) { return this.inbox.setConversationLabels(actor, workspaceId, conversationId, input); }
+  @Put("conversations/:conversationId/job") fileIntoJob(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("conversationId", ParseUUIDPipe) conversationId: string, @Body() input: FileIntoJobDto) { return this.inbox.fileIntoJob(actor, workspaceId, conversationId, input); }
+  @Get("conversations/:conversationId/insights") insights(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("conversationId", ParseUUIDPipe) conversationId: string) { return this.inbox.insights(actor, workspaceId, conversationId); }
   @Get("conversations/:conversationId/context") context(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: Ws, @Param("conversationId", ParseUUIDPipe) conversationId: string) { return this.inbox.context(actor, workspaceId, conversationId); }
 }
 

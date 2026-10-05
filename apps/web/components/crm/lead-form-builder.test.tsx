@@ -59,12 +59,28 @@ async function openPalette(user: ReturnType<typeof userEvent.setup>) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("LeadFormBuilder", () => {
-  it("shows a focused form gallery and keeps attribution in settings", async () => {
+  it("lists every form with its source, channel and submissions; a draft has no link yet (PLM-116)", async () => {
     mockApi();
     render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} />);
     expect(await screen.findByRole("button", { name: /Edit form Project enquiry/ })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Search forms" })).toBeInTheDocument();
-    expect(screen.queryByRole("table", { name: "Enquiry forms" })).not.toBeInTheDocument();
+    const table = screen.getByRole("table", { name: "Enquiry forms" });
+    for (const name of ["Form", "Status", "Source", "Channel", "Submissions"]) expect(within(table).getByRole("columnheader", { name: new RegExp(name) })).toBeInTheDocument();
+    expect(within(table).getByText(/^company$/i)).toBeInTheDocument();
+    expect(within(table).getByText(/^website$/i)).toBeInTheDocument();
+    expect(within(table).getByText("Publish to share")).toBeInTheDocument();
+    expect(within(table).queryByRole("button", { name: /Copy link/ })).not.toBeInTheDocument();
+  });
+  it("copies a published form's link and offers its QR code from the row (PLM-116)", async () => {
+    const published = { ...structuredClone(fixture), status: "published", published: structuredClone(fixture.draft), submissions: 12 };
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ data: [published] }) })));
+    const user = userEvent.setup();
+    render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} />);
+    await user.click(await screen.findByRole("button", { name: "Copy link to Project enquiry" }));
+    await waitFor(async () => expect(await navigator.clipboard.readText()).toContain("/enquiry/test-token"));
+    expect(await screen.findByRole("status")).toHaveTextContent("Form link copied.");
+    expect(screen.getByRole("button", { name: "Download QR for Project enquiry" })).toBeInTheDocument();
+    expect(within(screen.getByRole("table", { name: "Enquiry forms" })).getByText("12")).toBeInTheDocument();
   });
   it("adds an enquiry field, previews it, and saves and reloads the draft", async () => {
     const { saves } = mockApi(); const user = await openBuilder();

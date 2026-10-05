@@ -1,3 +1,5 @@
+import { loadEnquiryFacts, requirementContext, requirementProblems, throwProblems } from "../leads/enquiry-problems";
+import { carryTeamToOpportunity, teamRolesForType } from "../leads/lead-team";
 import { OpportunityDiscoveryService } from "./discovery.service";
 import { opportunityFunnel } from "./opportunity-funnel";
 import { flowSummary, loadFlowFacts, paymentProofs, pipelineStages } from "./flow-facts";
@@ -271,6 +273,12 @@ export class CrmOpportunitiesService {
           evidenceHash: String(row.qualification_evidence_hash),
         }
         : await evaluateQualification(client, workspaceId, leadId, {}, true);
+      // PLM-096 / PLM-092: everything the enquiry type requires before converting, named at once.
+      const facts = await loadEnquiryFacts(client, workspaceId, leadId);
+      if (facts) {
+        const context = await requirementContext(client, workspaceId, facts.serviceType, await teamRolesForType(client, workspaceId, facts.serviceType));
+        throwProblems(requirementProblems(facts, context, "convert"), "Complete the enquiry before converting");
+      }
       const conversion: ConversionContext = {
         origin: "lead_qualification",
         requestHash,
@@ -278,6 +286,8 @@ export class CrmOpportunitiesService {
         qualificationEvidenceHash: qualification.evidenceHash,
       };
       const opportunity = await this.createInTransaction(client, workspaceId, { ...input, leadId }, actorUser.userId, true, conversion);
+      // PLM-100: the enquiry's team (and its designer) carries into the opportunity.
+      await carryTeamToOpportunity(client, workspaceId, leadId, String(opportunity.id), actorUser.userId);
       const updated = await client.query(
         `UPDATE crm_leads SET status='qualified',next_action_at=NULL,
            qualified_at=COALESCE(qualified_at,now()),qualification_evidence=$4,

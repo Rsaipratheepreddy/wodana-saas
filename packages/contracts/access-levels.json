@@ -11,9 +11,10 @@
     },
     {
       "id": "inbox",
-      "view": ["crm.communications.view"],
-      "edit": ["crm.communications.send"],
-      "manage": ["crm.consent.manage"],
+      "$comment": "Own chats (see and answer the chats assigned to me) · Team chats (the unassigned queue and my team's chats) · Manage (every chat and the inbox settings).",
+      "view": ["crm.communications.view", "crm.communications.send"],
+      "edit": ["crm.inbox.team"],
+      "manage": ["crm.inbox.manage", "crm.consent.manage"],
       "advanced": []
     },
     {

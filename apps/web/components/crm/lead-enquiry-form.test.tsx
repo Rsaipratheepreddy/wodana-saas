@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
@@ -275,4 +275,66 @@ it("fills a new enquiry from a pasted message with Woddy, for the person to chec
   const [, init] = fetchMock.mock.calls.find(([url]) => String(url).includes("form-fill")) as unknown as [string, RequestInit];
   expect(JSON.parse(String(init.body))).toMatchObject({ form: "enquiry", text: expect.stringContaining("Sara Khan") });
   expect(fetchMock.mock.calls.some(([url]) => String(url) === "/api/workspace/crm/leads")).toBe(false);
+});
+
+it("lists every problem at once in one box at the top, marks each field and takes the person to it (PLM-092)", async () => {
+  const { user, saves } = setup();
+  await choose(user, /Owner/, "Leave unassigned");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  const box = await screen.findByRole("alert");
+  expect(box).toHaveTextContent("Enquiry not saved");
+  for (const text of ["Enter a customer name.", "Enter a mobile number.", "Select the emirate.", "Choose where this enquiry came from."]) expect(box).toHaveTextContent(text);
+  expect(screen.getByLabelText(/Customer name/)).toHaveAttribute("aria-invalid", "true");
+  expect(saves()).toHaveLength(0);
+  await user.click(within(box).getByRole("button", { name: "Enter a customer name." }));
+  expect(screen.getByLabelText(/Customer name/)).toHaveFocus();
+  // A fixed field leaves the box.
+  await user.type(screen.getByLabelText(/Customer name/), "Test customer");
+  expect(screen.getByRole("alert")).not.toHaveTextContent("Enter a customer name.");
+});
+
+it("puts every field the server refused into the box and onto its field (PLM-092)", async () => {
+  const { user, fetchMock, onSaved } = setup({ id: "old", version: 3, serviceType: "design", source: "company", channel: "call", party: { displayName: "Test customer" } });
+  fetchMock.mockResolvedValue({ ok: false, json: async () => ({ message: "Enter the client's email. Enter the address", missing: [{ key: "email", label: "Enter the client's email" }, { key: "address", label: "Enter the address" }] }) });
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  const box = await screen.findByRole("alert");
+  expect(box).toHaveTextContent("Enter the client's email");
+  expect(box).toHaveTextContent("Enter the address");
+  expect(screen.getByRole("textbox", { name: "Email" })).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByRole("textbox", { name: "Address" })).toHaveAttribute("aria-invalid", "true");
+  expect(onSaved).not.toHaveBeenCalled();
+});
+
+it("requires what the enquiry type requires from the start (PLM-096)", async () => {
+  const { user, saves } = setup(undefined, (data) => { data.leadOptions!.requirements = { design: { summary: "create", email: "convert" } }; });
+  await completeRequired(user);
+  await choose(user, /Channel/, "Call");
+  await choose(user, /Owner/, "Leave unassigned");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  const box = await screen.findByRole("alert");
+  expect(box).toHaveTextContent("Describe the project");
+  // Required before converting is not asked here.
+  expect(box).not.toHaveTextContent("Enter the client's email");
+  expect(saves()).toHaveLength(0);
+  expect(screen.getByRole("textbox", { name: "Project description" })).toHaveAttribute("aria-invalid", "true");
+});
+
+it("asks for the team roles the enquiry type has and sends Not applicable; another type shows none (PLM-100)", async () => {
+  const { user, onSaved, body } = setup(undefined, (data) => { data.leadOptions!.teamRoles = { design: ["designer"] }; });
+  await completeRequired(user);
+  await choose(user, /Channel/, "Call");
+  await choose(user, /Owner/, "Leave unassigned");
+  await choose(user, /Designer/, "Not applicable");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(body()).toMatchObject({ team: [{ role: "designer", notApplicable: true }] });
+  cleanup();
+  setup(undefined, (data) => { data.leadOptions!.teamRoles = { design: [] }; });
+  expect(screen.queryByRole("button", { name: /Designer/ })).not.toBeInTheDocument();
+});
+
+it("leaves the internal notes out for someone who can't read them (PLM-024)", async () => {
+  setup({ id: "old", version: 3, serviceType: "design", source: "company", channel: "call", party: { displayName: "Test customer" }, notesVisible: false });
+  await userEvent.setup().click(screen.getByRole("button", { name: /More details/ }));
+  expect(screen.queryByRole("textbox", { name: "Internal notes" })).not.toBeInTheDocument();
 });

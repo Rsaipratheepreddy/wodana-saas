@@ -60,6 +60,9 @@ export async function POST(request: Request) {
   if (identity === "existing" && !partyId) return invalidRequest(t("Choose the existing client again."));
   const referral = body?.referral && typeof body.referral === "object" && !Array.isArray(body.referral) ? body.referral : undefined;
   const extraContact = Object.fromEntries(["mobile", "mobileCountryCode", "phoneCountryCode", "company", "jobPosition", "website", "address"].flatMap(key => typeof body?.[key] === "string" ? [[key, body[key]]] : []));
+  // PLM-100: the team tagged at intake (a member per role, or not applicable).
+  const team = Array.isArray(body?.team) ? (body.team as unknown[]).filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && typeof (entry as Record<string, unknown>).role === "string")
+    .slice(0, 10).map(entry => ({ role: String(entry.role).slice(0, 40), ...(typeof entry.membershipId === "string" && UUID.test(entry.membershipId) ? { membershipId: entry.membershipId } : {}), ...(entry.notApplicable === true ? { notApplicable: true } : {}) })) : [];
 
   return workspaceJsonResponse(
     `/workspaces/${workspaceId}/crm/intake-events`,
@@ -86,6 +89,7 @@ export async function POST(request: Request) {
         assignment: body?.assignment ?? { mode: "unassigned" },
         ...(referral ? { referral } : {}),
         ...(identity ? { identity, ...(identity === "existing" ? { partyId } : {}) } : {}),
+        ...(team.length ? { team } : {}),
         originalPayload: { origin: "wodana_leads_ui" },
       }),
     },

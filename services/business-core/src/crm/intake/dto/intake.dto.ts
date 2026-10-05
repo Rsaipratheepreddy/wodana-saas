@@ -1,6 +1,8 @@
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsDefined,
   IsIn,
   IsInt,
@@ -72,8 +74,16 @@ export class InitialAssignmentDto {
   @IsOptional() @IsUUID() queueId?: string;
 }
 
+/** PLM-100: one team role on the enquiry: a member, or not applicable for this enquiry type (neither clears it). */
+export class LeadTeamDto {
+  @IsString() @IsNotEmpty() @MaxLength(40) role!: string;
+  @IsOptional() @IsUUID() membershipId?: string | null;
+  @IsOptional() @IsBoolean() notApplicable?: boolean;
+}
+
 export class UpdateLeadDetailsDto {
   @IsInt() @Min(1) version!: number;
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => LeadTeamDto) team?: LeadTeamDto[];
   @IsOptional() @IsString() @MaxLength(240) title?: string;
   @IsOptional() @IsString() @MaxLength(10000) summary?: string;
   @IsString() @IsNotEmpty() @MaxLength(100) serviceType!: string;
@@ -114,6 +124,7 @@ export class CreateIntakeEventDto {
    */
   @IsOptional() @IsIn(["existing", "new"]) identity?: "existing" | "new";
   @IsOptional() @IsUUID() partyId?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => LeadTeamDto) team?: LeadTeamDto[];
 }
 
 export class ListIntakeQueryDto {

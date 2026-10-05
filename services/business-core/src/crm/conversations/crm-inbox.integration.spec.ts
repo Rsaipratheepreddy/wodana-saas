@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ForbiddenException } from "@nestjs/common";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedDefaultNotificationTemplates } from "../../notifications/default-templates";
@@ -17,6 +18,9 @@ type Ids = {
   workspaceId: string; manager: string; sara: string; ali: string; saraMember: string; aliMember: string; managerMember: string;
   noura: string; stranger: string; nouraChat: string; strangerChat: string; queueId: string; templateId: string; leadId: string;
   as: (userId: string) => void; conversations: CrmConversationsService; inbox: CrmInboxService; templates: CrmWhatsAppTemplatesService;
+  salesRole: string; adminRole: string;
+  /** Permission checks follow the roles in the database instead of always passing (inbox visibility tests). */
+  realPermissions: () => void;
 };
 
 integration("team inbox", () => {
@@ -70,14 +74,26 @@ integration("team inbox", () => {
       await client.query(`INSERT INTO integration_connections(workspace_id,provider,display_name,status,connected_by,external_account_id,configuration) VALUES($1,'whatsapp','WhatsApp','connected',$2,'waba-1','{"phoneNumberId":"pn-1","displayPhoneNumber":"+1 555 0100"}')`, [workspaceId, manager]);
       await client.query("SET LOCAL session_replication_role = origin");
       let current = sara;
+      let enforce = false;
       const database = { tenantTransaction: (_w: string, _a: string, fn: (c: PoolClient) => unknown) => fn(client) };
-      const run = (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(client, { userId: current });
-      const access = { withPermission: run, withAnyPermission: run, hasPermission: async () => true };
+      // The roles in the database decide once realPermissions() is called (inbox visibility tests); before, everything passes.
+      const holds = async (userId: string, code: string) => !enforce || Boolean((await client.query(
+        `SELECT 1 FROM workspace_memberships membership JOIN effective_member_roles assigned ON assigned.workspace_id = membership.workspace_id AND assigned.membership_id = membership.id
+          JOIN role_permissions granted ON granted.role_id = assigned.role_id JOIN permissions permission ON permission.id = granted.permission_id
+         WHERE membership.workspace_id = $1 AND membership.user_id = $2 AND membership.status = 'active' AND permission.code = $3`, [workspaceId, userId, code])).rowCount);
+      const run = async (_a: unknown, _w: string, permissions: string | string[], fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+        let allowed = false;
+        for (const code of Array.isArray(permissions) ? permissions : [permissions]) if (await holds(current, code)) { allowed = true; break; }
+        if (!allowed) throw new ForbiddenException("Permission required");
+        return fn(client, { userId: current });
+      };
+      const access = { withPermission: run, withAnyPermission: run, hasPermission: async (_c: unknown, _w: string, userId: string, code: string) => holds(userId, code) };
+      const realPermissions = () => { enforce = true; };
       const events = { record: async () => randomUUID() };
       const conversations = new CrmConversationsService(database as never, access as never, events as never, {} as never, new CrmMessageReceiptService());
       const inbox = new CrmInboxService(database as never, access as never, events as never);
       const templates = new CrmWhatsAppTemplatesService(database as never, access as never, events as never);
-      await work(client, { workspaceId, manager, sara, ali, saraMember, aliMember, managerMember, noura, stranger, nouraChat, strangerChat, queueId, templateId, leadId, as: (userId) => { current = userId; }, conversations, inbox, templates });
+      await work(client, { workspaceId, manager, sara, ali, saraMember, aliMember, managerMember, noura, stranger, nouraChat, strangerChat, queueId, templateId, leadId, as: (userId) => { current = userId; }, conversations, inbox, templates, salesRole, adminRole, realPermissions });
     } finally {
       await client.query("ROLLBACK");
       client.release();
@@ -361,6 +377,208 @@ integration("team inbox", () => {
       const phone = await client.query(`SELECT direction, status, metadata->>'sentFromPhone' AS phone FROM crm_messages WHERE provider_message_id = 'wamid.phone-1'`);
       expect(phone.rows).toEqual([{ direction: "outbound", status: "sent", phone: "true" }]);
       expect((await chat(client, nouraChat)).waiting_since).toBeNull();
+    });
+  });
+
+  /** Someone beyond the fixture's people, with one role holding exactly these permissions (none: no role at all). */
+  async function member(client: PoolClient, workspaceId: string, name: string, codes: string[]) {
+    const [user, membership, role] = [randomUUID(), randomUUID(), randomUUID()];
+    await client.query("SET LOCAL session_replication_role = replica");
+    await client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,$3)", [user, `${user.slice(0, 8)}@example.com`, name]);
+    await client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id) VALUES($1,$2,$3)", [membership, workspaceId, user]);
+    if (codes.length) {
+      await client.query("INSERT INTO roles(id,workspace_id,code,name) VALUES($1,$2,$3,$4)", [role, workspaceId, `role-${role.slice(0, 8)}`, name]);
+      await client.query("INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code = ANY($3::text[])", [workspaceId, role, codes]);
+      await client.query("INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3)", [workspaceId, membership, role]);
+    }
+    await client.query("SET LOCAL session_replication_role = origin");
+    return { user, membership };
+  }
+
+  /** The roles of plan §5b: Sales (own chats), a Sales admin (team), a designer and a project manager (no inbox), someone with no access. */
+  async function people(client: PoolClient, workspaceId: string, salesRole: string, adminRole: string) {
+    // Sales opens the jobs it works on (the Sales template's codes); the administrator opens every kind of job.
+    await client.query("INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code IN ('crm.leads.view','crm.opportunities.view') ON CONFLICT DO NOTHING", [workspaceId, salesRole]);
+    await client.query("INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code IN ('crm.leads.view','crm.opportunities.view','projects.view') ON CONFLICT DO NOTHING", [workspaceId, adminRole]);
+    return {
+      adam: await member(client, workspaceId, "Adam Admin", ["crm.communications.view", "crm.communications.send", "crm.inbox.team", "crm.parties.identity", "crm.leads.view", "crm.opportunities.view", "projects.view"]),
+      dana: await member(client, workspaceId, "Dana Designer", ["crm.opportunities.view", "projects.view", "pre_projects.view"]),
+      pete: await member(client, workspaceId, "Pete Manager", ["projects.view", "projects.manage"]),
+      nobody: await member(client, workspaceId, "No Access", []),
+    };
+  }
+
+  /** The contact's opportunity (owned by Sara, Dana on its team) and project (Pete assigned as its manager). */
+  async function jobs(client: PoolClient, workspaceId: string, noura: string, saraMember: string, dana: string, pete: string, createdBy: string) {
+    const [opportunity, project] = [randomUUID(), randomUUID()];
+    await client.query("SET LOCAL session_replication_role = replica");
+    await client.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,pipeline_id,stage_id,owner_membership_id,title,reference) VALUES($1,$2,$3,$4,$5,$6,'Villa joinery','O-7')`,
+      [opportunity, workspaceId, noura, randomUUID(), randomUUID(), saraMember]);
+    await client.query("INSERT INTO crm_opportunity_team(workspace_id,opportunity_id,membership_id,role) VALUES($1,$2,$3,'designer')", [workspaceId, opportunity, dana]);
+    await client.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,reference,quote_id,started_at,created_by) VALUES($1,$2,$3,'Villa fit-out','P-3',$5,now(),$4)", [project, workspaceId, randomUUID(), createdBy, randomUUID()]);
+    await client.query("INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager,active) VALUES($1,$2,$3,true,true)", [workspaceId, project, pete]);
+    await client.query("SET LOCAL session_replication_role = origin");
+    return { opportunity, project };
+  }
+
+  it("shows each person only what their level reaches: the intake to the Sales admin, own chats to Sales, nothing to others", async () => {
+    await withInbox(async (client, { workspaceId, manager, sara, ali, aliMember, salesRole, adminRole, nouraChat, strangerChat, conversations, inbox, as, realPermissions }) => {
+      const { adam, dana, pete, nobody } = await people(client, workspaceId, salesRole, adminRole);
+      const aliChat = randomUUID();
+      await client.query(`INSERT INTO crm_conversations(id,workspace_id,party_id,channel,subject,owner_membership_id) VALUES($1,$2,(SELECT party_id FROM crm_conversations WHERE id=$3),'whatsapp','Ali has it',$4)`, [aliChat, workspaceId, strangerChat, aliMember]);
+      realPermissions();
+      const ids = async (query: Record<string, unknown> = {}) => (await conversations.list(actor, workspaceId, { status: "open", limit: 50, ...query } as never)).data.map((row: { id: string }) => row.id).sort();
+
+      // Sales admin (Team chats, in no queue): the whole unfiled intake, with its counts and search.
+      as(adam.user);
+      expect(await ids()).toEqual([nouraChat, strangerChat, aliChat].sort());
+      expect(await ids({ view: "unassigned" })).toEqual([nouraChat, strangerChat].sort());
+      expect(await ids({ search: "Noura" })).toEqual([nouraChat]);
+      expect(await inbox.summary(actor, workspaceId)).toMatchObject({ scope: "team", unassigned: 2, team: 1, all: 3 });
+      expect((await conversations.get(actor, workspaceId, nouraChat)).id).toBe(nouraChat);
+
+      // Sales (Own chats): their own chat only; the others do not exist for them, in lists, counts, search, the thread and commands.
+      as(ali);
+      expect(await ids()).toEqual([aliChat]);
+      expect(await ids({ search: "Noura" })).toEqual([]);
+      expect(await inbox.summary(actor, workspaceId)).toMatchObject({ scope: "own", mine: 1, unassigned: 0, all: 1 });
+      await expect(conversations.get(actor, workspaceId, nouraChat)).rejects.toThrow("Conversation not found");
+      await expect(conversations.messages(actor, workspaceId, nouraChat, { limit: 20 })).rejects.toThrow("Conversation not found");
+      await expect(conversations.addMessage(actor, workspaceId, nouraChat, { direction: "internal", bodyText: "Hi" } as never)).rejects.toThrow("Conversation not found");
+      await expect(inbox.context(actor, workspaceId, nouraChat)).rejects.toThrow("Conversation not found");
+      expect(await inbox.bulk(actor, workspaceId, { conversationIds: [aliChat, nouraChat], action: "resolve" } as never).catch((error: Error) => error.message)).toBe("Some chats were not found");
+      as(sara);
+      expect(await ids()).toEqual([]);
+
+      // A designer and a project manager have no inbox: nothing until a chat is filed into their job.
+      for (const person of [dana, pete]) {
+        as(person.user);
+        expect(await ids()).toEqual([]);
+        expect(await inbox.summary(actor, workspaceId)).toMatchObject({ scope: "job", all: 0, unassigned: 0 });
+        await expect(conversations.get(actor, workspaceId, strangerChat)).rejects.toThrow("Conversation not found");
+      }
+      // No access at all: refused.
+      as(nobody.user);
+      await expect(conversations.list(actor, workspaceId, { limit: 20 } as never)).rejects.toThrow("Permission required");
+      await expect(inbox.summary(actor, workspaceId)).rejects.toThrow("Permission required");
+
+      // Manager: everything.
+      as(manager);
+      expect(await ids()).toEqual([nouraChat, strangerChat, aliChat].sort());
+      expect(await inbox.summary(actor, workspaceId)).toMatchObject({ scope: "manage", all: 3 });
+
+      // E6-2: a message from an unknown number lands in the intake: the Sales admin sees it, the designer does not.
+      const arrived = await conversations.ingestProviderMessage({ workspaceId, channel: "whatsapp", providerThreadId: "wa:15550007777", providerMessageId: `wamid.${randomUUID()}`, contact: "+15550007777", bodyText: "Do you do kitchens?" } as never) as { conversationId?: string; id?: string };
+      const intakeChat = String(arrived.conversationId ?? (await client.query(`SELECT conversation.id FROM crm_conversations conversation JOIN crm_contact_points contact ON contact.party_id = conversation.party_id WHERE conversation.workspace_id=$1 AND contact.normalized_value='+15550007777'`, [workspaceId])).rows[0].id);
+      expect(await chat(client, intakeChat)).toMatchObject({ job_kind: null, job_id: null });
+      as(adam.user);
+      expect(await ids()).toContain(intakeChat);
+      as(dana.user);
+      expect(await ids()).not.toContain(intakeChat);
+    });
+  });
+
+  it("files a chat into a job: the job's team sees it, the intake no longer does, and leaving the team hides it again", async () => {
+    await withInbox(async (client, { workspaceId, manager, sara, saraMember, salesRole, adminRole, noura, nouraChat, strangerChat, leadId, conversations, inbox, as, realPermissions }) => {
+      const { adam, dana, pete } = await people(client, workspaceId, salesRole, adminRole);
+      const { opportunity, project } = await jobs(client, workspaceId, noura, saraMember, dana.membership, pete.membership, manager);
+      await client.query(`INSERT INTO crm_messages(workspace_id,conversation_id,direction,status,authorship,sender_type,body_text) VALUES($1,$2,'inbound','delivered','provider','provider','Can we change the wardrobe?')`, [workspaceId, nouraChat]);
+      realPermissions();
+      const ids = async () => (await conversations.list(actor, workspaceId, { status: "open", limit: 50 } as never)).data.map((row: { id: string }) => row.id).sort();
+
+      // The Sales admin files Noura's chat into her opportunity. Nobody owned it: the opportunity's owner does now.
+      as(adam.user);
+      const version = (await chat(client, nouraChat)).version;
+      await expect(inbox.fileIntoJob(actor, workspaceId, strangerChat, { kind: "opportunity", id: opportunity, version: (await chat(client, strangerChat)).version })).rejects.toThrow("This job belongs to another client");
+      const filed = await inbox.fileIntoJob(actor, workspaceId, nouraChat, { kind: "opportunity", id: opportunity, version });
+      expect(filed).toMatchObject({ changed: true, visible: false, job: { kind: "opportunity", id: opportunity, reference: "O-7", title: "Villa joinery" } });
+      expect(await chat(client, nouraChat)).toMatchObject({ job_kind: "opportunity", job_id: opportunity, owner_membership_id: saraMember, filed_by: adam.user });
+      const history = await client.query(`SELECT kind, method, reason FROM crm_conversation_events WHERE conversation_id=$1 ORDER BY created_at, id`, [nouraChat]);
+      expect(history.rows).toEqual(expect.arrayContaining([{ kind: "filed", method: "manual", reason: "O-7 · Villa joinery" }, { kind: "assigned", method: "relationship", reason: "Owns the job this chat was filed into" }]));
+      expect(await notices(client, workspaceId, sara, "crm.conversation.assigned")).toEqual([expect.objectContaining({ subject: "Conversation with Noura Haddad is yours" })]);
+      // It left the intake: the Sales admin no longer sees it. A replay of the same filing changes nothing.
+      expect(await ids()).toEqual([strangerChat]);
+      await expect(conversations.get(actor, workspaceId, nouraChat)).rejects.toThrow("Conversation not found");
+      expect(await inbox.fileIntoJob(actor, workspaceId, nouraChat, { kind: "opportunity", id: opportunity, version })).toMatchObject({ changed: false, visible: false });
+      expect((await client.query(`SELECT count(*)::int AS n FROM crm_conversation_events WHERE conversation_id=$1 AND kind='filed'`, [nouraChat])).rows[0].n).toBe(1);
+
+      // The job's team sees it: the designer reads it (without answering), the owner works it.
+      as(dana.user);
+      expect(await ids()).toEqual([nouraChat]);
+      const thread = await conversations.get(actor, workspaceId, nouraChat);
+      expect(thread).toMatchObject({ canSend: false, job: { kind: "opportunity", id: opportunity } });
+      expect(await inbox.summary(actor, workspaceId)).toMatchObject({ scope: "job", all: 1, team: 1 });
+      await expect(inbox.fileIntoJob(actor, workspaceId, nouraChat, { kind: null, version: thread.version })).rejects.toThrow("Permission required");
+      as(sara);
+      expect(await ids()).toEqual([nouraChat]);
+      // Stale version: refused.
+      await expect(inbox.fileIntoJob(actor, workspaceId, nouraChat, { kind: "enquiry", id: leadId, version: thread.version - 1 })).rejects.toThrow("Conversation changed");
+
+      // E6-4: the designer leaves the opportunity's team: the chat is gone for them, its history is kept.
+      await client.query(`DELETE FROM crm_opportunity_team WHERE opportunity_id=$1 AND membership_id=$2`, [opportunity, dana.membership]);
+      as(dana.user);
+      expect(await ids()).toEqual([]);
+      await expect(conversations.get(actor, workspaceId, nouraChat)).rejects.toThrow("Conversation not found");
+      expect((await client.query(`SELECT count(*)::int AS n FROM crm_messages WHERE conversation_id=$1`, [nouraChat])).rows[0].n).toBe(1);
+
+      // Sara's own chat filed into the project by the manager: the project manager is told and sees it; Sara, not on
+      // the project, no longer does. Pete is not an inbox member, so the chat keeps its owner.
+      const saraChat = randomUUID();
+      await client.query(`INSERT INTO crm_conversations(id,workspace_id,party_id,channel,subject,owner_membership_id) VALUES($1,$2,$3,'whatsapp','Snag photos',$4)`, [saraChat, workspaceId, noura, saraMember]);
+      as(manager);
+      const projectFiled = await inbox.fileIntoJob(actor, workspaceId, saraChat, { kind: "project", id: project, version: (await chat(client, saraChat)).version });
+      expect(projectFiled).toMatchObject({ changed: true, visible: true, job: { kind: "project", reference: "P-3", title: "Villa fit-out" } });
+      expect(await notices(client, workspaceId, pete.user, "crm.inbox.filed")).toEqual([{ subject: "A chat with Noura Haddad is in P-3 · Villa fit-out", body: "Maya Manager filed it into your job. New messages from them reach you here.", readAt: null }]);
+      as(pete.user);
+      expect(await ids()).toEqual([saraChat]);
+      as(sara);
+      expect(await ids()).toEqual([nouraChat]);
+      // Pete's assignment ends: the chat is gone for him.
+      await client.query(`UPDATE project_assignments SET active=false WHERE project_id=$1`, [project]);
+      as(pete.user);
+      expect(await ids()).toEqual([]);
+
+      // Out of the job again: back in the intake, its owner sees it; the history says so.
+      as(manager);
+      expect(await inbox.fileIntoJob(actor, workspaceId, saraChat, { kind: null, version: projectFiled.version })).toMatchObject({ changed: true, job: null });
+      expect((await client.query(`SELECT kind FROM crm_conversation_events WHERE conversation_id=$1 ORDER BY kind`, [saraChat])).rows.map((row) => row.kind)).toEqual(["filed", "unfiled"]);
+      as(sara);
+      expect(await ids()).toEqual([nouraChat, saraChat].sort());
+    });
+  });
+
+  it("keeps each organization's chats to itself, under the app role's row-level security", async () => {
+    await withInbox(async (client, { workspaceId, manager, nouraChat, strangerChat, conversations, inbox, as, realPermissions }) => {
+      const [otherWorkspace, otherParty, otherChat] = [randomUUID(), randomUUID(), randomUUID()];
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO workspaces(id,name,slug,default_currency,created_by) VALUES($1,'Other Studio',$2,'USD',$3)", [otherWorkspace, `other-${otherWorkspace.slice(0, 8)}`, manager]);
+      await client.query("INSERT INTO crm_parties(id,workspace_id,type,display_name,normalized_name) VALUES($1,$2,'person','Other Client','other client')", [otherParty, otherWorkspace]);
+      await client.query("INSERT INTO crm_conversations(id,workspace_id,party_id,channel,subject) VALUES($1,$2,$3,'whatsapp','Theirs')", [otherChat, otherWorkspace, otherParty]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      await client.query("SET LOCAL ROLE wodana_app");
+      await client.query("SELECT set_config('app.current_workspace_id',$1,true), set_config('app.current_actor_id',$2,true)", [workspaceId, manager]);
+      realPermissions();
+      as(manager);
+      const ids = (await conversations.list(actor, workspaceId, { limit: 50 } as never)).data.map((row: { id: string }) => row.id).sort();
+      expect(ids).toEqual([nouraChat, strangerChat].sort());
+      await expect(conversations.get(actor, workspaceId, otherChat)).rejects.toThrow("Conversation not found");
+      await expect(inbox.fileIntoJob(actor, workspaceId, otherChat, { kind: null, version: 1 })).rejects.toThrow("Conversation not found");
+      expect((await client.query(`SELECT count(*)::int AS n FROM crm_conversations WHERE id=$1`, [otherChat])).rows[0].n).toBe(0);
+    });
+  });
+
+  it("proposes the contact's live job and the quick replies that fit, with no model needed", async () => {
+    await withInbox(async (client, { workspaceId, sara, leadId, nouraChat, strangerChat, inbox, as }) => {
+      await client.query(`INSERT INTO crm_quick_replies(workspace_id,shortcut,body) VALUES($1,'address','Our studio is on Beach Road.'),($1,'visit','A site visit takes about an hour; which day suits you?')`, [workspaceId]);
+      await client.query(`INSERT INTO crm_messages(workspace_id,conversation_id,direction,status,authorship,sender_type,body_text) VALUES($1,$2,'inbound','delivered','provider','provider','Can you visit our villa this week?')`, [workspaceId, nouraChat]);
+      as(sara);
+      const context = await inbox.context(actor, workspaceId, nouraChat);
+      expect(context.job).toBeNull();
+      expect(context.suggestedJob).toMatchObject({ kind: "enquiry", id: leadId, reference: "E-1042", title: "Villa" });
+      expect((await inbox.context(actor, workspaceId, strangerChat)).suggestedJob).toBeNull();
+      const insights = await inbox.insights(actor, workspaceId, nouraChat);
+      expect(insights).toMatchObject({ source: "rules", summary: null, suggestedEnquiryType: null, summaryForEnquiry: "Can you visit our villa this week?" });
+      expect(insights.suggestedReplies.map((reply) => reply.shortcut)).toEqual(["visit"]);
     });
   });
 });

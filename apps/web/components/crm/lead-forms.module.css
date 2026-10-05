@@ -9,22 +9,10 @@
 
 /* ── Gallery ─────────────────────────────────────────────────────────────── */
 .formListToolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--wd-space-3); padding-block: var(--wd-space-3) var(--wd-space-5); }
-.formGallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--wd-space-4); align-items: start; }
-.formTile { display: grid; overflow: hidden; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); transition: border-color var(--wd-duration-fast) var(--wd-ease-standard); }
-.formTile:hover, .formTile:focus-within { border-color: var(--wd-color-action-primary); }
-.formTileOpen { display: block; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
-.formTileOpen:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
-.formTilePreview { display: flex; flex-direction: column; gap: var(--wd-space-2); min-block-size: 9rem; padding: var(--wd-space-5); background: var(--wd-color-surface-subtle); }
-.formTilePreview img { inline-size: auto; max-block-size: var(--wd-space-8); object-fit: contain; object-position: start; }
-.formTilePreview span { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); line-height: 1.3; overflow-wrap: anywhere; }
-.formTilePreview i { display: block; inline-size: 100%; block-size: var(--wd-space-2); border-radius: var(--wd-radius-pill); background: var(--wd-color-border); }
-.formTilePreview i:last-child { inline-size: 60%; }
-.formTileFooter { display: flex; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-3); }
-.formTileFooter > svg { flex: none; color: var(--wd-color-text-secondary); }
-.formTileFooter > span { flex: 1; min-inline-size: 0; }
-.formTileFooter strong, .formTileFooter small { display: block; overflow-wrap: anywhere; }
-.formTileFooter strong { font-size: var(--wd-text-sm); line-height: 1.4; }
-.formTileFooter small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.formName { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.formName strong { font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.formName small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.rowActions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-1); }
 .templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--wd-space-3); }
 .templateTile { display: grid; justify-items: start; gap: var(--wd-space-1); padding: var(--wd-space-4); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; text-align: start; cursor: pointer; transition: border-color var(--wd-duration-fast) var(--wd-ease-standard), background var(--wd-duration-fast) var(--wd-ease-standard); }
 .templateTile svg { color: var(--wd-color-action-primary); }

@@ -100,6 +100,8 @@ export type SalesSettings = {
   clientReviewMinutes: number;
   duplicateWindowDays: number;
   salesAdminMembershipId: string | null;
+  /** PLM-024: who reads internal notes, the enquiry team (default) or everyone with Sales access. */
+  internalNotesVisibility?: "team" | "sales";
   version: number;
 };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { CircleAlert } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { fieldName, focusField, inDocumentOrder, type FormControl } from "../foundations/blocked-save-alert";
@@ -20,6 +20,44 @@ export function FormErrorSummary({ problems }: { problems: Problem[] }) {
     <div>
       <strong>{unique.length === 1 ? t("Check 1 field") : t("Check {count} fields", { count: unique.length })}</strong>
       <ul>{unique.map((problem) => <li key={problem.name}><button aria-label={t("Go to {field}", { field: problem.name || t("Unnamed field") })} onClick={() => focusField(problem.control)} type="button">{problem.name || t("Unnamed field")}</button></li>)}</ul>
+    </div>
+  </div>;
+}
+
+/** One thing a refused save needs: the field (`key`, the control's `name`) and what to do. The server sends the same shape as `missing`. */
+export type SaveProblem = { key: string; label: string };
+
+/** The problems a refused save names (`{ message, missing: [{ key, label }] }`), or none. */
+export function readSaveProblems(body: unknown): SaveProblem[] {
+  const missing = body && typeof body === "object" ? (body as { missing?: unknown }).missing : undefined;
+  return Array.isArray(missing) ? missing.filter((item): item is SaveProblem => Boolean(item) && typeof item === "object"
+    && typeof (item as SaveProblem).key === "string" && typeof (item as SaveProblem).label === "string") : [];
+}
+
+/** The control a problem belongs to: the field named `key` in the same form, else one marked `data-problem-key`. */
+function problemControl(from: HTMLElement | null, key: string): FormControl | null {
+  const form = from?.closest("form");
+  const named = form?.elements.namedItem(key);
+  const control = named instanceof RadioNodeList ? named[0] : named;
+  if (control && "validity" in control) return control as FormControl;
+  const marked = (form ?? document).querySelector<HTMLElement>(`[data-problem-key="${CSS.escape(key)}"]`);
+  return (marked?.matches("input, select, textarea") ? marked : marked?.querySelector("input:not([type=hidden]), select, textarea")) as FormControl | null;
+}
+
+/**
+ * PLM-092: every problem a save found, in one box at the top of the form. Each one names what to do and takes the
+ * person to its field; the fields themselves are marked by their own `isInvalid`/`errorMessage`.
+ */
+export function ProblemSummary({ actions, problems, title }: { problems: Array<SaveProblem & { text?: string }>; title?: string; actions?: ReactNode }) {
+  const t = useT();
+  const box = useRef<HTMLDivElement>(null);
+  if (!problems.length) return null;
+  return <div className="wd-form-summary" ref={box} role="alert">
+    <CircleAlert aria-hidden="true" size={16} />
+    <div>
+      <strong>{title ?? (problems.length === 1 ? t("Check 1 field") : t("Check {count} fields", { count: problems.length }))}</strong>
+      <ul data-layout="list">{problems.map((problem) => <li key={problem.key}><button onClick={() => { const control = problemControl(box.current, problem.key); if (control) focusField(control); }} type="button">{problem.text ?? problem.label}</button></li>)}</ul>
+      {actions}
     </div>
   </div>;
 }

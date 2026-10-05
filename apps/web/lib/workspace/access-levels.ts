@@ -19,6 +19,16 @@ export const LEVEL_LABELS: Record<AccessLevel, MessageKey> = {
   none: tKey("No access"), view: tKey("View"), edit: tKey("Edit"), manage: tKey("Manage"),
 };
 
+/** A module whose levels mean something more specific than View · Edit · Manage names them (the Inbox: plan §5b). */
+export const MODULE_LEVEL_LABELS: Record<string, Partial<Record<AccessLevel, MessageKey>>> = {
+  inbox: { view: tKey("Own chats"), edit: tKey("Team chats"), manage: tKey("Manage") },
+};
+
+/** The name of a level in a module: the module's own word for it, else the shared one. */
+export function levelLabel(moduleId: string, level: AccessLevel): MessageKey {
+  return MODULE_LEVEL_LABELS[moduleId]?.[level] ?? LEVEL_LABELS[level];
+}
+
 export const MODULE_LABELS: Record<string, MessageKey> = {
   sales: tKey("Sales"), inbox: tKey("Inbox"), flows: tKey("Enquiry types & automations"), planning: tKey("Planning"), quotations: tKey("Quotations"),
   projects: tKey("Projects"), purchasing: tKey("Purchasing"), inventory: tKey("Inventory"), factory: tKey("Factory"),
