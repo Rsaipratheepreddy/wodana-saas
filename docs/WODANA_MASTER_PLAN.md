@@ -98,6 +98,22 @@ This section supersedes every earlier schedule in this file. §5a, §5b and §5c
 | **Arabic translation pass** for staff app and portal (strings via en.json; translated once, at the end) | P8 |
 | **Operations:** monitoring and alerts, backup and restore drill, performance on large lists, security review of new tables (RLS) and permissions | P0 + P8 |
 
+### 0.3b One system: eight shared engines every module uses
+Each engine is built and tested once; modules only configure it. No module keeps its own status, reminders, approvals, files or chat.
+
+| Engine | One job | Used by |
+| --- | --- | --- |
+| **E1 Job record** | One record from enquiry to warranty (enquiry → opportunity → case → project are views of the same job), with team per role, client, money summary and links | every module, the portal, My day, Woddy |
+| **E2 Steps (flow)** | Enquiry-type steps through every phase (sales, design, procurement, production, handover); current step computed from records; gates; deadlines; owner per step | pipeline, planning, projects, factory, purchasing, portal stage line |
+| **E3 Approvals** | Policies (what · amount ≥ X · approvers in order · Owner · escalation), separation of duties, one Approvals inbox | quotes/discounts, deal file, value lock, POs, vendor payments, expenses, refunds, change requests, stock corrections |
+| **E4 Reminders and notifications** | Due-soon → overdue → escalate after N; delivery over in-app/push/email/WhatsApp with consent, retries, fallback, digest, quiet hours; health page; owner copies | every deadline and event |
+| **E5 Documents and decisions** | Every file and decision versioned, with who/when/source/evidence; previews and cards; client-visible flag; Canva and PDF templates; audit trail | quotes, designs, BOQ, drawings, agreements, invoices, materials ledger, change requests, handover, warranty |
+| **E6 Conversations** | One thread model with internal notes and client-visible messages; inbox (front door) → job room ⇄ portal; questions routed by stage; WhatsApp as doorbell | inbox, job room, portal, vendor portal |
+| **E7 Money ledger** | Every money movement (client receipts, invoices, vendor bills and payments, expenses, cash, card lines, overheads) on one ledger by job and company → P&L, collections, cash, payables | finance, projects, deals, procurement, QuickBooks |
+| **E8 AI agent (Woddy)** | Reads the record and context, proposes plans and actions as confirmation cards; never acts without a person; audited | every screen (side panel), My day briefing, extraction (payment proofs, chats → decisions) |
+
+Phases P1–P8 first build or consolidate the engine a module needs, then the module's screens on top. A module may not ship its own variant of an engine.
+
 ### 0.4 How each phase is executed, to keep bugs out
 1. **Spec first:** journey, fields, rules, screens and edge cases written into §6 for the module, then reviewed.
 2. **Build:** one owner agent per phase (Opus for logic and UI; Fable only for mechanical sub-tasks, with an exact brief). At most two agents run at once, never in the same code area.
