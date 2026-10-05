@@ -17,6 +17,7 @@ import {
   LeaveQueryDto,
   LeaveTypeDto,
 } from "./hrms.dto";
+import { reassignBookingsForLeave } from "../booking/bookings.service";
 import {
   Calendar,
   fingerprint,
@@ -533,6 +534,8 @@ export class HrmsLeaveService {
         `UPDATE hrms_leave_requests SET status=$3,decided_by=$4,decision_reason=$5,decided_at=now(),version=version+1 WHERE workspace_id=$1 AND id=$2`,
         [workspaceId, id, status, ctx.userId, input.reason.trim()],
       );
+      // Booking pages: the host's booked meetings in those days go to another free host, or the owner is told.
+      if (status === "approved") await reassignBookingsForLeave(ctx.client, workspaceId, id);
       await this.access.audit(
         ctx,
         "leave_decided",

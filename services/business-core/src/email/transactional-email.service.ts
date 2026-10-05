@@ -10,7 +10,10 @@ export type EmailDeliveryStatus = "sent" | "not_configured" | "failed";
 export type EmailProvider = "mailgun" | "ses";
 
 /** Sends one prepared message through Amazon SES; replaced in tests. */
-export type SesSender = (input: { region: string; from: string; to: string; subject: string; text: string; html: string; configurationSet?: string }) => Promise<string | null>;
+export type SesSender = (input: { region: string; from: string; to: string; subject: string; text: string; html: string; configurationSet?: string; attachments?: EmailAttachment[] }) => Promise<string | null>;
+
+/** A small file sent with a message (e.g. a booking's .ics invitation). */
+export type EmailAttachment = { filename: string; contentType: string; content: string };
 
 export interface EmailDeliveryResult {
   status: EmailDeliveryStatus;
@@ -29,6 +32,7 @@ interface TransactionalMessage {
   html: string;
   /** Sender display name, normally the tenant; the address stays the configured sending domain. */
   fromName?: string;
+  attachments?: EmailAttachment[];
 }
 
 interface WorkspaceInvitationMessage {
@@ -49,7 +53,7 @@ const DEFAULT_MAILGUN_BASE_URL = "https://api.mailgun.net";
 const sesClients = new Map<string, SESv2Client>();
 
 /** Credentials come from the default AWS chain (the server's instance role in production). */
-const sendThroughSes: SesSender = async ({ region, from, to, subject, text, html, configurationSet }) => {
+const sendThroughSes: SesSender = async ({ region, from, to, subject, text, html, configurationSet, attachments }) => {
   let client = sesClients.get(region);
   if (!client) {
     client = new SESv2Client({ region });
@@ -62,6 +66,7 @@ const sendThroughSes: SesSender = async ({ region, from, to, subject, text, html
       Simple: {
         Subject: { Data: subject, Charset: "UTF-8" },
         Body: { Text: { Data: text, Charset: "UTF-8" }, Html: { Data: html, Charset: "UTF-8" } },
+        ...(attachments?.length ? { Attachments: attachments.map((file) => ({ FileName: file.filename, ContentType: file.contentType, RawContent: Buffer.from(file.content, "utf8") })) } : {}),
       },
     },
     ...(configurationSet ? { ConfigurationSetName: configurationSet } : {}),
@@ -309,6 +314,7 @@ export class TransactionalEmailService {
     form.set("subject", message.subject);
     form.set("text", message.text);
     form.set("html", message.html);
+    for (const file of message.attachments ?? []) form.append("attachment", new Blob([file.content], { type: file.contentType }), file.filename);
 
     try {
       const response = await fetch(`${baseUrl}/v3/${encodeURIComponent(domain)}/messages`, {
@@ -352,6 +358,7 @@ export class TransactionalEmailService {
         text: message.text,
         html: message.html,
         configurationSet,
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
       });
       this.logger.log(`Transactional email accepted by SES${messageId ? ` (${messageId})` : ""}`);
       return { status: "sent", provider: "ses", messageId };

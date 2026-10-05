@@ -42,6 +42,9 @@ const securityHeaders = [
   },
 ];
 
+const framableHeaders = securityHeaders.filter((header) => header.key !== "X-Frame-Options")
+  .map((header) => header.key === "Content-Security-Policy" ? { ...header, value: header.value.replace("frame-ancestors 'none'", "frame-ancestors *") } : header);
+
 const nextConfig: NextConfig = {
   distDir: process.env.WODANA_NEXT_DIST_DIR ?? ".next",
   allowedDevOrigins: ["127.0.0.1"],
@@ -71,7 +74,10 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
-      { source: "/:path*", headers: securityHeaders },
+      // Only the public booking page (/book/{workspace}/{type}) may be framed on firms' own websites (iframe or popup).
+      // Everything else, including the signed manage page, keeps frame-ancestors 'none'.
+      { source: "/:path((?!book/[^/]+/[^/]+/?$).*)", headers: securityHeaders },
+      { source: "/book/:workspace/:type", headers: framableHeaders },
       {
         // Brand characters (role avatars, Woddy) change by file name only, so browsers may keep them.
         source: "/brand/:path*",

@@ -4,10 +4,8 @@ import { useSyncExternalStore } from "react";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useDesignSystem } from "./provider";
 
-/** "Asia/Dubai" → "Dubai", "America/Argentina/Buenos_Aires" → "Buenos Aires": a zone as people name it. */
-export function timeZoneCity(timeZone: string): string {
-  return (timeZone.split("/").at(-1) ?? timeZone).replaceAll("_", " ");
-}
+export { timeZoneCity } from "./time-zone-name";
+import { timeZoneCity } from "./time-zone-name";
 
 const subscribe = () => () => {};
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;

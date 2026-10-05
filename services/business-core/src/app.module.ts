@@ -49,6 +49,7 @@ import { PettyCashModule } from "./petty-cash/petty-cash.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { ApprovalsModule } from "./approvals/approvals.controller";
 import { NotificationsModule } from "./notifications/notifications.module";
+import { BookingModule } from "./booking/booking.module";
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
     CrmSharedModule,
     CrmPartiesModule,
     CrmIntakeModule,
+    BookingModule,
     CrmLeadsModule,
     CrmActivitiesModule,
     CrmConversationsModule,

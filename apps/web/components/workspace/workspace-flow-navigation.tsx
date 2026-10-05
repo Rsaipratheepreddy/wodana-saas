@@ -68,7 +68,7 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
   if (activityActive || pathname === "/workspace/crm/conversations" || pathname.startsWith("/workspace/crm/customers") || pathname.startsWith("/workspace/crm/organizations")) return null;
   if (String(module.id) === "crm") {
     const allowed = new Set(module.navigation.flatMap(group => group.items).map(item => item.id));
-    const settings = ["assignment", "sla", "options", "automations"].includes(section ?? "");
+    const settings = ["assignment", "sla", "options", "automations"].includes(section ?? "") || pathname === "/workspace/crm/booking-types";
     const tabs = [
       { id: "leads", icon: "enquiries", label: tKey("Enquiries"), href: "/workspace/crm/leads", active: !section && (pathname === "/workspace/crm" || pathname.endsWith("/leads")) },
       { id: "opportunities", icon: "deals", label: tKey("Pipeline"), href: "/workspace/crm/opportunities", active: pathname.includes("/opportunities") },
@@ -78,13 +78,13 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
       { id: allowed.has("crm-settings") ? "crm-settings" : "automations", icon: "settings", label: tKey("Settings"), href: allowed.has("crm-settings") ? "/workspace/crm/leads?section=assignment" : "/workspace/crm/leads?section=automations", active: settings },
     ].filter(tab => allowed.has(tab.id));
     const settingsTabs = [
-      ...(allowed.has("crm-settings") ? [{ key: "assignment", label: t("Assignment") }, { key: "sla", label: t("Response targets") }, { key: "options", label: t("Fields") }] : []),
+      ...(allowed.has("crm-settings") ? [{ key: "assignment", label: t("Assignment") }, { key: "sla", label: t("Response targets") }, { key: "options", label: t("Fields") }, { key: "booking", label: t("Booking pages"), href: "/workspace/crm/booking-types" }] : []),
       ...(allowed.has("automations") ? [{ key: "automations", label: t("Automations") }] : []),
     ];
     // A single tab says nothing the page doesn't: each bar shows only when there is a choice.
     const showSettingsTabs = settings && settingsTabs.length > 1;
     if (tabs.length < 2 && !showSettingsTabs) return null;
-    return <div className={styles.flowHeader} data-module="crm" data-navigation="chips">{tabs.length > 1 ? <nav aria-label={t("Sales sections")} className={styles.flowTabs}><div className={styles.flowTabScroll}>{tabs.map(tab => <Link key={tab.label} href={tab.href} className={styles.salesTab} data-section={tab.label} data-tour={`sales-tab-${tab.id}`} aria-current={tab.active ? "page" : undefined}><span>{t(tab.label as never)}</span></Link>)}</div></nav> : null}{showSettingsTabs && <nav aria-label={t("Sales settings")} className={styles.commercialTabs}>{settingsTabs.map(tab => <Link key={tab.key} href={`/workspace/crm/leads?section=${tab.key}`} className={styles.commercialSegment} aria-current={section === tab.key ? "page" : undefined}>{tab.label}</Link>)}</nav>}</div>;
+    return <div className={styles.flowHeader} data-module="crm" data-navigation="chips">{tabs.length > 1 ? <nav aria-label={t("Sales sections")} className={styles.flowTabs}><div className={styles.flowTabScroll}>{tabs.map(tab => <Link key={tab.label} href={tab.href} className={styles.salesTab} data-section={tab.label} data-tour={`sales-tab-${tab.id}`} aria-current={tab.active ? "page" : undefined}><span>{t(tab.label as never)}</span></Link>)}</div></nav> : null}{showSettingsTabs && <nav aria-label={t("Sales settings")} className={styles.commercialTabs}>{settingsTabs.map(tab => <Link key={tab.key} href={"href" in tab && tab.href ? tab.href : `/workspace/crm/leads?section=${tab.key}`} className={styles.commercialSegment} aria-current={("href" in tab && tab.href ? pathname === tab.href : section === tab.key) ? "page" : undefined}>{tab.label}</Link>)}</nav>}</div>;
   }
   const items = module.navigation.flatMap((section) => section.items).filter((item) => item.showInSidebar !== false && item.id !== "integrations" && item.id !== "crm-attachments" && (String(module.id) !== "crm" || ["crm-overview", "leads", "opportunities", "follow-ups", "automations", "crm-attachments"].includes(item.id)));
   if (String(module.id) === "crm") items.push(
