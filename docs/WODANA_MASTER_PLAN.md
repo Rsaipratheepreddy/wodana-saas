@@ -168,6 +168,9 @@ Phases P1–P8 first build or consolidate the engine a module needs, then the mo
 7. Refund timelines.
 8. List of entities, licences and TRNs.
 9. Calendar choice: Wodana calendars or Google shared calendars.
+10. Required fields per enquiry type before converting (email, area, address, budget, designer): now configuration in Sales › Fields; Palm to confirm per type (PLM-096).
+11. Remove "Concepts / Early Ideas" from Palm's enquiry types and move its records to Full ID (PLM-127): a configuration change Palm must confirm.
+12. Locked name/phone after Qualified (E1-6): should an edit request go to an admin for approval, or is "ask a Sales admin" enough?
 
 ### 0.6 Handover
 - Per-role training scripts and short videos on real data.
