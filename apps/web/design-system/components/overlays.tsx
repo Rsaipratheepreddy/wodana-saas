@@ -158,7 +158,7 @@ function DialogCloseActions({ confirmLabel, onConfirm }: { confirmLabel: string;
   return <div className="wd-dialog-actions"><Button slot="close">{t("Cancel")}</Button><Button onPress={onConfirm} slot="close" variant="danger">{confirmLabel}</Button></div>;
 }
 
-export type SideSheetSize = "sm" | "md" | "lg";
+export type SideSheetSize = "sm" | "md" | "lg" | "xl";
 export type SideSheetSide = "inline-start" | "inline-end" | "bottom";
 export type SideSheetProps = Omit<DialogTriggerProps, "children"> & {
   children: ReactNode;
