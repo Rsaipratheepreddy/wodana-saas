@@ -62,7 +62,8 @@ integration("decisions waiting on the client (Q-8)", () => {
     await withOwnedCase(pool, async (client, ids) => {
       await client.query(`INSERT INTO commercial_quotes(workspace_id,case_id,id,sort_order,number,kind,status,title,currency,valid_until,detail) VALUES
         ($1,$2,'fresh',1,1,'quotation','issued','Fresh','AED',current_date + 20,$3::jsonb),
-        ($1,$2,'old',2,2,'quotation','issued','Old','AED',current_date - 1,$4::jsonb)`,
+        ($1,$2,'old',2,2,'quotation','issued','Old','AED',
+          (SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date - 1 FROM workspaces WHERE id = $1),$4::jsonb)`,
         [ids.workspaceId, ids.caseId, JSON.stringify({ issuedAt: new Date().toISOString() }), JSON.stringify({ issuedAt: new Date(Date.now() - 20 * 86_400_000).toISOString() })]);
       expect((await processClientDecisions(client, ids.workspaceId)).sent).toBe(0);
     });

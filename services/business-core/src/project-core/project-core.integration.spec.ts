@@ -640,7 +640,7 @@ integration("projects core (plan §6.10)", () => {
     await world(async (w) => {
       await accept(w);
       const core = w.as(w.manager);
-      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership, startDate: "2026-10-01" });
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership, startDate: "2036-09-18" });
       let project = await core.get(actor, w.workspaceId, projectId);
       project = await core.command(actor, w.workspaceId, projectId, { action: "set_member", version: project.project.version, role: "technical_designer", membershipId: w.designerMembership });
       await core.command(actor, w.workspaceId, projectId, { action: "save_package", version: project.project.version, name: "Kitchen joinery", supply: "make" });
@@ -661,16 +661,16 @@ integration("projects core (plan §6.10)", () => {
 
       const lead = w.work(w.manager);
       const preview = await lead.packagePlan(actor, w.workspaceId, projectId, pkg.id);
-      expect(preview.startDate).toBe("2026-10-01");
+      expect(preview.startDate).toBe("2036-09-18");
       expect(preview.tasks.map(({ title, startDate, dueDate, assigneeName, stageName }) => [title, startDate, dueDate, assigneeName, stageName])).toEqual([
-        ["Shop drawings", "2026-10-01", "2026-10-05", "Dana Designer", "Technical drawings"], // Thu, Fri, Mon
-        ["Production", "2026-10-06", "2026-10-12", null, "Production"],
-        ["Book the delivery", "2026-10-06", "2026-10-06", "Omar Manager", "Delivery and installation"],
+        ["Shop drawings", "2036-09-18", "2036-09-22", "Dana Designer", "Technical drawings"], // Thu, Fri, Mon
+        ["Production", "2036-09-23", "2036-09-29", null, "Production"],
+        ["Book the delivery", "2036-09-23", "2036-09-23", "Omar Manager", "Delivery and installation"],
       ]);
-      const state = await lead.command(actor, w.workspaceId, projectId, { action: "plan_package", packageId: pkg.id, startDate: "2026-10-01" });
+      const state = await lead.command(actor, w.workspaceId, projectId, { action: "plan_package", packageId: pkg.id, startDate: "2036-09-18" });
       const tasks = state.items.filter((item) => item.packageId === pkg.id);
       expect(tasks.map((item) => [item.number, item.title, item.startDate, item.dueDate])).toEqual([
-        [1, "Shop drawings", "2026-10-01", "2026-10-05"], [2, "Production", "2026-10-06", "2026-10-12"], [3, "Book the delivery", "2026-10-06", "2026-10-06"]]);
+        [1, "Shop drawings", "2036-09-18", "2036-09-22"], [2, "Production", "2036-09-23", "2036-09-29"], [3, "Book the delivery", "2036-09-23", "2036-09-23"]]);
       expect(tasks[1].blockedBy.map((item) => item.number)).toEqual([1]);
       const detail = await lead.item(actor, w.workspaceId, projectId, tasks[2].id);
       expect(detail.before).toEqual([expect.objectContaining({ number: 2, kind: "ss" })]);
@@ -679,9 +679,9 @@ integration("projects core (plan §6.10)", () => {
       project = await core.get(actor, w.workspaceId, projectId);
       await core.command(actor, w.workspaceId, projectId, { action: "save_package", version: project.project.version, name: "Wardrobes", supply: "make" });
       const wardrobes = (await core.scope(actor, w.workspaceId, projectId)).packages.find((item) => item.name === "Wardrobes")!;
-      expect((await lead.packagePlan(actor, w.workspaceId, projectId, wardrobes.id)).startDate).toBe("2026-10-13");
+      expect((await lead.packagePlan(actor, w.workspaceId, projectId, wardrobes.id)).startDate).toBe("2036-09-30");
       const planned = (await w.client.query<{ subject: string; body: string }>(`SELECT subject, body FROM notifications WHERE workspace_id = $1 AND event_type = 'work.planned' AND recipient_id = $2`, [w.workspaceId, w.designer])).rows;
-      expect(planned).toEqual([{ subject: "Kitchen joinery is planned", body: "Omar Manager gave you 1 task on PRJ-0001 · Villa 12. First due Oct 5, 2026." }]);
+      expect(planned).toEqual([{ subject: "Kitchen joinery is planned", body: "Omar Manager gave you 1 task on PRJ-0001 · Villa 12. First due Sep 22, 2036." }]);
     });
   });
 

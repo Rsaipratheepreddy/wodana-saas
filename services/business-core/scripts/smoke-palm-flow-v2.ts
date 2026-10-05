@@ -388,8 +388,8 @@ try {
     [workspaceId],
   );
   assert.deepEqual(quantitySurveyor.rows.map(row => row.code).sort(), [
-    "commercial.costs.view", "commercial.estimate", "crm.opportunities.view", "pre_projects.view",
-  ], "A new workspace must provision an assignable QS reviewer with only the required quotation access");
+    "ai.suggestions.use", "commercial.costs.view", "commercial.estimate", "crm.opportunities.view", "pre_projects.view",
+  ], "A new workspace must provision an assignable QS reviewer with only the required quotation access (plus Woddy, which every staff role gets: 0163)");
   const financeReviewer = await tenantQuery<{ code: string }>(
     `SELECT permission.code FROM roles role
      JOIN role_permissions assigned ON assigned.role_id=role.id AND assigned.workspace_id=role.workspace_id
@@ -398,6 +398,7 @@ try {
     [workspaceId],
   );
   assert.deepEqual(financeReviewer.rows.map(row => row.code).sort(), [
+    "ai.suggestions.use",
     "commercial.finance.verify", "crm.opportunities.view", "payables.view", "pre_projects.view", "receivables.view",
   ], "The Finance reviewer verifies payments and reads Finance (bills and invoices), nothing more");
   const activated = await request("/auth/invitations/activate", "POST", { invitationToken: provisioned.ownerInvitation.invitationToken, password }, 201, false);

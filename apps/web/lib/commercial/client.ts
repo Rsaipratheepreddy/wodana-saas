@@ -38,9 +38,10 @@ export function money(value: number, currency: string, locale?: string) {
     maximumFractionDigits: 2,
   }).format(value);
 }
-/** Currencies a quotation can be priced in: the workspace's own (pass `useDesignSystem().currency`) first, then common ones. */
+/** Currencies a quotation can be priced in: the workspace's own (pass `useDesignSystem().currency`) first, then every ISO 4217 currency. */
 export function quoteCurrencyChoices(workspaceCurrency: string) {
-  return Array.from(new Set([workspaceCurrency, "AED", "INR", "USD", "EUR", "GBP", "SAR", "QAR"].filter(Boolean)));
+  const all = (Intl as { supportedValuesOf?: (key: "currency") => string[] }).supportedValuesOf?.("currency") ?? ["EUR", "GBP", "USD"];
+  return Array.from(new Set([workspaceCurrency, ...all].filter(Boolean)));
 }
 export const roundMoney = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 /**

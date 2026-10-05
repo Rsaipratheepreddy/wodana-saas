@@ -39,8 +39,9 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
   const latest = data.revisions[0];
   // How long the list has been with the client, in days.
   const waitingText = (sentAt: string, number: number) => {
-    const days = Math.max(0, Math.floor((Date.parse(format.today()) - Date.parse(sentAt.slice(0, 10))) / 86_400_000));
-    return days ? t("R{number} with the client for {count} days", { number, count: days }) : t("R{number} is with the client since {date}", { number, date: format.when(sentAt) });
+    const days = Math.max(0, Math.round((Date.parse(format.today()) - Date.parse(format.dayOf(sentAt))) / 86_400_000));
+    if (!days) return t("R{number} is with the client since {date}", { number, date: format.when(sentAt) });
+    return days === 1 ? t("R{number} with the client for 1 day", { number }) : t("R{number} with the client for {count} days", { number, count: days });
   };
   const status = data.state === "draft" ? t("Not sent to the client yet")
     : data.state === "sent" ? waitingText(latest.sentAt, latest.number)

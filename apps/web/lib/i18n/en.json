@@ -10169,6 +10169,7 @@
   "Hide details": "Hide details",
   "Show details": "Show details",
   "R{number} with the client for {count} days": "R{number} with the client for {count} days",
+  "R{number} with the client for 1 day": "R{number} with the client for 1 day",
   "Remind": "Remind",
   "The overview didn't load.": "The overview didn't load.",
   "{stage} is {count} days past its plan": "{stage} is {count} days past its plan",

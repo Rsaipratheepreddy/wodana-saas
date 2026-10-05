@@ -19,6 +19,8 @@ export function useProjectFormat() {
     return {
       /** Today in the workspace's time zone, as YYYY-MM-DD. */
       today: () => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()),
+      /** The calendar day (YYYY-MM-DD) a moment falls on in the workspace's time zone. */
+      dayOf: (value: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value)),
       /** A calendar date (YYYY-MM-DD) as the workspace writes it. */
       day: (value: string | null) => (value ? new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00Z`)) : ""),
       /** A calendar date without the year when it's this year: "12 Oct". */

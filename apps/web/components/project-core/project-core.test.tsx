@@ -326,7 +326,7 @@ describe("projects", () => {
     const item = (id: string, name: string) => ({ id, position: 0, catalogItemId: null, name, code: "", specification: "", supplier: "", quantity: null, unit: "", note: "", boqLineIds: [], version: 1, clientChoice: true, usedIn: [], decision: null });
     let materials: MaterialsState = { state: "draft", items: [item("m1", "Quartz, Calacatta"), item("m2", "Oak veneer")], revisions: [], version: 4, canEdit: true };
     const fetcher = mount((url, body) => {
-      if (body?.action === "send_materials") materials = { ...materials, state: "sent", revisions: [{ id: "r1", number: 1, status: "sent", sentAt: "2026-10-01T09:00:00Z", sentByName: "Dana", decidedAt: null, decidedBy: null, method: null, note: "" }] };
+      if (body?.action === "send_materials") materials = { ...materials, state: "sent", revisions: [{ id: "r1", number: 1, status: "sent", sentAt: new Date().toISOString(), sentByName: "Dana", decidedAt: null, decidedBy: null, method: null, note: "" }] };
       if (body) return detail({ version: 5 });
       return url.includes("/materials") ? materials : url.includes("/scope") ? live : detail();
     });
