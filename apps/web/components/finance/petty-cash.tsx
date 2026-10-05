@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, TextInput, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, ListTabs, NoResultsState, RecordName, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { pettyCashApi, type PettyCashApi } from "@/lib/petty-cash/client";
 import type { PettyCashClaim, PettyCashPayables } from "@/lib/petty-cash/types";
@@ -29,19 +29,18 @@ export function PettyCash({ workspaceId, openId, onOpen }: { workspaceId: string
     && (!needle || `${claim.reference} ${claim.description} ${claim.claimedByName} ${claim.projectReference}`.toLocaleLowerCase().includes(needle)))
     .sort((a, b) => (show === "open" ? (a.decidedAt ?? "").localeCompare(b.decidedAt ?? "") : 0));
   const columns = useMemo<DataGridColumn<PettyCashClaim>[]>(() => [
-    { id: "claim", header: t("Claim"), accessorFn: (row) => row.description, size: 300, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
-      <span>{row.description}</span><small>{[row.reference, format.day(row.spentOn), `${row.projectReference} · ${row.projectName}`].join(" · ")}</small></span> } },
+    { id: "claim", header: t("Claim"), accessorFn: (row) => row.description, size: 300, meta: { primary: true, renderCell: (row) => <RecordName title={row.description} detail={[row.reference, format.day(row.spentOn), `${row.projectReference} · ${row.projectName}`].join(" · ")} /> } },
     { id: "claimant", header: t("Pay to"), accessorFn: (row) => row.claimedByName, size: 200, meta: { mobileHidden: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{row.claimedByName}</span>{row.decidedByName ? <small>{t("Approved by {name}", { name: row.decidedByName })}</small> : null}</span> } },
-    { id: "amount", header: t("Amount"), accessorFn: (row) => Number(row.amount), size: 150, meta: { renderCell: (row) => <span className={styles.money}>{format.money(row.amount, row.currency)}</span> } },
+    { id: "amount", header: t("Amount"), accessorFn: (row) => Number(row.amount), size: 150, meta: { align: "end", renderCell: (row) => <span className={styles.money}>{format.money(row.amount, row.currency)}</span> } },
     { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 150, meta: { renderCell: (row) => <ClaimStatusLabel status={row.status} /> } },
   ], [t, format]);
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   const open = state?.claims.find((claim) => claim.id === openId) ?? null;
   return <>
     <DataGrid<PettyCashClaim> ariaLabel={t("Petty cash")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
-      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search claims")} rowNumbers={false} wrapText
-      toolbarLeading={<SegmentedControl label={t("Show")} value={show} onChange={(value) => setShow(value as Show)} options={[{ id: "open", label: t("To reimburse") }, { id: "all", label: t("All") }]} />}
+      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search claims")} rowNumbers={false}
+      toolbarLeading={<ListTabs label={t("Show")} value={show} onChange={setShow} items={[{ id: "open", label: t("To reimburse") }, { id: "all", label: t("All") }]} />}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={show === "open" ? t("Nothing to reimburse") : t("No petty cash yet")} />} />
     {state && open ? <ReimburseSheet api={api} claim={open} canReimburse={state.canReimburse} onChanged={setState} onClose={() => onOpen(null)} /> : null}
   </>;

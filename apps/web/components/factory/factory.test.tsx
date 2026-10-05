@@ -54,6 +54,8 @@ describe("factory", () => {
     const table = await screen.findByRole("table", { name: "To make" }).catch(() => screen.findByRole("grid", { name: "To make" }));
     expect(table).toHaveTextContent("PRJ-0007 · Villa 12");
     expect(table).toHaveTextContent("1.5 m");
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Factory"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.getAttribute("data-tour"))).toEqual(["factory-tab-to-make", "factory-tab-orders", "factory-tab-schedule", "factory-tab-batches"]);
     await userEvent.click(within(table).getByText("Kitchen cabinets"));
     const dialog = await screen.findByRole("dialog", { name: "Plan work order" });
     const quantity = within(dialog).getByRole("textbox", { name: "Quantity" });

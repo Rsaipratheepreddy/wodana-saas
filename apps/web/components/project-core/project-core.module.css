@@ -15,11 +15,13 @@
 .closeList small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 
 /* List */
-.nameCell, .stageCell, .nextCell, .dateCell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.nameCell, .dateCell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .nameCell a { color: var(--wd-color-text); font-weight: var(--wd-weight-medium); text-decoration: none; }
 .nameCell a:hover { text-decoration: underline; }
-.nameCell small, .stageCell small, .nextCell small, .dateCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.nameCell small, .dateCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .dateCell small[data-late] { color: var(--wd-color-danger); }
+.open { color: inherit; text-decoration: none; }
+.open:hover { text-decoration: underline; }
 .attention { color: var(--wd-color-warning); font-size: var(--wd-text-sm); text-decoration: none; }
 .attention[data-late] { color: var(--wd-color-danger); }
 .attention:hover { text-decoration: underline; }

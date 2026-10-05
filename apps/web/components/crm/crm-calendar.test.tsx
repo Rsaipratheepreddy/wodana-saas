@@ -7,6 +7,8 @@ import { WorkspaceRegionProvider } from "@/design-system";
 import { zonedToUtc, zonedToday } from "@/lib/crm/zoned-time";
 import { CrmCalendar } from "./crm-calendar";
 
+const push = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn(), replace: vi.fn() }), usePathname: () => "/workspace/crm/calendar", useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/lib/crm/client", async (original) => ({ ...await original<object>(), crmRequest: vi.fn() }));
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const partyId = "00000000-0000-4000-8000-000000000002";
@@ -37,25 +39,28 @@ describe("CRM calendar", () => {
     expect(html).not.toContain("Schedule on");
   });
 
-  it("uses one compact toolbar with organisation, personal and member calendars", async () => {
-    render(<CrmCalendar workspaceId={workspaceId} />);
-    expect(await screen.findByRole("searchbox", { name: "Search calendar" })).toBeInTheDocument();
-    // One title (the page header), with the calendar's controls below it.
+  it("has one title, one New event action and one toolbar row: period, search, whose calendar, Day · Week · Month and ⋯", async () => {
+    const user = userEvent.setup(); render(<CrmCalendar workspaceId={workspaceId} currentUserId={userId} />);
+    const toolbar = await screen.findByRole("toolbar", { name: "Calendar controls" });
     expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Calendar"]);
-    expect(screen.getByRole("tab", { name: "Organisation" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Personal" })).toBeInTheDocument();
-    const googleLink = screen.getByRole("link", { name: "Connect Google" });
-    expect(googleLink).toHaveAttribute("href", "/workspace/integrations?connect=google_workspace");
-    expect(googleLink.querySelector("img")).toHaveAttribute("src", "/icons/integrations/google-calendar.svg");
-    expect(screen.getByRole("button", { name: /View member calendar/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "New event" })).toHaveLength(1);
+    expect(within(toolbar).getByRole("button", { name: "Week" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(toolbar).getByRole("button", { name: "Today" })).toBeInTheDocument();
+    // Search is an icon until used: the field is collapsed (no data-open) while empty.
+    const search = within(toolbar).getByRole("searchbox", { name: "Search calendar" });
+    expect(search.closest("form")).not.toHaveAttribute("data-open");
+    expect(await within(toolbar).findByRole("button", { name: /Whose calendar/ })).toHaveTextContent("Everyone");
+    // Google and the CRM meeting live in the ⋯ menu.
+    await user.click(within(toolbar).getByRole("button", { name: "Calendar options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Connect Google" }));
+    expect(push).toHaveBeenCalledWith("/workspace/integrations?connect=google_workspace");
   });
 
   it("shows real activities, excludes cancellations and supports the day/search view", async () => {
     const user = userEvent.setup(); render(<CrmCalendar workspaceId={workspaceId} />);
     expect(await screen.findByRole("button", { name: /CRM Design consultation/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Cancelled consultation/ })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Calendar view/ }));
-    await user.click(await screen.findByRole("option", { name: "Day view" }));
+    await user.click(screen.getByRole("button", { name: "Day" }));
     expect(screen.getByRole("group", { name: "Day calendar" })).toBeInTheDocument();
     await user.type(screen.getByRole("searchbox", { name: "Search calendar" }), "No match");
     expect(screen.queryByRole("button", { name: /CRM Design consultation/ })).not.toBeInTheDocument();
@@ -63,7 +68,7 @@ describe("CRM calendar", () => {
 
   it("saves the activity and appointment through one atomic command, not a Google send", async () => {
     const user = userEvent.setup(); render(<CrmCalendar workspaceId={workspaceId} />);
-    await user.click(screen.getByRole("button", { name: "Schedule" }));
+    await user.click(await screen.findByRole("button", { name: "New event" }));
     const dialog = await screen.findByRole("dialog", { name: "Schedule CRM meeting" });
     await user.type(within(dialog).getByRole("textbox", { name: /Meeting title/ }), "Site visit");
     await user.click(within(dialog).getByRole("button", { name: /Customer/ }));
@@ -84,8 +89,8 @@ describe("CRM calendar", () => {
   it("shows a fetch error instead of presenting it as an empty calendar", async () => {
     vi.mocked(crmRequest).mockRejectedValue(new Error("Access denied"));
     render(<CrmCalendar workspaceId={workspaceId} />);
-    expect(await screen.findByText("Calendar could not load")).toBeInTheDocument();
-    expect(screen.getAllByText("Access denied").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Access denied")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("group", { name: "Week calendar" })).not.toBeInTheDocument();
   });
 
   it("draws a meeting at the workspace's hour, not the browser's (CAL-2)", async () => {

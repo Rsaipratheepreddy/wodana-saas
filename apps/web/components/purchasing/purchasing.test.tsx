@@ -71,18 +71,29 @@ describe("suppliers", () => {
     const grid = await screen.findByRole("grid", { name: "Suppliers" }).catch(() => screen.findByRole("table", { name: "Suppliers" }));
     await within(grid).findByText("Nile Marble & Granite");
     expect(grid).toHaveTextContent("Preferred for Marble");
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Purchasing"]);
+    expect(screen.getAllByRole("button", { name: "Add supplier" })).toHaveLength(1);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["To order", "Price requests", "Orders", "Deliveries", "Suppliers"]);
+    expect(screen.getByRole("tab", { name: "Orders" })).toHaveAttribute("data-tour", "purchasing-tab-orders");
     expect(grid).toHaveTextContent("50% advance, rest on delivery");
     expect(grid).toHaveTextContent("10% discount");
     expect(grid).toHaveTextContent("30 days credit");
     expect(grid).toHaveTextContent("FAC, INT");
     expect(grid).not.toHaveTextContent("Old Glass Co");
-    await userEvent.click(screen.getByRole("button", { name: "Any approval" }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Not reviewed" }));
+    const filterBy = async (column: string, option: string) => {
+      await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+      await userEvent.click(await screen.findByRole("button", { name: /Column$/ }));
+      await userEvent.click(await screen.findByRole("option", { name: column }));
+      await userEvent.click(screen.getByRole("button", { name: new RegExp(`Filter by ${column.toLowerCase()}`) }));
+      await userEvent.click(await screen.findByRole("option", { name: option }));
+      await userEvent.click(screen.getByRole("button", { name: "Done" }));
+    };
+    await filterBy("Approval", "Not reviewed");
     await waitFor(() => expect(grid).not.toHaveTextContent("Nile Marble & Granite"));
     expect(grid).toHaveTextContent("Ritver Paints");
-    await userEvent.click(screen.getByRole("radio", { name: "Archived" }));
-    await userEvent.click(screen.getByRole("button", { name: "Not reviewed" }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Any approval" }));
+    expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("Not reviewed")).toBeVisible();
+    await filterBy("Show", "Archived");
+    await userEvent.click(screen.getByRole("button", { name: "Remove filter Approval" }));
     expect(await screen.findByText("Old Glass Co")).toBeInTheDocument();
   });
 

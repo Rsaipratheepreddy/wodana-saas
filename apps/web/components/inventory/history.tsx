@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, ErrorState, ListTabs, NoResultsState, type DataGridColumn, TypeChip } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, NoResultsState, type DataGridColumn, TypeChip } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { MovementKind, MovementRow } from "@/lib/inventory/types";
@@ -48,7 +48,6 @@ export function History({ api, itemId, onClearItem, refreshKey, projectId = null
   const needle = search.trim().toLocaleLowerCase();
   const searched = (rows ?? []).filter((row) => !needle || `${row.itemName} ${row.locationName} ${row.projectReference ?? ""} ${row.forProjectReference ?? ""} ${row.reason}`
     .toLocaleLowerCase().includes(needle));
-  const count = (key: Exclude<Kind, "all">) => searched.filter((row) => GROUPS[key].includes(row.kind)).length;
   const shown = kind === "all" ? searched : searched.filter((row) => GROUPS[kind].includes(row.kind));
   const columns = useMemo<DataGridColumn<MovementRow>[]>(() => [
     { id: "when", header: t("Date"), accessorFn: (row) => row.movedOn, size: 130, meta: { renderCell: (row) => format.day(row.movedOn) } },
@@ -67,13 +66,12 @@ export function History({ api, itemId, onClearItem, refreshKey, projectId = null
   const reference = projectId ? (rows ?? []).find((row) => row.forProjectReference || row.projectReference) : undefined;
   return <DataGrid<MovementRow> ariaLabel={t("History")} columns={columns} data={shown} getRowId={(row) => row.id} isLoading={!rows}
     onSearchChange={setSearch} searchValue={search} searchLabel={t("Search history")} rowNumbers={false} selectable={false} wrapText
-    toolbarLeading={<div className={styles.filters}>
-      <ListTabs label={t("History")} value={kind} onChange={setKind} items={[
-        { id: "all", label: t("All") }, { id: "in", label: t("In"), count: count("in") }, { id: "out", label: t("Out"), count: count("out") },
-        { id: "moves", label: t("Moves"), count: count("moves") }, { id: "reserved", label: t("Reserved"), count: count("reserved") },
-        { id: "corrections", label: t("Corrections"), count: count("corrections") }, { id: "made", label: t("Made"), count: count("made") }]} />
+    filters={[{ id: "kind", label: t("Kind"), value: kind === "all" ? undefined : kind, onChange: (value) => setKind((value as Kind | undefined) ?? "all"),
+      options: [{ id: "in", label: t("In") }, { id: "out", label: t("Out") }, { id: "moves", label: t("Moves") }, { id: "reserved", label: t("Reserved") },
+        { id: "corrections", label: t("Corrections") }, { id: "made", label: t("Made") }] }]}
+    toolbarLeading={projectId || itemId ? <div className={styles.filters}>
       <ProjectFilterChip project={projectId ? { id: projectId, reference: reference?.forProjectReference ?? reference?.projectReference ?? t("This project") } : null} onClear={() => onProject(null)} />
       {itemId ? <Button size="compact" variant="quiet" onPress={onClearItem}>{t("Show every item")}</Button> : null}
-    </div>}
-    emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No stock changes yet")} />} />;
+    </div> : undefined}
+    emptyContent={needle || kind !== "all" ? <NoResultsState onClear={() => { setSearch(""); setKind("all"); }} /> : <EmptyState title={t("No stock changes yet")} />} />;
 }

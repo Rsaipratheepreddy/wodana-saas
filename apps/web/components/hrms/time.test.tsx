@@ -167,7 +167,7 @@ describe("Time", () => {
     const person: TeamTimeWeek["people"][number] = { ...week(), membershipId: "m3", name: "Omar Joiner", scheduledMinutes: 1920, canDecide: false };
     mount(({ path }) => (path === "time/team" ? { weekStart: "2026-09-21", people: [person] } : undefined));
     page("team");
-    await userEvent.click(await screen.findByRole("radio", { name: "Time" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Time" }));
     const table = await grid("Team hours");
     expect(within(table).getAllByRole("row")[1]).toHaveTextContent(/Omar Joiner.*10h 0m.*32h 0m.*Draft/);
   });
@@ -190,7 +190,7 @@ describe("Payroll", () => {
     const employees = await grid("Employees");
     expect(calls.find((call) => call.path === "payroll")!.query.get("month")).toBe("2026-09");
     expect(within(employees).getAllByRole("row")[1]).toHaveTextContent(/Omar Joiner.*PL-07 · Foreman.*Site.*22.*19\.5.*160.*6.*2.*0\.5.*0.*1/);
-    await userEvent.click(screen.getByRole("radio", { name: "Crew workers" }));
+    await userEvent.click(screen.getByRole("button", { name: "Crew workers" }));
     const workers = await grid("Crew workers");
     expect(within(workers).getAllByRole("row")[1]).toHaveTextContent(/Ravi Kumar.*W-01.*Carpentry.*Joinery A.*21\.5.*4.*AED\s?3,870\.00.*1/);
     await userEvent.click(screen.getAllByRole("button", { name: "Table options" }).at(-1)!);

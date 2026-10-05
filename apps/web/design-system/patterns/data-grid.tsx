@@ -117,6 +117,9 @@ export type DataGridProps<T> = {
   toolbarLeading?: ReactNode;
   /** Filters that are not columns; offered under "Filter" and shown as chips once used. */
   filters?: ToolbarFilter[];
+  /** The page's secondary actions, at the top of the toolbar's ⋯ menu. */
+  menuActions?: Array<{ id: string; label: string }>;
+  onMenuAction?: (id: string) => void;
   selectedView?: string;
   onViewChange?: (view: string) => void;
   virtualizeAfter?: number;
@@ -230,6 +233,8 @@ export function DataGrid<T>({
   savedViews = [],
   toolbarLeading,
   filters,
+  menuActions,
+  onMenuAction,
   selectedView,
   showFooter = true,
   showToolbar = true,
@@ -346,7 +351,7 @@ export function DataGrid<T>({
   };
 
   return <section className="wd-data-grid" aria-label={ariaLabel} data-grid-lines={gridLines || undefined} data-row-numbers={rowNumbers || undefined} data-wrap-text={wrapText || undefined}>
-    {showToolbar ? <DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={title} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} filters={filters} onExport={exportRows} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} /> : null}
+    {showToolbar ? <DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={title} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} filters={filters} menuActions={menuActions} onMenuAction={onMenuAction} onExport={exportRows} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} /> : null}
     {selectedRows.length ? <div className="wd-bulk-bar"><strong>{t("{count} selected", { count: selectedRows.length })}</strong><div>{bulkActions?.(selectedRows)}</div><IconButton aria-label={t("Clear selection")} onPress={() => setSelection({})}><X size={14} /></IconButton></div> : null}
     {error ? <div className="wd-table-scroll wd-grid-state"><ErrorState title={error} /></div> : isLoading ? <div className="wd-table-scroll wd-grid-state"><div aria-label={t("Loading {name}", { name: ariaLabel })} className="wd-grid-loading" role="status"><TableSkeleton rows={8} widths={table.getVisibleLeafColumns().filter((column) => !column.id.startsWith("__")).map((column) => Math.max(1, column.getSize() / 100))} /></div></div> : !rows.length && !keepEmptyTable ? <div className="wd-table-scroll wd-grid-state">{emptyContent ?? <EmptyState description={emptyDescription} title={emptyTitle} />}</div> : <div className="wd-table-scroll" ref={scrollRef} tabIndex={0}>
       <table aria-label={ariaLabel} className="wd-table wd-record-table" data-virtual={virtual || undefined} style={{ inlineSize: table.getCenterTotalSize(), minInlineSize: "100%" }}>

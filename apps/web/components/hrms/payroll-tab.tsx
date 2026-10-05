@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { HrmsBootstrap, PayrollMonth } from "@wodana/contracts";
-import { DataGrid, EmptyState, ErrorState, SegmentedControl, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { ListTabs, DataGrid, EmptyState, ErrorState, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi, PayrollKind } from "@/lib/hrms/api";
 import { addMonths } from "@/lib/hrms/time";
@@ -63,8 +63,7 @@ export function PayrollTab({ api, boot }: { api: HrmsApi; boot: HrmsBootstrap })
   ], [t, count, money]);
   const monthLabel = new Intl.DateTimeFormat(locale, { timeZone: "UTC", month: "long", year: "numeric" }).format(new Date(`${month}-01T00:00:00Z`));
   const tools = <div className={styles.toolbar}>
-    <SegmentedControl label={t("Show")} value={view} onChange={(value) => setView(value as PayrollKind)}
-      options={[{ id: "employees", label: t("Employees") }, { id: "workers", label: t("Crew workers") }]} />
+    <ListTabs label={t("Show")} value={view} onChange={setView} items={[{ id: "employees", label: t("Employees") }, { id: "workers", label: t("Crew workers") }]} />
     <PeriodStepper label={monthLabel} previousLabel={t("Previous month")} nextLabel={t("Next month")} canNext={month < thisMonth}
       onPrevious={() => setMonth(addMonths(month, -1))} onNext={() => setMonth(addMonths(month, 1))} />
   </div>;

@@ -5,7 +5,7 @@ import { parseDate } from "@internationalized/date";
 import type { HrmsBootstrap, HrmsCrewState, HrmsDocument, HrmsDocumentKind, HrmsDocuments, HrmsPerson } from "@wodana/contracts";
 import {
   Button, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorState, FileUploader, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, SelectField, Skeleton,
-  TextAreaField, TextInput, type DataGridColumn,
+  TextAreaField, TextInput, type DataGridColumn, type ToolbarFilter,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
@@ -48,12 +48,12 @@ export function DocumentsTab({ api, boot, creating, onCreateDone, openId, onOpen
     return () => { live = false; };
   }, [api, boot.permissions.manage]);
   const columns = useMemo<DataGridColumn<HrmsDocument>[]>(() => [
-    ...(manage ? [{ id: "person", header: t("Person"), accessorFn: (row: HrmsDocument) => row.personName ?? "", size: 200, meta: { primary: true,
+    ...(manage ? [{ id: "person", header: t("Person"), enableColumnFilter: false, accessorFn: (row: HrmsDocument) => row.personName ?? "", size: 200, meta: { primary: true,
       renderCell: (row: HrmsDocument) => <span className={styles.nameCell}><span>{row.personName}</span>{row.workerId ? <small>{t("Crew worker")}</small> : null}</span> } }] : []),
     { id: "document", header: t("Document"), accessorFn: (row) => row.title, size: 260, meta: { primary: !manage,
       renderCell: (row) => <span className={styles.nameCell}><span>{row.title}</span><small>{[kinds[row.kind], row.number].filter(Boolean).join(" · ")}</small></span> } },
     { id: "expires", header: t("Expires"), accessorFn: (row) => row.expiresOn ?? "9999", size: 140, meta: { renderCell: (row) => (row.expiresOn ? format.date(row.expiresOn) : <span className={styles.muted}>{t("No expiry")}</span>) } },
-    { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 130, meta: { renderCell: (row) => <DocumentStatus status={row.status} /> } },
+    { id: "status", header: t("Status"), enableColumnFilter: false, accessorFn: (row) => row.status, size: 130, meta: { renderCell: (row) => <DocumentStatus status={row.status} /> } },
   ], [t, format, kinds, manage]);
   if (error && !data) return <ErrorState description={error} onRetry={() => void load()} />;
   const documents = data?.documents ?? [];
@@ -64,20 +64,20 @@ export function DocumentsTab({ api, boot, creating, onCreateDone, openId, onOpen
     && (person === "all" || subjectKey(document) === person)
     && (!needle || [document.personName, document.title, document.number, kinds[document.kind]].some((value) => value?.toLocaleLowerCase().includes(needle))))
     .sort((a, b) => order[a.status] - order[b.status] || (a.expiresOn ?? "9999").localeCompare(b.expiresOn ?? "9999"));
-  const filters = manage ? <div className={styles.toolbar}>
-    <SelectField label={t("Status")} selectedKey={status} onSelectionChange={(key) => setStatus((key ?? "all") as Status | "all")}
-      items={[{ id: "all", label: t("Any status") }, { id: "expired", label: t("Expired") }, { id: "expiring", label: t("Expiring") }, { id: "valid", label: t("Valid") }]} />
-    <SelectField label={t("Kind")} selectedKey={kind} onSelectionChange={(key) => setKind((key ?? "all") as HrmsDocumentKind | "all")}
-      items={[{ id: "all", label: t("Any kind") }, ...DOCUMENT_KINDS.map((item) => ({ id: item, label: kinds[item] }))]} />
-    <SelectField label={t("Person")} selectedKey={person} onSelectionChange={(key) => setPerson(key ? String(key) : "all")}
-      items={[{ id: "all", label: t("Everyone") }, ...people.map(([id, name]) => ({ id, label: name }))]} />
-  </div> : undefined;
+  const filters: ToolbarFilter[] = manage ? [
+    { id: "status", label: t("Status"), value: status === "all" ? undefined : status, onChange: (value) => setStatus((value as Status | undefined) ?? "all"),
+      options: [{ id: "expired", label: t("Expired") }, { id: "expiring", label: t("Expiring") }, { id: "valid", label: t("Valid") }] },
+    { id: "kind", label: t("Kind"), value: kind === "all" ? undefined : kind, onChange: (value) => setKind((value as HrmsDocumentKind | undefined) ?? "all"),
+      options: DOCUMENT_KINDS.map((item) => ({ id: item, label: kinds[item] })) },
+    { id: "person", label: t("Person"), value: person === "all" ? undefined : person, onChange: (value) => setPerson(value ?? "all"),
+      options: people.map(([id, name]) => ({ id, label: name })) },
+  ] : [];
   const filtered = needle || status !== "all" || kind !== "all" || person !== "all";
   const open = openId ? documents.find((document) => document.id === openId) ?? null : null;
   const done = () => { void load(); if (creating) onCreateDone(); else onOpen(null); };
   return <>
     <DataGrid<HrmsDocument> ariaLabel={t("Documents")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!data} onRowAction={(row) => onOpen(row.id)}
-      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search documents")} rowNumbers={false} selectable={false} wrapText toolbarLeading={filters}
+      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search documents")} rowNumbers={false} selectable={false} filters={filters}
       emptyContent={filtered ? <NoResultsState onClear={() => { setSearch(""); setStatus("all"); setKind("all"); setPerson("all"); }} /> : <EmptyState title={t("No documents yet")} />} />
     {data && (open || creating) ? <DocumentSheet key={open?.id ?? "new"} api={api} document={creating ? null : open} manage={manage} subjects={subjects}
       onClose={() => (creating ? onCreateDone() : onOpen(null))} onDone={done} /> : null}

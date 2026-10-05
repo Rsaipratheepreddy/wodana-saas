@@ -146,7 +146,7 @@ function GateList({ access, people, projectName, documents, onDone }: {
       {identity?.logoUrl ? <img src={identity.logoUrl} alt={identity.name} /> : null}
       <div>
         <strong>{identity?.name}</strong>
-        <h1>{projectName}</h1>
+        <h2>{projectName}</h2>
         <p>{t("Cleared for site on {date}", { date: format.longDay(access.day) })}</p>
       </div>
     </header>

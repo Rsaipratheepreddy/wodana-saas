@@ -4,11 +4,12 @@ import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSection } from "@/lib/navigation/use-section";
 import { Plus, ScanLine } from "lucide-react";
-import { Button, PageHeader, Tabs } from "@/design-system";
+import { Button, PageShell } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { RECEIVE_PATH } from "@/lib/operations/receive-link";
 import { purchasingApi } from "@/lib/purchasing/client";
 import type { PurchasingSection } from "@/lib/purchasing/sections";
+import { moduleTabs } from "../operations/module-tabs";
 import { useProjectFilter, withProject } from "../operations/ops";
 import { CreateOrderDialog } from "./create-order-dialog";
 import { Deliveries } from "./deliveries";
@@ -17,7 +18,6 @@ import { Orders } from "./orders";
 import { PriceRequests } from "./price-requests";
 import { Suppliers } from "./suppliers";
 import { ToOrder, type ToOrderView } from "./to-order";
-import styles from "./purchasing.module.css";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
 
 const PURCHASING_SCOPES = ["purchasing"] as const;
@@ -61,9 +61,7 @@ export function PurchasingPage({ workspaceId, section: initialSection }: { works
     : section === "suppliers" ? <Button variant="primary" onPress={() => setAddingSupplier(true)}><Plus aria-hidden="true" size={15} />{t("Add supplier")}</Button>
     // Deliveries: receive by scanning the code on the printed order or move (D-46).
     : section === "deliveries" ? <Button variant="primary" onPress={() => router.push(RECEIVE_PATH)}><ScanLine aria-hidden="true" size={15} />{t("Scan to receive")}</Button> : null;
-  return <div className={styles.page}>
-    <PageHeader title={t("Purchasing")} actions={action} />
-    <Tabs tour="purchasing-tab" selectedKey={section} onSelectionChange={(key) => go(key as PurchasingSection)} items={[
+  const { tabs, content } = moduleTabs<PurchasingSection>({ t, tour: "purchasing-tab", value: section, onChange: (key) => go(key), items: [
       { id: "to-order", label: t("To order"), panel: <ToOrder api={api} workspaceId={workspaceId} projectId={projectId} onProject={setProjectId} initialView={toOrderView}
         onCreated={(id) => { setRefresh((value) => value + 1); go("orders", id); }} onAsked={(id) => { setRefresh((value) => value + 1); go("price-requests", id); }}
         onOrders={() => go("orders")} refreshKey={refresh} /> },
@@ -75,7 +73,9 @@ export function PurchasingPage({ workspaceId, section: initialSection }: { works
         onOpenReturn={(id) => go("deliveries", id, "return")} onOpenUnmatched={(id) => go("deliveries", id, "unmatched")} onOpenOrder={(id) => go("orders", id)}
         projectId={projectId} onProject={setProjectId} /> },
       { id: "suppliers", label: t("Suppliers"), panel: <Suppliers api={api} adding={addingSupplier} onAddingChange={setAddingSupplier} /> },
-    ]} />
+    ] });
+  return <PageShell title={t("Purchasing")} action={action} tabs={tabs}>
+    {content}
     {newOrder ? <CreateOrderDialog api={api} needs={[]} onClose={() => setNewOrder(false)} onCreated={(id) => { setNewOrder(false); setRefresh((value) => value + 1); go("orders", id); }} /> : null}
-  </div>;
+  </PageShell>;
 }

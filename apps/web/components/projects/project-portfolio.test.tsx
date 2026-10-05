@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { jsonRequest } from "@/lib/commercial/client";
@@ -23,9 +23,25 @@ describe("project portfolio", () => {
     render(<ProjectPortfolio rows={[project]} today="2026-09-17" workspaceId="workspace" />);
     await user.click(screen.getByRole("radio", { name: "Table" }));
     expect(screen.getByRole("table", { name: "Projects" })).toBeInTheDocument();
-    expect(screen.getByText("Amira Hassan")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Jumeirah villa interiors" }));
+    expect(screen.getByText("Amira Hassan · PRJ-001")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Jumeirah villa interiors/ }));
     expect(push).toHaveBeenCalledWith("/workspace/projects/project-id/overview");
+  });
+
+  it("has one title, one primary action, status tabs under the title and project cards", async () => {
+    const user = userEvent.setup();
+    render(<ProjectPortfolio rows={[project, { ...project, id: "done", name: "Marina office", phase: "completed" }]} today="2026-09-17" workspaceId="workspace" />);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Start project" })).toHaveLength(1);
+    const card = screen.getByRole("heading", { level: 2, name: "Jumeirah villa interiors" }).closest("article")!;
+    expect(within(card).getByRole("link", { name: "Jumeirah villa interiors" })).toHaveAttribute("href", "/workspace/projects/project-id/overview");
+    await user.click(within(screen.getByRole("group", { name: "Project status" })).getByRole("button", { name: "Completed" }));
+    expect(screen.queryByText("Jumeirah villa interiors")).not.toBeInTheDocument();
+    expect(screen.getByText("Marina office")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("group", { name: "Project status" })).getByRole("button", { name: "Handover" }));
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("Jumeirah villa interiors")).toBeInTheDocument();
   });
 
   it("loads eligible planning cases before creating a project", async () => {
@@ -34,7 +50,7 @@ describe("project portfolio", () => {
       .mockResolvedValueOnce([{ id: "case-id", title: "Villa case", customer: "Amira Hassan" }])
       .mockResolvedValueOnce({ id: "new-project" });
     render(<ProjectPortfolio rows={[]} today="2026-09-17" workspaceId="workspace" />);
-    await user.click(screen.getByRole("button", { name: "Start project" }));
+    await user.click(screen.getAllByRole("button", { name: "Start project" })[0]);
     await waitFor(() => expect(jsonRequest).toHaveBeenCalledWith("/api/projects/candidates?workspaceId=workspace"));
     await user.click(screen.getByRole("button", { name: /Planning case/ }));
     await user.click(screen.getByRole("option", { name: "Villa case · Amira Hassan" }));

@@ -104,7 +104,7 @@ export function CrmSmartRules({ initialData, codes = SALES_RULES, title, embedde
         </Surface>)}
       </section>
     </div>;
-  return embedded ? (initialData.canView ? body : <NoAccessState area={t(title as never)} />) : <CrmProductShell title={title ?? t("Automations")} description="" canView={initialData.canView} useWorkspaceColors>{body}</CrmProductShell>;
+  return embedded ? (initialData.canView ? body : <NoAccessState area={t(title as never)} />) : <CrmProductShell title={title ?? t("Automations")} canView={initialData.canView} useWorkspaceColors>{body}</CrmProductShell>;
 }
 
 /** Sales → Settings → Automations, inside the Sales page like the other settings tabs. */

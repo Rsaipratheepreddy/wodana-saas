@@ -1,5 +1,4 @@
 /* Factory: what to make, work orders, their output and checks. */
-.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; }
 .stack { display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
 .muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .spacer { flex: 1; }
@@ -30,7 +29,6 @@
 .actions { display: flex; justify-content: flex-end; }
 
 @media (max-width: 640px) {
-  .page { padding: var(--wd-space-4); }
   .pair { grid-template-columns: minmax(0, 1fr); }
   .facts > div { grid-template-columns: minmax(0, 1fr); }
 }

@@ -19,7 +19,7 @@ describe("CrmCustomers", () => {
     expect(screen.getByText("Amira Al Mansoori")).toBeInTheDocument();
     expect(screen.getByText("Al Noor Developments LLC")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /^Companies\s*2$/ }));
+    await user.click(screen.getByRole("button", { name: "Companies" }));
     expect(screen.getByText("Al Noor Developments LLC")).toBeInTheDocument();
     expect(screen.queryByText("Amira Al Mansoori")).not.toBeInTheDocument();
   });
@@ -45,7 +45,7 @@ describe("CrmCustomers", () => {
     render(<CrmCustomers initialData={data} />);
 
     expect(screen.queryByText("Former Customer")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^Archived\s*1$/ }));
+    await user.click(screen.getByRole("button", { name: "Archived" }));
     expect(screen.getByText("Former Customer")).toBeInTheDocument();
     expect(screen.queryByText("Amira Al Mansoori")).not.toBeInTheDocument();
   });
@@ -120,4 +120,11 @@ it("edits a customer's profile and primary contact in place, each with its own v
   await user.type(within(dialog).getByRole("textbox", { name: "Given name" }), "h{Enter}");
   // The party's next change carries the version its last save returned.
   await waitFor(() => expect(crmRequest).toHaveBeenCalledWith(expect.anything(), `parties/${customer.id}`, "PATCH", { version: 4, givenName: "Amirah" }));
+});
+
+it("has one title, Add client top-end and the lists under it", () => {
+  render(<CrmCustomers initialData={structuredClone(crmScreenFixture("customers"))} />);
+  expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Clients"]);
+  expect(screen.getAllByRole("button", { name: "Add client" })).toHaveLength(1);
+  expect(within(screen.getByRole("group", { name: "Client lists" })).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["All", "People", "Companies", "Archived"]);
 });

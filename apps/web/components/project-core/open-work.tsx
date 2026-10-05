@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Avatar, EmptyState, ErrorState, GroupedTable, isNoAccessError, NoAccessState, MenuButton, SearchInput, SegmentedControl, Skeleton, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Avatar, EmptyState, ErrorState, GroupedTable, isNoAccessError, ListTabs, NoAccessState, MenuButton, NoResultsState, PageShell, SearchInput, SegmentedControl, Skeleton, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { OpenWork as OpenWorkState, OpenWorkItem, WorkBoard } from "@/lib/project-core/types";
@@ -51,7 +51,9 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
   const bucket = (due: string | null): Bucket => (!due ? "none" : due < today ? "late" : due === today ? "today" : due <= weekEnd ? "week" : "later");
   const bucketLabels: Record<Bucket, string> = { late: t("Late"), today: t("Today"), week: t("Next 7 days"), later: t("Later"), none: t("No due date") };
 
-  if (error && !data) return <div className={styles.openWork}>{isNoAccessError(error) ? <NoAccessState area={t("Projects")} /> : <ErrorState description={error} onRetry={() => void load()} />}</div>;
+  const tabs = <ListTabs label={t("Whose work")} value={view} onChange={(value) => { setView(value); if (value !== "team") setData(null); }}
+    items={[{ id: "mine", label: t("Mine") }, { id: "all", label: t("Everyone") }, ...(canSeeTeam ? [{ id: "team" as const, label: t("Team") }] : [])]} />;
+  if (error && !data) return <PageShell title={t("Tasks")} tabs={tabs}>{isNoAccessError(error) ? <NoAccessState area={t("Projects")} /> : <ErrorState description={error} onRetry={() => void load()} />}</PageShell>;
   const needle = search.trim().toLocaleLowerCase();
   const people = [...new Map((data?.items ?? []).map((item) => [item.assigneeId ?? "none", { id: item.assigneeId, name: item.assigneeName ?? t("No one") }])).values()]
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -73,22 +75,18 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
     { id: "status", label: t("Status"), width: "14%", mobileHidden: true, render: (item) => <StatusLabel status={item.status} /> },
   ];
 
-  return <div className={styles.openWork}>
-    <div className={styles.toolbar}>
+  return <PageShell title={t("Tasks")} tabs={tabs} toolbar={<div className={styles.toolbarGroup}>
       {view === "team" ? <SegmentedControl label={t("Period")} value={String(days)} onChange={(value) => setDays(value === "90" ? 90 : 30)}
-        options={[{ id: "30", label: t("Last 30 days") }, { id: "90", label: t("Last 90 days") }]} /> : <div className={styles.toolbarGroup}>
+        options={[{ id: "30", label: t("Last 30 days") }, { id: "90", label: t("Last 90 days") }]} /> : <>
         <SearchInput label={t("Search work")} placeholder={t("Search")} value={search} onChange={setSearch} />
         {view === "all" ? <MenuButton size="compact" label={who ? who.name : t("Everyone")} onAction={(id) => setWho(id === "everyone" ? null : people.find((person) => (person.id ?? "none") === id) ?? null)}
-          items={[{ id: "everyone", label: t("Everyone") }, ...people.map((person) => ({ id: person.id ?? "none", label: person.name }))]} /> : null}
-      </div>}
-      <SegmentedControl label={t("Whose work")} value={view} onChange={(value) => { setView(value as View); if (value !== "team") setData(null); }}
-        options={[{ id: "mine", label: t("Mine") }, { id: "all", label: t("Everyone") }, ...(canSeeTeam ? [{ id: "team", label: t("Team") }] : [])]} />
-    </div>
+          items={[{ id: "everyone", label: t("Everyone") }, ...people.map((person) => ({ id: person.id ?? "none", label: person.name }))]} /> : null}</>}
+    </div>}>
     {view === "team" ? <TeamInsights api={api} days={days} onPerson={(id, name) => { setWho({ id, name }); setView("all"); setData(null); }} />
       : !data ? <Skeleton lines={6} shape="rows" />
       : !data.items.length ? <EmptyState illustration={null} title={view === "mine" ? t("Nothing on your plate") : t("No open work")}
           description={view === "mine" ? t("Work given to you on any project shows here.") : undefined} />
-      : !items.length ? <EmptyState illustration={null} title={t("Nothing matches")} />
+      : !items.length ? <NoResultsState onClear={() => { setSearch(""); setWho(null); }} />
       : <GroupedTable<OpenWorkItem> ariaLabel={t("Open work")} columns={columns} sections={sections} selectable={false} getRowId={(item) => item.id}
           getRowLabel={(item) => `#${item.number} ${item.title}`} onRowAction={(item) => void open(item)} />}
     {opened?.error ? <ErrorState description={opened.error} onRetry={() => setOpened(null)} /> : null}
@@ -96,5 +94,5 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
       onBoard={(board) => setOpened((current) => (current ? { ...current, board } : current))}
       onOpenItem={(itemId) => setOpened((current) => (current ? { ...current, itemId } : current))}
       onClose={() => { setOpened(null); void load(); }} /> : null}
-  </div>;
+  </PageShell>;
 }

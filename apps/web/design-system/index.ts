@@ -27,6 +27,7 @@ export * from "./components/overlays";
 export * from "./components/status";
 export * from "./components/skeleton";
 export * from "./patterns/data-grid";
+export { ToolbarSearch } from "./patterns/data-grid-toolbar";
 export * from "./organisms/record-table";
 export * from "./patterns/page-header";
 export * from "./patterns/settings";

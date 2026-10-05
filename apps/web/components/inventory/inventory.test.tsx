@@ -50,6 +50,10 @@ describe("inventory", () => {
     expect(glue).toHaveTextContent("17 nos");
     expect(await rowOf("Calacatta slab")).toHaveTextContent("PRJ-0007");
     expect(screen.getByRole("tab", { name: /^Moves\s*1$/ })).toBeInTheDocument();
+    // One title under the shared page header, the one primary action, and the sections as tabs under it.
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Inventory"]);
+    expect(screen.getAllByRole("button", { name: "Move stock" })).toHaveLength(1);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Stock", "Moves1", "History"]);
     // A project's stock names its project as a link.
     expect(within(await rowOf("Calacatta slab")).getByRole("link", { name: "PRJ-0007" })).toHaveAttribute("href", "/workspace/projects/p1");
     await userEvent.click(within(glue).getByRole("button", { name: "Actions" }));

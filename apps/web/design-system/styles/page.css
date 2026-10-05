@@ -91,13 +91,13 @@
 .wd-card-grid > * > .wd-card, .wd-card-grid > .wd-card { block-size: 100%; }
 
 /* ── Toolbar: search is an icon until used; filters in use are chips; nothing else shows (§5c D1) ─────── */
-.wd-record-toolbar .wd-record-search:not([data-open]):not(:focus-within) { flex: 0 0 var(--wd-button-height-compact); min-inline-size: var(--wd-button-height-compact); border-color: transparent; background: transparent; }
-.wd-record-toolbar .wd-record-search .wd-search-field > svg { flex: none; }
-.wd-record-toolbar .wd-record-search:not([data-open]):not(:focus-within) .wd-search-field { position: relative; justify-content: center; padding-inline: 0; cursor: pointer; }
-.wd-record-toolbar .wd-record-search:not([data-open]):not(:focus-within) .wd-input { position: absolute; inset: 0; inline-size: 100%; opacity: 0; cursor: pointer; }
+.wd-record-search[data-collapsible]:not([data-open]):not(:focus-within) { flex: 0 0 var(--wd-button-height-compact); min-inline-size: var(--wd-button-height-compact); border-color: transparent; background: transparent; }
+.wd-record-search[data-collapsible] .wd-search-field > svg { flex: none; }
+.wd-record-search[data-collapsible]:not([data-open]):not(:focus-within) .wd-search-field { position: relative; justify-content: center; padding-inline: 0; cursor: pointer; }
+.wd-record-search[data-collapsible]:not([data-open]):not(:focus-within) .wd-input { position: absolute; inset: 0; inline-size: 100%; opacity: 0; cursor: pointer; }
 .wd-record-toolbar:not([data-compact]) .wd-record-tools { justify-content: flex-end; }
-.wd-record-toolbar .wd-record-search:not([data-open]):not(:focus-within):hover { background: var(--wd-color-surface-muted); }
-.wd-record-toolbar .wd-record-search:is([data-open], :focus-within) { flex: 0 1 16rem; min-inline-size: 12rem; }
+.wd-record-search[data-collapsible]:not([data-open]):not(:focus-within):hover { background: var(--wd-color-surface-muted); }
+.wd-record-search[data-collapsible]:is([data-open], :focus-within) { flex: 0 1 16rem; min-inline-size: 12rem; }
 .wd-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; }
 .wd-filter-chip { display: inline-flex; align-items: center; gap: var(--wd-space-1); min-block-size: var(--wd-button-height-compact); padding-inline: var(--wd-space-2) var(--wd-space-0-5); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-muted); color: var(--wd-color-text); font-size: var(--wd-text-xs); white-space: nowrap; }
 .wd-filter-chip-label { color: var(--wd-color-text-secondary); }
@@ -121,3 +121,5 @@
 }
 /* Number columns: the header sits over its figures (end-aligned). */
 .wd-data-grid th[data-align="end"] :is(.wd-column-head-content, .wd-sort-button, .wd-column-header) { justify-content: flex-end; text-align: end; }
+.wd-record-menu-actions { display: grid; gap: var(--wd-space-0-5); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.wd-record-menu-actions .wd-button { justify-content: flex-start; }

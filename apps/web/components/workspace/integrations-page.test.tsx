@@ -46,6 +46,9 @@ describe("IntegrationsPage", () => {
   });
   it("finds accounting tools by business purpose", async () => {
     render(<IntegrationsPage initialData={structuredClone(integrationsPageFixture)} />);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Connections"]);
+    expect(within(screen.getByRole("group", { name: "Connection purpose" })).getAllByRole("button").map((tab) => tab.textContent))
+      .toEqual(["All apps", "Talk to clients", "Invoices & payments", "Calendar & files"]);
     await userEvent.click(screen.getByRole("button", { name: "Invoices & payments" }));
     expect(screen.getByRole("article", { name: "QuickBooks integration" })).toBeVisible();
     expect(screen.queryByRole("article", { name: "Google Workspace integration" })).not.toBeInTheDocument();

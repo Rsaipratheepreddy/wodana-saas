@@ -155,16 +155,16 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
     { id: "all" as const, label: t("All"), count: summary?.all },
   ];
 
-  return <CrmProductShell title={t("Inbox")} description={t("Customer conversations")} canView={initialData.canView} compact header={false} useWorkspaceColors>
+  return <CrmProductShell title={t("Inbox")} canView={initialData.canView} compact useWorkspaceColors
+    actions={<Button variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={15} />{t("New conversation")}</Button>}>
     <div className={styles.inbox} data-selected={Boolean(selected)} onKeyDown={onKeyDown}>
       <section aria-label={t("Customer conversations")} className={styles.threadList}>
-        <header className={styles.listHeading}><h1>{t("Inbox")}</h1><div className={styles.actions}>
+        <div className={styles.listHeading}><div className={styles.actions}>
           <IconButton aria-label={selecting ? t("Stop selecting") : t("Select chats")} size="compact" onPress={() => { setSelecting((value) => !value); setPicked(new Set()); }}><CheckSquare size={16} /></IconButton>
           <IconButton aria-label={t("Refresh inbox")} size="compact" isLoading={busy} onPress={() => void reload()}><RefreshCw size={16} /></IconButton>
           {lookups.settings?.canManage ? <IconButton aria-label={t("Simulate a client message (demo)")} size="compact" onPress={() => setSimulating(true)}><FlaskConical size={16} /></IconButton> : null}
           {lookups.settings?.canManage ? <Link aria-label={t("Inbox settings")} className={styles.iconLink} href="/workspace/settings/inbox"><Settings2 aria-hidden="true" size={16} /></Link> : null}
-          <IconButton aria-label={t("New conversation")} className={styles.brandButton} variant="primary" size="compact" onPress={() => setCreating(true)}><Plus size={19} /></IconButton>
-        </div></header>
+        </div></div>
         <div className={styles.views}><ListTabs label={t("Inbox views")} items={viewItems} value={view} onChange={chooseView} /></div>
         {view === "team" && team.length ? <div className={styles.teamLoad} role="group" aria-label={t("Open chats per person")}>
           {team.map((person) => <button key={person.id} type="button" aria-pressed={ownerFilter === person.id} onClick={() => setOwnerFilter((current) => current === person.id ? "" : person.id)}>

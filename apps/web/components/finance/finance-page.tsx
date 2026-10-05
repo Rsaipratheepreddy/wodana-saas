@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSection } from "@/lib/navigation/use-section";
-import { Button, PageHeader, Tabs } from "@/design-system";
+import { Button, PageShell } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { payablesApi } from "@/lib/payables/client";
 import { receivablesApi } from "@/lib/receivables/client";
@@ -18,15 +18,15 @@ import { PaymentRuns } from "./payment-runs";
 import { Payments } from "./payments";
 import { PettyCash } from "./petty-cash";
 import { SuppliersOwed } from "./suppliers-owed";
-import styles from "./finance.module.css";
+import { moduleTabs, type ModuleTab } from "../operations/module-tabs";
 
 const PAYABLES_SECTIONS = ["bills", "payments", "runs", "suppliers"] as const;
 
-/** Tabs when there is a choice; a single tab is just its panel. */
-function FinanceTabs(props: ComponentProps<typeof Tabs>) {
-  const items = [...(props.items ?? [])];
-  return items.length === 1 ? <>{items[0].panel}</> : <Tabs {...props} />;
-}
+/**
+ * Over six tabs, the read-mostly views (what each supplier is owed, accounting postings) sit under "More";
+ * the daily queues (invoices, payments, runs, petty cash, client invoices) stay one click away.
+ */
+const MORE: FinanceSection[] = ["suppliers", "accounting"];
 
 const OPEN_PARAM: Record<Exclude<FinanceSection, "suppliers" | "accounting">, string> = { bills: "bill", payments: "payment", runs: "run", "petty-cash": "claim", "client-invoices": "invoice" };
 
@@ -60,14 +60,12 @@ export function FinancePage({ workspaceId, section: initialSection, sections = F
   const action = !state?.canManage || section === "petty-cash" || section === "client-invoices" || section === "accounting" ? undefined : section === "runs"
     ? <Button variant="primary" onPress={() => setPreparing(true)}>{t("New run")}</Button>
     : <Button variant="primary" onPress={() => setEntering(true)}>{t("Enter invoice")}</Button>;
-  return <div className={styles.page}>
-    <PageHeader title={t("Finance")} actions={action} />
-    <FinanceTabs selectedKey={section} onSelectionChange={(key) => go(key as FinanceSection)} items={[
-      { id: "bills", label: held ? t("Supplier invoices ({count})", { count: held }) : t("Supplier invoices"),
+  const { tabs, content } = moduleTabs<FinanceSection>({ t, value: section, onChange: (key) => go(key), more: MORE, items: ([
+      { id: "bills", label: t("Supplier invoices"), count: held,
         panel: <Bills api={api} state={state} error={error} openId={params.get("bill")} onReload={() => void load()} onOpen={(id) => go("bills", id)} /> },
       { id: "payments", label: t("Payments"),
         panel: <Payments api={api} state={state} error={error} openId={params.get("payment")} onReload={() => void load()} onOpen={(id) => go("payments", id)} onOpenBill={(id) => go("bills", id)} /> },
-      { id: "runs", label: toApprove ? t("Payment runs ({count})", { count: toApprove }) : t("Payment runs"),
+      { id: "runs", label: t("Payment runs"), count: toApprove,
         panel: <PaymentRuns api={api} state={state} error={error} openId={params.get("run")} creating={preparing} onReload={() => void load()} onOpen={(id) => go("runs", id)}
           onCreated={(id) => { setPreparing(false); if (id) go("runs", id); }} /> },
       { id: "suppliers", label: t("Owed to suppliers"),
@@ -77,8 +75,10 @@ export function FinancePage({ workspaceId, section: initialSection, sections = F
       { id: "client-invoices", label: t("Client invoices"),
         panel: <ClientInvoices api={receivables} openId={params.get("invoice")} onOpen={(id) => go("client-invoices", id)} /> },
       { id: "accounting", label: t("Accounting"), panel: <AccountingPostings api={accounting} /> },
-    ].filter((item) => sections.includes(item.id as FinanceSection))} />
+    ] satisfies Array<ModuleTab<FinanceSection>>).filter((item) => sections.includes(item.id)) });
+  return <PageShell title={t("Finance")} action={action} tabs={tabs}>
+    {content}
     {entering && state ? <BillEditor api={api} vendors={state.vendors} companies={state.companies} onClose={() => setEntering(false)}
       onSaved={(id) => { setEntering(false); void load(); go("bills", id); }} /> : null}
-  </div>;
+  </PageShell>;
 }

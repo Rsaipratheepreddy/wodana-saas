@@ -32,19 +32,9 @@ const OWN_TITLE = new Set([
 /** Staff screens still drawing their own header; each moves to PageShell when its module is rebuilt. */
 const OWN_HEADER_TO_FIX = new Set([
   "app/workspace/[[...section]]/page.tsx",
-  "app/workspace/coming-soon/page.tsx",
   "app/workspace/pre-projects/cases/[caseId]/[[...section]]/page.tsx",
-  "components/commercial/commercial-page.tsx",
-  "components/commercial/quotation-templates-page.tsx",
-  "components/crm/crm-inbox.tsx",
-  "components/crm/crm-overview.tsx",
-  "components/crm/crm-screen-page.tsx",
-  "components/crm/lead-form-share.tsx",
   "components/flows/flow-builder.tsx",
-  "components/hrms/site-access.tsx",
-  "components/pre-project/planning-approvals.tsx",
   "components/quotation/quote-builder.tsx",
-  "components/workspace/integrations-page.tsx",
 ]);
 
 /** Div grids standing in for tables; each becomes DataGrid / GroupedTable / DocumentTable when its module is rebuilt. */

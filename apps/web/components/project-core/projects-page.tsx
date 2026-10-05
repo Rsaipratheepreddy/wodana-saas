@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Play } from "lucide-react";
-import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, NoResultsState, PageHeader, SegmentedControl, Tag, type DataGridColumn } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, ListTabs, NoResultsState, PageShell, RecordName, type DataGridColumn, type StatusTone, type ToolbarFilter } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { ProjectRow, ReadyCase } from "@/lib/project-core/types";
@@ -15,6 +15,7 @@ import styles from "./project-core.module.css";
 type Filter = "open" | "on_hold" | "closed";
 /** Home's Projects health links here: late = off track or past its promised date, at risk = flagged at risk. */
 export type HealthFilter = "on-track" | "at-risk" | "late";
+const STATUS_TONE: Record<string, StatusTone> = { ok: "success", risk: "warning", off: "danger", hold: "neutral", done: "info" };
 
 /** Every project the person can see, one row each: where it is, what's next and when it's due. */
 export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: string; initialHealth?: HealthFilter }) {
@@ -50,34 +51,39 @@ export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: stri
     return !query || [row.name, row.reference, row.clientName, row.lead ?? ""].some((value) => value.toLocaleLowerCase().includes(query));
   }), [rows, filter, search, health, format]);
 
-  // Seven columns that fit the content area at 1440 px (Status stays on screen); text wraps inside them.
   const columns = useMemo<DataGridColumn<ProjectRow>[]>(() => [
-    { id: "name", header: t("Project"), accessorFn: (row) => `${row.name} ${row.reference}`, size: 220, meta: { primary: true, interactive: true, renderCell: (row) => <span className={styles.nameCell}>
-      <Link data-tour="project-open" href={`/workspace/projects/${row.id}`}>{row.name}</Link><small>{row.reference}</small></span> } },
-    { id: "client", header: t("Client"), accessorFn: (row) => row.clientName, size: 150 },
-    { id: "stage", header: t("Stage"), accessorFn: (row) => row.stage?.name ?? "", size: 160, meta: { renderCell: (row) => row.stage
-      ? <span className={styles.stageCell}>{row.stage.name}<small>{t("{position} of {count}", { position: row.stage.position, count: row.stage.count })}</small></span> : null } },
-    { id: "next", header: t("Next step"), accessorFn: (row) => row.next?.text ?? "", size: 230, meta: { mobileHidden: true, renderCell: (row) => row.status === "active" && row.next
-      ? <span className={styles.nextCell}>{row.next.text}{row.next.owner ? <small>{row.next.owner}</small> : null}</span> : null } },
-    { id: "attention", header: t("Needs a look"), accessorFn: (row) => (row.attention?.late ?? 0) * 1000 + (row.attention?.blocked ?? 0), size: 130, meta: { mobileHidden: true, renderCell: (row) => {
+    { id: "name", header: t("Project"), accessorFn: (row) => `${row.name} ${row.reference} ${row.clientName}`, size: 260, meta: { primary: true, interactive: true, renderCell: (row) =>
+      <RecordName detail={[row.clientName, row.reference].filter(Boolean).join(" · ")} title={<Link className={styles.open} data-tour="project-open" href={`/workspace/projects/${row.id}`}>{row.name}</Link>} /> } },
+    { id: "status", header: t("Status"), accessorFn: (row) => status(row.status, row.health).label, size: 120, meta: { renderCell: (row) => {
+      const value = status(row.status, row.health);
+      return <Badge tone={STATUS_TONE[value.tone] ?? "success"}>{value.label}</Badge>;
+    } } },
+    { id: "stage", header: t("Stage"), accessorFn: (row) => row.stage?.name ?? "", size: 170, meta: { renderCell: (row) => row.stage
+      ? <RecordName title={row.stage.name} detail={t("{position} of {count}", { position: row.stage.position, count: row.stage.count })} /> : null } },
+    { id: "next", header: t("Next step"), accessorFn: (row) => row.next?.text ?? "", size: 230, meta: { priority: "medium", renderCell: (row) => row.status === "active" && row.next
+      ? <RecordName title={row.next.text} detail={row.next.owner} /> : null } },
+    { id: "attention", header: t("Needs a look"), accessorFn: (row) => (row.attention?.late ?? 0) * 1000 + (row.attention?.blocked ?? 0), size: 130, meta: { priority: "low", renderCell: (row) => {
       const parts = [row.attention?.late ? t("{count} late", { count: row.attention.late }) : "", row.attention?.blocked ? t("{count} blocked", { count: row.attention.blocked }) : ""].filter(Boolean);
       return row.status === "active" && parts.length ? <Link className={styles.attention} data-late={row.attention?.late ? true : undefined}
         href={`/workspace/projects/${row.id}/plan?filter=${row.attention?.late ? "late" : "blocked"}`}>{parts.join(" · ")}</Link> : <span className={styles.muted}>—</span>;
     } } },
-    { id: "handover", header: t("Handover"), accessorFn: (row) => row.promiseDate ?? "", size: 130, meta: { renderCell: (row) => {
+    { id: "handover", header: t("Handover"), accessorFn: (row) => row.promiseDate ?? "", size: 130, meta: { priority: "medium", renderCell: (row) => {
       const until = row.status === "active" ? format.until(row.promiseDate) : null;
       return row.promiseDate ? <span className={styles.dateCell}>{format.day(row.promiseDate)}{until ? <small data-late={until.late || undefined}>{until.text}</small> : null}</span> : null;
     } } },
-    { id: "status", header: t("Status"), accessorFn: (row) => status(row.status, row.health).label, size: 120, meta: { renderCell: (row) => {
-      const value = status(row.status, row.health);
-      return <span className={styles.status} data-tone={value.tone}>{value.label}</span>;
-    } } },
   ], [t, format, status]);
 
-  if (error && !rows) return <div className={styles.page}><PageHeader title={t("Projects")} /><ErrorState description={error} onRetry={() => void load()} /></div>;
+  const action = canStart ? <Button variant="primary" onPress={() => setPicking(true)}><Play aria-hidden="true" size={15} />{t("Start project")}</Button> : null;
+  const tabs = <ListTabs label={t("Show")} value={filter} onChange={(value) => { setFilter(value); if (value !== "open") setHealth(null); }}
+    items={[{ id: "open", label: t("Running") }, { id: "on_hold", label: t("On hold") }, { id: "closed", label: t("Closed") }]} />;
+  // Home's Projects health links here; health applies to running projects only.
+  const filters: ToolbarFilter[] = filter === "open" ? [{ id: "health", label: t("Health"), value: health ?? undefined,
+    options: [{ id: "on-track", label: t("On track") }, { id: "at-risk", label: t("At risk") }, { id: "late", label: t("Late") }],
+    onChange: (value) => { setHealth((value as HealthFilter | undefined) ?? null); if (!value) router.replace("/workspace/projects"); } }] : [];
 
-  return <div className={styles.page} data-tour="project-list">
-    <PageHeader title={t("Projects")} actions={canStart ? <Button variant="primary" onPress={() => setPicking(true)}><Play aria-hidden="true" size={15} />{t("Start project")}</Button> : null} />
+  if (error && !rows) return <PageShell title={t("Projects")} action={action} tabs={tabs}><ErrorState description={error} onRetry={() => void load()} /></PageShell>;
+
+  return <div data-tour="project-list"><PageShell title={t("Projects")} action={action} tabs={tabs}>
     <DataGrid<ProjectRow>
       ariaLabel={t("Projects")}
       columns={columns}
@@ -88,20 +94,17 @@ export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: stri
       onSearchChange={setSearch}
       searchValue={search}
       searchLabel={t("Search projects")}
-      toolbarLeading={<><SegmentedControl label={t("Show")} value={filter} onChange={(value) => { setFilter(value as Filter); if (value !== "open") setHealth(null); }}
-        options={[{ id: "open", label: t("Running") }, { id: "on_hold", label: t("On hold") }, { id: "closed", label: t("Closed") }]} />
-        {health ? <Tag onRemove={() => { setHealth(null); router.replace("/workspace/projects"); }}>{health === "late" ? t("Late") : health === "at-risk" ? t("At risk") : t("On track")}</Tag> : null}</>}
-      emptyContent={search.trim() ? <NoResultsState onClear={() => setSearch("")} />
+      filters={filters}
+      emptyContent={search.trim() || health ? <NoResultsState onClear={() => { setSearch(""); setHealth(null); }} />
         : <EmptyState title={filter === "open" ? t("No running projects") : filter === "on_hold" ? t("Nothing on hold") : t("No closed projects")}
             description={filter === "open" ? t("A project starts from an accepted quotation.") : undefined}
             action={filter === "open" && canStart ? <Button variant="primary" onPress={() => setPicking(true)}>{t("Start project")}</Button> : null} />}
       rowNumbers={false}
       selectable={false}
-      wrapText
     />
     {picking ? <ReadyPicker workspaceId={workspaceId} onClose={() => setPicking(false)} onPick={(caseId) => { setPicking(false); setStarting(caseId); }} /> : null}
     {starting ? <StartProjectDialog workspaceId={workspaceId} caseId={starting} onClose={() => setStarting(null)} /> : null}
-  </div>;
+  </PageShell></div>;
 }
 
 /** Accepted quotations whose project hasn't started: pick one to start. */

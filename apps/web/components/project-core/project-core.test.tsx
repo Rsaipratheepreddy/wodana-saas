@@ -63,8 +63,27 @@ describe("projects", () => {
     expect(within(table).getByRole("link", { name: "Villa 12" })).toHaveAttribute("href", `/workspace/projects/${PID}`);
     expect(table).toHaveTextContent("Kickoff meeting held");
     expect(table).not.toHaveTextContent("Marina Penthouse");
-    await userEvent.click(screen.getByRole("radio", { name: "On hold" }));
+    await userEvent.click(screen.getByRole("button", { name: "On hold" }));
     expect(await screen.findByText("Marina Penthouse")).toBeInTheDocument();
+  });
+
+  it("has one title, one primary action, status tabs under the title, and health as a removable filter chip", async () => {
+    const rows: ProjectRow[] = [
+      { ...detail().project, stage: { name: "Kickoff", position: 1, count: 8 }, lead: "Omar Haddad", next: detail().next },
+      { ...detail({ id: "p3", reference: "PRJ-0009", name: "Palm Duplex", health: "at_risk" }).project, stage: null, lead: null, next: null },
+    ];
+    mount(() => ({ projects: rows, canStart: true }));
+    render(<DesignSystemProvider><ProjectsPage workspaceId="w" initialHealth="at-risk" /></DesignSystemProvider>);
+    expect(await screen.findByText("Palm Duplex")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Start project" })).toHaveLength(1);
+    expect(within(screen.getByRole("group", { name: "Show" })).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Running", "On hold", "Closed"]);
+    expect(screen.queryByRole("link", { name: "Villa 12" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("At risk")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Remove filter Health" }));
+    expect(await screen.findByRole("link", { name: "Villa 12" })).toBeInTheDocument();
+    expect(router.replace).toHaveBeenCalledWith("/workspace/projects");
   });
 
   it("works the current stage: confirms a check, then finishes it; sends the project's version with every change", async () => {

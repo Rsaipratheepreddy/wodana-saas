@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, ErrorState, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MoneyField, NoResultsState, TextAreaField, VisuallyHidden, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, FormDialog, FormNotSaved, InlineNotice, InspectorSheet, MoneyField, NoResultsState, TextAreaField, VisuallyHidden, RecordName, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { PayablesState, SupplierPayment } from "@/lib/payables/types";
@@ -23,13 +23,12 @@ export function Payments({ api, state, error, openId, onReload, onOpen, onOpenBi
   const rows = (state?.payments ?? []).filter((row) => !needle || `${row.supplierName} ${row.reference} ${row.orderNumber ?? ""} ${row.allocations.map((item) => item.number).join(" ")}`
     .toLocaleLowerCase().includes(needle));
   const columns = useMemo<DataGridColumn<SupplierPayment>[]>(() => [
-    { id: "supplier", header: t("Supplier"), accessorFn: (row) => row.supplierName, size: 300, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
-      <span>{row.supplierName}</span>
-      <small>{[methods[row.method], row.reference, ...(row.orderNumber ? [t("Advance on {order}", { order: row.orderNumber })] : []),
+    { id: "supplier", header: t("Supplier"), accessorFn: (row) => row.supplierName, size: 300, meta: { primary: true, renderCell: (row) => <RecordName title={row.supplierName}
+      detail={[methods[row.method], row.reference, ...(row.orderNumber ? [t("Advance on {order}", { order: row.orderNumber })] : []),
         ...(row.runNumber ? [t("Run {number}", { number: row.runNumber })] : []), ...row.allocations.map((item) => item.number)]
-        .filter(Boolean).join(" · ")}</small></span> } },
+        .filter(Boolean).join(" · ")} /> } },
     { id: "paid", header: t("Paid on"), accessorFn: (row) => row.paidOn, size: 140, meta: { mobileHidden: true, renderCell: (row) => <span>{format.day(row.paidOn)}</span> } },
-    { id: "amount", header: t("Amount"), accessorFn: (row) => Number(row.amount), size: 190, meta: { renderCell: (row) => <span className={styles.nameCell}>
+    { id: "amount", header: t("Amount"), accessorFn: (row) => Number(row.amount), size: 190, meta: { align: "end", renderCell: (row) => <span className={styles.nameCell}>
       <span className={styles.money}>{format.money(row.amount, row.currency)}</span>
       {row.status === "recorded" && Number(row.unallocated) > 0 ? <small>{t("{amount} to allocate", { amount: format.money(row.unallocated, row.currency) })}</small> : null}</span> } },
     { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 150, meta: { renderCell: (row) => <span className={styles.status}
@@ -39,7 +38,7 @@ export function Payments({ api, state, error, openId, onReload, onOpen, onOpenBi
   const payment = state?.payments.find((row) => row.id === openId) ?? null;
   return <>
     <DataGrid<SupplierPayment> ariaLabel={t("Payments")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
-      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search payments")} rowNumbers={false} wrapText
+      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search payments")} rowNumbers={false}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No payments yet")} description={t("Record one from an approved invoice or a supplier.")} />} />
     {payment && state ? <PaymentSheet api={api} payment={payment} canManage={state.canManage} bills={state.bills} onChanged={onReload} onClose={() => onOpen(null)} onOpenBill={onOpenBill} /> : null}
   </>;

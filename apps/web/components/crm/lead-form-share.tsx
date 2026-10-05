@@ -73,7 +73,7 @@ export function LeadFormShareSheet({ form, options, brandName, logoUrl, onClose,
       {/* The A4 poster: only printed, never shown on screen. */}
       {qr.png && <div className={styles.poster} aria-hidden="true">
         {logoUrl ? <Image unoptimized src={logoUrl} alt="" width={220} height={88} /> : brandName ? <strong>{brandName}</strong> : null}
-        <h1>{title}</h1>
+        <h2>{title}</h2>
         <Image unoptimized src={qr.png} alt="" width={420} height={420} />
         <p>{t("Scan to enquire")}</p>
         <small>{url}</small>

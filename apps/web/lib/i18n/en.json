@@ -12124,5 +12124,20 @@
   "Enquiry types & automations": "Enquiry types & automations",
   "Filters in use": "Filters in use",
   "Remove filter {name}": "Remove filter {name}",
-  "Table options": "Table options"
+  "Table options": "Table options",
+  "Health": "Health",
+  "No clients yet": "No clients yet",
+  "Follow-up lists": "Follow-up lists",
+  "Pipeline: {name}": "Pipeline: {name}",
+  "{title} lists": "{title} lists",
+  "No {items} yet": "No {items} yet",
+  "Approval type": "Approval type",
+  "Agreements & Payments": "Agreements & Payments",
+  "Sales preparation": "Sales preparation",
+  "Offer status": "Offer status",
+  "Schedule a CRM meeting": "Schedule a CRM meeting",
+  "New event": "New event",
+  "Whose calendar": "Whose calendar",
+  "Calendar options": "Calendar options",
+  "Pipeline options": "Pipeline options"
 }

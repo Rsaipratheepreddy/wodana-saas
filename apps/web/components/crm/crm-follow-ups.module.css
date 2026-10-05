@@ -2,23 +2,9 @@
 .calendarLink { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-link); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); text-decoration: none; white-space: nowrap; }
 .calendarLink:hover { text-decoration: underline; text-underline-offset: 3px; }
 .calendarLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
-.identity { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
-.identity strong, .identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.identity strong { color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
-.identity small, .muted, .timeZone { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.muted, .timeZone { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .timeZone { margin-block: var(--wd-space-2) 0; }
 .notice { margin-block: 0 var(--wd-space-2); color: var(--wd-color-success); font-size: var(--wd-text-xs); }
 
-.page { padding: var(--wd-space-3) var(--wd-space-4) var(--wd-space-4); }
-.personCell, .followUpCell { display: flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
-.personCell > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.personCell > :first-child { flex-shrink: 0; }
-.typeIcon { display: grid; place-items: center; inline-size: 28px; block-size: 28px; border-radius: var(--wd-radius-xs); flex-shrink: 0; background: var(--wd-color-surface-subtle); color: var(--wd-color-text-secondary); }
 .actions { gap: var(--wd-space-2); }
 .calendarLink { min-block-size: 30px; }
-@media (max-width: 600px) { .page { padding: var(--wd-space-2); } }
-.viewToolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wd-space-3); margin-block-end: var(--wd-space-5); }
-.viewSwitch { display: flex; gap: var(--wd-space-1); }
-.page { padding: var(--wd-space-3) var(--wd-space-4) var(--wd-space-4); }
-.page > .timeZone, .page > .notice { padding-inline: 0; }
-.viewToolbar { padding: var(--wd-space-6) var(--wd-space-6) 0; }

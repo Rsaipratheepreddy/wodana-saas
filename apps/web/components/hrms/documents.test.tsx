@@ -87,7 +87,12 @@ describe("Documents", () => {
     expect(rows[1]).toHaveTextContent(/Ravi Kumar.*Crew worker.*Safety induction.*1 Sept?.*Expired/);
     expect(rows[2]).toHaveTextContent(/Omar Joiner.*Work permit.*784-1990-123.*10 Oct.*Expiring/);
     expect(rows[3]).toHaveTextContent(/Passport.*P1234567.*2031.*Valid/);
-    await choose(screen.getByRole("tabpanel"), /^Any status/, "Expiring");
+    expect(screen.queryByRole("group", { name: "Filters in use" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+    await userEvent.click(screen.getByRole("button", { name: /Filter by status/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Expiring" }));
+    await userEvent.keyboard("{Escape}");
+    expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("Expiring")).toBeVisible();
     expect(within(await grid("Documents")).getAllByRole("row")).toHaveLength(2);
   });
 

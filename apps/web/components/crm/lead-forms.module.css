@@ -133,7 +133,7 @@
   :global(body *) { visibility: hidden; }
   .poster, .poster * { visibility: visible; }
   .poster { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: var(--wd-space-6); padding: var(--wd-space-16); background: var(--wd-color-surface); color: var(--wd-color-text); text-align: center; }
-  .poster h1 { margin: 0; font-size: var(--wd-text-3xl); }
+  .poster h2 { margin: 0; font-size: var(--wd-text-3xl); }
   .poster p { margin: 0; font-size: var(--wd-text-2xl); font-weight: var(--wd-weight-semibold); }
   .poster small { font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
 }

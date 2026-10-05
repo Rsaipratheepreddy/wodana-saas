@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, RecordName, Skeleton, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { PayablesState, SupplierBalance, SupplierState } from "@/lib/payables/types";
@@ -22,9 +22,8 @@ export function SuppliersOwed({ api, state, error, openId, onReload, onOpen, onO
   const rows = (state?.suppliers ?? []).filter((row) => !needle || `${row.supplierName} ${row.companyName}`.toLocaleLowerCase().includes(needle))
     .sort((a, b) => Number(b.overdue) - Number(a.overdue) || a.supplierName.localeCompare(b.supplierName));
   const columns = useMemo<DataGridColumn<SupplierBalance>[]>(() => [
-    { id: "supplier", header: t("Supplier"), accessorFn: (row) => row.supplierName, size: 300, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
-      <span>{row.supplierName}</span><small>{row.companyName}</small></span> } },
-    { id: "owed", header: t("Owed"), accessorFn: (row) => Number(row.owed), size: 190, meta: { renderCell: (row) => <span className={styles.nameCell}>
+    { id: "supplier", header: t("Supplier"), accessorFn: (row) => row.supplierName, size: 300, meta: { primary: true, renderCell: (row) => <RecordName title={row.supplierName} detail={row.companyName} /> } },
+    { id: "owed", header: t("Owed"), accessorFn: (row) => Number(row.owed), size: 190, meta: { align: "end", renderCell: (row) => <span className={styles.nameCell}>
       <span className={styles.money}>{Number(row.owed) < 0 ? t("{amount} paid ahead", { amount: format.money(plain(row.owed).replace("-", ""), row.currency) }) : format.money(row.owed, row.currency)}</span>
       {Number(row.held) > 0 ? <small>{t("{amount} held", { amount: format.money(row.held, row.currency) })}</small> : null}
       {Number(row.retention) > 0 ? <small>{t("{amount} retention", { amount: format.money(row.retention, row.currency) })}</small> : null}</span> } },
@@ -34,7 +33,7 @@ export function SuppliersOwed({ api, state, error, openId, onReload, onOpen, onO
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   return <>
     <DataGrid<SupplierBalance> ariaLabel={t("Owed to suppliers")} columns={columns} data={rows} getRowId={(row) => `${row.vendorId}|${row.legalEntityId}|${row.currency}`}
-      isLoading={!state} onRowAction={(row) => onOpen(row.vendorId)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search suppliers")} rowNumbers={false} wrapText
+      isLoading={!state} onRowAction={(row) => onOpen(row.vendorId)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search suppliers")} rowNumbers={false}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("Nothing owed to suppliers")} />} />
     {openId ? <OwedSheet api={api} vendorId={openId} onChanged={onReload} onClose={() => onOpen(null)} onOpenBill={onOpenBill} onOpenPayment={onOpenPayment} /> : null}
   </>;

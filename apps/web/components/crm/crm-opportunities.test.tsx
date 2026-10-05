@@ -64,8 +64,9 @@ describe("CrmOpportunities", () => {
     await userEvent.click(screen.getByRole("button", { name: "List" }));
     const table = screen.getByRole("table", { name: "Opportunities" });
     expect(table).toBeInTheDocument();
-    expect(within(table).getByRole("columnheader", { name: "Opportunity ID" })).toBeInTheDocument();
-    expect(within(table).getByText("D-0001")).toBeInTheDocument();
+    // The reference is on the muted line under the opportunity, not a column of its own.
+    expect(within(table).queryByRole("columnheader", { name: "Opportunity ID" })).not.toBeInTheDocument();
+    expect(within(table).getByText(/D-0001/)).toBeInTheDocument();
     expect(within(screen.getByRole("row", { name: /Emirates Hills villa interior renovation/ })).getByText("Proposal")).toBeInTheDocument();
     expect(within(screen.getByRole("row", { name: /DIFC executive office fit-out/ })).getByText("Negotiation")).toBeInTheDocument();
   });
@@ -190,10 +191,26 @@ describe("CrmOpportunities", () => {
       ? { ...record, flow: { flow: "design", next: { stageId: "x", name: "Qualified", step: "qualified" }, missing: [{ key: "introMeeting", label: "Intro meeting completed" }], toWon: [], steps: [] } }
       : { ...record, id: String(path), flow: null });
     render(<CrmOpportunities initialData={data} />);
-    const card = within(screen.getByRole("region", { name: "Proposal" })).getByRole("button", { name: /Amira Al Mansoori/ });
+    const card = within(screen.getByRole("region", { name: "Proposal" })).getByRole("button", { name: /Amira Al Mansoori/ }).closest("article")!;
     expect(await within(card).findByText("Book intro")).toBeInTheDocument();
     expect(within(card).getByText(/Overdue/)).toBeInTheDocument();
     expect(within(card).getByText(String(record.ownerName))).toBeInTheDocument();
     expect(card.querySelector(".wd-avatar")).toHaveAttribute("aria-label", String(record.ownerName));
   });
+});
+
+it("has one title, one primary action, status tabs and the assignee as a removable chip", async () => {
+  vi.mocked(crmRequest).mockReset().mockResolvedValue({ data: [] });
+  const user = userEvent.setup();
+  render(<CrmOpportunities initialData={structuredClone(crmScreenFixture("opportunities"))} />);
+  expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Pipeline"]);
+  expect(screen.getAllByRole("button", { name: "Convert enquiry" })).toHaveLength(1);
+  expect(within(screen.getByRole("group", { name: "Opportunity status" })).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.queryByRole("group", { name: "Filters in use" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Filter" }));
+  await user.click(screen.getByRole("menuitem", { name: "Unassigned" }));
+  const chips = screen.getByRole("group", { name: "Filters in use" });
+  expect(within(chips).getByText("Unassigned")).toBeVisible();
+  await user.click(within(chips).getByRole("button", { name: "Remove filter Unassigned" }));
+  expect(screen.queryByRole("group", { name: "Filters in use" })).not.toBeInTheDocument();
 });

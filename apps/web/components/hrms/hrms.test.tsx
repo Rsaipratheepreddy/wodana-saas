@@ -114,6 +114,9 @@ describe("People", () => {
       const first = page();
       expect(await enabled("Check in")).toHaveAttribute("data-variant", "primary");
       expect(screen.queryByRole("button", { name: "Switch place" })).toBeNull();
+      // One title; someone who runs HR has eight sections, so the occasional ones sit under More (at most six tabs).
+      expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Attendance & leave"]);
+      expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Attendance", "Leave", "Team", "HR records", "Crews", "More"]);
       expect(within(screen.getByRole("group", { name: "Today" })).getByText("Not checked in")).toBeInTheDocument();
       first.unmount();
 
@@ -269,7 +272,7 @@ describe("People", () => {
       page("team");
       const sheet = await screen.findByRole("dialog", { name: "Omar Joiner" });
       // Behind the sheet: To approve, with what's waiting counted.
-      expect(await screen.findByRole("radio", { name: "To approve (2)", hidden: true })).toHaveAttribute("aria-checked", "true");
+      expect(await screen.findByRole("button", { name: /^To approve\s*2$/, hidden: true })).toHaveAttribute("aria-pressed", "true");
       expect(within(sheet).getByText("Family visit")).toBeInTheDocument();
       expect(within(sheet).getByRole("button", { name: "Approve" })).toBeDisabled();
       expect(within(sheet).getByRole("button", { name: "Reject" })).toBeDisabled();
@@ -279,7 +282,7 @@ describe("People", () => {
       await userEvent.click(within(sheet).getByRole("button", { name: "Approve" }));
       await waitFor(() => expect(writes(calls, "leave/requests/r1/decision")).toEqual([{ decision: "approve", reason: "ok enjoy" }]));
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Omar Joiner" })).toBeNull());
-      expect(await screen.findByRole("radio", { name: "To approve (1)" })).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: /^To approve\s*1$/ })).toBeInTheDocument();
       // The attendance review shows its evidence, the photo only to those who may see it.
       await userEvent.click(within(await grid("To approve")).getByText("Sara Site"));
       const evidence = await screen.findByRole("dialog", { name: "Sara Site" });

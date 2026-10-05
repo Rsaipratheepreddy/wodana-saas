@@ -14,6 +14,8 @@ import {
   DesignSystemProvider,
   EmptyState,
   IconMenuButton,
+  ListTabs,
+  PageShell,
   SearchInput,
   SelectField,
   Surface,
@@ -261,26 +263,7 @@ export function IntegrationsPage({
     },
   ];
 
-  return <DesignSystemProvider className={[styles.provider, embedded ? styles.embedded : ""].join(" ")} portalContainer={portalContainer} ref={setPortalContainer}>
-    <section aria-label={embedded ? t("Connect your tools") : undefined} aria-labelledby={embedded ? undefined : "integrations-heading"} className={[styles.page, embedded ? styles.embedded : ""].join(" ")}>
-      {!embedded && <><header className={styles.pageHeading}>
-        <h1 id="integrations-heading">{t("Connections")}</h1>
-        <p>{t("Connect calendars, messaging and accounting to your workspace.")}</p>
-      </header>
-
-      <div className={styles.toolbar}>
-        <div className={styles.summary}>
-          <span>{t("{count} connected", { count: initialData.loadError ? "—" : connectedCount })}</span>
-          <span>{t("{count} configured", { count: initialData.loadError ? "—" : activeConnections.length })}</span>
-          {attentionCount ? <span data-attention>{t("{count} need attention", { count: attentionCount })}</span> : null}
-        </div>
-        <div className={styles.searchField}><SearchInput label={t("Search integrations")} onChange={setQuery} placeholder={t("Search apps")} value={query} /></div>
-      </div>
-
-      <div className={styles.purposes} role="group" aria-label={t("Connection purpose")}>{[
-        ['all', t('All apps')], ['communication', t('Talk to clients')], ['finance', t('Invoices & payments')], ['productivity', t('Calendar & files')],
-      ].map(([id, label]) => <button key={id} aria-pressed={purpose === id} onClick={() => setPurpose(id)}>{label}</button>)}</div>
-      </>}
+  const body = <>
       {initialData.loadError && <Callout title={t("Connections unavailable")} tone="warning">{initialData.loadError} <Button size="compact" onPress={() => window.location.reload()}>{t("Reload connections")}</Button></Callout>}
 
       {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
@@ -356,7 +339,21 @@ export function IntegrationsPage({
         <div className={styles.sectionHeading}><h2>{t("Configured accounts")}</h2><span>{filteredConnections.length === 1 ? t("1 account") : t("{count} accounts", { count: filteredConnections.length })}</span></div>
         <DataGrid ariaLabel={t("Configured accounts")} columns={accountColumns} data={filteredConnections} getRowId={(connection) => connection.id} pinFirstColumn={false} rowNumbers={false} selectable={false} showToolbar={false} />
       </section> : null}
-    </section>
+  </>;
+
+  return <DesignSystemProvider className={[styles.provider, embedded ? styles.embedded : ""].join(" ")} portalContainer={portalContainer} ref={setPortalContainer}>
+    {embedded ? <section aria-label={t("Connect your tools")} className={[styles.page, styles.embedded].join(" ")}>{body}</section>
+      : <div className={styles.page}><PageShell title={t("Connections")}
+        tabs={<ListTabs label={t("Connection purpose")} value={purpose} onChange={setPurpose} items={[
+          { id: "all", label: t("All apps") }, { id: "communication", label: t("Talk to clients") }, { id: "finance", label: t("Invoices & payments") }, { id: "productivity", label: t("Calendar & files") }]} />}
+        toolbar={<div className={styles.toolbar}>
+          <div className={styles.summary}>
+            <span>{t("{count} connected", { count: initialData.loadError ? "—" : connectedCount })}</span>
+            <span>{t("{count} configured", { count: initialData.loadError ? "—" : activeConnections.length })}</span>
+            {attentionCount ? <span data-attention>{t("{count} need attention", { count: attentionCount })}</span> : null}
+          </div>
+          <div className={styles.searchField}><SearchInput label={t("Search integrations")} onChange={setQuery} placeholder={t("Search apps")} value={query} /></div>
+        </div>}>{body}</PageShell></div>}
 
     <IntegrationTools connection={toolConnection} workspaceId={initialData.workspaceId} canManage={initialData.canManage} onClose={() => setToolConnection(null)} onHealthChange={updateConnectionHealth} />
     <WhatsAppSignup setup={whatsappSetup} workspaceId={initialData.workspaceId} onClose={() => { setWhatsappSetup(null); window.location.reload(); }} />

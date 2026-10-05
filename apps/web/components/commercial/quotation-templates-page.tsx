@@ -3,7 +3,7 @@ import Link from 'next/link';
 import {useRouter} from 'next/navigation';
 import {useState} from 'react';
 import {Archive, ArrowUpRight, FileText, History, Plus, RotateCcw} from 'lucide-react';
-import {Badge, Button, Callout, ConfirmationDialog, DataGrid, InspectorSheet, formatDate, useDesignSystem, type DataGridColumn} from '@/design-system';
+import {Badge, Button, Callout, ConfirmationDialog, DataGrid, EmptyState, ErrorState, InspectorSheet, PageShell, RecordName, formatDate, useDesignSystem, type DataGridColumn} from '@/design-system';
 import {useT} from '@/lib/i18n/i18n-provider';
 import {translateKnown} from '@/lib/i18n/keys';
 import type {QuotationTemplate, QuoteLine} from '@/lib/commercial/types';
@@ -24,10 +24,9 @@ export function QuotationTemplatesPage({workspaceId,items,error}:{workspaceId:st
   const [archiveTarget,setArchiveTarget]=useState<QuotationTemplate|null>(null);
   const [rollbackTarget,setRollbackTarget]=useState<WorkspaceConfigurationRevision|null>(null);
   const columns:DataGridColumn<QuotationTemplate>[]=[
-    {id:'name',header:t('Template'),size:300,accessorKey:'name',meta:{headerIcon:<FileText size={14}/>},cell:({row:{original:r}})=><span>{r.name}</span>},
-    {id:'rooms',header:t('Rooms'),size:270,accessorFn:r=>[...new Set(r.content.lines.map(l=>l.room))].join(', ')},
-    {id:'items',header:t('Items'),size:95,accessorFn:r=>r.content.lines.length},
-    {id:'currency',header:t('Currency'),size:105,accessorFn:r=>r.content.currency},
+    {id:'name',header:t('Template'),size:320,accessorKey:'name',meta:{primary:true,headerIcon:<FileText size={14}/>,renderCell:r=><RecordName title={r.name} detail={[...new Set(r.content.lines.map(l=>l.room))].join(', ')}/>}},
+    {id:'items',header:t('Items'),size:95,accessorFn:r=>r.content.lines.length,meta:{align:'end'}},
+    {id:'currency',header:t('Currency'),size:105,accessorFn:r=>r.content.currency,meta:{priority:'low'}},
     {id:'updated',header:t('Updated'),size:150,accessorFn:r=>formatDate(r.updatedAt,{locale,timeZone},{day:'numeric',month:'short',year:'numeric'})},
   ];
   const lineColumns:DataGridColumn<QuoteLine>[]=[{accessorKey:'title',header:t('Item'),size:240},{accessorKey:'room',header:t('Room'),size:160},{accessorKey:'quantity',header:t('Quantity'),size:100},{accessorKey:'unit',header:t('Unit'),size:100},{id:'rate',header:t('Rate'),size:140,accessorFn:r=>selected?money(r.rate,selected.content.currency,locale):String(r.rate)}];
@@ -35,10 +34,10 @@ export function QuotationTemplatesPage({workspaceId,items,error}:{workspaceId:st
   const openHistory=async(template:QuotationTemplate)=>{setSelected(null);setHistoryTemplate(template);setActionError('');try{const response=await fetch(`/api/commercial/quotation-templates/${template.id}/history?workspaceId=${encodeURIComponent(workspaceId)}`);if(!response.ok)throw new Error(await responseMessage(response,t('Template history could not be loaded.')));setRevisions(await response.json() as WorkspaceConfigurationRevision[]);}catch(failure){setRevisions([]);setActionError(failure instanceof Error?failure.message:t('Template history could not be loaded.'));}};
   const archiveTemplate=async()=>{if(!archiveTarget||busy)return;setBusy(true);setActionError('');try{const response=await fetch(`/api/commercial/quotation-templates/${archiveTarget.id}/archive?workspaceId=${encodeURIComponent(workspaceId)}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({version:archiveTarget.version})});if(!response.ok)throw new Error(await responseMessage(response,t('Template could not be archived.')));setArchiveTarget(null);setSelected(null);router.refresh();}catch(failure){setActionError(failure instanceof Error?failure.message:t('Template could not be archived.'));setArchiveTarget(null);}finally{setBusy(false);}};
   const rollback=async()=>{if(!historyTemplate||!rollbackTarget||busy)return;setBusy(true);setActionError('');try{const response=await fetch(`/api/commercial/quotation-templates/${historyTemplate.id}/rollback?workspaceId=${encodeURIComponent(workspaceId)}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({version:historyTemplate.version,revisionId:rollbackTarget.id})});if(!response.ok)throw new Error(await responseMessage(response,t('Template could not be restored.')));setRollbackTarget(null);setHistoryTemplate(null);router.refresh();}catch(failure){setActionError(failure instanceof Error?failure.message:t('Template could not be restored.'));setRollbackTarget(null);}finally{setBusy(false);}};
-  return <section className={`${styles.page} ${theme.theme}`} aria-label={t("Quotation Templates workspace")}>
-    <header className={styles.header}><h1>{t("Quotation Templates")}</h1><Link className={styles.link} href="/workspace/pre-projects?section=quotations"><Plus size={15}/>{t("Create from a quotation")}<ArrowUpRight size={13}/></Link></header>
-    <p className={styles.context}>{t("Save a quotation as a template to reuse its rooms, items, materials, rates and terms.")}</p>
-    {error?<Callout tone="danger" title={t("Templates could not be loaded")} actions={<Button onPress={()=>router.refresh()}>{t("Try again")}</Button>}>{translateKnown(t,error)}</Callout>:<DataGrid ariaLabel={t("Quotation Templates")} columns={columns} data={items} getRowId={r=>r.id} searchLabel={t("Search quotation templates")} onRowAction={r=>setSelected(r)} emptyTitle={t("No quotation templates yet")} emptyDescription={t("Open a quotation and choose Convert to template to save it for reuse.")} exportFileName="quotation-templates.csv"/>}
+  const create=<Link className="wd-button" data-variant="primary" href="/workspace/pre-projects?section=quotations"><Plus size={15} aria-hidden="true"/>{t("Create from a quotation")}</Link>;
+  return <div className={theme.theme}><PageShell aria-label={t("Quotation Templates workspace")} title={t("Quotation templates")} action={create}>
+    {error?<ErrorState title={t("Templates could not be loaded")} description={translateKnown(t,error)} onRetry={()=>router.refresh()}/>:<DataGrid ariaLabel={t("Quotation Templates")} columns={columns} data={items} getRowId={r=>r.id} searchLabel={t("Search quotation templates")} onRowAction={r=>setSelected(r)} rowNumbers={false} selectable={false}
+      emptyContent={<EmptyState title={t("No quotation templates yet")} description={t("Open a quotation and choose Convert to template to save it for reuse.")} action={create}/>} exportFileName="quotation-templates.csv"/>}
     <InspectorSheet isOpen={Boolean(selected)} onOpenChange={open=>{if(!open)setSelected(null)}} size="lg" title={selected?.name || t('Quotation template')} footer={selected?<div className={styles.actions}><Button variant="quiet" onPress={()=>void openHistory(selected)}><History size={14}/>{t("History")}</Button><Button variant="quiet" onPress={()=>setArchiveTarget(selected)}><Archive size={14}/>{t("Archive")}</Button></div>:undefined}>
       {selected&&<><p className={styles.context}>{t("Rates are saved in {currency}. Review and apply this template from a draft quotation’s Templates tab.",{currency:selected.content.currency})}</p><DataGrid ariaLabel={t("Template items")} columns={lineColumns} data={selected.content.lines} getRowId={r=>r.id} selectable={false} pageSize={20}/><dl className={styles.summary}><div><dt>{t("Inclusions")}</dt><dd>{selected.content.inclusions||'—'}</dd></div><div><dt>{t("Exclusions")}</dt><dd>{selected.content.exclusions||'—'}</dd></div><div><dt>{t("Terms")}</dt><dd>{selected.content.terms||'—'}</dd></div><div><dt>{t("Payment schedule")}</dt><dd>{selected.content.paymentTerms.map(term=>`${term.title} (${term.percent}%)`).join(', ')||'—'}</dd></div></dl><Link className={styles.link} href="/workspace/pre-projects?section=quotations">{t("Open quotations")}<ArrowUpRight size={13}/></Link></>}
     </InspectorSheet>
@@ -49,5 +48,5 @@ export function QuotationTemplatesPage({workspaceId,items,error}:{workspaceId:st
     </InspectorSheet>
     <ConfirmationDialog isOpen={Boolean(archiveTarget)} onOpenChange={open=>{if(!open&&!busy)setArchiveTarget(null)}} title={t("Archive this template?")} body={t("It will stop appearing in quotation creation. Existing quotations and revision history stay unchanged.")} confirmLabel={t(busy?'Archiving…':'Archive template')} onConfirm={()=>void archiveTemplate()}/>
     <ConfirmationDialog isOpen={Boolean(rollbackTarget)} onOpenChange={open=>{if(!open&&!busy)setRollbackTarget(null)}} title={t("Restore this template revision?")} body={t("The selected rooms, items, rates and terms will become the current template. The current version stays in history.")} confirmLabel={t(busy?'Restoring…':'Restore revision')} onConfirm={()=>void rollback()}/>
-  </section>;
+  </PageShell></div>;
 }

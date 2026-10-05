@@ -44,3 +44,6 @@
 .sectionHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .sectionHead h3 { margin: 0; flex: 1; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
 .empty { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+
+/* Module tabs under the page title: the open section renders as the page body, not inside the tab panel. */
+.moduleTabs :global(.wd-tab-panel) { display: none; }

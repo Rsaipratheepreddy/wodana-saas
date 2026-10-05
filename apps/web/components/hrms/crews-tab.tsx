@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { HrmsBootstrap, HrmsCrew, HrmsCrewState, HrmsPerson, HrmsWorker } from "@wodana/contracts";
 import {
-  Badge, Button, ComboboxField, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoAccessState, NoResultsState, PhoneField, SegmentedControl, SelectField, Switch,
+  Badge, Button, ComboboxField, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoAccessState, NoResultsState, PhoneField, ListTabs, SelectField, Switch,
   TextInput, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -68,8 +68,8 @@ export function CrewsTab({ api, boot, workspaceId, view, onView, creating, onCre
         : <span className={styles.muted}>{t("Trade rate")}</span> } }] : []),
     { id: "active", header: t("Active"), accessorFn: (row) => row.active, size: 110, meta: { renderCell: (row) => <ActiveBadge active={row.active} /> } },
   ], [t, crewName, manage, locale]);
-  const switcher = <SegmentedControl label={t("Show")} value={view} onChange={(value) => { setSearch(""); onView(value as CrewView); }}
-    options={[{ id: "crews", label: t("Crews") }, { id: "workers", label: t("Workers") }]} />;
+  const switcher = <ListTabs label={t("Show")} value={view} onChange={(value) => { setSearch(""); onView(value); }}
+    items={[{ id: "crews", label: t("Crews") }, { id: "workers", label: t("Workers") }]} />;
   if (error && !state) return error.denied ? <NoAccessState /> : <><div className={styles.toolbar}>{switcher}</div><ErrorState description={error.message} onRetry={() => void load()} /></>;
   const needle = search.trim().toLocaleLowerCase();
   const matches = (...values: Array<string | null>) => !needle || values.some((value) => value?.toLocaleLowerCase().includes(needle));

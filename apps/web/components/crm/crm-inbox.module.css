@@ -2,11 +2,9 @@
 .inbox :global(.wd-button), .inbox :global(.wd-icon-button) { border-radius: var(--wd-radius-xs); box-shadow: none; }
 .threadList { display: flex; flex-direction: column; min-inline-size: 0; min-block-size: 0; background: var(--wd-color-surface-muted); }
 .listHeading, .threadHeading { display: flex; align-items: center; gap: var(--wd-space-3); min-block-size: 64px; padding: var(--wd-space-3) var(--wd-space-4); border: 0; }
-.listHeading { justify-content: space-between; }
+.listHeading { justify-content: flex-end; min-block-size: 0; padding-block: var(--wd-space-2) 0; }
 .listHeading > div, .actions { display: flex; align-items: center; gap: var(--wd-space-2); }
 .listHeading svg { color: var(--chat-accent); }
-.listHeading .brandButton svg { color: var(--wd-color-action-on-primary); }
-.listHeading h1 { margin: 0; font-size: var(--wd-text-xl); font-weight: 650; letter-spacing: -.3px; }
 .actions { flex-shrink: 0; }
 .searchArea { min-inline-size: 0; padding: var(--wd-space-0-5) var(--wd-space-4) var(--wd-space-3); }
 .filters { padding: 0 var(--wd-space-4) var(--wd-space-3); border: 0; }

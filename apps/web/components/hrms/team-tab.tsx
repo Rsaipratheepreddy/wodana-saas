@@ -3,9 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { parseDate } from "@internationalized/date";
 import type { AttendanceDay, AttendanceReview, HrmsBootstrap, LeaveRequest, TeamTimeWeek } from "@wodana/contracts";
-import {
-  Button, DataGrid, DateRangeField, EmptyState, ErrorState, InlineNotice, InspectorSheet, SegmentedControl, SelectField, TextAreaField, type DataGridColumn,
-} from "@/design-system";
+import { ListTabs, Button, DataGrid, DateRangeField, EmptyState, ErrorState, InlineNotice, InspectorSheet, SelectField, TextAreaField, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
 import { addDays } from "@/lib/hrms/time";
@@ -41,8 +39,8 @@ export function TeamTab({ api, boot, open, onOpen }: { api: HrmsApi; boot: HrmsB
   }
   const approvals = useApprovals(api, boot);
   const count = approvals.rows?.filter(decidable).length ?? 0;
-  const switcher = <SegmentedControl label={t("Show")} value={view} onChange={(value) => setView(value as View)} options={[
-    { id: "today", label: t("Today") }, { id: "approve", label: count ? t("To approve ({count})", { count }) : t("To approve") }, { id: "days", label: t("Days") },
+  const switcher = <ListTabs label={t("Show")} value={view} onChange={setView} items={[
+    { id: "today", label: t("Today") }, { id: "approve", label: t("To approve"), count }, { id: "days", label: t("Days") },
     { id: "time", label: t("Time") }, { id: "utilisation", label: t("Utilisation") },
   ]} />;
   if (view === "approve") return <Approvals api={api} boot={boot} approvals={approvals} switcher={switcher} open={open} onOpen={onOpen} />;

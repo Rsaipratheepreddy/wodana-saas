@@ -34,4 +34,13 @@ describe("supplier-offer comparison", () => {
     await userEvent.type(screen.getByRole("searchbox", { name: "Search item, supplier, SKU or source" }), "walnut");
     await waitFor(() => expect(fetcher).toHaveBeenLastCalledWith(expect.stringContaining("search=walnut"), expect.any(Object)));
   });
+  it("has one title with the offer status as tabs, no eyebrow or description", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) });
+    vi.stubGlobal("fetch", fetcher);
+    render(<DesignSystemProvider><SupplierOfferPage workspaceId="d004d45c-7140-4b0c-a68d-e87d012c2390" /></DesignSystemProvider>);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Supplier offers"]);
+    await userEvent.click(screen.getByRole("button", { name: "Drafts" }));
+    await waitFor(() => expect(fetcher).toHaveBeenLastCalledWith(expect.stringContaining("status=draft"), expect.any(Object)));
+    expect(screen.getByRole("button", { name: "Drafts" })).toHaveAttribute("aria-pressed", "true");
+  });
 });

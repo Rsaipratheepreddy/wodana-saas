@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -12,12 +11,15 @@ import {
   ListTabs,
   DataGrid,
   IconButton,
-  IconMenuButton,
   InspectorSheet,
   NoAccessNotice,
   NoAccessState,
-  PageHeader,
+  EmptyState,
+  NoResultsState,
+  PageShell,
+  RecordName,
   type DataGridColumn,
+  type ToolbarFilter,
   DesignSystemProvider,
   FormDialog,
   TextAreaField,
@@ -95,6 +97,8 @@ function nextActionLabel(value: string | null, referenceTime: number, status: Cr
   const difference = date.getTime() - referenceTime;
   if (difference < 0) {
     const hours = Math.max(1, Math.round(Math.abs(difference) / 3_600_000));
+    // A day or more late reads in days ("29d overdue"), in the person's own unit style.
+    if (hours >= 24) return { label: t("{duration} overdue", { duration: new Intl.NumberFormat(localFormat.locale, { style: "unit", unit: "day", unitDisplay: "narrow" }).format(Math.floor(hours / 24)) }), overdue: true };
     return { label: t("{hours}h overdue", { hours }), overdue: true };
   }
   if (difference < 86_400_000) {
@@ -137,6 +141,8 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const seesTeam = serverData.canAssign !== false || !serverData.currentMembershipId;
   // S-30: everyone with enquiries of their own opens on My day: new ones, and those due today or overdue.
   const [leadView, setLeadView] = useState<EnquiryView>(serverData.currentMembershipId ? "my_day" : "all");
+  // Enquiries to check (a possible existing client, or a duplicate) are a filter, not more tabs (at most six).
+  const [check, setCheck] = useState<"review" | "duplicates" | undefined>();
   const [contactLead, setContactLead] = useState<CrmLeadListItem | null>(null);
   const [savingLeadId, setSavingLeadId] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<LeadMove | null>(null);
@@ -199,12 +205,12 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
     return listOf(lead.status) === view;
   };
   const visibleItems = useMemo(() => {
-    const listed = scoped.filter((lead) => inView(lead, leadView));
+    const listed = scoped.filter((lead) => inView(lead, leadView) && (!check || inView(lead, check)));
     // New and My day read in the order they need a reply: respond-by first, then the follow-up that's due.
     const due = (lead: CrmLeadListItem) => (lead.nextActionAt ? Date.parse(lead.nextActionAt) : Number.POSITIVE_INFINITY);
     return leadView === "new" || leadView === "my_day" ? [...listed].sort((a, b) => respondOrder(a) - respondOrder(b) || due(a) - due(b)) : listed;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scoped, leadView, endOfToday]);
+  }, [scoped, leadView, check, endOfToday]);
   const viewCount = (view: EnquiryView) => scoped.filter((lead) => inView(lead, view)).length;
   const sources = useMemo(() => [...new Set(items.map(lead => lead.source))].sort(), [items]);
 
@@ -377,7 +383,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   // The default columns (with the row checkbox) add up to the content area at 1440 px, so Log contact and Convert
   // stay in view; their text wraps inside the cells (leads-page.module.css).
   const columns: DataGridColumn<CrmLeadListItem>[] = [
-    { accessorKey: "partyName", header: t("Customer"), size: 168, meta: { headerIcon: <ContactRound size={14}/> }, cell: ({row:{original:lead}}) => { const name = customerDisplayName(lead.partyName); return <button type="button" className={styles.sheetLead} data-tour={!lead.isConverted && !["disqualified", "paused"].includes(lead.status) && hasResolvedEnquiryType(lead.serviceType) ? "enquiry-customer" : undefined} data-tour-safe onClick={() => setCardLead(lead)} aria-label={t("Open {name}", { name })} title={name}><Avatar name={name} size="sm" /><span className={styles.clientRequest}><strong>{name}</strong>{lead.reference ? <small>{lead.reference}</small> : null}</span></button>; } },
+    { accessorKey: "partyName", header: t("Customer"), size: 190, meta: { primary: true, interactive: true, headerIcon: <ContactRound size={14}/> }, cell: ({row:{original:lead}}) => { const name = customerDisplayName(lead.partyName); return <RecordName detail={lead.reference} title={<button type="button" className={styles.sheetLead} data-tour={!lead.isConverted && !["disqualified", "paused"].includes(lead.status) && hasResolvedEnquiryType(lead.serviceType) ? "enquiry-customer" : undefined} data-tour-safe onClick={() => setCardLead(lead)} aria-label={t("Open {name}", { name })} title={name}>{name}</button>} />; } },
     { accessorKey: "title", header: t("Enquiry title"), size: 240, meta: { headerIcon: <Type size={14}/> }, cell: ({getValue}) => <span className={styles.sheetText} title={String(getValue())}>{String(getValue())}</span> },
     { id: "status", header: t("Status"), size: 118, accessorFn: lead => statusText(lead), meta: { headerIcon: <CheckCircle2 size={14}/> }, cell: ({row:{original:lead}}) => <span className={styles.attentionFlags}>
       <Badge tone={statusTone(lead)}>{statusText(lead)}</Badge>
@@ -385,13 +391,13 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
       {lead.contactAttempts && ACTIVE_STATUSES.has(lead.status) ? <Badge tone="neutral">{t("Attempt {count}", { count: lead.contactAttempts })}</Badge> : null}
       {lead.escalatedAt && ACTIVE_STATUSES.has(lead.status) ? <Badge tone="danger">{t("Escalated")}</Badge> : null}
     </span> },
-    { id: "respondBy", header: t("Respond by"), size: 128, accessorFn: lead => Number.isFinite(respondOrder(lead)) ? lead.slaDueAt : undefined, sortUndefined: "last", meta: { headerIcon: <Timer size={14}/> }, cell: ({row:{original:lead}}) => respondBy(lead, now) ? <RespondByChip compact lead={lead} now={now} /> : <span className={styles.sheetText}>—</span> },
-    { id: "source", header: t("Source"), size: 130, accessorFn: lead => sourceLabel(lead.source), filterFn: "equalsString", meta: { headerIcon: <Globe size={14}/>, filterOptions: sources.map(source=>({id:sourceLabel(source),label:sourceLabel(source)})) }, cell: ({row:{original:lead}}) => <span className={styles.sourceCell}><SourceChip source={lead.source} displayLabel={sourceLabel(lead.source)} />
+    { id: "respondBy", header: t("Respond by"), size: 128, accessorFn: lead => Number.isFinite(respondOrder(lead)) ? lead.slaDueAt : undefined, sortUndefined: "last", meta: { priority: "medium", headerIcon: <Timer size={14}/> }, cell: ({row:{original:lead}}) => respondBy(lead, now) ? <RespondByChip compact lead={lead} now={now} /> : <span className={styles.sheetText}>—</span> },
+    { id: "source", header: t("Source"), size: 130, accessorFn: lead => sourceLabel(lead.source), filterFn: "equalsString", meta: { priority: "low", headerIcon: <Globe size={14}/>, filterOptions: sources.map(source=>({id:sourceLabel(source),label:sourceLabel(source)})) }, cell: ({row:{original:lead}}) => <span className={styles.sourceCell}><SourceChip source={lead.source} displayLabel={sourceLabel(lead.source)} />
       {lead.channel ? <small>{initialData.leadOptions?.channels[lead.source]?.find(option => option.id === lead.channel)?.label ?? humanize(lead.channel, notSet)}</small> : null}</span> },
     { id: "channel", header: t("Channel"), size: 140, accessorFn: lead => initialData.leadOptions?.channels[lead.source]?.find(option => option.id === lead.channel)?.label ?? humanize(lead.channel, notSet), meta: { headerIcon: <Globe size={14}/> } },
     { id: "intakeMethod", header: t("Captured via"), size: 145, accessorFn: lead => humanize(lead.intakeMethod ?? null, notSet), cell: ({ row }) => <span className={styles.intakeChip}>{humanize(row.original.intakeMethod ?? null, notSet)}</span> },
     { id: "serviceType", header: t("Service required"), size: 195, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.enquiryTypes, lead.serviceType), cell: ({ row }) => <span className={styles.serviceChip} data-missing={!hasResolvedEnquiryType(row.original.serviceType) || undefined}>{!hasResolvedEnquiryType(row.original.serviceType) ? t("To confirm") : leadOptionLabel(initialData.leadOptions?.enquiryTypes, row.original.serviceType)}</span>, meta: { headerIcon: <BriefcaseBusiness size={14}/> } },
-    { accessorKey: "ownerName", header: t("Assigned to"), size: 150, meta: { headerIcon: <UsersRound size={14}/> }, cell: ({row:{original:lead}}) => <div className={styles.managerCell}><button type="button"
+    { accessorKey: "ownerName", header: t("Assigned to"), size: 150, meta: { priority: "medium", headerIcon: <UsersRound size={14}/> }, cell: ({row:{original:lead}}) => <div className={styles.managerCell}><button type="button"
       aria-label={t("Assign {name}", { name: customerDisplayName(lead.partyName) })} title={lead.ownerName ? t("{name} · Reassign", { name: lead.ownerName }) : t("Choose sales owner")}
       className={styles.assigneeButton} disabled={busy || lead.isConverted || ["qualified", "disqualified"].includes(lead.status)} onClick={() => setAssignment(lead)}>
       {lead.ownerName ? <Avatar name={lead.ownerName} roles={["sales"]} seed={lead.ownerMembershipId ?? lead.ownerName} size="sm" /> : <UserRoundPlus aria-hidden="true" size={16} />}
@@ -419,16 +425,27 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
       : <Button size="compact" className={styles.createDeal} data-tour="enquiry-convert" data-tour-safe isDisabled={busy} isLoading={convertingId === lead.id} aria-label={t("Convert {name} to opportunity", { name: customerDisplayName(lead.partyName) })} onPress={() => confirmConvert(lead)}>{t("Convert")}</Button> },
   ];
   const pendingLead = pendingMove ? items.find((lead) => lead.id === pendingMove.leadId) : undefined;
+  const add = () => setCreateOpen(true);
+  // At most six lists; a count shows only on a list that asks for action (My day, New, Unassigned).
+  const leadTabs: Array<{ id: EnquiryView; label: string; count?: number }> = [
+    ...(serverData.currentMembershipId ? [{ id: "my_day" as const, label: t("My day"), count: viewCount("my_day") }] : []),
+    { id: "new", label: t("New"), count: viewCount("new") },
+    { id: "contacted", label: t("Contacted") },
+    { id: "come_back", label: t("Come back to") },
+    ...(seesTeam ? [{ id: "unassigned" as const, label: t("Unassigned"), count: viewCount("unassigned") }] : []),
+    { id: "all", label: t("All") },
+  ];
+  const checkOptions = [...(viewCount("review") ? [{ id: "review", label: t("Needs review") }] : []), ...(viewCount("duplicates") ? [{ id: "duplicates", label: t("Duplicates") }] : [])];
+  const checkFilters: ToolbarFilter[] = checkOptions.length || check ? [{ id: "check", label: t("To check"), options: checkOptions, value: check,
+    // A duplicate is in no working list, so checking one shows All.
+    onChange: (value) => { setCheck(value as typeof check); if (value) setLeadView("all"); } }] : [];
   const workspaceArea = activeSection === "leads" ? "work" : activeSection === "forms" || activeSection === "sources" ? "capture" : activeSection === "assignment" || activeSection === "sla" ? "response" : "performance";
   return <DesignSystemProvider className={`${styles.provider} ${theme.theme}`} portalContainer={portalContainer} ref={setPortalContainer}>
-    <section aria-label={t("Enquiries workspace")} className={styles.page}>
-      {/* One title per section, with New enquiry top-end on the list (S-20). */}
-      <div className={styles.pageHeader}><PageHeader title={t(SECTION_AREA[activeSection])} actions={activeSection === "leads" && initialData.canView
-        ? <Button variant="primary" onPress={() => setCreateOpen(true)}><Plus size={15} aria-hidden="true"/>{t("New enquiry")}</Button> : undefined} /></div>
-
-
-      {workspaceArea === "capture" && !sectionDenied && !(activeSection === "forms" && formEditing) ? <nav className={styles.subnav} aria-label={t("Capture settings")}><button type="button" data-active={activeSection === "forms" || undefined} onClick={() => openSection("forms")}>{t("Forms")}</button><button type="button" data-active={activeSection === "sources" || undefined} onClick={() => openSection("sources")}>{t("Lead sources")}</button></nav> : null}
-
+    {/* One title per section, with New enquiry top-end on the list (S-20); the lists sit under the title. */}
+    <PageShell aria-label={t("Enquiries workspace")} title={t(SECTION_AREA[activeSection])}
+      action={activeSection === "leads" && initialData.canView ? <Button variant="primary" onPress={add}><Plus size={15} aria-hidden="true"/>{t("New enquiry")}</Button> : undefined}
+      tabs={activeSection === "leads" && initialData.canView && !sectionDenied ? <ListTabs label={t("Enquiry lists")} value={leadView} onChange={setLeadView} items={leadTabs} />
+        : workspaceArea === "capture" && !sectionDenied && !(activeSection === "forms" && formEditing) ? <ListTabs label={t("Capture settings")} value={activeSection} onChange={openSection} items={[{ id: "forms", label: t("Forms") }, { id: "sources", label: t("Lead sources") }]} /> : undefined}>
 
       {!initialData.canView ? <NoAccessState area={t("Enquiries")} /> : sectionDenied ? <NoAccessState area={t(SECTION_AREA[activeSection])} /> : <>
         {linkedLead ? <InspectorSheet isOpen hideTitle title={t("Enquiry details")} size="md" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} onOpenRecord={openRecord} /></InspectorSheet> : null}
@@ -458,22 +475,13 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
           </section>}
           {seesTeam && unowned > 0 && leadView !== "unassigned" ? <Callout title={unowned === 1 ? t("1 enquiry has no owner") : t("{count} enquiries have no owner", { count: unowned })} tone="warning" actions={<Button size="compact" onPress={() => setLeadView("unassigned")}>{t("Show them")}</Button>}>{t("Assign them before the client waits longer.")}</Callout> : null}
           {incoming.length ? <div className={styles.newRows}><Button size="compact" variant="secondary" onPress={showIncoming}>{incoming.length === 1 ? t("1 new enquiry · Show") : t("{count} new enquiries · Show", { count: incoming.length })}</Button></div> : null}
-          <DataGrid keepEmptyTable compactToolbar selectable={canBulk} key={`${initialData.workspaceId}:${bulkRound}`} bulkActions={canBulk ? (selected) => <EnquiryBulkActions rows={selected} onPick={(mode, picked) => setBulk({ mode, rows: picked })} /> : undefined} emptyContent={<div className={styles.illustratedEmpty}><Image src="/images/empty-states/enquiries.png" width={112} height={112} alt={items.length ? t("No matching enquiries") : t("Your enquiries will appear here")} /><span>{items.length ? t("No matching enquiries") : t("No enquiries yet")}</span></div>} ariaLabel={t("CRM enquiries")} persistKey="crm-enquiries-v4" rowNumbers={false} columns={columns} data={visibleItems} getRowId={lead => lead.id}
+          <DataGrid keepEmptyTable compactToolbar selectable={canBulk} key={`${initialData.workspaceId}:${bulkRound}`} bulkActions={canBulk ? (selected) => <EnquiryBulkActions rows={selected} onPick={(mode, picked) => setBulk({ mode, rows: picked })} /> : undefined}
+            emptyContent={check || (items.length && leadView !== "my_day") ? <NoResultsState onClear={() => { setCheck(undefined); setLeadView("all"); }} />
+              : <EmptyState illustration="empty" title={items.length ? t("You're all caught up") : t("Your enquiries will appear here")} action={items.length ? undefined : <Button variant="primary" onPress={add}>{t("New enquiry")}</Button>} />}
+            ariaLabel={t("CRM enquiries")} persistKey="crm-enquiries-v4" rowNumbers={false} columns={columns} data={visibleItems} getRowId={lead => lead.id}
             initialColumnVisibility={{emirate:false,updatedAt:false,title:false,channel:false,intakeMethod:false,serviceType:false,priority:false,createdAt:false,budgetRange:false,customerType:false,area:false,campaign:false}} searchLabel={t("Search enquiries")} exportFileName="enquiries.csv"
-
-            onRowAction={setCardLead} pageSize={50} hasMoreRows={Boolean(nextCursor)} totalRowCount={items.length}
-            emptyTitle={leadView === "my_day" && items.length ? t("You're all caught up") : items.length ? t("No matching enquiries") : t("Your enquiries will appear here")} emptyDescription={items.length ? t("Try another view or clear your filters.") : t("Use New enquiry to add one.")}
-            toolbarLeading={<ListTabs label={t("Enquiry lists")} value={leadView} onChange={setLeadView} items={[
-          ...(serverData.currentMembershipId ? [{ id: "my_day" as const, label: t("My day"), count: viewCount("my_day") }] : []),
-          { id: "new", label: t("New"), count: viewCount("new") },
-          { id: "contacted", label: t("Contacted"), count: viewCount("contacted") },
-          { id: "come_back", label: t("Come back to"), count: viewCount("come_back") },
-          ...(seesTeam ? [{ id: "unassigned" as const, label: t("Unassigned"), count: viewCount("unassigned") }] : []),
-          ...(viewCount("review") ? [{ id: "review" as const, label: t("Needs review"), count: viewCount("review") }] : []),
-          ...(viewCount("duplicates") ? [{ id: "duplicates" as const, label: t("Duplicates"), count: viewCount("duplicates") }] : []),
-          { id: "all", label: t("All") },
-        ]} />}
-            toolbarActions={<><IconMenuButton ariaLabel={t("More actions")} items={[{ id: "import", label: t("Import CSV") }, { id: "review", label: t("Intake review") }]} onAction={(id) => id === "import" ? setImportOpen(true) : setReviewOpen(true)} /></>}
+            onRowAction={setCardLead} pageSize={50} hasMoreRows={Boolean(nextCursor)} totalRowCount={items.length} filters={checkFilters}
+            menuActions={[{ id: "import", label: t("Import CSV") }, { id: "review", label: t("Intake review") }]} onMenuAction={(id) => id === "import" ? setImportOpen(true) : setReviewOpen(true)}
             footerActions={<><Button size="compact" variant="quiet" isDisabled={busy || !items.some(lead => !lead.ownerMembershipId && ACTIVE_STATUSES.has(lead.status))} onPress={() => void runAutoAssign()}>{t("Assign unassigned")}</Button>{nextCursor ? <Button isDisabled={busy} isLoading={loadingMore} onPress={() => void loadMore()} size="compact">{t("Load more enquiries")}</Button> : null}<IconButton aria-label={t("Refresh enquiries")} onPress={() => void refresh()} isDisabled={busy} size="compact"><RefreshCw size={14} aria-hidden="true"/></IconButton></>}
           />
         </section>
@@ -527,7 +535,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
         }} /> : null}
         {confirmationDialog}
       </>}
-    </section>
+    </PageShell>
   </DesignSystemProvider>;
 }
 

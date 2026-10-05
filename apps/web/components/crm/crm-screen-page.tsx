@@ -24,15 +24,18 @@ import {
   Button,
   Callout,
   DataGrid,
+  EmptyState,
   InspectorSheet,
+  ListTabs,
   NoAccessState,
+  NoResultsState,
+  PageShell,
   Tabs,
   DesignSystemProvider,
   formatDate,
   formatMoney,
   useDesignSystem,
   type DataGridColumn,
-  type SavedView,
   TypeChip,
 } from "@/design-system";
 import type { CrmRecord, CrmScreenId, CrmScreenPageData } from "@/lib/crm/screens";
@@ -240,16 +243,16 @@ function reportValue(t: Translate, region: Region, row: CrmRecord) {
   return "—";
 }
 
-function viewsFor(id: CrmScreenId, items: CrmRecord[], referenceTime: number, t: Translate): SavedView[] {
-  const count = (view: string) => filterFor(id, items, view, referenceTime).length;
-  const viewLabel = (view: string) => t("{view} ({count})", { view: viewLabels[view] ? t(viewLabels[view]) : humanize(t, view), count: count(view) });
-  if (id === "crm-overview") return ["all", "customer_reply", "overdue_activity", "due_today"].map((view) => ({ id: view, label: viewLabel(view) }));
-  if (id === "customers" || id === "organizations") return ["all", "customer", "prospect", "archived"].map((view) => ({ id: view, label: viewLabel(view) }));
-  if (id === "opportunities") return ["all", "open", "won", "lost"].map((view) => ({ id: view, label: viewLabel(view) }));
-  if (id === "activities") return ["all", "pending", "overdue", "completed"].map((view) => ({ id: view, label: viewLabel(view) }));
-  if (id === "conversations") return ["all", "unread", "open", "closed"].map((view) => ({ id: view, label: viewLabel(view) }));
-  if (id === "sequences" || id === "automations") return ["all", "active", "draft", "paused"].map((view) => ({ id: view, label: viewLabel(view) }));
-  return [];
+/** The lists under the title; a count shows only on a list that asks for action (overdue, unread). */
+function tabsFor(id: CrmScreenId, items: CrmRecord[], referenceTime: number, t: Translate): Array<{ id: string; label: string; count?: number }> {
+  const views = id === "crm-overview" ? ["all", "customer_reply", "overdue_activity", "due_today"]
+    : id === "customers" || id === "organizations" ? ["all", "customer", "prospect", "archived"]
+    : id === "opportunities" ? ["all", "open", "won", "lost"]
+    : id === "activities" ? ["all", "pending", "overdue", "completed"]
+    : id === "conversations" ? ["all", "unread", "open", "closed"]
+    : id === "sequences" || id === "automations" ? ["all", "active", "draft", "paused"] : [];
+  const asksForAction = new Set(["overdue", "unread", "overdue_activity", "customer_reply"]);
+  return views.map((view) => ({ id: view, label: viewLabels[view] ? t(viewLabels[view]) : humanize(t, view), ...(asksForAction.has(view) ? { count: filterFor(id, items, view, referenceTime).length } : {}) }));
 }
 
 function filterFor(id: CrmScreenId, items: CrmRecord[], view: string, referenceTime: number) {
@@ -262,61 +265,6 @@ function filterFor(id: CrmScreenId, items: CrmRecord[], view: string, referenceT
   if (id === "activities" && view === "overdue") return items.filter((item) => value(item, "status") === "pending" && typeof value(item, "dueAt") === "string" && Date.parse(String(value(item, "dueAt"))) < referenceTime);
   if (id === "conversations" && view === "unread") return items.filter((item) => numeric(item, "unreadCount") > 0);
   return items.filter((item) => value(item, "status") === view);
-}
-
-type SummaryItem = { icon: ReactNode; label: string; value: number | string; attention?: boolean };
-
-function summaryFor(data: CrmScreenPageData, referenceTime: number, t: Translate, region: Region): SummaryItem[] {
-  const { id, items } = data;
-  if (id === "crm-overview") {
-    const counts = (data.supporting.counts ?? {}) as Record<string, number>;
-    return [
-      { icon: <Inbox size={14} />, value: items.length, label: t("need attention"), attention: items.length > 0 },
-      { icon: <ContactRound size={14} />, value: counts.customers ?? 0, label: t("customers") },
-      { icon: <CircleDollarSign size={14} />, value: counts.opportunities ?? 0, label: t("opportunities") },
-      { icon: <Activity size={14} />, value: counts.activities ?? 0, label: t("activities") },
-    ];
-  }
-  if (id === "customers" || id === "organizations") return [
-    { icon: id === "customers" ? <UsersRound size={14} /> : <Building2 size={14} />, value: items.length, label: t("loaded {items}", { items: t(screenCopy[id].noun) }) },
-    { icon: <BadgeCheck size={14} />, value: items.filter((item) => value(item, "status") === "active").length, label: t("active") },
-    { icon: <ContactRound size={14} />, value: items.filter((item) => primaryContact(item, "email") !== null).length, label: t("with email") },
-    { icon: <Clock3 size={14} />, value: items.filter((item) => value(item, "lifecycle") === "customer").length, label: t("customers") },
-  ];
-  if (id === "opportunities") return [
-    { icon: <CircleDollarSign size={14} />, value: items.length, label: t("opportunities") },
-    { icon: <BadgeCheck size={14} />, value: items.filter((item) => value(item, "status") === "open").length, label: t("open") },
-    { icon: <CircleDollarSign size={14} />, value: pipelineTotals(t, region, items), label: t("open value") },
-    { icon: <CalendarClock size={14} />, value: items.filter((item) => typeof value(item, "nextActionAt") === "string" && Date.parse(String(value(item, "nextActionAt"))) < referenceTime && value(item, "status") === "open").length, label: t("overdue") },
-  ];
-  if (id === "activities") return [
-    { icon: <Activity size={14} />, value: items.length, label: t("activities") },
-    { icon: <Clock3 size={14} />, value: items.filter((item) => value(item, "status") === "pending").length, label: t("pending") },
-    { icon: <CalendarClock size={14} />, value: items.filter((item) => value(item, "status") === "pending" && typeof value(item, "dueAt") === "string" && Date.parse(String(value(item, "dueAt"))) < referenceTime).length, label: t("overdue"), attention: true },
-    { icon: <BadgeCheck size={14} />, value: items.filter((item) => value(item, "status") === "completed").length, label: t("completed") },
-  ];
-  if (id === "conversations") return [
-    { icon: <MessageSquareText size={14} />, value: items.length, label: t("conversations") },
-    { icon: <Inbox size={14} />, value: items.reduce((total, item) => total + numeric(item, "unreadCount"), 0), label: t("unread"), attention: true },
-    { icon: <BadgeCheck size={14} />, value: items.filter((item) => value(item, "status") === "open").length, label: t("open") },
-    { icon: <Mail size={14} />, value: new Set(items.map((item) => value(item, "channel"))).size, label: t("channels") },
-  ];
-  if (id === "sequences") return [
-    { icon: <Sparkles size={14} />, value: items.length, label: t("sequences") },
-    { icon: <BadgeCheck size={14} />, value: items.filter((item) => value(item, "status") === "active").length, label: t("active") },
-    { icon: <Clock3 size={14} />, value: items.filter((item) => value(item, "status") === "draft").length, label: t("draft") },
-    { icon: <Activity size={14} />, value: items.reduce((total, item) => total + list(item, "steps").length, 0), label: t("total steps") },
-  ];
-  if (id === "automations") {
-    const runs = Array.isArray(data.supporting.runs) ? data.supporting.runs as CrmRecord[] : [];
-    return [
-      { icon: <Bot size={14} />, value: items.length, label: t("automations") },
-      { icon: <BadgeCheck size={14} />, value: items.filter((item) => value(item, "status") === "active").length, label: t("active") },
-      { icon: <Activity size={14} />, value: runs.length, label: t("recent runs") },
-      { icon: <Clock3 size={14} />, value: runs.filter((run) => value(run, "status") === "failed").length, label: t("failed"), attention: true },
-    ];
-  }
-  return [];
 }
 
 function inspectorTitle(id: CrmScreenId, row: CrmRecord, t: Translate) {
@@ -354,10 +302,9 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
   const copy = screenCopy[initialData.id];
   const title = t(copy.title);
   const noun = t(copy.noun);
-  const views = useMemo(() => viewsFor(initialData.id, data.items, referenceTime, t), [initialData.id, data.items, referenceTime, t]);
+  const tabs = useMemo(() => tabsFor(initialData.id, data.items, referenceTime, t), [initialData.id, data.items, referenceTime, t]);
   const visibleItems = useMemo(() => filterFor(initialData.id, data.items, view, referenceTime), [initialData.id, data.items, referenceTime, view]);
   const columns = useMemo(() => columnsFor(initialData.id, referenceTime, t, region), [initialData.id, referenceTime, t, region]);
-  const summary = useMemo(() => summaryFor(data, referenceTime, t, region), [data, referenceTime, t, region]);
 
   const reload = async (more = false) => {
     const endpoints: Partial<Record<CrmScreenId, string>> = { customers: "parties?limit=100", organizations: "parties?type=organization&limit=100", opportunities: "opportunities?limit=100", activities: "activities?limit=100", conversations: "conversations?limit=100", sequences: "sequences", automations: "automations", "crm-overview": "today" };
@@ -372,37 +319,31 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
     finally { setBusy(false); }
   };
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-    <section aria-label={t("{title} workspace", { title })} className={styles.page}>
-      <header className={styles.pageHeading}><div><h1>{title}</h1><p>{t(copy.description)}</p></div></header>
+    <PageShell aria-label={t("{title} workspace", { title })} title={title}
+      tabs={initialData.canView && tabs.length && section === "records" ? <ListTabs label={t("{title} lists", { title })} items={tabs} value={view} onChange={setView} /> : undefined}>
       {!initialData.canView ? <NoAccessState area={title} /> : <>
-        <section aria-label={t("{title} summary", { title })} className={styles.summary}>
-          {summary.map((item) => <span data-attention={item.attention && Number(item.value) > 0 || undefined} key={item.label}>{item.icon}<strong>{item.value}</strong>{item.label}</span>)}
-        </section>
         {failure ? <Callout title={t("Could not refresh CRM")} tone="danger">{failure}</Callout> : null}
         {creating ? <CrmCreateDialog workspaceId={initialData.workspaceId} id={initialData.id} onClose={() => setCreating(false)} onSaved={() => reload()} /> : null}
         {linkedRecord ? <InspectorSheet isOpen title={t("Record details")} size="md" onOpenChange={(open) => { if (!open) setLinkedRecord(undefined); }}><LinkedRecordWorkbench workspaceId={initialData.workspaceId} id={initialData.id} recordId={linkedRecord} onChanged={() => reload()} /></InspectorSheet> : null}
         {initialData.id === "opportunities" ? <Tabs selectedKey={section} onSelectionChange={setSection} items={[{ id: "records", label: t("Opportunities"), panel: null }, { id: "pipeline", label: t("Pipelines & rules"), panel: <PipelineSettings workspaceId={initialData.workspaceId} /> }]} /> : null}
-        {initialData.id === "activities" ? <Link href="/workspace/crm/follow-ups?view=schedule">{t("Open calendar")}</Link> : null}
-        {section === "records" ? <><div className={styles.gridRegion}>
-          <DataGrid
+        {section === "records" ? <DataGrid
             ariaLabel={t("CRM {items}", { items: noun })}
             columns={columns}
             data={visibleItems}
-            emptyDescription={initialData.id === "crm-overview" ? t("There is no urgent CRM work in this view.") : t("Try another view or clear the table search and filters.")}
-            emptyTitle={initialData.id === "crm-overview" ? t("You are all caught up") : t("No {items} in this view", { items: noun })}
+            emptyContent={view !== "all" ? <NoResultsState onClear={() => setView("all")} />
+              : <EmptyState title={initialData.id === "crm-overview" ? t("You are all caught up") : t("No {items} yet", { items: noun })} />}
             exportFileName={`wodana-${initialData.id}.csv`}
+            footerActions={<>{initialData.id === "activities" ? <Link href="/workspace/crm/follow-ups?view=schedule">{t("Open calendar")}</Link> : null}{data.nextCursor ? <Button size="compact" isLoading={busy} onPress={() => void reload(true)}>{t("Load more")}</Button> : null}</>}
             getInspectorTitle={(row) => inspectorTitle(initialData.id, row, t)}
             getRowId={(row) => row.id}
+            hasMoreRows={Boolean(data.nextCursor)}
             pageSize={25}
             persistKey={`crm-${initialData.id}`}
             renderInspector={(row) => <CrmRecordWorkbench id={initialData.id} workspaceId={initialData.workspaceId} row={data.items.find((item) => item.id === row.id) ?? row} onChanged={() => reload()} />}
-            savedViews={views}
-            selectedView={view}
-            onViewChange={setView}
-          />
-        </div>
-        <footer className={styles.pageFooter}>{data.nextCursor ? t("Showing the first {count} {items}. Load more to include the remaining records.", { count: data.items.length, items: noun }) : t("All {count} loaded {items} are shown.", { count: data.items.length, items: noun })}{data.nextCursor ? <Button size="compact" isLoading={busy} onPress={() => void reload(true)}>{t("Load more")}</Button> : null}</footer></> : null}
+            rowNumbers={false}
+            selectable={false}
+          /> : null}
       </>}
-    </section>
+    </PageShell>
   </DesignSystemProvider>;
 }

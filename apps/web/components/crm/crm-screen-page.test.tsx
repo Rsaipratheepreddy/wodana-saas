@@ -29,7 +29,9 @@ describe("CrmScreenPage", () => {
 
     expect(screen.getByRole("heading", { name: title, level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: tableName })).toBeInTheDocument();
-    expect(screen.getByLabelText(`${title} summary`)).toBeInTheDocument();
+    expect(screen.queryByLabelText(`${title} summary`)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("filters opportunities and opens the record inspector", async () => {
@@ -37,8 +39,7 @@ describe("CrmScreenPage", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
     render(<CrmScreenPage initialData={structuredClone(crmScreenFixture("opportunities"))} />);
 
-    await interaction.click(screen.getByRole("button", { name: /Table view/ }));
-    await interaction.click(screen.getByRole("option", { name: "Open (2)" }));
+    await interaction.click(screen.getByRole("button", { name: "Open" }));
     expect(screen.getByText("Emirates Hills villa interior renovation")).toBeInTheDocument();
 
     await interaction.click(screen.getByRole("button", { name: /DIFC executive office fit-out/ }));

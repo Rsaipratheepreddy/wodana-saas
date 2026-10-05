@@ -3,26 +3,29 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useState } from "react";
 import Link from "next/link";
-import { Avatar, Badge, DataGrid, type DataGridColumn } from "@/design-system";
+import { Badge, DataGrid, EmptyState, NoResultsState, OwnerCell, PageShell, RecordName, type DataGridColumn } from "@/design-system";
 import { projectStatusText, type PortfolioRow } from "./project-portfolio";
 import styles from "./client-projects.module.css";
 
+/** Clients: each client's project, its owner and status, and the way into the client updates. */
 export function ClientProjects({ rows }: { rows: PortfolioRow[] }) {
   const t = useT();
   const [search, setSearch] = useState("");
   const columns: DataGridColumn<PortfolioRow>[] = [
-    { accessorKey: "customer", header: t("Client"), meta: { renderCell: row => <span className={styles.client}><Avatar name={row.customer} size="sm" /><strong>{row.customer}</strong></span> } },
-    { accessorKey: "name", header: t("Project") },
-    { accessorKey: "manager", header: t("Owner"), meta: { renderCell: row => row.manager || t("Unassigned") } },
-    { accessorKey: "phase", header: t("Status"), meta: { renderCell: row => <Badge tone={row.phase === "completed" ? "success" : "info"}>{projectStatusText(t, row.phase)}</Badge> } },
-    { id: "actions", header: t("Actions"), meta: { renderCell: row => <Link className={styles.action} href={`/workspace/projects/${row.id}/overview?view=client-updates`}>{t("Client updates →")}</Link> } },
+    { id: "customer", header: t("Client"), accessorFn: row => `${row.customer} ${row.name} ${row.reference}`, size: 280, meta: { primary: true,
+      renderCell: row => <RecordName title={row.customer} detail={[row.name, row.reference].filter(Boolean).join(" · ")} /> } },
+    { accessorKey: "manager", header: t("Owner"), size: 160, meta: { priority: "low", renderCell: row => <OwnerCell fallback={t("Unassigned")} person={row.manager} /> } },
+    { accessorKey: "phase", header: t("Status"), size: 130, meta: { renderCell: row => <Badge tone={row.phase === "completed" ? "success" : "info"}>{projectStatusText(t, row.phase)}</Badge> } },
+    { id: "actions", header: t("Actions"), size: 160, enableSorting: false, meta: { interactive: true, renderCell: row => <Link className={styles.action} href={`/workspace/projects/${row.id}/overview?view=client-updates`}>{t("Client updates")}</Link> } },
   ];
-  const filtered = rows.filter(row => `${row.customer} ${row.name} ${row.manager ?? ""}`.toLowerCase().includes(search.toLowerCase()));
-  return <section className={styles.page} aria-label={t("Clients")}>
-    <DataGrid ariaLabel={t("Client projects")} columns={columns} data={filtered} gridLines getRowId={row => row.id}
+  const query = search.trim().toLowerCase();
+  const filtered = rows.filter(row => `${row.customer} ${row.name} ${row.reference} ${row.manager ?? ""}`.toLowerCase().includes(query));
+  return <PageShell title={t("Clients")}>
+    <DataGrid ariaLabel={t("Client projects")} columns={columns} data={filtered} getRowId={row => row.id}
       searchLabel={t("Search clients and projects")} searchValue={search} onSearchChange={setSearch}
-      emptyTitle={rows.length ? t("No matching clients") : t("No client projects yet")}
-      emptyDescription={rows.length ? t("Try a client or project name.") : t("Projects appear here once execution is set up.")}
-      persistKey="client-projects" rowNumbers={false} pageSize={25} />
-  </section>;
+      emptyContent={query ? <NoResultsState onClear={() => setSearch("")} />
+        : <EmptyState title={t("No client projects yet")} description={t("Projects appear here once execution is set up.")}
+            action={<Link className={styles.action} href="/workspace/projects">{t("Open projects")}</Link>} />}
+      persistKey="client-projects" rowNumbers={false} selectable={false} pageSize={25} />
+  </PageShell>;
 }

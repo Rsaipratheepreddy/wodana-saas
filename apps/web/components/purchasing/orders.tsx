@@ -11,7 +11,7 @@ import { OPEN_ORDERS, OrderStatusLabel, useOrderLabels } from "./order-labels";
 import { OrderSheet, type OrderIntent } from "./order-sheet";
 import styles from "./purchasing.module.css";
 
-type View = "mine" | "approval" | "send" | "confirm" | "late" | "open" | "all";
+type View = "mine" | "approval" | "send" | "confirm" | "late" | "all";
 type Step = { key: "place" | "approve" | "send" | "confirm" | "chase" | "receive" | "close"; mine: boolean };
 const RECEIVABLE = ["sent", "confirmed", "partly_received"];
 
@@ -32,8 +32,8 @@ export function orderNext(row: OrderRow, rights: { canBuy: boolean; canApprove: 
 }
 
 /**
- * Purchase orders, as queues: what needs me, waiting for approval, to send, to confirm and late, then every open
- * order. Each row says where the order is, what's still to come and when, and its one next step; approving
+ * Purchase orders, as queues: what needs me, waiting for approval, to send, to confirm and late, then all orders
+ * (open ones unless the Status filter is cleared). Each row says where the order is, what's still to come and when, and its one next step; approving
  * and marking sent work on several at once. A row opens the order.
  */
 export function Orders({ api, openId, intent = null, onOpen, onReceipt, refreshKey, projectId = null, onProject = () => undefined }: {
@@ -47,6 +47,8 @@ export function Orders({ api, openId, intent = null, onOpen, onReceipt, refreshK
   const [error, setError] = useState("");
   const [denied, setDenied] = useState(false);
   const [view, setView] = useState<View | null>(null);
+  // All shows the open orders until the Status filter is cleared.
+  const [openOnly, setOpenOnly] = useState(true);
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: "error" | "success" | "info"; text: string } | null>(null);
@@ -62,11 +64,11 @@ export function Orders({ api, openId, intent = null, onOpen, onReceipt, refreshK
     && (!needle || `${order.number} ${order.supplierName} ${order.projects.map((project) => project.reference).join(" ")}`.toLocaleLowerCase().includes(needle))), [state, projectId, needle]);
   const queues: Record<View, (row: OrderRow) => boolean> = {
     mine: (row) => Boolean(orderNext(row, rights, today)?.mine), approval: (row) => row.status === "pending_approval", send: (row) => row.status === "approved",
-    confirm: (row) => row.status === "sent" && !isLate(row, today), late: (row) => isLate(row, today), open: (row) => OPEN_ORDERS.includes(row.status), all: () => true,
+    confirm: (row) => row.status === "sent" && !isLate(row, today), late: (row) => isLate(row, today), all: (row) => !openOnly || OPEN_ORDERS.includes(row.status),
   };
   const counts = Object.fromEntries((Object.keys(queues) as View[]).map((key) => [key, scoped.filter(queues[key]).length])) as Record<View, number>;
   // Start where there's something to do.
-  const current: View = view ?? (counts.mine ? "mine" : "open");
+  const current: View = view ?? (counts.mine ? "mine" : "all");
   // Late first, then by when it's due, then the newest.
   const rows = scoped.filter(queues[current]).sort((a, b) => Number(isLate(b, today)) - Number(isLate(a, today)) || (a.due ?? "9999").localeCompare(b.due ?? "9999") || b.createdAt.localeCompare(a.createdAt));
 
@@ -137,7 +139,7 @@ export function Orders({ api, openId, intent = null, onOpen, onReceipt, refreshK
     </>;
   };
   const emptyTitle = { mine: t("Nothing waits for you"), approval: t("Nothing waits for approval"), send: t("Nothing to send"), confirm: t("Nothing to confirm"), late: t("Nothing is late"),
-    open: t("No open orders"), all: t("No orders yet") }[current];
+    all: openOnly ? t("No open orders") : t("No orders yet") }[current];
   return <div className={styles.stack}>
     {notice ? <InlineNotice tone={notice.tone} message={notice.text} /> : null}
     <DataGrid<OrderRow>
@@ -157,17 +159,18 @@ export function Orders({ api, openId, intent = null, onOpen, onReceipt, refreshK
           { id: "send", label: t("To send"), count: counts.send },
           { id: "confirm", label: t("To confirm"), count: counts.confirm },
           { id: "late", label: t("Late"), count: counts.late },
-          { id: "open", label: t("Open"), count: counts.open },
           { id: "all", label: t("All") },
         ]} />
         <ProjectFilterChip project={projectId ? (state?.orders.flatMap((order) => order.projects).find((project) => project.id === projectId) ?? { id: projectId, reference: t("This project") }) : null}
           onClear={() => onProject(null)} />
       </div>}
+      filters={current === "all" ? [{ id: "status", label: t("Status"), options: [{ id: "open", label: t("Open") }], value: openOnly ? "open" : undefined,
+        onChange: (value) => setOpenOnly(value === "open") }] : []}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} />
-        : <EmptyState title={emptyTitle} description={current === "all" ? t("Orders start from what projects need to order.") : null} />}
+        : <EmptyState title={emptyTitle} description={current === "all" && !openOnly ? t("Orders start from what projects need to order.") : null} />}
       rowNumbers={false}
       selectable={rights.canBuy || rights.canApprove}
-      selectionResetKey={`${current}:${projectId ?? ""}`}
+      selectionResetKey={`${current}:${openOnly}:${projectId ?? ""}`}
       bulkActions={bulk}
       wrapText
     />

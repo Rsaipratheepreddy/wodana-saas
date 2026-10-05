@@ -353,9 +353,15 @@ describe("open work", () => {
     expect(text.indexOf("Late · 1")).toBeLessThan(text.indexOf("Approve shop drawings"));
     expect(text.indexOf("Later · 1")).toBeLessThan(text.indexOf("Book the crane"));
     expect(table).not.toHaveTextContent("Dana Karim");
-    await userEvent.click(screen.getByRole("radio", { name: "Everyone" }));
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1, name: "Tasks" })).toBeVisible();
+    expect(within(screen.getByRole("group", { name: "Whose work" })).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Mine", "Everyone"]);
+    await userEvent.click(screen.getByRole("button", { name: "Everyone" }));
     expect(await screen.findByText("Paint samples")).toBeInTheDocument();
     expect(fetcher.mock.calls.at(-1)![0]).toContain("view=all");
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search work" }), "nothing like this");
+    await userEvent.click(await screen.findByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("Paint samples")).toBeInTheDocument();
   });
   it("shows the team's workload and how work went, and opens a person's work", async () => {
     const open: OpenWorkState = { view: "all", me: "m1", canSeeTeam: true, items: [
@@ -366,7 +372,7 @@ describe("open work", () => {
       people: [row({}), row({ membershipId: "m1", name: "Omar Haddad", open: 2, late: 0, done: 3, doneWithDue: 0, onTime: 0, cycleDays: null })] };
     const fetcher = mount((url) => (url.includes("/work/insights") ? insights : open));
     render(<DesignSystemProvider><OpenWork workspaceId="w" /></DesignSystemProvider>);
-    await userEvent.click(await screen.findByRole("radio", { name: "Team" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Team" }));
     const table = await screen.findByRole("table", { name: "Team" }).catch(() => screen.findByRole("grid", { name: "Team" }));
     expect(screen.getAllByText("75%")).toHaveLength(2); // Finished on time overall: 6 of 8; and Dana's row
     expect(within(table).getAllByText("75%")).toHaveLength(1); // Dana: 3 of 4; Omar has no due dates, so no percentage

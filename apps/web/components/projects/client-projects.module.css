@@ -1,5 +1,2 @@
-.page { padding:var(--wd-space-4) var(--wd-space-5); min-inline-size:0; background:var(--wd-color-surface); }
-.client { display:flex; align-items:center; gap:var(--wd-space-2); }
-.action { font-weight:600; color:var(--wd-color-action-primary); text-decoration:none; }
-.action:hover { text-decoration:underline; }
-@media(max-width:600px) { .page { padding:var(--wd-space-3); } }
+.action { font-weight: var(--wd-weight-semibold); color: var(--wd-color-action-primary); text-decoration: none; white-space: nowrap; }
+.action:hover { text-decoration: underline; }

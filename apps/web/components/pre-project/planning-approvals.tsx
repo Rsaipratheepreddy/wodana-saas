@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Callout, DataGrid } from "@/design-system";
+import { Badge, Callout, DataGrid, EmptyState, ListTabs, PageShell, RecordName } from "@/design-system";
 import type { PreProjectCase } from "@/lib/pre-project/types";
 import { designStatus, type CaseContent, type CaseDesign, type DesignOptions } from "@/lib/pre-project/content";
 import type { DefinitionPageData } from "@/lib/pre-project/definition";
@@ -13,7 +13,6 @@ import { usePreProject } from "./pre-project-context";
 import { DefinitionPage } from "./definition-page";
 import { CommercialPage } from "../commercial/commercial-page";
 import s from "./planning-approvals.module.css";
-import tableStyles from "../workspace/workspace.module.css";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
 
@@ -52,28 +51,28 @@ export function PlanningApprovals({ record, content, definition, commercial, sea
   const selectedQuote = quotes.find(item => review === `quote:${item.id}`);
   const detail = review === "scope" ? <DefinitionPage initial={definition} />
     : selectedQuote ? <CommercialPage reviewOnly key={selectedQuote.id} initial={commercial} record={record} section="quotations" quotationId={selectedQuote.id} search={search} /> : null;
-  return <section className={s.page} data-tour="case-approvals">
-    <h1 className={s.visuallyHidden}>{t("Approvals")}</h1>
+  const tabs = [{ id: "all", label: t("All items") }, ...["Requirements", "Designs", "Quotations"].map(type => ({ id: type, label: t(typeLabels[type]) }))];
+  const statusTone = (item: (typeof rows)[number]) => item.done ? "success" as const : item.ready ? "info" as const : "neutral" as const;
+  return <div data-tour="case-approvals"><PageShell title={t("Approvals")}
+    action={review ? undefined : <Link className="wd-button" href={`${root}/client-portal`}>{t("Client access")}</Link>}
+    tabs={review ? undefined : <ListTabs label={t("Approval type")} items={tabs} value={filter} onChange={setFilter} />}>
     {review ? <>{<Link className={s.back} href={href()}>← {t("All approvals")}</Link>}{detail ?? <Callout tone="warning" title={t("Review unavailable")}>{t("This item may have been archived or replaced. Return to the queue for its current version.")}</Callout>}</> : <>
       {"error" in content && <Callout tone="warning" title={t("Designs could not be loaded")}>{content.error}</Callout>}
       {"error" in definition && <Callout tone="warning" title={t("Requirements could not be loaded")}>{definition.error}</Callout>}
-      <div className={tableStyles.recordTablePanel}>
-        <DataGrid ariaLabel={t("Planning approvals")} compactToolbar selectable={false} toolbarActions={<Link className="wd-button" data-size="compact" href={`${root}/client-portal`}>{t("Client access")}</Link>}
-          data={rows.filter(row => filter === "all" || row.type === filter)} getRowId={row => row.id}
-          selectedView={filter} onViewChange={setFilter}
-          savedViews={[{id:"all",label:t("All items")}, ...["Requirements", "Designs", "Quotations"].map(type => ({id:type,label:t(typeLabels[type])}))]}
-          searchLabel={t("Search approvals")} exportFileName="planning-approvals.csv"
-          emptyTitle={t(filter === "all" ? "No items to review" : filter === "Requirements" ? "No requirements to review" : filter === "Designs" ? "No designs to review" : "No quotations to review")}
-          emptyDescription="" onRowAction={row => router.push(href(row.id))}
-          columns={[
-            {id:"title",header:t("Item"),size:300,accessorFn:row => row.title,cell:({row:{original:item}}) => <div className={s.item} data-tour={item.type === "Quotations" ? "approval-quote" : undefined}><Link href={href(item.id)}>{item.title}</Link><small>{item.version}</small></div>},
-            {id:"type",header:t("Type"),size:140,accessorFn:row => typeLabels[row.type] ? t(typeLabels[row.type]) : row.type,meta:{mobileHidden:true}},
-            {id:"status",header:t("Status"),size:190,accessorFn:row => row.status,cell:({row:{original:item}}) => <span className={s.status} data-complete={item.done} data-ready={item.ready} data-tour={item.type === "Quotations" ? "approval-quote-status" : undefined}>{item.status}</span>},
-            {id:"action",header:t("Action"),size:150,enableSorting:false,enableColumnFilter:false,cell:({row:{original:item}}) => <Link aria-label={t("Review {title} {version}", { title: item.title, version: item.version })} href={href(item.id)}>{t(item.ready ? "Review & send" : "Review")}</Link>},
-          ]}
-          footerActions={<Link href={`${root}/execution-release`}>{t("Release readiness")} →</Link>}
-        />
-      </div>
+      <DataGrid ariaLabel={t("Planning approvals")} selectable={false} rowNumbers={false}
+        data={rows.filter(row => filter === "all" || row.type === filter)} getRowId={row => row.id}
+        searchLabel={t("Search approvals")} exportFileName="planning-approvals.csv"
+        emptyContent={<EmptyState illustration={null} title={t(filter === "all" ? "No items to review" : filter === "Requirements" ? "No requirements to review" : filter === "Designs" ? "No designs to review" : "No quotations to review")} />}
+        onRowAction={row => router.push(href(row.id))}
+        columns={[
+          {id:"title",header:t("Item"),size:300,accessorFn:row => row.title,meta:{primary:true,interactive:true,renderCell:item => <span data-tour={item.type === "Quotations" ? "approval-quote" : undefined}>
+            <RecordName title={<Link className={s.open} href={href(item.id)}>{item.title}</Link>} detail={item.version} /></span>}},
+          {id:"type",header:t("Type"),size:140,accessorFn:row => typeLabels[row.type] ? t(typeLabels[row.type]) : row.type,meta:{priority:"low"}},
+          {id:"status",header:t("Status"),size:190,accessorFn:row => row.status,meta:{renderCell:item => <Badge tone={statusTone(item)} data-tour={item.type === "Quotations" ? "approval-quote-status" : undefined}>{item.status}</Badge>}},
+          {id:"action",header:t("Action"),size:150,enableSorting:false,enableColumnFilter:false,meta:{interactive:true,renderCell:item => <Link className={s.open} aria-label={t("Review {title} {version}", { title: item.title, version: item.version })} href={href(item.id)}>{t(item.ready ? "Review & send" : "Review")}</Link>}},
+        ]}
+        footerActions={<Link className={s.open} href={`${root}/execution-release`}>{t("Release readiness")} →</Link>}
+      />
     </>}
-  </section>;
+  </PageShell></div>;
 }

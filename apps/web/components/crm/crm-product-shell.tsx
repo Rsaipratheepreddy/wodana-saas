@@ -1,24 +1,28 @@
 "use client";
 
 import { useCallback, useState, type ReactNode } from "react";
-import { DesignSystemProvider, NoAccessState, PageHeader, useDesignSystem } from "@/design-system";
+import { DesignSystemProvider, NoAccessState, PageShell, useDesignSystem, type PageKind } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import base from "./crm-screen-page.module.css";
 import styles from "./crm-product.module.css";
 import workspaceColors from "./crm-workspace-colors.module.css";
 
 /**
- * A Sales page: one title and at most one primary action top-end (the shared PageHeader), then the page. `header`
- * off is for a full-height chat layout (the Inbox), whose chat carries its own heading.
+ * A Sales page on the shared anatomy (§5c D): PageShell with one title, at most one primary action top-end, tabs
+ * under the title and an optional toolbar, then the page. `compact` fills the viewport (the board and the Inbox).
  */
-export function CrmProductShell({ title, canView, actions, children, compact = false, header = true, useWorkspaceColors = false, headerClassName, pageClassName }: { title: string; description: string; canView: boolean; actions?: ReactNode; children: ReactNode; compact?: boolean; header?: boolean; useWorkspaceColors?: boolean; headerClassName?: string; pageClassName?: string }) {
+export function CrmProductShell({ title, canView, actions, tabs, toolbar, children, compact = false, kind = "list", useWorkspaceColors = false }: {
+  title: string; /** Ignored: a title carries no description (§5c D1). */ description?: string; canView: boolean; actions?: ReactNode; tabs?: ReactNode; toolbar?: ReactNode;
+  children: ReactNode; compact?: boolean; kind?: PageKind; useWorkspaceColors?: boolean;
+}) {
   const t = useT();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   return <DesignSystemProvider className={[base.provider, useWorkspaceColors && workspaceColors.theme].filter(Boolean).join(" ")} portalContainer={portal} ref={setPortal}>
-    <section className={[compact ? styles.focusedPage : base.page, pageClassName].filter(Boolean).join(" ")} aria-label={t("{title} workspace", { title })}>
-      {header ? <div className={[styles.pageHeader, headerClassName].filter(Boolean).join(" ")}><PageHeader title={title} actions={canView ? actions : undefined} /></div> : null}
-      {canView ? children : <NoAccessState area={t(title as never)} />}
-    </section>
+    <div className={compact ? styles.focusedPage : undefined}>
+      <PageShell aria-label={t("{title} workspace", { title })} kind={kind} title={title} action={canView ? actions : undefined} tabs={canView ? tabs : undefined} toolbar={canView ? toolbar : undefined}>
+        {canView ? children : <NoAccessState area={t(title as never)} />}
+      </PageShell>
+    </div>
   </DesignSystemProvider>;
 }
 

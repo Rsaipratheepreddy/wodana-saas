@@ -81,6 +81,19 @@ const grid = (name: string) => screen.findByRole("grid", { name }).catch(() => s
 describe("finance", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.mocked(window.history.replaceState).mockClear(); nav.query = ""; });
 
+  it("has one title, one primary action and at most six tabs, the read-mostly views under More", async () => {
+    mount(() => overview());
+    page();
+    await grid("Supplier invoices");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1, name: "Finance" })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Enter invoice" })).toHaveLength(1);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Supplier invoices1", "Payments", "Payment runs", "Petty cash", "Client invoices", "More"]);
+    await userEvent.click(screen.getByRole("tab", { name: "More" }));
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/finance/suppliers");
+    expect(within(screen.getByRole("group", { name: "More" })).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Owed to suppliers", "Accounting"]);
+  });
+
   it("lists the invoices still to act on with where each stands, and shows why one is held", async () => {
     mount(() => overview());
     page();
@@ -91,9 +104,9 @@ describe("finance", () => {
     expect(table).toHaveTextContent("Oak veneer: invoiced 11 sheets, received 6 sheets");
     expect(table).toHaveTextContent("Overdue");
     expect(table).not.toHaveTextContent("INV-3");
-    await userEvent.click(within(screen.getByRole("radiogroup", { name: "Show" })).getByRole("radio", { name: "All" }));
+    await userEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: "All" }));
     expect(await grid("Supplier invoices")).toHaveTextContent("INV-3");
-    expect(screen.getByRole("tab", { name: "Supplier invoices (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^Supplier invoices\s*1$/ })).toBeInTheDocument();
   });
 
   it("approves a held invoice with why, and says who can't", async () => {
@@ -309,7 +322,7 @@ describe("finance", () => {
     const table = await grid("Payment runs");
     expect(table).toHaveTextContent("Run 7");
     expect(table).toHaveTextContent("Submitted");
-    expect(screen.getByRole("tab", { name: "Payment runs (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^Payment runs\s*1$/ })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "New run" }));
     const sheet = await screen.findByRole("dialog", { name: "New run" });
     // Approved invoices with something to pay now, earliest due first; held and paid ones don't show.
@@ -439,7 +452,7 @@ describe("finance", () => {
     expect(within(table).getAllByRole("row").slice(1).map((row) => row.textContent)).toEqual([expect.stringMatching(/Taxi to the tile supplier.*PC-0001.*PRJ-0007 · Villa 12.*Dana Designer/),
       expect.stringContaining("PC-0003")]);
     expect(table).not.toHaveTextContent("PC-0002");
-    await userEvent.click(within(screen.getByRole("radiogroup", { name: "Show" })).getByRole("radio", { name: "All" }));
+    await userEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: "All" }));
     expect(await grid("Petty cash")).toHaveTextContent(/PC-0002.*Reimbursed/);
     await userEvent.click(within(await grid("Petty cash")).getByText("Taxi to the tile supplier"));
     expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/finance/petty-cash?claim=c1");

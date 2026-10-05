@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
-import { nextWorkingHalfHour, useWorkingCalendar, Badge, Button, Callout, DesignSystemProvider, FormDialog, IconButton, InspectorSheet, isNoAccessError, MoreDetails, NoAccessState, PageHeader, SearchInput, SelectField, TextAreaField, TextInput, useDesignSystem, useWorkspaceZoneLabel, Skeleton } from "@/design-system";
+import { useRouter } from "next/navigation";
+import { CalendarDate } from "@internationalized/date";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { nextWorkingHalfHour, useWorkingCalendar, Badge, Button, DesignSystemProvider, ErrorState, FormDialog, IconButton, IconMenuButton, InlineNotice, InspectorSheet, isNoAccessError, ListTabs, MoreDetails, NoAccessState, PageShell, SelectField, ToolbarSearch, TextAreaField, TextInput, useDesignSystem, useWorkspaceZoneLabel, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows, label, type RecordData } from "@/lib/crm/client";
 import { calendarDayKey, calendarRange, localDateTime, moveCalendar, type CalendarMode, type CalendarEvent } from "@/lib/crm/calendar";
@@ -36,7 +37,9 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
   // Days, hours and "today" are the workspace's wall clock (CAL-2): a Dubai meeting stays at 10:00 in India.
   const wallNow = () => atWallClock(new Date(), timeZone);
   const [anchor, setAnchor] = useState(wallNow);
-  const [mode, setMode] = useState<CalendarMode>("week");
+  const router = useRouter();
+  // A phone shows one day at a time; a wider screen starts on the week.
+  const [mode, setMode] = useState<CalendarMode>(() => (typeof window !== "undefined" && window.matchMedia?.("(max-width: 48rem)").matches ? "day" : "week"));
   const [search, setSearch] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [crm, setCrm] = useState<{ key: string; events: CalendarEvent[]; error?: string } | null>(null);
@@ -48,7 +51,6 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
   // Sources the person's role can't read are left out quietly: the calendar shows what they can use.
   const [membersDenied, setMembersDenied] = useState(false);
   const [connectionsDenied, setConnectionsDenied] = useState(false);
-  const zoneLabel = useWorkspaceZoneLabel();
   const [scope, setScope] = useState<"organization" | "personal" | "member">("organization");
   const [memberId, setMemberId] = useState("");
   const [googleSelection, setGoogleSelection] = useState("all");
@@ -149,41 +151,62 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
     }
     return nextWorkingHalfHour(atWallClock(Date.now(), timeZone), workingCalendar, workingCalendar.workingHours);
   };
-  const periodTitle = anchor.toLocaleDateString(locale, { month: "long", year: "numeric" });
-  const periodSubtitle = mode === "month" ? `${new Date(anchor.getFullYear(), anchor.getMonth(), 1).toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}` : `${range.days[0].toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${range.days.at(-1)?.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}`;
-  const addEvent = () => connections.some(item => ["connected", "degraded"].includes(item.status)) ? setGoogleCreateOn(newEventDate()) : setCreateOn(newEventDate());
-  return <div className={styles.calendarLayout}><div className={styles.calendar}>
-    <PageHeader title={t("Calendar")} actions={<Button variant="primary" onPress={addEvent}><Plus size={16} aria-hidden="true" />{t("Add event")}</Button>} />
-    <header className={styles.pageHeader} aria-label={t("Calendar controls")}><div className={styles.scopeBar}><div role="tablist" aria-label={t("Calendar scope")} className={styles.scopeTabs}>
-      <button type="button" role="tab" aria-selected={scope === "organization"} onClick={() => { setScope("organization"); setGoogleSelection("all"); }}>{t("Organisation")}</button>
-      {!membersDenied ? <button type="button" role="tab" aria-selected={scope === "personal"} onClick={() => { setScope("personal"); setGoogleSelection("all"); }}>{t("Personal")}</button> : null}
-      {scope === "member" ? <button type="button" role="tab" aria-selected="true">{scopedMember?.displayName ?? t("Member")}</button> : null}
-    </div><div className={styles.scopeFilters}>
-      {!membersDenied ? <SelectField label={<span className="wd-visually-hidden">{t("View member calendar")}</span>} aria-label={t("View member calendar")} selectedKey={scope === "member" ? memberId : "none"} items={[{ id: "none", label: t("Choose member") }, ...members.filter(member => member.status !== "suspended").map(member => ({ id: member.id, label: member.displayName }))]} onSelectionChange={value => { if (value && value !== "none") { setMemberId(String(value)); setScope("member"); setGoogleSelection("all"); } else { setMemberId(""); setScope("organization"); } }} /> : null}
-      {eligibleConnections.length ? <SelectField label={<span className="wd-visually-hidden">{t("Google calendars")}</span>} aria-label={t("Google calendars")} selectedKey={googleSelection} items={[{ id: "all", label: t("All Google calendars") }, ...eligibleConnections.map(connection => ({ id: connection.id, label: connection.displayName }))]} onSelectionChange={value => setGoogleSelection(String(value ?? "all"))} /> : null}
-    </div></div><div className={styles.topActions}>
-      <div className={styles.search}><SearchInput label={t("Search calendar")} placeholder={t("Search events")} value={search} onChange={setSearch} /></div>
-      {!connectionsDenied ? <Link className={styles.googleLink} href="/workspace/integrations?connect=google_workspace"><Image src="/icons/integrations/google-calendar.svg" alt="" width={18} height={18} aria-hidden="true" />{connections.some(item => ["connected", "degraded"].includes(item.status)) ? t("Manage Google") : t("Connect Google")}</Link> : null}
-      <Button size="compact" onPress={() => setCreateOn(newEventDate())}><CalendarDays size={15} aria-hidden="true" />{t("Schedule")}</Button>
-    </div></header>
-    {memberError ? <Callout title={t("Members unavailable")} tone="warning">{memberError}</Callout> : null}
-    {scope === "personal" && members.length > 0 && !currentMember ? <Callout title={t("Personal calendar unavailable")} tone="warning">{t("Your workspace membership could not be identified.")}</Callout> : null}
-    {connectionError ? <Callout title={t("Google connection access")} tone="warning">{connectionError} {t("Workspace events are still available.")}</Callout> : null}
-    {crm?.key === key && crm.error ? <Callout title={t("Calendar could not load")} tone="warning">{crm.error}</Callout> : crm?.key !== key ? <Skeleton lines={6} shape="rows" /> : null}
-    {project?.key === key && project.error ? <Callout title={t("Project schedule unavailable")} tone="warning">{project.error}</Callout> : null}
-    {connectionIds.length ? google?.key !== googleKey ? <p role="status">{t("Loading Google Calendar…")}</p> : google.error ? <Callout title={t("Google Calendar unavailable")} tone="warning">{google.error}</Callout> : null : null}
-    <section className={styles.calendarFrame} aria-label={t("Calendar schedule")}><div className={styles.periodBar}>
-      <div className={styles.periodIdentity}><span className={styles.dateBadge}><small>{anchor.toLocaleDateString(locale, { month: "short" })}</small><strong>{anchor.getDate()}</strong></span><span><h2>{periodTitle}</h2><small>{periodSubtitle}</small></span></div>
-      <div className={styles.periodControls}><div className={styles.periodStepper}><IconButton aria-label={t("Previous calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, -1))}><ChevronLeft size={16} /></IconButton><Button size="compact" onPress={() => setAnchor(wallNow())}>{t("Today")}</Button><IconButton aria-label={t("Next calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, 1))}><ChevronRight size={16} /></IconButton></div><SelectField label={<span className="wd-visually-hidden">{t("Calendar view")}</span>} aria-label={t("Calendar view")} items={[{ id: "day", label: t("Day view") }, { id: "week", label: t("Week view") }, { id: "month", label: t("Month view") }]} selectedKey={mode} onSelectionChange={value => setMode(String(value) as CalendarMode)} /><IconButton aria-label={t("Refresh calendar")} onPress={() => { setRefresh(n => n + 1); setConnectionError(""); }}><RefreshCw size={16} /></IconButton></div>
-    </div><div className={styles.scheduleMain}>{mode !== "month" ? <CalendarTimeGrid days={range.days} today={today} events={events} onSelect={setSelected} onSchedule={setCreateOn} /> : <div className={styles.scroll}><div className={styles.grid} data-mode="month" role="group" aria-label={t("Month calendar")}>
-      {range.days.slice(0, 7).map(day => <div className={styles.weekday} key={day.toISOString()}>{day.toLocaleDateString(locale, { weekday: "short" })}</div>)}
-      {range.days.map(day => { const nextDay = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1); const dayEvents = events.filter(event => event.start < nextDay && (event.end && event.end > event.start ? event.end > day : event.start >= day)); return <section key={day.toISOString()} className={styles.day} data-outside={day.getMonth() !== anchor.getMonth() || undefined} aria-label={day.toLocaleDateString(locale, { dateStyle: "full" })}><button className={styles.date} aria-current={calendarDayKey(day) === today ? "date" : undefined} data-today={calendarDayKey(day) === today || undefined} type="button" aria-label={t("Schedule on {date}", { date: day.toLocaleDateString(locale) })} onClick={() => setCreateOn(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10))}>{day.getDate()}</button>{dayEvents.slice(0, 3).map(event => <button type="button" className={styles.event} data-kind={event.kind} data-provider={event.provider} key={event.id} aria-label={`${event.provider} ${event.title}`} onClick={() => setSelected(event)}><span className={styles.eventTitle}>{event.title}</span></button>)}{dayEvents.length > 3 ? <button type="button" className={styles.more} onClick={() => { setAnchor(day); setMode("day"); }}>{t("+{count} more", { count: dayEvents.length - 3 })}</button> : null}</section>; })}
-    </div></div>}</div></section>
-    <footer className={styles.calendarFooter}><span>{zoneLabel ? t("Workspace: {zone}", { zone: zoneLabel }) : null}</span><span>{events.length === 1 ? t("{count} event in view", { count: events.length }) : t("{count} events in view", { count: events.length })}</span></footer>
+  // One period label: "October 2026" for a month, "5 – 11 Oct 2026" for a week, "Tuesday 6 October 2026" for a day.
+  const periodTitle = mode === "month" ? anchor.toLocaleDateString(locale, { month: "long", year: "numeric" })
+    : mode === "day" ? anchor.toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+    : new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).formatRange(range.days[0], range.days.at(-1) ?? range.days[0]);
+  const googleConnected = connections.some(item => ["connected", "degraded"].includes(item.status));
+  const addEvent = () => googleConnected ? setGoogleCreateOn(newEventDate()) : setCreateOn(newEventDate());
+  const whose = scope === "member" ? memberId : scope;
+  const whoseItems = [{ id: "organization", label: t("Everyone") }, ...(!membersDenied ? [{ id: "personal", label: t("Only me") },
+    ...members.filter(member => member.status !== "suspended" && member.userId !== currentUserId).map(member => ({ id: member.id, label: member.displayName }))] : [])];
+  const menu = [{ id: "schedule", label: t("Schedule a CRM meeting") }, ...(!connectionsDenied ? [{ id: "google", label: googleConnected ? t("Manage Google") : t("Connect Google") }] : []), { id: "refresh", label: t("Refresh") }];
+  const notice = memberError ? memberError : scope === "personal" && members.length > 0 && !currentMember ? t("Your workspace membership could not be identified.") : connectionError
+    ? `${connectionError} ${t("Workspace events are still available.")}` : project?.key === key && project.error ? project.error
+    : connectionIds.length && google?.key === googleKey && google.error ? google.error : "";
+  return <PageShell title={t("Calendar")} kind="dashboard" action={<Button variant="primary" onPress={addEvent}><Plus size={16} aria-hidden="true" />{t("New event")}</Button>}>
+    <div className={styles.toolbar} role="toolbar" aria-label={t("Calendar controls")}>
+      <div className={styles.period}>
+        <div className={styles.stepper}><IconButton aria-label={t("Previous calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, -1))}><ChevronLeft size={16} /></IconButton>
+          <Button size="compact" onPress={() => setAnchor(wallNow())}>{t("Today")}</Button>
+          <IconButton aria-label={t("Next calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, 1))}><ChevronRight size={16} /></IconButton></div>
+        <h2 className={styles.periodTitle} aria-live="polite">{periodTitle}</h2>
+      </div>
+      <div className={styles.controls}>
+        <ToolbarSearch label={t("Search calendar")} value={search} onChange={setSearch} />
+        {whoseItems.length > 1 ? <div className={styles.whose}><SelectField label={<span className="wd-visually-hidden">{t("Whose calendar")}</span>} aria-label={t("Whose calendar")} selectedKey={whose}
+          items={whoseItems} onSelectionChange={value => { const id = String(value ?? "organization"); setGoogleSelection("all");
+            if (id === "organization" || id === "personal") { setScope(id); setMemberId(""); } else { setMemberId(id); setScope("member"); } }} /></div> : null}
+        {eligibleConnections.length > 1 ? <div className={styles.whose}><SelectField label={<span className="wd-visually-hidden">{t("Google calendars")}</span>} aria-label={t("Google calendars")} selectedKey={googleSelection}
+          items={[{ id: "all", label: t("All Google calendars") }, ...eligibleConnections.map(connection => ({ id: connection.id, label: connection.displayName }))]} onSelectionChange={value => setGoogleSelection(String(value ?? "all"))} /></div> : null}
+        <ListTabs label={t("Calendar view")} items={[{ id: "day", label: t("Day") }, { id: "week", label: t("Week") }, { id: "month", label: t("Month") }]} value={mode} onChange={setMode} />
+        <IconMenuButton ariaLabel={t("Calendar options")} items={menu} onAction={(id) => {
+          if (id === "schedule") setCreateOn(newEventDate());
+          else if (id === "google") router.push("/workspace/integrations?connect=google_workspace");
+          else { setRefresh(n => n + 1); setConnectionError(""); }
+        }} />
+      </div>
+    </div>
+    {notice ? <InlineNotice tone="error" message={notice} /> : null}
+    <section className={styles.frame} aria-label={t("Calendar schedule")} aria-busy={crm?.key !== key || (connectionIds.length > 0 && google?.key !== googleKey) || undefined}>
+      {crm?.key !== key ? <div className={styles.loading}><Skeleton lines={8} shape="rows" /></div>
+      : crm.error ? <ErrorState title={t("Calendar could not load")} description={crm.error} onRetry={() => setRefresh(n => n + 1)} />
+      : mode !== "month" ? <CalendarTimeGrid days={range.days} today={today} events={events} onSelect={setSelected} onSchedule={setCreateOn} />
+      : <div className={styles.monthScroll}><div className={styles.month} role="group" aria-label={t("Month calendar")}>
+        {range.days.slice(0, 7).map(day => <div className={styles.weekday} key={day.toISOString()}>{day.toLocaleDateString(locale, { weekday: "short" })}</div>)}
+        {range.days.map(day => { const nextDay = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1); const dayEvents = events.filter(event => event.start < nextDay && (event.end && event.end > event.start ? event.end > day : event.start >= day));
+          return <section key={day.toISOString()} className={styles.day} data-outside={day.getMonth() !== anchor.getMonth() || undefined} data-off={!workingCalendar.isWorkingDay(new CalendarDate(day.getFullYear(), day.getMonth() + 1, day.getDate())) || undefined} aria-label={day.toLocaleDateString(locale, { dateStyle: "full" })}>
+            <button className={styles.date} aria-current={calendarDayKey(day) === today ? "date" : undefined} data-today={calendarDayKey(day) === today || undefined} type="button" aria-label={t("Schedule on {date}", { date: day.toLocaleDateString(locale) })} onClick={() => setCreateOn(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10))}>{day.getDate()}</button>
+            {dayEvents.slice(0, 3).map(event => <button type="button" className={styles.chip} data-kind={event.kind} data-provider={event.provider} data-completed={event.status === "completed" || undefined} key={event.id} aria-label={`${event.provider} ${event.title}`} onClick={() => setSelected(event)}>
+              {!event.allDay ? <small>{event.start.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}</small> : null}<span className={styles.eventTitle}>{event.title}</span></button>)}
+            {dayEvents.length > 3 ? <button type="button" className={styles.more} onClick={() => { setAnchor(day); setMode("day"); }}>{t("+{count} more", { count: dayEvents.length - 3 })}</button> : null}
+          </section>; })}
+      </div></div>}
+    </section>
     {createOn ? <ScheduleMeeting workspaceId={workspaceId} date={createOn} onClose={() => setCreateOn(null)} onSaved={() => { setCreateOn(null); setRefresh(n => n + 1); }} /> : null}
     {googleCreateOn ? <GoogleEventDialog workspaceId={workspaceId} connections={eligibleConnections} date={googleCreateOn} onClose={() => setGoogleCreateOn(null)} onSaved={() => { setGoogleCreateOn(null); setRefresh(n => n + 1); }} /> : null}
     {selected?.provider === "crm" ? <FollowUpSheet key={selected.id} workspaceId={workspaceId} recordId={selected.id} onClose={() => setSelected(null)} onSaved={() => setRefresh(n => n + 1)} /> : selected ? <InspectorSheet isOpen title={selected.title} onOpenChange={open => { if (!open) setSelected(null); }}><CalendarDetails workspaceId={workspaceId} event={selected} onChanged={() => setRefresh(n => n + 1)} /></InspectorSheet> : null}
-  </div></div>;
+  </PageShell>;
 }
 
 function ScheduleMeeting({ workspaceId, date, onClose, onSaved }: { workspaceId: string; date: Date; onClose: () => void; onSaved: () => void }) {

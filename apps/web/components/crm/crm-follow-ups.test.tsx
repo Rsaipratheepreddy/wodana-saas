@@ -53,9 +53,8 @@ describe("Follow-up list", () => {
     await user.type(search, "revised quote");
     expect(screen.getByRole("button", { name: /Discuss quotation/ })).toBeInTheDocument();
     await user.clear(search); await user.type(search, "no match");
-    expect(screen.getByText("No matching follow-ups")).toBeInTheDocument();
-    await user.clear(search); await user.click(screen.getByRole("button", { name: /Table view/ }));
-    await user.click(screen.getByRole("option", { name: "Completed (1)" }));
+    expect(screen.getByText("No matches")).toBeInTheDocument();
+    await user.clear(search); await user.click(screen.getByRole("button", { name: "Completed" }));
     expect(screen.getByRole("button", { name: /Already finished/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Discuss quotation/ })).not.toBeInTheDocument();
   });
@@ -101,7 +100,6 @@ it("filters Sales Kanban by the first five owners and searches the rest beside F
   render(<CrmFollowUps initialLayout="kanban" tasksOnly initialData={fixture(tasks)} />);
   const owners = screen.getByRole("group", { name: "Filter sales tasks by assignee" });
   expect(owners.querySelectorAll("button")).toHaveLength(5);
-  expect(owners.parentElement?.previousElementSibling?.querySelector("summary")).toHaveTextContent("Filter");
   await user.click(screen.getByRole("button", { name: "Show tasks assigned to Owner 1" }));
   expect(screen.getByText("Sales task 1")).toBeInTheDocument();
   expect(screen.queryByText("Sales task 2")).not.toBeInTheDocument();
@@ -229,4 +227,21 @@ it("uses the shared reminder editor with a preselected enquiry and keeps a saved
   // Saved once: only Close is left, so it can't be created twice.
   expect(screen.queryByRole("button", { name: "Save reminder" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Close" })).toBeEnabled();
+});
+
+it("has one title, the lists under it and the owner as a removable filter chip", async () => {
+  const user = userEvent.setup();
+  render(<CrmFollowUps initialLayout="list" initialData={fixture([initial, { ...initial, id: "other", title: "Other call", ownerMembershipId: "owner-2", ownerName: "Owner Two" }])} />);
+  expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Follow-ups"]);
+  expect(screen.getAllByRole("button", { name: "Add follow-up" })).toHaveLength(1);
+  expect(within(screen.getByRole("group", { name: "Follow-up lists" })).getByRole("button", { name: /^To do/ })).toHaveAttribute("aria-pressed", "true");
+  await user.click(screen.getByRole("button", { name: "Filter" }));
+  await user.click(screen.getByRole("button", { name: /Filter by owner/ }));
+  await user.click(screen.getByRole("option", { name: "Owner Two" }));
+  await user.keyboard("{Escape}");
+  expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("Owner Two")).toBeVisible();
+  expect(screen.getByRole("button", { name: /Other call/ })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Discuss quotation/ })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Remove filter Owner" }));
+  expect(screen.getByRole("button", { name: /Discuss quotation/ })).toBeInTheDocument();
 });

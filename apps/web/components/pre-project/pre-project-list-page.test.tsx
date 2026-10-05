@@ -31,11 +31,12 @@ describe("pre-project table selector", () => {
     render(<PreProjectListPage initialData={{ ...data, canCreate: false, canStartLead: false, items: [{ ...record, status: "qualified", qualifiedLead: true, opportunityId: null }] }} search="" />);
     expect(screen.getByRole("button", { name: "Start Villa interiors" })).toBeDisabled();
   });
-  it("always shows the table with customer initials and real case links", () => {
+  it("always shows the table with the client under the case and real case links", () => {
     render(<PreProjectListPage initialData={data} search="view=cards" />);
     const table = screen.getByRole("table", { name: "Planning cases" });
-    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Client", "Case", "Phase", "Status", "Owner", "Value", "Target", "Priority", "Risk", "Updated", "Created", "Action"]);
-    expect(within(table).getByRole("img", { name: "Khalid Rahman" })).toHaveTextContent("KR");
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Case", "Phase", "Status", "Owner", "Value", "Target", "Priority", "Risk", "Updated", "Created", "Action"]);
+    // The client is the muted line under the case.
+    expect(within(table).getByText("Khalid Rahman")).toBeInTheDocument();
     expect(within(table).getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/requirements`);
     expect(screen.queryByRole("button", { name: "Cards" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Table options" })).toBeInTheDocument();
@@ -76,9 +77,17 @@ describe("pre-project table selector", () => {
   });
   it("shows load errors and retries without suggesting a fake zero count", () => {
     render(<PreProjectListPage initialData={{ ...data, items: [], total: 0, error: "Unable to connect" }} search="" />);
-    expect(screen.getByRole("alert")).toHaveTextContent("Unable to connect");
+    expect(screen.getByText("Unable to connect")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("0 qualified leads")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(refresh).toHaveBeenCalledOnce();
+  });
+  it("has one title with the case lists under it and no page action", () => {
+    render(<PreProjectListPage initialData={{ ...data, items: [{ ...record, qualifiedLead: true, status: "qualified" }] }} search="section=designs" />);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Planning"]);
+    const tabs = within(screen.getByRole("group", { name: "Case lists" }));
+    expect(tabs.getByRole("button", { name: /^Ready to start\s*1$/ })).toBeInTheDocument();
+    expect(tabs.getByRole("button", { name: "In progress" })).toBeInTheDocument();
   });
 });

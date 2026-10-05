@@ -15,8 +15,10 @@ it('shows actual current revisions and routes reviews within the hub',async()=>{
  expect(screen.queryByText('Old layout')).not.toBeInTheDocument();
  expect(screen.getByRole('link',{name:'Review Kitchen layout V2'})).toHaveAttribute('href','/workspace/pre-projects/cases/case/designs?file=design');
  expect(screen.queryByRole('link',{name:'Review Project quotation V1'})).not.toBeInTheDocument();
- await userEvent.click(screen.getByRole('button',{name:/All items Table view/}));
- await userEvent.click(screen.getByRole('option',{name:'Designs'}));
+ expect(screen.getAllByRole('heading',{level:1})).toHaveLength(1);
+ expect(screen.getByRole('heading',{level:1,name:'Approvals'})).toBeVisible();
+ expect(screen.getByRole('link',{name:'Client access'})).toHaveAttribute('href','/workspace/pre-projects/cases/case/client-portal');
+ await userEvent.click(screen.getByRole('button',{name:'Designs'}));
  expect(screen.queryByText('Project quotation')).not.toBeInTheDocument();
  expect(screen.getByText('Kitchen layout')).toBeInTheDocument();
 });

@@ -1245,3 +1245,6 @@
 .replyFiles { display: grid; gap: var(--wd-space-2); }
 .replyFiles ul { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
 .replyFiles li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+
+/* Inside the shared page shell, which already gives the page its gutter. */
+.page.inShell { padding: 0; background: transparent; }

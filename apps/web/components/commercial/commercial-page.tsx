@@ -1,5 +1,6 @@
 "use client";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { useWoddyRecord } from "@/components/crm/woddy-chat";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -15,6 +16,7 @@ import {
   FormNotSaved,
   DesignSystemProvider,
   IconButton,
+  PageShell,
   SelectField,
   useConfirmationDialog,
   useDesignSystem, EmptyState
@@ -45,15 +47,16 @@ import { PreExecutionFlow } from "./pre-execution-flow";
 import { QuotationBuilderPreview } from "./quotation-builder-preview";
 import s from "./commercial.module.css";
 import colors from "../crm/crm-workspace-colors.module.css";
-const labels: Record<string, string> = {
-  "client-portal": "Client portal",
-  boq: "Design Quote",
-  quotations: "Quotations",
-  contracts: "Agreements & Payments",
-  "payment-plan": "Agreements & Payments",
-  variations: "Change requests",
-  approvals: "Approvals & release",
-  "execution-release": "Release readiness",
+/** Each section's one page title (PageShell). */
+const labels: Record<string, MessageKey> = {
+  "client-portal": tKey("Client portal"),
+  boq: tKey("Design Quote"),
+  quotations: tKey("Quotations"),
+  contracts: tKey("Agreements & Payments"),
+  "payment-plan": tKey("Agreements & Payments"),
+  variations: tKey("Change requests"),
+  approvals: tKey("Approvals & release"),
+  "execution-release": tKey("Release readiness"),
 };
 export function CommercialPage({
   initial,
@@ -253,15 +256,10 @@ export function CommercialPage({
     showReadinessFlow = ["approvals", "execution-release"].includes(section);
   return (
     <DesignSystemProvider {...design} className={colors.theme}>
+      <PageShell kind="record" title={t(labels[section] ?? labels.quotations)}>
       <section
-        className={`${s.page} ${reviewOnly ? s.reviewPage : ""} ${section === "quotations" && !quotationId ? s.quotationTablePage : ""} ${!reviewOnly && section === "quotations" && quotationId && draft ? s.studioPage : ""}`}
+        className={`${s.page} ${s.inShell} ${reviewOnly ? s.reviewPage : ""} ${section === "quotations" && !quotationId ? s.quotationTablePage : ""} ${!reviewOnly && section === "quotations" && quotationId && draft ? s.studioPage : ""}`}
       >
-        {section === "quotations" && quotationId && draft && (
-          <h1 className={s.visuallyHidden}>{t("Quotations")}</h1>
-        )}
-        {section !== "quotations" && section !== "contracts" && section !== "payment-plan" && (
-          <h1 className={s.visuallyHidden}>{labels[section]}</h1>
-        )}
         {showReadinessFlow && !embedded && (!state.data.servicePath || state.data.servicePath.scope.mainQuotation) ? <PreExecutionFlow state={state} section={section} root={root} /> : null}
         {error && (
           <p role="alert" className={s.error}>
@@ -586,6 +584,7 @@ export function CommercialPage({
         </FormDialog>
         {confirmationDialog}
       </section>
+      </PageShell>
     </DesignSystemProvider>
   );
 }

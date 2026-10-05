@@ -1,32 +1,8 @@
-.provider {
-  min-block-size: 100%;
-  background: var(--wd-color-surface);
-}
+.provider { min-block-size: 100%; }
+.provider.embedded { background: var(--wd-color-surface); }
 
-.page {
-  inline-size: min(100%, var(--wd-workspace-page-width, 76rem));
-  min-block-size: 100%;
-  margin-inline: auto;
-  padding: var(--wd-workspace-page-block-start, 1.5rem) var(--wd-workspace-page-inline, clamp(1rem, 3vw, 2rem)) var(--wd-workspace-page-block-end, 3rem);
-}
-
-.pageHeading { margin-block-end: var(--wd-space-4); }
-
-.pageHeading h1 {
-  margin: 0;
-  color: var(--wd-color-text);
-  font-size: var(--wd-text-2xl);
-  font-weight: var(--wd-weight-semibold);
-  letter-spacing: -.035em;
-  line-height: 1.2;
-}
-
-.pageHeading p {
-  margin: var(--wd-space-2) 0 0;
-  color: var(--wd-color-text-secondary);
-  font-size: var(--wd-text-sm);
-  line-height: 1.5;
-}
+/* Scopes the card rules below; PageShell gives the page its padding. */
+.page { min-inline-size: 0; }
 
 .toolbar {
   min-block-size: 3rem;
@@ -289,10 +265,6 @@
 }
 
 @media (max-width: 48rem) {
-  .page {
-    padding: var(--wd-space-5) var(--wd-space-4) var(--wd-space-10);
-  }
-
   .toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -317,10 +289,6 @@
 .page .providerIcon { border:0; background:var(--wd-color-surface-muted); border-radius:var(--wd-radius-sm); }
 .catalogGrid { gap:var(--wd-space-3); }
 
-.purposes{display:flex;flex-wrap:wrap;gap:var(--wd-space-1-5);margin-block:var(--wd-space-4)}
-.purposes button{border:0;border-radius:var(--wd-radius-xs);padding:var(--wd-space-2) var(--wd-space-3);background:var(--wd-color-surface-muted);color:var(--wd-color-text-secondary);font:inherit;font-size:var(--wd-text-sm);cursor:pointer}
-.purposes button[aria-pressed=true]{background:var(--wd-color-action-primary-subtle);color:var(--wd-color-text);font-weight:600}
-.purposes button:focus-visible{outline:2px solid var(--wd-color-action-primary);outline-offset:3px}
 
 .accounts :is(th,td){border:0!important}.accounts tbody tr:nth-child(even){background:var(--wd-color-surface-muted)}
 

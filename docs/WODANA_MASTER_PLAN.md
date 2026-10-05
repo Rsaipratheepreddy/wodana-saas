@@ -785,6 +785,124 @@ The current catalog (generic `workspace_catalog_records` + links) is too weak fo
 - **AI:** enquiry summary and a suggested next action; drafts a first-response message (a person sends it).
 - **Tests:** takeover timing across weekend and office hours; dedupe; conversion keeps IDs; note privacy.
 
+### 6.5a P2 build spec: lead → enquiry (6 Oct)
+**Journey:**
+1. A contact arrives through a form or QR code, the inbox (WhatsApp/email), a walk-in or call, an import, or the agency feed.
+2. A sales admin files it into an existing job or creates an enquiry.
+3. The system checks for a returning or duplicate client and asks for confirmation; it never merges silently.
+4. The enquiry has the right source, channel, type and team.
+5. The required fields for its enquiry type are complete.
+6. The enquiry is qualified or converted.
+
+**Decisions per tracker item** (build / better / configure / decline, with the reason):
+
+| Item | Decision | What ships |
+| --- | --- | --- |
+| PLM-092 form errors | **Better** | One error box at the top listing every problem, with each field highlighted and linked, from a single validation call that returns all problems (not one 422 per field). Shared by every form (P1 FormDialog error banner). |
+| PLM-096 required before conversion | **Build** | Required fields per enquiry type (Settings › Sales › Enquiry types), checked at conversion and at the gate that needs them. The error box lists what is missing. |
+| PLM-100 team fields | **Build** | Team per role (sales, designer, PM, QS…) on the job (E1). Each enquiry type shows only its roles; "Not applicable" is allowed per role. |
+| PLM-116 forms list | **Build** | A forms list on the P1 grid: source, channel and submissions columns; copy link, QR download and open on each row. |
+| PLM-127 Concepts / Early Ideas | **Configure** | Removed from the default template and from Palm's enquiry types; existing records keep their history. |
+| PLM-025 WhatsApp & email intake | **Build + external** | Inbox = sales-admin front door: File into job, or New enquiry prefilled from the chat. Email inbound via Mailgun routes per workspace address. WhatsApp goes live when Meta approves (demo mode until then). |
+| PLM-026 socials | **Better** | A per-channel form link and QR (built), plus a "paste a DM" action that reads the message into the enquiry form (AI fill, person confirms). DM connectors are declined for now: each platform needs its own app review; we revisit once WhatsApp is approved. |
+| PLM-029 digital marketing | **Waiting on Palm** | CSV import (built) and a webhook with a field map per agency. The format is needed from Palm (§0.5). |
+| PLM-024 internal notes | **Configure** | A "who sees internal notes" setting (enquiry team only / everyone with Sales access). The default is the team; never the portal. |
+| PLM-033/035–037/093/114/115/118/120 | **Re-verify** | Each gets a live retest script in the P2 click-through; anything failing is fixed in P2. |
+
+**Inbox visibility (owner + 2 Oct meeting):**
+- Sales admins see unassigned intake.
+- Once a thread is filed into a job, the job's team sees it.
+- Others see nothing.
+- The composer always shows whether a message goes to the client or stays internal (E6-1).
+
+**Consent:** forms and the portal capture channel consent (WhatsApp, email, SMS) with time and source. E4 reads it later.
+
+**Reuse:** the stash patch `P2-intake-inbox.patch` (inbox visibility, lead team, enquiry problems; migrations 0249/0250) is reviewed file by file and renumbered from 0247.
+
+**Edge cases:** E1-1…E1-4, E1-6, E6-1, E6-2, E6-4 (§7a), plus the spam submission and weekend lead cases (§6.5).
+
+**Exit (live on plm.wodana.ai):**
+- form → enquiry with the right source and channel;
+- duplicate → linked after confirmation;
+- returning client detected;
+- error box shows every problem;
+- inbox visibility per role (sales admin, designer, manager);
+- forms list with QR;
+- the re-verified items pass;
+- tracker rows updated.
+
+### 6.5b Booking pages (Calendly-style; owner, 6 Oct)
+**Why:** a client picks a free slot on the firm's website or from a link: a design consultation, a showroom visit or a site visit. No back-and-forth on WhatsApp. Each booking is also an intake channel, so it creates or attaches to the job (E1) and goes on the right person's calendar.
+
+**Records** (every table has `workspace_id`, FORCE RLS and `tenant_isolation`):
+- `booking_types`:
+  - name, slug, duration and color token;
+  - location kind: our location (from Sales › Locations), client address, video link or phone;
+  - buffers before and after, minimum notice, booking window in days, maximum per day;
+  - questions: lead-form fields, with the enquiry type and source;
+  - hosts mode: one person, round-robin in a team, or by enquiry type;
+  - confirmation: automatic or needs approval;
+  - active, version.
+- `booking_type_hosts`.
+- `availability_overrides`: per person, a date or range, extra or blocked hours.
+- `bookings`:
+  - type, host, start and end in UTC, the visitor's time zone, status (pending / confirmed / cancelled / completed / no-show);
+  - contact and job link, answers snapshot, consent, source and placement (UTM);
+  - a manage token hash; version.
+- A Postgres exclusion constraint on (host, time range) for live bookings, so the same host can never be double-booked.
+
+**Availability**, computed on the server:
+- the workspace working week, hours and holidays from the region pack;
+- each person's leave (HRMS) and overrides;
+- busy time from Wodana (meetings, site visits, appointments) and from Google free/busy for connected members;
+- buffers, minimum notice, the booking window and the daily maximum.
+
+Slots show in the visitor's time zone with the firm's zone named. The slot is re-checked at confirmation.
+
+**Public page `/book/{workspace}/{type}`:**
+- tenant branding (logo, colours, "Powered by Wodana");
+- pick a day, then a time, then a short form (name, phone in the region format, email, the type's questions, consent per channel);
+- done: a confirmation with "Add to calendar" (.ics) and manage links.
+
+Mobile first, RTL, every label through `t()`.
+
+**Embeds:**
+- a plain link and a QR per placement;
+- an inline embed (`<iframe>` snippet);
+- a popup button (one script tag);
+- each carries source, channel and UTM.
+
+**What a booking does, in one command** (idempotent, audited):
+1. Find or create the contact; a duplicate goes through the E1-1 confirmation rule.
+2. Create the enquiry (source "Booking page", channel from the placement), or attach to the open job.
+3. Create the meeting with its appointment on the host's Wodana calendar.
+4. Push a Google event with an invite when the host is connected.
+5. Send the confirmation email through `renderBrandedEmail` with an .ics attachment.
+6. Send a WhatsApp confirmation and a reminder through E4, only with consent.
+7. Notify the host.
+
+Signed manage links let the client reschedule or cancel within the type's rules.
+
+**Staff:**
+- Sales › ⋯ Settings › Booking types (in the module), each with its share sheet (link, QR, embed code);
+- bookings appear on the Calendar and the job;
+- the enquiry shows "Booked via booking page";
+- one-click no-show and complete.
+
+**Edge cases** (each a test):
+- two visitors take the same slot at once: one wins and the other is offered the next slots;
+- the host's Google calendar turns busy after the page loaded: re-check at confirm;
+- time zones with daylight saving, and a visitor in another country;
+- the host goes on leave after a booking: reassign within the round-robin team, otherwise the owner is told;
+- a cancellation inside the minimum notice;
+- spam: rate limit and honeypot;
+- a booking for a returning client;
+- an inactive type or a disabled workspace;
+- a slot across midnight in the firm's zone;
+- a region holiday.
+
+**Phase:** built with P2 (intake). The tables and slot engine are reused by E4 reminders and by site-visit scheduling in P4.
+
 ### 6.6 Discovery (requirements and site visit)
 - **Records:** `spaces` (site → room/zone tree, area, photos), brief (needs, wants, constraints, style, budget), requirement items (per space: what, quantity hint, priority), site visits (date, surveyor, measurements, photos with markup, access notes, services), definition baseline (client-confirmed revision, immutable).
 - **Rules:** an empty tree is valid early; rooms are never invented. The confirmed baseline is what quotes reference. Changing it after acceptance goes through a change order.

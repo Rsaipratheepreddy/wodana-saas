@@ -17,7 +17,8 @@ afterEach(() => {
 describe("LeadsPage", () => {
   it("opens lead-source connection setup within Sales", async () => {
     render(<LeadsPage initialData={structuredClone(leadsPageFixture)} integrationsData={{ ...structuredClone(integrationsPageFixture), connections: [] }} initialSection="sources" />);
-    expect(screen.getByRole("navigation", { name: "Capture settings" })).toHaveTextContent("Lead sources");
+    expect(screen.getByRole("group", { name: "Capture settings" })).toHaveTextContent("Lead sources");
+    expect(screen.getByRole("button", { name: "Lead sources" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("region", { name: "Sales lead source connections" })).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "Meta Lead Ads integration" })).toBeInTheDocument();
     await userEvent.click(within(screen.getByRole("article", { name: "WhatsApp Business integration" })).getByRole("button", { name: "Connect" }));
@@ -29,8 +30,9 @@ describe("LeadsPage", () => {
     const table = screen.getByRole("table", { name: "CRM enquiries" });
     expect(within(table).getByRole("columnheader", { name: /Customer/ })).toBeInTheDocument();
     expect(within(table).getAllByRole("columnheader")[0].textContent?.trim()).toBe("Customer");
-    expect(within(table).getByRole("img", { name: "Your enquiries will appear here" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New enquiry" })).toBeEnabled();
+    expect(within(table).getByText("Your enquiries will appear here")).toBeInTheDocument();
+    // The header action and the empty state's next action are the same action with the same label.
+    expect(screen.getAllByRole("button", { name: "New enquiry" })[0]).toBeEnabled();
   });
   it("shows the workspace's own shown fields as columns and hides hidden fixed fields", () => {
     const data = structuredClone(leadsPageFixture);
@@ -111,9 +113,9 @@ describe("LeadsPage", () => {
     render(<LeadsPage initialData={data} />);
     const rows = () => within(screen.getByRole("table", { name: "CRM enquiries" })).getAllByRole("row").length - 1;
     expect(rows()).toBe(6);
-    await user.click(screen.getByRole("button", { name: /^Contacted\s*3$/ }));
+    await user.click(screen.getByRole("button", { name: "Contacted" }));
     expect(rows()).toBe(3);
-    await user.click(screen.getByRole("button", { name: /^Come back to\s*1$/ }));
+    await user.click(screen.getByRole("button", { name: "Come back to" }));
     expect(screen.getByRole("button", { name: "Open Client 4" })).toBeInTheDocument();
     expect(within(screen.getByRole("table", { name: "CRM enquiries" })).getByText("Come back later")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^New\s*1$/ }));
@@ -394,6 +396,22 @@ describe("LeadsPage", () => {
     expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Enquiries"]);
     expect(screen.getAllByRole("button", { name: "New enquiry" })).toHaveLength(1);
   });
+
+  it("keeps at most six lists under the title and puts enquiries to check in a filter chip", async () => {
+    const user = userEvent.setup();
+    const data = structuredClone(leadsPageFixture);
+    data.items = [{ ...data.items[0], id: "dup", partyName: "Dup Client", status: "duplicate", isConverted: false }, { ...data.items[0], id: "fresh", partyName: "Fresh Client", status: "new", isConverted: false }];
+    render(<LeadsPage initialData={data} />);
+    expect(within(screen.getByRole("group", { name: "Enquiry lists" })).getAllByRole("button").length).toBeLessThanOrEqual(6);
+    await user.click(screen.getByRole("button", { name: "Filter" }));
+    await user.click(screen.getByRole("button", { name: /Filter by to check/ }));
+    await user.click(screen.getByRole("option", { name: "Duplicates" }));
+    await user.keyboard("{Escape}");
+    expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("Duplicates")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Open Dup Client" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Fresh Client" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "Enquiry lists" })).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+  }, 20_000);
 
   it("filters by source and resets to all leads", async () => {
     const interaction = userEvent.setup();

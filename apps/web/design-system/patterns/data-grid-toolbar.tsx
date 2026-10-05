@@ -20,10 +20,20 @@ type FilterTarget = { id: string; label: string; options?: Array<{ id: string; l
  * opens when used, "Filter" (each filter in use becomes a removable chip) and ⋯ (sort, columns, export).
  * Nothing else: page actions belong in the page header.
  */
-export function DataGridToolbar<T>({ compact = false, leading, title, table, views, activeView, onViewChange, searchLabel, searchValue, onSearchChange, actions, onExport, hasMoreRows, filters = [] }: {
+/** The one search of every toolbar (§5c D1): a search icon until it is focused or holds text, then a compact field. */
+export function ToolbarSearch({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const t = useT();
+  return <form className="wd-record-search" data-collapsible="" data-open={value ? true : undefined} onSubmit={event => event.preventDefault()}>
+    <SearchInput label={label} placeholder={t("Search…")} value={value} onChange={onChange} />
+  </form>;
+}
+
+export function DataGridToolbar<T>({ compact = false, leading, title, table, views, activeView, onViewChange, searchLabel, searchValue, onSearchChange, actions, onExport, hasMoreRows, filters = [], menuActions = [], onMenuAction }: {
   compact?: boolean; /** Replaces the title/view switch at the start, e.g. list tabs. */ leading?: ReactNode; title?: string; table: Table<T>; views: SavedView[]; activeView?: string; onViewChange: (id: string) => void;
   searchLabel: string; actions?: ReactNode; onExport: () => void; hasMoreRows?: boolean; totalRowCount?: number;
   searchValue?: string; onSearchChange?: (value: string) => void; filters?: ToolbarFilter[];
+  /** The page's secondary actions (import, review…), listed first in the ⋯ menu so a list has one ⋯, never two. */
+  menuActions?: Array<{ id: string; label: string }>; onMenuAction?: (id: string) => void;
 }) {
   const t = useT();
   const { portalContainer, direction } = useDesignSystem();
@@ -57,9 +67,7 @@ export function DataGridToolbar<T>({ compact = false, leading, title, table, vie
       <div className="wd-record-controls">
         {leading ? null : viewSwitch}
         {hasMoreRows ? <span className="wd-record-count" title={t("Load more to include older records.")}><Rows3 size={14} />{t("{count} loaded", { count: table.getFilteredRowModel().rows.length })}</span> : null}
-        <form className="wd-record-search" data-open={search ? true : undefined} onSubmit={event => event.preventDefault()}>
-          <SearchInput label={searchLabel} placeholder={t("Search…")} value={search} onChange={value => onSearchChange ? onSearchChange(value) : table.setGlobalFilter(value)} />
-        </form>
+        <ToolbarSearch label={searchLabel} value={search} onChange={value => onSearchChange ? onSearchChange(value) : table.setGlobalFilter(value)} />
         {targets.length ? <DialogTrigger>
           <Button variant="quiet" size="compact" aria-label={t("Filter")}><Filter size={14} /><span>{t("Filter")}</span></Button>
           <Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-record-panel" dir={direction} placement="bottom end"><Dialog aria-label={t("Filter records")}>{({ close }) => <>
@@ -73,7 +81,8 @@ export function DataGridToolbar<T>({ compact = false, leading, title, table, vie
         {leading ? viewSwitch : null}
         <DialogTrigger>
           <IconButton aria-label={t("Table options")} size="compact"><MoreHorizontal size={16} /></IconButton>
-          <Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-record-panel wd-table-options" dir={direction} placement="bottom end"><Dialog aria-label={t("Table options")}>
+          <Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-record-panel wd-table-options" dir={direction} placement="bottom end"><Dialog aria-label={t("Table options")}>{({ close }) => <>
+            {menuActions.length ? <section className="wd-record-menu-actions">{menuActions.map(item => <Button key={item.id} size="compact" variant="quiet" onPress={() => { close(); onMenuAction?.(item.id); }}>{item.label}</Button>)}</section> : null}
             {sortable.length ? <section>
               <strong>{t("Sort")}</strong>
               <SelectField label={t("Sort by")} items={[{ id: '__none', label: t("Default order") }, ...sortable.map(column => ({ id: column.id, label: header(column) }))]} selectedKey={sort?.id ?? '__none'} onSelectionChange={key => table.setSorting(key === '__none' ? [] : [{ id: String(key), desc: false }])} />
@@ -85,7 +94,7 @@ export function DataGridToolbar<T>({ compact = false, leading, title, table, vie
               <Button size="compact" variant="quiet" onPress={() => table.resetColumnVisibility()}>{t("Reset columns")}</Button>
             </section>
             <footer><Button size="compact" variant="quiet" onPress={onExport} aria-label={exportLabel}><Download size={14} aria-hidden="true" /><span>{t("Export")}</span></Button></footer>
-          </Dialog></Popover>
+          </>}</Dialog></Popover>
         </DialogTrigger>
       </div>
     </div>

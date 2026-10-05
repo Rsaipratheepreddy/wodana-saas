@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, DataGrid, EmptyState, ErrorState, InlineNotice, ListTabs, MenuButton, NoResultsState, TextAreaField, type DataGridColumn, FormDialog } from "@/design-system";
+import { Badge, Button, DataGrid, EmptyState, ErrorState, InlineNotice, ListTabs, MenuButton, NoResultsState, TextAreaField, type DataGridColumn, type ToolbarFilter, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import { restockQuantity } from "@/lib/inventory/levels";
@@ -64,7 +64,7 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
         {row.itemCode || point ? <small>{[row.itemCode, point ? t("Low at {quantity}", { quantity: unit(point.reorderAt, row.unit) }) : ""].filter(Boolean).join(" · ")}</small> : null}
         {point?.low ? <span><Badge tone="warning">{t("Low")}</Badge></span> : null}</span>;
     } } },
-    { id: "place", header: t("Place"), accessorFn: (row) => row.locationName, size: 180 },
+    { id: "place", header: t("Place"), accessorFn: (row) => row.locationName, size: 180, enableColumnFilter: false },
     { id: "for", header: t("For"), accessorFn: (row) => row.projectReference ?? "", size: 170, meta: { renderCell: (row) => row.projectId && row.projectReference
       ? <ProjectLinks projects={[{ id: row.projectId, reference: row.projectReference, name: row.projectName }]} /> : <span className={styles.muted}>{t("Free stock")}</span> } },
     { id: "onHand", header: t("On hand"), accessorFn: (row) => Number(row.onHand), size: 130, meta: { align: "end", renderCell: (row) => <span className={styles.number}>{unit(row.onHand, row.unit)}</span> } },
@@ -99,7 +99,8 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
   ], [t, state]);
 
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
-  const placeName = state?.locations.find((location) => location.id === place)?.name;
+  const placeFilter: ToolbarFilter[] = view !== "low" && state?.locations.length ? [{ id: "place", label: t("Place"), value: place ?? undefined, onChange: (value) => setPlace(value ?? null),
+    options: state.locations.map((location) => ({ id: location.id, label: location.name })) }] : [];
   const project = projectId ? state?.rows.find((row) => row.projectId === projectId) : undefined;
   const toolbar = <div className={styles.filters}>
     <ListTabs label={t("Stock")} value={view} onChange={setView} items={[
@@ -108,8 +109,6 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
       { id: "free", label: t("Free stock") },
       { id: "projects", label: t("For projects") },
     ]} />
-    {view !== "low" ? <MenuButton size="compact" label={placeName ?? t("Every place")} onAction={(id) => setPlace(id === "any" ? null : id)}
-      items={[{ id: "any", label: t("Every place") }, ...(state?.locations ?? []).map((location) => ({ id: location.id, label: location.name }))]} /> : null}
     <ProjectFilterChip project={projectId ? { id: projectId, reference: project?.projectReference ?? t("This project"), name: project?.projectName } : null} onClear={() => onProject(null)} />
   </div>;
   return <>
@@ -128,11 +127,11 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
     </section> : null}
     {view === "low" ? <DataGrid<ReorderPoint> ariaLabel={t("Low stock")} columns={lowColumns} data={[...points].sort((a, b) => Number(b.short) - Number(a.short) || Number(b.low) - Number(a.low))
       .filter((point) => !needle || point.itemName.toLocaleLowerCase().includes(needle))} getRowId={(point) => point.id} isLoading={!state}
-      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar}
+      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar} filters={placeFilter}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No reorder points yet")}
         description={t("Set one from an item's actions to be told when free stock runs low.")} />} />
     : <DataGrid<StockRow> ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
-      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar}
+      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar} filters={placeFilter}
       toolbarActions={state?.canAdjust ? <Button size="compact" onPress={() => setChange({ mode: "add", row: null })}>{t("Add stock")}</Button> : null}
       emptyContent={needle || place || view !== "all" || projectId ? <NoResultsState onClear={() => { setSearch(""); setPlace(null); setView("all"); onProject(null); }} />
         : <EmptyState title={t("Nothing in stock")} description={t("Deliveries add stock where they arrive.")} />} />}

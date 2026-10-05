@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Button, DataGrid, EmptyState, ErrorState, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, ListTabs, NoResultsState, RecordName, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { AccountingApi } from "@/lib/accounting/client";
 import type { Posting, PostingKind, PostingStatus } from "@/lib/accounting/types";
@@ -32,8 +32,7 @@ export function AccountingPostings({ api }: { api: AccountingApi }) {
   const needle = search.trim().toLocaleLowerCase();
   const rows = (postings ?? []).filter((row) => (show === "all" || needsAttention(row)) && (!needle || `${row.label ?? ""} ${row.companyName} ${kinds[row.kind]}`.toLocaleLowerCase().includes(needle)));
   const columns = useMemo<DataGridColumn<Posting>[]>(() => [
-    { id: "document", header: t("Document"), accessorFn: (row) => row.label ?? "", size: 300, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
-      <span>{row.label ?? kinds[row.kind]}</span><small>{[kinds[row.kind], row.companyName, format.day(row.documentDate)].join(" · ")}</small></span> } },
+    { id: "document", header: t("Document"), accessorFn: (row) => row.label ?? "", size: 300, meta: { primary: true, renderCell: (row) => <RecordName title={row.label ?? kinds[row.kind]} detail={[kinds[row.kind], row.companyName, format.day(row.documentDate)].join(" · ")} /> } },
     { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 320, meta: { renderCell: (row) => <span className={styles.nameCell}>
       <span className={styles.status} data-tone={row.errorCode === "total_differs" ? "warning" : statuses[row.status][1]}>
         {row.status === "sent" && row.providerNumber ? `${statuses.sent[0]} · ${row.providerNumber}` : statuses[row.status][0]}</span>
@@ -46,8 +45,8 @@ export function AccountingPostings({ api }: { api: AccountingApi }) {
   ], [t, format, kinds, statuses, api, busy]);
   if (error && !postings) return <ErrorState description={error} onRetry={() => void load()} />;
   return <DataGrid<Posting> ariaLabel={t("Accounting postings")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!postings}
-    onSearchChange={setSearch} searchValue={search} searchLabel={t("Search postings")} rowNumbers={false} wrapText
-    toolbarLeading={<SegmentedControl label={t("Show")} value={show} onChange={(value) => setShow(value as Show)} options={[{ id: "attention", label: t("Needs attention") }, { id: "all", label: t("All") }]} />}
+    onSearchChange={setSearch} searchValue={search} searchLabel={t("Search postings")} rowNumbers={false}
+    toolbarLeading={<ListTabs label={t("Show")} value={show} onChange={setShow} items={[{ id: "attention", label: t("Needs attention") }, { id: "all", label: t("All") }]} />}
     emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={show === "attention" ? t("Nothing needs attention") : t("Nothing posted yet")}
       action={<Link className={styles.linkButton} href="/workspace/settings/accounting">{t("Accounting settings")}</Link>} />} />;
 }

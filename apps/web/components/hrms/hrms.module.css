@@ -1,5 +1,4 @@
 /* People: attendance, leave, the team and HR records; and Settings → Attendance & leave. */
-.page { display: grid; align-content: start; gap: var(--wd-space-4); padding: var(--wd-space-6); min-inline-size: 0; max-inline-size: 72rem; }
 .stack { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
 .muted { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .spacer { flex: 1; }
@@ -86,7 +85,7 @@
   .gateList header { display: flex; align-items: center; gap: var(--wd-space-4); }
   .gateList header img { block-size: var(--wd-space-12); inline-size: auto; }
   .gateList header div { display: grid; gap: var(--wd-space-1); }
-  .gateList h1 { margin: 0; font-size: var(--wd-text-xl); }
+  .gateList h2 { margin: 0; font-size: var(--wd-text-xl); }
   .gateList p { margin: 0; color: var(--wd-color-text-secondary); }
   .gateList table { inline-size: 100%; border-collapse: collapse; }
   .gateList th, .gateList td { padding-block: var(--wd-space-2); padding-inline-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); text-align: start; vertical-align: top; }
@@ -94,7 +93,6 @@
 }
 
 @media (max-width: 640px) {
-  .page { padding: var(--wd-space-4); }
   .crewWorkers > li { grid-template-columns: minmax(0, 1fr) 7rem var(--wd-control-sm); }
   /* The presence choice takes its own line under the name and overtime. */
   .crewWorkers > li > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }

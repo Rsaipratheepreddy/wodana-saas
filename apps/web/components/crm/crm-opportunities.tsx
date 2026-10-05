@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Plus, RefreshCw, Columns3, List } from "lucide-react";
-import { Avatar, Badge, Button, Callout, DataGrid, ControlledModalDialog, FormDialog, personDisplayName, SearchInput, SelectField, TextAreaField, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { CalendarClock, Plus, Columns3, Filter, List, X } from "lucide-react";
+import { Avatar, Badge, Button, Callout, Card, DataGrid, ControlledModalDialog, EmptyState, FormDialog, IconButton, IconMenuButton, ListTabs, NoResultsState, OwnerCell, personDisplayName, RecordName, ToolbarSearch, TextAreaField, ToggleButton, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { Translate } from "@/lib/i18n/keys";
+import { tKey, type Translate } from "@/lib/i18n/keys";
 import type { CrmRecord, CrmScreenPageData } from "@/lib/crm/screens";
 import { crmRequest, rows, type MissingRequirement, type RecordData } from "@/lib/crm/client";
 import { missingFrom, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
@@ -46,18 +46,21 @@ function moneyLabel(record: CrmRecord, locale: string) {
   return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
 }
 
+const STATUS_LABELS: Record<string, ReturnType<typeof tKey>> = { open: tKey("Open"), won: tKey("Won"), lost: tKey("Lost"), abandoned: tKey("Abandoned") };
+function statusText(status: string, t: Translate) { return STATUS_LABELS[status] ? t(STATUS_LABELS[status]) : status.replaceAll("_", " "); }
+
 function columnsFor(pipelines: Pipeline[], t: Translate, locale: string, timeZone: string): DataGridColumn<CrmRecord>[] {
   const pipelineNames = [...new Set(pipelines.map((pipeline) => String(pipeline.name ?? "")).filter(Boolean))];
   const stageNames = [...new Set(pipelines.flatMap((pipeline) => (pipeline.stages ?? []).map((stage) => String(stage.name ?? ""))).filter(Boolean))];
   return [
-    { accessorKey: "reference", header: t("Opportunity ID"), size: 135, cell: ({ row }) => String(row.original.reference ?? "—") },
-    { accessorKey: "title", header: t("Opportunity"), size: 270, meta: { primary: true }, cell: ({ row }) => <span className={styles.identity}><strong>{String(row.original.title ?? t("Untitled opportunity"))}</strong><small>{String(row.original.partyName ?? t("Customer not set"))}</small></span> },
-    { id: "pipeline", accessorFn: (record) => String(record.pipelineName ?? t("Not set")), header: t("Pipeline"), size: 165, meta: { filterOptions: pipelineNames.map((name) => ({ id: name, label: name })) } },
+    { id: "title", header: t("Opportunity"), size: 300, accessorFn: (record) => `${String(record.title ?? "")} ${String(record.partyName ?? "")} ${String(record.reference ?? "")}`, meta: { primary: true, renderCell: (record) => <RecordName title={String(record.title ?? t("Untitled opportunity"))}
+      detail={[String(record.partyName ?? "").trim() || t("Customer not set"), opportunityReference(record)].filter(Boolean).join(" · ")} /> } },
     { id: "stage", accessorFn: (record) => String(record.stageName ?? record.stage_name ?? t("Not set")), header: t("Stage"), size: 150, meta: { filterOptions: stageNames.map((name) => ({ id: name, label: name })) }, cell: ({ row }) => <span data-unplaced={!row.original.stageName && !row.original.stage_name || undefined} className={styles.stage}>{String(row.original.stageName ?? row.original.stage_name ?? t("Not set"))}</span> },
-    { accessorKey: "status", header: t("Status"), size: 105, cell: ({ row }) => { const status = String(row.original.status ?? "unknown"); return <Badge tone={status === "won" ? "success" : status === "lost" || status === "abandoned" ? "danger" : "neutral"}>{status.replaceAll("_", " ")}</Badge>; } },
-    { id: "value", accessorFn: (record) => Number(record.amount ?? 0), header: t("Value"), size: 150, meta: { align: "end" }, cell: ({ row }) => <span className={styles.money}>{moneyLabel(row.original, locale) ?? t("Not set")}</span> },
-    { accessorKey: "ownerName", header: t("Sales owner"), size: 160, cell: ({ row }) => personDisplayName(row.original.ownerName as string | null) || t("Unassigned") },
-    { accessorKey: "nextActionAt", header: t("Next follow-up"), size: 145, cell: ({ row }) => <span className={styles.due}><CalendarClock aria-hidden="true" size={13} />{dateLabel(row.original.nextActionAt, locale, timeZone, t)}</span> },
+    { id: "status", accessorFn: (record) => statusText(String(record.status ?? "unknown"), t), header: t("Status"), size: 105, cell: ({ row }) => { const status = String(row.original.status ?? "unknown"); return <Badge tone={status === "won" ? "success" : status === "lost" || status === "abandoned" ? "danger" : "neutral"}>{statusText(status, t)}</Badge>; } },
+    { id: "pipeline", accessorFn: (record) => String(record.pipelineName ?? t("Not set")), header: t("Pipeline"), size: 165, meta: { priority: "low", filterOptions: pipelineNames.map((name) => ({ id: name, label: name })) } },
+    { id: "owner", accessorFn: (record) => personDisplayName(record.ownerName as string | null), header: t("Sales owner"), size: 160, meta: { priority: "medium", renderCell: (record) => <OwnerCell fallback={t("Unassigned")} person={record.ownerName as string | null} /> } },
+    { accessorKey: "nextActionAt", header: t("Next follow-up"), size: 145, meta: { priority: "medium" }, cell: ({ row }) => <span className={styles.due}><CalendarClock aria-hidden="true" size={13} />{dateLabel(row.original.nextActionAt, locale, timeZone, t)}</span> },
+    { id: "value", accessorFn: (record) => Number(record.amount ?? 0), header: t("Value"), size: 140, meta: { align: "end" }, cell: ({ row }) => <span className={styles.money}>{moneyLabel(row.original, locale) ?? t("Not set")}</span> },
   ];
 }
 
@@ -206,23 +209,40 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
   };
 
 
-  return <CrmProductShell title={t("Pipeline")} description="" canView={initialData.canView} useWorkspaceColors compact pageClassName={styles.boardPage}
-    actions={<Button variant="primary" onPress={() => router.push("/workspace/crm/leads")}><Plus aria-hidden="true" size={15} />{t("Convert enquiry")}</Button>}>
-    <div className={styles.boardSurface}>
-    <div className={styles.boardToolbar}>
-      <SearchInput label={t("Search opportunities")} value={search} onChange={setSearch} />
-      <SelectField label={null} aria-label={t("Filter by assignee")} placeholder={t("All assignees")} selectedKey={assignee || "all"} onSelectionChange={key => setAssignee(key === "all" ? "" : String(key))} items={[{id:"all",label:t("All assignees")},{id:"unassigned",label:t("Unassigned")}, ...[...new Map(items.filter(item => item.ownerMembershipId).map(item => [String(item.ownerMembershipId), personDisplayName(item.ownerName as string | null) || t("Assigned person")])).entries()].map(([id,label]) => ({id,label}))]} />
-      <SelectField label={null} aria-label={t("Opportunity status")} selectedKey={view} onSelectionChange={key => setView(key as "all" | "open" | "closed")} items={[{id:"all",label:t("All opportunities")},{id:"open",label:t("Open")},{id:"closed",label:t("Closed")}]} />
-      {pipelines.length > 1 && <SelectField label={null} aria-label={t("Pipeline")} selectedKey={pipelineFilter} onSelectionChange={key => setPipelineFilter(String(key))} items={[{id:"all",label:t("All pipelines")},...pipelines.map(p => ({id:p.id,label:String(p.name)}))]} />}
-      <div role="group" aria-label={t("Pipeline view")} className={styles.viewSwitch}><Button size="compact" aria-pressed={layout === "board"} onPress={() => setLayout("board")}><Columns3 size={14} />{t("Board")}</Button><Button size="compact" aria-pressed={layout === "list"} onPress={() => setLayout("list")}><List size={14} />{t("List")}</Button></div>
-      <div className={styles.toolbarActions}>
-        <Button size="compact" aria-label={t("Refresh pipeline")} isLoading={busy} onPress={() => void reload()}><RefreshCw aria-hidden="true" size={15} /></Button>
-      </div>
+  // Assignee and pipeline are filters (removable chips); the status is the tabs under the title.
+  const owners = [...new Map(items.filter(item => item.ownerMembershipId).map(item => [String(item.ownerMembershipId), personDisplayName(item.ownerName as string | null) || t("Assigned person")])).entries()];
+  const filterItems = [{ id: "owner:unassigned", label: t("Unassigned") }, ...owners.map(([id, name]) => ({ id: `owner:${id}`, label: t("Assigned to {name}", { name }) })),
+    ...(pipelines.length > 1 ? pipelines.map(pipeline => ({ id: `pipeline:${pipeline.id}`, label: t("Pipeline: {name}", { name: String(pipeline.name) }) })) : [])];
+  const chips = [
+    ...(assignee ? [{ id: "owner", label: filterItems.find(item => item.id === `owner:${assignee}`)?.label ?? t("Assigned person"), clear: () => setAssignee("") }] : []),
+    ...(pipelineFilter !== "all" ? [{ id: "pipeline", label: filterItems.find(item => item.id === `pipeline:${pipelineFilter}`)?.label ?? t("Pipeline"), clear: () => setPipelineFilter("all") }] : []),
+  ];
+  const filtered = Boolean(search || assignee || pipelineFilter !== "all");
+  const clearFilters = () => { setSearch(""); setAssignee(""); setPipelineFilter("all"); };
+  const toolbar = <div className={styles.boardToolbar}>
+    <div role="group" aria-label={t("Pipeline view")} className={styles.viewSwitch}>
+      <ToggleButton size="compact" variant="quiet" isSelected={layout === "board"} onPress={() => setLayout("board")}><Columns3 aria-hidden="true" size={14} />{t("Board")}</ToggleButton>
+      <ToggleButton size="compact" variant="quiet" isSelected={layout === "list"} onPress={() => setLayout("list")}><List aria-hidden="true" size={14} />{t("List")}</ToggleButton>
     </div>
+    {chips.length ? <div aria-label={t("Filters in use")} className="wd-filter-chips" role="group">{chips.map(chip => <span className="wd-filter-chip" key={chip.id}>
+      <span>{chip.label}</span><IconButton aria-label={t("Remove filter {name}", { name: chip.label })} onPress={chip.clear} size="compact"><X size={12} /></IconButton></span>)}</div> : null}
+    <div className={styles.toolbarActions}>
+      <ToolbarSearch label={t("Search opportunities")} value={search} onChange={setSearch} />
+      <IconMenuButton ariaLabel={t("Filter")} icon={<Filter aria-hidden="true" size={15} />} items={filterItems} onAction={(id) => { const [kind, value] = id.split(":"); if (kind === "owner") setAssignee(value); else setPipelineFilter(value); }} />
+      <IconMenuButton ariaLabel={t("Pipeline options")} items={[{ id: "refresh", label: t("Refresh") }]} onAction={() => void reload()} />
+    </div>
+  </div>;
+
+  return <CrmProductShell title={t("Pipeline")} canView={initialData.canView} useWorkspaceColors compact toolbar={toolbar}
+    actions={<Button variant="primary" onPress={() => router.push("/workspace/crm/leads")}><Plus aria-hidden="true" size={15} />{t("Convert enquiry")}</Button>}
+    tabs={<ListTabs label={t("Opportunity status")} value={view} onChange={setView} items={[{ id: "all", label: t("All") }, { id: "open", label: t("Open") }, { id: "closed", label: t("Closed") }]} />}>
+    <div className={styles.boardSurface}>
     {failure ? <Callout title={t("Could not update pipeline")} tone="warning">{failure}</Callout> : null}
     {moveNotice && <p role="status" className={styles.moveNotice}>{moveNotice}</p>}
-    {layout === "board" && !activePipelines.length && !items.length ? <div className={styles.emptyState}><strong>{t("Your pipeline starts with an enquiry")}</strong><p>{t("Open an enquiry and choose Convert to opportunity. Its customer, owner and follow-up stay connected.")}</p><ol className={styles.stageFlow} aria-label={t("Sales stages")}><li>{t("New Opportunity")}</li><li>{t("Qualified")}</li><li>{t("Proposal")}</li><li>{t("Negotiation")}</li></ol><p className={styles.flowOutcome}>{t("Then mark the opportunity {won} or {lost}.").split(/(\{won\}|\{lost\})/).map((part, index) => part === "{won}" ? <strong key={index}>{t("Won")}</strong> : part === "{lost}" ? <strong key={index}>{t("Lost")}</strong> : part)}</p></div> : null}
-    {layout === "board" && activePipelines.length > 0 && !boardItems.length && <p className={styles.emptyNotice}>{search || assignee || pipelineFilter !== "all" ? t("No opportunities match these filters.") : view === "closed" ? t("No closed opportunities yet.") : view === "open" ? t("No open opportunities yet. Convert one from an enquiry.") : t("No opportunities yet. Convert one from an enquiry.")}</p>}
+    {layout === "board" && !activePipelines.length && !items.length ? <EmptyState title={t("Your pipeline starts with an enquiry")} description={t("Open an enquiry and choose Convert to opportunity. Its customer, owner and follow-up stay connected.")}
+      action={<Button variant="primary" onPress={() => router.push("/workspace/crm/leads")}>{t("Open enquiries")}</Button>} /> : null}
+    {layout === "board" && activePipelines.length > 0 && !boardItems.length ? filtered ? <NoResultsState onClear={clearFilters} />
+      : <p className={styles.emptyNotice}>{view === "closed" ? t("No closed opportunities yet.") : view === "open" ? t("No open opportunities yet. Convert one from an enquiry.") : t("No opportunities yet. Convert one from an enquiry.")}</p> : null}
     {layout === "board" ? <>
       <span id="pipeline-drag-hint" className={styles.srOnly}>{t("Open opportunity. Drag to move stage, or use Alt and the left or right arrow keys.")}</span>
       <div className={`${styles.salesBoard} wd-scroll-quiet`} role="region" tabIndex={0} aria-label={t("Sales pipeline board")} style={{ "--stage-count": boardColumns.length + (unplaced.length ? 1 : 0) } as CSSProperties}>{[...boardColumns, ...(unplaced.length ? [{id:"unplaced",name:t("Needs a stage"),code:"",pipelineId:"",pipelineName:"",canCreate:false}] : [])].map((column, columnIndex) => {
@@ -240,20 +260,19 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
             const value = moneyLabel(item, locale);
             const outcomeMismatch = (column.code === "won" || column.code === "lost") && item.status !== column.code;
             const now = item.status === "open" ? nowSteps[item.id]?.step ?? null : null;
-            return <button type="button" className={styles.boardCard} key={item.id} draggable={item.status === "open" && !moving} aria-busy={moving === item.id} data-dragging={dragged === item.id || undefined}
-              aria-describedby="pipeline-drag-hint"
+            // The card is the shared Card; its title is the button that opens it (and moves it with Alt+arrows).
+            return <div className={styles.boardCard} key={item.id} draggable={item.status === "open" && !moving} aria-busy={moving === item.id} data-dragging={dragged === item.id || undefined}
               onDragStart={event => { setDragged(item.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); }}
-              onDragEnd={() => { setDragged(null); setDropTarget(null); }}
-              onKeyDown={event => { if (event.altKey && (event.key === "ArrowRight" || event.key === "ArrowLeft")) { event.preventDefault(); const stages = boardColumns.filter(stage => stage.pipelineId === String(item.pipelineId ?? item.pipeline_id)); const index = stages.findIndex(stage => stage.id === String(item.stageId ?? item.stage_id)); const next = stages[index + (event.key === "ArrowRight" ? 1 : -1)]; if (next) requestMove(item.id, next.id); } }} onClick={() => setSelectedRecord(item.id)}>
-              <strong>{title}</strong>
-              {outcomeMismatch && <span className={styles.cardWarning}>{t("Status is {status} — review outcome", { status: String(item.status).replaceAll("_", " ") })}</span>}
-              {(customer && customer !== title) || value ? <span className={styles.cardMeta}>{customer && customer !== title ? <span>{customer}</span> : null}{value ? <b>{value}</b> : null}</span> : null}
-              {now ? <span className={styles.cardNow}>{stepText(now, "short")}</span> : null}
-              <footer>
-                {item.status === "open" ? (typeof item.nextActionAt === "string" ? <DueChip at={item.nextActionAt} /> : <span className={styles.cardNoDue}>{t("No follow-up")}</span>) : <span />}
-                <span className={styles.owner} title={owner || t("Unassigned")}><span aria-hidden="true"><Avatar name={owner || t("Unassigned")} seed={owner ? String(item.ownerMembershipId ?? owner) : undefined} size="sm" /></span><span className={styles.srOnly}>{owner || t("Unassigned")}</span></span>
-              </footer>
-            </button>;
+              onDragEnd={() => { setDragged(null); setDropTarget(null); }}>
+              <Card as="article" title={<button type="button" className={styles.cardOpen} aria-describedby="pipeline-drag-hint" aria-label={[title, customer !== title ? customer : "", value ?? ""].filter(Boolean).join(" · ")}
+                onKeyDown={event => { if (event.altKey && (event.key === "ArrowRight" || event.key === "ArrowLeft")) { event.preventDefault(); const stages = boardColumns.filter(stage => stage.pipelineId === String(item.pipelineId ?? item.pipeline_id)); const index = stages.findIndex(stage => stage.id === String(item.stageId ?? item.stage_id)); const next = stages[index + (event.key === "ArrowRight" ? 1 : -1)]; if (next) requestMove(item.id, next.id); } }} onClick={() => setSelectedRecord(item.id)}>{title}</button>}
+                footer={<><span className={styles.cardDue}>{item.status === "open" ? (typeof item.nextActionAt === "string" ? <DueChip at={item.nextActionAt} /> : <span className={styles.cardNoDue}>{t("No follow-up")}</span>) : null}</span>
+                  <span className={styles.owner} title={owner || t("Unassigned")}><span aria-hidden="true"><Avatar name={owner || t("Unassigned")} seed={owner ? String(item.ownerMembershipId ?? owner) : undefined} size="sm" /></span><span className={styles.srOnly}>{owner || t("Unassigned")}</span></span></>}>
+                {outcomeMismatch && <span className={styles.cardWarning}>{t("Status is {status} — review outcome", { status: String(item.status).replaceAll("_", " ") })}</span>}
+                {(customer && customer !== title) || value ? <span className={styles.cardMeta}>{customer && customer !== title ? <span>{customer}</span> : null}{value ? <b>{value}</b> : null}</span> : null}
+                {now ? <span className={styles.cardNow}>{stepText(now, "short")}</span> : null}
+              </Card>
+            </div>;
           })}</div>
           {!cards.length && dragged && <p className={styles.emptyColumn}>{t("Drop here to move")}</p>}
         </section>;
@@ -263,8 +282,8 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
       ariaLabel={t("Opportunities")}
       columns={columns}
       data={boardItems}
-      emptyTitle={view === "open" ? t("No open opportunities") : view === "closed" ? t("No closed opportunities") : t("No opportunities")}
-      emptyDescription={t("Convert an enquiry to carry its customer and follow-up into the pipeline.")}
+      emptyContent={filtered ? <NoResultsState onClear={clearFilters} /> : <EmptyState title={view === "open" ? t("No open opportunities") : view === "closed" ? t("No closed opportunities") : t("No opportunities")}
+        action={<Button variant="primary" onPress={() => router.push("/workspace/crm/leads")}>{t("Open enquiries")}</Button>} />}
       exportFileName="wodana-opportunities.csv"
       footerActions={nextCursor ? <Button size="compact" isLoading={busy} onPress={() => void reload(true)}>{t("Load more opportunities")}</Button> : undefined}
       getRowId={(record) => record.id}

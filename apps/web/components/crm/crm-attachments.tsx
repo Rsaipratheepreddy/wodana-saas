@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, File, FileImage, FileText, RefreshCw } from "lucide-react";
-import { Badge, Button, DataGrid, Callout, IconButton, SelectField, type DataGridColumn } from "@/design-system";
+import { Badge, DataGrid, EmptyState, ErrorState, IconButton, SelectField, type DataGridColumn } from "@/design-system";
 import type { LeadsPageData } from "@/lib/crm/leads";
 import type { RequirementNote } from "@/lib/crm/note-document";
 import type { CaseAsset } from "@/lib/pre-project/content";
@@ -46,23 +46,25 @@ export function CrmAttachments({ initialData }: { initialData: LeadsPageData }) 
     return () => controller.abort();
   }, [leadId, initialData.workspaceId, initialData.canView, revision, t]);
   const columns: DataGridColumn<Attachment>[] = [
-    { accessorKey: "name", header: t("File"), size: 320, cell: ({ row }) => {
+    { accessorKey: "name", header: t("File"), size: 320, meta: { primary: true, interactive: true }, cell: ({ row }) => {
       const file = row.original;
       const Icon = file.mimeType?.startsWith("image/") ? FileImage : file.mimeType === "application/pdf" ? FileText : File;
       return <a className={styles.fileLink} href={`/api/workspace/requirement-notes/lead/${leadId}/${file.noteId}/assets/${file.id}?workspaceId=${encodeURIComponent(initialData.workspaceId)}`} target="_blank" rel="noopener noreferrer"><span className={styles.fileIcon} data-type={fileType(file)}><Icon size={18} aria-hidden="true" /></span><span className={styles.fileName}>{file.name}</span><ArrowUpRight size={13} aria-hidden="true" /></a>;
     } },
-    { accessorKey: "noteTitle", header: t("Requirement note"), size: 240 },
+    { accessorKey: "noteTitle", header: t("Requirement note"), size: 240, meta: { priority: "medium" } },
     { id: "type", accessorFn: (file) => fileTypeLabel(file, t), header: t("Type"), size: 100, cell: ({ row }) => <Badge tone="neutral">{fileTypeLabel(row.original, t)}</Badge> },
-    { accessorKey: "byteSize", header: t("Size"), size: 100, cell: ({ row }) => <span className={styles.size}>{fileSize(row.original.byteSize)}</span> },
+    { accessorKey: "byteSize", header: t("Size"), size: 100, meta: { align: "end" }, cell: ({ row }) => <span className={styles.size}>{fileSize(row.original.byteSize)}</span> },
   ];
-  return <CrmProductShell title={t("Attachments")} description="" canView={initialData.canView} useWorkspaceColors pageClassName={styles.page}>
-    <div className={styles.contextBar}>
+  const retry = () => setRevision(value => value + 1);
+  return <CrmProductShell title={t("Attachments")} canView={initialData.canView} useWorkspaceColors
+    toolbar={<div className={styles.contextBar}>
       <div className={styles.enquiryPicker}><SelectField aria-label={t("Choose enquiry")} label={null} placeholder={t("Choose an enquiry")} selectedKey={leadId || null} onSelectionChange={key => setLeadId(String(key ?? ""))} items={initialData.items.map(lead => ({ id: lead.id, label: `${lead.reference ? `${lead.reference} · ` : ""}${lead.title}`, description: lead.partyName }))} /></div>
-      <span className={styles.summary}>{leadId ? loading ? t("Loading files…") : files.length === 1 ? t("{count} file", { count: files.length }) : t("{count} files", { count: files.length }) : t("Files from enquiry requirement notes")}</span>
       {leadId && <Link className={styles.manageLink} href={`/workspace/crm/leads?lead=${leadId}`}>{t("Manage files")} <ArrowUpRight size={14} aria-hidden="true" /></Link>}
-      <IconButton aria-label={t("Refresh attachments")} size="compact" isDisabled={!leadId || loading} onPress={() => setRevision(value => value + 1)}><RefreshCw size={15} /></IconButton>
-    </div>
-    {error && <Callout title={t("Could not load attachments")} tone="danger">{error}<Button size="compact" onPress={() => setRevision(value => value + 1)}>{t("Retry")}</Button></Callout>}
-    <DataGrid ariaLabel={t("Enquiry attachments")} columns={columns} data={files} getRowId={file => `${file.noteId}:${file.id}`} isLoading={loading} searchLabel={t("Search files")} rowNumbers={false} selectable={false} emptyTitle={error ? t("Attachments unavailable") : leadId ? t("No attachments yet") : t("Choose an enquiry")} emptyDescription={error ? t("Retry loading the files above.") : leadId ? t("Add files to this enquiry’s requirement notes using Manage files.") : t("Select an enquiry above to browse its documents and images.")} />
+    </div>}>
+    {error ? <ErrorState title={t("Could not load attachments")} description={error} onRetry={retry} />
+      : <DataGrid ariaLabel={t("Enquiry attachments")} columns={columns} data={files} getRowId={file => `${file.noteId}:${file.id}`} isLoading={loading} searchLabel={t("Search files")} rowNumbers={false} selectable={false}
+        emptyContent={leadId ? <EmptyState title={t("No attachments yet")} action={<Link className="wd-button" data-size="compact" data-variant="primary" href={`/workspace/crm/leads?lead=${leadId}`}>{t("Manage files")}</Link>} />
+          : <EmptyState title={t("Choose an enquiry")} description={t("Select an enquiry above to browse its documents and images.")} />}
+        footerActions={<IconButton aria-label={t("Refresh attachments")} size="compact" isDisabled={!leadId || loading} onPress={retry}><RefreshCw size={15} /></IconButton>} />}
   </CrmProductShell>;
 }

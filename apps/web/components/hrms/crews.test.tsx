@@ -125,7 +125,7 @@ describe("Crews", () => {
     });
     page();
     await grid("Crews");
-    await userEvent.click(screen.getByRole("radio", { name: "Workers" }));
+    await userEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: "Workers" }));
     const table = await grid("Workers");
     expect(within(table).getAllByRole("row")[0]).toHaveTextContent(/Name.*Trade.*Crew.*Day rate.*Active/);
     expect(within(table).getByText("Anil Das").closest("tr")).toHaveTextContent(/Anil Das.*W-02.*Carpentry.*Joinery A.*Trade rate/);
@@ -168,7 +168,7 @@ describe("Crews", () => {
     page();
     await grid("Crews");
     expect(screen.queryByRole("button", { name: "New crew" })).toBeNull();
-    await userEvent.click(screen.getByRole("radio", { name: "Workers" }));
+    await userEvent.click(within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name: "Workers" }));
     const table = await grid("Workers");
     expect(within(table).getAllByRole("row")[0]).not.toHaveTextContent("Day rate");
     await userEvent.click(within(table).getByText("Ravi Kumar"));
