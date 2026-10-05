@@ -108,7 +108,7 @@
 .responseAnswers dd { margin: 0; font-size: var(--wd-text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
 .enquiryLink { justify-self: start; color: var(--wd-color-link); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); text-underline-offset: 3px; }
 .settings { display: grid; gap: var(--wd-space-6); max-inline-size: 40rem; padding-block: var(--wd-space-4); }
-.settingsFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--wd-space-3); }
+.settingsFields { display: grid; gap: var(--wd-space-4); }
 .brandIdentity { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-4); }
 .brandIdentity img { max-inline-size: 7rem; max-block-size: var(--wd-space-12); object-fit: contain; }
 .actions + .historyList, .historyList { display: grid; margin: 0; padding: 0; list-style: none; border-block: 1px solid var(--wd-color-structural-divider); }
@@ -120,7 +120,7 @@
 
 /* ── Share sheet and the printed poster ──────────────────────────────────── */
 .share { display: grid; gap: var(--wd-space-5); }
-.shareFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--wd-space-3); }
+.shareFields { display: grid; gap: var(--wd-space-4); }
 .copyRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--wd-space-2); }
 .copyActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .linkButton { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-block-size: var(--wd-control-md); padding-inline: var(--wd-space-3); border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: none; }

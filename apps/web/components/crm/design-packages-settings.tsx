@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
-import { Badge, Button, DataGrid, FormDialog, FormRow, InlineNotice, MoneyField, MoreDetails, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, FormDialog, InlineNotice, MoneyField, MoreDetails, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { loadDesignSettings, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type DesignPackage, type DesignSettings, type PricingMethod } from "@/lib/design/packages";
 import styles from "./design-packages-settings.module.css";
@@ -105,16 +105,12 @@ function PackageDialog({ initial, onClose, onSave }: { initial: Partial<DesignPa
   const per = value.pricingMethod === "per_area" ? (value.areaUnit === "sqm" ? t("Per sq m") : t("Per sq ft")) : value.pricingMethod === "per_space" ? t("Per space") : undefined;
   return <FormDialog isDirty={JSON.stringify(value) !== JSON.stringify(start)} onClose={onClose} onSubmit={save} submitLabel={t("Save package")} title={initial.id ? t("Edit package") : t("New package")}>
     <TextInput isRequired label={t("Name")} onChange={set("name")} value={value.name ?? ""} />
-    <FormRow>
-      <SelectField isRequired items={methods} label={t("Priced")} onSelectionChange={(key) => set("pricingMethod")(String(key) as PricingMethod)} selectedKey={value.pricingMethod ?? "per_area"} />
-      <MoneyField currency={value.currency ?? undefined} description={per} isRequired label={t("Rate")} min="0" onChange={(next) => set("rate")(next)} value={value.rate ?? ""} />
-    </FormRow>
+    <SelectField isRequired items={methods} label={t("Priced")} onSelectionChange={(key) => set("pricingMethod")(String(key) as PricingMethod)} selectedKey={value.pricingMethod ?? "per_area"} />
+    <MoneyField currency={value.currency ?? undefined} description={per} isRequired label={t("Rate")} min="0" onChange={(next) => set("rate")(next)} value={value.rate ?? ""} />
     {value.pricingMethod === "per_area" ? <SelectField items={[{ id: "sqft", label: t("Square feet") }, { id: "sqm", label: t("Square metres") }]} label={t("Area unit")} onSelectionChange={(key) => set("areaUnit")(String(key) as "sqft" | "sqm")} selectedKey={value.areaUnit ?? "sqft"} /> : null}
     <MoreDetails filled={[value.requiredRoleCode, value.inclusions, value.includesSpacePlanning, value.includesRenders].filter(Boolean).length}>
-      <FormRow>
-        <TextInput inputMode="numeric" label={t("Included revisions")} onChange={(next) => set("includedRevisions")(Math.min(20, Number(next.replace(/\D/g, "") || 0)))} value={String(value.includedRevisions ?? 2)} />
-        <TextInput description={t("Added to the project automatically, e.g. creative_director.")} label={t("Required role")} onChange={(next) => set("requiredRoleCode")(next.toLowerCase().replace(/[^a-z0-9_]/g, ""))} value={value.requiredRoleCode ?? ""} />
-      </FormRow>
+      <TextInput inputMode="numeric" label={t("Included revisions")} onChange={(next) => set("includedRevisions")(Math.min(20, Number(next.replace(/\D/g, "") || 0)))} value={String(value.includedRevisions ?? 2)} />
+      <TextInput description={t("Added to the project automatically, e.g. creative_director.")} label={t("Required role")} onChange={(next) => set("requiredRoleCode")(next.toLowerCase().replace(/[^a-z0-9_]/g, ""))} value={value.requiredRoleCode ?? ""} />
       <div className={styles.toggles}>
         <Switch isSelected={Boolean(value.includesSpacePlanning)} onChange={set("includesSpacePlanning")}>{t("Space planning")}</Switch>
         <Switch isSelected={Boolean(value.includesRenders)} onChange={set("includesRenders")}>{t("3D renders")}</Switch>

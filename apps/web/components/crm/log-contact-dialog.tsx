@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CalendarClock, CircleSlash, Mail, MessageCircle, MessageSquareText, Phone, PhoneMissed, PhoneOff, ThumbsUp, Users, type LucideIcon } from "lucide-react";
-import { FormDialog, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
+import { FormDialog, FormSection, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { logLeadContact, UNANSWERED_OUTCOMES, type ContactChannel, type ContactOutcome, type LoggedContact } from "@/lib/crm/contact";
 import type { CrmSlaPolicy } from "@/lib/crm/leads";
@@ -87,32 +87,28 @@ export function LogContactDialog({ workspaceId, lead, slaPolicies = [], onClose,
   };
 
   return <FormDialog description={lead.name} isDirty={Boolean(outcome || note.trim() || reason.trim())} onClose={onClose} onSubmit={save} submitLabel={t("Log contact")} title={t("Log contact")}>
-    <div className={styles.body}>
-      <div className={styles.group} role="radiogroup" aria-label={t("How")}>
-        <span className={styles.groupLabel}>{t("How")}</span>
-        <div className={styles.channels}>{channels.map(({ id, label }) => {
-          const Icon = CHANNEL_ICONS[id];
-          return <button aria-checked={channel === id} className={styles.channel} key={id} onClick={() => setChannel(id)} role="radio" type="button"><Icon aria-hidden="true" size={14} />{label}</button>;
-        })}</div>
-      </div>
-      <div className={styles.group} role="radiogroup" aria-label={t("Outcome")}>
-        <span className={styles.groupLabel}>{t("Outcome")}</span>
-        <div className={styles.outcomes}>{outcomes.map(({ id, label }) => {
-          const Icon = OUTCOME_ICONS[id];
-          return <button aria-checked={outcome === id} className={styles.outcome} data-tone={OUTCOME_TONES[id]} key={id} onClick={() => choose(id)} role="radio" type="button"><Icon aria-hidden="true" size={15} /><span>{label}</span></button>;
-        })}</div>
-      </div>
+    <FormSection title={t("How")}>
+      <div className={styles.channels} role="radiogroup" aria-label={t("How")}>{channels.map(({ id, label }) => {
+        const Icon = CHANNEL_ICONS[id];
+        return <button aria-checked={channel === id} className={styles.channel} key={id} onClick={() => setChannel(id)} role="radio" type="button"><Icon aria-hidden="true" size={14} />{label}</button>;
+      })}</div>
+    </FormSection>
+    <FormSection title={t("Outcome")}>
+      <div className={styles.outcomes} role="radiogroup" aria-label={t("Outcome")}>{outcomes.map(({ id, label }) => {
+        const Icon = OUTCOME_ICONS[id];
+        return <button aria-checked={outcome === id} className={styles.outcome} data-tone={OUTCOME_TONES[id]} key={id} onClick={() => choose(id)} role="radio" type="button"><Icon aria-hidden="true" size={15} /><span>{label}</span></button>;
+      })}</div>
       <TextAreaField errorMessage={t("Add a note about this contact.")} isRequired={!unanswered} label={t("Note")} maxLength={4000} onChange={setNote} placeholder={unanswered ? t("Noted as an attempt if you leave it empty") : t("What did you discuss?")} value={note} />
       {outcome === "not_interested" ? <TextInput errorMessage={t("Add the reason the client is not interested.")} isRequired label={t("Reason")} maxLength={160} onChange={setReason} value={reason} /> : null}
-      {showFollowUp ? <div className={styles.group}>
-        <div className="wd-quick-picks" role="group" aria-label={t("Suggested times")}>
-          {chips.map(({ id, at }) => {
-            const value = wallClock(at, timeZone);
-            return <button key={id} type="button" className="wd-chip" aria-pressed={followUp === value} onClick={() => setFollowUp(value)}>{chipLabel(id, at)}</button>;
-          })}
-        </div>
-        <CrmDateTimeField isRequired={needsFollowUp} label={needsFollowUp ? t("Come back on") : t("Next follow-up")} onChange={setFollowUp} value={followUp} />
-      </div> : null}
-    </div>
+    </FormSection>
+    {showFollowUp ? <FormSection title={t("Follow-up")}>
+      <div className="wd-quick-picks" role="group" aria-label={t("Suggested times")}>
+        {chips.map(({ id, at }) => {
+          const value = wallClock(at, timeZone);
+          return <button key={id} type="button" className="wd-chip" aria-pressed={followUp === value} onClick={() => setFollowUp(value)}>{chipLabel(id, at)}</button>;
+        })}
+      </div>
+      <CrmDateTimeField isRequired={needsFollowUp} label={needsFollowUp ? t("Come back on") : t("Next follow-up")} onChange={setFollowUp} value={followUp} />
+    </FormSection> : null}
   </FormDialog>;
 }

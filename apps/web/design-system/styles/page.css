@@ -114,7 +114,7 @@
 /* ── Forms on a page: one column, sections divided by a hairline, Save sticky at the bottom end (§5c D4) ─ */
 .wd-form-layout { display: grid; gap: var(--wd-phi-2); max-inline-size: 40rem; min-inline-size: 0; }
 .wd-form-layout-footer { position: sticky; inset-block-end: 0; display: flex; justify-content: flex-end; padding-block: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-workspace-canvas); }
-.wd-form-section + .wd-form-section { padding-block-start: var(--wd-phi-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.wd-form-section:has(+ .wd-form-section) { padding-block-end: var(--wd-phi-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
 /* On a phone the first column takes at most 60% of the screen, so the next column (usually the status) stays in view. */
 @media (max-width: 42rem) {
   .wd-data-grid table.wd-table :is(th, td)[data-primary="true"] { inline-size: min(var(--wd-record-column-size, 16rem), 60vw) !important; }
@@ -123,3 +123,5 @@
 .wd-data-grid th[data-align="end"] :is(.wd-column-head-content, .wd-sort-button, .wd-column-header) { justify-content: flex-end; text-align: end; }
 .wd-record-menu-actions { display: grid; gap: var(--wd-space-0-5); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .wd-record-menu-actions .wd-button { justify-content: flex-start; }
+/* Phone numbers read left to right in every language (+971 50 123 4567), aligned with the other fields. */
+.wd-root[dir="rtl"] input[type="tel"] { direction: ltr; text-align: end; }

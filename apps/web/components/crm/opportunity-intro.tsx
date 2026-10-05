@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { CalendarPlus, UserRoundPen } from "lucide-react";
 import { parseDate, parseTime } from "@internationalized/date";
-import { Avatar, Badge, Button, DateField, EditableFieldList, FactRow, FormDialog, FormRow, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar } from "@/design-system";
+import { Avatar, Badge, Button, DateField, EditableFieldList, FactRow, FormDialog, FormRow, FormSection, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput, TimeField, useWorkingCalendar } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows } from "@/lib/crm/client";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -119,16 +119,23 @@ function BookIntroDialog({ workspaceId, opportunityId, people, view, onClose, on
     onBooked();
   };
   return <FormDialog isDirty={JSON.stringify(value) !== JSON.stringify(start)} onClose={onClose} onSubmit={book} submitLabel={t("Book")} title={t("Book intro meeting")}>
-    <SelectField isRequired items={people} label={t("Designer")} onSelectionChange={(key) => set("designer")(String(key ?? ""))} placeholder={t("Choose the designer")} selectedKey={value.designer || null} />
-    {changing ? <TextInput isRequired label={t("Reason for changing the designer")} maxLength={500} onChange={set("reason")} value={value.reason} /> : null}
-    <DateField isRequired label={t("Date")} onChange={(next) => set("date")(next?.toString() ?? "")} quickPicks="inline" value={value.date ? parseDate(value.date) : null} />
-    <FormRow>
-      <TimeField description={t("Times are in {zone}", { zone: view.timezone })} granularity="minute" isRequired label={t("Start")} onChange={(next) => set("time")(next ? next.toString().slice(0, 5) : "")} value={value.time ? parseTime(value.time) : null} />
-      <SelectField items={DURATIONS.map((minutes) => ({ id: String(minutes), label: t("{count} min", { count: minutes }) }))} label={t("Length")} onSelectionChange={(key) => set("minutes")(String(key))} selectedKey={value.minutes} />
-    </FormRow>
-    <SelectField items={[{ id: "in_person", label: t("In person") }, { id: "online", label: t("Online") }]} label={t("Where")} onSelectionChange={(key) => set("mode")(String(key))} selectedKey={value.mode} />
-    <TextInput label={value.mode === "online" ? t("Meeting link") : t("Address")} maxLength={500} onChange={set("place")} placeholder={value.mode === "online" ? "https://" : undefined} value={value.place} />
-    <TextAreaField label={t("Note for the designer")} maxLength={2000} onChange={set("note")} value={value.note} />
+    <FormSection>
+      <SelectField isRequired items={people} label={t("Designer")} onSelectionChange={(key) => set("designer")(String(key ?? ""))} placeholder={t("Choose the designer")} selectedKey={value.designer || null} />
+      {changing ? <TextInput isRequired label={t("Reason for changing the designer")} maxLength={500} onChange={set("reason")} value={value.reason} /> : null}
+    </FormSection>
+    <FormSection title={t("When")}>
+      <DateField isRequired label={t("Date")} onChange={(next) => set("date")(next?.toString() ?? "")} quickPicks="inline" value={value.date ? parseDate(value.date) : null} />
+      {/* The start and its length: one coupled pair. */}
+      <FormRow>
+        <TimeField description={t("Times are in {zone}", { zone: view.timezone })} granularity="minute" isRequired label={t("Start")} onChange={(next) => set("time")(next ? next.toString().slice(0, 5) : "")} value={value.time ? parseTime(value.time) : null} />
+        <SelectField items={DURATIONS.map((minutes) => ({ id: String(minutes), label: t("{count} min", { count: minutes }) }))} label={t("Length")} onSelectionChange={(key) => set("minutes")(String(key))} selectedKey={value.minutes} />
+      </FormRow>
+    </FormSection>
+    <FormSection title={t("Place")}>
+      <SelectField items={[{ id: "in_person", label: t("In person") }, { id: "online", label: t("Online") }]} label={t("Where")} onSelectionChange={(key) => set("mode")(String(key))} selectedKey={value.mode} />
+      <TextInput label={value.mode === "online" ? t("Meeting link") : t("Address")} maxLength={500} onChange={set("place")} placeholder={value.mode === "online" ? "https://" : undefined} value={value.place} />
+      <TextAreaField label={t("Note for the designer")} maxLength={2000} onChange={set("note")} value={value.note} />
+    </FormSection>
   </FormDialog>;
 }
 

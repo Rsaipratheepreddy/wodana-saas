@@ -7,7 +7,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { createCustomField, customEnquiryField, customFieldRef, fieldQuestion, FIELD_TYPE_LABELS, NEW_FIELD_TYPES, type CustomEnquiryField, type EnquiryField, type EnquiryFieldType } from "@/lib/crm/enquiry-fields";
 import { CustomFieldSheet } from "./enquiry-fields-settings";
-import { Badge, Button, Form, FormRow, IconButton, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
+import { Badge, Button, Form, IconButton, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
 import { formQuestionTypes, type LeadFormQuestion, type LeadFormSchema } from "@/lib/crm/lead-forms";
 import styles from "./lead-forms.module.css";
 
@@ -179,10 +179,8 @@ export function LeadFormEditor({ draft, setDraft, busy, fields, workspaceId, onF
               {!system && <IconButton className={styles.deleteField} aria-label={question.title ? t("Delete {name}", { name: question.title }) : t("Delete field")} size="compact" isDisabled={busy} onPress={() => remove(question, index)}><Trash2 size={14} /></IconButton>}
             </div>
             {isOpen && <Form className={styles.cardEditor} fieldMarkers="optional" errorSummary={false} onSubmit={noSubmit}>
-              <FormRow>
-                <TextInput label={t("Field label")} isRequired value={question.title} maxLength={240} autoFocus={fresh === question.id} isDisabled={busy} isInvalid={!question.title.trim()} errorMessage={t("Give this question a label before publishing.")} onChange={title => updateQuestion(question.id, { title })} />
+              <TextInput label={t("Field label")} isRequired value={question.title} maxLength={240} autoFocus={fresh === question.id} isDisabled={busy} isInvalid={!question.title.trim()} errorMessage={t("Give this question a label before publishing.")} onChange={title => updateQuestion(question.id, { title })} />
                 <SelectField label={t("Answer type")} isDisabled={linked || busy} items={questionTypes} selectedKey={question.type} onSelectionChange={key => { const type = String(key); updateQuestion(question.id, { type, options: choiceTypes.has(type) ? question.options.length ? question.options : [1, 2].map(number => ({ id: crypto.randomUUID(), label: t("Option {number}", { number }) })) : [] }); }} />
-              </FormRow>
               <TextInput label={t("Help text")} value={question.description} maxLength={1000} isDisabled={busy} onChange={description => updateQuestion(question.id, { description })} />
               {choiceTypes.has(question.type) && (linked
                 ? <p className={styles.choiceSummary}><strong>{t("Choices")}</strong> {question.options.map(option => option.label).join(" · ") || t("Choices come from Settings → Fields.")}</p>

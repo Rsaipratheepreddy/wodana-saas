@@ -390,6 +390,7 @@
 .wd-side-sheet[data-side="bottom"] { block-size: min(80dvh, 40rem); inline-size: 100%; max-inline-size: none; border-start-start-radius: var(--wd-radius-md); border-start-end-radius: var(--wd-radius-md); box-shadow: var(--wd-shadow-2); }
 .wd-side-sheet[data-size="sm"] { inline-size: var(--wd-inspector-sm); }
 .wd-side-sheet[data-size="lg"] { inline-size: var(--wd-inspector-lg); }
+.wd-side-sheet[data-size="xl"] { inline-size: var(--wd-inspector-xl); }
 .wd-sheet-dialog { block-size: 100%; max-block-size: none; }
 .wd-sheet-body { flex: 1; }
 

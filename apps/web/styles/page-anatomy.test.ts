@@ -12,6 +12,8 @@ const views = execSync("git ls-files 'app/**/*.tsx' 'components/**/*.tsx'", { en
 const OWN_TITLE = new Set([
   "app/login/login-screen.tsx",
   "app/onboarding/onboarding-flow.tsx",
+  "components/booking/manage-booking.tsx",
+  "components/booking/public-booking.tsx",
   "components/client-portal/confirm-name.tsx",
   "components/client-portal/portal-document-print.tsx",
   "components/client-portal/project-profile.tsx",

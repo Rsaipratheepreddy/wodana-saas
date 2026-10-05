@@ -2,12 +2,11 @@
 
 import { useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { DateField, FormDialog, FormRow, MoneyField, SelectField, TextInput, useDesignSystem } from "@/design-system";
+import { DateField, FormDialog, MoneyField, SelectField, TextInput, useDesignSystem } from "@/design-system";
 import { crmRequest, type RecordData } from "@/lib/crm/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { zonedDateTime, zonedDateTimeToIso } from "@/lib/crm/zoned-time";
 import { CrmDateTimeField } from "./crm-date-time-field";
-import styles from "./crm-workbench.module.css";
 
 type Member = { id: string; label: string };
 const pad = (value: number) => String(value).padStart(2, "0");
@@ -58,12 +57,10 @@ export function OpportunityEditDialog({ workspaceId, opportunity, members, onClo
     onClose();
   };
 
-  return <FormDialog formClassName={styles.editOpportunity} formId="edit-opportunity" isDirty={JSON.stringify(form) !== start} onClose={onClose} onSubmit={save} submitLabel={t("Save")} title={t("Edit opportunity")}>
+  return <FormDialog formId="edit-opportunity" isDirty={JSON.stringify(form) !== start} onClose={onClose} onSubmit={save} submitLabel={t("Save")} title={t("Edit opportunity")}>
     <TextInput isRequired label={t("Title")} maxLength={240} value={form.title} onChange={set("title")} />
-    <FormRow>
-      {hasValue ? <MoneyField currency={currency || undefined} label={t("Value")} min="0" value={form.amount} onChange={set("amount")} /> : null}
-      <SelectField label={t("Sales owner")} items={members} selectedKey={form.owner || null} onSelectionChange={(key) => set("owner")(String(key ?? ""))} />
-    </FormRow>
+    {hasValue ? <MoneyField currency={currency || undefined} label={t("Value")} min="0" value={form.amount} onChange={set("amount")} /> : null}
+    <SelectField label={t("Sales owner")} items={members} selectedKey={form.owner || null} onSelectionChange={(key) => set("owner")(String(key ?? ""))} />
     <DateField label={t("Expected close")} value={form.closeDate ? parseDate(form.closeDate) : null} onChange={(next) => set("closeDate")(next?.toString() ?? "")} />
     <CrmDateTimeField label={t("Next follow-up")} value={form.followUp} onChange={set("followUp")} />
   </FormDialog>;

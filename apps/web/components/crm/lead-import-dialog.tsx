@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Callout, ControlledModalDialog, FileUploader, Form, SelectField } from "@/design-system";
+import { Button, Callout, ControlledModalDialog, FileUploader, Form, FormSection, SelectField } from "@/design-system";
 import type { LeadsPageData } from "@/lib/crm/leads";
 import type { LeadOption } from "@/lib/crm/lead-options";
 import { matchCsvHeader, parseLeadCsv, type CsvTable } from "@/lib/crm/import-csv";
@@ -99,16 +99,16 @@ export function LeadImportDialog({ initialData, onClose, onImported }: { initial
   };
   const counts = Object.values(results).reduce((totals, result) => ({ ...totals, [result.status]: totals[result.status] + 1 }), { created: 0, review: 0, error: 0 });
   const complete = Boolean(table && Object.keys(results).length === table.rows.length && counts.error === 0);
-  return <ControlledModalDialog isOpen title={t("Import enquiries")} description={t("Map your CSV columns, preview values, then import. Possible duplicates wait for review.")} size="lg" isDismissable={!busy} onOpenChange={open => { if (!open && !busy) onClose(); }}
+  return <ControlledModalDialog isOpen title={t("Import enquiries")} size="lg" isDismissable={!busy} onOpenChange={open => { if (!open && !busy) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Close")}</Button><Button variant="primary" isDisabled={!table || !options || busy || complete || fields.some(field => field.required && !mapping[field.id]) || !source || !channel} isLoading={busy} onPress={() => void importRows()}>{complete ? t("Import complete") : Object.keys(results).length ? t("Retry failed rows") : t("Import enquiries")}</Button></div>}>
     <Form className={styles.importBody} onSubmit={event => event.preventDefault()}>
       {failure ? <Callout title={t("Import needs attention")} tone="warning">{failure}</Callout> : null}
       <FileUploader accept=".csv,text/csv" appearance="button" label={t("CSV file")} multiple={false} onFiles={files => void loadFile(files[0])} />
       {table ? <>
-        <p>{table.rows.length === 1 ? t("{filename} · {count} row. Values are checked against this workspace’s enquiry choices.", { filename, count: table.rows.length }) : t("{filename} · {count} rows. Values are checked against this workspace’s enquiry choices.", { filename, count: table.rows.length })}</p>
-        <div className={styles.mapping}>{fields.map(field => <SelectField isRequired={field.required} key={field.id} label={field.label} items={[{ id: "", label: field.required ? t("Choose column") : t("Not in file") }, ...table.headers.map(header => ({ id: header, label: header }))]} selectedKey={mapping[field.id]} onSelectionChange={key => setMapping(previous => ({ ...previous, [field.id]: String(key ?? "") }))} />)}</div>
-        <div className={styles.mapping}><SelectField isRequired label={t("Default source")} items={options?.sources ?? []} selectedKey={source || null} onSelectionChange={key => { const selected = String(key ?? ""); setSource(selected); setChannel(options?.channels[selected]?.[0]?.id ?? ""); }} /><SelectField isRequired label={t("Default channel")} items={options?.channels[source] ?? []} selectedKey={channel || null} onSelectionChange={key => setChannel(String(key ?? ""))} /></div>
-        <div className={styles.preview}><strong>{t("Preview")}</strong>{table.rows.slice(0, 5).map((row, index) => <p key={index}>{t("Row {row}: {values}", { row: index + 2, values: ["displayName", "mobile", "emirate", "serviceType"].map(field => value(row, field as Field) || "—").join(" · ") })}</p>)}</div>
+        <p className={styles.file}>{table.rows.length === 1 ? t("{filename} · {count} row", { filename, count: table.rows.length }) : t("{filename} · {count} rows", { filename, count: table.rows.length })}</p>
+        <FormSection title={t("Columns")}>{fields.map(field => <SelectField isRequired={field.required} key={field.id} label={field.label} items={[{ id: "", label: field.required ? t("Choose column") : t("Not in file") }, ...table.headers.map(header => ({ id: header, label: header }))]} selectedKey={mapping[field.id]} onSelectionChange={key => setMapping(previous => ({ ...previous, [field.id]: String(key ?? "") }))} />)}</FormSection>
+        <FormSection title={t("Source")}><SelectField isRequired label={t("Default source")} items={options?.sources ?? []} selectedKey={source || null} onSelectionChange={key => { const selected = String(key ?? ""); setSource(selected); setChannel(options?.channels[selected]?.[0]?.id ?? ""); }} /><SelectField isRequired label={t("Default channel")} items={options?.channels[source] ?? []} selectedKey={channel || null} onSelectionChange={key => setChannel(String(key ?? ""))} /></FormSection>
+        <FormSection title={t("Preview")}><div className={styles.preview}>{table.rows.slice(0, 5).map((row, index) => <p key={index}>{t("Row {row}: {values}", { row: index + 2, values: ["displayName", "mobile", "emirate", "serviceType"].map(field => value(row, field as Field) || "—").join(" · ") })}</p>)}</div></FormSection>
         {Object.keys(results).length ? <div role="status" className={styles.summary}>{t("{created} created · {review} need duplicate review · {failed} failed", { created: counts.created, review: counts.review, failed: counts.error })}</div> : null}
         {Object.entries(results).filter(([, result]) => result.status !== "created").slice(0, 20).map(([index, result]) => <p key={index} className={styles.rowResult}>{t("Row {row}: {message}", { row: Number(index) + 2, message: result.message })}</p>)}
       </> : null}

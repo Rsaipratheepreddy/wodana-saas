@@ -43,7 +43,7 @@
 .boardToolbar :global(.wd-search-field .wd-input) { min-inline-size: 0; font-size: var(--wd-text-xs); }
 .leadForm { display: grid; gap: var(--wd-space-4); }
 .dialogActions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
-.formColumns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
+.customInputs { display: grid; gap: var(--wd-space-4); }
 .muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 @media (max-width: 48rem) {
   .workspaceHeader { align-items: stretch; flex-direction: column; }
@@ -53,7 +53,6 @@
   .filter :global(.wd-field) { display: grid; gap: var(--wd-space-1); }
   .filter :global(.wd-select-button) { inline-size: 100%; }
   .boardToolbar :global(.wd-search-field) { inline-size: 11rem; }
-  .formColumns { grid-template-columns: 1fr; }
 }
 
 .sections > :global(.wd-tabs) > :global(.wd-tab-scroll) { margin-block-end: var(--wd-space-3); }
@@ -160,8 +159,6 @@
 .sheet .nextAction[data-overdue] { color:var(--wd-color-danger); border-color:currentColor; }
 .serviceChip[data-missing] { background:var(--wd-color-surface-muted); color:var(--wd-color-text-secondary); border:1px dashed var(--wd-color-text-tertiary); font-weight:400; }
 .leadForm, .enquiryFields { gap: var(--wd-space-3); }
-.formColumns { gap: var(--wd-space-4); }
-@media(max-width:600px) { .formColumns { grid-template-columns: 1fr; } }
 .sheetLead { min-block-size: 42px; }
 .sheet :global(.wd-table-scroll) { overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--wd-color-border-strong) transparent; }
 /* On a desktop the columns keep their set widths (they add up to the content area at 1440 px), so the actions stay

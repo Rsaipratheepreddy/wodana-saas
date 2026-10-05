@@ -15,9 +15,6 @@
 .link { color: var(--wd-color-link); font-size: var(--wd-text-sm); text-decoration: none; white-space: nowrap; }
 .link:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
 
-.sideSection { display: grid; gap: var(--wd-space-2); }
-.sideSection > header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-block-size: var(--wd-control-sm); }
-.sideSection h4 { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
 .contact, .activity { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
 .contact li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-inline-size: 0; }
 .name { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); text-decoration: none; overflow-wrap: anywhere; }

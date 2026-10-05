@@ -3,8 +3,8 @@
 import { CrmDateTimeField } from "./crm-date-time-field";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, Check, StickyNote } from "lucide-react";
-import { Button, Callout, ComboboxField, Form, FormDialog, InspectorSheet, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, useRememberedChoice, useWorkingCalendar, useWorkspaceZoneLabel } from "@/design-system";
+import { ArrowLeft, Check, StickyNote } from "lucide-react";
+import { Button, Callout, ComboboxField, Form, FormDialog, FormSection, InspectorSheet, SelectField, TextAreaField, TextInput, useConfirmationDialog, useDesignSystem, useRememberedChoice, useWorkingCalendar, useWorkspaceZoneLabel } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, CrmRequestError, label, rows, type RecordData } from "@/lib/crm/client";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
@@ -72,8 +72,8 @@ function ScheduleFields({ date, time, onChange, required = false }: { date: stri
   const zone = useWorkspaceZoneLabel();
   const instant = zone && date && time ? zonedDateTimeToIso(`${date}T${time}`, timeZone) : null;
   const hint = zone ? instant ? t("{zone} · {time} your time", { zone, time: new Intl.DateTimeFormat(locale, { weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(instant)) }) : zone : null;
-  return <section className={styles.schedule} aria-label={t("Reminder schedule")}><h3><CalendarDays size={15} />{t("Reminder")}</h3><CrmDateTimeField label={t("Reminder")} isRequired={required} value={`${date}T${time}`} onChange={value => { const [date = "", time = ""] = value.split("T"); onChange({ date, time }); }} />
-  <div className={styles.shortcuts} aria-label={t("Quick reminder dates")}>{[{ label: t("Today"), offset: 0 }, { label: t("Tomorrow"), offset: 1 }, { label: t("Next week"), offset: 7 }].map((item) => <button key={item.offset} type="button" onClick={() => onChange({ date: workspaceDay(timeZone, item.offset), time: time || "10:00" })}>{item.label}</button>)}</div>{hint ? <p className={styles.hint}>{hint}</p> : null}</section>;
+  return <><CrmDateTimeField label={t("Reminder")} isRequired={required} value={`${date}T${time}`} onChange={value => { const [date = "", time = ""] = value.split("T"); onChange({ date, time }); }} />
+  <div className={styles.shortcuts} role="group" aria-label={t("Quick reminder dates")}>{[{ label: t("Today"), offset: 0 }, { label: t("Tomorrow"), offset: 1 }, { label: t("Next week"), offset: 7 }].map((item) => <button key={item.offset} type="button" onClick={() => onChange({ date: workspaceDay(timeZone, item.offset), time: time || "10:00" })}>{item.label}</button>)}</div>{hint ? <p className={styles.hint}>{hint}</p> : null}</>;
 }
 
 export function FollowUpSheet({ workspaceId, recordId, summary, onClose, onSaved, inline = false, sample = false }: { sample?: boolean; inline?: boolean; workspaceId: string; recordId: string; summary?: RecordData; onClose: () => void; onSaved: (record: RecordData) => void }) {
@@ -91,7 +91,7 @@ export function FollowUpSheet({ workspaceId, recordId, summary, onClose, onSaved
   const content = <>
     {sample ? <p className={styles.hint}>{t("Sample preview · Changes stay in this preview.")}</p> : null}
     {resource.loading ? <p role="status">{t("Loading follow-up…")}</p> : resource.failure ? <Callout title={t("Could not open follow-up")} tone="warning">{translateKnown(t, resource.failure)}<Button size="compact" onPress={resource.refresh}>{t("Retry")}</Button></Callout> : data ? <FollowUpForm sample={sample} key={`${recordId}:${data.version}`} workspaceId={workspaceId} initial={{ ...summary, ...data }} onSaved={onSaved} onEditingChange={editingChanged} onReload={resource.refresh} onClose={close} returnAfterSave={inline ? onClose : undefined} /> : null}</>;
-  return <>{inline ? <EditorPage title={t("Follow-up")} onClose={close}>{content}</EditorPage> : <InspectorSheet isOpen title={t("Follow-up")} description={t("Your notes, next reminder, and progress.")} size="md" onOpenChange={(open) => { if (!open) close(); }}>{content}</InspectorSheet>}{confirmationDialog}</>;
+  return <>{inline ? <EditorPage title={t("Follow-up")} onClose={close}>{content}</EditorPage> : <InspectorSheet isOpen title={t("Follow-up")} size="md" onOpenChange={(open) => { if (!open) close(); }}>{content}</InspectorSheet>}{confirmationDialog}</>;
 }
 
 function FollowUpForm({ workspaceId, initial, onSaved, onEditingChange, onReload, onClose, returnAfterSave, sample = false }: { sample?: boolean; returnAfterSave?: () => void; workspaceId: string; initial: RecordData; onSaved: (record: RecordData) => void; onEditingChange: (dirty: boolean, busy: boolean) => void; onReload: () => void; onClose: () => void }) {
@@ -150,11 +150,15 @@ function FollowUpForm({ workspaceId, initial, onSaved, onEditingChange, onReload
     {failure ? <Callout title={t("Could not save follow-up")} tone="danger">{failure}{conflict ? <Button size="compact" onPress={() => { const reload = () => { onEditingChange(false, false); onReload(); }; if (dirty) { requestConfirmation({ title: t("Load the latest follow-up?"), body: t("Your unsaved notes and reminder changes will be replaced by the latest saved version."), confirmLabel: t("Reload latest"), onConfirm: reload }); } else reload(); }}>{t("Reload latest")}</Button> : null}</Callout> : null}
     {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
     {pending ? <fieldset disabled={busy} className={styles.fields}>
-      <TextInput label={t("Follow-up title")} isRequired value={draft.title} maxLength={240} onChange={(title) => change({ title })} />
-      {suggestedFollowUpTime(`${draft.title} ${draft.notes}`) && suggestedFollowUpTime(`${draft.title} ${draft.notes}`) !== draft.time ? <div className={styles.timeSuggestion}><span>{t("Suggested time: {time}", { time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`) ?? "" })}</span><Button size="compact" onPress={() => change({ time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`)! })}>{t("Apply time")}</Button></div> : null}
-      <ScheduleFields date={draft.date} time={draft.time} onChange={change} /><DurationField draft={draft} onChange={duration => change({ duration })} />
-      {record.appointment ? <p className={styles.hint}>{t("Times are saved in Wodana. Google events are not changed.")}</p> : null}
-      <TextAreaField label={t("Notes")} description={t("Keep what the client said and what you need to do next.")} placeholder={t("Client asked me to call tomorrow about the quotation…")} value={draft.notes} maxLength={10000} onChange={(notes) => change({ notes })} />
+      <FormSection>
+        <TextInput label={t("Follow-up title")} isRequired value={draft.title} maxLength={240} onChange={(title) => change({ title })} />
+        {suggestedFollowUpTime(`${draft.title} ${draft.notes}`) && suggestedFollowUpTime(`${draft.title} ${draft.notes}`) !== draft.time ? <div className={styles.timeSuggestion}><span>{t("Suggested time: {time}", { time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`) ?? "" })}</span><Button size="compact" onPress={() => change({ time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`)! })}>{t("Apply time")}</Button></div> : null}
+        <TextAreaField label={t("Notes")} placeholder={t("Client asked me to call tomorrow about the quotation…")} value={draft.notes} maxLength={10000} onChange={(notes) => change({ notes })} />
+      </FormSection>
+      <FormSection title={t("Reminder")}>
+        <ScheduleFields date={draft.date} time={draft.time} onChange={change} /><DurationField draft={draft} onChange={duration => change({ duration })} />
+        {record.appointment ? <p className={styles.hint}>{t("Times are saved in Wodana. Google events are not changed.")}</p> : null}
+      </FormSection>
     </fieldset> : <div className={styles.readOnly}><h3>{String(record.title)}</h3><p>{record.dueAt ? new Date(String(record.dueAt)).toLocaleString(locale, { timeZone }) : t("No reminder date")}</p><h3>{t("Notes")}</h3><p>{String(record.description || t("No notes were added."))}</p>{record.completionOutcome ? <><h3>{t("Outcome")}</h3><p>{String(record.completionOutcome)}</p></> : null}</div>}
     <div className={styles.actions}>{pending ? <><Button size="compact" isDisabled={busy || conflict} onPress={() => void save(true)}><Check size={15} />{t(dirty ? "Save & complete" : "Mark complete")}</Button><Button size="compact" variant="primary" type="submit" isDisabled={!dirty || conflict} isLoading={busy}>{t("Save changes")}</Button></> : <Button size="compact" onPress={onClose}>{t("Close")}</Button>}</div>
     {confirmationDialog}
@@ -248,13 +252,21 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated, inline = fa
   const fields = <>
     {leads.failure || parties.failure ? <Callout title={t("Some customers could not load")} tone="warning">{translateKnown(t, leads.failure || parties.failure)}<Button size="compact" onPress={() => { leads.retry(); parties.retry(); }}>{t("Retry")}</Button></Callout> : null}
     <fieldset className={styles.fields} disabled={busy || created}>
+      <FormSection>
       <ComboboxField label={t("Enquiry or customer")} isRequired menuTrigger="input" placeholder={t(leads.loading || parties.loading ? "Loading customers…" : "Search customers and enquiries…")} items={targets.filter((item) => item.label.toLocaleLowerCase().includes(targetSearch.toLocaleLowerCase()))} inputValue={targetSearch} onInputChange={setTargetSearch} selectedKey={relation || null} onSelectionChange={(key) => { const selected = targets.find(item => item.id === String(key)); setRelation(selected?.id ?? ""); if (selected) setTargetSearch(selected.label); }} isDisabled={!targets.length} />
       {!leads.loading && !parties.loading && !targets.length ? <p className={styles.hint}>{t("Add an enquiry before creating a follow-up.")} <Link href="/workspace/crm/leads">{t("Open enquiries")}</Link></p> : null}
       <TextInput label={t("Follow-up title")} placeholder={t("e.g. Call about the quotation")} value={draft.title} maxLength={240} onChange={(title) => change({ title })} />
       {suggestedFollowUpTime(`${draft.title} ${draft.notes}`) ? <div className={styles.timeSuggestion}><span>{t("Suggested time: {time}", { time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`) ?? "" })}</span><Button size="compact" onPress={() => change({ time: suggestedFollowUpTime(`${draft.title} ${draft.notes}`)! })}>{t("Apply time")}</Button></div> : /\bat\s+\d/i.test(`${draft.title} ${draft.notes}`) ? <p className={styles.hint}>{t("Include AM or PM, or choose the exact time below.")}</p> : null}
-      <ScheduleFields date={draft.date} time={draft.time} onChange={change} required /><DurationField draft={draft} onChange={duration => change({ duration })} />
-      <TextAreaField label={t("Notes")} placeholder={t("Client asked me to call tomorrow…")} value={draft.notes} maxLength={10000} onChange={(notes) => change({ notes })} />
-      <div className={styles.assignmentFields}><SelectField label={t("Type")} items={[{ id: "call", label: t("Call") }, { id: "task", label: t("Task") }, { id: "meeting", label: t("Meeting") }]} selectedKey={type} onSelectionChange={(key) => setType(String(key))} /><SelectField label={t("Assigned to")} items={[{ id: "unassigned", label: t("Unassigned") }, ...rows(members.data).map((item) => ({ id: item.id, label: String(item.displayName ?? item.name ?? t("Team member")) }))]} selectedKey={owner} onSelectionChange={(key) => setOwner(String(key))} />{members.failure ? <p className={styles.hint}>{t("Assignees are unavailable. You can still save an unassigned reminder.")}</p> : null}</div>
+      </FormSection>
+      <FormSection title={t("Reminder")}>
+        <ScheduleFields date={draft.date} time={draft.time} onChange={change} required /><DurationField draft={draft} onChange={duration => change({ duration })} />
+      </FormSection>
+      <FormSection title={t("Details")}>
+        <SelectField label={t("Type")} items={[{ id: "call", label: t("Call") }, { id: "task", label: t("Task") }, { id: "meeting", label: t("Meeting") }]} selectedKey={type} onSelectionChange={(key) => setType(String(key))} />
+        <SelectField label={t("Assigned to")} items={[{ id: "unassigned", label: t("Unassigned") }, ...rows(members.data).map((item) => ({ id: item.id, label: String(item.displayName ?? item.name ?? t("Team member")) }))]} selectedKey={owner} onSelectionChange={(key) => setOwner(String(key))} />
+        {members.failure ? <p className={styles.hint}>{t("Assignees are unavailable. You can still save an unassigned reminder.")}</p> : null}
+        <TextAreaField label={t("Notes")} placeholder={t("Client asked me to call tomorrow…")} value={draft.notes} maxLength={10000} onChange={(notes) => change({ notes })} />
+      </FormSection>
     </fieldset>
   </>;
   if (!inline) return <FormDialog cancelLabel={created ? t("Close") : undefined} error={failure || undefined} errorTitle={t("Saved — refresh needed")} hideSubmit={created} isDirty={dirty && !created}

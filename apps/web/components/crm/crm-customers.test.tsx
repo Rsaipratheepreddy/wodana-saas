@@ -65,34 +65,45 @@ it.each(["Amira Al Mansoori", "Al Noor Developments LLC"])("opens %s in a modal 
   expect(screen.getByRole("table", { name: "Customer records" })).toBeVisible();
 });
 
-it("shows one customer heading and compact tab-specific actions", async () => {
+it("shows the client on the record anatomy: one heading, the next step, the activity and at most six sidebar tabs", async () => {
   const data = structuredClone(crmScreenFixture("customers"));
   const customer = data.items[0];
   vi.mocked(crmRequest).mockImplementation(async (_workspaceId, path) => path === `parties/${customer.id}`
-    ? { ...customer, version: 1, relationships: [], contacts: [], addresses: [], consents: [] }
+    ? { ...customer, status: "active", version: 1, relationships: [], contacts: [], addresses: [], consents: [] }
     : { data: [] });
   const user = userEvent.setup();
   render(<CrmCustomers initialData={data} />);
   await user.click(screen.getByRole("button", { name: new RegExp(String(customer.displayName)) }));
   const dialog = await screen.findByRole("dialog", { name: "Customer details" });
-  expect(await within(dialog).findByRole("heading", { name: String(customer.displayName) })).toBeInTheDocument();
-  // The profile edits in place: the name from its heading, the rest from its facts.
+  expect(await within(dialog).findByRole("heading", { level: 2, name: String(customer.displayName) })).toBeInTheDocument();
+  // The page keeps its one h1; the record's title is its only h2.
+  expect(screen.getAllByRole("heading", { level: 1, hidden: true }).map((heading) => heading.textContent)).toEqual(["Clients"]);
+  expect(within(dialog).getAllByRole("heading", { level: 2 })).toHaveLength(1);
+  // The profile edits in place: the name from its heading, the lifecycle from the status strip.
   expect(within(dialog).getByRole("button", { name: "Edit Display name" })).toBeInTheDocument();
-  expect(within(dialog).getByRole("button", { name: "Edit Lifecycle" })).toBeInTheDocument();
-
-  await user.click(within(dialog).getByRole("tab", { name: "Activity" }));
-  expect(within(dialog).queryByRole("heading", { name: "Activities & follow-ups" })).not.toBeInTheDocument();
-  expect(within(dialog).getByRole("button", { name: "Add activity" }).querySelector("svg")).toBeInTheDocument();
-
-  await user.click(within(dialog).getByRole("tab", { name: "Relationships" }));
-  expect(within(dialog).getByRole("button", { name: "Add relationship" }).querySelector("svg")).toBeInTheDocument();
-  await user.click(within(dialog).getByRole("tab", { name: "Contact" }));
-  expect(within(dialog).getByRole("button", { name: "Add contact" }).querySelector("svg")).toBeInTheDocument();
-  await user.click(within(dialog).getByRole("tab", { name: "Record controls" }));
-  expect(within(dialog).queryByRole("heading", { name: "Record controls" })).not.toBeInTheDocument();
-  const erase = within(dialog).getByRole("button", { name: "Privacy erasure" });
-  expect(erase).toHaveAttribute("data-variant", "danger");
-  expect(erase.querySelector("svg")).toBeInTheDocument();
+  expect(within(within(dialog).getByLabelText("Client status")).getByRole("button", { name: "Edit Lifecycle" })).toBeInTheDocument();
+  // The next step: with nothing booked, one quiet way to book a follow-up.
+  const next = within(dialog).getByRole("region", { name: "Next follow-up" });
+  expect(within(next).getByRole("button", { name: "Book a follow-up" })).toBeInTheDocument();
+  // The activity sits in the main column with its own Add activity.
+  const activity = within(dialog).getByRole("region", { name: "Activity" });
+  expect(within(activity).getByRole("button", { name: "Add activity" }).querySelector("svg")).toBeInTheDocument();
+  // The sidebar: Overview · Opportunities & projects · Details · Files.
+  const side = within(dialog).getByRole("complementary", { name: "Key facts" });
+  const tabs = within(side).getAllByRole("tab").map((tab) => tab.textContent);
+  expect(tabs).toEqual(["Overview", "Opportunities & projects", "Details", "Files"]);
+  expect(tabs.length).toBeLessThanOrEqual(6);
+  // Contact, addresses, relationships and consent are sections of Details, each with its own add action.
+  await user.click(within(side).getByRole("tab", { name: "Details" }));
+  for (const [section, action] of [["Contact", "Add contact"], ["Addresses", "Add address"], ["Relationships", "Add relationship"], ["Consent", "Record consent"]]) {
+    expect(within(within(side).getByRole("region", { name: section })).getByRole("button", { name: action }).querySelector("svg")).toBeInTheDocument();
+  }
+  // Merge, archive and privacy erasure are the record's ⋯ menu; erasure is the destructive one.
+  await user.click(within(dialog).getByRole("button", { name: "More actions" }));
+  expect(screen.getByRole("menuitem", { name: "Merge duplicate" })).toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: "Archive record" })).toBeInTheDocument();
+  await user.click(screen.getByRole("menuitem", { name: "Privacy erasure" }));
+  expect(await screen.findByRole("dialog", { name: "Erase private customer data" })).toBeInTheDocument();
 });
 
 it("edits a customer's profile and primary contact in place, each with its own version", async () => {

@@ -37,7 +37,8 @@ describe("Sales in real time", () => {
     expect(rows[1].querySelector("[data-chip][title]")).toHaveAttribute("title", expect.stringMatching(/^Respond by .* 42 min$/));
     expect(rows[1]).toHaveTextContent("Attempt 2");
     expect(rows[1]).toHaveTextContent("Confirm client");
-    expect(within(lists).getByRole("button", { name: /Needs review/ })).toBeInTheDocument();
+    // Needs review is a "To check" filter since P1, not a list tab.
+    expect(within(lists).queryByRole("button", { name: /Needs review/ })).not.toBeInTheDocument();
     // A manager sees the enquiries nobody owns (S-2).
     expect(screen.getByText("1 enquiry has no owner")).toBeVisible();
   });

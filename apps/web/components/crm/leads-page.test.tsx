@@ -176,21 +176,26 @@ describe("LeadsPage", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => leadsPageFixture.items[0] }));
     await interaction.click(screen.getByRole("button", { name: "Open Amira Al Mansoori" }));
     const dialog = await screen.findByRole("dialog", { name: "Enquiry details" });
-    const tabs = within(dialog).getAllByRole("tab");
-    expect(tabs.slice(0, 2).map((tab) => tab.textContent)).toEqual(["Details", "Activity"]);
+    // The record anatomy (§5c D.7): the page keeps its one h1; the record's title is its h2.
+    expect(screen.getAllByRole("heading", { level: 1, hidden: true })).toHaveLength(1);
+    // (The sheet keeps its own title for screen readers only.)
+    expect(within(dialog).getAllByRole("heading", { level: 2 }).filter((heading) => !heading.closest(".wd-visually-hidden")).map((heading) => heading.textContent)).toEqual(["Amira Al Mansoori"]);
+    // The status strip, then the next step with its one primary action, then the activity.
+    const strip = within(dialog).getByLabelText("Enquiry properties");
+    for (const name of ["Stage", "Owner", "Next follow-up", "Source"]) expect(within(strip).getByText(name)).toBeInTheDocument();
+    const next = await within(dialog).findByRole("region", { name: "Ready to move forward?" });
+    expect(within(next).getByRole("button", { name: "Convert to opportunity" })).toHaveAttribute("data-variant", "primary");
+    expect(within(next).getByRole("button", { name: /Log contact/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("region", { name: "Activity" })).toBeInTheDocument();
+    // The sidebar: Overview · Details · Files, Overview first.
+    const side = within(dialog).getByRole("complementary", { name: "Enquiry details" });
+    const tabs = within(side).getAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Overview", "Details", "Files"]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
-    expect(within(dialog).getByRole("tab", { name: "Activity" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("tab", { name: "Details" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("tab", { name: "Source" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("tab", { name: "History" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("tab", { name: "Requirements" })).toBeInTheDocument();
-    expect(within(dialog).getByText("Next follow-up")).toBeInTheDocument();
-    expect(within(dialog).queryByText("Owner & next step")).not.toBeInTheDocument();
-    expect(within(dialog).getByText("Owner")).toBeInTheDocument();
-    const convertAction = await within(dialog).findByRole("button", { name: "Convert to opportunity" });
-    expect(convertAction.closest("section")?.className).toContain("dealNextStepSticky");
-    await interaction.click(within(dialog).getByRole("tab", { name: "Activity" }));
-    expect(convertAction).toBeVisible();
+    expect(within(next).queryByRole("tab")).not.toBeInTheDocument();
+    // Requirements, the source and the change history are sections of Details.
+    await interaction.click(within(side).getByRole("tab", { name: "Details" }));
+    for (const name of ["Requirements", "Source", "History"]) expect(within(side).getByRole("region", { name })).toBeInTheDocument();
   });
 
   it("closes the enquiry sheet before opening its linked opportunity, and names the state Converted", async () => {
@@ -220,6 +225,7 @@ describe("LeadsPage", () => {
     render(<LeadsPage initialData={data} />);
     await user.click(screen.getByRole("button", { name: `Open ${lead.partyName}` }));
     const dialog = await screen.findByRole("dialog", { name: "Enquiry details" });
+    await user.click(await within(dialog).findByRole("tab", { name: "Details" }));
     await user.click(await within(dialog).findByRole("button", { name: "Edit Company" }));
     await user.type(within(dialog).getByRole("textbox", { name: "Company" }), "Palm Holdings{Enter}");
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(true));
@@ -236,6 +242,7 @@ describe("LeadsPage", () => {
     render(<LeadsPage initialData={data} />);
     await userEvent.click(screen.getByRole("button", { name: `Open ${data.items[0].partyName}` }));
     const dialog = await screen.findByRole("dialog", { name: "Enquiry details" });
+    await userEvent.click(await within(dialog).findByRole("tab", { name: "Details" }));
     expect(await within(dialog).findByText("Company")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Edit Company" })).not.toBeInTheDocument();
   });
@@ -268,7 +275,7 @@ describe("LeadsPage", () => {
     const dialog = await screen.findByRole("dialog", { name: "Enquiry details" });
     expect(within(dialog).getByRole("heading", { name: "Sara Al Nuaimi" })).toBeInTheDocument();
     expect(within(dialog).getAllByText("E-0042")).toHaveLength(1);
-    expect(within(dialog).getByRole("tab", { name: "Activity" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("tab", { name: "Overview" })).toBeInTheDocument();
   });
 
   it("assigns from the table, preserves other rows, and uses the returned version for auto-assignment", async () => {

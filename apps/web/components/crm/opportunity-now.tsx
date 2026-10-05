@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { Button as AriaButton, Dialog, DialogTrigger, Heading } from "react-aria-components";
 import { CalendarClock, CalendarPlus, Check, Circle, CircleCheck } from "lucide-react";
 import { Avatar, Badge, Button, PopoverSurface, TooltipBubble, useDesignSystem } from "@/design-system";
@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { groupRequirements, type Checklist, type ChecklistRow, type NowPlan, type NowStep } from "@/lib/crm/now-step";
 import { translateKnown } from "@/lib/i18n/keys";
 import type { OpportunityFlowView } from "@/lib/crm/opportunity-flow";
+import { NextStepCard } from "./record/record-layout";
 import styles from "./opportunity-now.module.css";
 
 export type Teammate = { id: string; label: string };
@@ -103,7 +104,6 @@ export function NextActions({ plan, checklist, owner, people, followUp, busy, on
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const text = useStepText();
-  const titleId = useId();
   const now = plan.now;
   if (!now && !checklist && !followUp) return null;
   const rows = checklist?.rows ?? [];
@@ -115,19 +115,12 @@ export function NextActions({ plan, checklist, owner, people, followUp, busy, on
   const rowDetail = (row: ChecklistRow) => detail?.(row)
     ?? (row.state === "done" ? [row.doneBy, shortDate(row.doneAt, locale, timeZone)].filter(Boolean).join(" · ") || null : null);
   return <div className={styles.nowBlock}>
-    <section className={styles.now} aria-labelledby={titleId} data-status={plan.status}>
-      <div className={styles.nowHead}>
-        <div className={styles.nowMain}>
-          <h3 id={titleId}>{title}</h3>
-          {why ? <p className={styles.why}>{t(why.key, why.values)}</p> : null}
-        </div>
-        <div className={styles.nowMeta}>
-          {owner ? <span className={styles.assignee}><span aria-hidden="true"><Avatar name={owner.label} seed={owner.id} size="sm" /></span><span>{owner.label}</span></span>
-            : <span className={styles.assignee}>{t("Unassigned")}</span>}
-          {onReassign && people.length ? <ReassignPopover owner={owner} people={people} onReassign={onReassign} /> : null}
-          {ready && now ? <span className={styles.primary}><Button size="compact" variant="primary" isLoading={busy} onPress={() => onAct(now)}>{text(now, "short")}</Button></span> : null}
-        </div>
-      </div>
+    <NextStepCard title={title} why={why ? t(why.key, why.values) : null} status={plan.status} meta={<>
+      {owner ? <span className={styles.assignee}><span aria-hidden="true"><Avatar name={owner.label} seed={owner.id} size="sm" /></span><span>{owner.label}</span></span>
+        : <span className={styles.assignee}>{t("Unassigned")}</span>}
+      {onReassign && people.length ? <ReassignPopover owner={owner} people={people} onReassign={onReassign} /> : null}
+      {ready && now ? <span className={styles.primary}><Button size="compact" variant="primary" isLoading={busy} onPress={() => onAct(now)}>{text(now, "short")}</Button></span> : null}
+    </>}>
       {followUp}
       {rows.length ? <ul className={styles.checklist} aria-label={title}>{rows.map((row) => {
         const label = translateKnown(t, row.label);
@@ -141,7 +134,7 @@ export function NextActions({ plan, checklist, owner, people, followUp, busy, on
           {row.state === "missing" && row.action ? <Button aria-label={`${t(row.action)} · ${label}`} size="compact" variant={row === first ? "primary" : "secondary"} isLoading={busy && row === first} onPress={() => onRow(row)}>{t(row.action)}</Button> : null}
         </li>;
       })}</ul> : null}
-    </section>
+    </NextStepCard>
     {then.length ? <p className={styles.then}>{t("Then:")} {then.map((step) => text(step)).join(" · ")}</p> : null}
   </div>;
 }

@@ -1,5 +1,5 @@
 .editor { display: grid; align-content: start; gap: var(--wd-space-5); color: var(--wd-color-text); font-size: var(--wd-text-sm); }
-.fields { display: grid; gap: var(--wd-space-5); border: 0; margin: 0; padding: 0; min-inline-size: 0; }
+.fields { display: grid; border: 0; margin: 0; padding: 0; min-inline-size: 0; }
 .editor :global(.wd-field) { gap: var(--wd-space-1-5); }
 .editor :global(.wd-field-label) { font-size: var(--wd-text-xs); font-weight: 500; }
 .editor :global(.wd-input-group), .editor :global(.wd-select-button) { block-size: 2.5rem; min-block-size: 2.5rem; border-radius: var(--wd-radius-sm); }
@@ -16,9 +16,6 @@
 .contextIcon { color: var(--crm-accent); flex-shrink: 0; }
 .context a { margin-inline-start: auto; white-space: nowrap; }
 .editor a { color: var(--crm-accent); font-size: var(--wd-text-2xs); text-underline-offset: 3px; }
-.schedule { display: grid; gap: var(--wd-space-3); }
-.schedule h3 { display: flex; align-items: center; gap: var(--wd-space-1-5); margin: 0; font-size: var(--wd-text-sm); font-weight: 600; }
-.schedule h3 svg { color: var(--crm-accent); }
 .dateFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); align-items: start; gap: var(--wd-space-3); }
 /* Date and time controls share one height so their labels and boxes line up. */
 .dateFields :global(.wd-date-group) { box-sizing: border-box; block-size: var(--wd-control-lg); }
@@ -35,10 +32,8 @@
 .readOnly { display: grid; gap: var(--wd-space-2); }
 .readOnly h3 { margin: 0; font-size: var(--wd-text-sm); }
 .readOnly p { margin: 0 0 var(--wd-space-3); color: var(--wd-color-text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
-.assignmentFields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--wd-space-3); }
-.assignmentFields .hint { grid-column: 1 / -1; }
 .dateFields input:focus-visible, .shortcuts button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
-@media (max-width: 30rem) { .editor { gap: var(--wd-space-4); } .context { flex-wrap: wrap; } .assignmentFields { grid-template-columns: 1fr; } .actions :global(.wd-button) { flex: 1; } }
+@media (max-width: 30rem) { .editor { gap: var(--wd-space-4); } .context { flex-wrap: wrap; } .actions :global(.wd-button) { flex: 1; } }
 .document { animation: documentEnter 260ms ease-out; background: var(--wd-color-surface); border-radius: var(--wd-radius-lg); padding: var(--wd-space-4); }
 .documentBanner { margin-block: var(--wd-space-4) 0; display: flex; align-items: center; gap: var(--wd-space-4); min-block-size: 110px; padding-inline: var(--wd-space-8); border-radius: var(--wd-radius-md); color: var(--wd-color-text); background: linear-gradient(115deg, color-mix(in srgb, #a991dc 22%, var(--wd-color-surface)), color-mix(in srgb, #81b7a5 22%, var(--wd-color-surface))); }
 .documentBanner span { font-size: var(--wd-text-lg); font-weight: 500; }
@@ -49,6 +44,6 @@
 @keyframes documentEnter { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .document { animation: none; } }
 @media (max-width: 600px) { .document { padding: var(--wd-space-3); } .documentBanner { padding: var(--wd-space-4); min-block-size: 70px; } .documentBody { padding: var(--wd-space-5) 0; } }
-.duration { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: var(--wd-space-3); }
-.duration strong { font-size: var(--wd-text-sm); padding-block: var(--wd-space-3); }
+.duration { display: grid; gap: var(--wd-space-1-5); }
+.duration strong { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
 @media(max-width:480px) { .dateFields { grid-template-columns:minmax(0,1fr); } }

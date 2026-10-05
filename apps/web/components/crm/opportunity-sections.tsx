@@ -13,6 +13,7 @@ import { formatPhoneForDisplay, phoneCountry, whatsappUrl } from "@/lib/phone";
 import { ResourceState, useCrmResource } from "./crm-workbench";
 import { answered, formatMoney, type Discovery, type DiscoveryGroup } from "./opportunity-discovery";
 import { OpportunityIntro, type Intro } from "./opportunity-intro";
+import { SideSection } from "./record/record-layout";
 import styles from "./opportunity-sections.module.css";
 
 /** A group of facts: its title, how complete it is, Edit, and the facts as label and value; folds away. */
@@ -116,14 +117,7 @@ export function OpportunityCards(props: CardsProps) {
   </div>;
 }
 
-/** A sidebar group: a small heading, an optional action, and its content. */
-export function SideSection({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
-  const id = useId();
-  return <section className={styles.sideSection} aria-labelledby={id}>
-    <header><h4 id={id}>{title}</h4>{action}</header>
-    {children}
-  </section>;
-}
+export { SideSection };
 
 type Contact = { type?: string; value?: string; rawValue?: string; countryCode?: string; isPrimary?: boolean; status?: string };
 

@@ -38,7 +38,9 @@ describe("CRM opportunity workbench", () => {
     const next = await screen.findByRole("region", { name: "To move to Proposal" });
     expect(within(next).getByText("Proposal means we have everything to price the work.")).toBeInTheDocument();
     expect(within(next).getByRole("button", { name: "Add · Area" })).toHaveAttribute("data-variant", "primary");
-    expect(screen.getByRole("heading", { level: 2, name: "Villa renovation" })).toBeInTheDocument();
+    // One title: the page owns the h1, the record's own title is its only h2.
+    expect(screen.queryAllByRole("heading", { level: 1 })).toHaveLength(0);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual(["Villa renovation"]);
     expect(screen.getAllByRole("link", { name: "Aisha" })[0]).toHaveAttribute("href", "/workspace/crm/customers?record=party-1");
     expect(within(screen.getByRole("list", { name: "Progress" })).getAllByRole("listitem").map((item) => item.getAttribute("data-state"))).toEqual(["done", "current", "upcoming", "upcoming"]);
     for (const name of ["Change stage", "Progress"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
