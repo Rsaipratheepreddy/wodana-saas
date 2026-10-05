@@ -547,6 +547,50 @@ Fable never designs UI or logic: it implements a brief Opus wrote and Opus revie
 7. **Record detail:** main column = the next step (action card); sidebar = Overview · Details · Files. The same anatomy for opportunity, case, project, order, vendor.
 8. **Settings live in the module:** each module has its own "⋯ › Settings" sheet (Sales: enquiry types, sources, locations; Projects: stages, roles; Finance: approvals, numbering). Global Settings keeps only workspace, branding, billing and integrations.
 
+**P1 build spec (6 Oct; from the UI inventory)**
+
+*Today:*
+- 25 pages use PageHeader; about 8 build their own `<h1>` header.
+- 33 grids hide the toolbar and about 50 keep their own toolbar CSS.
+- No Card component exists, and modules define about 230 local card classes.
+- About 60 files lay forms out in two columns, and sections have no divider.
+- Four records have more than 6 tabs: customer 10, HRMS 8, Finance 7, Project 7.
+- Settings sit in 14 global routes.
+- The tenant's all-caps heading font reaches staff titles.
+
+*Foundation (design system):*
+1. **Sentence-case titles.** Staff screens take only the firm's colours. The brand typeface stays on client-facing surfaces (portal, forms, documents).
+2. **PageShell.** One title, one primary action, tabs under the title, toolbar, content; one gap scale per page kind.
+3. **Card and CardGrid.** One radius, one padding, one shadow; header · body · footer; equal heights.
+4. **Toolbar.** Search is an icon until used. Filter shows filters in use as removable chips. ⋯ holds sort, columns and export. The page's one action lives in the header.
+5. **Table cells.** RecordName (name plus one muted line) and OwnerCell (avatar). Columns hide by priority below 80rem and 64rem.
+6. **Forms.** FormLayout (one column ≤40rem, sticky Save at the bottom end); a hairline between FormSections. FormRow only for two tightly coupled fields (date and time).
+7. **Tabs.** At most 6. The active tab is bold and underlined. Counts show only when they ask for action.
+
+*Guard tests* (fail the build on new violations; the allow-list of existing ones only shrinks):
+- no `<h1>` outside the design system;
+- no `role="table"` div grids;
+- no local two-column form classes;
+- no more than 6 tabs;
+- no local `*card*` surface rules in newly touched files.
+
+*Rollout order:*
+1. the Planning list (the owner's first complaint);
+2. Sales lists (leads, opportunities, customers, follow-ups);
+3. Projects list and Tasks;
+4. Purchasing, Inventory, Factory, Finance, HRMS lists;
+5. one-off headers (inbox, CRM screens, quotation templates, integrations, client projects, tasks);
+6. form dialogs to single column with sections;
+7. tabs over 6 grouped.
+
+*Settings inside modules:* the ⋯ › Settings sheet per module; Sales gets enquiry types, sources and locations. Module settings move as each module's phase rebuilds it (P2 Sales …). Global Settings keeps workspace, branding, billing and integrations.
+
+*Exit (P1):*
+- guard tests green;
+- every list and form on the rules, with before/after screenshots;
+- deployed;
+- Planning list checked live on plm.wodana.ai.
+
 **F. Features (Shyam's 14 points + Palm tracker + owner)**
 1. **Document audit trail:** created/updated/uploaded by and at, plus version history on every document (quotes, designs, BOQ, approvals).
 2. **Money:** cash monitoring (cash in, issued, used; project + company), a project P&L (revenue, purchases, expenses, vendor payments, allocated overheads), vendor payment monitoring (bills, paid, pending, due), configurable payment approval levels, a corporate card expense feed with reconciliation, complete expense capture per project and category, and overhead allocation rules.

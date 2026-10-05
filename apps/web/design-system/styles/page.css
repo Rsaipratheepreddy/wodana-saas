@@ -1,0 +1,123 @@
+/* ── Page anatomy (§5c D) ──────────────────────────────────────────────────────────────────────────
+   PageShell: a sticky header (one sentence-case title, one primary action at the end, tabs under it),
+   then the toolbar and the content. One gap scale per page type; the 4px grid inside components and
+   the φ rhythm between sections. Card: one radius, one padding, one shadow; grids of equal heights. */
+
+.wd-page-shell {
+  --wd-page-gap: var(--wd-phi-2);
+  --wd-page-pad-inline: var(--wd-phi-4);
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--wd-page-gap);
+  min-inline-size: 0;
+  padding: 0 var(--wd-page-pad-inline) var(--wd-phi-4);
+}
+.wd-page-shell[data-kind="record"], .wd-page-shell[data-kind="dashboard"], .wd-page-shell[data-kind="form"] { --wd-page-gap: var(--wd-phi-3); }
+.wd-page-shell[data-kind="form"] > :is(.wd-page-shell-body, .wd-page-shell-toolbar) { max-inline-size: 40rem; }
+
+.wd-page-shell > .wd-page-shell-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 20;
+  display: grid;
+  gap: var(--wd-space-2);
+  margin-inline: calc(var(--wd-page-pad-inline) * -1);
+  padding: var(--wd-phi-3) var(--wd-page-pad-inline) 0;
+  background: var(--wd-color-workspace-canvas);
+}
+.wd-page-shell > .wd-page-shell-header:not(:has(.wd-page-shell-tabs)) { padding-block-end: var(--wd-space-2); }
+.wd-page-shell-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-4); min-block-size: var(--wd-control-md); }
+/* Specific enough to win over shell-level h1 rules: titles are never uppercase or display-sized. */
+.wd-page-shell > .wd-page-shell-header .wd-page-shell-title {
+  margin: 0;
+  min-inline-size: 0;
+  color: var(--wd-color-text);
+  font-family: var(--wd-font-display);
+  font-size: var(--wd-text-xl);
+  font-weight: var(--wd-weight-semibold);
+  line-height: 1.3;
+  letter-spacing: var(--wd-tracking-tight);
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+.wd-page-shell-action { display: flex; flex: none; align-items: center; gap: var(--wd-space-2); }
+.wd-page-shell-tabs { min-inline-size: 0; }
+.wd-page-shell-body { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--wd-page-gap); min-inline-size: 0; }
+@media (max-width: 48rem) {
+  .wd-page-shell { --wd-page-pad-inline: var(--wd-space-4); }
+  .wd-page-shell > .wd-page-shell-header { padding-block-start: var(--wd-space-4); }
+}
+
+/* ── Tabs: the active one is bold with an underline; bold never shifts the row ───────────────────────── */
+.wd-list-tab-label { display: inline-grid; }
+.wd-list-tab-label::after { content: attr(data-label); block-size: 0; overflow: hidden; visibility: hidden; font-weight: var(--wd-weight-semibold); }
+.wd-list-tabs .wd-list-tab[aria-pressed="true"], .wd-tab[data-selected] { font-weight: var(--wd-weight-semibold); }
+
+/* ── Cards ──────────────────────────────────────────────────────────────────────────────────────────── */
+.wd-card {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wd-space-3);
+  min-inline-size: 0;
+  padding: var(--wd-space-4);
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface);
+  box-shadow: 0 0 0 1px var(--wd-color-structural-divider), var(--wd-shadow-xs);
+}
+.wd-card-header { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-control-sm); min-inline-size: 0; }
+.wd-card > .wd-card-header .wd-card-title {
+  margin: 0;
+  min-inline-size: 0;
+  color: var(--wd-color-text);
+  font-family: var(--wd-font-sans);
+  font-size: var(--wd-text-md);
+  font-weight: var(--wd-weight-semibold);
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+.wd-card-chip { display: inline-flex; flex: none; }
+.wd-card-action { display: flex; flex: none; align-items: center; gap: var(--wd-space-1); margin-inline-start: auto; }
+.wd-card-body { display: grid; flex: 1 1 auto; align-content: start; gap: var(--wd-space-2); min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.wd-card-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.wd-card-grid { --wd-card-min: 18rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--wd-card-min)), 1fr)); grid-auto-rows: 1fr; gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
+.wd-card-grid[data-min="14rem"] { --wd-card-min: 14rem; }
+.wd-card-grid[data-min="24rem"] { --wd-card-min: 24rem; }
+.wd-card-grid > * { min-inline-size: 0; }
+.wd-card-grid > * > .wd-card, .wd-card-grid > .wd-card { block-size: 100%; }
+
+/* ── Toolbar: search is an icon until used; filters in use are chips; nothing else shows (§5c D1) ─────── */
+.wd-record-toolbar .wd-record-search:not([data-open]):not(:focus-within) { flex: 0 0 var(--wd-button-height-compact); min-inline-size: var(--wd-button-height-compact); border-color: transparent; background: transparent; }
+.wd-record-toolbar .wd-record-search .wd-search-field > svg { flex: none; }
+.wd-record-toolbar .wd-record-search:not([data-open]):not(:focus-within) .wd-search-field { position: relative; justify-content: center; padding-inline: 0; cursor: pointer; }
+.wd-record-toolbar .wd-record-search:not([data-open]):not(:focus-within) .wd-input { position: absolute; inset: 0; inline-size: 100%; opacity: 0; cursor: pointer; }
+.wd-record-toolbar:not([data-compact]) .wd-record-tools { justify-content: flex-end; }
+.wd-record-toolbar .wd-record-search:not([data-open]):not(:focus-within):hover { background: var(--wd-color-surface-muted); }
+.wd-record-toolbar .wd-record-search:is([data-open], :focus-within) { flex: 0 1 16rem; min-inline-size: 12rem; }
+.wd-filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; }
+.wd-filter-chip { display: inline-flex; align-items: center; gap: var(--wd-space-1); min-block-size: var(--wd-button-height-compact); padding-inline: var(--wd-space-2) var(--wd-space-0-5); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-muted); color: var(--wd-color-text); font-size: var(--wd-text-xs); white-space: nowrap; }
+.wd-filter-chip-label { color: var(--wd-color-text-secondary); }
+
+/* ── Table cells: name + one muted line; owner avatar; columns give way by priority (§5c D2) ───────── */
+.wd-record-name { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.wd-record-name-title { min-inline-size: 0; overflow: hidden; color: var(--wd-color-text); font-weight: var(--wd-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.wd-record-name-detail { min-inline-size: 0; overflow: hidden; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.wd-owner-cell { display: inline-flex; align-items: center; min-inline-size: 0; }
+.wd-owner-cell[data-empty] { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+@media (max-width: 80rem) { .wd-data-grid :is(th, td)[data-priority="low"] { display: none; } }
+@media (max-width: 64rem) { .wd-data-grid :is(th, td)[data-priority="medium"] { display: none; } }
+
+/* ── Forms on a page: one column, sections divided by a hairline, Save sticky at the bottom end (§5c D4) ─ */
+.wd-form-layout { display: grid; gap: var(--wd-phi-2); max-inline-size: 40rem; min-inline-size: 0; }
+.wd-form-layout-footer { position: sticky; inset-block-end: 0; display: flex; justify-content: flex-end; padding-block: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-workspace-canvas); }
+.wd-form-section + .wd-form-section { padding-block-start: var(--wd-phi-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
+/* On a phone the first column takes at most 60% of the screen, so the next column (usually the status) stays in view. */
+@media (max-width: 42rem) {
+  .wd-data-grid table.wd-table :is(th, td)[data-primary="true"] { inline-size: min(var(--wd-record-column-size, 16rem), 60vw) !important; }
+}
+/* Number columns: the header sits over its figures (end-aligned). */
+.wd-data-grid th[data-align="end"] :is(.wd-column-head-content, .wd-sort-button, .wd-column-header) { justify-content: flex-end; text-align: end; }

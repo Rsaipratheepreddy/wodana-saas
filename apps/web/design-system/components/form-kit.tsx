@@ -17,6 +17,14 @@ export function FormSection({ children, title }: { children: ReactNode; title?: 
   return <fieldset className="wd-form-section">{title ? <legend className="wd-form-section-title">{title}</legend> : null}{children}</fieldset>;
 }
 
+/**
+ * A form on a page (§5c D4): one column about 40rem wide, sections divided by a hairline and a title,
+ * labels above fields at one height, and Save sticky at the bottom end. Use it inside `Form`.
+ */
+export function FormLayout({ children, footer }: { children: ReactNode; /** Cancel then Save; stays visible at the bottom end. */ footer?: ReactNode }) {
+  return <div className="wd-form-layout">{children}{footer ? <div className="wd-form-layout-footer"><div className="wd-dialog-actions">{footer}</div></div> : null}</div>;
+}
+
 /** Two short, closely related fields side by side (a date and its time); one column on a narrow screen. */
 export function FormRow({ children }: { children: ReactNode }) {
   return <div className="wd-form-row">{children}</div>;

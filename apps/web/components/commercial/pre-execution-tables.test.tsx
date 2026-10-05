@@ -65,7 +65,6 @@ describe('Planning shared tables',()=>{
   expect(within(table).queryByText('Villa proposal')).not.toBeInTheDocument();
   await user.click(within(table).getByRole('cell',{name:'V1'}));
   expect(open).toHaveBeenCalledExactlyOnceWith('other');
-  expect(screen.getByRole('button',{name:'Manage columns'})).toBeVisible();
-  expect(screen.getByRole('button',{name:'Export filtered rows'})).toBeVisible();
+  expect(screen.getAllByRole('button',{name:'Table options'})[0]).toBeVisible();
  });
 });

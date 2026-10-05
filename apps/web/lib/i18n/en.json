@@ -12121,5 +12121,8 @@
   "Choose an access level for each module.": "Choose an access level for each module.",
   "No access": "No access",
   "{count} more permissions": "{count} more permissions",
-  "Enquiry types & automations": "Enquiry types & automations"
+  "Enquiry types & automations": "Enquiry types & automations",
+  "Filters in use": "Filters in use",
+  "Remove filter {name}": "Remove filter {name}",
+  "Table options": "Table options"
 }

@@ -24,16 +24,19 @@ describe("DataGrid", () => {
     render(<DesignSystemProvider><DataGrid ariaLabel="Customers" columns={columns} data={[]} getRowId={(row) => row.id} /></DesignSystemProvider>);
     expect(screen.getByText("Create a record or adjust the current filters.")).toBeInTheDocument();
   });
-  it("exports filtered rows across pages and selected rows through the direct Export button", async () => {
+  it("exports filtered rows across pages and selected rows from the table options menu", async () => {
     const user = userEvent.setup(), onExport = vi.fn();
     const data = [{id:'1',name:'Palm A',stage:'New'}, {id:'2',name:'Palm B',stage:'New'}, {id:'3',name:'Villa',stage:'New'}];
     render(<DesignSystemProvider><DataGrid ariaLabel="Export records" columns={columns} data={data} getRowId={row => row.id} pageSize={1} onExport={onExport}/></DesignSystemProvider>);
     expect(screen.queryByRole("button", { name: "Actions" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
     await user.type(screen.getByRole("searchbox", { name: "Search records" }), "Palm");
+    await user.click(screen.getByRole("button", { name: "Table options" }));
     await user.click(screen.getByRole("button", { name: "Export filtered rows" }));
     expect(onExport).toHaveBeenLastCalledWith(data.slice(0,2));
+    await user.keyboard("{Escape}");
     await user.click(screen.getByRole("checkbox", { name: "Select row 1" }));
+    await user.click(screen.getByRole("button", { name: "Table options" }));
     await user.click(screen.getByRole("button", { name: "Export selected rows" }));
     expect(onExport).toHaveBeenLastCalledWith([data[0]]);
   });
@@ -41,7 +44,7 @@ describe("DataGrid", () => {
     const user = userEvent.setup();
     render(<DesignSystemProvider><DataGrid ariaLabel="Columns" columns={columns} data={rows} getRowId={row => row.id} initialColumnVisibility={{ stage: false }}/></DesignSystemProvider>);
     expect(screen.queryByRole("columnheader", { name: "Stage" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Manage columns" }));
+    await user.click(screen.getByRole("button", { name: "Table options" }));
     expect(screen.getByRole("checkbox", { name: "Name" })).toBeDisabled();
     await user.click(screen.getByRole("checkbox", { name: "Stage" }));
     await user.click(screen.getByRole("button", { name: "Reset columns" }));
@@ -49,14 +52,14 @@ describe("DataGrid", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("columnheader", { name: "Stage" })).not.toBeInTheDocument();
   });
-  it("sorts across pages through the nested sort picker and keeps row numbers in display order", async () => {
+  it("sorts across pages from the table options menu and keeps row numbers in display order", async () => {
     const user = userEvent.setup();
     const data = [{id:'1',name:'Zebra',stage:'New'}, {id:'2',name:'Alpha',stage:'New'}, {id:'3',name:'Beta',stage:'New'}];
     render(<DesignSystemProvider><DataGrid ariaLabel="Sorted records" columns={columns} data={data} getRowId={row => row.id} pageSize={2}/></DesignSystemProvider>);
-    await user.click(screen.getByRole("button", { name: "Sort" }));
+    await user.click(screen.getByRole("button", { name: "Table options" }));
     await user.click(screen.getByRole("button", { name: /Sort by/ }));
     await user.click(screen.getByRole("option", { name: "Name" }));
-    await user.click(screen.getByRole("button", { name: "Done" }));
+    await user.keyboard("{Escape}");
     const table = screen.getByRole("table", { name: "Sorted records" });
     expect(within(table).getAllByRole("row").slice(1).map(row => row.textContent)).toEqual(['1AlphaNew','2BetaNew']);
     await user.click(screen.getByRole("button", { name: "Next page" }));

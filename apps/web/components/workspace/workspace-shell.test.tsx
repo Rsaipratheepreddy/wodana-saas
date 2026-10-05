@@ -51,6 +51,14 @@ describe("WorkspaceShell theme", () => {
     view.rerender(<WorkspaceShell {...shellProps}><p>Enquiry types list</p></WorkspaceShell>);
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeInTheDocument();
   });
+  it("follows the firm's colour on staff screens but keeps titles in sentence case (no all-caps brand typeface)", () => {
+    route.pathname = "/workspace/crm/leads";
+    const { container } = render(<WorkspaceShell {...shellProps} workspaces={[{ ...shellProps.workspaces[0], primaryColor: "#0F766E", headingFont: "alta", bodyFont: "montserrat" }]}><p>Module content</p></WorkspaceShell>);
+    const styled = [...container.querySelectorAll<HTMLElement>("[style]")].map((element) => element.getAttribute("style") ?? "").join(";");
+    expect(styled).toContain("--wd-");
+    expect(styled).not.toMatch(/heading-transform|workspace-font-heading/);
+  });
+
   it("keeps the main workspace navigation visible inside CRM", () => {
     route.pathname = "/workspace/crm/leads";
     render(<WorkspaceShell {...shellProps}><p>Module content</p></WorkspaceShell>);

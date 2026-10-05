@@ -75,8 +75,8 @@ describe("sales enquiries list", () => {
     const chips = within(screen.getByRole("group", { name: "Status" }));
     expect(chips.getByRole("button", { name: /^All/ })).toHaveTextContent("2");
     expect(chips.getByRole("button", { name: /^New/ })).toHaveTextContent("1");
-    expect(chips.getByRole("button", { name: /^Won/ })).toHaveTextContent("0");
-    expect(chips.getByRole("button", { name: /^Lost/ })).toHaveTextContent("0");
+    expect(chips.getByRole("button", { name: /^Won/ })).toHaveTextContent(/^Won$/);
+    expect(chips.getByRole("button", { name: /^Lost/ })).toHaveTextContent(/^Lost$/);
     expect(screen.getAllByText("Germany · DE").length).toBeGreaterThan(0);
     await userEvent.click(chips.getByRole("button", { name: /^Contacted/ }));
     await waitFor(() => expect(screen.queryByText("Lena Fischer")).not.toBeInTheDocument());
@@ -85,7 +85,7 @@ describe("sales enquiries list", () => {
     await userEvent.type(screen.getByRole("searchbox"), "SE-0007");
     await waitFor(() => expect(screen.queryByText("Omar Haddad")).not.toBeInTheDocument());
     expect(screen.getByText("Lena Fischer")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export filtered rows" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Table options" })).toBeInTheDocument();
   });
 
   it("says when there are no enquiries yet, without a fake action", async () => {
@@ -121,7 +121,7 @@ describe("sales enquiry inspector", () => {
     expect(status.body).toEqual({ expectedVersion: 1, status: "contacted" });
     expect(await within(dialog).findByRole("button", { name: "Mark qualified" })).toBeInTheDocument();
     // The open drawer hides the page from assistive technology; the list behind it still moved the count.
-    await waitFor(() => expect(within(screen.getByRole("group", { name: "Status", hidden: true })).getByRole("button", { name: /^New/, hidden: true })).toHaveTextContent("0"));
+    await waitFor(() => expect(within(screen.getByRole("group", { name: "Status", hidden: true })).getByRole("button", { name: /^New/, hidden: true })).toHaveTextContent(/^New$/));
   });
 
   it("adds a note with a client-side key", async () => {

@@ -38,7 +38,7 @@ describe("pre-project table selector", () => {
     expect(within(table).getByRole("img", { name: "Khalid Rahman" })).toHaveTextContent("KR");
     expect(within(table).getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/requirements`);
     expect(screen.queryByRole("button", { name: "Cards" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export filtered rows" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Table options" })).toBeInTheDocument();
     expect(table.closest(".wd-table-scroll")).not.toBeNull();
   });
   it("searches all server pages as you type and drops obsolete filters", async () => {

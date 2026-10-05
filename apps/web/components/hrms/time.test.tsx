@@ -193,7 +193,9 @@ describe("Payroll", () => {
     await userEvent.click(screen.getByRole("radio", { name: "Crew workers" }));
     const workers = await grid("Crew workers");
     expect(within(workers).getAllByRole("row")[1]).toHaveTextContent(/Ravi Kumar.*W-01.*Carpentry.*Joinery A.*21\.5.*4.*AED\s?3,870\.00.*1/);
+    await userEvent.click(screen.getAllByRole("button", { name: "Table options" }).at(-1)!);
     await userEvent.click(screen.getByRole("button", { name: /Export/ }));
+    await userEvent.keyboard("{Escape}");
     expect(clicks.at(-1)).toMatch(/\/api\/workspace\/hrms\/payroll\/export\?month=2026-09&kind=workers&workspaceId=w$/);
     await userEvent.click(screen.getByRole("button", { name: "Previous month" }));
     await waitFor(() => expect(calls.filter((call) => call.path === "payroll").at(-1)!.query.get("month")).toBe("2026-08"));

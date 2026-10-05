@@ -40,6 +40,9 @@ import { WorkspaceIdentityProvider } from "./workspace-identity";
 import { resolveWorkspaceRoute } from "@/lib/workspace/route-map";
 import { useT } from "@/lib/i18n/i18n-provider";
 
+/** Staff screens follow the firm's colours only; its brand typeface (often all-caps) is for client-facing surfaces, so titles stay in sentence case. */
+const staffBrandStyle = (workspace?: WorkspaceIdentity) => workspacePrimaryColorStyle({ primaryColor: workspace?.primaryColor, secondaryColor: workspace?.secondaryColor });
+
 export type WorkspaceShellProps = {
   children: ReactNode;
   modules: WorkspaceModuleDefinition[];
@@ -56,7 +59,7 @@ export type WorkspaceShellProps = {
 
 export function WorkspaceShell({ banner, children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace, access }: WorkspaceShellProps) {
   const identity = workspaces[0] ? { name: workspaces[0].name, logoUrl: workspaces[0].imageUrl ?? null } : null;
-  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={workspacePrimaryColorStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name} workspaceId={workspaces[0]?.id}><RememberProvider scope={workspaces[0]?.id && (user.id ?? user.email) ? `${user.id ?? user.email}:${workspaces[0].id}` : null}><WorkspaceShellContent banner={banner} canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces} access={access}>{children}</WorkspaceShellContent></RememberProvider></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
+  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={staffBrandStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name} workspaceId={workspaces[0]?.id}><RememberProvider scope={workspaces[0]?.id && (user.id ?? user.email) ? `${user.id ?? user.email}:${workspaces[0].id}` : null}><WorkspaceShellContent banner={banner} canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces} access={access}>{children}</WorkspaceShellContent></RememberProvider></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
 }
 
 const FLOW_BUILDER = /^\/workspace\/enquiry-types\/[0-9a-f-]{36}\/?$/i;
@@ -114,11 +117,11 @@ function WorkspaceShellContent({ banner, children, modules, user, workspaces, un
   // The quote builder, the steps builder and the client view take the whole screen: the client view shows the portal as
   // the client does; the builders are focused editors with their own slim top bar and a way back.
   if (preProjectRoute?.section === "quotations" && builderSearch.has("quote") || pathname.startsWith("/workspace/client-view/") || FLOW_BUILDER.test(pathname)) {
-    return <div className={styles.shell} data-workspace-theme={theme} style={{...workspacePrimaryColorStyle(workspaces[0]),display:"block",minHeight:"100dvh"}}><main data-tour="page-content">{banner}{children}</main></div>;
+    return <div className={styles.shell} data-workspace-theme={theme} style={{...staffBrandStyle(workspaces[0]),display:"block",minHeight:"100dvh"}}><main data-tour="page-content">{banner}{children}</main></div>;
   }
 
   return (
-    <div className={styles.shell} data-workspace-theme={theme} data-account-flow={activeModule.id === "workspace" && pathname !== "/workspace" || undefined} data-task-flow={pathname === "/workspace/tasks" || undefined} data-project-flow={pathname.startsWith("/workspace/pre-projects") || pathname.startsWith("/workspace/projects") || undefined} data-focus={Boolean(focus) || moduleSelector || undefined} data-module-selector={moduleSelector || undefined} data-case-workspace={!!preProjectRoute || undefined} style={workspacePrimaryColorStyle(workspaces[0])}>
+    <div className={styles.shell} data-workspace-theme={theme} data-account-flow={activeModule.id === "workspace" && pathname !== "/workspace" || undefined} data-task-flow={pathname === "/workspace/tasks" || undefined} data-project-flow={pathname.startsWith("/workspace/pre-projects") || pathname.startsWith("/workspace/projects") || undefined} data-focus={Boolean(focus) || moduleSelector || undefined} data-module-selector={moduleSelector || undefined} data-case-workspace={!!preProjectRoute || undefined} style={staffBrandStyle(workspaces[0])}>
       {!moduleSelector ? <div className={styles.desktopSidebar}>
         <WorkspaceSidebar
           activeModule={activeModule}

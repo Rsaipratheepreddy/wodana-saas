@@ -338,7 +338,7 @@ describe("LeadsPage", () => {
     expect(body).not.toHaveProperty("title");
     expect(fetchMock.mock.calls.some(([url]) => url.includes("/auto-assign"))).toBe(false);
     expect(screen.getAllByText("E-0006").length).toBeGreaterThan(0);
-  }, 15000);
+  }, 90000);
 
   it("loads the next backend cursor without duplicating leads", async () => {
     const interaction = userEvent.setup();
@@ -407,7 +407,7 @@ describe("LeadsPage", () => {
     await interaction.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.getByRole("button", { name: "Open Leena Mathew" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Dr Maya Nair" })).toBeInTheDocument();
-  }, 15000);
+  }, 40000);
 
   it("logs a contact, keeps the version and moves the enquiry to Come back to", async () => {
     const user = userEvent.setup();

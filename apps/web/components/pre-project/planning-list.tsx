@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import {
-  Badge, Button, Callout, ControlledModalDialog, DataGrid, EmptyState, NoResultsState, PageHeader, personDisplayName, SearchInput, SegmentedControl, SelectField,
-  type DataGridColumn,
+  Badge, Button, Callout, ControlledModalDialog, DataGrid, EmptyState, ListTabs, NoResultsState, OwnerCell, PageShell, personDisplayName, RecordName, SearchInput, SelectField,
+  type DataGridColumn, type ToolbarFilter,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown } from "@/lib/i18n/keys";
@@ -115,29 +115,32 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
   }
 
   const columns = useMemo<DataGridColumn<PlanningRow>[]>(() => [
-    { id: "case", header: t("Case"), accessorFn: (row) => `${row.title} ${row.reference ?? ""}`, size: 280, meta: { primary: true, interactive: true, renderCell: (row) => <span className={styles.nameCell}>
-      {row.href ? <Link data-tour="case-open" href={row.href}>{projectDisplayName(row.title)}</Link>
-        : <button type="button" className={styles.openButton} disabled={Boolean(busy) || !(row.source?.opportunityId ? planning.canCreate : planning.canStartLead)}
-            onClick={(event) => { event.stopPropagation(); void open(row); }}>{busy === row.id ? t("Opening…") : projectDisplayName(row.title)}</button>}
-      {row.reference || row.description ? <small>{[row.reference, row.description].filter(Boolean).join(" · ")}</small> : null}</span> } },
-    { id: "client", header: t("Client"), accessorFn: (row) => row.customer, size: 150 },
-    { id: "stage", header: t("Stage"), accessorFn: (row) => translateKnown(t, row.stage), size: 150, meta: { renderCell: (row) => <Badge tone={row.group === "in_design" ? "info" : "neutral"}>{translateKnown(t, row.stage)}</Badge> } },
-    { id: "owner", header: t("Owner"), accessorFn: (row) => row.owner ?? "", size: 150, meta: { mobileHidden: true, renderCell: (row) => row.owner ?? <span className={styles.muted}>{t("Unassigned")}</span> } },
+    { id: "case", header: t("Case"), accessorFn: (row) => `${row.title} ${row.reference ?? ""} ${row.customer}`, size: 320, meta: { primary: true, interactive: true, renderCell: (row) => <span title={row.description}>
+      <RecordName detail={[row.customer, row.reference].filter(Boolean).join(" · ")} title={row.href ? <Link className={styles.open} data-tour="case-open" href={row.href}>{projectDisplayName(row.title)}</Link>
+        : <button type="button" className={styles.open} disabled={Boolean(busy) || !(row.source?.opportunityId ? planning.canCreate : planning.canStartLead)}
+            onClick={(event) => { event.stopPropagation(); void open(row); }}>{busy === row.id ? t("Opening…") : projectDisplayName(row.title)}</button>} />
+    </span> } },
+    { id: "stage", header: t("Stage"), accessorFn: (row) => (row.onHold ? t("On hold") : translateKnown(t, row.stage)), size: 150, meta: { renderCell: (row) => row.onHold
+      ? <Badge tone="warning">{t("On hold")}</Badge> : <Badge tone={row.group === "in_design" ? "info" : "neutral"}>{translateKnown(t, row.stage)}</Badge> } },
+    { id: "next", header: t("Next step"), accessorFn: (row) => translateKnown(t, row.next), size: 200, meta: { priority: "medium" } },
+    { id: "owner", header: t("Owner"), accessorFn: (row) => row.owner ?? "", size: 150, meta: { priority: "low", renderCell: (row) => <OwnerCell fallback={t("Unassigned")} person={row.owner} /> } },
     { id: "value", header: t("Value"), accessorFn: (row) => Number(row.amount ?? 0), size: 120, meta: { align: "end", renderCell: (row) => row.amount && row.currency
       ? format.money(row.amount, row.currency) : <span className={styles.muted}>—</span> } },
-    { id: "next", header: t("Next step"), accessorFn: (row) => (row.onHold ? t("On hold") : translateKnown(t, row.next)), size: 180, meta: { renderCell: (row) => row.onHold
-      ? <Badge tone="warning">{t("On hold")}</Badge> : <span>{translateKnown(t, row.next)}</span> } },
   // `open` reads the latest state through `busy`; the columns only need rebuilding when that changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [t, format, busy, planning.canCreate, planning.canStartLead]);
 
   const canStart = planning.canCreate;
-  const groups = [{ id: "all", label: t("All") }, { id: "ready", label: t("Ready to start") }, { id: "before_deal", label: servicePathEnabled ? t("Before deal") : t("In planning") },
-    { id: "in_design", label: servicePathEnabled ? t("In design") : t("Project open") }];
+  // Only "Ready to start" asks for action, so only it shows a count.
+  const groups: Array<{ id: "all" | PlanningGroup; label: string; count?: number }> = [{ id: "all", label: t("All") },
+    { id: "ready", label: t("Ready to start"), count: rows.filter((row) => row.group === "ready" && !row.onHold).length },
+    { id: "before_deal", label: servicePathEnabled ? t("Before deal") : t("In planning") }, { id: "in_design", label: servicePathEnabled ? t("In design") : t("Project open") }];
+  const filters: ToolbarFilter[] = [{ id: "status", label: t("Status"), options: [{ id: "active", label: t("Active") }, { id: "hold", label: t("On hold") }],
+    value: status === "all" ? undefined : status, onChange: (value) => setStatus((value as Status | undefined) ?? "all") }];
   const problem = error || projectError || planning.error;
 
-  return <div className={styles.page} data-tour="planning-list">
-    <PageHeader title={t("Planning")} actions={<Button variant="primary" onPress={() => setStarting(true)}><Plus aria-hidden="true" size={15} />{t("Start planning")}</Button>} />
+  return <div data-tour="planning-list"><PageShell title={t("Planning")} action={<Button variant="primary" onPress={() => setStarting(true)}><Plus aria-hidden="true" size={15} />{t("Start planning")}</Button>}
+    tabs={<ListTabs label={t("Planning stage")} items={groups} value={group} onChange={setGroup} />}>
     {problem ? <Callout tone="warning" title={t("Some projects could not be loaded")}>{translateKnown(t, problem)}</Callout> : null}
     <DataGrid<PlanningRow>
       ariaLabel={t("Planning")}
@@ -148,11 +151,7 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
       onSearchChange={setSearch}
       searchValue={search}
       searchLabel={t("Search planning")}
-      toolbarLeading={<>
-        <SegmentedControl label={t("Planning stage")} value={group} onChange={(value) => setGroup(value as "all" | PlanningGroup)} options={groups} />
-        <SelectField label={null} aria-label={t("Project status")} selectedKey={status} onSelectionChange={(key) => setStatus(String(key) as Status)}
-          items={[{ id: "all", label: t("All projects") }, { id: "active", label: t("Active") }, { id: "hold", label: t("On hold") }]} />
-      </>}
+      filters={filters}
       emptyContent={search.trim() || group !== "all" || status !== "all"
         ? <NoResultsState onClear={() => { setSearch(""); setGroup("all"); setStatus("all"); }} />
         : <EmptyState title={t("Nothing in planning yet")}
@@ -160,11 +159,10 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
             action={<Button variant="primary" onPress={() => setStarting(true)}>{t("Start planning")}</Button>} />}
       rowNumbers={false}
       selectable={false}
-      wrapText
     />
     {lead ? <StartQualifiedLead workspaceId={planning.workspaceId} lead={lead} onClose={() => setLead(null)} onStarted={(id) => router.push(`/workspace/pre-projects/cases/${id}/requirements`)} /> : null}
     {starting ? <StartPlanningDialog planning={planning} canStart={canStart} onClose={() => setStarting(false)} /> : null}
-  </div>;
+  </PageShell></div>;
 }
 
 type Candidate = { id: string; title: string; customerName: string; status: string; caseId?: string | null };
@@ -216,7 +214,6 @@ function StartPlanningDialog({ planning, canStart, onClose }: { planning: PrePro
   return <ControlledModalDialog isOpen onOpenChange={(open) => { if (!open && !creating) onClose(); }} title={t("Start planning")}
     footer={<div className="wd-dialog-actions"><Button isDisabled={creating} onPress={onClose}>{t("Cancel")}</Button>{canStart
       ? <Button variant="primary" isDisabled={!opportunityId || loading || creating} isLoading={creating} onPress={() => void create()}>{t("Start with requirements")}</Button> : null}</div>}>
-    <p>{t("Choose an open or won opportunity. Requirements come first; production is released only after the required approvals.")}</p>
     {failure ? <Callout tone="warning" title={t("Could not start planning")}>{failure}</Callout> : null}
     {planning.error ? <Callout tone="warning" title={t("Planning access could not be checked")}>{translateKnown(t, planning.error)}</Callout>
       : !canStart ? <Callout tone="warning" title={t("Project creation needs access")}>{t("Your account needs Planning create and Opportunities view permissions. Ask your workspace administrator to update your role.")}</Callout>

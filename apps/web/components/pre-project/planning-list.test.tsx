@@ -50,12 +50,12 @@ describe("Planning rows (D-31)", () => {
 });
 
 describe("Planning list", () => {
-  it("has one title, one primary action and a grid with stage, owner, value and next step", () => {
+  it("has one title, one primary action and a compact grid: case with client on a muted line, stage, next step, owner and value", () => {
     render(<PlanningList projects={[]} planning={list([planning])} />);
     expect(screen.getByRole("heading", { level: 1, name: "Planning" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Start planning" })).toHaveLength(1);
     const grid = screen.getByRole("table", { name: "Planning" });
-    expect(within(grid).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(expect.arrayContaining(["Case", "Client", "Stage", "Owner", "Value", "Next step"]));
+    expect(within(grid).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Case", "Stage", "Next step", "Owner", "Value"]);
     expect(within(grid).getByRole("link", { name: "Villa interiors" })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/requirements");
     expect(within(grid).getByText("Present the design")).toBeVisible();
     expect(within(grid).getByText(/48,000/)).toBeVisible();
@@ -72,15 +72,28 @@ describe("Planning list", () => {
   it("filters by planning stage and status, and says when nothing matches", async () => {
     const paid = { ...project, id: "project-2", caseId: "case-2", workflow: { templateCode: "design_build_deal_first", currentStageKey: "concept", currentStageName: "Concept" } };
     render(<PlanningList projects={[paid]} planning={list([planning, { ...planning, id: "case-3", title: "Paused office", status: "on_hold" } as PreProjectListItem])} workflow={workflow} servicePathEnabled />);
-    await userEvent.click(screen.getByRole("radio", { name: "In design" }));
-    expect(screen.getByText("PRJ-0007")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "In design" }));
+    expect(screen.getByText(/PRJ-0007/)).toBeVisible();
     expect(screen.queryByText("Paused office")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("radio", { name: "Before deal" }));
+    await userEvent.click(screen.getByRole("button", { name: "Before deal" }));
     expect(screen.getByText("Paused office")).toBeVisible();
     expect(screen.getByText("On hold", { selector: ".wd-badge, [class*='badge'], span" })).toBeVisible();
     await userEvent.type(screen.getByRole("searchbox", { name: "Search planning" }), "nothing like this");
     await userEvent.click(await screen.findByRole("button", { name: "Clear filters" }));
-    expect(screen.getByText("PRJ-0007")).toBeVisible();
+    expect(screen.getByText(/PRJ-0007/)).toBeVisible();
+  });
+
+  it("keeps the toolbar slim: status is a filter that shows as a removable chip only while used", async () => {
+    render(<PlanningList projects={[]} planning={list([planning, { ...planning, id: "case-3", title: "Paused office", status: "on_hold" } as PreProjectListItem])} />);
+    expect(screen.queryByRole("group", { name: "Filters in use" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+    await userEvent.click(screen.getByRole("button", { name: /Filter by status/ }));
+    await userEvent.click(screen.getByRole("option", { name: "On hold" }));
+    await userEvent.keyboard("{Escape}");
+    expect(within(screen.getByRole("group", { name: "Filters in use" })).getByText("On hold")).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Villa interiors" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Remove filter Status" }));
+    expect(screen.getByRole("link", { name: "Villa interiors" })).toBeVisible();
   });
 
   it("opens a qualified enquiry's case the first time it's opened", async () => {

@@ -3,68 +3,92 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useState, type ReactNode } from "react";
 import type { Table } from "@tanstack/react-table";
-import { ArrowDownWideNarrow, Columns3, Download, Filter, Rows3, Table2, X } from "lucide-react";
+import { Download, Filter, MoreHorizontal, Rows3, X } from "lucide-react";
 import { Dialog, DialogTrigger, Popover } from "react-aria-components";
 import { Button, IconButton } from "../components/actions";
 import { Checkbox, SearchInput, SelectField, TextInput } from "../components/forms";
 import type { DataGridColumnMeta, SavedView } from "./data-grid";
 import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provider";
 
-export function DataGridToolbar<T>({ compact = false, leading, title, table, views, activeView, onViewChange, searchLabel, searchValue, onSearchChange, actions, onExport, hasMoreRows }: {
+/** A filter that is not a column (e.g. Active / On hold): it is offered under "Filter" and shown as a chip once used. */
+export type ToolbarFilter = { id: string; label: string; options: Array<{ id: string; label: string }>; value?: string; onChange: (value: string | undefined) => void };
+
+type FilterTarget = { id: string; label: string; options?: Array<{ id: string; label: string }>; value: string | undefined; set: (value: string | undefined) => void };
+
+/**
+ * The toolbar above every list (§5c D1): the view switch or tabs at the start; at the end a search icon that
+ * opens when used, "Filter" (each filter in use becomes a removable chip) and ⋯ (sort, columns, export).
+ * Nothing else: page actions belong in the page header.
+ */
+export function DataGridToolbar<T>({ compact = false, leading, title, table, views, activeView, onViewChange, searchLabel, searchValue, onSearchChange, actions, onExport, hasMoreRows, filters = [] }: {
   compact?: boolean; /** Replaces the title/view switch at the start, e.g. list tabs. */ leading?: ReactNode; title?: string; table: Table<T>; views: SavedView[]; activeView?: string; onViewChange: (id: string) => void;
   searchLabel: string; actions?: ReactNode; onExport: () => void; hasMoreRows?: boolean; totalRowCount?: number;
-  searchValue?: string; onSearchChange?: (value: string) => void;
+  searchValue?: string; onSearchChange?: (value: string) => void; filters?: ToolbarFilter[];
 }) {
   const t = useT();
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   const columns = table.getAllLeafColumns().filter(column => !column.id.startsWith('__'));
-  const filterable = columns.filter(column => column.getCanFilter() && typeof column.columnDef.header === 'string');
+  const header = (column: (typeof columns)[number]) => String(column.columnDef.header);
+  const targets: FilterTarget[] = [
+    ...filters.map(filter => ({ id: `filter:${filter.id}`, label: filter.label, options: filter.options, value: filter.value, set: filter.onChange })),
+    ...columns.filter(column => column.getCanFilter() && typeof column.columnDef.header === 'string').map(column => ({
+      id: column.id, label: header(column), options: (column.columnDef.meta as DataGridColumnMeta<T> | undefined)?.filterOptions,
+      value: column.getFilterValue() === undefined ? undefined : String(column.getFilterValue()), set: (value: string | undefined) => column.setFilterValue(value),
+    })),
+  ];
   const sortable = columns.filter(column => column.getCanSort() && typeof column.columnDef.header === 'string');
-  const [filterId, setFilterId] = useState('');
-  const filterColumn = filterable.find(column => column.id === filterId) ?? filterable[0];
-  const options = (filterColumn?.columnDef.meta as DataGridColumnMeta<T> | undefined)?.filterOptions;
-  const filters = table.getState().columnFilters;
+  const [targetId, setTargetId] = useState('');
+  const target = targets.find(item => item.id === targetId) ?? targets[0];
+  const active = targets.filter(item => item.value !== undefined && item.value !== '');
   const sort = table.getState().sorting[0];
-  const columnItems = (items: typeof columns) => items.map(column => ({ id: column.id, label: String(column.columnDef.header) }));
+  const exportLabel = table.getSelectedRowModel().rows.length ? t("Export selected rows") : t("Export filtered rows");
+  const valueLabel = (item: FilterTarget) => item.options?.find(option => option.id === item.value)?.label ?? item.value;
+  const viewSwitch = views.length ? <SelectField label={t("Table view")} selectedKey={activeView} onSelectionChange={key => key && onViewChange(String(key))} items={views} /> : null;
+  const search = searchValue ?? String(table.getState().globalFilter ?? '');
+
   return <header className="wd-grid-toolbar wd-record-toolbar" data-compact={compact || undefined} data-leading={leading ? true : undefined}>
     {leading ? <div className="wd-grid-leading">{leading}</div> : title ? <strong className="wd-grid-title">{title}</strong> : null}
+    {active.length ? <div aria-label={t("Filters in use")} className="wd-filter-chips" role="group">{active.map(item => <span className="wd-filter-chip" key={item.id}>
+      <span><span className="wd-filter-chip-label">{item.label}</span> {valueLabel(item)}</span>
+      <IconButton aria-label={t("Remove filter {name}", { name: item.label })} onPress={() => item.set(undefined)} size="compact"><X size={12} /></IconButton>
+    </span>)}</div> : null}
     <div className="wd-record-tools">
       <div className="wd-record-controls">
-      {leading ? null : views.length ? <SelectField label={t("Table view")} selectedKey={activeView} onSelectionChange={key => key && onViewChange(String(key))} items={views} /> : !compact ? <span className="wd-record-view"><Table2 size={14} />{t("Table view")}</span> : null}
-      <DialogTrigger>
-        <Button variant="quiet" size="compact" aria-label={t("Manage columns")}><Columns3 size={14} /><span>{t("Configure columns")}</span></Button>
-        <Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-column-popover" dir={direction} placement="bottom start"><Dialog aria-label={t("Visible columns")} className="wd-column-menu">
-          <strong>{t("Columns")}</strong>
-          {columns.map(column => <Checkbox key={column.id} isDisabled={!column.getCanHide()} isSelected={column.getIsVisible()} onChange={column.toggleVisibility}>{typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id}</Checkbox>)}
-          <Button size="compact" variant="quiet" onPress={() => table.resetColumnVisibility()}>{t("Reset columns")}</Button>
-        </Dialog></Popover>
-      </DialogTrigger>
-      {hasMoreRows ? <span className="wd-record-count" title={t("Load more to include older records.")}><Rows3 size={14} />{t("{count} loaded", { count: table.getFilteredRowModel().rows.length })}</span> : null}
-      <DialogTrigger>
-        <Button variant="quiet" size="compact" aria-label={t("Filter")} isDisabled={!filterable.length}><Filter size={14} /><span>{filters.length ? (filters.length === 1 ? t("1 filter") : t("{count} filters", { count: filters.length })) : t("Filter")}</span></Button>
-        <Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-record-panel" dir={direction} placement="bottom start"><Dialog aria-label={t("Filter records")}>{({ close }) => <>
-          <header><strong>{t("Filter records")}</strong><IconButton aria-label={t("Close filters")} onPress={close} size="compact"><X size={14} /></IconButton></header>
-          <SelectField label={t("Column")} items={columnItems(filterable)} selectedKey={filterColumn?.id} onSelectionChange={key => key && setFilterId(String(key))} />
-          {options ? <SelectField label={t("Filter by {column}", { column: String(filterColumn?.columnDef.header).toLowerCase() })} selectedKey={String(filterColumn?.getFilterValue() ?? '__all')} items={[{ id: '__all', label: t("All values") }, ...options]} onSelectionChange={key => filterColumn?.setFilterValue(key === '__all' ? undefined : String(key))} /> : <TextInput label={t("Contains")} value={String(filterColumn?.getFilterValue() ?? '')} onChange={value => filterColumn?.setFilterValue(value || undefined)} placeholder={t("Enter a value…")} />}
-          {filters.length > 1 && <p className="wd-record-filter-summary">{filters.map(filter => `${table.getColumn(filter.id)?.columnDef.header}: ${filter.value}`).join(' · ')}</p>}
-          <footer><Button size="compact" variant="quiet" isDisabled={!filters.length} onPress={() => table.resetColumnFilters()}>{t("Clear filters")}</Button><Button size="compact" onPress={close}>{t("Done")}</Button></footer>
-        </>}</Dialog></Popover>
-      </DialogTrigger>
-      <DialogTrigger>
-        <Button variant="quiet" size="compact" aria-label={t("Sort")} isDisabled={!sortable.length}><ArrowDownWideNarrow size={14} /><span>{t("Sort")}{sort ? ` · ${table.getState().sorting.length}` : ''}</span></Button>
-        <Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-record-panel" dir={direction} placement="bottom start"><Dialog aria-label={t("Sort records")}>{({ close }) => <>
-          <header><strong>{t("Sort records")}</strong><IconButton aria-label={t("Close sorting")} onPress={close} size="compact"><X size={14} /></IconButton></header>
-          <SelectField label={t("Sort by")} items={[{ id: '__none', label: t("Default order") }, ...columnItems(sortable)]} selectedKey={sort?.id ?? '__none'} onSelectionChange={key => table.setSorting(key === '__none' ? [] : [{ id: String(key), desc: false }])} />
-          <SelectField label={t("Direction")} items={[{ id: 'asc', label: t("Ascending") }, { id: 'desc', label: t("Descending") }]} isDisabled={!sort} selectedKey={sort?.desc ? 'desc' : 'asc'} onSelectionChange={key => sort && table.setSorting([{ ...sort, desc: key === 'desc' }])} />
-          <footer><Button variant="quiet" size="compact" isDisabled={!sort} onPress={() => table.resetSorting()}>{t("Clear sort")}</Button><Button size="compact" onPress={close}>{t("Done")}</Button></footer>
-        </>}</Dialog></Popover>
-      </DialogTrigger>
+        {leading ? null : viewSwitch}
+        {hasMoreRows ? <span className="wd-record-count" title={t("Load more to include older records.")}><Rows3 size={14} />{t("{count} loaded", { count: table.getFilteredRowModel().rows.length })}</span> : null}
+        <form className="wd-record-search" data-open={search ? true : undefined} onSubmit={event => event.preventDefault()}>
+          <SearchInput label={searchLabel} placeholder={t("Search…")} value={search} onChange={value => onSearchChange ? onSearchChange(value) : table.setGlobalFilter(value)} />
+        </form>
+        {targets.length ? <DialogTrigger>
+          <Button variant="quiet" size="compact" aria-label={t("Filter")}><Filter size={14} /><span>{t("Filter")}</span></Button>
+          <Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-record-panel" dir={direction} placement="bottom end"><Dialog aria-label={t("Filter records")}>{({ close }) => <>
+            <header><strong>{t("Filter records")}</strong><IconButton aria-label={t("Close filters")} onPress={close} size="compact"><X size={14} /></IconButton></header>
+            <SelectField label={t("Column")} items={targets.map(item => ({ id: item.id, label: item.label }))} selectedKey={target?.id} onSelectionChange={key => key && setTargetId(String(key))} />
+            {target?.options ? <SelectField label={t("Filter by {column}", { column: target.label.toLowerCase() })} selectedKey={target.value ?? '__all'} items={[{ id: '__all', label: t("All values") }, ...target.options]} onSelectionChange={key => target.set(key === '__all' ? undefined : String(key))} />
+              : target ? <TextInput label={t("Contains")} value={target.value ?? ''} onChange={value => target.set(value || undefined)} placeholder={t("Enter a value…")} /> : null}
+            <footer><Button size="compact" variant="quiet" isDisabled={!active.length} onPress={() => active.forEach(item => item.set(undefined))}>{t("Clear filters")}</Button><Button size="compact" onPress={close}>{t("Done")}</Button></footer>
+          </>}</Dialog></Popover>
+        </DialogTrigger> : null}
+        {leading ? viewSwitch : null}
+        <DialogTrigger>
+          <IconButton aria-label={t("Table options")} size="compact"><MoreHorizontal size={16} /></IconButton>
+          <Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-record-panel wd-table-options" dir={direction} placement="bottom end"><Dialog aria-label={t("Table options")}>
+            {sortable.length ? <section>
+              <strong>{t("Sort")}</strong>
+              <SelectField label={t("Sort by")} items={[{ id: '__none', label: t("Default order") }, ...sortable.map(column => ({ id: column.id, label: header(column) }))]} selectedKey={sort?.id ?? '__none'} onSelectionChange={key => table.setSorting(key === '__none' ? [] : [{ id: String(key), desc: false }])} />
+              {sort ? <SelectField label={t("Direction")} items={[{ id: 'asc', label: t("Ascending") }, { id: 'desc', label: t("Descending") }]} selectedKey={sort.desc ? 'desc' : 'asc'} onSelectionChange={key => table.setSorting([{ ...sort, desc: key === 'desc' }])} /> : null}
+            </section> : null}
+            <section aria-label={t("Visible columns")}>
+              <strong>{t("Columns")}</strong>
+              {columns.map(column => <Checkbox key={column.id} isDisabled={!column.getCanHide()} isSelected={column.getIsVisible()} onChange={column.toggleVisibility}>{typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id}</Checkbox>)}
+              <Button size="compact" variant="quiet" onPress={() => table.resetColumnVisibility()}>{t("Reset columns")}</Button>
+            </section>
+            <footer><Button size="compact" variant="quiet" onPress={onExport} aria-label={exportLabel}><Download size={14} aria-hidden="true" /><span>{t("Export")}</span></Button></footer>
+          </Dialog></Popover>
+        </DialogTrigger>
       </div>
-      <form className="wd-record-search" onSubmit={event => event.preventDefault()}>
-        <SearchInput label={searchLabel} placeholder={t("Search…")} value={searchValue ?? String(table.getState().globalFilter ?? '')} onChange={value => onSearchChange ? onSearchChange(value) : table.setGlobalFilter(value)} />
-      </form>
     </div>
-    <div className="wd-record-actions"><Button size="compact" variant="quiet" onPress={onExport} aria-label={table.getSelectedRowModel().rows.length ? t("Export selected rows") : t("Export filtered rows")}><Download size={14} aria-hidden="true"/><span>{t("Export")}</span></Button>{actions}</div>
+    {actions ? <div className="wd-record-actions">{actions}</div> : null}
   </header>;
 }
