@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
@@ -54,7 +54,7 @@ describe("a day's progress on A4", () => {
     expect(within(document).getByText("Studio Interiors")).toBeInTheDocument();
     expect(within(document).getByText("PRJ-7 · Villa 12")).toBeInTheDocument();
     // The tab (and a saved PDF) is named after the document, not the product (m15).
-    expect(globalThis.document.title).toBe("Progress on Sep 25, 2026 · PRJ-7 · Studio Interiors");
+    await waitFor(() => expect(globalThis.document.title).toBe("Progress on Sep 25, 2026 · PRJ-7 · Studio Interiors"));
     expect(within(document).getByText("Stage 3 of 6 · Production")).toBeInTheDocument();
     expect(within(document).getByText("42% complete")).toBeInTheDocument();
     expect(within(document).getByText("The kitchen carcasses are in.")).toBeInTheDocument();
