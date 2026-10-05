@@ -127,6 +127,27 @@ Phases P1–P8 first build or consolidate the engine a module needs, then the mo
   - "Powered by Wodana" only where the plan allows.
 - Added to P4 (client app + branding tokens) and P8 (store flavours per firm, custom domains).
 
+### 0.3d WhatsApp templates, reminders and links (part of E4 + E6)
+- **Each firm uses its own WhatsApp Business number.** It is connected by Embedded Signup; Wodana is the Tech Provider. Messages come from the firm's name and number (white-label).
+- **Meta's rules, built in:**
+  - Inside the 24-hour window after the client writes, free-form replies are allowed.
+  - Outside it, only **Meta-approved templates** may be sent.
+  - Templates have a category: Utility (reminders, updates, payments) or Marketing (promotions). Utility is used for operations and costs less.
+- **Template library:**
+  - Wodana ships ready templates per event and language: quote ready, design ready for approval, payment due/overdue, payment received, site visit confirmed/reminder, daily update ready, question waiting, handover, warranty visit, document shared.
+  - When a firm connects WhatsApp, Wodana submits the templates to Meta for that firm and tracks approval (pending/approved/rejected with reason).
+  - Firms edit the wording in Settings › Inbox › Templates. Fields such as {{client}}, {{amount}} and {{date}} fill from the record.
+- **Event → template mapping** (per module notifications sheet): which event sends which template to whom, plus the reminder cadence (e.g. payment: 3 days before, on the day, 3 and 7 days after), quiet hours, and at most one reminder per day per client. Reminders run on the E4 deadline engine and stop the moment the action is done (paid, approved, answered).
+- **Links:** each message carries a button with a **signed deep link** straight to the exact item in the client portal or app (e.g. "Approve design" → that design).
+  - The link is short, expires, and is bound to the contact.
+  - If it has expired, the client signs in with mobile + code and lands on the same page.
+  - The app opens it if installed (universal/app links).
+- **Consent and opt-out:** sends only with WhatsApp consent recorded (form, portal, or chat opt-in). STOP/opt-out is honoured automatically. Without consent or on failure, Wodana falls back to email, then push, then SMS.
+- **Tracking:** sent / delivered / read / failed per message (Meta webhooks) on the record and on the Notification health page; failures alert the firm admin.
+- **Costs:** utility templates only for operations; digests group several updates into one message; usage per firm shown in Settings.
+- **Replies:** a client reply to a template opens the 24-hour window and lands in the job's conversation (E6), routed to the stage owner.
+- **Delivered in:** P2 (connection, template library, consent), P5 (event mapping, reminders, deep links, fallback, health).
+
 ### 0.4 How each phase is executed, to keep bugs out
 1. **Spec first:** journey, fields, rules, screens and edge cases written into §6 for the module, then reviewed.
 2. **Build:** one owner agent per phase (Opus for logic and UI; Fable only for mechanical sub-tasks, with an exact brief). At most two agents run at once, never in the same code area.
