@@ -220,7 +220,7 @@ Our existing plan already answers much of this: the decisions ledger, approvals,
 | AI9 | **Approval chaser with impact:** reminders, escalation, plus "each extra day moves handover by N days" from the steps engine | P5 | Waiting on client approvals is the most common delay. |
 | AI10 | **Meeting notes → actions:** record or upload; summary, decisions to the ledger, tasks, client-shareable version | P5 | Programa and Houzz Pro ship it; meetings are where scope changes. |
 
-**C. Engineering safeguards added (§7 and §8 apply them)**
+**C. Engineering safeguards added (§7 and §8 apply them).** Phases: C1 → P6 (books, e-invoice) and P7 (Shopify); C2 → P2 (WhatsApp connection) and P5 (E4 delivery, AI); C3 → P3 (the first AI read, payment proofs) and every later AI feature; C4 → P1 (CI budgets on seeded data) and P8 (status page); C5 → P8 (whole-workspace export; grid CSV exists); C6 → P8 (control plane); C7 → P5 (mobile daily progress).
 1. **External sync ledger.** Every push to QuickBooks, Zoho, Shopify or an e-invoice provider stores the external ID, a sync status per document, retries with an idempotency key, and a reconciliation report. A sync never touches a closed period. *Reason:* competitor syncs corrupt books (Houzz Pro, Mydoma backdated invoices).
 2. **Integration cost metering per tenant** for WhatsApp messages, AI tokens and paid APIs, with budgets and alerts. Utility templates only for operations; fallback to push or email. *Reason:* Meta per-message pricing (July 2025) and Intuit metered API calls (2025) changed costs under customers.
 3. **AI provenance.** Every AI-made field keeps source document/page, model, confidence and the person who confirmed it. Undo is a compensating command. *Reason:* about 50% of contractors distrust AI accuracy; trust comes from evidence.
@@ -584,6 +584,8 @@ Fable never designs UI or logic: it implements a brief Opus wrote and Opus revie
 7. tabs over 6 grouped.
 
 *Settings inside modules:* the ⋯ › Settings sheet per module; Sales gets enquiry types, sources and locations. Module settings move as each module's phase rebuilds it (P2 Sales …). Global Settings keeps workspace, branding, billing and integrations.
+
+*Also in P1 (research R14):* hide unused fields per firm for each form and grid (configuration, never deletion).
 
 *Exit (P1):*
 - guard tests green;
