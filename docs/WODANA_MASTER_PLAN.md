@@ -114,6 +114,19 @@ Each engine is built and tested once; modules only configure it. No module keeps
 
 Phases P1–P8 first build or consolidate the engine a module needs, then the module's screens on top. A module may not ship its own variant of an engine.
 
+### 0.3c Client mobile app and white-labelling (owner, 5 Oct)
+- **Client mobile app:** the client portal as a native app (iOS/Android, same Expo codebase).
+  - Sign in with mobile + code.
+  - Feed, "Waiting for you", daily status, documents, payments (pay / upload proof), design comments, Q&A/chat, warranty claims.
+  - Push notifications with consent.
+  - Built in P4 alongside the web portal (same API and read models), released with Milestone A.
+- **White-labelling (per firm), as configuration from Settings › Branding:**
+  - name, logo, colours, fonts, email sender name/domain, WhatsApp templates, PDF templates, portal custom domain (e.g. portal.palmliving.ae);
+  - **branded mobile apps via build flavours** (EAS app variants per firm: app name, icon, splash, bundle id, push credentials), published under the firm's store account or ours;
+  - one codebase with a flavour config file per firm and a tenant lock in the flavour.
+  - "Powered by Wodana" only where the plan allows.
+- Added to P4 (client app + branding tokens) and P8 (store flavours per firm, custom domains).
+
 ### 0.4 How each phase is executed, to keep bugs out
 1. **Spec first:** journey, fields, rules, screens and edge cases written into §6 for the module, then reviewed.
 2. **Build:** one owner agent per phase (Opus for logic and UI; Fable only for mechanical sub-tasks, with an exact brief). At most two agents run at once, never in the same code area.
