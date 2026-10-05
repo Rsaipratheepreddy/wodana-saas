@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
-import { Button, DateField, EmptyState, ErrorState, InlineNotice, SegmentedControl, SelectField, SettingsSection, Skeleton, TextAreaField, TextInput, FormDialog, TypeChip } from "@/design-system";
+import { Button, DateField, EmptyState, ErrorState, InlineNotice, SegmentedControl, SelectField, SettingsSection, Skeleton, TextAreaField, TextInput, FormDialog, FormSection, TypeChip } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { createVariation } from "@/lib/project-core/variations";
 import { siteApi, warrantySettingsApi } from "@/lib/site/client";
@@ -118,19 +118,19 @@ function ClaimDialog({ state, channels, onClose, onSave }: {
   const [areaId, setAreaId] = useState("");
   return <FormDialog size="md" title={t("Record a claim")} onClose={onClose} isSubmitDisabled={!name.trim() || !description.trim()} submitLabel={t("Save")} onSubmit={async () => { await onSave({ raisedOn, raisedByName: name.trim(), channel, description: description.trim(), boqLineId: lineId || null, areaId: areaId || null });
       }}>
-      <div className={styles.pair}>
+      <FormSection title={t("Raised")}>
         <DateField label={t("Day")} isRequired value={parseDate(raisedOn)} onChange={(value) => setRaisedOn(value ? value.toString() : state.today)} />
         <SelectField label={t("How it came in")} selectedKey={channel} onSelectionChange={(key) => setChannel((key ?? "phone") as WarrantyClaim["channel"])}
           items={(Object.keys(channels) as Array<WarrantyClaim["channel"]>).map((id) => ({ id, label: channels[id] }))} />
-      </div>
-      <TextInput label={t("Who raised it")} isRequired value={name} onChange={setName} />
-      <TextAreaField label={t("What's wrong")} isRequired value={description} onChange={setDescription} />
-      <div className={styles.pair}>
+        <TextInput label={t("Who raised it")} isRequired value={name} onChange={setName} />
+      </FormSection>
+      <FormSection title={t("Problem")}>
+        <TextAreaField label={t("What's wrong")} isRequired value={description} onChange={setDescription} />
         <SelectField label={t("Item")} placeholder={t("Choose")} selectedKey={lineId} onSelectionChange={(key) => setLineId(key ? String(key) : "")}
           items={state.lines.map((line) => ({ id: line.id, label: line.title }))} />
         {state.areas.length ? <SelectField label={t("Area")} placeholder={t("Choose")} selectedKey={areaId} onSelectionChange={(key) => setAreaId(key ? String(key) : "")}
-          items={state.areas.map((area) => ({ id: area.id, label: area.name }))} /> : <span />}
-      </div>
+          items={state.areas.map((area) => ({ id: area.id, label: area.name }))} /> : null}
+      </FormSection>
   </FormDialog>;
 }
 

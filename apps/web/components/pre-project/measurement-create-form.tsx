@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { Button, SelectField, TextInput } from '@/design-system';
+import { Button, FormSection, SelectField, TextInput } from '@/design-system';
 import { blankEntry, entryPayload, blankSpecification, caseRequest, specificationPayload, type CatalogChoice, type CaseContent, type ItemDimension, type ItemSpecification, type ScopeEntry } from '@/lib/pre-project/content';
 import { CaseModal, CatalogChoiceField } from './case-controls';
 import styles from './case-content.module.css';
@@ -36,7 +36,7 @@ export function MeasurementCreateForm({ data, entries, initialEntryId, initialRo
   const dirty = Boolean(name || catalog || dimension.name || dimension.measured !== null || dimension.approximate !== null || dimension.evidence);
   const disabled = saving || !data.canEdit;
   const patch = (value: Partial<ItemDimension>) => setDimension(current => ({ ...current, ...value }));
-  return <CaseModal size="md" title={t("Add measurement")} description={t("Choose what you measured and record its site size.")} dirty={dirty} busy={saving} onClose={onClose}
+  return <CaseModal size="md" title={t("Add measurement")} dirty={dirty} busy={saving} onClose={onClose}
     footer={data.canEdit && <Button type="submit" form="new-measurement-form" variant="primary" isLoading={saving}>{t("Save measurement")}</Button>}>
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {<form id="new-measurement-form" onSubmit={async event => {
@@ -55,12 +55,16 @@ export function MeasurementCreateForm({ data, entries, initialEntryId, initialRo
       } catch (caught) { setError(caught instanceof Error ? caught.message : t('Could not save. Your measurement is still here.')); }
       finally { setSaving(false); }
     }}><fieldset disabled={disabled} className={styles.captureFields}>
+      <FormSection title={t("Item")}>
       {entries.length>0 && <SelectField label={t('Item')} isDisabled={disabled||Boolean(created)} selectedKey={entryId || 'new'} onSelectionChange={key=>setEntryId(key==='new'?'':String(key))} items={[{id:'new',label:t('New item')},...entries.map(item=>({id:item.id,label:item.title}))]}/>}
       {!selected && <>
         <CatalogChoiceField workspaceId={data.workspaceId} caseId={data.caseId} kind="work" label={t("Catalog item (optional)")} disabled={disabled||Boolean(created)} value={catalog} onChange={value=>{setCatalog(value);if(value)setName(value.name);}}/>
         <TextInput label={t("Item name")} isRequired isDisabled={disabled||Boolean(created)} value={name} maxLength={240} onChange={setName} placeholder={t("e.g. Kitchen cabinet or bedroom wall")}/>
       </>}
-      <MeasurementFields value={dimension} onChange={patch} disabled={disabled} requireMeasured />
+      </FormSection>
+      <FormSection title={t("Measurement")}>
+        <MeasurementFields value={dimension} onChange={patch} disabled={disabled} requireMeasured />
+      </FormSection>
     </fieldset></form>}
   </CaseModal>;
 }

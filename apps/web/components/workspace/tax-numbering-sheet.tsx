@@ -70,6 +70,7 @@ function TaxSection({ data, canManage, workspaceId, entityId, onSaved }: { data:
       <h3 id="tax-heading">{label}</h3>
       <span className={styles.meta}><bdi>{data.taxModel.registrationLabel ?? t("Tax registration number")}</bdi>: <bdi>{data.entity.taxRegistrationNumber || t("Not added")}</bdi></span>
     </header>
+    {message ? <InlineNotice message={message.text} tone={message.tone} /> : null}
     {!data.tax && !rates.length ? <InlineNotice message={`${label} ${t("is not set up yet. Documents add no tax until you add a rate.")}`} /> : null}
     <div className={styles.rates} role="list" aria-label={t("Rates")}>
       {rates.map((rate, index) => <div className={styles.rate} key={index} role="listitem">
@@ -81,7 +82,6 @@ function TaxSection({ data, canManage, workspaceId, entityId, onSaved }: { data:
     </div>
     {canManage ? <Button size="compact" variant="quiet" onPress={() => setRates((current) => [...current, { code: "", label: current.length ? "" : t("Standard"), rate: "", isDefault: current.length === 0 }])}><Plus aria-hidden="true" size={14} />{t("Add rate")}</Button> : null}
     <Switch isDisabled={!canManage} isSelected={pricesIncludeTax} onChange={setPricesIncludeTax}>{t("Prices include tax")}</Switch>
-    {message ? <InlineNotice message={message.text} tone={message.tone} /> : null}
     {canManage ? <div className={styles.actions}><Button isLoading={saving} onPress={() => void save()} variant="primary">{t("Save tax")}</Button></div> : null}
   </section>;
 }
@@ -113,6 +113,7 @@ function NumberingSection({ data, canManage, workspaceId, entityId, onSaved }: {
 
   return <section className={styles.section} aria-labelledby="numbering-heading">
     <header className={styles.sectionHeader}><h3 id="numbering-heading">{t("Document numbering")}</h3></header>
+    {message ? <InlineNotice message={message.text} tone={message.tone} /> : null}
     {rows.map((row) => <fieldset className={styles.sequence} key={row.documentType}>
       <legend>{documentLabel[row.documentType]}<output className={styles.preview} dir="ltr">{previewNumber(row.prefix, row.padding, row.nextNumber)}</output></legend>
       <TextInput description={t("Use {YYYY} for the year.")} isDisabled={!canManage} isRequired label={t("Prefix")} onChange={(value) => update(row.documentType, { prefix: value })} value={row.prefix} />
@@ -120,7 +121,6 @@ function NumberingSection({ data, canManage, workspaceId, entityId, onSaved }: {
       <TextInput isDisabled={!canManage} label={t("Next number")} onChange={(value) => update(row.documentType, { nextNumber: Number(value.replace(/\D/g, "")) || 1 })} value={String(row.nextNumber)} />
       <Switch isDisabled={!canManage} isSelected={row.resetPolicy === "annual"} onChange={(value) => update(row.documentType, { resetPolicy: value ? "annual" : "never", prefix: value && !row.prefix.includes("{YYYY}") ? `${row.prefix}{YYYY}-` : row.prefix })}>{t("Start again each year")}</Switch>
     </fieldset>)}
-    {message ? <InlineNotice message={message.text} tone={message.tone} /> : null}
     {canManage ? <div className={styles.actions}><Button isDisabled={!changed.length} isLoading={saving} onPress={() => void save()} variant="primary">{t("Save numbering")}</Button></div> : null}
   </section>;
 }

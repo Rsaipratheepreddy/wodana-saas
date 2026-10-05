@@ -45,13 +45,6 @@
 .memberName strong { font-weight: var(--wd-weight-medium); }
 .memberName small, .memberNote { overflow-wrap: anywhere; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 
-.form { display: grid; }
-.formColumns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--wd-space-5) var(--wd-space-4); }
-.form :global(.wd-field) { gap: var(--wd-space-1-5); }
-.form :global(.wd-input-group) { min-block-size: var(--wd-control-md); border-radius: var(--wd-radius-sm); box-shadow: none; }
-.form :global(.wd-textarea-frame) { border-radius: var(--wd-radius-sm); box-shadow: none; }
-.form :global(.wd-textarea) { min-block-size: 4rem; padding: var(--wd-space-3) var(--wd-space-3); }
-
 @media (max-width: 64rem) {
   .layout { grid-template-columns: minmax(0, 1fr); gap: var(--wd-phi-3); }
   .rolesPane { display: none; }
@@ -63,5 +56,4 @@
   .moduleRow > :global(.wd-segmented) { grid-column: 1 / -1; grid-row: 2; inline-size: 100%; }
   .moduleRow > :global(.wd-segmented) button { flex: 1; justify-content: center; padding-inline: var(--wd-space-1); }
   .members > :global(.wd-field) { max-inline-size: none; }
-  .formColumns { grid-template-columns: 1fr; }
 }

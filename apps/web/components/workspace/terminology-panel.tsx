@@ -203,16 +203,15 @@ export function TerminologyPanel({
       {!canManage && data ? <p className={styles.permissionNote}>{t("Only workspace owners and administrators can change workspace language.")}</p> : null}
     </section>
 
-    <FormDialog isOpen={Boolean(editing)} title={editing ? t("Edit {name}", { name: editing.defaultVisibleName }) : t("Edit workspace language")} description={editing ? t("Choose how {name} appears across this workspace.", { name: itemLabel(editing) }) : undefined} onClose={() => { setEditing(null); }} isSubmitting={saving} submitLabel={t("Save language")} onSubmit={save} formClassName={styles.terminologyForm} secondaryAction={<>{editing ? <Button isDisabled={saving} onPress={() => void loadHistory(editing)} variant="quiet"><History aria-hidden="true" size={14} />{t("History")}</Button> : null}{editing?.overridden ? <Button isDisabled={saving} onPress={() => { setEditing(null); setRestoreTarget(editing); }} variant="quiet"><RotateCcw aria-hidden="true" size={14} />{t("Restore default")}</Button> : null}<span /></>}>
+    <FormDialog isOpen={Boolean(editing)} title={editing ? t("Edit {name}", { name: editing.defaultVisibleName }) : t("Edit workspace language")} onClose={() => { setEditing(null); }} isSubmitting={saving} submitLabel={t("Save language")} onSubmit={save} formClassName={styles.terminologyForm} secondaryAction={<>{editing ? <Button isDisabled={saving} onPress={() => void loadHistory(editing)} variant="quiet"><History aria-hidden="true" size={14} />{t("History")}</Button> : null}{editing?.overridden ? <Button isDisabled={saving} onPress={() => { setEditing(null); setRestoreTarget(editing); }} variant="quiet"><RotateCcw aria-hidden="true" size={14} />{t("Restore default")}</Button> : null}<span /></>}>
 
         {error ? <Callout title={t("Could not update workspace language")} tone="danger">{error}</Callout> : null}
-        <TextInput description={t("Used when referring to one record.")} isRequired label={t("Singular")} onChange={(visibleName) => { setDraft((current) => current ? { ...current, visibleName } : current); setError(""); }} value={draft?.visibleName ?? ""} />
-        <TextInput description={t("Used in navigation, lists, and counts.")} isRequired label={t("Plural")} onChange={(visibleNamePlural) => { setDraft((current) => current ? { ...current, visibleNamePlural } : current); setError(""); }} value={draft?.visibleNamePlural ?? ""} />
+        <TextInput isRequired label={t("Singular")} onChange={(visibleName) => { setDraft((current) => current ? { ...current, visibleName } : current); setError(""); }} value={draft?.visibleName ?? ""} />
+        <TextInput isRequired label={t("Plural")} onChange={(visibleNamePlural) => { setDraft((current) => current ? { ...current, visibleNamePlural } : current); setError(""); }} value={draft?.visibleNamePlural ?? ""} />
       
 </FormDialog>
 
     <InspectorSheet
-      description={historyTarget ? t("Review changes to {name}. Restoring a revision creates a new revision; it never erases history.", { name: itemLabel(historyTarget) }) : undefined}
       isOpen={Boolean(historyTarget)}
       onOpenChange={(open) => { if (!open && !rollingBack) setHistoryTarget(null); }}
       size="sm"

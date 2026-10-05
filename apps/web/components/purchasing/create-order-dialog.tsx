@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
-import { Button, DateField, FormDialog, FormRow, IconButton, InlineNotice, MoneyField, SelectField, Skeleton, TextInput, VisuallyHidden } from "@/design-system";
+import { Button, DateField, FormDialog, IconButton, InlineNotice, MoneyField, SelectField, Skeleton, TextInput, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { ReorderPoint } from "@/lib/inventory/types";
@@ -71,11 +71,9 @@ export function CreateOrderDialog({ api, needs, restock = [], onClose, onCreated
   return <FormDialog size="lg" title={t("New order")} onClose={onClose} error={error || undefined} errorTitle={t("Could not create the order.")} isSubmitDisabled={!valid}
     isDirty={lines.some((line) => line.description.trim() && !line.need && !line.stock) || Boolean(vendorId && !needs.length && !restock.length)} submitLabel={t("Create order")} onSubmit={save}>
     {!suppliers && !error ? <Skeleton lines={5} /> : <>
-      <FormRow>
-        <SelectField label={t("Supplier")} isRequired placeholder={t("Choose a supplier")} selectedKey={vendorId} onSelectionChange={(key) => { setVendorId(key === null ? null : String(key)); setCompanyId(null); }}
-          items={active.map((item) => ({ id: item.id, label: item.approval === "approved" ? item.name : `${item.name} · ${labels.approval[item.approval]}` }))} />
-        <DateField label={t("Needed by")} value={expected ? parseDate(expected) : null} onChange={(value) => setExpected(value ? value.toString() : null)} />
-      </FormRow>
+      <SelectField label={t("Supplier")} isRequired placeholder={t("Choose a supplier")} selectedKey={vendorId} onSelectionChange={(key) => { setVendorId(key === null ? null : String(key)); setCompanyId(null); }}
+        items={active.map((item) => ({ id: item.id, label: item.approval === "approved" ? item.name : `${item.name} · ${labels.approval[item.approval]}` }))} />
+      <DateField label={t("Needed by")} value={expected ? parseDate(expected) : null} onChange={(value) => setExpected(value ? value.toString() : null)} />
       {supplier && companies.length > 1 ? <SelectField label={t("Buying company")} isRequired placeholder={t("Which company buys")} selectedKey={companyId}
         onSelectionChange={(key) => setCompanyId(key === null ? null : String(key))} items={companies.map((entity) => ({ id: entity.id, label: entity.name }))} /> : null}
       {supplier && !companies.length ? <InlineNotice tone="error" message={t("None of your companies buys from {supplier}. Add one to the supplier first.", { supplier: supplier.name })} /> : null}

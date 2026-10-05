@@ -42,6 +42,7 @@ import { DataGridToolbar, type ToolbarFilter } from "./data-grid-toolbar";
 export type { ToolbarFilter } from "./data-grid-toolbar";
 import { ColumnHeaderMenu } from "../molecules/column-header-menu";
 import { useDesignSystem } from "../foundations/provider";
+import { useGridDefaultsSource, type GridDefault } from "../foundations/grid-defaults";
 
 export type CellEditorContext<T> = { columnId: string; row: T; value: unknown };
 export type DataGridColumnMeta<T> = {
@@ -112,6 +113,12 @@ export type DataGridProps<T> = {
   hasMoreRows?: boolean;
   totalRowCount?: number;
   initialColumnVisibility?: VisibilityState;
+  /**
+   * The list's key for its workspace default (e.g. "crm.enquiries", plan §0.7 R14): the columns the firm hides
+   * start hidden for everyone; a person can still show them, "Reset columns" returns to the default, and people
+   * who manage the module can save the current columns as the default for everyone.
+   */
+  gridKey?: string;
   savedViews?: SavedView[];
   /** Content at the start of the toolbar row (e.g. ListTabs). */
   toolbarLeading?: ReactNode;
@@ -248,6 +255,7 @@ export function DataGrid<T>({
   hasMoreRows,
   totalRowCount,
   initialColumnVisibility = {},
+  gridKey,
   onViewChange,
   virtualizeAfter = 150,
 }: DataGridProps<T>) {
@@ -270,6 +278,16 @@ export function DataGrid<T>({
   const [inspected, setInspected] = useState<T | null>(null);
   const persistenceKey = persistKey ? `${persistKey}-view` : undefined;
   const hydratedPersistenceKey = useRef<string | undefined>(undefined);
+  const gridDefaults = useGridDefaultsSource();
+  const [workspaceDefault, setWorkspaceDefault] = useState<GridDefault | null>(null);
+  // Once a person shows or hides a column themselves, a late-arriving workspace default doesn't undo it.
+  const personalized = useRef(false);
+  useEffect(() => {
+    if (!gridKey || !gridDefaults) return;
+    let live = true;
+    gridDefaults.load(gridKey).then((result) => { if (live) setWorkspaceDefault(result); }).catch(() => { /* the list works with its own columns */ });
+    return () => { live = false; };
+  }, [gridKey, gridDefaults]);
 
   const leadingColumns = useMemo<DataGridColumn<T>[]>(() => selectable || rowNumbers ? [
     { id: "__select", size: 44, enableHiding: false, enableSorting: false, enableResizing: false,
@@ -301,7 +319,7 @@ export function DataGrid<T>({
     getSubRows,
     globalFilterFn: "includesString",
     manualPagination,
-    onColumnVisibilityChange: setVisibility,
+    onColumnVisibilityChange: (updater) => { personalized.current = true; setVisibility(updater); },
     onColumnFiltersChange: setColumnFilters,
     onExpandedChange: setExpanded,
     onGlobalFilterChange: setGlobalFilter,
@@ -312,11 +330,32 @@ export function DataGrid<T>({
     state: { columnFilters, columnVisibility: visibility, expanded, globalFilter, pagination: page === undefined ? pagination : { ...pagination, pageIndex: Math.max(0, page - 1) }, rowSelection: selection, sorting },
   });
 
+  // The primary column is never hidden, by a person or by the workspace default.
+  const hideable = useMemo(() => new Set(table.getAllLeafColumns()
+    .filter((column) => !column.id.startsWith("__") && column.getCanHide() && !(column.columnDef.meta as DataGridColumnMeta<T> | undefined)?.primary)
+    .map((column) => column.id)), [table, columns]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hiddenByWorkspace = workspaceDefault?.hiddenColumns.filter((id) => hideable.has(id)).join("\n") ?? "";
+  const columnDefault = useMemo<VisibilityState>(() => ({
+    ...defaultVisibility, ...Object.fromEntries(hiddenByWorkspace.split("\n").filter(Boolean).map((id) => [id, false])),
+  }), [defaultVisibility, hiddenByWorkspace]);
+  useEffect(() => {
+    if (!personalized.current) setVisibility(columnDefault);
+  }, [columnDefault]);
+  const resetColumns = () => { personalized.current = false; setVisibility(columnDefault); };
+  const saveColumnDefault = gridKey && gridDefaults && workspaceDefault?.canManage ? async () => {
+    const hiddenColumns = table.getAllLeafColumns().filter((column) => hideable.has(column.id) && !column.getIsVisible()).map((column) => column.id);
+    const saved = await gridDefaults.save(gridKey, { hiddenColumns, version: workspaceDefault.version, requestId: crypto.randomUUID() });
+    // What everyone now starts with is what this person sees: keep their columns as they are.
+    personalized.current = true;
+    setWorkspaceDefault(saved);
+  } : undefined;
+
   useEffect(() => {
     if (!persistenceKey) return;
-    const saved = readUrlState(persistenceKey, { sorting: [] as SortingState, visibility: defaultVisibility });
-    setSorting(saved.sorting);
-    setVisibility(saved.visibility);
+    const saved = readUrlState<{ sorting: SortingState; visibility: VisibilityState } | null>(persistenceKey, null);
+    setSorting(saved?.sorting ?? []);
+    if (saved) personalized.current = true;
+    setVisibility(saved?.visibility ?? defaultVisibility);
   }, [persistenceKey, defaultVisibility]);
   useEffect(() => {
     if (!persistenceKey) return;
@@ -351,7 +390,7 @@ export function DataGrid<T>({
   };
 
   return <section className="wd-data-grid" aria-label={ariaLabel} data-grid-lines={gridLines || undefined} data-row-numbers={rowNumbers || undefined} data-wrap-text={wrapText || undefined}>
-    {showToolbar ? <DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={title} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} filters={filters} menuActions={menuActions} onMenuAction={onMenuAction} onExport={exportRows} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} /> : null}
+    {showToolbar ? <DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={title} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} filters={filters} menuActions={menuActions} onMenuAction={onMenuAction} onExport={exportRows} onResetColumns={resetColumns} onSaveColumnDefault={saveColumnDefault} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} /> : null}
     {selectedRows.length ? <div className="wd-bulk-bar"><strong>{t("{count} selected", { count: selectedRows.length })}</strong><div>{bulkActions?.(selectedRows)}</div><IconButton aria-label={t("Clear selection")} onPress={() => setSelection({})}><X size={14} /></IconButton></div> : null}
     {error ? <div className="wd-table-scroll wd-grid-state"><ErrorState title={error} /></div> : isLoading ? <div className="wd-table-scroll wd-grid-state"><div aria-label={t("Loading {name}", { name: ariaLabel })} className="wd-grid-loading" role="status"><TableSkeleton rows={8} widths={table.getVisibleLeafColumns().filter((column) => !column.id.startsWith("__")).map((column) => Math.max(1, column.getSize() / 100))} /></div></div> : !rows.length && !keepEmptyTable ? <div className="wd-table-scroll wd-grid-state">{emptyContent ?? <EmptyState description={emptyDescription} title={emptyTitle} />}</div> : <div className="wd-table-scroll" ref={scrollRef} tabIndex={0}>
       <table aria-label={ariaLabel} className="wd-table wd-record-table" data-virtual={virtual || undefined} style={{ inlineSize: table.getCenterTotalSize(), minInlineSize: "100%" }}>

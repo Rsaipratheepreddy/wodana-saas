@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import type { HrmsEmployee, LeaveBalance, LeaveRequest, LeaveType } from "@wodana/contracts";
 import {
-  Button, DataGrid, DateField, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, SelectField, Skeleton, TextAreaField,
+  Button, DataGrid, DateField, EmptyState, ErrorState, FormRow, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, SelectField, Skeleton, TextAreaField,
   type DataGridColumn,
  FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -114,7 +114,7 @@ function RequestLeaveDialog({ api, types, balances, onClose, onSaved }: {
       {!active.length ? <InlineNotice tone="info" message={t("No kinds of leave are set up yet.")} /> : null}
       <SelectField label={t("Type")} isRequired placeholder={t("Choose")} selectedKey={typeId} onSelectionChange={(key) => setTypeId(key ? String(key) : null)}
         items={active.map((item) => { const balance = balances.find((row) => row.leaveTypeId === item.id); return { id: item.id, label: item.name, description: balance ? balanceLine(balance, format, t) : undefined }; })} />
-      <div className={styles.pair}>
+      <FormRow>
         <DateField label={t("From")} isRequired value={from ? parseDate(from) : null} onChange={(value) => {
           const next = value ? value.toString() : null;
           setFrom(next);
@@ -122,7 +122,7 @@ function RequestLeaveDialog({ api, types, balances, onClose, onSaved }: {
         }} />
         <DateField label={t("To")} isRequired value={end ? parseDate(end) : null} onChange={(value) => setTo(value ? value.toString() : null)}
           isInvalid={backwards} errorMessage={backwards ? t("The last day can't be before the first.") : undefined} />
-      </div>
+      </FormRow>
       {halfDay ? <SegmentedControl label={t("Part of day")} value={part} onChange={(value) => setPart(value as LeaveRequest["dayPart"])}
         options={(["full", "first_half", "second_half"] as const).map((id) => ({ id, label: labels.part(id) }))} /> : null}
       <TextAreaField label={t("Reason")} isRequired value={reason} onChange={setReason} />

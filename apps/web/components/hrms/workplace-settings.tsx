@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { LocateFixed } from "lucide-react";
 import type { WorkContext, WorkLocation } from "@wodana/contracts";
 import {
-  Badge, Button, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NumericInput, SegmentedControl, SelectField, Switch, TextAreaField, TextInput, type DataGridColumn,
+  Badge, Button, DataGrid, EmptyState, ErrorState, FormSection, InlineNotice, InspectorSheet, NumericInput, SegmentedControl, SelectField, Switch, TextAreaField, TextInput, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
@@ -91,20 +91,22 @@ function WorkplaceSheet({ api, location, contexts, onClose, onSaved }: { api: Hr
       <Button variant="primary" isLoading={busy} isDisabled={!dirty || !valid} onPress={() => void save()}>{t("Save")}</Button></div>}>
     <div className={styles.sheet}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
-      {location ? <Facts items={[[t("Kind"), location.kind === "office" ? t("Office") : t("Site")], location.kind === "site" ? [t("Project"), context?.name ?? ""] : null]} /> : <>
-        <SegmentedControl label={t("Kind")} value={form.kind} onChange={(value) => set("kind", value as WorkLocation["kind"])} options={[{ id: "office", label: t("Office") }, { id: "site", label: t("Site") }]} />
-        {form.kind === "site" ? <SelectField label={t("Project")} isRequired placeholder={t("Choose")} selectedKey={form.contextId} onSelectionChange={(key) => set("contextId", key ? String(key) : null)}
-          items={contexts.map((item) => ({ id: item.id, label: item.name, description: item.customerName }))} /> : null}
-      </>}
-      <TextInput label={t("Name")} isRequired value={form.name} onChange={(value) => set("name", value)} maxLength={160} />
-      <TextAreaField label={t("Address")} value={form.address} onChange={(value) => set("address", value)} maxLength={500} />
-      <div className={styles.pair}>
+      <FormSection>
+        {location ? <Facts items={[[t("Kind"), location.kind === "office" ? t("Office") : t("Site")], location.kind === "site" ? [t("Project"), context?.name ?? ""] : null]} /> : <>
+          <SegmentedControl label={t("Kind")} value={form.kind} onChange={(value) => set("kind", value as WorkLocation["kind"])} options={[{ id: "office", label: t("Office") }, { id: "site", label: t("Site") }]} />
+          {form.kind === "site" ? <SelectField label={t("Project")} isRequired placeholder={t("Choose")} selectedKey={form.contextId} onSelectionChange={(key) => set("contextId", key ? String(key) : null)}
+            items={contexts.map((item) => ({ id: item.id, label: item.name, description: item.customerName }))} /> : null}
+        </>}
+        <TextInput label={t("Name")} isRequired value={form.name} onChange={(value) => set("name", value)} maxLength={160} />
+        <Switch isSelected={form.active} onChange={(value) => set("active", value)}>{t("Active")}</Switch>
+      </FormSection>
+      <FormSection title={t("Location")}>
+        <TextAreaField label={t("Address")} value={form.address} onChange={(value) => set("address", value)} maxLength={500} />
         <NumericInput label={t("Latitude")} isRequired minValue={-90} maxValue={90} formatOptions={{ maximumFractionDigits: 7 }} value={form.latitude} onChange={(value) => set("latitude", value)} />
         <NumericInput label={t("Longitude")} isRequired minValue={-180} maxValue={180} formatOptions={{ maximumFractionDigits: 7 }} value={form.longitude} onChange={(value) => set("longitude", value)} />
-      </div>
-      <div><Button size="compact" isLoading={locating} onPress={locate}><LocateFixed aria-hidden="true" size={14} />{t("Use my location")}</Button></div>
-      <NumericInput label={t("Radius")} isRequired suffix={format.unit("meter")} minValue={25} maxValue={2000} step={1} value={form.radiusM} onChange={(value) => set("radiusM", value)} />
-      <Switch isSelected={form.active} onChange={(value) => set("active", value)}>{t("Active")}</Switch>
+        <div><Button size="compact" isLoading={locating} onPress={locate}><LocateFixed aria-hidden="true" size={14} />{t("Use my location")}</Button></div>
+        <NumericInput label={t("Radius")} isRequired suffix={format.unit("meter")} minValue={25} maxValue={2000} step={1} value={form.radiusM} onChange={(value) => set("radiusM", value)} />
+      </FormSection>
     </div>
   </InspectorSheet>;
 }

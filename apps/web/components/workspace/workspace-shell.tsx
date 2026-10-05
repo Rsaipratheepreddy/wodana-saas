@@ -4,13 +4,14 @@ import { ArrowLeft, ChevronRight, Menu, Moon, Settings, Sun } from "lucide-react
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { WoddyProvider, useWoddy } from "@/components/crm/woddy-chat";
 import { TourProvider } from "@/components/tours/tour-provider";
 import { WoddyMenu } from "@/components/tours/woddy-menu";
 import { TourPersonaBadge } from "@/components/tours/tour-persona-badge";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
-import { RememberProvider } from "@/design-system";
+import { GridDefaultsProvider, RememberProvider } from "@/design-system";
+import { createGridDefaultsSource } from "@/lib/workspace/grid-settings";
 import {
   findWorkspaceModule,
   homeTabs,
@@ -59,7 +60,9 @@ export type WorkspaceShellProps = {
 
 export function WorkspaceShell({ banner, children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace, access }: WorkspaceShellProps) {
   const identity = workspaces[0] ? { name: workspaces[0].name, logoUrl: workspaces[0].imageUrl ?? null } : null;
-  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={staffBrandStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name} workspaceId={workspaces[0]?.id}><RememberProvider scope={workspaces[0]?.id && (user.id ?? user.email) ? `${user.id ?? user.email}:${workspaces[0].id}` : null}><WorkspaceShellContent banner={banner} canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces} access={access}>{children}</WorkspaceShellContent></RememberProvider></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
+  const workspaceId = workspaces[0]?.id;
+  const gridDefaults = useMemo(() => workspaceId ? createGridDefaultsSource(workspaceId) : null, [workspaceId]);
+  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={staffBrandStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name} workspaceId={workspaces[0]?.id}><RememberProvider scope={workspaces[0]?.id && (user.id ?? user.email) ? `${user.id ?? user.email}:${workspaces[0].id}` : null}><GridDefaultsProvider source={gridDefaults}><WorkspaceShellContent banner={banner} canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces} access={access}>{children}</WorkspaceShellContent></GridDefaultsProvider></RememberProvider></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
 }
 
 const FLOW_BUILDER = /^\/workspace\/enquiry-types\/[0-9a-f-]{36}\/?$/i;

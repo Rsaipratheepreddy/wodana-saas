@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DateField, EmptyState, ErrorState, GroupedTable, InlineNotice, ListTabs, NoResultsState, SearchInput, SelectField, Skeleton, TextAreaField, TextInput,
+import { Button, DateField, EmptyState, ErrorState, FormRow, FormSection, GroupedTable, InlineNotice, ListTabs, NoResultsState, SearchInput, SelectField, Skeleton, TextAreaField, TextInput,
   type GroupedTableColumn, type GroupedTableSection, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { FactoryApi } from "@/lib/factory/client";
@@ -104,27 +104,27 @@ function PlanDialog({ api, line, state, onClose, onPlanned }: { api: FactoryApi;
   const [error, setError] = useState("");
   const over = Number(quantity) > Number(line.left);
   const valid = Number(quantity) > 0 && !over && (!start || !end || end >= start);
-  return <FormDialog size="md" title={t("Plan work order")} onClose={onClose} error={error || undefined} isSubmitDisabled={!valid} submitLabel={t("Plan work order")} onSubmit={async () => { setError("");
+  return <FormDialog size="md" title={t("Plan work order")} description={`${line.projectReference} · ${line.title}`} onClose={onClose} error={error || undefined} isSubmitDisabled={!valid} submitLabel={t("Plan work order")} onSubmit={async () => { setError("");
         try { const saved = await api.plan({ id, lineId: line.lineId, quantity, workcenterId: workcenterId || null, plannedStart: start, plannedEnd: end, plannedHours: hours || null, notes: notes.trim() });
           onPlanned(saved.order.id); }
         catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
       }}>
-      <p className={styles.muted}>{`${line.projectReference} · ${line.title}`}</p>
       {line.projectStatus === "on_hold" ? <InlineNotice tone="info" message={t("{project} is on hold: it can be planned, not released.", { project: line.projectReference })} /> : null}
-      <div className={styles.pair}>
+      <FormSection title={t("Work")}>
         <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={line.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
           isInvalid={over} errorMessage={over ? t("Only {quantity} left.", { quantity: `${quantityText(line.left)} ${line.unit}`.trim() }) : undefined} />
         <SelectField label={t("Workcenter")} placeholder={t("Choose")} selectedKey={workcenterId} onSelectionChange={(key) => setWorkcenterId(key ? String(key) : "")}
           items={state.workcenters.map((center) => ({ id: center.id, label: center.name }))} />
-      </div>
-      <div className={styles.pair}>
-        <DateField label={t("Start")} value={start ? parseDate(start) : null} onChange={(value) => setStart(value ? value.toString() : null)} />
-        <DateField label={t("Finish")} value={end ? parseDate(end) : null} onChange={(value) => setEnd(value ? value.toString() : null)}
-          isInvalid={Boolean(start && end && end < start)} errorMessage={start && end && end < start ? t("The finish can't be before the start.") : undefined} />
-      </div>
-      <TextInput label={t("Hours it takes")} inputMode="decimal" suffix={t("h")} value={hours} onChange={(value) => setHours(numeric(value))}
-        description={workcenterId ? t("Left empty: the workcenter's hours a day over its working days.") : undefined} />
-      <TextAreaField label={t("Notes")} value={notes} onChange={setNotes} />
+        <TextAreaField label={t("Notes")} value={notes} onChange={setNotes} />
+      </FormSection>
+      <FormSection title={t("Schedule")}>
+        <FormRow>
+          <DateField label={t("Start")} value={start ? parseDate(start) : null} onChange={(value) => setStart(value ? value.toString() : null)} />
+          <DateField label={t("Finish")} value={end ? parseDate(end) : null} onChange={(value) => setEnd(value ? value.toString() : null)}
+            isInvalid={Boolean(start && end && end < start)} errorMessage={start && end && end < start ? t("The finish can't be before the start.") : undefined} />
+        </FormRow>
+        <TextInput label={t("Hours it takes")} inputMode="decimal" suffix={t("h")} value={hours} onChange={(value) => setHours(numeric(value))} />
+      </FormSection>
   </FormDialog>;
 }
 

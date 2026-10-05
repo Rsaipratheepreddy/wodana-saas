@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, Trash2 } from "lucide-react";
-import { Button, DateField, EmptyState, FormDialog, FormRow, IconButton, InlineNotice, MoneyField, SettingsRow, SettingsSection, Skeleton, TextInput } from "@/design-system";
+import { Button, DateField, EmptyState, FormDialog, IconButton, InlineNotice, MoneyField, SettingsRow, SettingsSection, Skeleton, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { LabourRates, TradeRate } from "@/lib/project-core/types";
@@ -84,9 +84,7 @@ function RateDialog({ trade, currency, today, onClose, onSave, onRemove }: {
           <Trash2 aria-hidden="true" size={14} /></IconButton>
       </li>)}</ul> : null}
       {trade ? null : <TextInput label={t("Trade")} isRequired maxLength={80} value={name} onChange={setName} />}
-      <FormRow>
-        <MoneyField label={t("Day rate")} isRequired currency={currency} value={rate} onChange={setRate} />
-        <DateField label={t("From")} isRequired value={from ? parseDate(from) : null} onChange={(value) => setFrom(value ? value.toString() : null)} />
-      </FormRow>
+      <MoneyField label={t("Day rate")} isRequired currency={currency} value={rate} onChange={setRate} />
+      <DateField label={t("From")} isRequired value={from ? parseDate(from) : null} onChange={(value) => setFrom(value ? value.toString() : null)} />
   </FormDialog>;
 }

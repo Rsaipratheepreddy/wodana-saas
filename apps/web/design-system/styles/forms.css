@@ -2,9 +2,10 @@
    grouped sections, a summary of blocked fields at the top, drafts, conflicts and quick picks. */
 
 /* ── Labels ─────────────────────────────────────────────────────────────────────────────────────────── */
+/* The label and its marker are laid out in a row with a gap, so the space holds in either direction. */
+.wd-field-label[data-optional] { display: inline-flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--wd-space-1-5); }
 .wd-field-label[data-optional]::after {
   content: attr(data-optional);
-  margin-inline-start: var(--wd-space-1-5);
   color: var(--wd-color-text-tertiary);
   font-size: var(--wd-text-xs);
   font-weight: var(--wd-weight-regular);

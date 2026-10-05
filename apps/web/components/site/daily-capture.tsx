@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { ImagePlus, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import {
   AutosaveState, Badge, Button, DateField, FileUploader, FormDialog, FormSection, IconButton, InlineNotice, MoreDetails, SegmentedControl, SelectField, Switch, TextAreaField, TextInput,
   useFormDraft,
@@ -299,7 +299,6 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
         {pending.map((photo) => photoTile(photo.id, photo.preview, photo.file.name, true))}
       </ul> : null}
       <FileUploader appearance="button" accept="image/*" label={photos.length || pending.length ? t("Add more photos") : t("Add photos")} onFiles={(files) => void addPhotos(files)} />
-      {!hasPhotos ? <span className={styles.hint}><ImagePlus aria-hidden="true" size={14} />{t("Photos are made smaller on this device before they're sent.")}</span> : null}
     </FormSection>
 
     <FormSection title={t("Crew")}>
@@ -311,12 +310,12 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
           onChange={(hours) => set({ crew: draft.crew.map((item, at) => (at === index ? { ...item, hours: numeric(hours) } : item)) })} />
         <IconButton aria-label={t("Remove")} size="compact" variant="quiet" onPress={() => set({ crew: draft.crew.filter((_, at) => at !== index) })}><X aria-hidden="true" size={13} /></IconButton>
       </div>)}
-      <Button size="compact" variant="quiet" onPress={() => set({ crew: [...draft.crew, { trade: "", people: "", hours: "" }] })}><Plus aria-hidden="true" size={14} />{t("Add a trade")}</Button>
+      <Button className={styles.addLine} size="compact" variant="quiet" onPress={() => set({ crew: [...draft.crew, { trade: "", people: "", hours: "" }] })}><Plus aria-hidden="true" size={14} />{t("Add a trade")}</Button>
     </FormSection>
 
     <FormSection title={t("Issues")}>
       {draft.issues.length ? <ul className={styles.issues}>{draft.issues.map(issueRow)}</ul> : null}
-      <Button size="compact" variant="quiet" onPress={() => set({ issues: [...draft.issues, { id: crypto.randomUUID(), severity: "minor", description: "", internal: true }] })}>
+      <Button className={styles.addLine} size="compact" variant="quiet" onPress={() => set({ issues: [...draft.issues, { id: crypto.randomUUID(), severity: "minor", description: "", internal: true }] })}>
         <Plus aria-hidden="true" size={14} />{t("Add an issue")}</Button>
     </FormSection>
 
@@ -329,7 +328,7 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
             onKeyDown={(event) => { if (event.key !== "Enter") return; event.preventDefault(); if (item.title.trim()) addNext(); }} />}
         <IconButton aria-label={t("Remove")} size="compact" variant="quiet" onPress={() => set({ next: draft.next.filter((_, at) => at !== index) })}><X aria-hidden="true" size={13} /></IconButton>
       </li>)}</ul> : null}
-      <Button size="compact" variant="quiet" onPress={addNext}><Plus aria-hidden="true" size={14} />{t("Add")}</Button>
+      <Button className={styles.addLine} size="compact" variant="quiet" onPress={addNext}><Plus aria-hidden="true" size={14} />{t("Add")}</Button>
     </FormSection>
 
     <Switch isSelected={draft.noWork} onChange={(noWork) => set({ noWork })}>{t("No work today")}</Switch>
@@ -352,7 +351,7 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
             <IconButton aria-label={t("Remove")} size="compact" variant="quiet" onPress={() => set({ materials: draft.materials.filter((_, at) => at !== index) })}><X aria-hidden="true" size={13} /></IconButton>
           </div>;
         })}
-        <Button size="compact" variant="quiet" onPress={() => set({ materials: [...draft.materials, { direction: "received", description: "", quantity: "", unit: "", delivery: "" }] })}>
+        <Button className={styles.addLine} size="compact" variant="quiet" onPress={() => set({ materials: [...draft.materials, { direction: "received", description: "", quantity: "", unit: "", delivery: "" }] })}>
           <Plus aria-hidden="true" size={14} />{t("Add a material")}</Button>
       </FormSection>
       <FormSection title={t("Installed")}>
@@ -366,26 +365,24 @@ export function DailyCapture({ workspaceId, projectId, api, state, report, onSta
           {Number(line.installed) < 0 ? <TextInput label={t("Why it's taken back")} isRequired value={line.note}
             onChange={(note) => set({ lines: draft.lines.map((item, at) => (at === index ? { ...item, note } : item)) })} /> : null}
         </div>)}
-        {state.lines.length ? <Button size="compact" variant="quiet" onPress={() => set({ lines: [...draft.lines, { boqLineId: "", installed: "", note: "" }] })}>
+        {state.lines.length ? <Button className={styles.addLine} size="compact" variant="quiet" onPress={() => set({ lines: [...draft.lines, { boqLineId: "", installed: "", note: "" }] })}>
           <Plus aria-hidden="true" size={14} />{t("Add an item")}</Button> : null}
       </FormSection>
-      <TextInput label={t("Weather")} value={draft.weather} onChange={(weather) => set({ weather })} />
-      <div className={styles.pair}>
+      <FormSection title={t("Conditions")}>
+        <TextInput label={t("Weather")} value={draft.weather} onChange={(weather) => set({ weather })} />
         <SelectField label={t("Safety")} selectedKey={draft.safety} onSelectionChange={(key) => set({ safety: (key ?? "none") as Safety })}
           items={[{ id: "none", label: t("No safety issue") }, { id: "observation", label: t("Safety observation") }, { id: "incident", label: t("Incident") }]} />
+        {draft.safety !== "none" ? <TextAreaField label={t("What happened")} isRequired value={draft.safetyNote} onChange={(safetyNote) => set({ safetyNote })} /> : null}
         <SelectField label={t("Outlook")} selectedKey={draft.forecast} onSelectionChange={(key) => set({ forecast: (key ?? "none") as Outlook })}
           items={[{ id: "none", label: t("On track") }, { id: "watch", label: t("At risk") }, { id: "blocked", label: t("Blocked") }]} />
-      </div>
-      {draft.safety !== "none" ? <TextAreaField label={t("What happened")} isRequired value={draft.safetyNote} onChange={(safetyNote) => set({ safetyNote })} /> : null}
-      {draft.forecast !== "none" ? <>
-        <TextAreaField label={t("What's at risk and how it's recovered")} isRequired value={draft.impact} onChange={(impact) => set({ impact })} />
-        <div className={styles.pair}>
+        {draft.forecast !== "none" ? <>
+          <TextAreaField label={t("What's at risk and how it's recovered")} isRequired value={draft.impact} onChange={(impact) => set({ impact })} />
           <SelectField label={t("Who recovers it")} isRequired placeholder={t("Choose")} selectedKey={draft.recoveryOwnerId} onSelectionChange={(key) => set({ recoveryOwnerId: key ? String(key) : "" })}
             items={state.members.map((member) => ({ id: member.membershipId, label: member.name }))} />
           <DateField label={t("By")} isRequired value={draft.recoveryOn ? parseDate(draft.recoveryOn) : null} onChange={(value) => set({ recoveryOn: value ? value.toString() : null })} />
-        </div>
-      </> : null}
-      <TextAreaField label={t("Notes for the team")} value={draft.notes} onChange={(notes) => set({ notes })} />
+        </> : null}
+        <TextAreaField label={t("Notes for the team")} value={draft.notes} onChange={(notes) => set({ notes })} />
+      </FormSection>
     </MoreDetails>
   </FormDialog>;
 }

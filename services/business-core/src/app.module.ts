@@ -50,6 +50,7 @@ import { InventoryModule } from "./inventory/inventory.module";
 import { ApprovalsModule } from "./approvals/approvals.controller";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { BookingModule } from "./booking/booking.module";
+import { GridSettingsModule } from "./grid-settings/grid-settings.module";
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { BookingModule } from "./booking/booking.module";
     CrmPartiesModule,
     CrmIntakeModule,
     BookingModule,
+    GridSettingsModule,
     CrmLeadsModule,
     CrmActivitiesModule,
     CrmConversationsModule,

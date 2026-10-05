@@ -143,6 +143,7 @@ export function Orders({ api, openId, intent = null, onOpen, onReceipt, refreshK
   return <div className={styles.stack}>
     {notice ? <InlineNotice tone={notice.tone} message={notice.text} /> : null}
     <DataGrid<OrderRow>
+      gridKey="purchasing.orders"
       ariaLabel={t("Orders")}
       columns={columns}
       data={rows}

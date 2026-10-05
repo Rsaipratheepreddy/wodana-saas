@@ -4,7 +4,7 @@ import { Copy } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  Badge, Breadcrumbs, Button, Callout, ErrorState, Fieldset, Form, InlineNotice, NumericInput, PageHeader, PageSkeleton,
+  Badge, Breadcrumbs, Button, Callout, ErrorState, Form, FormSection, InlineNotice, NumericInput, PageHeader, PageSkeleton,
   SelectField, TextInput, ValidationSummary,
 } from "@/design-system";
 import { useLanguage, useT } from "@/lib/i18n/i18n-provider";
@@ -166,46 +166,34 @@ export function CreateTenantPage() {
     {crumbs}
     <PageHeader title={t("Create tenant")} />
     {stage === "details" ? <Form className={styles.form} onSubmit={review}>
-      <Fieldset legend={t("Account")}>
-        <div className={styles.pair}>
-          <TextInput autoFocus isRequired label={t("Account name")} value={details.accountName} onChange={nameChanged} />
-          <TextInput isRequired label={t("Organization name")} value={details.organizationName} onChange={(value) => setDetails((current) => ({
-            ...current, organizationName: value, slug: current.slug === tenantSlug(current.organizationName) ? tenantSlug(value) : current.slug }))} />
-        </div>
-        <div className={styles.pair}>
-          <TextInput isRequired label={t("Contract contact")} value={details.contactName} onChange={(value) => update("contactName", value)} />
-          <TextInput isRequired inputType="email" label={t("Contact email")} value={details.contactEmail} onChange={(value) => update("contactEmail", value)} />
-        </div>
-      </Fieldset>
-      <Fieldset legend={t("Organization")}>
-        <div className={styles.pair}>
-          <TextInput isRequired label={t("Login address")} value={details.slug} onChange={(value) => update("slug", tenantSlug(value))}
-            isInvalid={Boolean(slugState && !slugState.available)}
-            errorMessage={slugState && !slugState.available ? t("Taken") : undefined}
-            description={slugState?.available ? t("{address} is free", { address: slugState.address }) : undefined} />
-          <TextInput label={t("Registered name")} value={details.registeredName} onChange={(value) => update("registeredName", value)} />
-        </div>
-        {slugState && !slugState.available && slugState.suggestion
-          ? <div><Button size="compact" onPress={() => update("slug", slugState.suggestion!)}>{t("Use {slug}", { slug: slugState.suggestion })}</Button></div> : null}
-        <div className={styles.pair}>
-          <SelectField isRequired accent="neutral" label={t("Country")} items={options("region")} selectedKey={details.regionCode || null}
-            onSelectionChange={(key) => { if (key) update("regionCode", String(key)); }} />
-          <SelectField isRequired accent="neutral" label={t("Firm setup")} items={options("firm_kit")} selectedKey={details.firmKitCode || null}
-            onSelectionChange={(key) => { if (key) update("firmKitCode", String(key)); }} />
-        </div>
-        <div className={styles.pair}>
-          <SelectField isRequired accent="neutral" label={t("Plan")} items={options("plan")} selectedKey={details.planCode || null}
-            onSelectionChange={(key) => { if (key) setDetails((current) => ({ ...current, planCode: String(key), seatLimit: null })); }} />
-          <NumericInput isRequired label={t("Seats")} minValue={1} value={seats ?? undefined} onChange={(value) => update("seatLimit", Number.isFinite(value) ? value : null)} />
-        </div>
-      </Fieldset>
-      <Fieldset legend={t("Owner")}>
-        <div className={styles.pair}>
-          <TextInput isRequired label={t("Owner name")} value={details.ownerName} onChange={(value) => update("ownerName", value)} />
-          <TextInput isRequired inputType="email" label={t("Owner email")} value={details.ownerEmail} onChange={(value) => update("ownerEmail", value)} />
-        </div>
-      </Fieldset>
       <ValidationSummary errors={errors} />
+      <FormSection title={t("Account")}>
+        <TextInput autoFocus isRequired label={t("Account name")} value={details.accountName} onChange={nameChanged} />
+        <TextInput isRequired label={t("Organization name")} value={details.organizationName} onChange={(value) => setDetails((current) => ({
+          ...current, organizationName: value, slug: current.slug === tenantSlug(current.organizationName) ? tenantSlug(value) : current.slug }))} />
+        <TextInput isRequired label={t("Contract contact")} value={details.contactName} onChange={(value) => update("contactName", value)} />
+        <TextInput isRequired inputType="email" label={t("Contact email")} value={details.contactEmail} onChange={(value) => update("contactEmail", value)} />
+      </FormSection>
+      <FormSection title={t("Organization")}>
+        <TextInput isRequired label={t("Login address")} value={details.slug} onChange={(value) => update("slug", tenantSlug(value))}
+          isInvalid={Boolean(slugState && !slugState.available)}
+          errorMessage={slugState && !slugState.available ? t("Taken") : undefined}
+          description={slugState?.available ? t("{address} is free", { address: slugState.address }) : undefined} />
+        {slugState && !slugState.available && slugState.suggestion
+        ? <div><Button size="compact" onPress={() => update("slug", slugState.suggestion!)}>{t("Use {slug}", { slug: slugState.suggestion })}</Button></div> : null}
+        <TextInput label={t("Registered name")} value={details.registeredName} onChange={(value) => update("registeredName", value)} />
+        <SelectField isRequired accent="neutral" label={t("Country")} items={options("region")} selectedKey={details.regionCode || null}
+          onSelectionChange={(key) => { if (key) update("regionCode", String(key)); }} />
+        <SelectField isRequired accent="neutral" label={t("Firm setup")} items={options("firm_kit")} selectedKey={details.firmKitCode || null}
+          onSelectionChange={(key) => { if (key) update("firmKitCode", String(key)); }} />
+        <SelectField isRequired accent="neutral" label={t("Plan")} items={options("plan")} selectedKey={details.planCode || null}
+          onSelectionChange={(key) => { if (key) setDetails((current) => ({ ...current, planCode: String(key), seatLimit: null })); }} />
+        <NumericInput isRequired label={t("Seats")} minValue={1} value={seats ?? undefined} onChange={(value) => update("seatLimit", Number.isFinite(value) ? value : null)} />
+      </FormSection>
+      <FormSection title={t("Owner")}>
+        <TextInput isRequired label={t("Owner name")} value={details.ownerName} onChange={(value) => update("ownerName", value)} />
+        <TextInput isRequired inputType="email" label={t("Owner email")} value={details.ownerEmail} onChange={(value) => update("ownerEmail", value)} />
+      </FormSection>
       <div className={styles.actions}><Button variant="primary" type="submit">{t("Review")}</Button></div>
     </Form> : null}
 

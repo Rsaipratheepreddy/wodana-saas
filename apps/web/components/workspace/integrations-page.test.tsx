@@ -136,7 +136,7 @@ describe("IntegrationsPage", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Connect Google Workspace" });
     expect(within(dialog).getByRole("button", { name: "Save and connect" })).toBeInTheDocument();
-    expect(within(dialog).getByText(/credentials are never stored in this form/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole("textbox", { name: /Connection name/ })).toBeInTheDocument();
   });
 
   it("starts authorization from a saved draft", async () => {

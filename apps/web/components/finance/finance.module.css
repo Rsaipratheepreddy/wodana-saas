@@ -6,9 +6,6 @@
 .nameCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .lateText { color: var(--wd-color-danger); }
-.dialogBody { display: grid; gap: var(--wd-space-4); }
-.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
-.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
 
 .status { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-sm); white-space: nowrap; }
 .status::before { content: ""; inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); background: var(--wd-color-text-disabled); }
@@ -49,7 +46,6 @@
 .linkButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
 
 @media (max-width: 640px) {
-  .pair, .trio { grid-template-columns: minmax(0, 1fr); }
   .facts > div { grid-template-columns: minmax(0, 1fr); }
 }
 .rowActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }

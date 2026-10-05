@@ -171,8 +171,8 @@ export function OrganizationAccountPanel({
         {error ? <Callout title={t("Could not send request")} tone="danger">{error}</Callout> : null}
         <TextInput isRequired label={t("Company name")} onChange={updateName} value={draft.name} />
         <TextInput isRequired label={t("Registered company name")} onChange={(registeredName) => { setDraft((current) => ({ ...current, registeredName })); setError(""); }} value={draft.registeredName} />
-        <TextInput description={t("Used on official documents. You can set it before approval.")} isRequired label={t("Entity code")} onChange={(entityCode) => { setDraft((current) => ({ ...current, entityCode: entityCode.toUpperCase() })); setError(""); }} value={draft.entityCode} />
-        <TextInput description={t("Regional settings will start from {name} and can be changed after approval.", { name: profile.workspace.name })} label={t("Reason")} onChange={(reason) => { setDraft((current) => ({ ...current, reason })); setError(""); }} value={draft.reason} />
+        <TextInput isRequired label={t("Entity code")} onChange={(entityCode) => { setDraft((current) => ({ ...current, entityCode: entityCode.toUpperCase() })); setError(""); }} value={draft.entityCode} />
+        <TextInput label={t("Reason")} onChange={(reason) => { setDraft((current) => ({ ...current, reason })); setError(""); }} value={draft.reason} />
     </FormDialog>
 
     <ConfirmationDialog body={cancelTarget ? t("Cancel the request for {name}? It will not create an organization.", { name: cancelTarget.name }) : null} confirmLabel={cancelling ? t("Cancelling…") : t("Cancel request")} isOpen={Boolean(cancelTarget)} onConfirm={() => void cancelRequest()} onOpenChange={(open) => { if (!open && !cancelling) setCancelTarget(null); }} title={t("Cancel organization request?")} />

@@ -6,7 +6,6 @@
 .muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .spacer { flex: 1; }
 .actions { display: flex; justify-content: flex-end; }
-.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
 .dialogBody { display: grid; gap: var(--wd-space-4); }
 .dialogText { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
@@ -58,7 +57,7 @@
 .receiveHead { padding-block: var(--wd-space-1-5); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .receiveLine { padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
 .receiveHead > :nth-child(n+2), .receiveLine > [role="cell"]:nth-child(n+2) { text-align: end; }
-.receiveReason { grid-column: 1 / -1; }
+.receiveReason { grid-column: 1 / -1; display: grid; gap: var(--wd-space-3); }
 .late { color: var(--wd-color-danger); }
 .nameCell small.lateText, .lateText { color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
 .nameCell small.arrived { color: var(--wd-color-text-secondary); }
@@ -86,7 +85,7 @@
 
 @media (max-width: 640px) {
   .page { padding: var(--wd-space-4); }
-  .pair, .sheets > li { grid-template-columns: minmax(0, 1fr); }
+  .sheets > li { grid-template-columns: minmax(0, 1fr); }
   .importList > li { grid-template-columns: minmax(0, 1fr) auto; }
   .draftLines > li, .draftLines > li:has(> :nth-child(5)) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .receiveHead, .receiveLine, .receiveLines[data-columns] :is(.receiveHead, .receiveLine) { grid-template-columns: repeat(3, minmax(0, 1fr)); }

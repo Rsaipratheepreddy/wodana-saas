@@ -995,6 +995,13 @@
       "when": 1801740000800,
       "tag": "0247_booking_pages",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1801740000900,
+      "tag": "0248_workspace_grid_settings",
+      "breakpoints": true
     }
   ]
 }

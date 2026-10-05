@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, DateField, EmptyState, ErrorState, FormDialog, FormRow, InlineNotice, RecordTable, SelectField, TextInput, TextAreaField, useDesignSystem } from "@/design-system";
+import { Badge, Button, DateField, EmptyState, ErrorState, FormDialog, FormSection, InlineNotice, RecordTable, SelectField, TextInput, TextAreaField, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest, scopeLabels } from "@/lib/pre-project/content";
 import type { DefinitionPageData, DefinitionState } from "@/lib/pre-project/definition";
@@ -123,16 +123,16 @@ function ScopeSignOff({ initial }: { initial: Extract<DefinitionPageData, { work
     </section> : null}
 
     {decisionOpen && <FormDialog title={t("Record the client's answer")} isDirty={Boolean(decisionBy || evidence || note)} onClose={() => setDecisionOpen(false)} submitLabel={t("Save")} onSubmit={recordDecision}>
-      <FormRow>
+      <FormSection>
         <SelectField label={t("Answer")} isRequired selectedKey={decision} onSelectionChange={key => key && setDecision(key as typeof decision)} items={[{id:"confirmed",label:t("Signed off")},{id:"changes_requested",label:t("Wants changes")}]} />
         <TextInput label={t("Client name")} isRequired maxLength={240} value={decisionBy} onChange={setDecisionBy} />
-      </FormRow>
-      <FormRow>
+        <TextAreaField label={t("Remarks")} isRequired={decision === "changes_requested"} maxLength={5000} value={note} onChange={setNote} />
+      </FormSection>
+      <FormSection title={t("Proof")}>
         <SelectField label={t("Received by")} isRequired selectedKey={channel} onSelectionChange={key => key && setChannel(String(key))} items={[{id:"meeting",label:t("Meeting")},{id:"email",label:t("Email")},{id:"phone",label:t("Phone")},{id:"whatsapp",label:t("WhatsApp")},{id:"signed_document",label:t("Signed document")},{id:"other",label:t("Other")}]} />
         <DateField label={t("When")} isRequired granularity="second" value={decidedAt ? parseDateTime(decidedAt) : null} onChange={value => setDecidedAt(value?.toString() ?? "")} />
-      </FormRow>
-      <TextInput label={t("Evidence")} isRequired maxLength={3000} placeholder={t("Email, meeting note or signed file")} value={evidence} onChange={setEvidence} />
-      <TextAreaField label={t("Remarks")} isRequired={decision === "changes_requested"} maxLength={5000} value={note} onChange={setNote} />
+        <TextInput label={t("Evidence")} isRequired maxLength={3000} placeholder={t("Email, meeting note or signed file")} value={evidence} onChange={setEvidence} />
+      </FormSection>
     </FormDialog>}
   </div>;
 }

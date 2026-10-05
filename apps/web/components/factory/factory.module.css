@@ -8,7 +8,6 @@
 .nameCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .number { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dialogBody { display: grid; gap: var(--wd-space-4); }
-.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
 .lateText { color: var(--wd-color-danger); }
 
 
@@ -29,7 +28,6 @@
 .actions { display: flex; justify-content: flex-end; }
 
 @media (max-width: 640px) {
-  .pair { grid-template-columns: minmax(0, 1fr); }
   .facts > div { grid-template-columns: minmax(0, 1fr); }
 }
 .linkButton { padding: 0; border: 0; background: transparent; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); text-align: start; cursor: pointer; }

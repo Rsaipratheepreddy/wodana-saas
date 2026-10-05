@@ -3,7 +3,7 @@
 .muted { color: var(--wd-color-text-tertiary); }
 .builderPage { min-inline-size: 0; }
 .muted[data-late] { color: var(--wd-color-danger); }
-.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
+.quantityUnit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
 .dialogBody { display: grid; gap: var(--wd-space-4); }
 
 /* Closing a project */
@@ -219,7 +219,6 @@ li[data-passed] > .autoMark { border-style: solid; border-color: var(--wd-color-
   .headFacts { display: flex; inline-size: 100%; }
   /* On a phone the details are one tap away (ⓘ): the header keeps the stage and the handover. */
   .headFact[data-extra] { display: none; }
-  .pair { grid-template-columns: minmax(0, 1fr); }
   .composer { grid-template-columns: minmax(0, 1fr); }
   .stageMeta { order: 1; flex-basis: 100%; margin-inline-start: calc(var(--wd-space-4) + var(--wd-space-3)); text-align: start; font-size: var(--wd-text-xs); }
   .stageHead { flex-wrap: wrap; padding-block: var(--wd-space-1); }

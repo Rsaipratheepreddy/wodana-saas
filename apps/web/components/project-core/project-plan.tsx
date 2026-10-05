@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
 import {
-  Avatar, Button, DateField, FormDialog, FormRow, EmptyState, ErrorState, GroupedTable, IconMenuButton, InlineNotice, Kanban, MenuButton, PillTabs, SearchInput, SegmentedControl,
+  Avatar, Button, DateField, FormDialog, EmptyState, ErrorState, GroupedTable, IconMenuButton, InlineNotice, Kanban, MenuButton, PillTabs, SearchInput, SegmentedControl,
   SelectField, Skeleton, Switch, TextInput, type GroupedTableSection,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -315,11 +315,9 @@ function NewWorkDialog({ board, onClose, onCreate }: { board: WorkBoard; onClose
     <TextInput label={t("Title")} isRequired maxLength={240} value={title} onChange={setTitle} />
     <SegmentedControl label={t("Type")} value={type} onChange={(value) => setType(value as WorkType)}
       options={(["task", "client_request", "snag"] as const).map((option) => ({ id: option, label: labels.type[option] }))} />
-    <FormRow>
-      <SelectField label={t("Assignee")} placeholder={t("No one")} selectedKey={assigneeId} onSelectionChange={(key) => setAssigneeId(key === null ? null : String(key))}
-        items={board.people.map((person) => ({ id: person.membershipId, label: person.membershipId === board.me ? t("{name} (me)", { name: person.name }) : person.name }))} />
-      <DateField label={t("Due")} value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
-    </FormRow>
+    <SelectField label={t("Assignee")} placeholder={t("No one")} selectedKey={assigneeId} onSelectionChange={(key) => setAssigneeId(key === null ? null : String(key))}
+      items={board.people.map((person) => ({ id: person.membershipId, label: person.membershipId === board.me ? t("{name} (me)", { name: person.name }) : person.name }))} />
+    <DateField label={t("Due")} value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
     {board.packages.length ? <SelectField label={t("Package")} placeholder={t("None")} selectedKey={packageId} onSelectionChange={(key) => setPackageId(key === null ? null : String(key))}
       items={board.packages.map((item) => ({ id: item.id, label: item.name }))} /> : null}
   </FormDialog>;
@@ -349,11 +347,9 @@ function PlanPackageDialog({ board, load, onClose, onSave }: {
   const shown = plan && plan.package.id === packageId ? plan : null;
   return <FormDialog size="lg" title={t("Plan a package")} onClose={onClose} isSubmitDisabled={!shown || !shown.tasks.length} submitLabel={t("Save")} closeOnSuccess
     onSubmit={async () => { if (shown) await onSave(shown.package.id, shown.startDate); }}>
-      <FormRow>
-        <SelectField label={t("Package")} isRequired selectedKey={packageId} onSelectionChange={(key) => setPackageId(key === null ? null : String(key))}
-          items={options.map((item) => ({ id: item.id, label: `${item.name} · ${supplies[item.supply]}` }))} />
-        <DateField label={t("Start")} value={shown ? parseDate(shown.startDate) : startDate ? parseDate(startDate) : null} onChange={(value) => setStartDate(value ? value.toString() : null)} />
-      </FormRow>
+      <SelectField label={t("Package")} isRequired selectedKey={packageId} onSelectionChange={(key) => setPackageId(key === null ? null : String(key))}
+        items={options.map((item) => ({ id: item.id, label: `${item.name} · ${supplies[item.supply]}` }))} />
+      <DateField label={t("Start")} value={shown ? parseDate(shown.startDate) : startDate ? parseDate(startDate) : null} onChange={(value) => setStartDate(value ? value.toString() : null)} />
       {error ? <InlineNotice tone="error" message={error} />
         : !shown ? <Skeleton lines={4} shape="rows" />
         : !shown.tasks.length ? <EmptyState illustration={null} title={t("No standard tasks for this kind of package")} description={t("Add them in Settings → Projects → Standard tasks.")} />

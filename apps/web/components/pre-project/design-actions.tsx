@@ -129,10 +129,8 @@ export function DesignActions({ data, design, options, onUpdate, onRoomAdded }: 
 
     {mode === "client_approved" || mode === "client_changes" ? <div className={styles.actionForm}>
       <TextInput autoFocus isRequired label={t("Client")} maxLength={240} value={clientName} onChange={setClientName} />
-      <div className={styles.actionPair}>
-        <SelectField label={t("How")} items={SOURCES.map((item) => ({ ...item, label: t(item.label) }))} selectedKey={source} onSelectionChange={(key) => key && setSource(String(key))} />
-        <DateField label={t("When")} value={decidedOn} maxValue={today(timeZone)} onChange={(value) => value && setDecidedOn(value as CalendarDate)} />
-      </div>
+      <SelectField label={t("How")} items={SOURCES.map((item) => ({ ...item, label: t(item.label) }))} selectedKey={source} onSelectionChange={(key) => key && setSource(String(key))} />
+      <DateField label={t("When")} value={decidedOn} maxValue={today(timeZone)} onChange={(value) => value && setDecidedOn(value as CalendarDate)} />
       <TextAreaField isRequired label={mode === "client_approved" ? t("What the client approved") : t("What the client wants changed")} value={note} onChange={setNote} />
       <div className={styles.actionRow}><Button size="compact" onPress={() => setMode(null)} isDisabled={busy}>{t("Cancel")}</Button><Button size="compact" variant="primary" isLoading={busy} isDisabled={!clientName.trim() || !note.trim()}
         onPress={() => void send(mode === "client_approved" ? "approved" : "changes_requested", { decisionBy: clientName.trim(), decisionSource: source, decisionAt: decisionAt() })}>{t("Record decision")}</Button></div>

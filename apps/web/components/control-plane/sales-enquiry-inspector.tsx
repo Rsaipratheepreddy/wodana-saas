@@ -204,8 +204,8 @@ function LostDialog({ busy, error, onClose, onConfirm }: { busy: boolean; error:
     footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button>
       <Button variant="primary" isLoading={busy} onPress={() => void onConfirm(reason.trim())}>{labels.move.lost}</Button></div>}>
     <div className={styles.stack}>
-      <TextAreaField label={t("Reason")} description={t("Optional")} value={reason} onChange={setReason} />
       {error ? <InlineNotice tone="error" message={error} /> : null}
+      <TextAreaField label={t("Reason")} description={t("Optional")} value={reason} onChange={setReason} />
     </div>
   </ControlledModalDialog>;
 }

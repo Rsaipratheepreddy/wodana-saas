@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Send, Sparkles } from "lucide-react";
 import {
-  Button, EmptyState, FormDialog, FormRow, ErrorState, GroupedTable, InspectorSheet, MultiSelectField, SegmentedControl, SelectField, Skeleton, Switch, TextAreaField, TextInput,
+  Button, EmptyState, FormDialog, FormSection, ErrorState, GroupedTable, InspectorSheet, MultiSelectField, SegmentedControl, SelectField, Skeleton, Switch, TextAreaField, TextInput,
   type GroupedTableColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -117,20 +117,24 @@ function MaterialSheet({ item, lines, run, onClose }: { item: MaterialItem | nul
       <Button variant="primary" isLoading={busy} isDisabled={!form.name.trim()} onPress={() => void save()}>{t("Save")}</Button>
     </div>}>
     <div className={styles.sheetBody}>
-      <TextInput label={t("Name")} isRequired value={form.name} onChange={set("name")} />
-      <div className={styles.pair}>
+      <FormSection>
+        <TextInput label={t("Name")} isRequired value={form.name} onChange={set("name")} />
+        <TextInput label={t("Finish or specification")} value={form.specification} onChange={set("specification")} />
         <TextInput label={t("Code")} value={form.code} onChange={set("code")} />
+      </FormSection>
+      <FormSection title={t("Supply")}>
         <TextInput label={t("Supplier")} value={form.supplier} onChange={set("supplier")} />
-      </div>
-      <TextInput label={t("Finish or specification")} value={form.specification} onChange={set("specification")} />
-      <div className={styles.pair}>
-        <TextInput label={t("Quantity")} inputMode="decimal" value={form.quantity} onChange={(value) => set("quantity")(value.replace(/[^\d.]/g, ""))} />
-        <TextInput label={t("Unit")} value={form.unit} onChange={set("unit")} />
-      </div>
-      <MultiSelectField label={t("For")} selectedKeys={used} onSelectionChange={(keys) => setUsed(new Set([...keys].map(String)))}
-        items={lines.filter((line) => line.status === "active").map((line) => ({ id: line.id, label: line.areaName ? `${line.title} · ${line.areaName}` : line.title }))} />
-      <Switch isSelected={clientChoice} onChange={setClientChoice}>{t("The client chooses it (needs their sign-off)")}</Switch>
-      <TextAreaField label={t("Note")} value={form.note} onChange={set("note")} />
+        <div className={styles.quantityUnit}>
+          <TextInput label={t("Quantity")} inputMode="decimal" value={form.quantity} onChange={(value) => set("quantity")(value.replace(/[^\d.]/g, ""))} />
+          <TextInput label={t("Unit")} value={form.unit} onChange={set("unit")} />
+        </div>
+      </FormSection>
+      <FormSection title={t("Usage")}>
+        <MultiSelectField label={t("For")} selectedKeys={used} onSelectionChange={(keys) => setUsed(new Set([...keys].map(String)))}
+          items={lines.filter((line) => line.status === "active").map((line) => ({ id: line.id, label: line.areaName ? `${line.title} · ${line.areaName}` : line.title }))} />
+        <Switch isSelected={clientChoice} onChange={setClientChoice}>{t("The client chooses it (needs their sign-off)")}</Switch>
+        <TextAreaField label={t("Note")} value={form.note} onChange={set("note")} />
+      </FormSection>
     </div>
   </InspectorSheet>;
 }
@@ -150,20 +154,22 @@ function DecisionDialog({ data, run, onClose }: { data: MaterialsState; run: Run
         decisions: Object.entries(decisions).map(([itemId, entry]) => ({ itemId, decision: entry.decision, note: entry.note.trim() })) }, { inDialog: true });
       onClose();
     }}>
-      <ul className={styles.decisions} aria-label={t("Materials")}>
-        {data.items.map((item) => <li key={item.id}>
-          <span className={styles.lineCell}><span>{item.name}</span>{item.specification ? <small>{item.specification}</small> : null}</span>
-          <SegmentedControl label={t("Decision for {name}", { name: item.name })} value={decisions[item.id].decision}
-            onChange={(value) => setDecisions({ ...decisions, [item.id]: { ...decisions[item.id], decision: value as "approved" | "rejected" } })}
-            options={[{ id: "approved", label: t("Approve") }, { id: "rejected", label: t("Reject") }]} />
-          {decisions[item.id].decision === "rejected" ? <TextInput aria-label={t("What they want instead of {name}", { name: item.name })} label={null} placeholder={t("What they want instead")}
-            value={decisions[item.id].note} onChange={(value) => setDecisions({ ...decisions, [item.id]: { ...decisions[item.id], note: value } })} /> : null}
-        </li>)}
-      </ul>
-      <FormRow>
+      <FormSection title={t("Materials")}>
+        <ul className={styles.decisions} aria-label={t("Materials")}>
+          {data.items.map((item) => <li key={item.id}>
+            <span className={styles.lineCell}><span>{item.name}</span>{item.specification ? <small>{item.specification}</small> : null}</span>
+            <SegmentedControl label={t("Decision for {name}", { name: item.name })} value={decisions[item.id].decision}
+              onChange={(value) => setDecisions({ ...decisions, [item.id]: { ...decisions[item.id], decision: value as "approved" | "rejected" } })}
+              options={[{ id: "approved", label: t("Approve") }, { id: "rejected", label: t("Reject") }]} />
+            {decisions[item.id].decision === "rejected" ? <TextInput aria-label={t("What they want instead of {name}", { name: item.name })} label={null} placeholder={t("What they want instead")}
+              value={decisions[item.id].note} onChange={(value) => setDecisions({ ...decisions, [item.id]: { ...decisions[item.id], note: value } })} /> : null}
+          </li>)}
+        </ul>
+      </FormSection>
+      <FormSection title={t("Client decision")}>
         <TextInput label={t("Decided by")} isRequired maxLength={160} value={decidedBy} onChange={setDecidedBy} />
         <SelectField label={t("How")} isRequired selectedKey={method} onSelectionChange={(key) => setMethod(String(key))} items={METHODS.map(([id, label]) => ({ id, label: t(label as never) }))} />
-      </FormRow>
-      <TextAreaField label={t("Note")} value={note} onChange={setNote} />
+        <TextAreaField label={t("Note")} value={note} onChange={setNote} />
+      </FormSection>
   </FormDialog>;
 }

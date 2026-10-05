@@ -423,7 +423,7 @@ describe("finance", () => {
     await userEvent.click(within(sheet).getByRole("button", { name: "Record payment" }));
     const dialog = await screen.findByRole("dialog", { name: /Record payment/ });
     expect(await within(dialog).findByText(/Invoices are paid through payment runs/)).toBeInTheDocument();
-    expect(within(dialog).queryByRole("region", { name: "Invoices it pays" })).toBeNull();
+    expect(within(dialog).queryByRole("group", { name: "Invoices it pays" })).toBeNull();
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Amount" }), "50");
     expect(within(dialog).getByRole("button", { name: "Record payment" })).toBeDisabled();
     await userEvent.click(within(dialog).getByRole("button", { name: /Advance on an order/ }));

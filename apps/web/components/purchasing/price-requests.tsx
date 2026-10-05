@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, DataGrid, EmptyState, ErrorState, NoAccessState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, type DataGridColumn, FormDialog, FormRow, MoneyField, NumericInput, PercentageInput, VisuallyHidden } from "@/design-system";
+import { Badge, Button, DataGrid, EmptyState, ErrorState, NoAccessState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, type DataGridColumn, FormDialog, MoneyField, NumericInput, PercentageInput, VisuallyHidden } from "@/design-system";
 import { parseDate } from "@internationalized/date";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
@@ -181,11 +181,9 @@ function ReplyDialog({ state, vendorId, onClose, onSave, onDecline }: {
           <span />
         </li>)}
       </ul>
-      <FormRow>
-        <NumericInput label={t("Delivery in days")} minValue={0} maxValue={9999} formatOptions={{ maximumFractionDigits: 0 }} value={lead === "" ? Number.NaN : Number(lead)}
-          onChange={(value) => setLead(Number.isFinite(value) ? String(Math.round(value)) : "")} />
-        <DateField label={t("Prices valid until")} value={valid ? parseDate(valid) : null} onChange={(value) => setValid(value ? value.toString() : null)} />
-      </FormRow>
+      <NumericInput label={t("Delivery in days")} minValue={0} maxValue={9999} formatOptions={{ maximumFractionDigits: 0 }} value={lead === "" ? Number.NaN : Number(lead)}
+        onChange={(value) => setLead(Number.isFinite(value) ? String(Math.round(value)) : "")} />
+      <DateField label={t("Prices valid until")} value={valid ? parseDate(valid) : null} onChange={(value) => setValid(value ? value.toString() : null)} />
       <TextAreaField label={t("Note")} value={note} onChange={setNote} />
   </FormDialog>;
 }

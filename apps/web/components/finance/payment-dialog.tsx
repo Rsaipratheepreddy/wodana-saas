@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DateField, FormDialog, InlineNotice, MoneyField, SelectField, Skeleton, TextInput, VisuallyHidden } from "@/design-system";
+import { Button, DateField, FormDialog, FormSection, InlineNotice, MoneyField, SelectField, Skeleton, TextInput, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { Bill, PaymentMethod, SupplierState } from "@/lib/payables/types";
@@ -87,27 +87,24 @@ export function PaymentDialog({ api, vendorId, legalEntityId: fixedCompany, curr
     }}>
     {!supplier && !error ? <Skeleton lines={6} /> : <>
       {advanceOnly ? <InlineNotice tone="info" message={t("Invoices are paid through payment runs. Record an advance on an order here.")} /> : null}
-      {!fixedCompany && pairs.length > 1 ? <SelectField label={t("Paid by")} isRequired placeholder={t("Choose")} selectedKey={pair || null}
-        onSelectionChange={(key) => { setPair(key ? String(key) : ""); setOrderId(""); setParts({}); }} items={pairs} /> : null}
-      <div className={styles.trio}>
+      <FormSection title={t("Payment")}>
+        {!fixedCompany && pairs.length > 1 ? <SelectField label={t("Paid by")} isRequired placeholder={t("Choose")} selectedKey={pair || null}
+          onSelectionChange={(key) => { setPair(key ? String(key) : ""); setOrderId(""); setParts({}); }} items={pairs} /> : null}
         <DateField label={t("Paid on")} isRequired value={paidOn ? parseDate(paidOn) : null} onChange={(value) => setPaidOn(value ? value.toString() : null)} />
         <MoneyField label={t("Amount")} isRequired currency={currency || undefined} value={amount} onChange={setAmount} />
         <SelectField label={t("How")} isRequired selectedKey={method} onSelectionChange={(key) => setMethod((key ?? "bank") as PaymentMethod)}
           items={METHODS.map((item) => ({ id: item, label: methods[item] }))} />
-      </div>
-      {method === "bank" && supplier ? supplier.supplier.bank
-        ? <p className={styles.muted}>{t("Into {bank} ending {digits}", { bank: supplier.supplier.bank.bankName, digits: supplier.supplier.bank.last4 })}</p>
-        : <InlineNotice tone="error" message={t("This supplier has no approved bank account. Approve their bank details before paying by bank.")} /> : null}
-      {method === "bank" && supplier?.supplier.bankChangePending ? <InlineNotice tone="info" message={t("New bank details are waiting for approval. Pay into the approved account.")} /> : null}
-      <div className={styles.pair}>
+        {method === "bank" && supplier ? supplier.supplier.bank
+          ? <p className={styles.muted}>{t("Into {bank} ending {digits}", { bank: supplier.supplier.bank.bankName, digits: supplier.supplier.bank.last4 })}</p>
+          : <InlineNotice tone="error" message={t("This supplier has no approved bank account. Approve their bank details before paying by bank.")} /> : null}
+        {method === "bank" && supplier?.supplier.bankChangePending ? <InlineNotice tone="info" message={t("New bank details are waiting for approval. Pay into the approved account.")} /> : null}
         <TextInput label={t("Reference")} value={reference} onChange={setReference} />
         {!forBill && orders.length ? <SelectField label={t("Advance on an order")} selectedKey={orderId || "none"}
           onSelectionChange={(key) => { setOrderId(key && key !== "none" ? String(key) : ""); setParts({}); }}
-          items={[{ id: "none", label: t("None") }, ...orders.map((order) => ({ id: order.id, label: order.number }))]} /> : <span />}
-      </div>
-      {open.length ? <section className={styles.part} aria-label={t("Invoices it pays")}>
-        <div className={styles.headRow}><h3 className={styles.subhead}>{t("Invoices it pays")}</h3><span className={styles.spacer} />
-          {amount ? <Button size="compact" variant="quiet" onPress={spread}>{t("Oldest first")}</Button> : null}</div>
+          items={[{ id: "none", label: t("None") }, ...orders.map((order) => ({ id: order.id, label: order.number }))]} /> : null}
+      </FormSection>
+      {open.length ? <FormSection title={t("Invoices it pays")}>
+        {amount ? <div><Button size="compact" variant="quiet" onPress={spread}>{t("Oldest first")}</Button></div> : null}
         <div className={styles.allocations}>{open.map((bill) => <div key={bill.id} className={styles.allocation}>
           <span className={styles.nameCell}><span>{bill.number}</span>
             <small>{[bill.dueDate ? t("Due {date}", { date: format.day(bill.dueDate) }) : "", t("{amount} to pay", { amount: money(bill.payable) })].filter(Boolean).join(" · ")}</small></span>
@@ -116,7 +113,7 @@ export function PaymentDialog({ api, vendorId, legalEntityId: fixedCompany, curr
         </div>)}</div>
         {over ? <InlineNotice tone="error" message={t("That's more than the payment.")} />
           : onAccount !== "0" ? <p className={styles.muted}>{t("{amount} stays with the supplier to allocate later.", { amount: money(onAccount) })}</p> : null}
-      </section> : orderId ? <p className={styles.muted}>{t("It goes against the order's invoices when they're approved.")}</p> : null}
+      </FormSection> : null}
     </>}
   </FormDialog>;
 }

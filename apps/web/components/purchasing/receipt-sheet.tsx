@@ -161,7 +161,7 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
 function ReverseDialog({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
-  return <FormDialog size="md" title={t("Reverse this delivery")} description={t("It stops counting and its goods come out of stock. Receive the right delivery again.")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()}
+  return <FormDialog size="md" title={t("Reverse this delivery")} description={t("Its goods come out of stock.")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!reason.trim()}
     submitLabel={t("Reverse")} submitVariant={"danger"} onSubmit={() => onSave(reason.trim())}>
     <TextAreaField label={t("What was wrong with it")} isRequired value={reason} onChange={setReason} />
   </FormDialog>;

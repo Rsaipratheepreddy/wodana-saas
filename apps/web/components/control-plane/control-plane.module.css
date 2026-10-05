@@ -48,8 +48,6 @@
 
 /* Dialogs and the create flow */
 .dialogBody { display: grid; gap: var(--wd-space-4); }
-.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: start; }
-.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: start; }
 .form { display: grid; gap: var(--wd-phi-3); max-inline-size: 48rem; }
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-2); }
 .link { display: grid; gap: var(--wd-space-2); }
@@ -76,7 +74,7 @@
   .connectionGrid { grid-template-columns: minmax(0, 1fr); }
   .connectionCard .record { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .connectionCard .record dd { margin-block-end: var(--wd-space-2); }
-  .properties, .pair, .trio { grid-template-columns: minmax(0, 1fr); }
+  .properties { grid-template-columns: minmax(0, 1fr); }
   .properties > div { grid-template-columns: 7rem minmax(0, 1fr); }
   .operator > span:last-child { display: none; }
 }

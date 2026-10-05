@@ -51,7 +51,6 @@
 .actionsHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .actionRow { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
 .actionForm { display: flex; flex-direction: column; gap: var(--wd-space-3); }
-.actionPair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-2); }
 
 .uploadForm { display: flex; flex-direction: column; gap: var(--wd-space-3); }
 .drop { display: flex; align-items: center; justify-content: center; gap: var(--wd-space-2); min-block-size: calc(var(--wd-space-10) * 2); border: 1px dashed var(--wd-color-border-strong); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); cursor: pointer; }
@@ -61,6 +60,3 @@
 .pending li { display: flex; align-items: center; gap: var(--wd-space-2); }
 .pending input { flex: 1 1 auto; min-inline-size: 0; min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-3); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); }
 
-@media (max-width: 48rem) {
-  .actionPair { grid-template-columns: 1fr; }
-}

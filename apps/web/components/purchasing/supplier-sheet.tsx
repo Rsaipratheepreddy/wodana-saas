@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Badge,
-  Button, EditableField, EditableFieldList, FactRow, FillWithWoddy, FormDialog, FormRow, InlineNotice, InspectorSheet, MoreDetails, MultiSelectField, PhoneField, SegmentedControl, SelectField, TagsField, TextAreaField, TextInput, useDesignSystem, useFormDraft,
+  Button, EditableField, EditableFieldList, FactRow, FillWithWoddy, FormDialog, FormSection, InlineNotice, InspectorSheet, MoreDetails, MultiSelectField, PhoneField, SegmentedControl, SelectField, TagsField, TextAreaField, TextInput, useDesignSystem, useFormDraft,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { joinPhone, phoneCountry, splitPhone } from "@/lib/phone";
@@ -122,7 +122,7 @@ function TermsDialog({ supplier, onClose, onSave, onReload }: { supplier: Suppli
     {form.paymentTerms === "credit" ? <TextInput label={t("Days")} isRequired inputMode="numeric" value={form.creditDays} onChange={(value) => set("creditDays")(value.replace(/\D/g, "").slice(0, 3))}
       validate={(value) => Number(value) >= 1 && Number(value) <= 365 ? null : t("Between 1 and 365 days.")} /> : null}
     <TextInput label={t("Terms note")} maxLength={500} value={form.termsNote} onChange={set("termsNote")} />
-    <TextInput label={t("Retention")} description={t("Held from each invoice until handover")} inputMode="decimal" suffix="%" value={form.retentionPercent}
+    <TextInput label={t("Retention")} inputMode="decimal" suffix="%" value={form.retentionPercent}
       onChange={(value) => set("retentionPercent")(value.replace(/[^\d.]/g, ""))} validate={(value) => !value || Number(value) < 100 ? null : t("Less than 100%.")} />
   </FormDialog>;
 }
@@ -183,40 +183,32 @@ function NewSupplierSheet({ api, state, onState, onClose }: SheetProps) {
     lead={aiReady ? <FillWithWoddy fields={[{ key: "name", label: t("Name") }, { key: "categories", label: t("Categories") }, { key: "contactName", label: t("Contact") }, { key: "phone", label: t("Phone") },
       { key: "email", label: t("Email") }, { key: "locality", label: t("Location") }, { key: "legalName", label: t("Legal name") }, { key: "taxRegistrationNumber", label: t("Tax number") }, { key: "notes", label: t("Notes") }]}
       onApply={fill} onExtract={async ({ text, image }) => fillWithWoddy(api.workspaceId, "supplier", { ...(text ? { text } : {}), ...(image ? { image: await imageForWoddy(image) } : {}) })} /> : null}>
-    <TextInput label={t("Name")} isRequired maxLength={240} value={form.name} onChange={set("name")} />
-    <TagsField label={t("Categories")} values={form.categories} onChange={set("categories")} suggestions={state.categories} placeholder={t("e.g. Marble, Joinery, Paint")} />
-    <FormRow>
+    <FormSection title={t("Supplier")}>
+      <TextInput label={t("Name")} isRequired maxLength={240} value={form.name} onChange={set("name")} />
+      <TagsField label={t("Categories")} values={form.categories} onChange={set("categories")} suggestions={state.categories} placeholder={t("e.g. Marble, Joinery, Paint")} />
       <TextInput label={t("Contact")} maxLength={180} value={form.contactName} onChange={set("contactName")} />
       <PhoneField label={t("Phone")} kind="any" locale={locale} value={form.phone} onChange={set("phone")} countryCode={form.phoneCountry} onCountryChange={set("phoneCountry")} />
-    </FormRow>
-    <FormRow>
+    </FormSection>
+    <FormSection title={t("Payment")}>
       <SelectField label={t("Payment terms")} isRequired selectedKey={form.paymentTerms} onSelectionChange={(key) => set("paymentTerms")(key as PaymentTerms)}
         items={TERMS.map((item) => ({ id: item, label: labels.terms[item] }))} />
       {form.paymentTerms === "split" ? <TextInput label={t("Advance")} isRequired inputMode="decimal" suffix="%" value={form.advancePercent} onChange={(value) => set("advancePercent")(percent(value))} validate={inRange} />
         : form.paymentTerms === "credit" ? <TextInput label={t("Days")} isRequired inputMode="numeric" value={form.creditDays} onChange={(value) => set("creditDays")(value.replace(/\D/g, "").slice(0, 3))}
           validate={(value) => Number(value) >= 1 && Number(value) <= 365 ? null : t("Between 1 and 365 days.")} /> : null}
-    </FormRow>
+    </FormSection>
     <MoreDetails filled={moreFilled}>
-      <FormRow>
-        <TextInput label={t("Email")} inputType="email" maxLength={320} value={form.email} onChange={set("email")} />
-        <TextInput label={t("Location")} maxLength={160} value={form.locality} onChange={set("locality")} />
-      </FormRow>
-      <FormRow>
-        <TextInput label={t("Legal name")} maxLength={240} value={form.legalName} onChange={set("legalName")} />
-        <TextInput label={t("Tax number")} maxLength={120} value={form.taxRegistrationNumber} onChange={set("taxRegistrationNumber")} />
-      </FormRow>
+      <TextInput label={t("Email")} inputType="email" maxLength={320} value={form.email} onChange={set("email")} />
+      <TextInput label={t("Location")} maxLength={160} value={form.locality} onChange={set("locality")} />
+      <TextInput label={t("Legal name")} maxLength={240} value={form.legalName} onChange={set("legalName")} />
+      <TextInput label={t("Tax number")} maxLength={120} value={form.taxRegistrationNumber} onChange={set("taxRegistrationNumber")} />
       {state.entities.length > 1 ? <MultiSelectField label={t("Companies that buy from it")} selectedKeys={new Set(form.entityIds)}
         onSelectionChange={(keys) => set("entityIds")([...keys].map(String))} items={state.entities.map((entity) => ({ id: entity.id, label: entity.name }))} /> : null}
-      <FormRow>
-        <TextInput label={t("Terms note")} maxLength={500} value={form.termsNote} onChange={set("termsNote")} />
-        <TextInput label={t("Retention")} description={t("Held from each invoice until handover")} inputMode="decimal" suffix="%" value={form.retentionPercent}
-          onChange={(value) => set("retentionPercent")(percent(value))} validate={(value) => !value || Number(value) < 100 ? null : t("Less than 100%.")} />
-      </FormRow>
-      <FormRow>
-        <SelectField label={t("Discount or commission")} selectedKey={form.deal} onSelectionChange={(key) => set("deal")(key as Deal)} items={DEALS.map((item) => ({ id: item, label: labels.deal[item] }))} />
-        {form.deal === "discount" || form.deal === "commission" ? <TextInput label={t("Percent")} isRequired inputMode="decimal" suffix="%" value={form.dealPercent}
-          onChange={(value) => set("dealPercent")(percent(value))} validate={inRange} /> : null}
-      </FormRow>
+      <TextInput label={t("Terms note")} maxLength={500} value={form.termsNote} onChange={set("termsNote")} />
+      <TextInput label={t("Retention")} inputMode="decimal" suffix="%" value={form.retentionPercent}
+        onChange={(value) => set("retentionPercent")(percent(value))} validate={(value) => !value || Number(value) < 100 ? null : t("Less than 100%.")} />
+      <SelectField label={t("Discount or commission")} selectedKey={form.deal} onSelectionChange={(key) => set("deal")(key as Deal)} items={DEALS.map((item) => ({ id: item, label: labels.deal[item] }))} />
+      {form.deal === "discount" || form.deal === "commission" ? <TextInput label={t("Percent")} isRequired inputMode="decimal" suffix="%" value={form.dealPercent}
+        onChange={(value) => set("dealPercent")(percent(value))} validate={inRange} /> : null}
       {form.deal !== "none" ? <TextInput label={t("Deal note")} maxLength={500} value={form.dealNote} onChange={set("dealNote")} /> : null}
       <TextAreaField label={t("Notes")} maxLength={10000} value={form.notes} onChange={set("notes")} />
     </MoreDetails>

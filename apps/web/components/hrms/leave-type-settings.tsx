@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { LeaveType } from "@wodana/contracts";
-import { Badge, DataGrid, EmptyState, ErrorState, NumericInput, Switch, TextInput, type DataGridColumn, FormDialog } from "@/design-system";
+import { Badge, DataGrid, EmptyState, ErrorState, NumericInput, Switch, TextInput, type DataGridColumn, FormDialog, FormSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
 import { useHrmsFormat } from "./hrms-format";
@@ -60,14 +60,16 @@ function LeaveTypeDialog({ api, type, onClose, onSaved }: { api: HrmsApi; type: 
     } catch (cause) { setError(format.failure(cause, t("Could not save."))); setBusy(false); }
   };
   return <FormDialog size="md" title={type ? type.name : t("New leave type")} onClose={onClose} error={error || undefined} isSubmitting={busy} isSubmitDisabled={!form.name.trim() || !daysValid} submitLabel={t("Save")} onSubmit={() => save()}>
-      <TextInput label={t("Name")} isRequired value={form.name} onChange={(value) => set("name", value)} maxLength={100} />
-      <Switch isSelected={form.limited} onChange={(value) => set("limited", value)}>{t("Limited")}</Switch>
-      {form.limited ? <NumericInput label={t("Days a year")} isRequired minValue={0} maxValue={366} step={0.5} value={days} onChange={(value) => set("annualDays", value)}
-        isInvalid={!daysValid} errorMessage={!daysValid ? t("Use whole or half days.") : undefined} /> : null}
-      <div className={styles.switches}>
-        <Switch isSelected={form.allowHalfDay} onChange={(value) => set("allowHalfDay", value)}>{t("Half days")}</Switch>
+      <FormSection>
+        <TextInput label={t("Name")} isRequired value={form.name} onChange={(value) => set("name", value)} maxLength={100} />
         <Switch isSelected={form.paid} onChange={(value) => set("paid", value)}>{t("Paid")}</Switch>
         <Switch isSelected={form.active} onChange={(value) => set("active", value)}>{t("Active")}</Switch>
-      </div>
+      </FormSection>
+      <FormSection title={t("Allowance")}>
+        <Switch isSelected={form.limited} onChange={(value) => set("limited", value)}>{t("Limited")}</Switch>
+        {form.limited ? <NumericInput label={t("Days a year")} isRequired minValue={0} maxValue={366} step={0.5} value={days} onChange={(value) => set("annualDays", value)}
+          isInvalid={!daysValid} errorMessage={!daysValid ? t("Use whole or half days.") : undefined} /> : null}
+        <Switch isSelected={form.allowHalfDay} onChange={(value) => set("allowHalfDay", value)}>{t("Half days")}</Switch>
+      </FormSection>
   </FormDialog>;
 }

@@ -1213,6 +1213,10 @@
 .wd-root .wd-field-label{color:var(--wd-ink);font-size:var(--wd-text-sm);font-weight:500;line-height:1.5}
 .wd-root :is(.wd-input-group,.wd-date-group,.wd-select-button,.wd-picker-button,.wd-textarea-frame){border-color:var(--wd-color-border-control);border-radius:var(--wd-radius-md);background:var(--wd-surface)}
 .wd-root :is(.wd-input-group,.wd-date-group,.wd-select-button){min-block-size:40px;font-size:var(--wd-text-sm)}
+/* Single-line fields are exactly the contract height, so text, select and date line up in a form. */
+.wd-root :is(.wd-date-group,.wd-select-button){block-size:40px}
+.wd-root .wd-select-button .wd-select-indicator{block-size:100%}
+.wd-root .wd-date-group > *{min-block-size:0;block-size:auto;align-self:stretch}
 .wd-root :is(.wd-input-group,.wd-date-group,.wd-select-button)[data-hovered]{border-color:var(--wd-color-text-tertiary);background:var(--wd-surface)}
 .wd-root form .wd-input{padding-inline:var(--wd-space-3);font-size:var(--wd-text-md)}
 .wd-root form .wd-select-button{padding-inline:var(--wd-space-3) var(--wd-space-1-5)}

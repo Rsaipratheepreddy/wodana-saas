@@ -181,7 +181,6 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
         isOpen={createDecision}
         onClose={() => setCreateDecision(false)}
         title={t("Request a client decision")}
-        size="lg"
         error={error || undefined}
         isSubmitting={busy}
         isDirty={Boolean(decisionDraft.title || decisionDraft.detail || decisionDraft.targetKey)}
@@ -206,14 +205,16 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
           setDecisionDraft(blankDecision);
         }}
       >
-        <TextInput label={t("Question")} isRequired maxLength={160} value={decisionDraft.title} onChange={(title) => setDecisionDraft({ ...decisionDraft, title })} />
-        <TextAreaField label={t("What does the client need to decide?")} isRequired value={decisionDraft.detail} onChange={(detail) => setDecisionDraft({ ...decisionDraft, detail })} />
-        <SelectField label={t("Exact revision")} isRequired items={decisionTargets} selectedKey={decisionDraft.targetKey || null} onSelectionChange={(key) => setDecisionDraft({ ...decisionDraft, targetKey: String(key ?? "") })} />
-        <DateField label={t("Due date")} isRequired value={dateValue(decisionDraft.dueDate)} onChange={(date) => setDecisionDraft({ ...decisionDraft, dueDate: date?.toString() ?? "" })} />
-        <FormRow>
+        <FormSection>
+          <TextInput label={t("Question")} isRequired maxLength={160} value={decisionDraft.title} onChange={(title) => setDecisionDraft({ ...decisionDraft, title })} />
+          <TextAreaField label={t("What does the client need to decide?")} isRequired value={decisionDraft.detail} onChange={(detail) => setDecisionDraft({ ...decisionDraft, detail })} />
+          <SelectField label={t("Exact revision")} isRequired items={decisionTargets} selectedKey={decisionDraft.targetKey || null} onSelectionChange={(key) => setDecisionDraft({ ...decisionDraft, targetKey: String(key ?? "") })} />
+          <DateField label={t("Due date")} isRequired value={dateValue(decisionDraft.dueDate)} onChange={(date) => setDecisionDraft({ ...decisionDraft, dueDate: date?.toString() ?? "" })} />
+        </FormSection>
+        <FormSection title={t("Choices")}>
           <TextInput label={t("First choice")} isRequired value={decisionDraft.firstChoice} onChange={(firstChoice) => setDecisionDraft({ ...decisionDraft, firstChoice })} />
           <TextInput label={t("Second choice")} isRequired value={decisionDraft.secondChoice} onChange={(secondChoice) => setDecisionDraft({ ...decisionDraft, secondChoice })} />
-        </FormRow>
+        </FormSection>
         <MoreDetails label={t("Reminders")}>
           <Checkbox isSelected={decisionDraft.remindersEnabled} onChange={(remindersEnabled) => setDecisionDraft({ ...decisionDraft, remindersEnabled })}>{t("Show reminders in Wodana")}</Checkbox>
           <Checkbox isSelected={decisionDraft.email} onChange={(email) => setDecisionDraft({ ...decisionDraft, email })}>{t("Email when connected and opted in")}</Checkbox>
@@ -237,22 +238,24 @@ export function CommercialRequests({ state, run, busy, error, openRequestId }: P
           setChangeDraft(blankChange);
         }}
       >
-        {accepted && <SelectField label={t("Change type")} isRequired items={changeKinds.map((kind) => ({ id: kind.value, label: translateKnown(t, kind.label) }))} selectedKey={changeDraft.kind}
-          onSelectionChange={(key) => setChangeDraft({ ...changeDraft, kind: String(key ?? "addition") as ControlledChangeKind, sourceLineIds: [] })} />}
+        <FormSection>
+          {accepted && <SelectField label={t("Change type")} isRequired items={changeKinds.map((kind) => ({ id: kind.value, label: translateKnown(t, kind.label) }))} selectedKey={changeDraft.kind}
+            onSelectionChange={(key) => setChangeDraft({ ...changeDraft, kind: String(key ?? "addition") as ControlledChangeKind, sourceLineIds: [] })} />}
+          <TextInput label={t("Title")} isRequired maxLength={160} value={accepted ? changeDraft.title : draft.title}
+            onChange={(title) => accepted ? setChangeDraft({ ...changeDraft, title }) : setDraft({ ...draft, title })} />
+          <TextAreaField label={t("What needs to change or be clarified?")} isRequired value={accepted ? changeDraft.detail : draft.detail}
+            onChange={(detail) => accepted ? setChangeDraft({ ...changeDraft, detail }) : setDraft({ ...draft, detail })} />
+        </FormSection>
         {accepted && contractLines.length > 0 && <FormSection title={linesRequired ? t("Affected accepted items") : `${t("Affected accepted items")} · ${t("Optional")}`}>
           {contractLines.map((line) => <Checkbox key={line.id} isSelected={changeDraft.sourceLineIds.includes(line.id)} onChange={(chosen) => setChangeDraft({
             ...changeDraft,
             sourceLineIds: chosen ? [...changeDraft.sourceLineIds, line.id] : changeDraft.sourceLineIds.filter((id) => id !== line.id),
           })}>V{line.quoteNumber} · {line.room} · {line.title} · {t("{quantity} {unit} remaining", { quantity: line.remainingQuantity, unit: line.unit })}</Checkbox>)}
         </FormSection>}
-        <TextInput label={t("Title")} isRequired maxLength={160} value={accepted ? changeDraft.title : draft.title}
-          onChange={(title) => accepted ? setChangeDraft({ ...changeDraft, title }) : setDraft({ ...draft, title })} />
-        <TextAreaField label={t("What needs to change or be clarified?")} isRequired value={accepted ? changeDraft.detail : draft.detail}
-          onChange={(detail) => accepted ? setChangeDraft({ ...changeDraft, detail }) : setDraft({ ...draft, detail })} />
-        {accepted && <FormRow>
+        {accepted && <FormSection title={t("Follow-up")}>
           <TextInput label={t("Owner")} value={changeDraft.owner} onChange={(owner) => setChangeDraft({ ...changeDraft, owner })} />
           <DateField label={t("Due date")} value={dateValue(changeDraft.dueDate)} onChange={(date) => setChangeDraft({ ...changeDraft, dueDate: date?.toString() ?? "" })} />
-        </FormRow>}
+        </FormSection>}
       </FormDialog>
       <FormDialog
         isOpen={Boolean(request)}
@@ -500,12 +503,10 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
       >
         <TextInput label={t("Milestone")} isRequired maxLength={160} isDisabled={Boolean(payment.sourceQuoteId)}
           value={payment.title} onChange={title => setPayment({ ...payment, title })} />
-        <FormRow>
-          <MoneyField label={t("Amount")} currency={paymentCurrency} isRequired min={smallestAmount(paymentCurrency)} isDisabled={Boolean(payment.sourceQuoteId)}
-            value={payment.amount} onChange={amount => setPayment({ ...payment, amount })} />
-          <DateField label={t("Due date")} isRequired value={dateValue(payment.dueDate)}
-            onChange={date => setPayment({ ...payment, dueDate: date?.toString() ?? "" })} />
-        </FormRow>
+        <MoneyField label={t("Amount")} currency={paymentCurrency} isRequired min={smallestAmount(paymentCurrency)} isDisabled={Boolean(payment.sourceQuoteId)}
+          value={payment.amount} onChange={amount => setPayment({ ...payment, amount })} />
+        <DateField label={t("Due date")} isRequired value={dateValue(payment.dueDate)}
+          onChange={date => setPayment({ ...payment, dueDate: date?.toString() ?? "" })} />
         <FormSection title={t("Required before")}>
           <Checkbox isDisabled={Boolean(payment.sourceQuoteId)} isSelected={payment.requiredForRelease} onChange={requiredForRelease => setPayment({ ...payment, requiredForRelease })}>{t("Execution release")}</Checkbox>
           <Checkbox isDisabled={Boolean(payment.sourceQuoteId)} isSelected={payment.requiredForProduction} onChange={requiredForProduction => setPayment({ ...payment, requiredForProduction })}>{t("Manufacturing starts")}</Checkbox>
@@ -547,11 +548,12 @@ function CommissionFields({ currency, index, line, onChange, onRemove, fixedReci
   // An untouched row is optional; once it's being filled in, it needs a recipient and a value.
   const required = Boolean(fixedRecipient) || !commissionBlank(line);
   return <FormSection title={<span className={s.commissionTitle}>{title}{onRemove ? <IconButton aria-label={t("Remove commission {number}", { number: index + 1 })} onPress={onRemove}><X size={14} /></IconButton> : null}</span>}>
-    {fixedRecipient ? null : <FormRow>
+    {fixedRecipient ? null : <>
       <TextInput isRequired={required} label={t("Recipient")} maxLength={160} value={line.recipientName} onChange={(recipientName) => onChange({ recipientName })} />
       <SelectField isRequired={required} label={t("Type")} items={commissionTypes.map((type) => ({ id: type.id, label: t(type.label) }))} selectedKey={line.type}
         onSelectionChange={(key) => onChange({ type: String(key ?? "sales") as CommissionDraft["type"] })} />
-    </FormRow>}
+    </>}
+    {/* The amount and what it is counted in (the currency, or a percentage) stay side by side. */}
     <FormRow>
       <SelectField isRequired={required} label={t("Basis")} items={[{ id: "amount", label: currency }, { id: "percent", label: t("Percentage") }]} selectedKey={line.basis}
         onSelectionChange={(key) => onChange({ basis: String(key ?? "amount") as CommissionDraft["basis"], value: "" })} />
@@ -772,10 +774,8 @@ export function ApprovalRelease({
               setMaterialDraft(null);
             }}>
             <TextInput isRequired label={t("Material / finish name")} value={materialDraft.name} onChange={name => setMaterialDraft({ ...materialDraft, name })} />
-            <FormRow>
-              <TextInput label={t("Brand")} value={materialDraft.brand} onChange={brand => setMaterialDraft({ ...materialDraft, brand })} />
-              <TextInput label={t("Product code")} value={materialDraft.code} onChange={code => setMaterialDraft({ ...materialDraft, code })} />
-            </FormRow>
+            <TextInput label={t("Brand")} value={materialDraft.brand} onChange={brand => setMaterialDraft({ ...materialDraft, brand })} />
+            <TextInput label={t("Product code")} value={materialDraft.code} onChange={code => setMaterialDraft({ ...materialDraft, code })} />
             <TextAreaField isRequired label={t("Specification")} value={materialDraft.specification} onChange={specification => setMaterialDraft({ ...materialDraft, specification })} />
             <MoreDetails filled={(materialDraft.note ? 1 : 0) + (materialDraft.photo ? 1 : 0)}>
               <TextAreaField label={t("Internal note")} value={materialDraft.note} onChange={note => setMaterialDraft({ ...materialDraft, note })} />

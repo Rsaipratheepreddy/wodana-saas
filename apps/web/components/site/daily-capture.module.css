@@ -1,6 +1,6 @@
 /* The day's report, phone-first: one column of short sections, big targets for one-tap progress. */
 .muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
-.hint { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.addLine { justify-self: start; }
 .tasks, .issues, .next, .photos { display: grid; gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; min-inline-size: 0; }
 .task { display: grid; gap: var(--wd-space-2); padding-block-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); min-inline-size: 0; }
 .task:last-child { border-block-end: 0; padding-block-end: 0; }
@@ -22,9 +22,7 @@
 .material { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: var(--wd-space-2); align-items: end; }
 .material > :first-child { grid-column: 1 / -1; }
 .material > :nth-child(5) { grid-column: 1 / -2; }
-.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
 @media (max-width: 640px) {
-  .pair { grid-template-columns: minmax(0, 1fr); }
   .crew { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
   .crew > :first-child { grid-column: 1 / -1; }
   .photos { grid-template-columns: minmax(0, 1fr); }

@@ -20,7 +20,7 @@ export function CaseModal({title,description,children,footer,onClose,dirty=false
  const t=useT();
  useEffect(()=>{if(!dirty)return;const warn=(event:BeforeUnloadEvent)=>event.preventDefault();window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty]);
  const close=(open:boolean)=>{if(!open&&!busy)onClose();};
- const actions=<div className={styles.actions}><CaseModalClose busy={busy} label={footer?t('Cancel'):t('Close')}/>{footer}</div>;
+ const actions=<div className="wd-dialog-actions"><CaseModalClose busy={busy} label={footer?t('Cancel'):t('Close')}/>{footer}</div>;
  const body=<div className={styles.form}>{children}</div>;
  if(layout==='sheet')return <InspectorSheet size="lg" isOpen isDirty={dirty&&!busy} title={title} description={description} onOpenChange={close} footer={actions}>{body}</InspectorSheet>;
  return <ControlledModalDialog size={size} title={title} description={description} isOpen isDirty={dirty&&!busy} isDismissable={!busy} onOpenChange={close} footer={actions}

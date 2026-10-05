@@ -3,32 +3,9 @@
 .page { inline-size: min(100%, var(--wd-workspace-page-width, 76rem)); min-block-size: 100%; margin-inline: auto; padding: var(--wd-workspace-page-block-start, 1.5rem) var(--wd-workspace-page-inline, clamp(1rem, 3vw, 2rem)) var(--wd-workspace-page-block-end, 3rem); }
 .liveStatus { display: flex; align-items: center; gap: var(--wd-space-1-5); padding-block: var(--wd-space-3); color: var(--wd-color-success); font-size: var(--wd-text-sm); }
 
-.settingList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--wd-phi-5) var(--wd-phi-5); }
-.settingCard { position: relative; display: grid; align-content: start; gap: var(--wd-phi-2); min-inline-size: 0; min-block-size: 0; }
-.profileHeader { grid-column: 1 / -1; min-block-size: 0; padding-block-end: var(--wd-phi-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
-.profileBody { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--wd-space-4); }
-.logoControl { position: relative; }
-.cardHeader { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-4); }
-.cardHeader h2 { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
-.profileIdentity { display: grid; min-inline-size: 0; gap: var(--wd-space-3); }
-.profileIdentity .cardHeader h2 { overflow: hidden; font-size: var(--wd-text-xl); letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
-.profileIdentity .cardHeader p { margin: var(--wd-space-1) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
-.profileMeta { display: flex; flex-wrap: wrap; gap: var(--wd-space-3) var(--wd-space-6); margin: 0; }
-.profileMeta .profileField { min-inline-size: min(100%, 12rem); }
-.profileFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3) var(--wd-space-4); margin: 0; }
-.profileField { display: grid; min-inline-size: 0; gap: var(--wd-space-1); }
-.profileField:last-child:nth-child(odd) { grid-column: 1 / -1; }
-.profileField dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); }
-.profileField dd { min-inline-size: 0; margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); line-height: 1.45; overflow-wrap: anywhere; }
-.logoPreview { display: grid; inline-size: 4.5rem; block-size: 4.5rem; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); color: var(--wd-identity-ink); font-size: var(--wd-text-lg); font-weight: var(--wd-weight-bold); letter-spacing: -.03em; }
-.logoPreview[data-has-logo] { background: var(--wd-color-surface); color: var(--wd-color-text); }
-.logoPreview img { inline-size: 100%; block-size: 100%; object-fit: contain; padding: var(--wd-space-2); }
 .fileInput { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .permissionNote { margin: var(--wd-space-5) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 
-.editor { display: grid; gap: var(--wd-space-3); }
-.formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3) var(--wd-space-4); }
-.fullField { grid-column: 1 / -1; }
 .logoFormActions { display: flex; align-items: center; gap: var(--wd-space-3); }
 .logoFormPreview { display: grid; inline-size: 3rem; block-size: 3rem; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); color: var(--wd-identity-ink); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-bold); }
 .logoFormPreview[data-has-logo] { background: var(--wd-color-surface); color: var(--wd-color-text); }
@@ -70,18 +47,7 @@
 @media (max-width: 52rem) {
   .page { padding-block-start: var(--wd-space-6); }
 }
-@media (max-width: 48rem) {
-  .profileBody { grid-template-columns: auto minmax(0, 1fr); gap: var(--wd-space-3); }
-  .profileMeta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
-  .profileMeta .profileField { min-inline-size: 0; }
-}
 @media (max-width: 38rem) {
-  .settingList, .profileFields { grid-template-columns: 1fr; }
-  .profileField:last-child:nth-child(odd) { grid-column: auto; }
-  .settingCard { min-block-size: 0; }
-  .profileMeta { grid-template-columns: 1fr; }
-  .formGrid { grid-template-columns: 1fr; }
-  .fullField { grid-column: auto; }
   .legalEntityList > li, .organizationList > li, .terminologyList > li { grid-template-columns: auto minmax(0, 1fr) auto; }
   .legalEntityActions, .terminologyActions { grid-column: 2 / -1; justify-content: flex-start; }
   .requestRow { align-items: flex-start; flex-direction: column; }

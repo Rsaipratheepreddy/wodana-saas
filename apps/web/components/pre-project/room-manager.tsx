@@ -86,8 +86,8 @@ export function RoomManager({ data, onClose, onSave }: { data: CaseContent; onCl
           <DoorOpen aria-hidden="true" size={16} />
           {renaming?.room.id === room.id ? <form className={styles.renameForm} onSubmit={(event) => { event.preventDefault(); void rename(); }}>
             <TextInput autoFocus aria-label={t("Room name")} label={null} maxLength={120} onChange={(name) => setRenaming({ room, name })} value={renaming.name} />
-            <Button size="compact" type="submit" variant="primary" isLoading={busy === room.id}>{t("Save")}</Button>
             <Button size="compact" onPress={() => setRenaming(null)}>{t("Cancel")}</Button>
+            <Button size="compact" type="submit" variant="primary" isLoading={busy === room.id}>{t("Save")}</Button>
           </form> : <>
             <span className={styles.name}>{room.name}</span>
             {room.catalogRecordId ? <Badge tone="neutral">{t("Catalog")}</Badge> : <Badge tone="info">{t("Custom")}</Badge>}

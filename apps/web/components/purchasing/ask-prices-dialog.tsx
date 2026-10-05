@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { DateField, FormDialog, FormRow, MultiSelectField, SelectField, Skeleton, Switch, TextAreaField } from "@/design-system";
+import { DateField, FormDialog, MultiSelectField, SelectField, Skeleton, Switch, TextAreaField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { Need, SupplierState } from "@/lib/purchasing/types";
@@ -36,11 +36,9 @@ export function AskPricesDialog({ api, needs, onClose, onCreated }: { api: Purch
     {!suppliers && !error ? <Skeleton lines={4} /> : <>
       <MultiSelectField isRequired label={t("Suppliers")} selectedKeys={chosen} onSelectionChange={(keys) => setChosen(new Set([...keys].map(String)))}
         items={active.map((item) => ({ id: item.id, label: item.categories.length ? `${item.name} · ${item.categories.slice(0, 2).join(", ")}` : item.name }))} />
-      <FormRow>
-        {companies.length > 1 ? <SelectField label={t("Buying company")} isRequired placeholder={t("Which company buys")} selectedKey={companyId}
-          onSelectionChange={(key) => setCompanyId(key === null ? null : String(key))} items={companies.map((entity) => ({ id: entity.id, label: entity.name }))} /> : null}
-        <DateField label={t("Needed by")} value={neededBy ? parseDate(neededBy) : null} onChange={(value) => setNeededBy(value ? value.toString() : null)} />
-      </FormRow>
+      {companies.length > 1 ? <SelectField label={t("Buying company")} isRequired placeholder={t("Which company buys")} selectedKey={companyId}
+        onSelectionChange={(key) => setCompanyId(key === null ? null : String(key))} items={companies.map((entity) => ({ id: entity.id, label: entity.name }))} /> : null}
+      <DateField label={t("Needed by")} value={neededBy ? parseDate(neededBy) : null} onChange={(value) => setNeededBy(value ? value.toString() : null)} />
       <TextAreaField label={t("Note for the suppliers")} value={notes} onChange={setNotes} />
       <Switch isSelected={send} onChange={setSend}>{t("Email each supplier the list")}</Switch>
     </>}

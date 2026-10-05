@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { DateField, FormDialog, MoneyField, SelectField, TextAreaField, TextInput } from "@/design-system";
+import { DateField, FormDialog, FormRow, MoneyField, SelectField, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkOrderState } from "@/lib/factory/types";
 import { quantityText } from "../purchasing/order-labels";
-import styles from "./factory.module.css";
 
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const TYPED = "typed";
@@ -54,11 +53,11 @@ export function ScheduleDialog({ state, onClose, onSave }: { state: WorkOrderSta
       }}>
       <SelectField label={t("Workcenter")} placeholder={t("Choose")} selectedKey={workcenterId} onSelectionChange={(key) => setWorkcenterId(key ? String(key) : "")}
         items={state.workcenters.map((center) => ({ id: center.id, label: center.name }))} />
-      <div className={styles.pair}>
+      <FormRow>
         <DateField label={t("Start")} value={start ? parseDate(start) : null} onChange={(value) => setStart(value ? value.toString() : null)} />
         <DateField label={t("Finish")} value={end ? parseDate(end) : null} onChange={(value) => setEnd(value ? value.toString() : null)}
           isInvalid={!valid} errorMessage={valid ? undefined : t("The finish can't be before the start.")} />
-      </div>
+      </FormRow>
       <TextInput label={t("Hours it takes")} inputMode="decimal" suffix={t("h")} value={hours} onChange={(value) => setHours(numeric(value))} />
       <TextAreaField label={t("Notes")} value={notes} onChange={setNotes} />
   </FormDialog>;
@@ -78,11 +77,9 @@ export function ReportDialog({ unit, left, onClose, onSave }: { unit: string; le
   const valid = Number(good || 0) + Number(scrap || 0) > 0 && !over && !badHours && (!Number(scrap) || scrapReason.trim());
   return <FormDialog size="md" title={t("Report output")} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Report output")} onSubmit={async () => { await onSave({ good: good || "0", scrap: scrap || "0", scrapReason: scrapReason.trim(), note: note.trim(), ...(hours ? { hours } : {}) });
       }}>
-      <div className={styles.pair}>
-        <TextInput label={t("Made")} inputMode="decimal" suffix={unit || undefined} value={good} onChange={(value) => setGood(numeric(value))}
-          isInvalid={over} errorMessage={over ? t("Only {quantity} is still to make.", { quantity: `${quantityText(left)} ${unit}`.trim() }) : undefined} />
-        <TextInput label={t("Scrapped")} inputMode="decimal" suffix={unit || undefined} value={scrap} onChange={(value) => setScrap(numeric(value))} />
-      </div>
+      <TextInput label={t("Made")} inputMode="decimal" suffix={unit || undefined} value={good} onChange={(value) => setGood(numeric(value))}
+        isInvalid={over} errorMessage={over ? t("Only {quantity} is still to make.", { quantity: `${quantityText(left)} ${unit}`.trim() }) : undefined} />
+      <TextInput label={t("Scrapped")} inputMode="decimal" suffix={unit || undefined} value={scrap} onChange={(value) => setScrap(numeric(value))} />
       {Number(scrap) ? <TextInput label={t("Why it was scrapped")} isRequired value={scrapReason} onChange={setScrapReason} /> : null}
       <TextInput label={t("Hours worked")} inputMode="decimal" value={hours} onChange={(value) => setHours(numeric(value))}
         isInvalid={badHours} errorMessage={badHours ? t("More than 0 and at most 1000, with up to 2 decimals.") : undefined} />
@@ -98,14 +95,11 @@ export function CheckDialog({ unit, waiting, onClose, onSave }: { unit: string; 
   const [failReason, setFailReason] = useState("");
   const over = Number(passed || 0) + Number(failed || 0) > Number(waiting);
   const valid = Number(passed || 0) + Number(failed || 0) > 0 && !over && (!Number(failed) || failReason.trim());
-  return <FormDialog size="md" title={t("Check quality")} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={async () => { await onSave({ passed: passed || "0", failed: failed || "0", failReason: failReason.trim() });
+  return <FormDialog size="md" title={t("Check quality")} description={t("{quantity} waiting to be checked.", { quantity: `${quantityText(waiting)} ${unit}`.trim() })} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Save")} onSubmit={async () => { await onSave({ passed: passed || "0", failed: failed || "0", failReason: failReason.trim() });
       }}>
-      <p className={styles.muted}>{t("{quantity} waiting to be checked.", { quantity: `${quantityText(waiting)} ${unit}`.trim() })}</p>
-      <div className={styles.pair}>
-        <TextInput label={t("Passed")} inputMode="decimal" suffix={unit || undefined} value={passed} onChange={(value) => setPassed(numeric(value))} isInvalid={over}
-          errorMessage={over ? t("Only {quantity} is waiting.", { quantity: `${quantityText(waiting)} ${unit}`.trim() }) : undefined} />
-        <TextInput label={t("Failed")} inputMode="decimal" suffix={unit || undefined} value={failed} onChange={(value) => setFailed(numeric(value))} />
-      </div>
+      <TextInput label={t("Passed")} inputMode="decimal" suffix={unit || undefined} value={passed} onChange={(value) => setPassed(numeric(value))} isInvalid={over}
+        errorMessage={over ? t("Only {quantity} is waiting.", { quantity: `${quantityText(waiting)} ${unit}`.trim() }) : undefined} />
+      <TextInput label={t("Failed")} inputMode="decimal" suffix={unit || undefined} value={failed} onChange={(value) => setFailed(numeric(value))} />
       {Number(failed) ? <TextInput label={t("Why it failed")} isRequired value={failReason} onChange={setFailReason} /> : null}
   </FormDialog>;
 }
@@ -135,11 +129,9 @@ export function SendOutDialog({ state, onClose, onSave }: { state: WorkOrderStat
       <TextInput label={t("What the supplier does")} isRequired value={name} onChange={setName} />
       <SelectField label={t("Supplier")} placeholder={t("Choose")} selectedKey={vendorId} onSelectionChange={(key) => setVendorId(key ? String(key) : "")}
         items={state.suppliers.map((supplier) => ({ id: supplier.id, label: supplier.approved ? supplier.name : t("{name} (not approved)", { name: supplier.name }) }))} />
-      <div className={styles.pair}>
-        <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={state.order.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
-          isInvalid={over} errorMessage={over ? t("Up to {quantity}.", { quantity: `${quantityText(state.order.quantity)} ${state.order.unit}`.trim() }) : undefined} />
-        <MoneyField label={t("Price each")} value={price} onChange={setPrice} />
-      </div>
+      <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={state.order.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
+        isInvalid={over} errorMessage={over ? t("Up to {quantity}.", { quantity: `${quantityText(state.order.quantity)} ${state.order.unit}`.trim() }) : undefined} />
+      <MoneyField label={t("Price each")} value={price} onChange={setPrice} />
       <DateField label={t("Back by")} value={back ? parseDate(back) : null} onChange={(value) => setBack(value ? value.toString() : null)} />
   </FormDialog>;
 }

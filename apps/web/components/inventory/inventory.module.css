@@ -13,7 +13,6 @@
 .nameCell > .number[data-sign="out"] { color: var(--wd-color-text-secondary); }
 .dialogBody { display: grid; gap: var(--wd-space-4); }
 .dialogText { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
-.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
 
 .status { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-sm); white-space: nowrap; }
 .status::before { content: ""; inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); background: var(--wd-color-text-disabled); }
@@ -47,7 +46,6 @@
 
 @media (max-width: 640px) {
   .page { padding: var(--wd-space-4); }
-  .pair { grid-template-columns: minmax(0, 1fr); }
   .lineHead, .line, .lines[data-columns="4"] :is(.lineHead, .line) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lineHead > :first-child, .line > :first-child { grid-column: 1 / -1; text-align: start; }
 }

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { parseDate } from "@internationalized/date";
 import { Ban, Plus, Replace, X } from "lucide-react";
 import {
-  Badge, Button, DateField, EditableField, ErrorState, IconButton, InlineNotice, InspectorSheet, SelectField, Skeleton, StageTracker, Tabs, TextAreaField, TextInput, type WorkflowStage,
+  Badge, Button, DateField, EditableField, ErrorState, FormSection, IconButton, InlineNotice, InspectorSheet, SelectField, Skeleton, StageTracker, Tabs, TextAreaField, TextInput, type WorkflowStage,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { addExact, currencyDecimals, orderTotals, priceLine, subtractExact } from "@/lib/purchasing/amounts";
@@ -226,10 +226,11 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
       {order.status !== "approved" && state.canReceive ? <Button variant="primary" onPress={() => setDialog("receive")}>{t("Receive")}</Button> : null}
     </div>
     : ["partly_received", "received"].includes(order.status) && (state.canBuy || state.canReceive) ? <div className="wd-dialog-actions">
-      {state.canBuy ? <Button variant={order.status === "received" ? "primary" : "quiet"} onPress={() => setDialog("close")}>{t("Close order")}</Button> : null}<span className={styles.spacer} />
+      {state.canBuy && order.status !== "received" ? <Button variant="quiet" onPress={() => setDialog("close")}>{t("Close order")}</Button> : null}<span className={styles.spacer} />
       {following && late ? <Button onPress={() => setDialog("chase")}>{t("Chase")}</Button> : null}
       {following ? <Button onPress={() => setDialog("confirm")}>{t("Update confirmation")}</Button> : null}
       {order.status === "partly_received" && state.canReceive ? <Button variant="primary" onPress={() => setDialog("receive")}>{t("Receive")}</Button> : null}
+      {state.canBuy && order.status === "received" ? <Button variant="primary" onPress={() => setDialog("close")}>{t("Close order")}</Button> : null}
     </div> : null;
 
   const step = nextStep();
@@ -237,24 +238,21 @@ export function OrderSheet({ api, orderId, intent = null, settings, onChanged, o
   const canTrack = Boolean(order && state?.canBuy && FOLLOWING.includes(order.status));
   const deliveriesCount = (state?.receipts.length ?? 0) + (state?.returns.length ?? 0) + shipments.length;
   const linesPanel = !state || !order || !form ? null : <div className={styles.sheet}>
-    {draft ? <section className={styles.part} aria-label={t("Delivery and terms")}>
-      <div className={styles.pair}>
+    {draft ? <div className={styles.stack}>
+      <FormSection title={t("Delivery")}>
         <DateField label={t("Needed by")} value={form.expectedDate ? parseDate(form.expectedDate) : null} onChange={(value) => setForm({ ...form, expectedDate: value ? value.toString() : null })} />
         <SelectField label={t("Deliver to")} selectedKey={form.deliverTo} onSelectionChange={(key) => setForm({ ...form, deliverTo: key as DeliverTo })} items={DELIVERY.map((id) => ({ id, label: labels.deliverTo[id] }))} />
-      </div>
-      <TextInput label={t("Delivery address")} value={form.deliveryAddress} onChange={(deliveryAddress) => setForm({ ...form, deliveryAddress })} />
-      <div className={styles.pair}>
+        <TextInput label={t("Delivery address")} value={form.deliveryAddress} onChange={(deliveryAddress) => setForm({ ...form, deliveryAddress })} />
+      </FormSection>
+      <FormSection title={t("Payment")}>
         <SelectField label={t("Payment terms")} selectedKey={form.paymentTerms} onSelectionChange={(key) => setForm({ ...form, paymentTerms: key as PaymentTerms })}
           items={TERMS.map((id) => ({ id, label: supplierLabels.terms[id] }))} />
         {form.paymentTerms === "split" ? <TextInput label={t("Advance")} inputMode="decimal" suffix="%" value={form.advancePercent} onChange={(value) => setForm({ ...form, advancePercent: numeric(value) })} />
-          : form.paymentTerms === "credit" ? <TextInput label={t("Days")} inputMode="numeric" value={form.creditDays} onChange={(value) => setForm({ ...form, creditDays: value.replace(/\D/g, "").slice(0, 3) })} /> : <span />}
-      </div>
-      <div className={styles.pair}>
-        <TextInput label={t("Retention")} description={t("Held from each invoice until handover")} inputMode="decimal" suffix="%" value={form.retentionPercent}
+          : form.paymentTerms === "credit" ? <TextInput label={t("Days")} inputMode="numeric" value={form.creditDays} onChange={(value) => setForm({ ...form, creditDays: value.replace(/\D/g, "").slice(0, 3) })} /> : null}
+        <TextInput label={t("Retention")} inputMode="decimal" suffix="%" value={form.retentionPercent}
           onChange={(value) => setForm({ ...form, retentionPercent: numeric(value) })} />
-        <span />
-      </div>
-    </section> : <dl className={styles.facts}>
+      </FormSection>
+    </div> : <dl className={styles.facts}>
       <div><dt>{t("Supplier")}</dt><dd>{[order.supplierName, state.supplier?.contactName, state.supplier?.phone].filter(Boolean).join(" · ")}</dd></div>
       <div><dt>{t("Needed by")}</dt><dd>{format.day(order.expectedDate) || "—"}</dd></div>
       <div><dt>{t("Deliver to")}</dt><dd>{[labels.deliverTo[order.deliverTo], order.deliveryAddress].filter(Boolean).join(" · ")}</dd></div>

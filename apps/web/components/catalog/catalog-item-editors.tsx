@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Plus, Sparkles, Trash2 } from "lucide-react";
-import { Button, ComboboxField, IconButton, InlineNotice, SelectField, Switch, TextInput } from "@/design-system";
+import { Button, ComboboxField, FormSection, IconButton, InlineNotice, SelectField, Switch, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { AiPauseNotice } from "@/components/workspace/ai-pause-notice";
 import { isAiPauseMessage } from "@/lib/ai/pause";
@@ -43,27 +43,27 @@ export function CatalogItemForm({ workspaceId, catalogId, item, structure, onSav
   };
   return <form className={styles.form} onSubmit={submit}>
     {error ? <InlineNotice message={error} tone="error" /> : null}
-    <TextInput isRequired label={t("Name")} onChange={set("name")} value={draft.name} />
-    <div className={styles.formRow}>
+    <FormSection>
+      <TextInput isRequired label={t("Name")} onChange={set("name")} value={draft.name} />
       <TextInput isRequired label={t("Code")} onChange={set("code")} value={draft.code} />
       <SelectField isRequired items={types} label={t("Type")} onSelectionChange={(key) => set("itemType")(String(key))} selectedKey={draft.itemType} />
-    </div>
-    <div className={styles.formRow}>
-      <SelectField isRequired items={structure.units.map((unit) => ({ id: unit.code, label: `${unit.code} · ${unit.label}` }))} label={t("Unit")} onSelectionChange={(key) => set("unitCode")(String(key))} selectedKey={draft.unitCode} />
       <SelectField items={[{ id: "", label: t("No category") }, ...structure.categories.map((category) => ({ id: category.id, label: category.name }))]} label={t("Category")} onSelectionChange={(key) => set("categoryId")(String(key ?? ""))} selectedKey={draft.categoryId} />
-    </div>
-    {attributes.map((attribute) => {
-      const value = values[attribute.code] ?? "";
-      const change = (next: string) => setValues((current) => ({ ...current, [attribute.code]: next }));
-      if (attribute.valueType === "choice") return <SelectField isRequired={attribute.required} items={[...(attribute.required ? [] : [{ id: "", label: t("Not set") }]), ...attribute.choices.map((choice) => ({ id: choice.value, label: choice.label }))]} key={attribute.id} label={attribute.label} onSelectionChange={(key) => change(String(key ?? ""))} selectedKey={value} />;
-      if (attribute.valueType === "boolean") return <Switch isSelected={value === "true"} key={attribute.id} onChange={(on) => change(on ? "true" : "false")}>{attribute.label}</Switch>;
-      if (attribute.valueType === "number" || attribute.valueType === "dimension") return <TextInput isRequired={attribute.required} key={attribute.id} label={attribute.label} onChange={(next) => change(decimal(next))} suffix={attribute.unitCode ?? undefined} value={value} />;
-      return <TextInput isRequired={attribute.required} key={attribute.id} label={attribute.label} onChange={change} value={value} />;
-    })}
-    <div className={styles.formRow}>
-      <TextInput description={t("Added to quoted quantities.")} label={t("Waste")} onChange={(next) => set("wastePercent")(decimal(next))} suffix="%" value={draft.wastePercent} />
-      <TextInput description={t("Whole sheets, boxes or packs when buying.")} label={t("Buy in multiples of")} onChange={(next) => set("purchaseRoundTo")(decimal(next))} suffix={draft.unitCode} value={draft.purchaseRoundTo} />
-    </div>
+    </FormSection>
+    {attributes.length ? <FormSection title={t("Attributes")}>
+      {attributes.map((attribute) => {
+        const value = values[attribute.code] ?? "";
+        const change = (next: string) => setValues((current) => ({ ...current, [attribute.code]: next }));
+        if (attribute.valueType === "choice") return <SelectField isRequired={attribute.required} items={[...(attribute.required ? [] : [{ id: "", label: t("Not set") }]), ...attribute.choices.map((choice) => ({ id: choice.value, label: choice.label }))]} key={attribute.id} label={attribute.label} onSelectionChange={(key) => change(String(key ?? ""))} selectedKey={value} />;
+        if (attribute.valueType === "boolean") return <Switch isSelected={value === "true"} key={attribute.id} onChange={(on) => change(on ? "true" : "false")}>{attribute.label}</Switch>;
+        if (attribute.valueType === "number" || attribute.valueType === "dimension") return <TextInput isRequired={attribute.required} key={attribute.id} label={attribute.label} onChange={(next) => change(decimal(next))} suffix={attribute.unitCode ?? undefined} value={value} />;
+        return <TextInput isRequired={attribute.required} key={attribute.id} label={attribute.label} onChange={change} value={value} />;
+      })}
+    </FormSection> : null}
+    <FormSection title={t("Quantities")}>
+      <SelectField isRequired items={structure.units.map((unit) => ({ id: unit.code, label: `${unit.code} · ${unit.label}` }))} label={t("Unit")} onSelectionChange={(key) => set("unitCode")(String(key))} selectedKey={draft.unitCode} />
+      <TextInput label={t("Waste")} onChange={(next) => set("wastePercent")(decimal(next))} suffix="%" value={draft.wastePercent} />
+      <TextInput label={t("Buy in multiples of")} onChange={(next) => set("purchaseRoundTo")(decimal(next))} suffix={draft.unitCode} value={draft.purchaseRoundTo} />
+    </FormSection>
     <div className={styles.actions}><Button onPress={onCancel}>{t("Cancel")}</Button><Button isLoading={saving} type="submit" variant="primary">{t("Save item")}</Button></div>
   </form>;
 }

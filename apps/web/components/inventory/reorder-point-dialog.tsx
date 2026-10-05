@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, FormDialog, FormRow, SelectField, TextInput } from "@/design-system";
+import { Button, FormDialog, SelectField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { ReorderPoint, StockState } from "@/lib/inventory/types";
@@ -40,10 +40,8 @@ export function ReorderPointDialog({ api, state, item, point, suppliers, onClose
     secondaryAction={point ? <Button variant="quiet" isLoading={removing} onPress={() => void remove()}>{t("Remove")}</Button> : undefined}>
       <SelectField label={t("Where")} isRequired isDisabled={Boolean(point)} selectedKey={place} onSelectionChange={(key) => setPlace(String(key ?? EVERYWHERE))}
         items={[{ id: EVERYWHERE, label: t("Every place together") }, ...state.locations.filter((location) => location.kind !== "site").map((location) => ({ id: location.id, label: location.name }))]} />
-      <FormRow>
-        <TextInput label={t("Low at")} description={t("Free stock at or below this")} isRequired inputMode="decimal" suffix={item.unit || undefined} value={reorderAt} onChange={(value) => setReorderAt(numeric(value))} />
-        <TextInput label={t("Order")} inputMode="decimal" suffix={item.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
-      </FormRow>
+      <TextInput label={t("Low at")} isRequired inputMode="decimal" suffix={item.unit || undefined} value={reorderAt} onChange={(value) => setReorderAt(numeric(value))} />
+      <TextInput label={t("Order")} inputMode="decimal" suffix={item.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
       {suppliers ? <SelectField label={t("From")} selectedKey={vendorId} onSelectionChange={(key) => setVendorId(String(key ?? NOBODY))}
         items={[{ id: NOBODY, label: t("Any supplier") }, ...suppliers.map((supplier) => ({ id: supplier.id, label: supplier.name }))]} /> : null}
   </FormDialog>;

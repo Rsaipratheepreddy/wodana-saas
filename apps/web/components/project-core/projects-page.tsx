@@ -85,6 +85,7 @@ export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: stri
 
   return <div data-tour="project-list"><PageShell title={t("Projects")} action={action} tabs={tabs}>
     <DataGrid<ProjectRow>
+      gridKey="projects.list"
       ariaLabel={t("Projects")}
       columns={columns}
       data={visible}

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileUp, Plus } from "lucide-react";
 import {
-  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, FormRow, MoreDetails, NoResultsState, PageHeader, SelectField, TextAreaField, TextInput, useFormDraft, useRememberedChoice,
+  Button, DataGrid, EmptyState, ErrorState, FillWithWoddy, FormDialog, MoreDetails, NoResultsState, PageHeader, SelectField, TextAreaField, TextInput, useFormDraft, useRememberedChoice,
   type DataGridColumn,
   TypeChip,
 } from "@/design-system";
@@ -162,14 +162,10 @@ function NewItemDialog({ isOpen, onClose, onCreated, structure, workspaceId, cat
     lead={aiReady ? <FillWithWoddy fields={[{ key: "name", label: t("Name") }, { key: "code", label: t("Code") }, { key: "unit", label: t("Unit") }, { key: "description", label: t("Description") }]}
       onApply={fill} onExtract={async ({ text, image }) => fillWithWoddy(workspaceId, "catalog_item", { ...(text ? { text } : {}), ...(image ? { image: await imageForWoddy(image) } : {}) })} /> : null}>
     <TextInput isRequired label={t("Name")} maxLength={200} onChange={set("name")} value={draft.name} />
-    <FormRow>
-      <TextInput isRequired label={t("Code")} maxLength={80} onChange={set("code")} value={draft.code} />
-      <SelectField isRequired items={Object.entries(types).map(([id, label]) => ({ id, label }))} label={t("Type")} onSelectionChange={(key) => set("itemType")(String(key))} selectedKey={draft.itemType} />
-    </FormRow>
-    <FormRow>
-      <SelectField isRequired items={units.map((unit) => ({ id: unit.code, label: `${unit.code} · ${unit.label}` }))} label={t("Unit")} onSelectionChange={(key) => set("unitCode")(String(key))} selectedKey={draft.unitCode} />
-      <SelectField items={[{ id: "", label: t("No category") }, ...categories.map((category) => ({ id: category.id, label: category.name }))]} label={t("Category")} onSelectionChange={(key) => set("categoryId")(String(key ?? ""))} selectedKey={draft.categoryId} />
-    </FormRow>
+    <TextInput isRequired label={t("Code")} maxLength={80} onChange={set("code")} value={draft.code} />
+    <SelectField isRequired items={Object.entries(types).map(([id, label]) => ({ id, label }))} label={t("Type")} onSelectionChange={(key) => set("itemType")(String(key))} selectedKey={draft.itemType} />
+    <SelectField isRequired items={units.map((unit) => ({ id: unit.code, label: `${unit.code} · ${unit.label}` }))} label={t("Unit")} onSelectionChange={(key) => set("unitCode")(String(key))} selectedKey={draft.unitCode} />
+    <SelectField items={[{ id: "", label: t("No category") }, ...categories.map((category) => ({ id: category.id, label: category.name }))]} label={t("Category")} onSelectionChange={(key) => set("categoryId")(String(key ?? ""))} selectedKey={draft.categoryId} />
     <MoreDetails filled={draft.description ? 1 : 0}>
       <TextAreaField label={t("Description")} maxLength={4000} onChange={set("description")} value={draft.description} />
     </MoreDetails>

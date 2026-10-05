@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
 import { Badge,
-  Button, DataGrid, DateField, FormDialog, FormRow, VisuallyHidden, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoResultsState, SelectField, Skeleton, TextAreaField, TextInput,
+  Button, DataGrid, DateField, FormDialog, FormSection, VisuallyHidden, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoResultsState, SelectField, Skeleton, TextAreaField, TextInput,
   type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -74,28 +74,28 @@ export function RecordUnmatchedDialog({ api, locations, onClose, onRecorded }: {
     onRecorded(saved);
   };
   return <FormDialog size="lg" title={t("Goods without an order")} onClose={onClose} isDirty={Boolean(filled.length || note.trim() || photos.length)} isSubmitDisabled={!ready} submitLabel={t("Save")} onSubmit={save}>
-      <FormRow>
+      <FormSection title={t("Delivery")}>
         <SelectField label={t("From")} isRequired selectedKey={vendorId} placeholder={t("Choose the supplier")} onSelectionChange={(key) => setVendorId(key === null ? null : String(key))}
           items={[...suppliers, { id: OTHER, label: t("Not in the list") }]} />
-        {vendorId === OTHER ? <TextInput label={t("Who delivered")} isRequired maxLength={160} value={supplierName} onChange={setSupplierName} /> : <span />}
-      </FormRow>
-      <FormRow>
+        {vendorId === OTHER ? <TextInput label={t("Who delivered")} isRequired maxLength={160} value={supplierName} onChange={setSupplierName} /> : null}
         <SelectField label={t("Arrived at")} isRequired selectedKey={place} onSelectionChange={(key) => setPlace(key === null ? null : String(key))} items={places} />
         <DateField label={t("Received on")} isRequired value={parseDate(receivedOn)} onChange={(value) => value && setReceivedOn(value.toString())} />
-      </FormRow>
-      <FormRow>
         <TextInput label={t("Delivery note")} maxLength={120} value={note} onChange={setNote} />
         <TextInput label={t("Handed over by")} maxLength={160} value={handedOverBy} onChange={setHandedOverBy} />
-      </FormRow>
-      <ul className={styles.draftLines} aria-label={t("What arrived")}>{lines.map((line, index) => <li key={index}>
-        <TextInput label={<VisuallyHidden>{t("What arrived, line {number}", { number: index + 1 })}</VisuallyHidden>} maxLength={240} placeholder={t("What arrived")} value={line.description} onChange={(description) => setLine(index, { description })} />
-        <TextInput label={<VisuallyHidden>{t("Quantity, line {number}", { number: index + 1 })}</VisuallyHidden>} placeholder={t("Quantity")} inputMode="decimal" value={line.quantity} onChange={(value) => setLine(index, { quantity: numeric(value) })} />
-        <TextInput label={<VisuallyHidden>{t("Unit, line {number}", { number: index + 1 })}</VisuallyHidden>} maxLength={20} placeholder={t("Unit")} value={line.unit} onChange={(unit) => setLine(index, { unit })} />
-        {lines.length > 1 ? <IconButton aria-label={t("Remove line {number}", { number: index + 1 })} size="compact" variant="quiet" onPress={() => setLines(lines.filter((_, item) => item !== index))}>
-          <X aria-hidden="true" size={14} /></IconButton> : <span />}
-      </li>)}</ul>
-      <Button size="compact" variant="quiet" onPress={() => setLines([...lines, { description: "", quantity: "", unit: "" }])}><Plus aria-hidden="true" size={14} />{t("Add line")}</Button>
-      <PhotoPicker files={photos} onChange={setPhotos} />
+      </FormSection>
+      <FormSection title={t("What arrived")}>
+        <ul className={styles.draftLines} aria-label={t("What arrived")}>{lines.map((line, index) => <li key={index}>
+          <TextInput label={<VisuallyHidden>{t("What arrived, line {number}", { number: index + 1 })}</VisuallyHidden>} maxLength={240} placeholder={t("What arrived")} value={line.description} onChange={(description) => setLine(index, { description })} />
+          <TextInput label={<VisuallyHidden>{t("Quantity, line {number}", { number: index + 1 })}</VisuallyHidden>} placeholder={t("Quantity")} inputMode="decimal" value={line.quantity} onChange={(value) => setLine(index, { quantity: numeric(value) })} />
+          <TextInput label={<VisuallyHidden>{t("Unit, line {number}", { number: index + 1 })}</VisuallyHidden>} maxLength={20} placeholder={t("Unit")} value={line.unit} onChange={(unit) => setLine(index, { unit })} />
+          {lines.length > 1 ? <IconButton aria-label={t("Remove line {number}", { number: index + 1 })} size="compact" variant="quiet" onPress={() => setLines(lines.filter((_, item) => item !== index))}>
+            <X aria-hidden="true" size={14} /></IconButton> : <span />}
+        </li>)}</ul>
+        <div><Button size="compact" variant="quiet" onPress={() => setLines([...lines, { description: "", quantity: "", unit: "" }])}><Plus aria-hidden="true" size={14} />{t("Add line")}</Button></div>
+      </FormSection>
+      <FormSection title={t("Photos")}>
+        <PhotoPicker files={photos} onChange={setPhotos} />
+      </FormSection>
   </FormDialog>;
 }
 

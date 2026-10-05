@@ -74,6 +74,7 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
     ]} />}>
     {failure ? <Callout title={t("Could not refresh customers")} tone="warning">{failure}</Callout> : null}
     <DataGrid
+      gridKey="crm.customers"
       ariaLabel={t("Customer records")}
       columns={columns}
       data={visible}

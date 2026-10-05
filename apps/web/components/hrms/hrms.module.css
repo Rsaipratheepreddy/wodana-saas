@@ -40,12 +40,8 @@
 
 /* Forms in dialogs and sheets. */
 .dialogBody { display: grid; gap: var(--wd-space-4); }
-.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
-.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
 .switches { display: flex; flex-wrap: wrap; gap: var(--wd-space-3) var(--wd-space-6); }
-.weekdays { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; border: 0; min-inline-size: 0; }
-.weekdays legend { padding: 0; margin-block-end: var(--wd-space-2); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }
-.weekdays > div { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); }
+.weekdays { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); }
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-2); }
 
 /* The check-in camera. */
@@ -66,8 +62,6 @@
 .dayTotal [data-over] { color: var(--wd-color-danger); }
 
 /* A crew's day: one row a worker — name, whether they were there, overtime. */
-.crewGroup { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; border: 0; min-inline-size: 0; }
-.crewGroup legend { padding: 0; margin-block-end: var(--wd-space-2); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }
 .crewHead { display: flex; justify-content: space-between; padding-inline-end: var(--wd-space-10); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .crewWorkers { display: grid; margin: 0; padding: 0; list-style: none; }
 .crewWorkers > li { display: grid; grid-template-columns: minmax(0, 1fr) auto 7rem var(--wd-control-sm); align-items: center; gap: var(--wd-space-2) var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
@@ -96,7 +90,6 @@
   .crewWorkers > li { grid-template-columns: minmax(0, 1fr) 7rem var(--wd-control-sm); }
   /* The presence choice takes its own line under the name and overtime. */
   .crewWorkers > li > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
-  .pair, .trio { grid-template-columns: minmax(0, 1fr); }
   .facts > div { grid-template-columns: minmax(0, 1fr); }
   .location { margin-inline-start: 0; }
 }

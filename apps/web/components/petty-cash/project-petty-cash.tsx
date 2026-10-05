@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
 import {
-  Button, DataGrid, DateField, EmptyState, ErrorState, FileUploader, FormDialog, FormNotSaved, FormRow, InlineNotice, InspectorSheet, MoneyField, NoResultsState, SelectField, TextAreaField, TextInput,
+  Button, DataGrid, DateField, EmptyState, ErrorState, FileUploader, FormDialog, FormNotSaved, FormSection, InlineNotice, InspectorSheet, MoneyField, NoResultsState, SelectField, TextAreaField, TextInput,
   type DataGridColumn,
   TypeChip,
 } from "@/design-system";
@@ -159,22 +159,22 @@ function ClaimDialog({ api, projectId, state, claim, onClose, onSaved }: {
   return <FormDialog size="lg" title={claim ? claim.reference : t("New claim")} onClose={onClose} error={error || undefined} isDirty={Boolean(amount || description.trim() || file)}
     isSubmitting={busy === "save"} isSubmitDisabled={!ready || !evidence} submitLabel={t("Submit")} onSubmit={() => { setError(""); return persist(true); }}
     secondaryAction={<Button isLoading={busy === "save"} isDisabled={Boolean(busy) || !ready} onPress={() => void saveDraft()}>{t("Save draft")}</Button>}>
-      <FormRow>
+      <FormSection title={t("Expense")}>
         <DateField label={t("Spent on")} isRequired value={spentOn ? parseDate(spentOn) : null} onChange={(value) => setSpentOn(value ? value.toString() : null)} />
         <MoneyField label={t("Amount")} isRequired currency={state.currency} value={amount} onChange={setAmount} />
-      </FormRow>
-      <TextInput label={t("What for")} isRequired maxLength={500} value={description} onChange={setDescription} />
-      <FormRow>
+        <TextInput label={t("What for")} isRequired maxLength={500} value={description} onChange={setDescription} />
         <SelectField label={t("Kind")} isRequired placeholder={t("Choose")} selectedKey={category} onSelectionChange={(key) => setCategory(key ? (key as PettyCashCategory) : null)}
           items={CATEGORIES.map((item) => ({ id: item, label: categories[item] }))} />
         <SelectField label={t("Package")} selectedKey={packageId || "none"} onSelectionChange={(key) => setPackageId(key && key !== "none" ? String(key) : "")}
           items={[{ id: "none", label: t("Not in a package") }, ...state.packages.map((item) => ({ id: item.id, label: item.name }))]} />
-      </FormRow>
-      <div className={styles.receipt}>
-        <FileUploader appearance="button" accept="application/pdf,image/*" multiple={false} label={file || claim?.receiptName ? t("Replace receipt") : t("Attach receipt")}
-          onFiles={(files) => setFile(files[0] ?? null)} />
-        {file ? <span>{file.name}</span> : claim?.receiptName ? <span className={styles.muted}>{claim.receiptName}</span> : null}
-      </div>
-      {!file && !claim?.receiptName ? <TextInput label={t("If there's no receipt, why")} maxLength={500} value={noReceiptReason} onChange={setNoReceiptReason} /> : null}
+      </FormSection>
+      <FormSection title={t("Receipt")}>
+        <div className={styles.receipt}>
+          <FileUploader appearance="button" accept="application/pdf,image/*" multiple={false} label={file || claim?.receiptName ? t("Replace receipt") : t("Attach receipt")}
+            onFiles={(files) => setFile(files[0] ?? null)} />
+          {file ? <span>{file.name}</span> : claim?.receiptName ? <span className={styles.muted}>{claim.receiptName}</span> : null}
+        </div>
+        {!file && !claim?.receiptName ? <TextInput label={t("If there's no receipt, why")} maxLength={500} value={noReceiptReason} onChange={setNoReceiptReason} /> : null}
+      </FormSection>
   </FormDialog>;
 }

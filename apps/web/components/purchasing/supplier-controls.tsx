@@ -87,10 +87,8 @@ function DocumentDialog({ api, supplierId, onClose, onSaved }: { api: Purchasing
   };
   return <FormDialog size="md" title={t("Add document")} onClose={onClose} isDirty={Boolean(label.trim() || number.trim() || file)}
     isSubmitDisabled={(kind === "other" && !label.trim()) || (required && !expiresOn)} submitLabel={t("Save")} onSubmit={save}>
-      <FormRow>
-        <SelectField label={t("Document")} isRequired selectedKey={kind} onSelectionChange={(key) => setKind(key as DocumentKind)} items={KINDS.map((item) => ({ id: item, label: labels.kind[item] }))} />
-        {kind === "other" ? <TextInput label={t("Name")} isRequired maxLength={160} value={label} onChange={setLabel} /> : <TextInput label={t("Number")} maxLength={120} value={number} onChange={setNumber} />}
-      </FormRow>
+      <SelectField label={t("Document")} isRequired selectedKey={kind} onSelectionChange={(key) => setKind(key as DocumentKind)} items={KINDS.map((item) => ({ id: item, label: labels.kind[item] }))} />
+      {kind === "other" ? <TextInput label={t("Name")} isRequired maxLength={160} value={label} onChange={setLabel} /> : <TextInput label={t("Number")} maxLength={120} value={number} onChange={setNumber} />}
       <DateField label={t("Expires on")} isRequired={required} value={expiresOn ? parseDate(expiresOn) : null} onChange={(value) => setExpiresOn(value ? value.toString() : null)} />
       <Switch isSelected={required} onChange={setRequired}>{t("Required: the supplier goes on hold when it expires")}</Switch>
       <FileUploader appearance="button" accept="application/pdf,image/*" label={file ? file.name : t("Attach the file")} multiple={false} onFiles={(files) => setFile(files[0] ?? null)} />
@@ -145,10 +143,8 @@ function BankDialog({ onClose, onSave }: { onClose: () => void; onSave: (input: 
   return <FormDialog size="md" title={t("New bank details")} onClose={onClose} isDirty={Boolean(form.accountName.trim() || form.bankName.trim() || form.accountNumber.trim())}
     isSubmitDisabled={!form.accountName.trim() || !form.bankName.trim() || !form.accountNumber.trim()} submitLabel={t("Save")} onSubmit={() => onSave(form)}>
     <TextInput label={t("Account name")} isRequired maxLength={160} value={form.accountName} onChange={set("accountName")} />
-    <FormRow>
-      <TextInput label={t("Bank")} isRequired maxLength={160} value={form.bankName} onChange={set("bankName")} />
-      <TextInput label={t("SWIFT")} maxLength={11} value={form.swift} onChange={set("swift")} />
-    </FormRow>
+    <TextInput label={t("Bank")} isRequired maxLength={160} value={form.bankName} onChange={set("bankName")} />
+    <TextInput label={t("SWIFT")} maxLength={11} value={form.swift} onChange={set("swift")} />
     <TextInput label={t("Account number or IBAN")} isRequired maxLength={34} value={form.accountNumber} onChange={set("accountNumber")} />
     <SelectField label={t("How the details came")} isRequired selectedKey={form.source} onSelectionChange={(key) => set("source")(String(key))} items={SOURCES.map((item) => ({ id: item, label: labels.source[item] }))} />
   </FormDialog>;
@@ -204,10 +200,8 @@ function ContractDialog({ state, onClose, onSave }: { state: SupplierControlsSta
   return <FormDialog size="lg" title={t("Add rate contract")} onClose={onClose} isDirty={Boolean(reference.trim() || filled.length)} isSubmitDisabled={!ready} submitLabel={t("Save")}
     onSubmit={() => onSave({ reference: reference.trim(), currency: currency.trim().toUpperCase(), validFrom, validTo,
       lines: filled.map((line) => ({ catalogItemId: line.catalogItemId, unitPrice: line.unitPrice, packSize: line.packSize || null, minimum: line.minimum || null })) })}>
-      <FormRow>
-        <TextInput label={t("Reference")} isRequired maxLength={120} value={reference} onChange={setReference} />
-        <TextInput label={t("Currency")} isRequired value={currency} onChange={(value) => setCurrency(value.toUpperCase().slice(0, 3))} />
-      </FormRow>
+      <TextInput label={t("Reference")} isRequired maxLength={120} value={reference} onChange={setReference} />
+      <TextInput label={t("Currency")} isRequired value={currency} onChange={(value) => setCurrency(value.toUpperCase().slice(0, 3))} />
       <FormRow>
         <DateField label={t("Valid from")} isRequired value={validFrom ? parseDate(validFrom) : null} onChange={(value) => setValidFrom(value ? value.toString() : null)} />
         <DateField label={t("Valid to")} isRequired minValue={validFrom ? parseDate(validFrom) : undefined} value={validTo ? parseDate(validTo) : null} onChange={(value) => setValidTo(value ? value.toString() : null)} />

@@ -3,7 +3,7 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState, type FormEvent } from "react";
 import { Building2, Network, Pencil, Plus, RotateCcw, Users } from "lucide-react";
-import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, DesignSystemProvider, EmptyState, IconButton, IconMenuButton, InspectorSheet, MultiSelectField, SelectField, SettingsPage, Surface, Tabs, TextAreaField, TextInput, useDesignSystem, FormDialog } from "@/design-system";
+import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, DesignSystemProvider, EmptyState, IconButton, IconMenuButton, InspectorSheet, MultiSelectField, SelectField, SettingsPage, Surface, Tabs, TextAreaField, TextInput, useDesignSystem, FormDialog, FormSection } from "@/design-system";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { BusinessUnitRecord } from "@/lib/workspace/company-profile";
 import type { WorkspaceConfigurationRevision } from "@/lib/workspace/company-profile";
@@ -204,7 +204,7 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
 
       <UnitDialog initialData={initialData} item={editingUnit} key={editingUnit === "new" ? "unit-new" : editingUnit?.id ?? "unit-closed"} onClose={() => setEditingUnit(null)} onSaved={(unit) => { setUnits((current) => [unit, ...current.filter((item) => item.id !== unit.id)]); setEditingUnit(null); setStatus(t("{name} was saved.", { name: unit.name })); }} units={units} />
       <TeamDialog initialData={initialData} item={editingTeam} key={editingTeam === "new" ? "team-new" : editingTeam?.id ?? "team-closed"} onClose={() => setEditingTeam(null)} onSaved={(team) => { setTeams((current) => [team, ...current.filter((item) => item.id !== team.id)]); setEditingTeam(null); setStatus(t("{name} was saved.", { name: team.name })); }} units={units} />
-      <InspectorSheet isOpen={Boolean(historyTeam)} onOpenChange={(open) => { if (!open && !isRollingBack) setHistoryTeam(null); }} size="sm" title={historyTeam ? t("{name} history", { name: historyTeam.name }) : t("Team history")} description={t("Member access, inherited roles, and enquiry queues are versioned together.")}>
+      <InspectorSheet isOpen={Boolean(historyTeam)} onOpenChange={(open) => { if (!open && !isRollingBack) setHistoryTeam(null); }} size="sm" title={historyTeam ? t("{name} history", { name: historyTeam.name }) : t("Team history")}>
         {historyError ? <Callout title={t("Team history unavailable")} tone="danger">{historyError}</Callout> : null}
         {!historyError && !revisions.length ? <p className={styles.historyStatus}>{t("No saved changes yet.")}</p> : null}
         {revisions.length ? <ol className={styles.historyList}>{revisions.map((revision, index) => <li key={revision.id}><div><strong>{t("Revision {number}", { number: revision.revisionNumber })}</strong>{index === 0 ? <Badge tone="neutral">{t("Current")}</Badge> : null}</div><small>{new Date(revision.createdAt).toLocaleString(locale, { timeZone })} · {revision.changes.length === 1 ? t("1 changed field") : t("{count} changed fields", { count: revision.changes.length })}</small>{index ? <Button isDisabled={isRollingBack} onPress={() => setRollbackTarget(revision)} size="compact" variant="quiet"><RotateCcw aria-hidden="true" size={14} />{t("Restore")}</Button> : null}</li>)}</ol> : null}
@@ -230,7 +230,17 @@ function UnitDialog({ initialData, item, onClose, onSaved, units }: { initialDat
   const [saving, setSaving] = useState(false);
   const save = async (event: FormEvent) => { event.preventDefault(); setSaving(true); setFailure(""); try { const response = await fetch(existing ? `/api/workspace/business-units/${existing.id}` : "/api/workspace/business-units", { method: existing ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: initialData.workspaceId, ...(existing ? { version: existing.version } : { code }), legalEntityId, parentBusinessUnitId: parentId === "none" ? null : parentId, name, type, timezone }) }); if (!response.ok) throw new Error(await responseMessage(response, t("The business unit could not be saved."))); onSaved(await response.json() as BusinessUnitRecord); } catch (error) { setFailure(error instanceof Error ? error.message : t("The business unit could not be saved.")); } finally { setSaving(false); } };
   return <FormDialog isOpen={Boolean(item)} title={existing ? t("Edit business unit") : t("Create business unit")} onClose={onClose} isSubmitting={saving} submitLabel={t("Save business unit")} onSubmit={save} formClassName={styles.form}>
-{failure ? <Callout title={t("Could not save business unit")} tone="danger">{failure}</Callout> : null}<div className={styles.formColumns}><TextInput isRequired label={t("Name")} onChange={setName} placeholder={t("Design Studio")} value={name} /><TextInput isDisabled={Boolean(existing)} isRequired label={t("Code")} onChange={setCode} placeholder={t("DESIGN")} value={code} /></div><div className={styles.formColumns}><SelectField items={initialData.legalEntities.map((entity) => ({ id: entity.id, label: entity.displayName }))} label={t("Legal entity")} onSelectionChange={(key) => key && setLegalEntityId(String(key))} selectedKey={legalEntityId} /><SelectField items={Object.entries(UNIT_TYPES).map(([id, label]) => ({ id, label: t(label) }))} label={t("Unit type")} onSelectionChange={(key) => key && setType(String(key))} selectedKey={type} /></div><SelectField items={[{ id: "none", label: t("Top level") }, ...units.filter((unit) => unit.id !== existing?.id && unit.legalEntityId === legalEntityId).map((unit) => ({ id: unit.id, label: unit.name }))]} label={t("Parent business unit")} onSelectionChange={(key) => key && setParentId(String(key))} selectedKey={parentId} /><TextInput isRequired label={t("Time zone")} onChange={setTimezone} value={timezone} />
+    {failure ? <Callout title={t("Could not save business unit")} tone="danger">{failure}</Callout> : null}
+    <FormSection>
+      <TextInput isRequired label={t("Name")} onChange={setName} placeholder={t("Design Studio")} value={name} />
+      <TextInput isDisabled={Boolean(existing)} isRequired label={t("Code")} onChange={setCode} placeholder={t("DESIGN")} value={code} />
+      <SelectField items={Object.entries(UNIT_TYPES).map(([id, label]) => ({ id, label: t(label) }))} label={t("Unit type")} onSelectionChange={(key) => key && setType(String(key))} selectedKey={type} />
+    </FormSection>
+    <FormSection title={t("Structure")}>
+      <SelectField items={initialData.legalEntities.map((entity) => ({ id: entity.id, label: entity.displayName }))} label={t("Legal entity")} onSelectionChange={(key) => key && setLegalEntityId(String(key))} selectedKey={legalEntityId} />
+      <SelectField items={[{ id: "none", label: t("Top level") }, ...units.filter((unit) => unit.id !== existing?.id && unit.legalEntityId === legalEntityId).map((unit) => ({ id: unit.id, label: unit.name }))]} label={t("Parent business unit")} onSelectionChange={(key) => key && setParentId(String(key))} selectedKey={parentId} />
+      <TextInput isRequired label={t("Time zone")} onChange={setTimezone} value={timezone} />
+    </FormSection>
 </FormDialog>;
 }
 
@@ -251,13 +261,20 @@ function TeamDialog({ initialData, item, onClose, onSaved, units }: { initialDat
   return <FormDialog isOpen={Boolean(item)} title={existing ? t("Edit team") : t("Create team")} onClose={onClose} isSubmitting={saving} submitLabel={t("Save team")} onSubmit={save} formClassName={styles.form}>
 
       {failure ? <Callout title={t("Could not save team")} tone="danger">{failure}</Callout> : null}
-      <div className={styles.formColumns}><TextInput isRequired label={t("Team name")} onChange={setName} placeholder={t("Sales")} value={name} /><TextInput isDisabled={Boolean(existing)} isRequired label={t("Code")} onChange={setCode} placeholder={t("SALES")} value={code} /></div>
-      <SelectField items={units.map((unit) => ({ id: unit.id, label: unit.name }))} label={t("Department")} onSelectionChange={(key) => key && setUnitId(String(key))} selectedKey={unitId} />
-      <MultiSelectField items={initialData.roles.filter((role) => !["owner", "administrator"].includes(role.code)).map((role) => ({ id: role.id, label: role.name }))} label={t("Access inherited by this team")} onSelectionChange={(keys) => setRoleIds(new Set(Array.from(keys, String)))} selectedKeys={roleIds} />
-      <MultiSelectField items={initialData.queues.map((queue) => ({ id: queue.id, label: queue.name }))} label={t("Enquiry queues for this team")} onSelectionChange={(keys) => setQueueIds(new Set(Array.from(keys, String)))} selectedKeys={queueIds} />
-      <fieldset className={styles.memberChoices}><legend>{t("Members")}</legend><div>{initialData.members.map((member) => <Checkbox isSelected={memberIds.has(member.id)} key={member.id} onChange={(checked) => { const next = new Set(memberIds); if (checked) next.add(member.id); else { next.delete(member.id); if (leadId === member.id) setLeadId("none"); } setMemberIds(next); }}><span><strong>{member.displayName}</strong><small>{member.email}</small></span></Checkbox>)}</div></fieldset>
-      <SelectField items={[{ id: "none", label: t("No team lead") }, ...initialData.members.filter((member) => memberIds.has(member.id)).map((member) => ({ id: member.id, label: member.displayName }))]} label={t("Team lead")} onSelectionChange={(key) => key && setLeadId(String(key))} selectedKey={leadId} />
-      <TextAreaField label={t("Description")} onChange={setDescription} placeholder={t("What this team owns")} value={description} />
+      <FormSection>
+        <TextInput isRequired label={t("Team name")} onChange={setName} placeholder={t("Sales")} value={name} />
+        <TextInput isDisabled={Boolean(existing)} isRequired label={t("Code")} onChange={setCode} placeholder={t("SALES")} value={code} />
+        <SelectField items={units.map((unit) => ({ id: unit.id, label: unit.name }))} label={t("Department")} onSelectionChange={(key) => key && setUnitId(String(key))} selectedKey={unitId} />
+        <TextAreaField label={t("Description")} onChange={setDescription} placeholder={t("What this team owns")} value={description} />
+      </FormSection>
+      <FormSection title={t("Members")}>
+        {initialData.members.length ? <div className={styles.memberChoices}><div>{initialData.members.map((member) => <Checkbox isSelected={memberIds.has(member.id)} key={member.id} onChange={(checked) => { const next = new Set(memberIds); if (checked) next.add(member.id); else { next.delete(member.id); if (leadId === member.id) setLeadId("none"); } setMemberIds(next); }}><span><strong>{member.displayName}</strong><small>{member.email}</small></span></Checkbox>)}</div></div> : null}
+        <SelectField items={[{ id: "none", label: t("No team lead") }, ...initialData.members.filter((member) => memberIds.has(member.id)).map((member) => ({ id: member.id, label: member.displayName }))]} label={t("Team lead")} onSelectionChange={(key) => key && setLeadId(String(key))} selectedKey={leadId} />
+      </FormSection>
+      <FormSection title={t("Access")}>
+        <MultiSelectField items={initialData.roles.filter((role) => !["owner", "administrator"].includes(role.code)).map((role) => ({ id: role.id, label: role.name }))} label={t("Access inherited by this team")} onSelectionChange={(keys) => setRoleIds(new Set(Array.from(keys, String)))} selectedKeys={roleIds} />
+        <MultiSelectField items={initialData.queues.map((queue) => ({ id: queue.id, label: queue.name }))} label={t("Enquiry queues for this team")} onSelectionChange={(keys) => setQueueIds(new Set(Array.from(keys, String)))} selectedKeys={queueIds} />
+      </FormSection>
     
 </FormDialog>;
 }

@@ -4,7 +4,7 @@ import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { useState } from 'react';
 import type { Quote, QuotePresentation } from '@/lib/commercial/types';
 import { quotationPhoto } from '@/lib/commercial/quotation-table';
-import { Button, DateField, EmailInput, FileUploader, FormDialog, FormRow, FormSection, MoreDetails, PhoneNumberField, TextInput } from '@/design-system';
+import { Button, DateField, EmailInput, FileUploader, FormDialog, FormSection, MoreDetails, PhoneNumberField, TextInput } from '@/design-system';
 import { parseDate } from '@internationalized/date';
 import s from './quotation-builder-shell.module.css';
 
@@ -38,21 +38,17 @@ export function QuotationDocumentDetails({ quote, readOnly, onChange, onClose }:
     catch (error) { setProblem((error as Error).message); }
     finally { setBusy(false); }
   };
-  return <FormDialog title={t("Client & project details")} size="lg" onClose={onClose} isDirty={dirty} hideSubmit={readOnly} cancelLabel={readOnly ? t('Close') : undefined}
+  return <FormDialog title={t("Client & project details")} onClose={onClose} isDirty={dirty} hideSubmit={readOnly} cancelLabel={readOnly ? t('Close') : undefined}
     isSubmitting={busy} submitLabel={t("Apply details")} closeOnSuccess error={problem || undefined}
     onSubmit={() => onChange({ ...quote, cover: { subtitle: '', ...quote.cover, preparedFor: details.clientName ?? '', location: details.location ?? '' }, presentation: { ...quote.presentation!, details } }, true)}>
     <FormSection title={t("Client")}>
       {client.map(field)}
-      <FormRow>
-        <PhoneNumberField isReadOnly={readOnly} label={t("Client phone")} value={details.clientPhone ?? ''} onChange={(value) => set('clientPhone', value)} />
-        <EmailInput isReadOnly={readOnly} label={t("Client email")} maxLength={254} value={details.clientEmail ?? ''} onChange={(value) => set('clientEmail', value)} />
-      </FormRow>
+      <PhoneNumberField isReadOnly={readOnly} label={t("Client phone")} value={details.clientPhone ?? ''} onChange={(value) => set('clientPhone', value)} />
+      <EmailInput isReadOnly={readOnly} label={t("Client email")} maxLength={254} value={details.clientEmail ?? ''} onChange={(value) => set('clientEmail', value)} />
     </FormSection>
     <FormSection title={t("Quotation")}>
-      <FormRow>
-        <TextInput isReadOnly={readOnly} label={t("Quote reference")} maxLength={500} value={details.reference ?? ''} onChange={(value) => set('reference', value)} />
-        <DateField isReadOnly={readOnly} label={t("Issue date")} value={dateOf(details.date)} onChange={(date) => set('date', date?.toString() ?? '')} />
-      </FormRow>
+      <TextInput isReadOnly={readOnly} label={t("Quote reference")} maxLength={500} value={details.reference ?? ''} onChange={(value) => set('reference', value)} />
+      <DateField isReadOnly={readOnly} label={t("Issue date")} value={dateOf(details.date)} onChange={(date) => set('date', date?.toString() ?? '')} />
     </FormSection>
     <MoreDetails filled={team.filter(({ key }) => details[key]).length + (details.clientLogo ? 1 : 0)}>
       <FormSection title={t("Your team")}>{team.map(field)}</FormSection>

@@ -1,16 +1,16 @@
 .tools, .form { display: grid; gap: var(--wd-space-4); }
-.tools p { font-size: var(--wd-text-sm); line-height: 1.6; color: #667085; margin: 0; }
-.columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--wd-space-3); }
+.tools p { font-size: var(--wd-text-sm); line-height: 1.6; color: var(--wd-color-text-secondary); margin: 0; }
+/* Allowed pairs: a rate and its currency; an invoice date and its due date. */
+.amountCurrency, .dateRange { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--wd-space-3); }
 .actions, .row { display: flex; align-items: center; gap: var(--wd-space-3); flex-wrap: wrap; }
-.row { padding-block: var(--wd-space-3); border-bottom: 1px solid var(--wd-color-structural-divider); }
-.row > div { flex: 1; min-width: 150px; }
+.row { padding-block: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.row > div { flex: 1; min-inline-size: 150px; }
 .row strong, .row small { display: block; }
-.row small { margin-top: var(--wd-space-1); color: #667085; font-size: var(--wd-text-xs); }
-.records { max-height: 340px; overflow: auto; }
-.field { display: grid; gap: var(--wd-space-1-5); font-size: var(--wd-text-sm); }
-.field textarea { resize: vertical; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-xs); padding: var(--wd-space-2); font: inherit; }
-.tools pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--wd-text-xs); max-width: 100%; }
+.row small { margin-block-start: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.records { max-block-size: 340px; overflow: auto; }
+.tools pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--wd-text-xs); max-inline-size: 100%; }
 
 .row > .templateDetails { flex-basis: 100%; display: grid; gap: var(--wd-space-1-5); }
 .templateDetails p, .templatePreview { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 .templatePreview { padding: var(--wd-space-3); border-inline-start: 3px solid var(--wd-border-brand, #cfb0ea); }
+@media (max-width: 30rem) { .amountCurrency, .dateRange { grid-template-columns: minmax(0, 1fr); } }

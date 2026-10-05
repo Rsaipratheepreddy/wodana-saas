@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Time, parseDate } from "@internationalized/date";
 import type { CalendarInput, HrmsBootstrap, HrmsCalendar, HrmsHoliday } from "@wodana/contracts";
 import {
-  Badge, Button, Checkbox, ConfirmationDialog, DataGrid, DateRangeField, EmptyState, ErrorState, InlineNotice, InspectorSheet, SelectField, TextInput, TimeField,
+  Badge, Button, Checkbox, ConfirmationDialog, DataGrid, DateRangeField, EmptyState, ErrorState, FormRow, FormSection, InlineNotice, InspectorSheet, SelectField, TextInput, TimeField,
   type DataGridColumn,
  FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -91,19 +91,20 @@ function CalendarSheet({ api, calendar, template, zone, onClose, onSaved, onHoli
       <Button variant="primary" isLoading={busy} isDisabled={!dirty || !valid} onPress={() => void save()}>{t("Save")}</Button></div>}>
     <div className={styles.sheet}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
-      <TextInput label={t("Name")} isRequired value={form.name} onChange={(value) => set("name", value)} maxLength={120} />
-      <SelectField label={t("Time zone")} isRequired selectedKey={form.timezone} onSelectionChange={(key) => { if (key) set("timezone", String(key)); }} items={zones} />
-      <fieldset className={styles.weekdays}>
-        <legend>{t("Working days")}</legend>
-        <div>{format.week.map((day) => <Checkbox key={day.day} aria-label={day.long} isSelected={form.workingDays.includes(day.day)}
+      <FormSection>
+        <TextInput label={t("Name")} isRequired value={form.name} onChange={(value) => set("name", value)} maxLength={120} />
+        <SelectField label={t("Time zone")} isRequired selectedKey={form.timezone} onSelectionChange={(key) => { if (key) set("timezone", String(key)); }} items={zones} />
+      </FormSection>
+      <FormSection title={t("Working days")}>
+        <div className={styles.weekdays}>{format.week.map((day) => <Checkbox key={day.day} aria-label={day.long} isSelected={form.workingDays.includes(day.day)}
           onChange={(on) => set("workingDays", (on ? [...form.workingDays, day.day] : form.workingDays.filter((item) => item !== day.day)).sort((a, b) => a - b))}>{day.short}</Checkbox>)}</div>
-      </fieldset>
-      <div className={styles.trio}>
-        {timeField("dayStart", t("Starts"))}
+        <FormRow>
+          {timeField("dayStart", t("Starts"))}
+          {timeField("dayEnd", t("Ends"))}
+        </FormRow>
         {timeField("halfDay", t("Half day"))}
-        {timeField("dayEnd", t("Ends"))}
-      </div>
-      {!ordered ? <InlineNotice tone="error" message={t("A day starts before its half, and its half before its end.")} /> : null}
+        {!ordered ? <InlineNotice tone="error" message={t("A day starts before its half, and its half before its end.")} /> : null}
+      </FormSection>
       {calendar ? <Holidays api={api} calendar={calendar} onChanged={onHolidaysChanged} /> : null}
     </div>
   </InspectorSheet>;

@@ -91,10 +91,10 @@ function MaterialDialog({ title, state, action, withReason = false, onClose, onS
       }}>
       <SelectField label={t("Material")} selectedKey={materialItemId} onSelectionChange={(key) => setMaterialItemId(key ? String(key) : other)}
         items={[...state.projectMaterials.map((item) => ({ id: item.id, label: item.unit ? `${item.name} (${item.unit})` : item.name })), { id: other, label: t("Another material") }]} />
-      {!listed ? <div className={styles.pair}>
+      {!listed ? <>
         <TextInput label={t("Name")} isRequired value={name} onChange={setName} />
         <TextInput label={t("Unit")} value={unit} onChange={setUnit} />
-      </div> : null}
+      </> : null}
       <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={(listed?.unit ?? unit) || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
       {withReason ? <TextAreaField label={t("Why it's swapped")} isRequired value={reason} onChange={setReason} /> : null}
   </FormDialog>;

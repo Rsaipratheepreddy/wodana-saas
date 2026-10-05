@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DateField, FormDialog, FormRow, InlineNotice, SelectField, Skeleton, TextInput } from "@/design-system";
+import { Button, DateField, FormDialog, FormSection, InlineNotice, SelectField, Skeleton, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
@@ -80,42 +80,44 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
     </> : undefined}>
     {!form && !error ? <Skeleton lines={5} /> : <>
       {form ? <>
-        <FormRow>
+        <FormSection title={t("Delivery")}>
           <SelectField label={t("Arrived at")} isRequired selectedKey={place} onSelectionChange={(key) => setPlace(key === null ? null : String(key))}
             items={form.places.map((item) => ({ id: item.key, label: placeLabel(item) }))} />
           <DateField label={t("Received on")} isRequired value={parseDate(receivedOn)} onChange={(value) => value && setReceivedOn(value.toString())} />
-        </FormRow>
-        <FormRow>
           <TextInput label={t("Delivery note")} maxLength={120} value={note} onChange={setNote} />
           <TextInput label={t("Handed over by")} maxLength={160} value={handedOverBy} onChange={setHandedOverBy} />
-        </FormRow>
-        {!open.length ? <InlineNotice tone="info" message={t("Everything on this order has arrived.")} /> : <div className={styles.receiveLines} role="table" aria-label={t("What arrived")}
-          data-columns={form.requireInspection ? "4" : "5"}>
-          <div role="row" className={styles.receiveHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Left")}</span>
-            <span role="columnheader">{t("On the note")}</span><span role="columnheader">{t("Received")}</span>{form.requireInspection ? null : <span role="columnheader">{t("Rejected")}</span>}</div>
-          {open.map((item) => {
-            const value = line(item.id);
-            return <div role="row" key={item.id} className={styles.receiveLine}>
-              <span role="cell" className={styles.nameCell}><span>{item.description}</span><small>{[item.projectReference, item.specification].filter(Boolean).join(" · ")}</small>
-                {Number(value.noted) > Number(value.received || 0) && value.received !== "" ? <small className={styles.lateText}>
-                  {t("{quantity} missing against the note", { quantity: `${subtractExact(value.noted, value.received)} ${item.unit}`.trim() })}</small> : null}</span>
-              <span role="cell" className={styles.money}>{`${quantityText(item.outstanding)} ${item.unit}`.trim()}</span>
-              <span role="cell"><TextInput aria-label={t("On the note of {item}", { item: item.description })} label={null} inputMode="decimal" value={value.noted}
-                onChange={(noted) => setLine(item.id, { noted: numeric(noted) })} /></span>
-              <span role="cell"><TextInput aria-label={t("Received of {item}", { item: item.description })} label={null} inputMode="decimal" suffix={item.unit || undefined} value={value.received}
-                onChange={(received) => setLine(item.id, { received: numeric(received) })} /></span>
-              {form.requireInspection ? null : <span role="cell"><TextInput aria-label={t("Rejected of {item}", { item: item.description })} label={null} inputMode="decimal" value={value.rejected}
-                onChange={(rejected) => setLine(item.id, { rejected: numeric(rejected) })} /></span>}
-              {!form.requireInspection && Number(value.rejected) > 0 ? <RejectFields description={item.description} kind={value.kind} reason={value.reason}
-                onChange={(patch) => setLine(item.id, patch)} labels={labels.rejectKind} /> : null}
-            </div>;
-          })}
-        </div>}
-        {tooMuch ? <InlineNotice tone="error" message={t("At most {quantity} of {item} can arrive.", { quantity: `${quantityText(tooMuch.receivable)} ${tooMuch.unit}`.trim(), item: tooMuch.description })} /> : null}
-        {overRejected ? <InlineNotice tone="error" message={t("More of {item} is rejected than arrived.", { item: overRejected.description })} /> : null}
-        {/* Receive stays off until the site photo is added: say so, or the button looks broken. */}
-        {photoNeeded ? <InlineNotice tone="info" message={t("A photo is needed for deliveries to site.")} /> : null}
-        <PhotoPicker files={photos} onChange={setPhotos} label={atSite && form.requireSitePhoto ? t("Add a photo of the delivery") : undefined} />
+        </FormSection>
+        <FormSection title={t("What arrived")}>
+          {!open.length ? <InlineNotice tone="info" message={t("Everything on this order has arrived.")} /> : <div className={styles.receiveLines} role="table" aria-label={t("What arrived")}
+            data-columns={form.requireInspection ? "4" : "5"}>
+            <div role="row" className={styles.receiveHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Left")}</span>
+              <span role="columnheader">{t("On the note")}</span><span role="columnheader">{t("Received")}</span>{form.requireInspection ? null : <span role="columnheader">{t("Rejected")}</span>}</div>
+            {open.map((item) => {
+              const value = line(item.id);
+              return <div role="row" key={item.id} className={styles.receiveLine}>
+                <span role="cell" className={styles.nameCell}><span>{item.description}</span><small>{[item.projectReference, item.specification].filter(Boolean).join(" · ")}</small>
+                  {Number(value.noted) > Number(value.received || 0) && value.received !== "" ? <small className={styles.lateText}>
+                    {t("{quantity} missing against the note", { quantity: `${subtractExact(value.noted, value.received)} ${item.unit}`.trim() })}</small> : null}</span>
+                <span role="cell" className={styles.money}>{`${quantityText(item.outstanding)} ${item.unit}`.trim()}</span>
+                <span role="cell"><TextInput aria-label={t("On the note of {item}", { item: item.description })} label={null} inputMode="decimal" value={value.noted}
+                  onChange={(noted) => setLine(item.id, { noted: numeric(noted) })} /></span>
+                <span role="cell"><TextInput aria-label={t("Received of {item}", { item: item.description })} label={null} inputMode="decimal" suffix={item.unit || undefined} value={value.received}
+                  onChange={(received) => setLine(item.id, { received: numeric(received) })} /></span>
+                {form.requireInspection ? null : <span role="cell"><TextInput aria-label={t("Rejected of {item}", { item: item.description })} label={null} inputMode="decimal" value={value.rejected}
+                  onChange={(rejected) => setLine(item.id, { rejected: numeric(rejected) })} /></span>}
+                {!form.requireInspection && Number(value.rejected) > 0 ? <RejectFields description={item.description} kind={value.kind} reason={value.reason}
+                  onChange={(patch) => setLine(item.id, patch)} labels={labels.rejectKind} /> : null}
+              </div>;
+            })}
+          </div>}
+          {tooMuch ? <InlineNotice tone="error" message={t("At most {quantity} of {item} can arrive.", { quantity: `${quantityText(tooMuch.receivable)} ${tooMuch.unit}`.trim(), item: tooMuch.description })} /> : null}
+          {overRejected ? <InlineNotice tone="error" message={t("More of {item} is rejected than arrived.", { item: overRejected.description })} /> : null}
+          {/* Receive stays off until the site photo is added: say so, or the button looks broken. */}
+          {photoNeeded ? <InlineNotice tone="info" message={t("A photo is needed for deliveries to site.")} /> : null}
+        </FormSection>
+        <FormSection title={t("Photos")}>
+          <PhotoPicker files={photos} onChange={setPhotos} label={atSite && form.requireSitePhoto ? t("Add a photo of the delivery") : undefined} />
+        </FormSection>
       </> : null}
     </>}
   </FormDialog>;
@@ -126,9 +128,9 @@ export function RejectFields({ description, kind, reason, labels, onChange }: {
   description: string; kind: RejectKind | null; reason: string; labels: Record<RejectKind, string>; onChange: (patch: { kind?: RejectKind | null; reason?: string }) => void;
 }) {
   const t = useT();
-  return <span className={styles.receiveReason}><span className={styles.pair}>
+  return <span className={styles.receiveReason}>
     <SelectField label={t("What was wrong with {item}", { item: description })} isRequired selectedKey={kind} placeholder={t("Choose")}
       onSelectionChange={(key) => onChange({ kind: key === null ? null : key as RejectKind })} items={(Object.keys(labels) as RejectKind[]).map((id) => ({ id, label: labels[id] }))} />
     <TextInput label={t("Why it was rejected")} isRequired value={reason} onChange={(value) => onChange({ reason: value })} />
-  </span></span>;
+  </span>;
 }

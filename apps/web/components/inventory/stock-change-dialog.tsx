@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { FormDialog, FormRow, InlineNotice, MoneyField, SelectField, TextInput } from "@/design-system";
+import { useMemo, useState, type ReactNode } from "react";
+import { FormDialog, FormSection, InlineNotice, MoneyField, SelectField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { StockRow, StockState } from "@/lib/inventory/types";
@@ -40,6 +40,9 @@ export function StockChangeDialog({ api, state, mode, row, onClose, onDone }: {
     && (mode !== "issue" || row?.projectId || projectId) && (mode !== "allocate" || projectId) && (mode !== "return" || projectId)
     && (!differs || reason.trim()) && (mode !== "add" || ((itemId !== NEW_ITEM || name.trim()) && reason.trim())) && (mode !== "return" || reason.trim());
 
+  // Adding stock asks for the item, then the stock (its own titled section). Every other change is a few fields in one column.
+  const group = (title: string | undefined, children: ReactNode) => mode === "add" ? <FormSection title={title}>{children}</FormSection> : children;
+
   const save = async () => {
     {
       const base = { id, action: mode, locationId, reason: reason.trim() };
@@ -53,29 +56,29 @@ export function StockChangeDialog({ api, state, mode, row, onClose, onDone }: {
   return <FormDialog size="md" title={title} onClose={onClose} isDirty={Boolean(reason.trim() || (mode !== "count" && quantity))} isSubmitDisabled={!ready}
     submitLabel={mode === "count" ? t("Save count") : title} onSubmit={save}
     description={row ? `${row.itemName} · ${row.locationName} · ${row.projectReference ?? t("Free stock")} · ${t("{quantity} on hand", { quantity: `${quantityText(row.onHand)} ${row.unit}`.trim() })}` : undefined}>
-      {mode === "add" ? <>
+      {group(undefined, mode === "add" ? <>
         <SelectField label={t("Item")} isRequired selectedKey={itemId} onSelectionChange={(key) => setItemId(String(key ?? NEW_ITEM))}
           items={[{ id: NEW_ITEM, label: t("A new item") }, ...items.map((item) => ({ id: item.itemId, label: item.unit ? `${item.itemName} (${item.unit})` : item.itemName }))]} />
-        {itemId === NEW_ITEM ? <FormRow>
+        {itemId === NEW_ITEM ? <>
           <TextInput label={t("Name")} isRequired maxLength={200} value={name} onChange={setName} />
           <TextInput label={t("Unit")} maxLength={20} value={unit} onChange={setUnit} />
-        </FormRow> : null}
-        <FormRow>
+        </> : null}
+      </> : null)}
+      {group(t("Stock"), <>
+        {mode === "add" ? <>
           <SelectField label={t("Place")} isRequired selectedKey={locationId} onSelectionChange={(key) => setLocationId(key === null ? null : String(key))}
             items={state.locations.map((location) => ({ id: location.id, label: location.name }))} />
           <SelectField label={t("For")} selectedKey={projectId ?? FREE} onSelectionChange={(key) => setProjectId(key === null || key === FREE ? null : String(key))}
             items={[{ id: FREE, label: t("Free stock") }, ...projectItems]} />
-        </FormRow>
-      </> : null}
-      {(mode === "issue" && !row?.projectId) || mode === "allocate" || mode === "return" ? <SelectField label={mode === "return" ? t("Back from") : t("Project")} isRequired
-        selectedKey={projectId} onSelectionChange={(key) => setProjectId(key === null ? null : String(key))} items={projectItems} /> : null}
-      <FormRow>
+        </> : null}
+        {(mode === "issue" && !row?.projectId) || mode === "allocate" || mode === "return" ? <SelectField label={mode === "return" ? t("Back from") : t("Project")} isRequired
+          selectedKey={projectId} onSelectionChange={(key) => setProjectId(key === null ? null : String(key))} items={projectItems} /> : null}
         <TextInput label={mode === "count" ? t("Counted") : t("Quantity")} isRequired inputMode="decimal" suffix={unitOf || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))} />
         {mode === "add" ? <MoneyField label={t("Cost each")} value={cost} onChange={setCost} /> : null}
-      </FormRow>
-      {over ? <InlineNotice tone="error" message={t("Only {quantity} there.", { quantity: `${quantityText(row!.onHand)} ${row!.unit}`.trim() })} /> : null}
-      {mode === "add" || mode === "count" || mode === "return" || mode === "issue" ? <TextInput
-        label={mode === "add" ? t("Where it comes from") : mode === "count" ? t("Why it's different") : mode === "return" ? t("Why it's coming back") : t("Note")}
-        isRequired={mode === "add" || mode === "return" || Boolean(differs)} maxLength={500} value={reason} onChange={setReason} /> : null}
+        {over ? <InlineNotice tone="error" message={t("Only {quantity} there.", { quantity: `${quantityText(row!.onHand)} ${row!.unit}`.trim() })} /> : null}
+        {mode === "add" || mode === "count" || mode === "return" || mode === "issue" ? <TextInput
+          label={mode === "add" ? t("Where it comes from") : mode === "count" ? t("Why it's different") : mode === "return" ? t("Why it's coming back") : t("Note")}
+          isRequired={mode === "add" || mode === "return" || Boolean(differs)} maxLength={500} value={reason} onChange={setReason} /> : null}
+      </>)}
   </FormDialog>;
 }

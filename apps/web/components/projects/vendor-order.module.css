@@ -254,7 +254,7 @@ form.actionPanel {
   display: grid;
   gap: var(--wd-space-4);
 }
-form.actionPanel > h2, form.actionPanel > p { margin: 0; }
+form.actionPanel > h2 { margin: 0; }
 .formActions {
   display: flex;
   justify-content: flex-end;

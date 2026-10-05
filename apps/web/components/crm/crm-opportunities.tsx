@@ -279,6 +279,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
       })}</div>
       {nextCursor && <Button size="compact" isLoading={busy} onPress={() => void reload(true)}>{t("Load more opportunities")}</Button>}
     </> : <DataGrid
+      gridKey="crm.opportunities"
       ariaLabel={t("Opportunities")}
       columns={columns}
       data={boardItems}

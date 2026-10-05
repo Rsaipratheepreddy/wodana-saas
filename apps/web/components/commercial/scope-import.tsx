@@ -60,6 +60,26 @@ export function ScopeImport({
       isOpen={open}
       onOpenChange={(v) => !v && onClose()}
       title={t("Import requirements")}
+      footer={
+        <div className="wd-dialog-actions">
+          <Button isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button>
+          <Button
+            variant="primary"
+            isDisabled={busy || !selected.length}
+            isLoading={busy}
+            onPress={async () => {
+              if (await run("import_scope", { refreshExisting: refresh, entryIds: selected }))
+                onClose();
+              else
+                setError(
+                  t("Scope could not be imported. Close this dialog to review the error, refresh, and try again."),
+                );
+            }}
+          >
+            {selected.length ? t("Import selected requirements ({count})", { count: selected.length }) : t("Import selected requirements")}
+          </Button>
+        </div>
+      }
     >
       <div className={s.form}>
         {error && (
@@ -67,8 +87,6 @@ export function ScopeImport({
             {translateKnown(t, error)}
           </p>
         )}
-        <p className={s.muted}>
-          {t("Choose the requirements to add. Existing prices stay unchanged; set quantities and prices before review.")}</p>
         {!content && !error && <Skeleton lines={5} />}
         {included.length > 0 && <DataGrid compactToolbar rowNumbers={false} ariaLabel={t("Requirement import")} data={included} getRowId={row=>row.id} searchLabel={t("Search requirement import")} exportFileName="requirement-import.csv" selectable={false} columns={[{id:"include",header:t("Include"),size:80,cell:({row:{original:e}})=><Checkbox aria-label={t("Include {title}", { title: e.title })} isDisabled={busy} isSelected={selected.includes(e.id)} onChange={checked=>setSelected(ids=>checked?[...ids,e.id]:ids.filter(id=>id!==e.id))}/>},{id:"title",header:t("Room / item"),size:320,accessorFn:(e)=>`${e.roomName ?? t("General")} ${e.title}`,cell:({row:{original:e}})=>{return <>
                       <strong>{e.title}</strong>
@@ -103,21 +121,6 @@ export function ScopeImport({
           {t("Update existing imported items, keeping their rates and costs")}</Checkbox>}
         {quote.lines.some(line => line.scopeId) && <p className={s.muted}>
           {t("Existing quotation items are retained if they were removed from Requirements; review those items before issuing.")}</p>}
-        <Button
-          variant="primary"
-          isDisabled={busy || !selected.length}
-          isLoading={busy}
-          onPress={async () => {
-            if (await run("import_scope", { refreshExisting: refresh, entryIds: selected }))
-              onClose();
-            else
-              setError(
-                t("Scope could not be imported. Close this dialog to review the error, refresh, and try again."),
-              );
-          }}
-        >
-          {selected.length ? t("Import selected requirements ({count})", { count: selected.length }) : t("Import selected requirements")}
-        </Button>
       </div>
     </ControlledModalDialog>
   );

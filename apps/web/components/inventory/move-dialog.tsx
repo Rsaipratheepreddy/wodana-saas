@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { EmptyState, InlineNotice, SelectField, TextInput, FormDialog } from "@/design-system";
+import { EmptyState, FormDialog, FormRow, InlineNotice, SelectField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { StockRow, StockState, TransferState } from "@/lib/inventory/types";
@@ -33,12 +33,12 @@ export function MoveDialog({ api, state, row, onClose, onSent }: { api: Inventor
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
   };
   return <FormDialog size="lg" title={t("Move stock")} onClose={onClose} error={error || undefined} isSubmitting={busy} isSubmitDisabled={!from || !to || from === to || !chosen.length || Boolean(over) || Boolean(wrongSite)} submitLabel={t("Move")} onSubmit={() => send()}>
-      <div className={styles.pair}>
+      <FormRow>
         <SelectField label={t("From")} isRequired selectedKey={from} onSelectionChange={(key) => { setFrom(key === null ? null : String(key)); setAmounts({}); }}
           items={state.locations.filter((location) => state.rows.some((item) => item.locationId === location.id)).map((location) => ({ id: location.id, label: location.name }))} />
         <SelectField label={t("To")} isRequired selectedKey={to} onSelectionChange={(key) => setTo(key === null ? null : String(key))}
           items={state.locations.filter((location) => location.id !== from).map((location) => ({ id: location.id, label: location.name }))} />
-      </div>
+      </FormRow>
       {!from ? null : !here.length ? <EmptyState illustration={null} title={t("Nothing in stock here")} /> : <div className={styles.lines} role="table" aria-label={t("What to move")}>
         <div role="row" className={styles.lineHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("On hand")}</span><span role="columnheader">{t("Move")}</span></div>
         {here.map((item) => <div role="row" key={keyOf(item)} className={styles.line}>

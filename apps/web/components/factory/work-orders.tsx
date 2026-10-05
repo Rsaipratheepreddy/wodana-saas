@@ -142,16 +142,13 @@ function BatchDialog({ api, orders, workcenters, onClose, onSaved }: { api: Fact
   const [workcenterId, setWorkcenterId] = useState(shared ?? "");
   const [plannedOn, setPlannedOn] = useState<string | null>(orders.map((order) => order.plannedStart).filter((value): value is string => Boolean(value)).sort()[0] ?? null);
   const [error, setError] = useState("");
-  return <FormDialog size="md" title={t("Run together")} onClose={onClose} error={error || undefined} isSubmitDisabled={!name.trim()} submitLabel={t("Create batch")} onSubmit={async () => { setError("");
+  return <FormDialog size="md" title={t("Run together")} description={orders.map((order) => `${orderNumber(order.number)} · ${order.projectReference}`).join(", ")} onClose={onClose} error={error || undefined} isSubmitDisabled={!name.trim()} submitLabel={t("Create batch")} onSubmit={async () => { setError("");
         try { await api.saveBatch({ id, name: name.trim(), workcenterId: workcenterId || null, plannedOn, orderIds: orders.map((order) => order.id) }); onSaved(id); }
         catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
       }}>
-      <p className={styles.muted}>{orders.map((order) => `${orderNumber(order.number)} · ${order.projectReference}`).join(", ")}</p>
       <TextInput label={t("Name")} isRequired value={name} onChange={setName} />
-      <div className={styles.pair}>
-        <SelectField label={t("Workcenter")} placeholder={t("Choose")} selectedKey={workcenterId} onSelectionChange={(key) => setWorkcenterId(key ? String(key) : "")}
-          items={workcenters.map((center) => ({ id: center.id, label: center.name }))} />
-        <DateField label={t("Day")} value={plannedOn ? parseDate(plannedOn) : null} onChange={(value) => setPlannedOn(value ? value.toString() : null)} />
-      </div>
+      <SelectField label={t("Workcenter")} placeholder={t("Choose")} selectedKey={workcenterId} onSelectionChange={(key) => setWorkcenterId(key ? String(key) : "")}
+        items={workcenters.map((center) => ({ id: center.id, label: center.name }))} />
+      <DateField label={t("Day")} value={plannedOn ? parseDate(plannedOn) : null} onChange={(value) => setPlannedOn(value ? value.toString() : null)} />
   </FormDialog>;
 }

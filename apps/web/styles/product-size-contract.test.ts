@@ -30,7 +30,8 @@ describe("current Wodana size and font contract", () => {
   });
 
   it("uses shared form-control density without permanent elevation in Company Settings", () => {
-    expect(roleStyles).toMatch(/\.form :global\(\.wd-input-group\) \{ min-block-size: var\(--wd-control-md\)/);
+    // §5c D.4: the role form takes the shared field heights; no local control-size override.
+    expect(roleStyles).not.toMatch(/:global\(\.wd-input-group\) \{[^}]*min-block-size/);
     expect(roleStyles).not.toMatch(/\.form :global\(\.(?:wd-input-group|wd-textarea-frame)\) \{[^}]*box-shadow: 0 1px/);
   });
 });

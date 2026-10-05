@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
-import { Button, Checkbox, DateField, EmptyState, ErrorState, FileUploader, IconButton, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput, FormDialog } from "@/design-system";
+import { Button, Checkbox, DateField, EmptyState, ErrorState, FileUploader, IconButton, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput, FormDialog, FormSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { siteApi } from "@/lib/site/client";
 import type { HandoverKind, HandoverMethod, HandoverPack, HandoverState } from "@/lib/site/types";
@@ -168,24 +168,26 @@ function DecisionDialog({ mode, methods, today, open, balance, onClose, onSave }
         await onSave({ decidedOn, decidedByName: name.trim(), method, ...(mode === "accept" ? { outstanding: items.map((item) => item.trim()).filter(Boolean) } : { reason: reason.trim() }),
           ...(confirmOpen ? { confirmOpen: true, openReason: openReason.trim() } : {}), ...(balance ? { balanceReason: balanceReason.trim() } : {}) });
       }}>
-      <div className={styles.pair}>
+      <FormSection title={t("Client decision")}>
         <DateField label={t("Day")} isRequired value={parseDate(decidedOn)} onChange={(value) => setDecidedOn(value ? value.toString() : today)} />
         <SelectField label={t("How")} selectedKey={method} onSelectionChange={(key) => setMethod((key ?? "signed_document") as HandoverMethod)}
           items={(Object.keys(methods) as HandoverMethod[]).map((id) => ({ id, label: methods[id] }))} />
-      </div>
-      <TextInput label={t("Who decided for the client")} isRequired value={name} onChange={setName} />
-      {mode === "accept" ? <fieldset className={styles.group}>
-        <legend>{t("Still outstanding")}</legend>
+        <TextInput label={t("Who decided for the client")} isRequired value={name} onChange={setName} />
+        {mode === "accept" ? null : <TextAreaField label={t("Why the client refused it")} isRequired value={reason} onChange={setReason} />}
+      </FormSection>
+      {mode === "accept" ? <FormSection title={t("Still outstanding")}>
         {items.map((item, index) => <div key={index} className={styles.row}>
           <TextInput aria-label={t("Outstanding item")} label={null} value={item} onChange={(value) => setItems(items.map((row, at) => (at === index ? value : row)))} />
           <IconButton aria-label={t("Remove")} size="compact" variant="quiet" onPress={() => setItems(items.filter((_, at) => at !== index))}><X aria-hidden="true" size={13} /></IconButton>
         </div>)}
-        <Button size="compact" variant="quiet" onPress={() => setItems([...items, ""])}><Plus aria-hidden="true" size={14} />{t("Add an item")}</Button>
-      </fieldset> : <TextAreaField label={t("Why the client refused it")} isRequired value={reason} onChange={setReason} />}
-      {confirmOpen && open ? <><OpenWorkList open={open} /><TextAreaField label={t("Why hand over with work still open")} isRequired value={openReason} onChange={setOpenReason} /></> : null}
-      {balance ? balance.allowed
-        ? <><InlineNotice tone="info" message={t("Balance due {amount}", { amount: balance.text })} />
-            <TextAreaField label={t("Why accept before it's paid")} isRequired value={balanceReason} onChange={setBalanceReason} /></>
-        : <InlineNotice tone="error" message={t("{amount} is still due. Someone who manages projects accepts a handover with a balance.", { amount: balance.text })} /> : null}
+        <Button className={styles.addLine} size="compact" variant="quiet" onPress={() => setItems([...items, ""])}><Plus aria-hidden="true" size={14} />{t("Add an item")}</Button>
+      </FormSection> : null}
+      {(confirmOpen && open) || balance ? <FormSection title={t("Before you accept")}>
+        {confirmOpen && open ? <><OpenWorkList open={open} /><TextAreaField label={t("Why hand over with work still open")} isRequired value={openReason} onChange={setOpenReason} /></> : null}
+        {balance ? balance.allowed
+          ? <><InlineNotice tone="info" message={t("Balance due {amount}", { amount: balance.text })} />
+              <TextAreaField label={t("Why accept before it's paid")} isRequired value={balanceReason} onChange={setBalanceReason} /></>
+          : <InlineNotice tone="error" message={t("{amount} is still due. Someone who manages projects accepts a handover with a balance.", { amount: balance.text })} /> : null}
+      </FormSection> : null}
   </FormDialog>;
 }

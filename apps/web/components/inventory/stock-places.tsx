@@ -50,11 +50,9 @@ function PlaceDialog({ draft, kinds, onClose, onSave }: { draft: Draft; kinds: R
   return <FormDialog size="md" title={draft.isNew ? t("Add place") : draft.name} onClose={onClose} error={error || undefined} isSubmitDisabled={!value.name.trim()} submitLabel={t("Save")} onSubmit={async () => { setError("");
         try { await onSave(value); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
       }}>
-      <div className={styles.pair}>
-        <TextInput label={t("Name")} isRequired value={value.name} onChange={(name) => setValue({ ...value, name })} />
-        {site ? <TextInput label={t("Kind")} isReadOnly value={kinds.site} onChange={() => undefined} /> : <SelectField label={t("Kind")} isDisabled={!draft.isNew} selectedKey={value.kind}
-          onSelectionChange={(key) => setValue({ ...value, kind: key as LocationKind })} items={(["warehouse", "factory", "other"] as const).map((id) => ({ id, label: kinds[id] }))} />}
-      </div>
+      <TextInput label={t("Name")} isRequired value={value.name} onChange={(name) => setValue({ ...value, name })} />
+      {site ? <TextInput label={t("Kind")} isReadOnly value={kinds.site} onChange={() => undefined} /> : <SelectField label={t("Kind")} isDisabled={!draft.isNew} selectedKey={value.kind}
+        onSelectionChange={(key) => setValue({ ...value, kind: key as LocationKind })} items={(["warehouse", "factory", "other"] as const).map((id) => ({ id, label: kinds[id] }))} />}
       <TextInput label={t("Address")} value={value.address} onChange={(address) => setValue({ ...value, address })} />
       {site ? null : <>
         <Switch isSelected={value.isDefault} onChange={(isDefault) => setValue({ ...value, isDefault })}>{t("Default place of this kind")}</Switch>

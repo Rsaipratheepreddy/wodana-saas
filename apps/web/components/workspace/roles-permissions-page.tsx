@@ -403,19 +403,12 @@ function RoleDialog({ initialData, item, onClose, onSaved }: { initialData: Role
   };
 
   const title = existing ? t("Edit custom role") : source ? t("Duplicate {name}", { name: source.name }) : t("Create custom role");
-  const intro = existing
-    ? t("Update the role details. Product capabilities stay in the list.")
-    : source
-      ? t("The copy starts with the same capabilities; adjust them after saving.")
-      : t("Create the role, then choose its product capabilities from the list.");
 
-  return <FormDialog isOpen={Boolean(item)} title={title} description={intro} onClose={onClose} isSubmitting={saving} submitLabel={t("Save role")} onSubmit={save} formClassName={styles.form}>
+  return <FormDialog isOpen={Boolean(item)} title={title} onClose={onClose} isSubmitting={saving} submitLabel={t("Save role")} onSubmit={save}>
 
       {failure ? <Callout title={t("Could not save role")} tone="danger">{failure}</Callout> : null}
-      <div className={styles.formColumns}>
-        <TextInput isRequired label={t("Role name")} onChange={(value) => { setName(value); if (!existing && !codeTouched) setCode(roleCode(value)); }} placeholder={t("Studio lead")} value={name} />
-        <TextInput description={existing ? t("Role codes cannot be changed.") : t("Used internally for access assignments.")} isDisabled={Boolean(existing)} isRequired label={t("Role code")} onChange={(value) => { setCodeTouched(true); setCode(roleCode(value)); }} placeholder={t("studio_lead")} value={code} />
-      </div>
+      <TextInput isRequired label={t("Role name")} onChange={(value) => { setName(value); if (!existing && !codeTouched) setCode(roleCode(value)); }} placeholder={t("Studio lead")} value={name} />
+      <TextInput isDisabled={Boolean(existing)} isRequired label={t("Role code")} onChange={(value) => { setCodeTouched(true); setCode(roleCode(value)); }} placeholder={t("studio_lead")} value={code} />
       <TextAreaField label={t("Description")} onChange={setDescription} placeholder={t("What members with this role can do")} value={description} />
     
 </FormDialog>;

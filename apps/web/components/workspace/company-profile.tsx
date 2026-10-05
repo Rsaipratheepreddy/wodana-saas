@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent 
 import { CheckCircle2, Trash2 } from "lucide-react";
 import {
   Button, Callout, ComboboxField, ConfirmationDialog, ControlledModalDialog,
-  DesignSystemProvider, SelectField, SettingsPage, SettingsRow, SettingsSection, TextInput, ValidationSummary, useDesignSystem, FormDialog } from "@/design-system";
+  DesignSystemProvider, SelectField, SettingsPage, SettingsRow, SettingsSection, TextInput, ValidationSummary, useDesignSystem, FormDialog, FormSection } from "@/design-system";
 import type { Translate } from "@/lib/i18n/keys";
 import {
   type CompanyAddress, type CompanyProfileData, type CompanyProfileUpdate, type LegalEntityRecord,
@@ -15,7 +15,7 @@ import {
 import { countryOptions, currencyOptions, localeOptions, timeZoneOptions, type RegionalOption } from "@/lib/workspace/regional-options";
 import styles from "./company-profile.module.css";
 import { BrandColour } from "./brand-colour";
-import { administrativeAreaLabel } from "@/lib/workspace/region-labels";
+import { administrativeAreaLabel, requiresAdministrativeArea, usesPostalCode } from "@/lib/workspace/region-labels";
 import { AiAssistanceSetting } from "./ai-assistance-setting";
 import { identityInitials, identityStyle } from "@/lib/brand/identity";
 
@@ -95,9 +95,9 @@ function validate(form: ProfileForm, t: Translate): FormErrors {
   if (form.line2.length > 160) errors.line2 = t("Address line must be 160 characters or fewer.");
   if (!form.city.trim()) errors.city = t("Enter the city.");
   else if (form.city.length > 100) errors.city = t("City must be 100 characters or fewer.");
-  if (form.countryCode === "AE" && !form.region.trim()) errors.region = t("Select an emirate.");
+  if (requiresAdministrativeArea(form.countryCode) && !form.region.trim()) errors.region = t("Select the {area}.", { area: t(administrativeAreaLabel(form.countryCode) as never) });
   else if (form.region.length > 100) errors.region = t("State or region must be 100 characters or fewer.");
-  if (form.countryCode !== "AE" && form.postalCode.length > 32) errors.postalCode = t("Postal code must be 32 characters or fewer.");
+  if (usesPostalCode(form.countryCode) && form.postalCode.length > 32) errors.postalCode = t("Postal code must be 32 characters or fewer.");
   if (!/^[A-Z]{3}$/.test(form.defaultCurrency)) errors.defaultCurrency = t("Select a base currency.");
   if (!form.defaultLocale) errors.defaultLocale = t("Select a language and format.");
   if (!form.defaultTimezone) errors.defaultTimezone = t("Select a time zone.");
@@ -349,30 +349,35 @@ export function CompanyProfile({
         {!canManage ? <p className={styles.permissionNote}>{t("Only workspace owners and administrators can edit this profile.")}</p> : null}
       </SettingsPage>
 
-      {entity ? <FormDialog isOpen={isOpen} size="lg" title={t("Edit profile")} onClose={() => { requestEditorChange(false); }} isSubmitting={isSaving} submitLabel={t("Save")} onSubmit={submit} formClassName={styles.editor}>
+      {entity ? <FormDialog isOpen={isOpen} size="lg" title={t("Edit profile")} onClose={() => { requestEditorChange(false); }} isSubmitting={isSaving} submitLabel={t("Save")} onSubmit={submit}>
 
           <ValidationSummary errors={Object.values(errors).filter((error): error is string => Boolean(error))} />
           {saveError ? <Callout title={t("Could not save changes")} tone="danger">{saveError}</Callout> : null}
           {logoError ? <Callout title={t("Could not update logo")} tone="danger">{logoError}</Callout> : null}
-          <div className={styles.formGrid}>
-            <div className={styles.fullField}><div className={styles.logoFormActions}><div className={styles.logoFormPreview} data-has-logo={data.branding.logoUrl ? true : undefined} style={data.branding.logoUrl ? undefined : identityStyle(data.workspace.id)}>{data.branding.logoUrl ? <Image alt={t("{name} logo", { name: data.workspace.name })} height={56} src={data.branding.logoUrl} unoptimized width={56} /> : <span aria-hidden="true">{identityInitials(data.workspace.name)}</span>}</div><Button isDisabled={isUploadingLogo} isLoading={isUploadingLogo} onPress={() => fileInput.current?.click()}>{t("Upload logo")}</Button>{data.branding.logoUrl ? <Button isDisabled={isUploadingLogo} onPress={() => setRemoveLogoOpen(true)} variant="quiet"><Trash2 aria-hidden="true" size={15} />{t("Remove")}</Button> : null}</div></div>
-            <div className={styles.fullField}><TextInput autoFocus errorMessage={errors.name} isInvalid={Boolean(errors.name)} isRequired label={t("Company name")} onChange={(value) => updateField("name", value)} value={form.name} /></div>
-            <div className={styles.fullField}><TextInput errorMessage={errors.registeredName} isInvalid={Boolean(errors.registeredName)} isRequired label={t("Registered company name")} onChange={(value) => updateField("registeredName", value)} value={form.registeredName} /></div>
+          <FormSection>
+            <div className={styles.logoFormActions}><div className={styles.logoFormPreview} data-has-logo={data.branding.logoUrl ? true : undefined} style={data.branding.logoUrl ? undefined : identityStyle(data.workspace.id)}>{data.branding.logoUrl ? <Image alt={t("{name} logo", { name: data.workspace.name })} height={56} src={data.branding.logoUrl} unoptimized width={56} /> : <span aria-hidden="true">{identityInitials(data.workspace.name)}</span>}</div><Button isDisabled={isUploadingLogo} isLoading={isUploadingLogo} onPress={() => fileInput.current?.click()}>{t("Upload logo")}</Button>{data.branding.logoUrl ? <Button isDisabled={isUploadingLogo} onPress={() => setRemoveLogoOpen(true)} variant="quiet"><Trash2 aria-hidden="true" size={15} />{t("Remove")}</Button> : null}</div>
+            <TextInput autoFocus errorMessage={errors.name} isInvalid={Boolean(errors.name)} isRequired label={t("Company name")} onChange={(value) => updateField("name", value)} value={form.name} />
+          </FormSection>
+          <FormSection title={t("Legal & tax")}>
+            <TextInput errorMessage={errors.registeredName} isInvalid={Boolean(errors.registeredName)} isRequired label={t("Registered company name")} onChange={(value) => updateField("registeredName", value)} value={form.registeredName} />
             <ComboboxField errorMessage={errors.countryCode} isInvalid={Boolean(errors.countryCode)} isRequired items={countries} label={t("Country / region")} onSelectionChange={(key) => key && updateField("countryCode", String(key))} placeholder={t("Search countries")} selectedKey={form.countryCode} />
             <TextInput errorMessage={errors.registrationNumber} isInvalid={Boolean(errors.registrationNumber)} label={t("Registration number")} onChange={(value) => updateField("registrationNumber", value)} value={form.registrationNumber} />
             <TextInput errorMessage={errors.taxRegistrationNumber} isInvalid={Boolean(errors.taxRegistrationNumber)} label={t("Tax registration number")} onChange={(value) => updateField("taxRegistrationNumber", value)} value={form.taxRegistrationNumber} />
-            <div className={styles.fullField}><TextInput errorMessage={errors.line1} isInvalid={Boolean(errors.line1)} isRequired label={t("Address line 1")} onChange={(value) => updateField("line1", value)} value={form.line1} /></div>
-            <div className={styles.fullField}><TextInput errorMessage={errors.line2} isInvalid={Boolean(errors.line2)} label={t("Address line 2")} onChange={(value) => updateField("line2", value)} value={form.line2} /></div>
-            {regionLookupFailed ? <TextInput description={t("Location suggestions are unavailable; enter the local administrative area.")} errorMessage={errors.region} isInvalid={Boolean(errors.region)} isRequired={form.countryCode === "AE"} label={areaLabel} onChange={(value) => updateField("region", value)} value={form.region} /> : <ComboboxField description={isLoadingRegions ? t("Loading locations for {country}…", { country: displayName(form.countryCode, "region", locale) }) : t("Only locations in {country} are shown.", { country: displayName(form.countryCode, "region", locale) })} errorMessage={errors.region} isDisabled={isLoadingRegions} isInvalid={Boolean(errors.region)} isRequired={form.countryCode === "AE"} items={regions} label={areaLabel} onSelectionChange={(key) => { if (!key) return; const value = String(key); if (value !== form.region) updateField("city", ""); updateField("region", value); }} placeholder={isLoadingRegions ? t("Loading…") : t("Select {area}", { area: areaLabel.toLowerCase() })} selectedKey={form.region || null} />}
-            {cityLookupFailed ? <TextInput description={t("City suggestions are unavailable; enter the city manually.")} errorMessage={errors.city} isInvalid={Boolean(errors.city)} isRequired label={t("City")} onChange={(value) => updateField("city", value)} value={form.city} /> : <ComboboxField description={!form.region ? t("Select {area} first.", { area: areaLabel.toLowerCase() }) : isLoadingCities ? t("Loading cities in {region}…", { region: form.region }) : t("Only cities in {region} are shown.", { region: form.region })} errorMessage={errors.city} isDisabled={!form.region || isLoadingCities} isInvalid={Boolean(errors.city)} isRequired items={cities} label={t("City")} onSelectionChange={(key) => key && updateField("city", String(key))} placeholder={!form.region ? t("Select {area} first", { area: areaLabel.toLowerCase() }) : isLoadingCities ? t("Loading…") : t("Select city")} selectedKey={form.city || null} />}
-            {form.countryCode === "AE" ? null : <TextInput errorMessage={errors.postalCode} isInvalid={Boolean(errors.postalCode)} label={t("Postal code")} onChange={(value) => updateField("postalCode", value)} value={form.postalCode} />}
+          </FormSection>
+          <FormSection title={t("Registered office")}>
+            <TextInput errorMessage={errors.line1} isInvalid={Boolean(errors.line1)} isRequired label={t("Address line 1")} onChange={(value) => updateField("line1", value)} value={form.line1} />
+            <TextInput errorMessage={errors.line2} isInvalid={Boolean(errors.line2)} label={t("Address line 2")} onChange={(value) => updateField("line2", value)} value={form.line2} />
+            {regionLookupFailed ? <TextInput description={t("Location suggestions are unavailable; enter the local administrative area.")} errorMessage={errors.region} isInvalid={Boolean(errors.region)} isRequired={form.countryCode === "AE"} label={areaLabel} onChange={(value) => updateField("region", value)} value={form.region} /> : <ComboboxField errorMessage={errors.region} isDisabled={isLoadingRegions} isInvalid={Boolean(errors.region)} isRequired={form.countryCode === "AE"} items={regions} label={areaLabel} onSelectionChange={(key) => { if (!key) return; const value = String(key); if (value !== form.region) updateField("city", ""); updateField("region", value); }} placeholder={isLoadingRegions ? t("Loading…") : t("Select {area}", { area: areaLabel.toLowerCase() })} selectedKey={form.region || null} />}
+            {cityLookupFailed ? <TextInput description={t("City suggestions are unavailable; enter the city manually.")} errorMessage={errors.city} isInvalid={Boolean(errors.city)} isRequired label={t("City")} onChange={(value) => updateField("city", value)} value={form.city} /> : <ComboboxField errorMessage={errors.city} isDisabled={!form.region || isLoadingCities} isInvalid={Boolean(errors.city)} isRequired items={cities} label={t("City")} onSelectionChange={(key) => key && updateField("city", String(key))} placeholder={!form.region ? t("Select {area} first", { area: areaLabel.toLowerCase() }) : isLoadingCities ? t("Loading…") : t("Select city")} selectedKey={form.city || null} />}
+            {!usesPostalCode(form.countryCode) ? null : <TextInput errorMessage={errors.postalCode} isInvalid={Boolean(errors.postalCode)} label={t("Postal code")} onChange={(value) => updateField("postalCode", value)} value={form.postalCode} />}
+          </FormSection>
+          <FormSection title={t("Regional defaults")}>
             <ComboboxField errorMessage={errors.defaultCurrency} isInvalid={Boolean(errors.defaultCurrency)} isRequired items={currencies} label={t("Base currency")} onSelectionChange={(key) => key && updateField("defaultCurrency", String(key))} placeholder={t("Search currencies")} selectedKey={form.defaultCurrency} />
             <SelectField errorMessage={errors.defaultLocale} isInvalid={Boolean(errors.defaultLocale)} isRequired items={locales} label={t("Language & number format")} onSelectionChange={(key) => key && updateField("defaultLocale", String(key))} selectedKey={form.defaultLocale} />
-            <div className={styles.fullField}><ComboboxField errorMessage={errors.defaultTimezone} isInvalid={Boolean(errors.defaultTimezone)} isRequired items={timeZones} label={t("Time zone")} onSelectionChange={(key) => key && updateField("defaultTimezone", String(key))} placeholder={t("Search time zones")} selectedKey={form.defaultTimezone} /></div>
+            <ComboboxField errorMessage={errors.defaultTimezone} isInvalid={Boolean(errors.defaultTimezone)} isRequired items={timeZones} label={t("Time zone")} onSelectionChange={(key) => key && updateField("defaultTimezone", String(key))} placeholder={t("Search time zones")} selectedKey={form.defaultTimezone} />
             <SelectField items={[{ id: "metric", label: t("Metric") }, { id: "imperial", label: t("Imperial") }, { id: "mixed", label: t("Mixed") }]} label={t("Measurement system")} onSelectionChange={(key) => key && updateField("unitSystem", String(key))} selectedKey={form.unitSystem} />
             <SelectField items={[{ id: "0", label: t("Sunday") }, { id: "1", label: t("Monday") }, { id: "6", label: t("Saturday") }]} label={t("Week starts on")} onSelectionChange={(key) => key && updateField("weekStartsOn", String(key))} selectedKey={form.weekStartsOn} />
-          </div>
-        
+          </FormSection>
 </FormDialog> : null}
       <ConfirmationDialog body={t("Your edits have not been saved. Discard them and close the editor?")} confirmLabel={t("Discard changes")} isOpen={discardOpen} onConfirm={discardChanges} onOpenChange={setDiscardOpen} title={t("Discard unsaved changes?")} />
       <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isRemovingLogo} onPress={() => setRemoveLogoOpen(false)}>{t("Keep logo")}</Button><Button isLoading={isRemovingLogo} onPress={removeLogo} variant="danger">{t("Remove logo")}</Button></div>} isOpen={removeLogoOpen} onOpenChange={setRemoveLogoOpen} title={t("Remove company logo?")}>{t("The initials fallback will replace the logo on the workspace and tenant sign-in screen.")}</ControlledModalDialog>

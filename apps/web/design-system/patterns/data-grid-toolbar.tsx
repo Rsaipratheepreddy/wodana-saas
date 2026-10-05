@@ -28,12 +28,16 @@ export function ToolbarSearch({ label, value, onChange }: { label: string; value
   </form>;
 }
 
-export function DataGridToolbar<T>({ compact = false, leading, title, table, views, activeView, onViewChange, searchLabel, searchValue, onSearchChange, actions, onExport, hasMoreRows, filters = [], menuActions = [], onMenuAction }: {
+export function DataGridToolbar<T>({ compact = false, leading, title, table, views, activeView, onViewChange, searchLabel, searchValue, onSearchChange, actions, onExport, hasMoreRows, filters = [], menuActions = [], onMenuAction, onResetColumns, onSaveColumnDefault }: {
   compact?: boolean; /** Replaces the title/view switch at the start, e.g. list tabs. */ leading?: ReactNode; title?: string; table: Table<T>; views: SavedView[]; activeView?: string; onViewChange: (id: string) => void;
   searchLabel: string; actions?: ReactNode; onExport: () => void; hasMoreRows?: boolean; totalRowCount?: number;
   searchValue?: string; onSearchChange?: (value: string) => void; filters?: ToolbarFilter[];
   /** The page's secondary actions (import, review…), listed first in the ⋯ menu so a list has one ⋯, never two. */
   menuActions?: Array<{ id: string; label: string }>; onMenuAction?: (id: string) => void;
+  /** Back to the columns everyone starts with (the workspace default when the list has one). */
+  onResetColumns?: () => void;
+  /** Only for people who manage the module: the current columns become the default for everyone. */
+  onSaveColumnDefault?: () => Promise<void>;
 }) {
   const t = useT();
   const { portalContainer, direction } = useDesignSystem();
@@ -49,6 +53,12 @@ export function DataGridToolbar<T>({ compact = false, leading, title, table, vie
   ];
   const sortable = columns.filter(column => column.getCanSort() && typeof column.columnDef.header === 'string');
   const [targetId, setTargetId] = useState('');
+  const [defaultState, setDefaultState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const saveColumnDefault = async () => {
+    if (!onSaveColumnDefault) return;
+    setDefaultState('saving');
+    try { await onSaveColumnDefault(); setDefaultState('saved'); } catch { setDefaultState('failed'); }
+  };
   const target = targets.find(item => item.id === targetId) ?? targets[0];
   const active = targets.filter(item => item.value !== undefined && item.value !== '');
   const sort = table.getState().sorting[0];
@@ -90,8 +100,10 @@ export function DataGridToolbar<T>({ compact = false, leading, title, table, vie
             </section> : null}
             <section aria-label={t("Visible columns")}>
               <strong>{t("Columns")}</strong>
-              {columns.map(column => <Checkbox key={column.id} isDisabled={!column.getCanHide()} isSelected={column.getIsVisible()} onChange={column.toggleVisibility}>{typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id}</Checkbox>)}
-              <Button size="compact" variant="quiet" onPress={() => table.resetColumnVisibility()}>{t("Reset columns")}</Button>
+              {columns.map(column => <Checkbox key={column.id} isDisabled={!column.getCanHide() || Boolean((column.columnDef.meta as DataGridColumnMeta<T> | undefined)?.primary)} isSelected={column.getIsVisible()} onChange={value => { setDefaultState('idle'); column.toggleVisibility(value); }}>{typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id}</Checkbox>)}
+              <Button size="compact" variant="quiet" onPress={() => { setDefaultState('idle'); if (onResetColumns) onResetColumns(); else table.resetColumnVisibility(); }}>{t("Reset columns")}</Button>
+              {onSaveColumnDefault ? <Button size="compact" variant="quiet" intent="write" isLoading={defaultState === 'saving'} onPress={() => void saveColumnDefault()}>{t("Save as the default for everyone")}</Button> : null}
+              {defaultState === 'saved' ? <p className="wd-record-filter-summary" role="status">{t("Saved as the default for everyone")}</p> : defaultState === 'failed' ? <p className="wd-record-filter-summary" role="alert">{t("The default could not be saved. Reload and try again.")}</p> : null}
             </section>
             <footer><Button size="compact" variant="quiet" onPress={onExport} aria-label={exportLabel}><Download size={14} aria-hidden="true" /><span>{t("Export")}</span></Button></footer>
           </>}</Dialog></Popover>

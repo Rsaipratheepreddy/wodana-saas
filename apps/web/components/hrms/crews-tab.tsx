@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { HrmsBootstrap, HrmsCrew, HrmsCrewState, HrmsPerson, HrmsWorker } from "@wodana/contracts";
 import {
-  Badge, Button, ComboboxField, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoAccessState, NoResultsState, PhoneField, ListTabs, SelectField, Switch,
+  Badge, Button, ComboboxField, DataGrid, EmptyState, ErrorState, FormRow, FormSection, InlineNotice, InspectorSheet, NoAccessState, NoResultsState, PhoneField, ListTabs, SelectField, Switch,
   TextInput, useDesignSystem, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -237,22 +237,24 @@ function WorkerSheet({ api, workspaceId, state, worker, manage, onClose, onSaved
     <div className={styles.sheet}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
       {manage ? <>
-        <TextInput label={t("Name")} isRequired value={draft.name} onChange={set("name")} maxLength={120} />
-        <div className={styles.pair}>
+        <FormSection>
+          <TextInput label={t("Name")} isRequired value={draft.name} onChange={set("name")} maxLength={120} />
           <TradeField value={draft.trade} onChange={set("trade")} options={trades} />
           <SelectField label={t("Crew")} selectedKey={draft.crewId ?? "none"} items={crews} onSelectionChange={(key) => set("crewId")(key && key !== "none" ? String(key) : null)} />
-        </div>
-        <div className={styles.pair}>
+          <Switch isSelected={draft.active} onChange={set("active")}>{t("Active")}</Switch>
+        </FormSection>
+        <FormSection title={t("Contact")}>
           <TextInput label={t("Worker code")} value={draft.workerCode} onChange={set("workerCode")} maxLength={40} />
           <PhoneField label={t("Phone")} kind="any" locale={locale} value={draft.phone} onChange={set("phone")} countryCode={draft.phoneCountry} onCountryChange={set("phoneCountry")} />
-        </div>
-        <div className={styles.pair}>
-          <TextInput label={t("Day rate")} inputMode="decimal" suffix={draft.dayRate ? draft.currency : undefined} placeholder={t("Trade rate")} value={draft.dayRate}
-            onChange={(value) => set("dayRate")(decimal(value))} isInvalid={badRate} errorMessage={badRate ? t("Up to four decimal places.") : undefined} />
-          <SelectField label={t("Currency")} isRequired={Boolean(draft.dayRate)} isDisabled={!draft.dayRate} selectedKey={draft.currency || null} items={currencies}
-            onSelectionChange={(key) => set("currency")(key ? String(key) : "")} />
-        </div>
-        <Switch isSelected={draft.active} onChange={set("active")}>{t("Active")}</Switch>
+        </FormSection>
+        <FormSection title={t("Pay")}>
+          <FormRow>
+            <TextInput label={t("Day rate")} inputMode="decimal" suffix={draft.dayRate ? draft.currency : undefined} placeholder={t("Trade rate")} value={draft.dayRate}
+              onChange={(value) => set("dayRate")(decimal(value))} isInvalid={badRate} errorMessage={badRate ? t("Up to four decimal places.") : undefined} />
+            <SelectField label={t("Currency")} isRequired={Boolean(draft.dayRate)} isDisabled={!draft.dayRate} selectedKey={draft.currency || null} items={currencies}
+              onSelectionChange={(key) => set("currency")(key ? String(key) : "")} />
+          </FormRow>
+        </FormSection>
       </> : <Facts items={[
         [t("Trade"), worker?.trade],
         [t("Crew"), crewName ?? t("No crew")],

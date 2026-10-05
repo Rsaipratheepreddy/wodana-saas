@@ -4,7 +4,7 @@ import { useId, useState, type ComponentProps } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { FileText, LayoutGrid, Plus, Table2 } from 'lucide-react';
-import { Badge, Button, Checkbox, DataGrid, EmptyState, FormDialog, FormRow, MenuButton, MoneyField, MoreDetails, SelectField, SearchInput, TextInput, TextAreaField, useDesignSystem, type DataGridColumn } from '@/design-system';
+import { Badge, Button, Checkbox, DataGrid, EmptyState, FormDialog, FormSection, MenuButton, MoneyField, MoreDetails, SelectField, SearchInput, TextInput, TextAreaField, useDesignSystem, type DataGridColumn } from '@/design-system';
 import { blankEntry, briefFields, caseApi, caseRequest, entryPayload, formatCaseMoney, scopeLabel, type CaseBrief, type CaseContent, type CaseRoom, type ScopeEntry, type ItemDimension } from '@/lib/pre-project/content';
 import { documentText, mediaIds, textDocument, type RequirementNote } from '@/lib/crm/note-document';
 import { useT } from '@/lib/i18n/i18n-provider';
@@ -190,20 +190,24 @@ function BriefEditor({data,onClose,onSave}:{data:CaseContent;onClose:()=>void;on
   ?<TextAreaField key={key} label={t(briefFields[key])} isReadOnly={readOnly} value={draft[key]} maxLength={limit(key)} onChange={value=>change(key,value)}/>
   :<TextInput key={key} label={t(briefFields[key])} isReadOnly={readOnly} value={draft[key]} maxLength={limit(key)} onChange={value=>change(key,value)}/>;
  const later=['people','preferences','retainedItems','exclusions','constraints'] as const;
- return <FormDialog size="lg" title={t("Project brief")} onClose={onClose} isDirty={JSON.stringify(draft)!==JSON.stringify(data.brief)} hideSubmit={readOnly} cancelLabel={readOnly?t('Close'):undefined}
+ return <FormDialog title={t("Project brief")} onClose={onClose} isDirty={JSON.stringify(draft)!==JSON.stringify(data.brief)} hideSubmit={readOnly} cancelLabel={readOnly?t('Close'):undefined}
   submitLabel={t("Save brief")} closeOnSuccess onSubmit={()=>onSave(draft)}>
-  {field('goals',true)}
-  <FormRow>{field('propertyType')}{field('area')}</FormRow>
-  <FormRow>{field('location')}{field('timeline')}</FormRow>
-  <FormRow>
+  <FormSection>
+   {field('goals',true)}
+   {field('decisionMakers')}
+  </FormSection>
+  <FormSection title={t("Property")}>
+   {field('propertyType')}{field('area')}{field('location')}
+  </FormSection>
+  <FormSection title={t("Budget and timeline")}>
    <MoneyField label={t("Budget amount")} currency={draft.currencyCode} isReadOnly={readOnly} value={draft.budgetAmount ?? ''} onChange={value=>change('budgetAmount',value)}/>
    {field('budget')}
-  </FormRow>
-  {field('decisionMakers')}
-  {data.crmContext.opportunityAmount?<p className={styles.muted}>{t('CRM opportunity value: {amount}. This remains separate from the client’s budget.',{amount:formatCaseMoney(data.crmContext.opportunityAmount,data.crmContext.currencyCode??draft.currencyCode,locale,t)})}</p>:null}
+   {data.crmContext.opportunityAmount?<p className={styles.muted}>{t('CRM opportunity value: {amount}. This remains separate from the client’s budget.',{amount:formatCaseMoney(data.crmContext.opportunityAmount,data.crmContext.currencyCode??draft.currencyCode,locale,t)})}</p>:null}
+   {field('timeline')}
+  </FormSection>
   <MoreDetails label={t('People, preferences & constraints')} filled={later.filter(key=>draft[key]?.trim()).length}>
    {field('people',true)}{field('preferences',true)}
-   <FormRow>{field('retainedItems')}{field('exclusions')}</FormRow>
+   {field('retainedItems')}{field('exclusions')}
    {field('constraints',true)}
   </MoreDetails>
  </FormDialog>;

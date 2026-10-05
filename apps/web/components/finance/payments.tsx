@@ -108,7 +108,7 @@ function PaymentSheet({ api, payment, canManage, bills, onChanged, onClose, onOp
               onChange={(value) => setParts({ ...parts, [bill.id]: value })} />
           </div>)}</div>
           {over ? <InlineNotice tone="error" message={t("That's more than is left of the payment.")} /> : null}
-        </> : <TextAreaField label={t("Why it's reversed")} description={t("A bounced cheque or a returned transfer. Its invoices are owed again.")} isRequired value={reason} onChange={setReason} />}
+        </> : <TextAreaField label={t("Why it's reversed")} isRequired value={reason} onChange={setReason} />}
     </FormDialog> : null}
   </InspectorSheet>;
 }

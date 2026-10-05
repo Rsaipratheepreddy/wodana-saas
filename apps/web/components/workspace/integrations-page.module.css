@@ -293,11 +293,8 @@
 .accounts :is(th,td){border:0!important}.accounts tbody tr:nth-child(even){background:var(--wd-color-surface-muted)}
 
 .setupIdentity { display:flex; align-items:center; gap:var(--wd-space-3); margin-block-end:var(--wd-space-2); padding:var(--wd-space-3); background:var(--wd-color-surface-muted); border-radius:var(--wd-radius-sm); }
-.setupIdentity strong,.setupIdentity small { display:block; }
-.setupIdentity strong { font-size:var(--wd-text-md); font-weight:600; }
-.setupIdentity small { margin-block-start:var(--wd-space-1); font-size:var(--wd-text-xs); color:var(--wd-color-text-secondary); }
+.setupIdentity strong { display:block; font-size:var(--wd-text-md); font-weight:600; }
 .form :global(.wd-input-affix),.form :global(.wd-select-prefix) { color:var(--wd-color-action-primary); }
-.form>p { font-size:var(--wd-text-xs); line-height:1.6; color:var(--wd-color-text-secondary); margin:0; }
 .form :global(.wd-input-affix) { border:0; background:transparent; }
 
 .embedded { padding:0; inline-size:100%; }

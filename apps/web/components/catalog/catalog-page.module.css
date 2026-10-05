@@ -13,7 +13,6 @@
 .itemCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .muted { color: var(--wd-color-text-tertiary); }
 .form { display: grid; gap: var(--wd-space-4); }
-.formRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
 .inspector { display: grid; gap: var(--wd-space-5); }
 .facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3) var(--wd-space-4); margin: 0; }
 .facts dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
@@ -46,7 +45,7 @@
   .tree { position: static; display: flex; overflow-x: auto; gap: var(--wd-space-1); padding-block-end: var(--wd-space-1); }
   .tree > :global(.wd-field) { display: none; }
   .treeItem { flex: none; }
-  .facts, .formRow, .sheets li { grid-template-columns: minmax(0, 1fr); }
+  .facts, .sheets li { grid-template-columns: minmax(0, 1fr); }
   .issues li { grid-template-columns: minmax(0, 1fr); }
   .issues li small { grid-row: auto; }
 }
@@ -59,7 +58,8 @@
 .priceLine small { color: var(--wd-color-text-tertiary); }
 .priceActions { display: flex; gap: var(--wd-space-1); margin-inline-start: auto; }
 .tiers { display: grid; gap: var(--wd-space-2); }
-.tiers .formRow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; }
+/* One price tier per line: the quantity it starts at, its price, remove. */
+.tierRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: var(--wd-space-3); }
 .actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
 .tiers > :global(.wd-button) { justify-self: start; }
 .suggestions { display: grid; max-block-size: 26rem; overflow: auto; margin: 0; padding: 0; list-style: none; }

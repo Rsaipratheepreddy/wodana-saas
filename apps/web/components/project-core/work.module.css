@@ -3,7 +3,6 @@
 .muted[data-late] { color: var(--wd-color-danger); }
 .number { color: var(--wd-color-text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .spacer { flex: 1; }
-.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
 .dialogBody { display: grid; gap: var(--wd-space-4); }
 .person { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
 
@@ -98,7 +97,6 @@
 .projectCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 
 @media (max-width: 640px) {
-  .pair { grid-template-columns: minmax(0, 1fr); }
   .facts > div { grid-template-columns: 6rem minmax(0, 1fr); }
   .planList > li { grid-template-columns: minmax(0, 1fr) auto; }
   .missList > li { grid-template-columns: minmax(0, 1fr); }

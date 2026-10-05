@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   Factory,
 } from "lucide-react";
-import { Button, DateField, Form, FormRow, MoneyField, NumericInput, TextAreaField, useDesignSystem } from "@/design-system";
+import { Button, DateField, Form, MoneyField, NumericInput, TextAreaField, useDesignSystem } from "@/design-system";
 import { parseDate } from "@internationalized/date";
 import { jsonRequest, money } from "@/lib/commercial/client";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -288,19 +288,16 @@ export function VendorOrderForm() {
                     {t("Back to order")}
                   </Button>
                   <h2>{t(current.title as never)}</h2>
-                  <p>{t(current.description as never)}</p>
-                  <FormRow>
-                    <DateField isRequired isDisabled={busy}
-                      label={form.kind === "delivery" ? t("Delivery date") : form.kind === "progress" ? t("Progress date") : t("Proposed delivery date")}
-                      value={dateOf(form.date)} onChange={(value) => setForm({ ...form, date: value?.toString() ?? "" })} />
-                    <NumericInput isRequired isDisabled={busy} minValue={0} maxValue={o.quantity} formatOptions={{ maximumFractionDigits: 4 }}
-                      label={form.kind === "progress"
-                        ? t("Completed quantity ({unit})", { unit: o.unit })
-                        : form.kind === "delivery"
-                          ? t("Quantity in this delivery ({unit})", { unit: o.unit })
-                          : t("Offered / confirmed quantity ({unit})", { unit: o.unit })}
-                      value={form.quantity} onChange={(quantity) => setForm({ ...form, quantity: Number.isFinite(quantity) ? quantity : 0 })} />
-                  </FormRow>
+                  <DateField isRequired isDisabled={busy}
+                    label={form.kind === "delivery" ? t("Delivery date") : form.kind === "progress" ? t("Progress date") : t("Proposed delivery date")}
+                    value={dateOf(form.date)} onChange={(value) => setForm({ ...form, date: value?.toString() ?? "" })} />
+                  <NumericInput isRequired isDisabled={busy} minValue={0} maxValue={o.quantity} formatOptions={{ maximumFractionDigits: 4 }}
+                    label={form.kind === "progress"
+                      ? t("Completed quantity ({unit})", { unit: o.unit })
+                      : form.kind === "delivery"
+                        ? t("Quantity in this delivery ({unit})", { unit: o.unit })
+                        : t("Offered / confirmed quantity ({unit})", { unit: o.unit })}
+                    value={form.quantity} onChange={(quantity) => setForm({ ...form, quantity: Number.isFinite(quantity) ? quantity : 0 })} />
                   {form.kind === "quotation" && <>
                     <MoneyField isRequired isDisabled={busy} label={t("Unit price")} currency={o.currency}
                       value={form.unitCost ? String(form.unitCost) : ""} onChange={(value) => setForm({ ...form, unitCost: Number(value || 0) })} />

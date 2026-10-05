@@ -1,5 +1,3 @@
 .fields { display:grid; gap:var(--wd-space-3); min-inline-size:0; }
-.sizeRow { display:grid; grid-template-columns:minmax(0,1fr) minmax(90px,.45fr); gap:var(--wd-space-3); align-items:start; }
-.referenceRow { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--wd-space-3); align-items:start; }
+.quantityUnit { display:grid; grid-template-columns:minmax(0,1fr) minmax(90px,.45fr); gap:var(--wd-space-3); align-items:start; }
 .fields :global(.wd-field) { min-inline-size:0; }
-@media(max-width:380px) { .referenceRow { grid-template-columns:minmax(0,1fr); } }

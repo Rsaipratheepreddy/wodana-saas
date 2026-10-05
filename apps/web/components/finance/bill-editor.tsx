@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
-import { Button, DateField, FormDialog, IconButton, MoneyField, SelectField, TextInput, VisuallyHidden } from "@/design-system";
+import { Button, DateField, FormDialog, FormRow, FormSection, IconButton, MoneyField, SelectField, TextInput, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { BillState, PayablesState, SupplierState } from "@/lib/payables/types";
@@ -96,22 +96,22 @@ export function BillEditor({ api, vendors, companies, existing, onClose, onSaved
   return <FormDialog size="lg" title={existing ? t("Edit invoice") : t("Enter invoice")} onClose={onClose} error={error || undefined} isDirty={Boolean(number.trim() || lines.length)}
     isSubmitting={busy === "save"} isSubmitDisabled={!ready} submitLabel={t("Submit")} onSubmit={() => { setError(""); return persist(true); }}
     secondaryAction={<Button isLoading={busy === "save"} isDisabled={!ready || Boolean(busy)} onPress={() => void saveDraft()}>{t("Save draft")}</Button>}>
-      <div className={styles.pair}>
+      <FormSection title={t("Invoice")}>
         <SelectField label={t("Supplier")} isRequired placeholder={t("Choose")} selectedKey={vendorId || null} isDisabled={fromOrders}
           onSelectionChange={(key) => { setVendorId(key ? String(key) : ""); setSupplier(null); }} items={vendors.map((vendor) => ({ id: vendor.id, label: vendor.name }))} />
+        {!fromOrders ? <>
+          <SelectField label={t("Company")} isRequired placeholder={t("Choose")} selectedKey={legalEntityId || null}
+            onSelectionChange={(key) => { const company = companies.find((item) => item.id === key); setLegalEntityId(company?.id ?? ""); if (company && !currency) setCurrency(company.currency); }}
+            items={companies.map((company) => ({ id: company.id, label: company.name }))} />
+          <TextInput label={t("Currency")} isRequired value={currency} maxLength={3} onChange={(value) => setCurrency(value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3))} />
+        </> : null}
         <TextInput label={t("Invoice number")} isRequired maxLength={80} value={number} onChange={setNumber} />
-      </div>
-      <div className={styles.trio}>
-        <DateField label={t("Invoice date")} isRequired value={invoiceDate ? parseDate(invoiceDate) : null} onChange={(value) => setInvoiceDate(value ? value.toString() : null)} />
-        <DateField label={t("Due date")} description={t("Empty: from the credit days")} value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
-        <MoneyField label={t("Total on the invoice")} currency={currency || undefined} value={statedTotal} onChange={setStatedTotal} />
-      </div>
-      {!fromOrders ? <div className={styles.pair}>
-        <SelectField label={t("Company")} isRequired placeholder={t("Choose")} selectedKey={legalEntityId || null}
-          onSelectionChange={(key) => { const company = companies.find((item) => item.id === key); setLegalEntityId(company?.id ?? ""); if (company && !currency) setCurrency(company.currency); }}
-          items={companies.map((company) => ({ id: company.id, label: company.name }))} />
-        <TextInput label={t("Currency")} isRequired value={currency} maxLength={3} onChange={(value) => setCurrency(value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3))} />
-      </div> : null}
+        <FormRow>
+          <DateField label={t("Invoice date")} isRequired value={invoiceDate ? parseDate(invoiceDate) : null} onChange={(value) => setInvoiceDate(value ? value.toString() : null)} />
+          <DateField label={t("Due date")} value={dueDate ? parseDate(dueDate) : null} onChange={(value) => setDueDate(value ? value.toString() : null)} />
+        </FormRow>
+      </FormSection>
+      <FormSection title={t("Lines")}>
       {vendorId && orders.length ? <SelectField label={t("Add lines from an order")} placeholder={t("Choose an order")} selectedKey={null}
         onSelectionChange={(key) => { if (key) void addOrder(String(key)); }} items={orders.map((order) => ({ id: order.id, label: `${order.number} · ${format.money(order.total, order.currency)}` }))} /> : null}
       {lines.length ? <div className={styles.lines} role="table" aria-label={t("Lines")}>
@@ -135,11 +135,13 @@ export function BillEditor({ api, vendors, companies, existing, onClose, onSaved
         </div>)}
       </div> : null}
       <div><Button size="compact" variant="quiet" isDisabled={!vendorId} onPress={addCharge}><Plus aria-hidden="true" size={14} />{t("Add a charge not on an order")}</Button></div>
+      <MoneyField label={t("Total on the invoice")} currency={currency || undefined} value={statedTotal} onChange={setStatedTotal} />
       {lines.length ? <dl className={styles.totals}>
         <div><dt>{t("Net")}</dt><dd>{money(totals.net)}</dd></div>
         <div><dt>{t("Tax")}</dt><dd>{money(totals.tax)}</dd></div>
         <div><dt>{t("Total")}</dt><dd><strong>{money(totals.total)}</strong></dd></div>
         {statedTotal && addExact(statedTotal) !== addExact(totals.total) ? <div><dt /><dd className={styles.lateText}>{t("The invoice says {amount}", { amount: money(statedTotal) })}</dd></div> : null}
       </dl> : null}
+      </FormSection>
   </FormDialog>;
 }

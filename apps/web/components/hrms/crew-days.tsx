@@ -7,7 +7,7 @@ import { Plus, X } from "lucide-react";
 import type { CrewDay, CrewPresence, HrmsBootstrap, HrmsCrewState } from "@wodana/contracts";
 import {
   Button, ComboboxField, DataGrid, DateField, EmptyState, ErrorState, IconButton, InlineNotice, InspectorSheet, NoAccessState, NoResultsState,
-  NumericInput, SegmentedControl, SelectField, TextAreaField, useDesignSystem, type DataGridColumn, FormDialog } from "@/design-system";
+  NumericInput, SegmentedControl, SelectField, TextAreaField, useDesignSystem, type DataGridColumn, FormDialog, FormSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { hrmsApi, type CrewDayList, type HrmsApi } from "@/lib/hrms/api";
 import { hrmsHref } from "@/lib/hrms/sections";
@@ -209,15 +209,15 @@ function CrewDayForm({ api, day, crews, markable, projectId, viewer, onClose, on
       {error ? <InlineNotice tone="error" message={error} /> : null}
       {day?.decisionNote ? <InlineNotice tone="info" message={day.decidedByName ? t("Sent back by {name}: {note}", { name: day.decidedByName, note: day.decisionNote })
         : t("Sent back: {note}", { note: day.decisionNote })} /> : null}
-      <div className={styles.pair}>
+      <FormSection>
         <SelectField label={t("Crew")} isRequired placeholder={t("Choose")} selectedKey={draft.crewId} items={crewItems}
           onSelectionChange={(key) => { const crewId = key ? String(key) : null; if (crewId !== draft.crewId) setDraft((current) => ({ ...current, crewId, rows: crewRows(crewId) })); }} />
         <DateField label={t("Day")} isRequired maxValue={parseDate(today)} value={draft.workDate ? parseDate(draft.workDate) : null}
           onChange={(value) => setDraft((current) => ({ ...current, workDate: value ? value.toString() : "" }))}
           isInvalid={future} errorMessage={future ? t("A crew day can't be in the future.") : undefined} />
-      </div>
-      {draft.crewId ? <fieldset className={styles.crewGroup}>
-        <legend>{t("Who was there")}</legend>
+        <TextAreaField label={t("Note")} value={draft.note} onChange={(note) => setDraft((current) => ({ ...current, note }))} />
+      </FormSection>
+      {draft.crewId ? <FormSection title={t("Who was there")}>
         {draft.rows.length ? <>
           <div className={styles.crewHead} aria-hidden="true"><span>{t("Worker")}</span><span>{t("Overtime")}</span></div>
           <ul className={styles.crewWorkers}>{draft.rows.map((row) => <li key={row.workerId}>
@@ -237,8 +237,7 @@ function CrewDayForm({ api, day, crews, markable, projectId, viewer, onClose, on
             if (row) { setDraft((current) => ({ ...current, rows: [...current.rows, { ...row, extra: true }] })); setAdding((value) => value + 1); }
           }} /> : null}
         {draft.rows.length && !someone ? <p className={styles.muted} role="status">{t("Mark who was there.")}</p> : null}
-      </fieldset> : null}
-      <TextAreaField label={t("Note")} value={draft.note} onChange={(note) => setDraft((current) => ({ ...current, note }))} />
+      </FormSection> : null}
     </div>
     {submitting ? <SubmitCrewDayDialog api={api} day={submitting} today={today} onClose={() => setSubmitting(null)} onSubmitted={onSubmitted} /> : null}
   </InspectorSheet>;

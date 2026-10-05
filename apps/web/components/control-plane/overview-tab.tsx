@@ -182,6 +182,7 @@ export function TransitionDialog({ orgKey, lifecycle, onClose, onDone }: { orgKe
       <Button variant={to === "suspended" || to === "archived" ? "danger" : "primary"} isLoading={busy} isDisabled={!valid} onPress={() => void save()}>
         {to === "suspended" ? t("Suspend") : to === "archived" ? t("Archive") : t("Save")}</Button></div>}>
     <div className={styles.dialogBody}>
+      {error ? <InlineNotice tone="error" message={error} /> : null}
       <SelectField label={t("New state")} accent="neutral" isRequired selectedKey={to}
         items={lifecycle.nextStates.map((state) => ({ id: state, label: labels.state[state].label }))}
         onSelectionChange={(value) => { if (value) setTo(value as LifecycleState); }} />
@@ -189,7 +190,6 @@ export function TransitionDialog({ orgKey, lifecycle, onClose, onDone }: { orgKe
         onChange={(value) => setGraceEnds(value ? value.toString() : null)} /> : null}
       {blockers.length ? <Callout tone="warning" title={t("Before archiving")}><ul className={styles.muted}>{blockers.map((item) => <li key={item}>{item}</li>)}</ul></Callout> : null}
       <TextAreaField label={t("Reason")} isRequired value={reason} onChange={setReason} description={t("At least 10 characters.")} />
-      {error ? <InlineNotice tone="error" message={error} /> : null}
     </div>
   </ControlledModalDialog>;
 }

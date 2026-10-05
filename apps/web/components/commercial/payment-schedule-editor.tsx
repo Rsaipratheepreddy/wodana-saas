@@ -251,7 +251,6 @@ export function PaymentScheduleEditor({
       ) : null}
 
       <ControlledModalDialog
-        description={t("Reuse a saved schedule or create one. Issued quotations are never changed.")}
         isOpen={library}
         onOpenChange={setLibrary}
         size="lg"

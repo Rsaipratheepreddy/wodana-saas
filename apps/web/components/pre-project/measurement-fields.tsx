@@ -25,7 +25,7 @@ export function MeasurementFields({ value, onChange, disabled, requireMeasured =
   return <div className={styles.fields}>
     <SelectField label={t('Measurement type')} isRequired isDisabled={disabled} selectedKey={custom?'custom':value.name||null} placeholder={t('Choose a dimension…')} items={[...types.map(id=>({id,label:t(id)})),{id:'custom',label:t('Custom dimension')}]} onSelectionChange={key=>{setCustom(key==='custom');onChange({name:key==='custom'?'':String(key??'')});}} />
     {custom && <TextInput label={t('Dimension name')} isRequired isDisabled={disabled} maxLength={120} value={value.name} onChange={name=>onChange({name})} placeholder={t('e.g. Left wall opening')} />}
-    <div className={styles.sizeRow}>
+    <div className={styles.quantityUnit}>
       {numeric('measured',t('Measured size'))}
       <SelectField label={t('Unit')} isDisabled={disabled} selectedKey={value.unit} items={['mm','cm','m','in','ft'].map(id=>({id,label:id}))} onSelectionChange={key=>{if(key&&key!==value.unit)onChange({unit:String(key),approximate:null,measured:null});}} />
     </div>

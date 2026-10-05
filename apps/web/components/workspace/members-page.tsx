@@ -679,13 +679,9 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       <ViewAsDialog mfaEnabled={Boolean(viewAs?.mfaEnabled)} onClose={() => setViewAsTarget(null)} target={viewAsTarget} workspaceId={initialData.workspaceId} />
 
       <FormDialog
-        description={invitationResult
-          ? invitationResult.deliveryStatus === "sent"
-            ? t("The invitation was emailed. The secure copy link is shown only now.")
-            : t("Email was not delivered. Share this secure link with the invited member; it is shown only now.")
-          : bulkInvitationResult
-            ? t("Bulk invitation processing is complete.")
-            : t("The member will receive access after activating the invitation.")}
+        description={invitationResult && invitationResult.deliveryStatus !== "sent"
+          ? t("Email was not delivered. Share this secure link with the invited member; it is shown only now.")
+          : undefined}
         hideSubmit={hasInvitationOutcome}
         cancelLabel={hasInvitationOutcome ? t("Done") : undefined}
         isSubmitting={isInviting}
@@ -720,7 +716,6 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       </FormDialog>
 
       <FormDialog
-        description={editingMember ? t("Update workspace access for {email}.", { email: editingMember.email }) : undefined}
         isSubmitting={isSavingMember}
         isOpen={Boolean(editingMember)}
         onClose={() => { setMemberReviewOpen(false); setEditingMember(null); }}
@@ -734,7 +729,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           <RoleChoices onChange={setEditRoles} roles={assignableRoles} selected={editRoles} />
           <SelectField
             accent="neutral"
-            description={editingMember.userId === initialData.currentUserId ? t("You cannot suspend your own active session here.") : t("Suspended members cannot sign in to this workspace.")}
+            description={editingMember.userId === initialData.currentUserId ? t("You cannot suspend your own active session here.") : undefined}
             isDisabled={editingMember.userId === initialData.currentUserId}
             items={[{ id: "active", label: t("Active") }, { id: "suspended", label: t("Suspended") }]}
             label={t("Member status")}

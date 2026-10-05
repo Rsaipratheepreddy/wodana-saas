@@ -22,6 +22,7 @@ export * from "./components/editable-field";
 export * from "./components/date-picks";
 export * from "./foundations/working-days";
 export * from "./foundations/remembered";
+export * from "./foundations/grid-defaults";
 export * from "./components/navigation";
 export * from "./components/overlays";
 export * from "./components/status";

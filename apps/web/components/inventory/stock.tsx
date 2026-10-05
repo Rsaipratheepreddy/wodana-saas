@@ -130,7 +130,7 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar} filters={placeFilter}
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No reorder points yet")}
         description={t("Set one from an item's actions to be told when free stock runs low.")} />} />
-    : <DataGrid<StockRow> ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
+    : <DataGrid<StockRow> gridKey="inventory.stock" ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar} filters={placeFilter}
       toolbarActions={state?.canAdjust ? <Button size="compact" onPress={() => setChange({ mode: "add", row: null })}>{t("Add stock")}</Button> : null}
       emptyContent={needle || place || view !== "all" || projectId ? <NoResultsState onClear={() => { setSearch(""); setPlace(null); setView("all"); onProject(null); }} />

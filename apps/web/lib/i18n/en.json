@@ -12263,5 +12263,22 @@
   "Choose an active team member": "Choose an active team member",
   "Extra hours need a start and end time": "Extra hours need a start and end time",
   "The end time must be after the start time": "The end time must be after the start time",
-  "Choose a valid date range": "Choose a valid date range"
+  "Choose a valid date range": "Choose a valid date range",
+  "Validity": "Validity",
+  "Problem": "Problem",
+  "Before you accept": "Before you accept",
+  "Save as the default for everyone": "Save as the default for everyone",
+  "Saved as the default for everyone": "Saved as the default for everyone",
+  "The default could not be saved. Reload and try again.": "The default could not be saved. Reload and try again.",
+  "The list default could not be loaded.": "The list default could not be loaded.",
+  "The list default could not be saved.": "The list default could not be saved.",
+  "Invalid list.": "Invalid list.",
+  "The order goes back to draft and through approval again.": "The order goes back to draft and through approval again.",
+  "Its goods come out of stock.": "Its goods come out of stock.",
+  "Structure": "Structure",
+  "Budget and timeline": "Budget and timeline",
+  "Attributes": "Attributes",
+  "Quantities": "Quantities",
+  "yourcompany.com": "yourcompany.com",
+  "MAIN_ENTITY": "MAIN_ENTITY"
 }

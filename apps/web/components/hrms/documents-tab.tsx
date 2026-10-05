@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import type { HrmsBootstrap, HrmsCrewState, HrmsDocument, HrmsDocumentKind, HrmsDocuments, HrmsPerson } from "@wodana/contracts";
 import {
-  Button, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorState, FileUploader, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, SelectField, Skeleton,
+  Button, ControlledModalDialog, DataGrid, DateField, EmptyState, ErrorState, FileUploader, FormRow, FormSection, InlineNotice, InspectorSheet, NoResultsState, SegmentedControl, SelectField, Skeleton,
   TextAreaField, TextInput, type DataGridColumn, type ToolbarFilter,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -134,33 +134,37 @@ function DocumentSheet({ api, document, manage, subjects, onClose, onDone }: {
     <div className={styles.sheet}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
       {manage ? <>
-        {document ? null : <>
-          <SegmentedControl label={t("Whose")} value={draft.subject} onChange={(value) => setDraft((current) => ({ ...current, subject: value as Draft["subject"], subjectId: null }))}
-            options={[{ id: "member", label: t("Person") }, { id: "worker", label: t("Crew worker") }]} />
-          {subjects ? <SelectField label={draft.subject === "member" ? t("Person") : t("Crew worker")} isRequired placeholder={t("Choose")} selectedKey={draft.subjectId} items={options}
-            onSelectionChange={(key) => set("subjectId", key ? String(key) : null)} /> : <Skeleton lines={1} />}
-        </>}
-        <div className={styles.pair}>
+        <FormSection>
+          {document ? null : <>
+            <SegmentedControl label={t("Whose")} value={draft.subject} onChange={(value) => setDraft((current) => ({ ...current, subject: value as Draft["subject"], subjectId: null }))}
+              options={[{ id: "member", label: t("Person") }, { id: "worker", label: t("Crew worker") }]} />
+            {subjects ? <SelectField label={draft.subject === "member" ? t("Person") : t("Crew worker")} isRequired placeholder={t("Choose")} selectedKey={draft.subjectId} items={options}
+              onSelectionChange={(key) => set("subjectId", key ? String(key) : null)} /> : <Skeleton lines={1} />}
+          </>}
           <SelectField label={t("Kind")} isRequired placeholder={t("Choose")} selectedKey={draft.kind} items={DOCUMENT_KINDS.map((item) => ({ id: item, label: kinds[item] }))}
             onSelectionChange={(key) => {
               const next = key ? (key as HrmsDocumentKind) : null;
               // A new document is named after its kind until someone names it.
               setDraft((current) => ({ ...current, kind: next, title: !current.title.trim() || (current.kind && current.title === kinds[current.kind]) ? next ? kinds[next] : "" : current.title }));
             }} />
+          <TextInput label={t("Title")} isRequired value={draft.title} onChange={(value) => set("title", value)} maxLength={120} />
           <TextInput label={t("Number")} value={draft.number} onChange={(value) => set("number", value)} maxLength={80} />
-        </div>
-        <TextInput label={t("Title")} isRequired value={draft.title} onChange={(value) => set("title", value)} maxLength={120} />
-        <div className={styles.pair}>
-          <DateField label={t("Issued")} value={draft.issuedOn ? parseDate(draft.issuedOn) : null} onChange={(value) => set("issuedOn", value ? value.toString() : null)} />
-          <DateField label={t("Expires")} value={draft.expiresOn ? parseDate(draft.expiresOn) : null} onChange={(value) => set("expiresOn", value ? value.toString() : null)}
-            isInvalid={backwards} errorMessage={backwards ? t("It expires after it's issued.") : undefined} />
-        </div>
-        <TextAreaField label={t("Note")} value={draft.note} onChange={(value) => set("note", value)} />
-        <div className={styles.inline}>
-          <FileUploader appearance="button" accept="application/pdf,image/*" multiple={false} label={file || document?.fileName ? t("Replace file") : t("Attach file")}
-            onFiles={(files) => setFile(files[0] ?? null)} />
-          {file ? <span>{file.name}</span> : fileLink}
-        </div>
+        </FormSection>
+        <FormSection title={t("Validity")}>
+          <FormRow>
+            <DateField label={t("Issued")} value={draft.issuedOn ? parseDate(draft.issuedOn) : null} onChange={(value) => set("issuedOn", value ? value.toString() : null)} />
+            <DateField label={t("Expires")} value={draft.expiresOn ? parseDate(draft.expiresOn) : null} onChange={(value) => set("expiresOn", value ? value.toString() : null)}
+              isInvalid={backwards} errorMessage={backwards ? t("It expires after it's issued.") : undefined} />
+          </FormRow>
+        </FormSection>
+        <FormSection title={t("File")}>
+          <div className={styles.inline}>
+            <FileUploader appearance="button" accept="application/pdf,image/*" multiple={false} label={file || document?.fileName ? t("Replace file") : t("Attach file")}
+              onFiles={(files) => setFile(files[0] ?? null)} />
+            {file ? <span>{file.name}</span> : fileLink}
+          </div>
+          <TextAreaField label={t("Note")} value={draft.note} onChange={(value) => set("note", value)} />
+        </FormSection>
       </> : document ? <Facts items={[
         [t("Status"), <DocumentStatus key="status" status={document.status} />],
         [t("Kind"), kinds[document.kind]],

@@ -519,12 +519,6 @@
   text-align: start;
   font-weight: 550;
 }
-.settingsGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--wd-space-16);
-  max-inline-size: 70rem;
-}
 .preview {
   align-self: start;
   position: sticky;
@@ -578,8 +572,7 @@
     align-items: flex-start;
     flex-wrap: wrap;
   }
-  .bottom,
-  .settingsGrid {
+  .bottom {
     grid-template-columns: 1fr;
     gap: var(--wd-space-6);
   }

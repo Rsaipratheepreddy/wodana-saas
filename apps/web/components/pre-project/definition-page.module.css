@@ -13,8 +13,6 @@
 .history li { display: flex; flex-wrap: wrap; gap: var(--wd-space-3); padding-block: var(--wd-space-1-5); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .history li span { color: var(--wd-color-text-secondary); }
 .form { display: grid; gap: var(--wd-space-4); }
-.formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-4); }
 .form :global(.wd-field) { min-inline-size: 0; }
 .error { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
-@media (max-width: 48rem) { .formGrid { grid-template-columns: minmax(0, 1fr); } }

@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState, type FormEvent } from "react";
-import { Button, Callout, ControlledModalDialog, Form, NumericInput, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
+import { useEffect, useId, useState, type FormEvent } from "react";
+import { Button, Callout, ControlledModalDialog, Form, FormSection, NumericInput, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
 import type { IntegrationConnection } from "@/lib/workspace/integrations";
 import styles from "./integration-tools.module.css";
 import { templateBody, type MetaTemplate } from "@/lib/crm/whatsapp-templates";
@@ -51,6 +51,7 @@ function ConnectedTools({ connection, workspaceId, canManage, onClose, onHealthC
   const [calendarChoices, setCalendarChoices] = useState<RecordRow[]>([]);
   const base = `/api/workspace/integration-connections/${connection.id}/tools`;
   const isWrite = action.includes(".");
+  const formId = `tools-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const set = (name: string, value: string) => { setFields((previous) => ({ ...previous, [name]: value })); setKey(crypto.randomUUID()); setResult(null); };
   async function request(kind: string, body?: unknown): Promise<Result> {
     const response = await fetch(body ? base : `${base}?${new URLSearchParams({ workspaceId, ...Object.fromEntries(new URLSearchParams(kind)) })}`, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
@@ -110,7 +111,7 @@ function ConnectedTools({ connection, workspaceId, canManage, onClose, onHealthC
       setResult(data.eventId ? { ...data, id: data.eventId, url: data.htmlLink } : data);
     });
   }
-  return <ControlledModalDialog isOpen onOpenChange={(open) => { if (!open) onClose(); }} title={connection.displayName} description={t("Use this organization’s connected account. Provider actions are recorded in the workspace audit log.")} footer={<Button onPress={onClose}>{t("Close")}</Button>}>
+  return <ControlledModalDialog isOpen onOpenChange={(open) => { if (!open) onClose(); }} title={connection.displayName} footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Close")}</Button>{isWrite ? <Button form={formId} type="submit" variant="primary" isDisabled={!canManage || Boolean(result?.id) || (action === "message.send" && (!optIn || !selectedTemplate))} isLoading={busy}>{action.endsWith("send") ? t("Send message") : action === "invoice.create" ? t("Create invoice") : action === "calendar.create" ? t("Schedule event") : t("Create document")}</Button> : null}</div>}>
     <div className={styles.tools}>
       <SelectField isDisabled={busy} label={t("What would you like to do?")} selectedKey={action} items={actions.map((item) => ({ ...item, label: t(item.label) }))} onSelectionChange={(value) => { if (!value) return; setAction(String(value)); setRows([]); setResult(null); setError(""); setKey(crypto.randomUUID()); }} />
       {error ? <Callout title={t("Action needs attention")} tone="danger">{error}</Callout> : null}
@@ -133,20 +134,26 @@ function ConnectedTools({ connection, workspaceId, canManage, onClose, onHealthC
           await load("calendars");
         })}>{t("Save selected calendars")}</Button> : null}
         {result?.hasMore ? <Button isDisabled={busy} onPress={() => void run(() => load(action, page + 1))}>{t("Next page")}</Button> : null}
-      </> : <Form className={styles.form} onSubmit={(event) => void submit(event)}>
+      </> : <Form className={styles.form} id={formId} onSubmit={(event) => void submit(event)}>
         {action === "invoice.create" ? <>
+          <FormSection>
           <Button isDisabled={busy} onPress={() => void run(async () => { const [customerData, itemData] = await Promise.all([request("kind=customers"), request("kind=items")]); setCustomers(customerData.items ?? []); setItems(itemData.items ?? []); })}>{t("Load customers and items")}</Button>
           <SelectField label={t("Customer")} isRequired items={options(customers)} selectedKey={fields.customerId ?? null} onSelectionChange={(value) => value && set("customerId", String(value))} />
           <SelectField label={t("Item or service")} isRequired items={options(items)} selectedKey={fields.itemId ?? null} onSelectionChange={(value) => value && set("itemId", String(value))} />
           {input("reference", t("Project or milestone reference"))}{input("description", t("Invoice description"))}
-          <div className={styles.columns}>{input("quantity", t("Quantity"), "number")}{input("rate", t("Unit rate"), "number")}{input("currency", t("Currency code"))}</div>
-          <div className={styles.columns}>{input("date", t("Invoice date"), "date")}{input("dueDate", t("Due date"), "date")}</div>
+          </FormSection>
+          <FormSection title={t("Amount")}>
+          {input("quantity", t("Quantity"), "number")}
+          <div className={styles.amountCurrency}>{input("rate", t("Unit rate"), "number")}{input("currency", t("Currency code"))}</div>
           {input("taxId", t("Provider tax code (optional)"), "text", false)}
           {connection.provider === "quickbooks" ? <Switch isSelected={onlinePayment} onChange={(value) => { setOnlinePayment(value); setKey(crypto.randomUUID()); }}>{t("Enable card and bank payments (requires QuickBooks Payments)")}</Switch> : null}
-          <p>{t("This creates one invoice in the selected company. Choose the tax code configured by its accountant. Load invoices afterward to retrieve its payment page.")}</p>
+          </FormSection>
+          <FormSection title={t("Dates")}>
+          <div className={styles.dateRange}>{input("date", t("Invoice date"), "date")}{input("dueDate", t("Due date"), "date")}</div>
+          </FormSection>
         </> : null}
         {action === "email.send" ? <>{input("to", t("Recipient email"), "email")}{input("subject", t("Subject"))}</> : null}
-        {action === "document.create" ? <>{input("name", t("Document name"))}{input("folderId", t("Drive folder ID (optional)"), "text", false)}<p>{t("Creates a private text document. This connection can access files created or explicitly shared with Wodana.")}</p></> : null}
+        {action === "document.create" ? <>{input("name", t("Document name"))}{input("folderId", t("Drive folder ID (optional)"), "text", false)}</> : null}
         {action === "calendar.create" ? <>
           <Button onPress={() => void run(async () => { const data = await request("kind=calendars"); setCalendarChoices((data.calendars ?? []).filter((row) => row.enabled && ["owner", "writer"].includes(String(row.accessRole)))); })}>{t("Load selected calendars")}</Button>
           <SelectField label={t("Calendar")} isRequired items={calendarChoices.map((row) => ({ id: String(row.externalId), label: String(row.displayName) }))} selectedKey={fields.calendarId ?? null} onSelectionChange={(value) => value && set("calendarId", String(value))} />
@@ -159,13 +166,11 @@ function ConnectedTools({ connection, workspaceId, canManage, onClose, onHealthC
             const chosen = whatsappTemplates.find(item => `${item.id}/${item.language}` === value);
             if (chosen) { setFields(previous => ({ ...previous, templateId: String(value), templateName: chosen.name, language: chosen.language, parameters: "", urlParameter: "" })); setKey(crypto.randomUUID()); setResult(null); }
           }} />
-          {selectedTemplate ? <p className={styles.templatePreview}>{templateBody(selectedTemplate)}</p> : <p>{t("Choose from this account’s approved templates. Login codes are sent automatically by the portal.")}</p>}
+          {selectedTemplate ? <p className={styles.templatePreview}>{templateBody(selectedTemplate)}</p> : null}
           {bodyVariableCount ? <TextAreaField isRequired label={t("Template values ({count}, one per line)", { count: bodyVariableCount })} onChange={(value) => set("parameters", value)} value={fields.parameters ?? ""} /> : null}
           {dynamicUrl ? input("urlParameter", t("Button link value")) : null}
           <Switch isSelected={optIn} onChange={(checked) => { setOptIn(checked); setKey(crypto.randomUUID()); }}>{t("The recipient has opted in to messages from this business")}</Switch>
-          <p>{t("Use an approved template from this account. Provider acceptance appears first; delivery and read receipts arrive in Replies and delivery updates.")}</p>
         </> : null}
-        <Button type="submit" variant="primary" isDisabled={!canManage || Boolean(result?.id) || (action === "message.send" && (!optIn || !selectedTemplate))} isLoading={busy}>{action.endsWith("send") ? t("Send message") : action === "invoice.create" ? t("Create invoice") : action === "calendar.create" ? t("Schedule event") : t("Create document")}</Button>
       </Form>}
     </div>
   </ControlledModalDialog>;

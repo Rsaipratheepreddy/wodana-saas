@@ -73,6 +73,7 @@ export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, ca
       {!readOnly && canOverride && input ? <Button size="compact" variant="primary" onPress={() => { setAmount(line.rate > 0 ? String(line.rate) : ""); setReason(""); setOverride(open => !open); }}>{t(override ? "Cancel override" : "Override price")}</Button> : null}
     </div>}>
       <div className={styles.review}>
+        {error ? <p role="alert" className={styles.error}>{translateKnown(t, error)}</p> : null}
         <div className={styles.reviewSummary}><span>{t("Unit rate")}</span><strong>{money(line.rate, currency, locale)}</strong></div>
         <p className={styles.reviewStatus} data-issue={needsAttention || undefined}>{status}</p>
         {provenance ? <div className={styles.provenance}>
@@ -85,7 +86,6 @@ export function QuotationCatalogPrice({ line, currency, taxRate, workspaceId, ca
           <TextInput aria-label={t("Override reason for {title}", { title: line.title })} label={t("Reason")} maxLength={500} isRequired value={reason} onChange={setReason} />
           <Button type="submit" size="compact" variant="primary">{t("Use override")}</Button>
         </Form> : null}
-        {error ? <p role="alert" className={styles.error}>{translateKnown(t, error)}</p> : null}
       </div>
     </ControlledModalDialog>
   </>;

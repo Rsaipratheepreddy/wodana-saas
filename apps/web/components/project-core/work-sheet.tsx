@@ -288,10 +288,8 @@ function WaitsOn({ detail, board, run, onOpenItem }: { detail: WorkDetail; board
     {mode === "link" ? <div className={styles.inlineForm}>
       <SelectField label={t("Item")} placeholder={t("Choose an item")} selectedKey={pick} onSelectionChange={(key) => setPick(key === null ? null : String(key))}
         items={candidates.map((item) => ({ id: item.id, label: `#${item.number} ${item.title}` }))} />
-      <div className={styles.pair}>
-        <SegmentedControl label={t("When")} value={kind} onChange={setKind} options={[{ id: "fs", label: t("After it finishes") }, { id: "ss", label: t("After it starts") }]} />
-        <TextInput label={t("Days in between")} inputMode="numeric" value={lag} onChange={(value) => setLag(value.replace(/[^\d-]/g, ""))} />
-      </div>
+      <SegmentedControl label={t("When")} value={kind} onChange={setKind} options={[{ id: "fs", label: t("After it finishes") }, { id: "ss", label: t("After it starts") }]} />
+      <TextInput label={t("Days in between")} inputMode="numeric" value={lag} onChange={(value) => setLag(value.replace(/[^\d-]/g, ""))} />
       <div className="wd-dialog-actions"><Button onPress={() => setMode(null)}>{t("Cancel")}</Button><Button variant="primary" isDisabled={!pick} onPress={() => void link()}>{t("Save")}</Button></div>
     </div> : null}
     {mode === "blocker" ? <form className={styles.inlineForm} onSubmit={(event) => { event.preventDefault(); void report(); }}>

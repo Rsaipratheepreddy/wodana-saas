@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { DateField, EmailInput, FormDialog, FormRow, InlineNotice, MoneyField, SelectField, TextAreaField, TextInput, VisuallyHidden } from "@/design-system";
+import { DateField, EmailInput, FormDialog, FormRow, FormSection, InlineNotice, MoneyField, SelectField, TextAreaField, TextInput, VisuallyHidden } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
@@ -20,7 +20,7 @@ export function ReasonDialog({ kind, optional = false, onClose, onSave }: { kind
   const title = kind === "cancel" ? t("Cancel order") : kind === "change" ? t("Change the order") : kind === "close" ? t("Close order") : kind === "continue" ? t("Continue this order") : kind === "funds" ? t("Let it go ahead") : t("Send back");
   const label = kind === "cancel" ? t("Why it's cancelled") : kind === "change" ? t("What's changing") : kind === "close" ? t("Why the rest won't come")
     : kind === "continue" ? t("Why it continues while the supplier is on hold") : kind === "funds" ? t("Why it goes ahead beyond the money in hand") : t("What needs to change");
-  return <FormDialog size="md" title={title} description={kind === "change" ? t("The order goes back to draft and through approval again. What was approved is kept.") : undefined}
+  return <FormDialog size="md" title={title} description={kind === "change" ? t("The order goes back to draft and through approval again.") : undefined}
     onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} isSubmitDisabled={!optional && !reason.trim()} submitLabel={title}
     submitVariant={kind === "cancel" ? "danger" : "primary"} onSubmit={() => onSave(reason.trim())}>
     <TextAreaField label={optional ? t("Note") : label} isRequired={!optional} value={reason} onChange={setReason} />
@@ -86,10 +86,8 @@ export function OfferAlternateDialog({ line, currency, onClose, onSave }: { line
     onClose={onClose} isDirty={Boolean(note.trim())} isSubmitDisabled={!description.trim() || !note.trim()} submitLabel={t("Save")}
     onSubmit={() => onSave({ description: description.trim(), specification: specification.trim(), unitPrice: price || null, note: note.trim() })}>
     <TextInput label={t("What they offer")} isRequired maxLength={240} value={description} onChange={setDescription} />
-    <FormRow>
-      <TextInput label={t("Finish or size")} maxLength={240} value={specification} onChange={setSpecification} />
-      <MoneyField label={t("Price each")} currency={currency} value={price} onChange={setPrice} />
-    </FormRow>
+    <TextInput label={t("Finish or size")} maxLength={240} value={specification} onChange={setSpecification} />
+    <MoneyField label={t("Price each")} currency={currency} value={price} onChange={setPrice} />
     <TextAreaField label={t("Why they offer it")} isRequired value={note} onChange={setNote} />
   </FormDialog>;
 }
@@ -147,19 +145,19 @@ export function ShipmentDialog({ shipment, onClose, onSave }: { shipment: Shipme
   const valid = Boolean(carrier.trim() || trackingRef.trim() || eta) && !badLink && !badDates && (status !== "delayed" || Boolean(note.trim() || eta));
   return <FormDialog size="md" title={shipment ? t("Update shipment") : t("Add shipment")} onClose={onClose} isSubmitDisabled={!valid} submitLabel={t("Save")}
     onSubmit={() => onSave({ shipmentId: id, shipmentVersion: shipment?.version, carrier: carrier.trim(), trackingRef: trackingRef.trim(), trackingUrl: trackingUrl.trim(), status, shippedOn, eta, note: note.trim() })}>
-    <FormRow>
+    <FormSection title={t("Shipment")}>
       <TextInput label={t("Carrier")} maxLength={120} value={carrier} onChange={setCarrier} />
-      <SelectField label={t("Status")} isRequired selectedKey={status} onSelectionChange={(key) => setStatus((key ?? "booked") as ShipmentStatus)} items={SHIPMENT.map((value) => ({ id: value, label: labels.shipment[value] }))} />
-    </FormRow>
-    <FormRow>
       <TextInput label={t("Tracking reference")} maxLength={120} value={trackingRef} onChange={setTrackingRef} />
       <TextInput label={t("Tracking link")} inputType="url" value={trackingUrl} onChange={setTrackingUrl} isInvalid={badLink} errorMessage={badLink ? t("The tracking link starts with https://.") : undefined} />
-    </FormRow>
-    <FormRow>
-      <DateField label={t("Shipped on")} value={shippedOn ? parseDate(shippedOn) : null} onChange={(value) => setShippedOn(value ? value.toString() : null)} />
-      <DateField label={t("Expected on")} minValue={shippedOn ? parseDate(shippedOn) : undefined} value={eta ? parseDate(eta) : null} onChange={(value) => setEta(value ? value.toString() : null)}
-        isInvalid={badDates} errorMessage={badDates ? t("It can't arrive before it ships.") : undefined} />
-    </FormRow>
-    <TextAreaField label={status === "delayed" ? t("Why it's delayed") : t("Note")} isRequired={status === "delayed" && !eta} value={note} onChange={setNote} />
+    </FormSection>
+    <FormSection title={t("Progress")}>
+      <SelectField label={t("Status")} isRequired selectedKey={status} onSelectionChange={(key) => setStatus((key ?? "booked") as ShipmentStatus)} items={SHIPMENT.map((value) => ({ id: value, label: labels.shipment[value] }))} />
+      <FormRow>
+        <DateField label={t("Shipped on")} value={shippedOn ? parseDate(shippedOn) : null} onChange={(value) => setShippedOn(value ? value.toString() : null)} />
+        <DateField label={t("Expected on")} minValue={shippedOn ? parseDate(shippedOn) : undefined} value={eta ? parseDate(eta) : null} onChange={(value) => setEta(value ? value.toString() : null)}
+          isInvalid={badDates} errorMessage={badDates ? t("It can't arrive before it ships.") : undefined} />
+      </FormRow>
+      <TextAreaField label={status === "delayed" ? t("Why it's delayed") : t("Note")} isRequired={status === "delayed" && !eta} value={note} onChange={setNote} />
+    </FormSection>
   </FormDialog>;
 }

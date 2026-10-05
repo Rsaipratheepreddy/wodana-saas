@@ -143,6 +143,7 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
     tabs={<ListTabs label={t("Planning stage")} items={groups} value={group} onChange={setGroup} />}>
     {problem ? <Callout tone="warning" title={t("Some projects could not be loaded")}>{translateKnown(t, problem)}</Callout> : null}
     <DataGrid<PlanningRow>
+      gridKey="planning.list"
       ariaLabel={t("Planning")}
       columns={columns}
       data={visible}
