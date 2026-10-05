@@ -79,6 +79,8 @@ This section supersedes every earlier schedule in this file. §5a, §5b and §5c
 | P7 | **Production and procurement** | PLM-045, 046, 055–065, 068–074, 083, 086, 089–091, 098, 124–126 · BOQ → purchase · vendor portal (onboarding, KYC, bidding, PO acknowledgement) · Shopify core collection | Live: Furniture A–E and fit-out through delivery |
 | P8 | **Reports, warranty, mobile** | PLM-104, 105 · warranty reminders (12) · mobile app parity (site, daily progress, approvals, My day) | **Milestone B: full handover.** |
 
+Each phase also takes its research items from §0.7 (features R1–R14, AI ideas AI1–AI10, safeguards C1–C7).
+
 ### 0.3a Gaps found in the coverage check (5 Oct), now assigned
 
 | Gap | Phase |
@@ -172,6 +174,71 @@ Phases P1–P8 first build or consolidate the engine a module needs, then the mo
 - Admin guide (enquiry types, steps, roles, approvals, notifications).
 - Data import (clients, catalogue, suppliers).
 - Go-live checklist, backup and restore test, support window.
+
+### 0.7 Public research (6 Oct): what we add, and why
+**Sources:** Capterra and Software Advice low-star reviews, Trustpilot, App Store, Houzz homeowner forums, CPA and designer blogs, competitor changelogs (Houzz Pro/Ivy, Programa, Mydoma, Studio Designer, DesignFiles, Fohlio, Buildertrend, JobTread, Dzylo, Atelier, HomeLane, UAE fit-out ERPs). Reddit, G2 and X were not reachable by the research tools.
+
+**What the market says, in four lines:**
+1. Clients and firms fight over **what was agreed** and **what it costs**: a final bill far above the quote, "extras" never agreed, hidden markup.
+2. **Procurement silence** loses both margin and goodwill: backorders, damage, items that don't fit, nobody knows the delivery date.
+3. Buyers punish **broken promises around the product**: QuickBooks "integration" that means typing twice, slow support, lock-in contracts, no bulk export, weak mobile apps.
+4. AI is wanted for **admin and paperwork**: logs, client updates, bills, meeting notes. Flashy design features rank lower. About half of contractors don't trust AI accuracy yet.
+
+Our existing plan already answers much of this: the decisions ledger, approvals, own books instead of a sync, the offline outbox, allowance lines, retention, the client portal, export (§7). The additions below fill what is still missing. Each goes into its phase's spec (§6) and gets tests like any other item.
+
+**A. Features added**
+
+| # | Add | Phase | Reason (evidence) |
+| --- | --- | --- | --- |
+| R1 | **Client budget tracker** in the portal: agreed value + approved changes + allowance spend = forecast final, with every change linked to its approval | P4 | Homeowners' top complaint is a final bill above the quote (Houzz threads; 78% of renovations go over budget). It ends "surprise" bills. |
+| R2 | **Item-level client approval** with good/better/best options and **alternatives on rejection** (in-budget, in-stock, from the catalogue and past jobs), all written to the decisions ledger | P4 | "But you said…" disputes; Studio Designer users ask for item e-approval; Programa and Buildertrend ship options. |
+| R3 | **Markup disclosure as a firm setting:** fee-based, disclosed markup, or all-inclusive price, applied the same way to quote, invoice and portal | P3 | Hidden markup is a top homeowner grievance (Houzz). This is configuration, not a branch. |
+| R4 | **Product clipper and product library:** paste a supplier link or use the browser button; AI fills name, price, dimensions, finish, lead time and images; reused across jobs | P4 | The most frequent sourcing action; praised in Houzz Pro, DesignFiles and Programa reviews. |
+| R5 | **Fit check:** item dimensions checked against the measured door, lift, stair and wall sizes from the site visit before an item is approved or ordered | P4 → P7 | "The couch doesn't fit through the door" and non-returnable items (Houzz threads). Nobody does this well. |
+| R6 | **Client order tracking:** each client item shows ordered → acknowledged → shipped → delivered → installed with an ETA. A slipped ETA drafts the client message for a person to send. | P7 | "No one can tell me when my order will be delivered" (Havenly, Houzz). |
+| R7 | **Client deposits held per job and drawn against orders**, visible to the client (deposit → ordered → delivered) | P6 | "Took the deposit and never ordered" disputes; trust accounting in Studio Designer. |
+| R8 | **Native e-sign** for proposals, agreements, change requests and handover: typed or drawn signature, signer identity, IP, time, document hash and certificate page. DocuSign becomes optional. | P3 | Every competitor has it. Our signed record must sit with the decisions ledger, not in a third party. |
+| R9 | **Time tracking billed to the client:** timer or entries per job and phase, billable flag, hourly fees on invoices, cost into project P&L | P5 (capture) · P6 (billing) | Design fees leak. Programa, Studio Designer and Mydoma have it; DesignFiles and Houzz Pro users complain theirs is weak. |
+| R10 | **E-invoicing per region pack.** UAE: Peppol PINT AE via an accredited provider. Large taxpayers appoint one by 30 Oct 2026 and go live 1 Jan 2027; everyone else goes live 1 Jul 2027. India GST e-invoice follows the same adapter. Numbering is gap-free and issued invoices are immutable from day one of Wodana Books. | P6 (design), live before 1 Jul 2027 | A legal deadline for Palm and every UAE firm. Retrofitting it later would mean reworking the books. |
+| R11 | **Change requests emailable and signable without a portal login** (signed link) | P4 | Buildertrend reviewers: "you can NOT email a change order". Clients ignore portals. |
+| R12 | **Card-fee pass-through and payment links** where the region pack allows surcharges | P6 | Protects margin (StudioPay); legality differs by country, so it lives in the region pack. |
+| R13 | **Notification control per person:** mute non-critical events per module, digest instead of a stream; critical events (approvals, payments, deadlines) can't be muted | P5 | "Can't turn off notifications" (Buildertrend). It keeps E4 trusted. |
+| R14 | **Hide unused fields** per firm for each form and grid (configuration, never deletion) | P1 | "Need to turn off unused fields" (Programa); our Notion-calm rule. |
+
+**B. AI ideas added to E8 (all propose → person confirms, with source, confidence and undo)**
+
+| # | Idea | Phase | Daily pain it removes |
+| --- | --- | --- | --- |
+| AI1 | **Walkthrough → daily report:** photos and a voice note become the daily report, snags pinned to rooms, and tomorrow's checklist | P5 | Writing reports at night; the owner called daily progress the worst screen. Buildertrend's AI photo summary is called "gold". |
+| AI2 | **"What changed since you last looked"** per viewer (client, manager, owner), built from the ledger and job events, respecting visibility | P4 (portal) · P5 (staff) | Client updates take an hour (Buildertrend: 60 → 6.5 min); "the designer went silent". |
+| AI3 | **Unbilled-change detector:** reads job conversations and meeting notes for requests ("add a light here") with no matching change request and drafts one | P5 | Silent margin loss; disputed extras. |
+| AI4 | **Margin-leak radar per project:** quoted cost vs committed POs, labour, time and changes; flags vendor price creep, unbilled changes, and spend growing faster than progress | P6 | Firms learn they lost money only at the end (UAE fit-out commentary; Red Zone in §6.21). |
+| AI5 | **Vendor documents reader:** quote PDF or email → normalised bid comparison against the price request; bill → three-way match with PO and receipt; variance over 10% → alert | P7 | Retyping supplier quotes and bills (Buildertrend Bill Capture, Fohlio). |
+| AI6 | **Order-acknowledgement watcher:** supplier replies parsed for changed dates, quantities or substitutions → PO update + client message + schedule shift, proposed | P7 | Backorders found by the client first (Canals, Studio Designer). |
+| AI7 | **Voice note → tasks and decisions** (English, Arabic, Hindi, mixed) | P5 | WhatsApp voice notes are how site teams work today. |
+| AI8 | **Ask the job:** "why did we switch the countertop?" answered only from the job's ledger, messages and files, with citations; no citation → no answer | P5 | "I never said that" disputes; staff turnover loses context. |
+| AI9 | **Approval chaser with impact:** reminders, escalation, plus "each extra day moves handover by N days" from the steps engine | P5 | Waiting on client approvals is the most common delay. |
+| AI10 | **Meeting notes → actions:** record or upload; summary, decisions to the ledger, tasks, client-shareable version | P5 | Programa and Houzz Pro ship it; meetings are where scope changes. |
+
+**C. Engineering safeguards added (§7 and §8 apply them)**
+1. **External sync ledger.** Every push to QuickBooks, Zoho, Shopify or an e-invoice provider stores the external ID, a sync status per document, retries with an idempotency key, and a reconciliation report. A sync never touches a closed period. *Reason:* competitor syncs corrupt books (Houzz Pro, Mydoma backdated invoices).
+2. **Integration cost metering per tenant** for WhatsApp messages, AI tokens and paid APIs, with budgets and alerts. Utility templates only for operations; fallback to push or email. *Reason:* Meta per-message pricing (July 2025) and Intuit metered API calls (2025) changed costs under customers.
+3. **AI provenance.** Every AI-made field keeps source document/page, model, confidence and the person who confirmed it. Undo is a compensating command. *Reason:* about 50% of contractors distrust AI accuracy; trust comes from evidence.
+4. **Performance budgets** (list p95 < 300 ms server, page interactive < 2 s on 4G) checked in CI on seeded large data, and a public **status page**. *Reason:* "slow and sometimes non-responsive" is a top complaint (Studio Designer).
+5. **Self-serve full export** (CSV + files, per job or whole workspace, as a background job with a download link) tested in the e2e smoke. *Reason:* lock-in is a top reason firms hate their tools.
+6. **Honest commercial terms in the control plane:** monthly plans, renewal reminder 30 days before, self-serve cancellation, export kept for 90 days. *Reason:* about 98% of Houzz Pro's negative reviews are billing and renewal.
+7. **Offline capture order:** photos upload before text and the pending count is visible. This extends the §6.29 outbox. *Reason:* offline field capture loses trust when the sync queue is invisible (Buildertrend, Procore).
+
+**D. Considered and not adopted**
+
+| Idea | Decision | Reason |
+| --- | --- | --- |
+| Lead marketplace (Houzz model) | Decline | It creates a conflict of interest with our firms' clients (Business of Home), and lead quality is the top Houzz complaint. |
+| Own 3D/AR rendering engine | Defer; integrate | Not daily operations. Canva (planned) plus partner render tools cover it; revisit after P8. |
+| SketchUp/Revit plugins | Defer after P8 | Valuable for specification-heavy firms, but no current client needs it. |
+| Factory nesting / cut lists from drawings | Pilot after P7 | Depends on each firm's CAD data. |
+| Open AI connector (MCP server) | Defer to P8 | Proven demand (JobTread), but scoped, audited, read-first access needs E3 and E8 stable first. |
+| Per-volume or per-project pricing | Decline | Buyers say it punishes growth. Price per workspace + seats. |
 
 ---
 
@@ -1312,7 +1379,7 @@ One adapter interface per capability. States: **Not configured → Connected →
 | Payments | Stripe / Network International / Telr (UAE), Razorpay (IN) | payment link → webhook → receipt `recorded`, then Finance verifies (never auto-verified) |
 | Accounting | Zoho Books, QuickBooks Online | out: suppliers, supplier bills (matched to orders and receipts), supplier payments, credit and debit notes, client invoices and receipts, per buying company and tax code; in: payment status; a reconciliation job flags differences; Wodana stays the source of truth |
 | Storage | S3-compatible | per-tenant prefix, malware scan, signed URLs |
-| E-sign | later (DocuSign/Zoho Sign) | agreements |
+| E-sign | native in P3 (§0.7 R8); DocuSign/Zoho Sign optional | proposals, agreements, change requests, handover |
 
 **Built — accounting sync (Settings → Accounting; Business → Finance → Accounting):**
 - **Setup:** each company posts to one connected QuickBooks or Zoho Books account from a start date. Its item for invoice lines, expense account for bills, the accounts supplier payments come from and client payments go into, its petty cash expense account and the account petty cash is paid from, and a tax code for each rate it uses are chosen from the accounting system's own lists.
