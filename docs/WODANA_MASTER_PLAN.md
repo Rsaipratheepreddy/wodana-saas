@@ -1587,6 +1587,113 @@ Each is small, reusable and built once in the platform or design system.
 | Backups | nightly full + WAL; restore tested before go-live and monthly |
 | Observability | structured logs with correlation ID; error tracking; slow-query log; alerts on outbox lag and failed deliveries |
 
+### 7a. Edge-case catalogue per engine and module (6 Oct)
+Each row becomes an automated test in its phase: a domain unit test, a real-Postgres integration test, or an e2e smoke step. The ID goes in the test name. A phase is not done until its rows pass. International by default: every date rule uses the workspace time zone and working week, and every amount uses the document currency with the region pack's tax and rounding.
+
+**E1 Job record**
+
+| ID | Case | Expected | Phase |
+| --- | --- | --- | --- |
+| E1-1 | The same person enquires twice through different channels (form + WhatsApp + phone) | Matched by normalised phone or email (region phone format); one job, both touchpoints linked; a possible match shown for confirmation, never merged silently | P2 |
+| E1-2 | A returning client starts a new job after handover | New job under the same client; history visible; warranty items of the old job untouched | P2 |
+| E1-3 | Lead lost, then the client comes back | Reopen with a reason; the old loss stays in the history and reports | P2 |
+| E1-4 | Job owner deactivated mid-job | Reassignment is required before deactivation; their past actions keep their name | P2 |
+| E1-5 | Two people edit the same job | Version check; the second save gets 409 with the field diff | P1 |
+| E1-6 | Client name or phone edited by sales after Qualified | Blocked (locked fields); edit request goes to an admin | P2 |
+
+**E2 Steps**
+
+| ID | Case | Expected | Phase |
+| --- | --- | --- | --- |
+| E2-1 | Enquiry type changed after steps started | Steps recomputed from facts; completed facts carry over; dropped steps archived with a reason | P3 |
+| E2-2 | A gate's evidence is removed (payment proof deleted) | The step reopens; later steps that depended on it are flagged, not silently undone | P3 |
+| E2-3 | Firm edits a type's steps while jobs are running | Running jobs keep their version; new jobs use the new version; an explicit "move to new version" exists | P3 |
+| E2-4 | Deadline falls on a weekend or holiday | Moved to the next working day of the workspace calendar | P3 |
+| E2-5 | Step skipped by a manager | Allowed only where the type marks it optional; reason recorded | P3 |
+
+**E3 Approvals**
+
+| ID | Case | Expected | Phase |
+| --- | --- | --- | --- |
+| E3-1 | Approver on leave | Delegate or the next approver after the escalation time; recorded who approved for whom | P3 |
+| E3-2 | Requester is also the approver | Separation of duties: skipped to the next approver; waiver only if the firm allows and recorded | P3 |
+| E3-3 | Amount changes after the first approval | Approvals reset when the change crosses a threshold or exceeds the tolerance | P3 |
+| E3-4 | Policy edited while requests are pending | Pending requests keep their policy version | P3 |
+| E3-5 | Quote expires during approval | Approval blocked; extend validity (approved) or re-issue | P3 |
+| E3-6 | Two approvers act at the same moment | One decision wins (row lock); the other sees the final state | P3 |
+
+**E4 Reminders and notifications**
+
+| ID | Case | Expected | Phase |
+| --- | --- | --- | --- |
+| E4-1 | Consent withdrawn mid-reminder sequence | Next send on that channel stops; fallback channel only if consented | P5 |
+| E4-2 | Action done between schedule and send | The send is cancelled (re-check before send) | P5 |
+| E4-3 | Quiet hours in the recipient's time zone | Held until the window opens; critical items follow the firm's rule | P5 |
+| E4-4 | WhatsApp template rejected or outside the 24-hour window | Fallback to email, then push; failure visible on the health page | P5 |
+| E4-5 | Duplicate events (retry/replay) | One notification (idempotency key per event and recipient) | P5 |
+| E4-6 | Third reminder unanswered | Escalation to the owner's manager or the firm owner, once | P5 |
+| E4-7 | Recipient has no email or phone | In-app only; the owner is told the contact is unreachable | P5 |
+
+**E5 Documents and decisions**
+
+| ID | Case | Expected | Phase |
+| --- | --- | --- | --- |
+| E5-1 | Client changes a material after the list is locked | New ledger version with price and time impact → change request; procurement uses the locked version until approved | P4 |
+| E5-2 | "I never said that" | Ledger shows who, when, source (portal, meeting, WhatsApp), evidence and the client's confirmation | P4 |
+| E5-3 | Same file uploaded twice | Checksum match → link to the existing version | P1 |
+| E5-4 | A document shared with the client is replaced | The client sees the new version with a "changed" marker; the old one stays in history | P4 |
+| E5-5 | Huge or unsupported file; image without preview | Size limit per plan; placeholder card, never a broken render | P1 |
+| E5-6 | Fit check fails (item larger than the measured access) | Warning on approval and a block on ordering until overridden with a reason | P4 |
+
+**E6 Conversations**
+
+| ID | Case | Expected | Phase |
+| --- | --- | --- | --- |
+| E6-1 | Internal note posted in a client-visible thread | Notes never reach the portal; the composer shows which audience it posts to | P2 |
+| E6-2 | Message from an unknown number | Inbox intake (sales admin), File into job or New enquiry | P2 |
+| E6-3 | Client replies to an old template after the job moved on | Lands in the job's conversation, routed to the current stage owner | P5 |
+| E6-4 | A staff member loses access to a job | Their inbox no longer shows its threads; history keeps their messages | P2 |
+
+**E7 Wodana Books**
+
+| ID | Case | Expected | Phase |
+| --- | --- | --- | --- |
+| E7-1 | Partial payments against one milestone | Milestone shows paid/left; receipts post separately; AR ageing per remaining amount | P6 |
+| E7-2 | Overpayment | Credit on the client account; applied to the next milestone or refunded with approval | P6 |
+| E7-3 | Refund after project closed | Reopens the period only if it is open; otherwise posted in the current period with a reference | P6 |
+| E7-4 | VAT/GST rate changes mid-project | Each invoice uses the rate in force on its tax point; quotes show the change | P6 |
+| E7-5 | Invoice in a foreign currency | Rate snapshot at posting; realised FX difference at receipt | P6 |
+| E7-6 | Posting into a closed period | Blocked; correction goes to the open period | P6 |
+| E7-7 | Issued e-invoice needs correction | Credit note, never an edit; numbering gap-free | P6 |
+| E7-8 | Card statement line matches two expenses | Suggested match only; a person confirms; no double posting | P6 |
+| E7-9 | Rounding across 200 lines | Line rounding per region pack; totals from rounded lines; trial balance balances to the cent | P6 |
+
+**E8 Woddy**
+
+| ID | Case | Expected | Phase |
+| --- | --- | --- | --- |
+| E8-1 | AI reads a payment proof with a different amount than the milestone | Proposes the read amount with confidence and the source; Finance confirms | P3 |
+| E8-2 | Model unavailable or over the firm's budget | Feature degrades to manual; no blocked work | P5 |
+| E8-3 | User without permission asks Woddy to act | Woddy uses the user's permissions only | P5 |
+| E8-4 | Answer without a citation | Not shown; "I couldn't find this in the job" | P5 |
+
+**Modules**
+
+| ID | Case | Expected | Phase |
+| --- | --- | --- | --- |
+| M-1 | Supplier delivers short or damaged | Partial receipt; reject with photo; PO stays open for the rest; client ETA updates | P7 |
+| M-2 | Supplier changes the price on the bill | Variance check against the PO; over tolerance → approval; item cost updated | P7 |
+| M-3 | Stock reserved for a job is used for another | Blocked unless the reservation is released with a reason | P7 |
+| M-4 | Offline daily report syncs a day later | Keeps its own date; photos first; conflicts per field | P5 |
+| M-5 | Change request approved after procurement started | Impact on open POs listed; handover date recalculated | P4 |
+| M-6 | Warranty claim after the warranty end | Shown as chargeable; manager decides | P8 |
+| M-7 | Client portal opened by a second contact of the same client | Sees only what that contact's role allows | P4 |
+| M-8 | Vendor bank details changed | Payments blocked until a second person approves the change | P7 |
+| M-9 | Quote number collision across entities | Sequence per entity and type; prefix/suffix from settings | P3 |
+| M-10 | Workspace changes its time zone | Business dates keep their calendar day; timestamps re-render | P1 |
+
+**International clean-up (found in the P0 scan):** the legacy project-execution document still falls back to AED for order currency (`execution.domain.ts`). It is removed when procurement moves to tables in P7.
+
 ---
 
 ## 8. Engineering rules and schema conventions
