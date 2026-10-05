@@ -79,6 +79,25 @@ This section supersedes every earlier schedule in this file. §5a, §5b and §5c
 | P7 | **Production and procurement** | PLM-045, 046, 055–065, 068–074, 083, 086, 089–091, 098, 124–126 · BOQ → purchase · vendor portal (onboarding, KYC, bidding, PO acknowledgement) · Shopify core collection | Live: Furniture A–E and fit-out through delivery |
 | P8 | **Reports, warranty, mobile** | PLM-104, 105 · warranty reminders (12) · mobile app parity (site, daily progress, approvals, My day) | **Milestone B: full handover.** |
 
+### 0.3a Gaps found in the coverage check (5 Oct), now assigned
+
+| Gap | Phase |
+| --- | --- |
+| **Re-verify the 60 items the audit marked "built"** (the failed retests of duplicates, form source/channel, returning customer, etc.). Every phase verifies the existing items in its area before adding new ones. | P2–P7 |
+| **Enquiry-type steps editor matched to CeCe's Enquiry Types Flow tab** (her words, her paths; Interior Design mapped once she sends it) | P3 |
+| **Project record revamp:** project overview, plan, money, site and handover tabs on the §5c D.7 anatomy | P5 |
+| **Planning case revamp:** overview, requirements, site, moodboard and design tabs | P4 |
+| **Site flow as one guided path:** visit → measurements → photos → checklist, on web and app | P4 |
+| **Client portal moodboard:** Pinterest-style, Love/Avoid, comments | P4 |
+| **Mobile app early, not last:** site check-in, daily progress, approvals, My day and the location settings everyone looks for move with P4–P5; full parity in P8 | P4–P8 |
+| **Calendar and tasks robustness:** one calendar for meetings, visits, steps and deadlines; Google sync for every user | P5 |
+| **Plan / work board:** sprints, stories, tasks and issues for projects | P7 |
+| **Palm configuration data:** enquiry types, areas per Emirate, budget ranges, client types, design package prices, form branding, quote validity, roles per person. A checklist run with CeCe. | P2–P4 |
+| **Catalogue:** real images replacing the placeholders; import the Core Collection with all fields | P3 / P7 |
+| **External dependencies:** WhatsApp Business connection once Meta approves the app; Canva and Shopify credentials; Mailgun and push in production | tracked in every phase |
+| **Arabic translation pass** for staff app and portal (strings via en.json; translated once, at the end) | P8 |
+| **Operations:** monitoring and alerts, backup and restore drill, performance on large lists, security review of new tables (RLS) and permissions | P0 + P8 |
+
 ### 0.4 How each phase is executed, to keep bugs out
 1. **Spec first:** journey, fields, rules, screens and edge cases written into §6 for the module, then reviewed.
 2. **Build:** one owner agent per phase (Opus for logic and UI; Fable only for mechanical sub-tasks, with an exact brief). At most two agents run at once, never in the same code area.
