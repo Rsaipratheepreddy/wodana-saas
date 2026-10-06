@@ -4,6 +4,7 @@ import { DesignSystemProvider } from "@/design-system";
 import type { CaseContent, CaseDesign, DesignOptions } from "@/lib/pre-project/content";
 import { DesignWorkspace } from "./design-workspace";
 import { DesignActions } from "./design-actions";
+import { READ_TIMEOUT_MS } from "@/lib/workspace/read-within";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }), usePathname: () => "/workspace/pre-projects/cases/c1/designs", useSearchParams: () => new URLSearchParams() }));
 afterEach(() => vi.unstubAllGlobals());
@@ -66,6 +67,39 @@ describe("design workspace", () => {
     mount([]);
     expect(await screen.findByText("Design hasn't started")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start design" })).toBeInTheDocument();
+  });
+});
+
+describe("design workspace loading (D9): content, empty, error with Retry, never an endless skeleton", () => {
+  it("shows the stages once they load", async () => {
+    serve(journey([stage("concepts", "Concepts", "active")]));
+    mount([]);
+    expect(await screen.findByRole("tab", { name: "Concepts" })).toBeInTheDocument();
+  });
+  it("shows an error with Retry when the stages fail, and recovers on Retry", async () => {
+    const fetcher = vi.fn(async (): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }> => ({ ok: false, status: 500, json: async () => ({ message: "Design service unavailable" }) }));
+    vi.stubGlobal("fetch", fetcher);
+    mount([]);
+    expect(await screen.findByText("Design didn't load")).toBeInTheDocument();
+    fetcher.mockImplementation(async () => ({ ok: true, status: 200, json: async () => ({ journey: null, stages: [], canStart: true, timezone: "UTC" }) }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Design hasn't started")).toBeInTheDocument();
+  });
+  it("treats an answer without stages (an empty 200) as a failed load, not as still loading", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError("Unexpected end of JSON input"); } })));
+    mount([]);
+    expect(await screen.findByText("Design didn't load")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+  it("gives up on a read that never answers and offers Retry", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.stubGlobal("fetch", vi.fn(() => new Promise(() => undefined)));
+      mount([]);
+      await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS);
+      expect(await screen.findByText("Design didn't load")).toBeInTheDocument();
+      expect(screen.getByText("This is taking too long. Try again.")).toBeInTheDocument();
+    } finally { vi.useRealTimers(); }
   });
 });
 

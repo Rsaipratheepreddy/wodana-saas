@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Avatar, EditableField, Progress } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Priority, ProjectDetail } from "@/lib/project-core/types";
+import { projectPercent } from "@/lib/project-core/project-record";
 import { useProjectFormat } from "./format";
 import type { ProjectDialog } from "./project-header";
 import styles from "./project-core.module.css";
@@ -15,7 +16,11 @@ type Save = (action: string, input: Record<string, unknown>) => Promise<void>;
  * The project's details, one click from the work: client, team by role, value, dates, plan progress, site
  * work, route and priority. The project manager edits dates and priority in place; the team opens its dialog.
  */
-export function ProjectDetails({ detail, save, onReload, onDialog, planEnd }: { detail: ProjectDetail; save: Save; onReload: () => void; onDialog: (dialog: ProjectDialog) => void; planEnd?: string | null }) {
+export function ProjectDetails({ detail, save, onReload, onDialog, planEnd, compact = false }: {
+  detail: ProjectDetail; save: Save; onReload: () => void; onDialog: (dialog: ProjectDialog) => void; planEnd?: string | null;
+  /** In the record's Details tab: only what isn't on its Overview (client, team, progress and site work are). */
+  compact?: boolean;
+}) {
   const t = useT();
   const format = useProjectFormat();
   const { project } = detail;
@@ -30,9 +35,11 @@ export function ProjectDetails({ detail, save, onReload, onDialog, planEnd }: { 
   }, new Map<string, { name: string; roles: string[] }>())];
   const missing = detail.team.filter((role) => !role.member);
   const late = planEnd && project.promiseDate && planEnd > project.promiseDate;
+  // The plan's measure, never below the stages already behind the project.
+  const percent = projectPercent(detail);
   return <div className={styles.detailsPanel}>
     <dl className={styles.detailList} data-layout="stacked">
-      <div><dt>{t("Client")}</dt><dd>{project.clientName}</dd></div>
+      {compact ? null : <div><dt>{t("Client")}</dt><dd>{project.clientName}</dd></div>}
       <div><dt>{t("Agreed value")}</dt><dd>
         <Link className={styles.detailLink} href={`/workspace/projects/${project.id}/scope`}>{format.money(project.total, project.currency)}</Link>
         {detail.seal ? <small>{t("Sealed {revision} · {date}", { revision: detail.seal.revisionLabel, date: format.when(detail.seal.acceptedAt) })}</small> : null}
@@ -44,19 +51,19 @@ export function ProjectDetails({ detail, save, onReload, onDialog, planEnd }: { 
         validate={(promiseDate) => promiseDate && project.startDate && promiseDate < project.startDate ? t("Handover can't be before the start.") : null} value={project.promiseDate ?? ""} />
       {late ? <div><dt className="wd-visually-hidden">{t("Plan")}</dt><dd><small data-late>{t("The plan ends {date}", { date: format.short(planEnd) })}</small></dd></div> : null}
       {/* A closed project's status says where it ended; the plan's share done is for work still going on. */}
-      {detail.progress !== null && !["completed", "cancelled"].includes(project.status) ? <div><dt>{t("Progress")}</dt><dd>
-        <Link className={styles.detailLink} href={`/workspace/projects/${project.id}/plan`}>{t("{percent}% done", { percent: detail.progress })}</Link>
-        <Progress label={t("Progress")} value={detail.progress} />
+      {!compact && percent !== null && !["completed", "cancelled"].includes(project.status) ? <div><dt>{t("Progress")}</dt><dd>
+        <Link className={styles.detailLink} href={`/workspace/projects/${project.id}/plan`}>{t("{percent}% done", { percent })}</Link>
+        <Progress label={t("Progress")} value={percent} />
       </dd></div> : null}
-      <div><dt>{t("Site work")}</dt><dd>{project.siteStartedOn
+      {compact ? null : <div><dt>{t("Site work")}</dt><dd>{project.siteStartedOn
         ? project.siteFinishedOn ? t("{from} – {to}", { from: format.short(project.siteStartedOn), to: format.short(project.siteFinishedOn) }) : t("Since {date}", { date: format.short(project.siteStartedOn) })
-        : <span className={styles.muted}>{t("Not started")}</span>}</dd></div>
+        : <span className={styles.muted}>{t("Not started")}</span>}</dd></div>}
       <EditableField canEdit={manage} items={(["normal", "high", "critical"] as const).map((id) => ({ id, label: priorityLabel[id] }))} kind="select" label={t("Priority")}
         onReload={onReload} onSave={(priority) => save("set_priority", { priority })} value={project.priority} />
       {project.templateName ? <div><dt>{t("Route")}</dt><dd>{project.templateName}</dd></div> : null}
       <div><dt>{t("Planning")}</dt><dd><Link className={styles.detailLink} href={`/workspace/pre-projects/cases/${project.caseId}/overview`}>{project.opportunityReference ?? t("Open")}</Link></dd></div>
     </dl>
-    <section className={styles.detailTeam} aria-label={t("Team")}>
+    {compact ? null : <section className={styles.detailTeam} aria-label={t("Team")}>
       <div className={styles.detailHeading}>
         <h2>{t("Team")}</h2>
         {manage ? <button type="button" className={styles.panelAction} onClick={() => onDialog("team")}>{t("Edit")}</button> : null}
@@ -68,6 +75,6 @@ export function ProjectDetails({ detail, save, onReload, onDialog, planEnd }: { 
         </li>)}
       </ul>
       {missing.length ? <p className={styles.muted}>{t("Not named: {roles}", { roles: missing.map((role) => t(role.label as never)).join(", ") })}</p> : null}
-    </section>
+    </section>}
   </div>;
 }

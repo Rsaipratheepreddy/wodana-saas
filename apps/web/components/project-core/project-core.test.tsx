@@ -35,7 +35,8 @@ const overview = (patch: Partial<ProjectOverview> = {}): ProjectOverview => ({
   blockers: [{ key: "late_work", count: 1, items: ["#4 Measure the kitchen"], href: `/workspace/projects/${PID}/plan?filter=late` }],
   decisions: [], stagePlan: { s0: { start: "2026-09-20", end: "2026-09-25", open: 1, total: 2 } },
   dates: { start: "2026-09-20", promise: "2099-12-12", planEnd: "2026-10-30", siteStarted: null, siteFinished: null },
-  money: null, activity: [{ id: "a1", at: "2026-09-27T08:00:00Z", action: "work.create", source: "user", actor: "Omar Haddad", subject: "#4 Measure the kitchen", detail: {} }], ...patch,
+  money: null, activity: [{ id: "a1", at: "2026-09-27T08:00:00Z", action: "work.create", source: "user", actor: "Omar Haddad", subject: "#4 Measure the kitchen", detail: {} }],
+  health: { health: "at_risk", stated: "on_track", reasons: [{ key: "late_work", count: 1 }] }, contacts: { client: { phone: "+971501234567", email: null }, sales: null }, ...patch,
 });
 const mount = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
@@ -97,17 +98,16 @@ describe("projects", () => {
       return current;
     });
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
-    const finish = await screen.findByRole("button", { name: "Finish Kickoff" });
-    expect(finish).toBeDisabled();
+    // The next step names what the stage needs; its button confirms it.
+    expect(await screen.findByRole("heading", { level: 3, name: "Kickoff meeting held" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm: Kickoff meeting held" })).toHaveTextContent("Confirm");
     // Read from the records, never ticked by hand.
     expect(screen.getByText("Project manager named")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox", { name: "Kickoff meeting held" }));
-    // Ready: the stage's own button and the header's next step read the same.
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "Finish Kickoff" })).toHaveLength(2));
-    const [header, stage] = screen.getAllByRole("button", { name: "Finish Kickoff" });
-    expect(header).toBeEnabled();
-    expect(stage).toBeEnabled();
-    await userEvent.click(stage);
+    // Ready: the one action finishes the stage.
+    const finish = await screen.findByRole("button", { name: "Finish Kickoff" });
+    expect(finish).toBeEnabled();
+    await userEvent.click(finish);
     // Finishing moves the project on, so it asks first and nothing is sent until it's confirmed.
     const dialog = await screen.findByRole("dialog", { name: "Finish Kickoff?" });
     expect(posts(fetcher).map((post) => post.action)).toEqual(["confirm_check"]);
@@ -130,9 +130,9 @@ describe("projects", () => {
     await userEvent.type(name, "Villa 12 · Phase 2{Enter}");
     await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "rename", name: "Villa 12 · Phase 2", version: 4 })]));
     expect(await screen.findByRole("heading", { level: 1, name: "Villa 12 · Phase 2" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Show details" }));
-    const panel = await screen.findByRole("dialog", { name: "Details" });
-    await userEvent.click(await within(panel).findByRole("button", { name: "Edit Priority" }));
+    // On the Overview the details are the sidebar's Details tab.
+    await userEvent.click(screen.getByRole("tab", { name: "Details" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Edit Priority" }));
     await userEvent.click(await screen.findByRole("option", { name: "High" }));
     await waitFor(() => expect(posts(fetcher)[1]).toEqual(expect.objectContaining({ action: "set_priority", priority: "high", version: 5 })));
   });
@@ -142,9 +142,9 @@ describe("projects", () => {
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
     expect(await screen.findByRole("heading", { level: 1, name: "Villa 12" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit Project name" })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Show details" }));
-    const panel = await screen.findByRole("dialog", { name: "Details" });
-    expect(within(panel).queryByRole("button", { name: "Edit Priority" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Details" }));
+    expect(await screen.findByText("Priority")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit Priority" })).not.toBeInTheDocument();
   });
 
   it("shows why a change was refused and reloads when someone else changed the project", async () => {
@@ -233,22 +233,24 @@ describe("projects", () => {
     await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "reopen", reason: "Handover signed too early", version: 4 })]));
   });
 
-  it("keeps the header to one line with the next action, and the details one click away", async () => {
+  it("shows the project as a record: one title, where it stands, the next step, the team and its contacts", async () => {
     mount(() => detail());
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
     const heading = await screen.findByRole("heading", { level: 1, name: "Villa 12" });
-    const header = heading.closest("header")!;
-    expect(header).toHaveTextContent("PRJ-0007");
-    expect(header).toHaveTextContent("Kickoff · 1 of 2");
-    // The next step for this person: confirm the kickoff meeting.
-    expect(within(header).getByRole("button", { name: "Confirm: Kickoff meeting held" })).toBeInTheDocument();
+    expect(heading.closest("header")!).toHaveTextContent("PRJ-0007");
+    // The strip: health from the records (a task is late), the stage, the handover.
+    const strip = await screen.findByLabelText("Where the project stands");
+    expect(strip).toHaveTextContent("Kickoff · 1 of 2");
+    await waitFor(() => expect(strip).toHaveTextContent("At risk"));
+    // The one next step lives in its card, not twice in the header.
+    expect(screen.getAllByRole("button", { name: "Confirm: Kickoff meeting held" })).toHaveLength(1);
     // Seven tabs, in the order work happens.
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Overview", "Scope", "Plan", "Money", "Site", "Handover", "Updates"]);
-    // Narrow screen: the details open as a panel on demand, with the team by role.
-    await userEvent.click(within(header).getByRole("button", { name: "Show details" }));
-    const panel = await screen.findByRole("dialog", { name: "Details" });
-    expect(within(panel).getByText("Omar Haddad")).toBeInTheDocument();
-    expect(within(panel).getByText("Not named: Designer")).toBeInTheDocument();
+    expect(screen.getAllByRole("tab").slice(0, 7).map((tab) => tab.textContent)).toEqual(["Overview", "Scope", "Plan", "Money", "Site", "Handover", "Updates"]);
+    // The sidebar's team: each person once, the roles nobody holds, and how to reach the client.
+    const team = screen.getByRole("list", { name: "Team" });
+    expect(within(team).getByText("Omar Haddad")).toBeInTheDocument();
+    expect(screen.getByText("Not named: Designer")).toBeInTheDocument();
+    expect(within(team).getByRole("link", { name: "Call Maya Rahman" })).toHaveAttribute("href", "tel:+971501234567");
   });
 
   it("shows what holds the project up, each linked to its list, and the latest activity", async () => {
@@ -256,10 +258,11 @@ describe("projects", () => {
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
     const blockers = await screen.findByRole("region", { name: "Needs attention" });
     expect(within(blockers).getByRole("link", { name: /1 task late/ })).toHaveAttribute("href", `/workspace/projects/${PID}/plan?filter=late`);
-    expect(screen.getByRole("region", { name: "Next" })).toHaveTextContent("Kickoff meeting held");
+    expect(screen.getByRole("heading", { level: 3, name: "Kickoff meeting held" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Recent activity" })).toHaveTextContent("Omar Haddad added #4 Measure the kitchen");
     // Kickoff's planned work ended on the 25th and is still open.
     expect(screen.getByText("3 days late")).toBeInTheDocument();
+    expect(screen.getByText("3 days past its plan")).toBeInTheDocument();
   });
 
   it("resumes a held project, offering to move the dates by the working days lost", async () => {

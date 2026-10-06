@@ -216,6 +216,10 @@ li[data-passed] > .autoMark { border-style: solid; border-color: var(--wd-color-
   .headLine { flex-direction: column; }
   .headActions { align-self: stretch; }
   .headActions > :first-child { flex: 1; justify-content: center; }
+  /* On the Overview the header holds only ⋯: it stays at the end of the title line. */
+  .head[data-record] .headLine { flex-direction: row; }
+  .head[data-record] .headActions { align-self: flex-start; }
+  .head[data-record] .headActions > :first-child { flex: none; }
   .headFacts { display: flex; inline-size: 100%; }
   /* On a phone the details are one tap away (ⓘ): the header keeps the stage and the handover. */
   .headFact[data-extra] { display: none; }

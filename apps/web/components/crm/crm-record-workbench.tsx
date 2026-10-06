@@ -30,6 +30,7 @@ import { CrmRequestError, crmRequest, dateText, label, rows, type RecordData } f
 import { activityTitle } from "@/lib/crm/contact";
 import { ActionDialog, FactList, ResourceState, addActivityAction, choice, completeActivityAction, options, rescheduleActivityAction, useCrmResource, type ActionSpec, type FieldSpec } from "./crm-workbench";
 import { CustomerPanel } from "./customer-record";
+import { SiteLocation } from "@/components/ui/site-location";
 import styles from "./crm-workbench.module.css";
 import screen from "./opportunity-now.module.css";
 
@@ -190,7 +191,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const nextTask = pendingFollowUp(rows(activities.data));
   // Booking a follow-up is offered only when the flow asks for one; that row then stands in for the checklist's own.
   const needsFollowUp = status === "open" && !nextTask && Boolean(flow?.missing?.some((item) => item.key === "nextAction"));
-  const plan = nowPlan({ flow, status, funnel, caseId });
+  const project = live.projectId ? { id: String(live.projectId), reference: live.projectReference ? String(live.projectReference) : null } : null;
+  const plan = nowPlan({ flow, status, funnel, caseId, project });
   const fullChecklist = nextChecklist(flow, status);
   const checklist = fullChecklist && needsFollowUp ? { ...fullChecklist, rows: fullChecklist.rows.filter((item) => item.id !== "nextAction") } : fullChecklist;
   // The client (the opportunity's party), never the sales owner; without a client name the task keeps its own title.
@@ -216,6 +218,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
     else if (step.target === "intro") { unfold("intro"); setBookIntro(true); }
     else if (step.target === "discovery") openSheet(groupForRequirement(step.keys[0] ?? ""), step.keys[0]);
     else if (step.target === "quote" || step.target === "planning") { if (caseId) router.push(caseLink(step.target === "quote" ? "quotations" : step.section ?? "overview")); else void openCase(); }
+    else if (step.target === "project" && project) router.push(`/workspace/projects/${encodeURIComponent(project.id)}`);
     else if (step.target === "enquiry" && leadId) router.push(`/workspace/crm/leads?lead=${leadId}`);
     else if (step.target === "advance") void advance();
     else if (step.target === "win") startWin();
@@ -282,6 +285,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
                 <EditableField canEdit={Boolean(resource.data)} display={closeDate ? dateText(live.expectedCloseAt ?? live.expected_close_at, { locale, timeZone }) : undefined} kind="date" label={t("Expected close")} onReload={resource.refresh}
                   onSave={(date) => patch({ expectedCloseAt: date ? new Date(`${date}T12:00:00`).toISOString() : null })} placeholder={t("Not set")} value={closeDate} />
                 {flow?.enquiryType ? <FactRow label={t("Enquiry type")}>{flow.enquiryType}</FactRow> : null}
+                {discovery.view?.facts.propertyLocation || discovery.view?.facts.latitude != null ? <FactRow label={t("Property location")}>
+                  <SiteLocation address={discovery.view.facts.propertyLocation} latitude={discovery.view.facts.latitude} longitude={discovery.view.facts.longitude} /></FactRow> : null}
                 <FactRow label={t("Sales owner")}>{owner ? <span className={screen.person}><span aria-hidden="true"><Avatar name={owner.label} seed={owner.id} size="sm" /></span>{owner.label}</span> : t("Unassigned")}</FactRow>
                 {proof ? <FactRow label={t("Payment proof")}><a className={screen.factLink} href={proofHref(workspaceId, row.id, proof.id)} target="_blank" rel="noopener noreferrer">{t("Attached · {date}", { date: shortDay(proof.recordedAt) })}</a></FactRow> : null}
               </EditableFieldList>

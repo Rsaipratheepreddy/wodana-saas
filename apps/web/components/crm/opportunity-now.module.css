@@ -1,4 +1,4 @@
-/* The opportunity record's own pieces: header value and owner, links, history, the checklist and follow-up row, the progress line. The shared anatomy is in record/record.module.css. */
+/* The opportunity record's own pieces: header value and owner, links, history, the checklist and follow-up row, the progress line. The shared anatomy is in components/record/record.module.css. */
 .value { color: var(--wd-color-text); font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); }
 .value[data-empty] { color: var(--wd-color-text-tertiary); font-weight: var(--wd-weight-regular); }
 .owner { display: inline-flex; }

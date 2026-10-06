@@ -98,15 +98,15 @@ export async function getPreProject(id: string): Promise<PreProjectCase | { erro
   return response.json();
 }
 
-export async function getCaseOverviewData(): Promise<{ workspaceId: string; members: { id: string; displayName: string }[] }> {
+export async function getCaseOverviewData(): Promise<{ workspaceId: string; members: { id: string; displayName: string; email?: string | null }[] }> {
   const { workspaceId, token } = await context();
   if (isE2eBypass()) return { workspaceId, members: [{ id: e2eCase.ownerMembershipId!, displayName: e2eCase.engagementOwnerName! }] };
   const response = await fetch(businessApiUrl(`/workspaces/${workspaceId}/members`), {
     headers: { authorization: `Bearer ${token}` }, cache: "no-store",
   }).catch(() => null);
   if (!response?.ok) return { workspaceId, members: [] };
-  const members = await response.json() as { id: string; displayName: string; status: string }[];
-  return { workspaceId, members: members.filter((member) => member.status === "active").map(({ id, displayName }) => ({ id, displayName })) };
+  const members = await response.json() as { id: string; displayName: string; status: string; email?: string | null }[];
+  return { workspaceId, members: members.filter((member) => member.status === "active").map(({ id, displayName, email }) => ({ id, displayName, email: email ?? null })) };
 }
 
 export async function getCaseContent(id:string,includeDesigns=false,includeSite=false):Promise<{data:import('./content').CaseContent;designs:import('./content').CaseDesign[];designOptions?:import('./content').DesignOptions;site?:import('./site').SiteData}|{error:string}> {

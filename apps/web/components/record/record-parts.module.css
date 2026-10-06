@@ -1,0 +1,77 @@
+/* The shared pieces of a record (§5c D.7): the stage timeline, people with their contact actions, facts, activity and files. */
+
+/* The timeline: one under the other on a narrow frame, side by side (Halal-style steps) once there is room. */
+.timelineFrame { container-type: inline-size; min-inline-size: 0; }
+.timeline { display: grid; margin: 0; padding: 0; list-style: none; }
+.timeline > li { position: relative; display: grid; align-content: start; grid-template-columns: var(--wd-space-6) minmax(0, 1fr); gap: var(--wd-space-3); padding-block-end: var(--wd-space-2); }
+.timeline > li:last-child { padding-block-end: 0; }
+.timeline > li:not(:last-child)::after { content: ""; position: absolute; inset-block: var(--wd-space-6) 0; inset-inline-start: var(--wd-space-3); border-inline-start: 1px solid var(--wd-color-border); }
+.timeline > li[data-state="done"]:not(:last-child)::after { border-color: var(--wd-color-success); }
+.mark { position: relative; z-index: 1; display: grid; place-items: center; inline-size: var(--wd-space-6); block-size: var(--wd-space-6); border-radius: var(--wd-radius-round); background: var(--wd-color-surface); color: var(--wd-color-text-tertiary); }
+[data-state="done"] > .mark { background: var(--wd-color-success-subtle); color: var(--wd-color-success); }
+[data-state="current"] > .mark { background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); }
+[data-state="blocked"] > .mark { background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
+/* One line per step on a narrow frame: the name, its date or state, and its people. */
+.stepBody { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-0-5) var(--wd-space-2); min-inline-size: 0; min-block-size: var(--wd-space-6); }
+.stepLabel { color: var(--wd-color-text); font-size: var(--wd-text-sm); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
+[data-state="current"] .stepLabel { font-weight: var(--wd-weight-semibold); }
+:is([data-state="upcoming"], [data-state="skipped"]) .stepLabel { color: var(--wd-color-text-secondary); }
+.stepDate { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+.stepLate { color: var(--wd-color-danger); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.stepPeople { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); }
+
+/* Side by side once each step has about 5.5rem: up to six steps from 32rem, more from 44rem. */
+@container (min-width: 32rem) {
+  .timelineFrame:not([data-many]) .timeline { grid-template-columns: repeat(var(--steps), minmax(0, 1fr)); }
+  .timelineFrame:not([data-many]) .timeline > li { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-2); padding-block-end: 0; padding-inline-end: var(--wd-space-2); }
+  .timelineFrame:not([data-many]) .timeline > li:not(:last-child)::after { inset-block: var(--wd-space-3) auto; inset-inline: calc(var(--wd-space-6) + var(--wd-space-1)) var(--wd-space-1); border-inline-start: 0; border-block-start: 1px solid var(--wd-color-border); }
+  .timelineFrame:not([data-many]) .timeline > li[data-state="done"]:not(:last-child)::after { border-color: var(--wd-color-success); }
+  .timelineFrame:not([data-many]) .stepBody { display: grid; align-content: start; justify-items: start; gap: var(--wd-space-0-5); padding-block-start: var(--wd-space-0-5); }
+  .timelineFrame:not([data-many]) .stepPeople { padding-block-start: var(--wd-space-1); }
+  .timelineFrame:not([data-many]) .stepLabel { font-size: var(--wd-text-xs); overflow-wrap: break-word; hyphens: auto; }
+}
+@container (min-width: 44rem) {
+  .timelineFrame[data-many] .timeline { grid-template-columns: repeat(var(--steps), minmax(0, 1fr)); }
+  .timelineFrame[data-many] .timeline > li { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-2); padding-block-end: 0; padding-inline-end: var(--wd-space-2); }
+  .timelineFrame[data-many] .timeline > li:not(:last-child)::after { inset-block: var(--wd-space-3) auto; inset-inline: calc(var(--wd-space-6) + var(--wd-space-1)) var(--wd-space-1); border-inline-start: 0; border-block-start: 1px solid var(--wd-color-border); }
+  .timelineFrame[data-many] .timeline > li[data-state="done"]:not(:last-child)::after { border-color: var(--wd-color-success); }
+  .timelineFrame[data-many] .stepBody { display: grid; align-content: start; justify-items: start; gap: var(--wd-space-0-5); padding-block-start: var(--wd-space-0-5); }
+  .timelineFrame[data-many] .stepPeople { padding-block-start: var(--wd-space-1); }
+  .timelineFrame[data-many] .stepLabel { font-size: var(--wd-text-xs); overflow-wrap: break-word; hyphens: auto; }
+}
+
+/* People: avatar, name and role, then call / WhatsApp / email at the end. */
+.people { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.person { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-control-md); }
+.personText { display: grid; flex: 1 1 auto; min-inline-size: 0; }
+.personName { color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.personRole { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.contact { display: flex; flex: none; align-items: center; gap: var(--wd-space-0-5); }
+
+/* Facts: the label at the start, the value at the end. */
+.facts { display: grid; gap: var(--wd-space-2); margin: 0; }
+.facts > div { display: flex; align-items: baseline; justify-content: space-between; gap: var(--wd-space-3); min-inline-size: 0; }
+.facts dt { flex: none; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.facts dd { display: grid; justify-items: end; gap: var(--wd-space-0-5); margin: 0; min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; text-align: end; overflow-wrap: anywhere; }
+.facts dd[data-tone="danger"] { color: var(--wd-color-danger); }
+.facts dd[data-tone="success"] { color: var(--wd-color-success); }
+.facts dd small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+/* Activity: the words, then who and when; a hairline between entries. */
+.activity { display: grid; margin: 0; padding: 0; list-style: none; }
+.activity > li { display: grid; gap: var(--wd-space-0-5); padding-block: var(--wd-space-2); }
+.activity > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }
+.activityText { color: var(--wd-color-text); font-size: var(--wd-text-sm); line-height: var(--wd-leading-copy); overflow-wrap: anywhere; }
+.activityMeta { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+/* Files. */
+.files { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.files > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); font-size: var(--wd-text-sm); }
+.files > li > svg { flex: none; color: var(--wd-color-text-tertiary); }
+.files a { color: var(--wd-color-link); text-decoration: none; overflow-wrap: anywhere; }
+.files a:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+.fileMeta { inline-size: 100%; padding-inline-start: var(--wd-space-6); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+/* A person inline: avatar and name. */
+.chip { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; }
+.chip > span:last-child { overflow-wrap: anywhere; }

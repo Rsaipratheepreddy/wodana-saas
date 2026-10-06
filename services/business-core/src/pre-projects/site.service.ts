@@ -8,6 +8,7 @@ import { ItemDimensionDto } from './item-specification.dto';
 import { normalizeItemDimension } from './item-specification.service';
 import { ReviewSiteMeasurementDto, SaveSiteMeasurementDto, SaveSiteObservationDto, SaveSiteVisitDto, SiteLocationDto } from './site.dto';
 import { syncOneTreeFromCase } from '../jobs/one-tree.store';
+import { siteEvidenceProblem } from '../design/design-journey.domain';
 
 type Dimension = ItemDimensionDto & { verification?:string; siteSurvey?:{id:string;version:number;status:string}; approximateMetres?:number|null; measuredMetres?:number|null };
 type SiteContent = Record<string,unknown> & { id:string;version:number;kind:string;title:string;status:string;roomId?:string|null;entryId?:string|null;visitId?:string|null;dimensions?:Dimension[];assetIds:string[];assets?:unknown[];evidenceConsentConfirmed?:boolean;evidenceConsent?:{confirmedAt:string;confirmedBy:string} };
@@ -63,6 +64,9 @@ export class SiteService {
   return this.brief.edit(actor,w,c,async(client,userId)=>{
    validateVisit(input);
    const previous=await this.previous(client,w,c,input,'visit');
+   // PLM-128: a visit is done only once what it captured is measured with photos (the journey's site visit rule).
+   // A visit already recorded as done stays editable.
+   if(input.status==='completed'&&previous?.status!=='completed'){const problem=siteEvidenceProblem(await this.visitEvidence(client,w,c));if(problem)throw new BadRequestException(problem);}
    let assigneeName:string|null=null;
    if(input.assigneeId){const person=await client.query(`SELECT u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.user_id=$2 AND m.status='active' AND u.status='active'`,[w,input.assigneeId]);if(!person.rowCount)throw new BadRequestException('Choose an active workspace member for the visit.');assigneeName=person.rows[0].name;}
    return this.write(client,w,c,userId,{...input,kind:'visit',version:input.version+1,assigneeName,roomId:null,entryId:null,visitId:null,scheduledAt:new Date(input.scheduledAt).toISOString()},previous);
@@ -104,6 +108,22 @@ export class SiteService {
    if(content.entryId)await this.syncSpecification(client,w,c,userId,content,null,true);
    return saved;
   });
+ }
+ /** Each measurement set with its photos, and each room with something captured on site but no measurement yet. */
+ private async visitEvidence(client:PoolClient,w:string,c:string) {
+  return (await client.query<{title:string;status:string;files:number}>(`SELECT COALESCE(NULLIF(record.title,''),room.name,'Measurement') AS title,record.status,
+     (COALESCE(jsonb_array_length(record.content->'assetIds'),0)
+      +(SELECT count(*) FROM pre_project_brief_entries entry JOIN pre_project_entry_assets link ON link.workspace_id=entry.workspace_id AND link.entry_id=entry.id
+         WHERE entry.workspace_id=record.workspace_id AND entry.case_id=record.case_id AND entry.kind='file' AND entry.archived_at IS NULL AND record.room_id IS NOT NULL AND entry.room_id=record.room_id))::int AS files
+    FROM pre_project_site_records record LEFT JOIN pre_project_rooms room ON room.workspace_id=record.workspace_id AND room.case_id=record.case_id AND room.id=record.room_id
+   WHERE record.workspace_id=$1 AND record.case_id=$2 AND record.kind='measurement'
+   UNION ALL
+   SELECT room.name,'not_measured',0 FROM pre_project_rooms room
+   WHERE room.workspace_id=$1 AND room.case_id=$2
+     AND NOT EXISTS(SELECT 1 FROM pre_project_site_records m WHERE m.workspace_id=room.workspace_id AND m.case_id=room.case_id AND m.kind='measurement' AND m.room_id=room.id)
+     AND (EXISTS(SELECT 1 FROM pre_project_site_records o WHERE o.workspace_id=room.workspace_id AND o.case_id=room.case_id AND o.kind<>'visit' AND o.room_id=room.id)
+       OR EXISTS(SELECT 1 FROM pre_project_brief_entries e WHERE e.workspace_id=room.workspace_id AND e.case_id=room.case_id AND e.kind='file' AND e.archived_at IS NULL AND e.room_id=room.id))
+   ORDER BY 1`,[w,c])).rows;
  }
  private async current(client:PoolClient,w:string,c:string,id:string,required=false):Promise<SiteContent|null> {
   const found=await client.query(`SELECT content FROM pre_project_site_records WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[w,c,id]);

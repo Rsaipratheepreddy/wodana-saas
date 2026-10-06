@@ -6,6 +6,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
 import { ensureJobForSource } from "../jobs/job-identity.store";
+import { ensureSiteLocation } from "../crm/opportunities/site-location";
 import { canonicalHash } from "../crm/shared/crm-types";
 import { transitionEngagement, type EngagementLifecycleState } from "./engagement-lifecycle";
 import { ListPreProjectsDto, StartFromQualifiedLeadDto, TransitionEngagementDto, UpdateEngagementProfileDto } from "./pre-projects.dto";
@@ -23,6 +24,8 @@ const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "crea
   o.conversion_origin AS "conversionOrigin", o.converted_at AS "convertedAt",
   o.qualification_evidence AS "qualificationEvidence", o.qualification_evidence_hash AS "qualificationEvidenceHash",
   project.id AS "projectId",
+  o.reference AS "reference", o.owner_membership_id AS "salesMembershipId", enquiry_type.name AS "enquiryTypeName",
+  discovery.property_location AS "siteAddress", discovery.latitude::float8 AS "siteLatitude", discovery.longitude::float8 AS "siteLongitude",
   EXISTS (SELECT 1 FROM project_workflow_templates workflow
     WHERE workflow.workspace_id = c.workspace_id AND workflow.status = 'active'
       AND workflow.is_default AND workflow.code = 'design_build_deal_first') AS "servicePathEnabled"
@@ -33,7 +36,10 @@ const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "crea
   LEFT JOIN users u ON u.id = m.user_id
   LEFT JOIN workspace_memberships engagement_membership ON engagement_membership.id = c.owner_membership_id AND engagement_membership.workspace_id = c.workspace_id
   LEFT JOIN users engagement_owner ON engagement_owner.id = engagement_membership.user_id
-  LEFT JOIN delivery_projects project ON project.workspace_id = c.workspace_id AND project.case_id = c.id`;
+  LEFT JOIN delivery_projects project ON project.workspace_id = c.workspace_id AND project.case_id = c.id
+  LEFT JOIN crm_opportunity_discovery discovery ON discovery.workspace_id = c.workspace_id AND discovery.opportunity_id = c.opportunity_id
+  LEFT JOIN crm_flow_versions flow_version ON flow_version.workspace_id = o.workspace_id AND flow_version.id = o.flow_version_id
+  LEFT JOIN crm_flows enquiry_type ON enquiry_type.workspace_id = flow_version.workspace_id AND enquiry_type.id = flow_version.flow_id`;
 
 type LifecycleRow = EngagementLifecycleState & {
   id: string;
@@ -63,7 +69,7 @@ export class PreProjectsService {
           manager.display_name, opportunity.conversion_origin, opportunity.converted_at,
           COALESCE(opportunity.qualification_evidence, lead.qualification_evidence),
           COALESCE(opportunity.qualification_evidence_hash, lead.qualification_evidence_hash),
-          NULL::uuid,
+          NULL::uuid, opportunity.reference, opportunity.owner_membership_id, NULL::varchar, NULL::varchar, NULL::float8, NULL::float8,
           EXISTS (SELECT 1 FROM project_workflow_templates workflow
             WHERE workflow.workspace_id = lead.workspace_id AND workflow.status = 'active'
               AND workflow.is_default AND workflow.code = 'design_build_deal_first')
@@ -156,6 +162,8 @@ export class PreProjectsService {
         RETURNING id`, [workspaceId, opportunityId, user.userId]);
       await ensureJobForSource(client, workspaceId, { type: "case", id: String(created.rows[0].id) }, user.userId);
       await assignDesignerToCase(client, workspaceId, String(created.rows[0].id));
+      // Site check-in works for the job straight away when the property's position is known.
+      await ensureSiteLocation(client, { workspaceId, opportunityId, actorUserId: user.userId });
       const result = await this.read(client, workspaceId, created.rows[0].id);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId, leadId: lead.id } });
       return result;
@@ -198,6 +206,8 @@ export class PreProjectsService {
         RETURNING id`, [workspaceId, opportunityId, user.userId]);
       await ensureJobForSource(client, workspaceId, { type: "case", id: String(created.rows[0].id) }, user.userId);
       await assignDesignerToCase(client, workspaceId, String(created.rows[0].id));
+      // Site check-in works for the job straight away when the property's position is known.
+      await ensureSiteLocation(client, { workspaceId, opportunityId, actorUserId: user.userId });
       const result = await this.read(client, workspaceId, created.rows[0].id);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId } });
       return result;

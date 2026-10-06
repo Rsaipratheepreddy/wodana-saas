@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Info } from "lucide-react";
 import { Badge, Button, EditableField, IconButton, IconMenuButton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { ProjectDetail } from "@/lib/project-core/types";
+import type { Health, ProjectDetail } from "@/lib/project-core/types";
 import { useProjectFormat, useStatusLabel } from "./format";
 import styles from "./project-core.module.css";
 
@@ -27,7 +27,8 @@ export function useNextAction(detail: ProjectDetail, run: Run, open: (dialog: Pr
   const check = current.checks.find((item) => !item.passed);
   if (!check) return null;
   switch (check.kind) {
-    case "confirm": return current.canWork ? { label: t("Confirm"), ariaLabel: t("Confirm: {check}", { check: t(check.label as never) }), press: () => open("confirm_check") } : null;
+    // Named for what it confirms, so the button reads on its own.
+    case "confirm": return current.canWork ? { label: t("Confirm: {check}", { check: t(check.label as never) }), press: () => open("confirm_check") } : null;
     case "lead_assigned": case "role_assigned": return detail.canManage ? { label: t("Name someone"), press: () => open("team") } : null;
     case "payment_verified": return { label: t("Open payments"), href: `${base}/money?view=client` };
     case "material_list_signed_off": return { label: t("Material list"), href: `${base}/scope?view=materials` };
@@ -44,8 +45,12 @@ export function useNextAction(detail: ProjectDetail, run: Run, open: (dialog: Pr
  * closed, its client, project manager and agreed value. One primary action (what's next for this person),
  * the details toggle and the project's other actions in ⋯. A second line only when it's on hold or closed.
  */
-export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDialog, onAction, onRename, onReload }: {
+export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDialog, onAction, onRename, onReload, health, record = false }: {
   detail: ProjectDetail; next: NextAction | null; detailsOpen: boolean; onToggleDetails: () => void; onDialog: (dialog: ProjectDialog) => void; onAction?: () => void;
+  /** The health from the records (late work, a missed handover), when the Overview's read has it. */
+  health?: Health;
+  /** On the Overview the record's strip and sidebar carry the facts and the details: the header keeps the title, number, status and ⋯. */
+  record?: boolean;
   /** Renames the project in place (the name is its title); throws the reason back to the title. */
   onRename?: (name: string) => Promise<void>; onReload?: () => void;
 }) {
@@ -53,7 +58,7 @@ export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDi
   const format = useProjectFormat();
   const statusLabel = useStatusLabel();
   const { project } = detail;
-  const status = statusLabel(project.status, project.health);
+  const status = statusLabel(project.status, health ?? project.health);
   const tone = status.tone === "ok" ? "success" : status.tone === "risk" ? "warning" : status.tone === "off" ? "danger" : status.tone === "done" ? "info" : "neutral";
   const current = detail.stages.find((stage) => stage.status === "current");
   const until = project.status === "active" || project.status === "on_hold" ? format.until(project.promiseDate) : null;
@@ -83,24 +88,26 @@ export function ProjectHeader({ detail, next, detailsOpen, onToggleDetails, onDi
       <span key="value" className={`${styles.headFact} ${styles.number}`} data-extra>{format.money(project.total, project.currency)}</span>,
     ]),
   ].filter(Boolean);
+  const shownFacts = record ? [] : facts;
 
-  return <header className={styles.head} data-tour="project-properties">
+  return <header className={styles.head} data-tour="project-properties" data-record={record || undefined}>
     <div className={styles.headLine}>
       <div className={styles.headTitle}>
         <EditableField canEdit={Boolean(onRename) && open && manage} heading="h1" isRequired label={t("Project name")} maxLength={240} onReload={onReload} onSave={(name) => onRename?.(name)} value={project.name} />
         <span className={styles.reference}>{project.reference}</span>
         <Badge tone={tone}>{status.label}</Badge>
         {priority ? <Badge tone={project.priority === "critical" ? "danger" : "warning"}>{priority}</Badge> : null}
-        {facts.length ? <span className={styles.headFacts}>{facts}</span> : null}
+        {shownFacts.length ? <span className={styles.headFacts}>{shownFacts}</span> : null}
       </div>
       <div className={styles.headActions}>
         {next ? next.href
           ? <Link className="wd-button" data-variant="primary" data-size="compact" href={next.href} aria-label={next.ariaLabel}>{next.label}</Link>
           : <Button size="compact" variant="primary" aria-label={next.ariaLabel} onPress={() => { next.press?.(); onAction?.(); }}>{next.label}</Button> : null}
-        <IconButton aria-label={detailsOpen ? t("Hide details") : t("Show details")} aria-pressed={detailsOpen} onPress={onToggleDetails}><Info aria-hidden="true" size={16} /></IconButton>
+        {record ? null : <IconButton aria-label={detailsOpen ? t("Hide details") : t("Show details")} aria-pressed={detailsOpen} onPress={onToggleDetails}><Info aria-hidden="true" size={16} /></IconButton>}
         {actions.length ? <IconMenuButton ariaLabel={t("Project actions")} onAction={(id) => onDialog(id as ProjectDialog)} items={actions} /> : null}
       </div>
     </div>
-    {state ? <p className={styles.headState} data-tone={state.tone}><strong>{state.title}</strong><span>{state.text}</span></p> : null}
+    {/* On the Overview the next-step card says why it's on hold or how it closed. */}
+    {state && !record ? <p className={styles.headState} data-tone={state.tone}><strong>{state.title}</strong><span>{state.text}</span></p> : null}
   </header>;
 }

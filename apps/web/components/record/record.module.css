@@ -1,4 +1,4 @@
-/* A Sales record (§5c D.7): header, status strip, then the main column (next step, activity) beside the sidebar's tabs. */
+/* A record (§5c D.7): header, status strip, then the main column (next step, activity) beside the sidebar's tabs. */
 .record { container-type: inline-size; block-size: 100%; }
 .frame { gap: var(--wd-space-4); }
 

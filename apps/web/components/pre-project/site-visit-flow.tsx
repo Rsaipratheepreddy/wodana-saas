@@ -6,6 +6,7 @@ import { AccessPointsEditor } from "@/components/catalog/fit-check-panel";
 import { Button, InlineNotice, TextAreaField, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { JourneyStageView, JourneyView, SiteMeasurement } from "@/lib/pre-project/design-workspace";
+import { SiteLocation } from "@/components/ui/site-location";
 import { CaseModal } from "./case-controls";
 import styles from "./design-decisions.module.css";
 
@@ -74,6 +75,7 @@ export function SiteVisitFlow({ view, stage, access, onClose, onBook, onMeasure,
           ? run(async () => { await onSaveAnswers(unsaved.map((item) => ({ key: item.key, answer: (drafts[item.key] ?? "").trim() }))); setStep(steps[index + 1]); })
           : setStep(steps[index + 1]))}>{step === "questions" && unsaved.length ? t("Save and continue") : t("Continue")}</Button>}
     </div>}>
+    {view.site ? <div className={styles.muted}><SiteLocation address={view.site.address} latitude={view.site.latitude} longitude={view.site.longitude} /></div> : null}
     <nav aria-label={t("Site visit steps")}><ol className={styles.steps}>{steps.map((item, position) => <li key={item}>
       <button type="button" aria-current={item === step ? "step" : undefined} data-done={progress[item] || undefined} onClick={() => setStep(item)}>
         <span className={styles.stepIcon} aria-hidden="true">{progress[item] ? <Check size={12} strokeWidth={3} /> : position + 1}</span>{labels[item]}

@@ -18,6 +18,10 @@ export type PreProjectCase = {
   /** Set only after a paid Deal File has opened the linked project. */
   projectId?: string | null;
   servicePathEnabled?: boolean;
+  /** Where the job is: the property's address and position from the opportunity. */
+  siteAddress?: string | null; siteLatitude?: number | null; siteLongitude?: number | null;
+  /** The opportunity's number (D-0001), its sales owner and its enquiry type's name. */
+  reference?: string | null; salesMembershipId?: string | null; enquiryTypeName?: string | null;
 };
 export type PreProjectListItem = Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt"> & {
   status: PreProjectCase["status"] | "qualified"; opportunityId: string | null; qualifiedLead?: boolean; leadVersion?: number;

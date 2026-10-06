@@ -78,7 +78,7 @@ export function ProjectStages({ detail, run, onTeam, plan, today, api }: {
   </>;
 }
 
-function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, running }: {
+export function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, running }: {
   check: EvaluatedCheck; stage: ProjectStage; run: Run; projectId: string; onTeam: () => void; roleLabel: (key: string | null) => string; running: boolean;
 }) {
   const t = useT();
@@ -120,7 +120,7 @@ function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, running }: 
 }
 
 /** What the project still owes before it can close (the last stage finishing completes it): each opens where it's settled. */
-function CloseOutList({ api, projectId }: { api: ProjectApi; projectId: string }) {
+export function CloseOutList({ api, projectId }: { api: ProjectApi; projectId: string }) {
   const t = useT();
   const [closeOut, setCloseOut] = useState<CloseOut | null>(null);
   useEffect(() => {
@@ -143,7 +143,7 @@ function CloseOutList({ api, projectId }: { api: ProjectApi; projectId: string }
   </div>;
 }
 
-function ReasonDialog({ title, label, onClose, onSave }: { title: string; label: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
+export function ReasonDialog({ title, label, onClose, onSave }: { title: string; label: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [text, setText] = useState("");
   return <FormDialog size="md" title={title} onClose={onClose} isDirty={Boolean(text.trim())} isSubmitDisabled={!text.trim()} submitLabel={t("Save")} onSubmit={() => onSave(text.trim())}>

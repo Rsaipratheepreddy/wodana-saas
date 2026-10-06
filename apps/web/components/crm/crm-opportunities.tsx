@@ -119,7 +119,8 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
         try {
           const detail = await crmRequest<RecordData & { flow?: OpportunityFlowView; funnel?: FunnelStep[] }>(initialData.workspaceId, `opportunities/${item.id}`);
           if (!detail || typeof detail !== "object") continue;
-          const step = nowPlan({ flow: detail.flow && typeof detail.flow === "object" ? detail.flow : null, status: String(detail.status ?? item.status), funnel: detail.funnel, caseId: detail.preProjectCaseId ? String(detail.preProjectCaseId) : null }).now;
+          const step = nowPlan({ flow: detail.flow && typeof detail.flow === "object" ? detail.flow : null, status: String(detail.status ?? item.status), funnel: detail.funnel, caseId: detail.preProjectCaseId ? String(detail.preProjectCaseId) : null,
+            project: detail.projectId ? { id: String(detail.projectId), reference: detail.projectReference ? String(detail.projectReference) : null } : null }).now;
           setNowSteps((current) => ({ ...current, [item!.id]: { version, step } }));
         } catch { /* the card simply shows no step */ }
       }
@@ -266,7 +267,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
               onDragEnd={() => { setDragged(null); setDropTarget(null); }}>
               <Card as="article" title={<button type="button" className={styles.cardOpen} aria-describedby="pipeline-drag-hint" aria-label={[title, customer !== title ? customer : "", value ?? ""].filter(Boolean).join(" · ")}
                 onKeyDown={event => { if (event.altKey && (event.key === "ArrowRight" || event.key === "ArrowLeft")) { event.preventDefault(); const stages = boardColumns.filter(stage => stage.pipelineId === String(item.pipelineId ?? item.pipeline_id)); const index = stages.findIndex(stage => stage.id === String(item.stageId ?? item.stage_id)); const next = stages[index + (event.key === "ArrowRight" ? 1 : -1)]; if (next) requestMove(item.id, next.id); } }} onClick={() => setSelectedRecord(item.id)}>{title}</button>}
-                footer={<><span className={styles.cardDue}>{item.status === "open" ? (typeof item.nextActionAt === "string" ? <DueChip at={item.nextActionAt} /> : <span className={styles.cardNoDue}>{t("No follow-up")}</span>) : null}</span>
+                footer={<><span className={styles.cardDue}>{item.status === "open" ? (typeof item.nextActionAt === "string" ? <DueChip at={item.nextActionAt} /> : <span className={styles.cardNoDue}>{t("No follow-up")}</span>) : item.status === "won" && item.dealClosed === true ? <Badge tone="success">{t("Deal closed")}</Badge> : null}</span>
                   <span className={styles.owner} title={owner || t("Unassigned")}><span aria-hidden="true"><Avatar name={owner || t("Unassigned")} seed={owner ? String(item.ownerMembershipId ?? owner) : undefined} size="sm" /></span><span className={styles.srOnly}>{owner || t("Unassigned")}</span></span></>}>
                 {outcomeMismatch && <span className={styles.cardWarning}>{t("Status is {status} — review outcome", { status: String(item.status).replaceAll("_", " ") })}</span>}
                 {(customer && customer !== title) || value ? <span className={styles.cardMeta}>{customer && customer !== title ? <span>{customer}</span> : null}{value ? <b>{value}</b> : null}</span> : null}

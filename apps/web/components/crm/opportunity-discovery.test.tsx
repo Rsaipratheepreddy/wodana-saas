@@ -10,7 +10,7 @@ const packages = { minimumDeposit: null, version: 1, packages: [
   { id: "p1", code: "bespoke", name: "Bespoke Interior Design", pricingMethod: "per_area", rate: "40.00", currency: "AED", areaUnit: "sqft", includedRevisions: 2, includesSpacePlanning: true, includesRenders: true, requiredRoleCode: null, inclusions: null, position: 1, status: "active", version: 1 },
 ] };
 const view = (over: Partial<DiscoveryView> = {}): DiscoveryView => ({
-  facts: { area: null, areaUnit: null, spaces: null, propertyLocation: null, clientEmail: "client@example.com", floorPlanAssetId: null, designPackageId: null },
+  facts: { area: null, areaUnit: null, spaces: null, propertyLocation: null, clientEmail: "client@example.com", floorPlanAssetId: null, designPackageId: null, latitude: null, longitude: null },
   designFee: null, package: null, enquiryType: "full_home", clientType: "homeowner",
   questions: [{ key: "budget", label: "Budget range", required: true }], answers: {},
   files: [{ id: "f1", name: "plan.pdf", mimeType: "application/pdf" }],
@@ -76,8 +76,53 @@ describe("opportunity discovery sheets (PLM-040)", () => {
   });
 
   it("shows the priced fee with the package", async () => {
-    stub(view({ missing: [], designFee: { amount: "4000.00", currency: "AED" }, facts: { area: "100", areaUnit: "sqft", spaces: null, propertyLocation: "Marina", clientEmail: "c@example.com", floorPlanAssetId: "f1", designPackageId: "p1" } }));
+    stub(view({ missing: [], designFee: { amount: "4000.00", currency: "AED" }, facts: { area: "100", areaUnit: "sqft", spaces: null, propertyLocation: "Marina", clientEmail: "c@example.com", floorPlanAssetId: "f1", designPackageId: "p1", latitude: null, longitude: null } }));
     renderSheet({ group: "package" });
     expect(await screen.findByText(/4,000\.00/)).toBeInTheDocument();
+  });
+
+  it("places the property from a pasted map link, opens it in Maps and saves the coordinates", async () => {
+    const calls = stub(view({ facts: { ...view().facts, propertyLocation: "Villa 12, Palm Way" } }));
+    const onClose = vi.fn();
+    renderSheet({ group: "property", onClose });
+    await screen.findByRole("dialog", { name: "Property details" });
+    expect(screen.queryByRole("link", { name: "Open in Maps" })).not.toBeInTheDocument();
+    const link = screen.getByRole("textbox", { name: "Paste a Google Maps link" });
+    fireEvent.change(link, { target: { value: "https://maps.app.goo.gl/AbCdEf" } });
+    expect(await screen.findByText("No coordinates in this link")).toBeInTheDocument();
+    fireEvent.change(link, { target: { value: "https://www.google.com/maps/place/Villa/@25.11,55.13,17z/data=!3m1!4b1!8m2!3d25.1124317!4d55.1390165" } });
+    expect(link).toHaveValue("");
+    expect(screen.getByRole("textbox", { name: "Latitude" })).toHaveValue("25.1124317");
+    expect(screen.getByRole("textbox", { name: "Longitude" })).toHaveValue("55.1390165");
+    expect(screen.getByRole("link", { name: "Open in Maps" })).toHaveAttribute("href", "https://www.google.com/maps/search/?api=1&query=25.1124317,55.1390165");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(calls.find((call) => call.method === "PUT")!.body).toMatchObject({ version: 0, propertyLocation: "Villa 12, Palm Way", latitude: 25.1124317, longitude: 55.1390165 });
+  });
+
+  it("uses the browser's current location, and a half-entered position blocks the save", async () => {
+    const getCurrentPosition = vi.fn((success: PositionCallback) => success({ coords: { latitude: -33.86881234, longitude: 151.20929876 } } as GeolocationPosition));
+    vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition } });
+    const calls = stub(view());
+    renderSheet({ group: "property" });
+    const sheet = await screen.findByRole("dialog", { name: "Property details" });
+    fireEvent.click(screen.getByRole("button", { name: "Use my current location" }));
+    expect(getCurrentPosition).toHaveBeenCalledWith(expect.any(Function), expect.any(Function), expect.objectContaining({ enableHighAccuracy: true }));
+    expect(await screen.findByRole("link", { name: "Open in Maps" })).toHaveAttribute("href", expect.stringContaining("query=-33.868812,151.209299"));
+    const longitude = screen.getByRole("textbox", { name: "Longitude" });
+    fireEvent.change(longitude, { target: { value: "" } });
+    fireEvent.blur(longitude);
+    await waitFor(() => expect(sheet.querySelector("[data-variant=primary]")).toBeDisabled());
+    expect(screen.queryByRole("link", { name: "Open in Maps" })).not.toBeInTheDocument();
+    expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  });
+
+  it("says so when the browser has no location", async () => {
+    vi.stubGlobal("navigator", { ...navigator, geolocation: undefined });
+    stub(view());
+    renderSheet({ group: "property" });
+    await screen.findByRole("dialog", { name: "Property details" });
+    fireEvent.click(screen.getByRole("button", { name: "Use my current location" }));
+    expect(await screen.findByText("Location unavailable")).toBeInTheDocument();
   });
 });

@@ -124,4 +124,11 @@ describe("the pending follow-up", () => {
     expect(isGenericFollowUp({ title: "Send the revised layout" })).toBe(false);
     expect(firstName("  Amal Rahman ")).toBe("Amal");
   });
+
+  it("leads a won deal to its project once the project runs", () => {
+    const plan = nowPlan({ flow: null, status: "won", funnel: [], caseId: "case-1", project: { id: "p-1", reference: "PRJ-0004" } });
+    expect(plan.now).toMatchObject({ id: "project", target: "project", short: "Open project" });
+    expect(plan.why).toEqual({ key: "Won. The work continues in project {reference}.", values: { reference: "PRJ-0004" } });
+    expect(plan.then).toEqual([]);
+  });
 });

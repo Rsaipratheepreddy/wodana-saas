@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { pollEvery, useLiveInvalidate } from "./live-events";
+import { StrictMode } from "react";
+import { RELEASE_GRACE_MS, pollEvery, useLiveInvalidate } from "./live-events";
 
 const workspaceId = "e56299c6-3da3-402a-a9ac-3995bb37b9d4";
 
@@ -39,7 +40,25 @@ describe("live events (FD-4)", () => {
     first.unmount();
     expect(source.closed).toBe(false);
     second.unmount();
+    expect(source.closed).toBe(false);
+    act(() => { vi.advanceTimersByTime(RELEASE_GRACE_MS); });
     expect(source.closed).toBe(true);
+  });
+
+  it("keeps one connection through React's double effects and a page handing over to the next", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const page = renderHook(() => useLiveInvalidate(workspaceId, ["sales"], vi.fn()), { wrapper: StrictMode });
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.instances[0].closed).toBe(false);
+    page.unmount();
+    const next = renderHook(() => useLiveInvalidate(workspaceId, ["projects"], vi.fn()), { wrapper: StrictMode });
+    act(() => { vi.advanceTimersByTime(RELEASE_GRACE_MS * 2); });
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.instances[0].closed).toBe(false);
+    next.unmount();
+    act(() => { vi.advanceTimersByTime(RELEASE_GRACE_MS); });
+    expect(FakeEventSource.instances[0].closed).toBe(true);
   });
 
   it("does not ask again for a refused stream for 30 seconds, whoever mounts", () => {

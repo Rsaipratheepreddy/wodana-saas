@@ -18,6 +18,7 @@ import { thankForDeal } from "../conversations/inbox/client-followups";
 import { markProposalWon } from "./opportunity-proposals";
 import { tellDealOutcome } from "../leads/sales-attention";
 import { ELIGIBLE_SALES_OWNERS_SQL, SALES_OWNER_PERMISSIONS } from "../leads/crm-leads.service";
+import { loadDealClosing } from "./deal-closing";
 import {
   AddStakeholderDto,
   CreateOpportunityDto,
@@ -204,7 +205,14 @@ export class CrmOpportunitiesService {
       const hasMore = result.rows.length > query.limit;
       const rawData = hasMore ? result.rows.slice(0, query.limit) : result.rows;
       const canViewSensitiveValues = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.sensitive_values");
-      const data = rawData.map((row) => this.presentOpportunity(row as Row, canViewSensitiveValues));
+      const presented = rawData.map((row) => this.presentOpportunity(row as Row, canViewSensitiveValues));
+      // PLM-102: a won card shows Deal Closed, computed from the records its enquiry type's closing event names.
+      const data = [];
+      for (const row of presented) {
+        if ((row as { status?: string }).status !== "won") { data.push(row); continue; }
+        const closing = await loadDealClosing(client, workspaceId, String((row as { id: string }).id));
+        data.push({ ...row, dealClosed: closing?.closed ?? false, dealClosedAt: closing?.closedAt ?? null });
+      }
       const last = data.at(-1) as { id: string; createdAt: Date } | undefined;
       return { data, nextCursor: hasMore && last ? encodeCursor({ value: new Date(last.createdAt).toISOString(), id: last.id }) : null };
     });
@@ -767,6 +775,7 @@ export class CrmOpportunitiesService {
                    opportunity.created_at AS "createdAt", opportunity.updated_at AS "updatedAt",
                    party.display_name AS "partyName", enquiry.reference AS "enquiryReference",
                    source_case.id AS "preProjectCaseId", commercial_case.content #>> '{dealFile,reference}' AS "dealFileReference",
+                   case_project.id AS "projectId", case_project.reference AS "projectReference",
                    pipeline.name AS "pipelineName",
                    stage.name AS "stageName", account.display_name AS "ownerName"
             FROM crm_opportunities opportunity
@@ -775,6 +784,10 @@ export class CrmOpportunitiesService {
             LEFT JOIN crm_enquiries enquiry ON enquiry.id = source_lead.enquiry_id AND enquiry.workspace_id = opportunity.workspace_id
             LEFT JOIN pre_project_cases source_case ON source_case.workspace_id = opportunity.workspace_id AND source_case.opportunity_id = opportunity.id
             LEFT JOIN commercial_cases_view commercial_case ON commercial_case.workspace_id = source_case.workspace_id AND commercial_case.case_id = source_case.id
+            -- After Won, the job's live project (a cancelled one is history), so the record leads to it.
+            LEFT JOIN LATERAL (SELECT project.id, project.reference FROM delivery_projects project
+                                WHERE project.workspace_id = source_case.workspace_id AND project.case_id = source_case.id AND project.status <> 'cancelled'
+                                ORDER BY project.created_at DESC LIMIT 1) case_project ON true
             JOIN crm_pipelines pipeline ON pipeline.id = opportunity.pipeline_id AND pipeline.workspace_id = opportunity.workspace_id
             JOIN crm_pipeline_stages stage ON stage.id = opportunity.stage_id AND stage.workspace_id = opportunity.workspace_id
             LEFT JOIN workspace_memberships membership ON membership.id = opportunity.owner_membership_id

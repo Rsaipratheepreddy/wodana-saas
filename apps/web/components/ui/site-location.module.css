@@ -1,0 +1,5 @@
+/* Where a job is, read only: the address, then Open in Maps. */
+.site { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-1) var(--wd-space-3); min-inline-size: 0; }
+.maps { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-link); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: none; white-space: nowrap; }
+.maps:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+.maps:focus-visible { border-radius: var(--wd-radius-xs); outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }

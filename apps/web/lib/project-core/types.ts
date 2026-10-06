@@ -39,7 +39,7 @@ export type ProjectRow = ProjectSummary & {
   attention?: { late: number; blocked: number };
 };
 
-export type Member = { membershipId: string; name: string };
+export type Member = { membershipId: string; name: string; email?: string | null };
 export type EvaluatedCheck = StageCheck & { passed: boolean; confirmedBy: string | null; confirmedAt: string | null; note: string };
 export type ProjectStage = {
   id: string; position: number; key: string; name: string; ownerRole: string | null; status: "upcoming" | "current" | "done" | "skipped";
@@ -270,8 +270,21 @@ export type Blocker = { key: BlockerKey; count: number; items: string[]; href: s
 export type ClientDecision = { kind: "materials" | "handover" | "variation"; label: string; since: string | null; href: string };
 export type ActivityRow = { id: string; at: string; action: string; source: string; actor: string; subject: string; detail: Record<string, string> };
 /** The project's Overview, read on the server. */
+export type HealthReason =
+  | { key: "stated" } | { key: "past_handover"; days: number } | { key: "plan_after_handover"; days: number }
+  | { key: "late_work"; count: number } | { key: "late_orders"; count: number } | { key: "critical_snags"; count: number };
 export type ProjectOverview = {
   today: string;
+  /** Where the work is: the project's check-in site, else the property on its opportunity. */
+  site?: { address: string | null; latitude: number | null; longitude: number | null } | null;
+  /** The worse of the health the manager stated and what the records say (late work, a missed handover). */
+  health?: { health: Health; stated: Health; reasons: HealthReason[] };
+  /** Who to call: the client and the sales person on the opportunity. */
+  contacts?: { client: { phone: string | null; email: string | null }; sales: { name: string; email: string | null } | null };
+  /** The crew in the latest site report sent for review. */
+  workforce?: { date: string; people: number; trades: Array<{ trade: string; people: number }> } | null;
+  /** The latest site reports sent for review, newest first. */
+  siteReports?: Array<{ id: string; date: string; status: string; byName: string; text: string }>;
   work: { open: number; late: number; blocked: number; ready: number; openSnags: number; criticalSnags: number; clientRequests: number };
   blockers: Blocker[];
   decisions: ClientDecision[];
@@ -281,6 +294,8 @@ export type ProjectOverview = {
     currency: string; agreed: string; invoiced: string; received: string; due: string; toInvoice: number;
     next: { title: string; amount: string; dueDate: string | null; state: MilestoneState } | null;
     spent: string | null; committed: string | null; available: string | null; costCurrency: string | null;
+    /** The cost budget set on the project's packages, when any. */
+    budget?: string | null;
   };
   activity: ActivityRow[];
 };

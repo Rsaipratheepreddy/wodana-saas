@@ -1,97 +1,228 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, CircleCheck } from "lucide-react";
-import { ErrorState, Skeleton } from "@/design-system";
+import { ArrowRight, CalendarClock, CircleCheck, Flag, HeartPulse, ListChecks, Wallet } from "lucide-react";
+import { Badge, Button, EmptyState, ErrorState, IconMenuButton, Progress, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
-import type { ActivityRow, Blocker, BlockerKey, ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
+import type { ActivityRow, Blocker, BlockerKey, Health, HealthReason, ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
+import { projectPeople, projectStrip, projectTimeline, stageLateDays } from "@/lib/project-core/project-record";
+import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, RecordStrip, SideSection, StripItem } from "@/components/record/record-layout";
+import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
+import { SiteLocation } from "@/components/ui/site-location";
 import { useProjectFormat } from "./format";
-import { ProjectStages } from "./project-stages";
+import type { NextAction } from "./project-header";
+import { CheckRow, CloseOutList, ReasonDialog } from "./project-stages";
+import coreStyles from "./project-core.module.css";
 import styles from "./project-overview.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
 
+/** A health word and its tone, the same on the strip and the header. */
+export function useHealthLabel() {
+  const t = useT();
+  return (health: Health) => health === "off_track" ? { label: t("Off track"), tone: "danger" as const } : health === "at_risk" ? { label: t("At risk"), tone: "warning" as const } : { label: t("On track"), tone: "success" as const };
+}
+
+/** Why the health is what it is, in words. */
+function useReasonText() {
+  const t = useT();
+  return (reason: HealthReason) => {
+    switch (reason.key) {
+      case "past_handover": return reason.days === 1 ? t("1 day past the handover date") : t("{count} days past the handover date", { count: reason.days });
+      case "plan_after_handover": return t("The plan ends {count} days after the handover", { count: reason.days });
+      case "late_work": return reason.count === 1 ? t("1 task late") : t("{count} tasks late", { count: reason.count });
+      case "late_orders": return reason.count === 1 ? t("1 order late") : t("{count} orders late", { count: reason.count });
+      case "critical_snags": return reason.count === 1 ? t("1 critical snag") : t("{count} critical snags", { count: reason.count });
+      default: return t("Set by the project manager");
+    }
+  };
+}
+
 /**
- * A project at a glance: what's next and who acts, what holds it up (each blocker opens its filtered list),
- * the stage journey with each stage's planned dates, the key dates and money, and the latest activity.
+ * A project's Overview (§5c D.7): where it stands in one strip (health from the records, stage, handover, work
+ * done, budget, payments); the next step as the action card with what the current stage needs; the stages as a
+ * timeline; what holds it up; the latest site reports and activity; and the sidebar's Overview (team with ways
+ * to reach them, site, key dates, money) · Details · Files.
  */
-export function ProjectOverview({ api, detail, run, onTeam, refreshKey }: { api: ProjectApi; detail: ProjectDetail; run: Run; onTeam: () => void; refreshKey: number }) {
+export function ProjectOverview({ api, detail, overview, error, onRetry, run, onTeam, next, details }: {
+  api: ProjectApi; detail: ProjectDetail; overview: Overview | null; error?: string; onRetry?: () => void; run: Run; onTeam: () => void;
+  /** The one thing to do next for this person (the page's own next action). */
+  next: NextAction | null;
+  /** The Details tab: the project's editable details. */
+  details: ReactNode;
+}) {
   const t = useT();
   const format = useProjectFormat();
-  const projectId = detail.project.id;
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [error, setError] = useState("");
-  const load = useCallback(async () => {
-    try { setOverview(await api.overview(projectId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The overview didn't load.")); }
-  }, [api, projectId, t]);
-  useEffect(() => { queueMicrotask(() => void load()); }, [load, refreshKey, detail.project.version]);
+  const healthLabel = useHealthLabel();
+  const reasonText = useReasonText();
   const blockerLabel = useBlockerLabels();
-  const running = detail.project.status === "active";
-  const current = detail.stages.find((stage) => stage.status === "current");
-  const next = detail.next;
-  const plan = current && overview ? overview.stagePlan[current.id] : undefined;
-  const lateBy = plan?.end && overview && plan.open > 0 && plan.end < overview.today ? Math.round((Date.parse(`${overview.today}T00:00:00Z`) - Date.parse(`${plan.end}T00:00:00Z`)) / 86_400_000) : 0;
+  const { project } = detail;
+  const projectId = project.id;
+  const running = project.status === "active";
+  const strip = projectStrip(detail, overview);
+  const steps = projectTimeline(detail, overview);
+  const people = projectPeople(detail);
+  const health = healthLabel(strip.health);
+  const until = strip.handover && (running || project.status === "on_hold") ? format.until(strip.handover.date) : null;
+  const money = overview?.money ?? null;
+  const roleLabel = (key: string | null) => t((detail.roles.find((role) => role.key === key)?.label ?? key ?? "") as never);
+
+  const overviewPanel = <RecordPanel>
+    <SideSection title={t("Team")} action={detail.canManage && (running || project.status === "on_hold") ? <Button size="compact" variant="quiet" onPress={onTeam}>{t("Edit")}</Button> : null}>
+      <PeopleList label={t("Team")}>
+        <PersonRow id={`client-${project.id}`} name={project.clientName} role={t("Client")} phone={overview?.contacts?.client.phone} email={overview?.contacts?.client.email} />
+        {overview?.contacts?.sales && !people.named.some((person) => person.name === overview.contacts!.sales!.name)
+          ? <PersonRow id={`sales-${overview.contacts.sales.name}`} name={overview.contacts.sales.name} role={t("Sales")} email={overview.contacts.sales.email} /> : null}
+        {people.named.map((person) => <PersonRow key={person.id} id={person.id} name={person.name} email={person.email}
+          role={[...(overview?.contacts?.sales?.name === person.name ? [t("Sales")] : []), ...person.roles.map((role) => t(role as never))].join(" · ")} />)}
+        {overview?.workforce ? <li className={styles.crew}>
+          <span>{t("{count} workers on site", { count: overview.workforce.people })}</span>
+          <small>{[overview.workforce.trades.map((trade) => `${trade.trade} ${trade.people}`).join(" · "), format.short(overview.workforce.date)].join(" · ")}</small>
+        </li> : null}
+      </PeopleList>
+      {people.missing.length ? <p className={styles.muted}>{t("Not named: {roles}", { roles: people.missing.map((role) => t(role as never)).join(", ") })}</p> : null}
+    </SideSection>
+    {overview?.site ? <SideSection title={t("Site")}><SiteLocation address={overview.site.address} latitude={overview.site.latitude} longitude={overview.site.longitude} /></SideSection> : null}
+    {overview ? <SideSection title={t("Key dates")}>
+      <FactList facts={[
+        overview.dates.start ? { label: t("Start"), value: format.short(overview.dates.start) } : null,
+        overview.dates.promise ? { label: t("Handover"), value: format.short(overview.dates.promise) } : null,
+        overview.dates.planEnd ? { label: t("Plan ends"), value: format.short(overview.dates.planEnd), tone: overview.dates.promise && overview.dates.planEnd > overview.dates.promise ? "danger" : undefined } : null,
+        overview.dates.siteStarted ? { label: t("Site work"), value: overview.dates.siteFinished ? t("{from} – {to}", { from: format.short(overview.dates.siteStarted), to: format.short(overview.dates.siteFinished) }) : t("Since {date}", { date: format.short(overview.dates.siteStarted) }) } : null,
+        project.closedAt ? { label: project.status === "cancelled" ? t("Cancelled") : t("Completed"), value: format.short(format.dayOf(project.closedAt)) } : null,
+      ]} />
+    </SideSection> : null}
+    {money ? <SideSection title={t("Money")} action={detail.canSeeMoney ? <Link className={styles.sideLink} href={`/workspace/projects/${projectId}/money`}>{t("Open")}<ArrowRight aria-hidden="true" size={13} data-directional="true" /></Link> : null}>
+      <FactList facts={[
+        { label: t("Agreed"), value: format.money(money.agreed, money.currency) },
+        { label: t("Received"), value: format.money(money.received, money.currency), tone: "success" },
+        Number(money.due) > 0 ? { label: t("Still due"), value: format.money(money.due, money.currency) } : null,
+        money.next ? { label: t("Next payment"), value: <>{format.money(money.next.amount, money.currency)}<small>{[money.next.title, money.next.dueDate ? format.short(money.next.dueDate) : null].filter(Boolean).join(" · ")}</small></> } : null,
+        money.spent !== null && money.costCurrency ? { label: t("Spent"), value: format.money(money.spent, money.costCurrency) } : null,
+        money.available !== null && money.costCurrency ? { label: t("Cash in hand"), value: format.money(money.available, money.costCurrency), tone: Number(money.available) < 0 ? "danger" : undefined } : null,
+      ]} />
+      {strip.paid !== null ? <Progress label={t("{percent}% paid", { percent: strip.paid })} value={Math.min(100, strip.paid)} /> : null}
+    </SideSection> : null}
+  </RecordPanel>;
+
+  const files = [
+    ...(detail.seal ? [{ id: "seal", name: t("Accepted quotation {revision}", { revision: detail.seal.revisionLabel }), meta: format.when(detail.seal.acceptedAt), href: `/workspace/projects/${projectId}/scope` }] : []),
+    { id: "case", name: t("Planning record {reference}", { reference: project.opportunityReference ?? "" }).trim(), meta: t("Quotations, agreement and designs"), href: `/workspace/pre-projects/cases/${project.caseId}/overview` },
+  ];
 
   return <div className={styles.overview}>
-    {running && next ? <section className={styles.next} aria-label={t("Next")}>
-      <span className={styles.nextLabel}>{t("Next")}</span>
-      <span className={styles.nextText}>{t(next.text as never)}</span>
-      <span className={styles.nextWho}>{next.owner ?? (next.role ? t("{role} · not named", { role: t((detail.roles.find((role) => role.key === next.role)?.label ?? next.role) as never) }) : next.kind === "payment_verified" ? t("Finance") : "")}</span>
-      {lateBy ? <span className={styles.late}>{t("{stage} is {count} days past its plan", { stage: t(next.stage as never), count: lateBy })}</span> : null}
-    </section> : null}
-
-    {error && !overview ? <ErrorState description={error} onRetry={() => void load()} /> : !overview ? <Skeleton lines={2} shape="rows" />
-      : running || detail.project.status === "on_hold" ? <section className={styles.blockers} aria-label={t("Needs attention")}>
-        <h2>{t("Needs attention")}</h2>
-        {overview.blockers.length ? <ul>{overview.blockers.map((blocker) => <BlockerRow key={blocker.key} label={blockerLabel(blocker.key, blocker.count)}
-          blocker={blocker.key === "reports_missing" ? { ...blocker, items: blocker.items.map((day) => format.short(day)) } : blocker} />)}</ul>
-          : <p className={styles.clear}><CircleCheck aria-hidden="true" size={16} />{t("Nothing is holding the project up.")}</p>}
-      </section> : null}
-
-    <section className={styles.section} aria-label={t("Stages")}>
-      <h2>{t("Stages")}</h2>
-      <ProjectStages detail={detail} run={run} onTeam={onTeam} plan={overview?.stagePlan} today={overview?.today} api={api} />
-    </section>
-
-    {overview ? <div className={styles.glance}>
-      <section aria-label={t("Dates")}>
-        <h2>{t("Dates")}</h2>
-        <dl>
-          <div><dt>{t("Start")}</dt><dd>{overview.dates.start ? format.day(overview.dates.start) : <span className={styles.muted}>{t("Not set")}</span>}</dd></div>
-          <div><dt>{t("Handover")}</dt><dd>{overview.dates.promise ? format.day(overview.dates.promise) : <span className={styles.muted}>{t("Not set")}</span>}</dd></div>
-          <div><dt>{t("Plan ends")}</dt><dd data-late={overview.dates.planEnd && overview.dates.promise && overview.dates.planEnd > overview.dates.promise || undefined}>
-            {overview.dates.planEnd ? format.day(overview.dates.planEnd) : <span className={styles.muted}>{t("Nothing planned")}</span>}</dd></div>
-          <div><dt>{t("Site work")}</dt><dd>{overview.dates.siteStarted ? format.day(overview.dates.siteStarted) : <span className={styles.muted}>{t("Not started")}</span>}</dd></div>
-        </dl>
-      </section>
-      {overview.money ? <section aria-label={t("Money")}>
-        <h2><Link href={`/workspace/projects/${projectId}/money`}>{t("Money")}<ArrowRight aria-hidden="true" size={13} /></Link></h2>
-        <dl>
-          <div><dt>{t("Agreed")}</dt><dd>{format.money(overview.money.agreed, overview.money.currency)}</dd></div>
-          <div><dt>{t("Received")}</dt><dd>{format.money(overview.money.received, overview.money.currency)}</dd></div>
-          <div><dt>{t("Still due")}</dt><dd>{format.money(overview.money.due, overview.money.currency)}</dd></div>
-          {overview.money.next ? <div><dt>{t("Next payment")}</dt><dd>{overview.money.next.title} · {format.money(overview.money.next.amount, overview.money.currency)}
-            {overview.money.next.dueDate ? <small>{format.day(overview.money.next.dueDate)}</small> : null}</dd></div> : null}
-          {overview.money.available !== null && overview.money.costCurrency ? <div><dt>{t("Cash in hand")}</dt>
-            <dd data-late={Number(overview.money.available) < 0 || undefined}>{format.money(overview.money.available, overview.money.costCurrency)}</dd></div> : null}
-        </dl>
-      </section> : null}
-    </div> : null}
-
-    {overview?.activity.length ? <section className={styles.activity} aria-label={t("Recent activity")}>
-      <h2>{t("Recent activity")}</h2>
-      <ol>{overview.activity.map((row) => <li key={row.id}><ActivityText row={row} /><time dateTime={row.at}>{format.when(row.at)}</time></li>)}</ol>
-    </section> : null}
+    <RecordFrame tour="project-record">
+      <RecordStrip label={t("Where the project stands")}>
+        <StripItem icon={<HeartPulse aria-hidden="true" size={13} />} label={t("Health")}>
+          {running ? <span className={styles.health}><Badge tone={health.tone}>{health.label}</Badge>{strip.reasons.length ? <small>{strip.reasons.slice(0, 2).map(reasonText).join(" · ")}</small> : null}</span>
+            : <Badge tone={project.status === "on_hold" ? "warning" : "info"}>{project.status === "on_hold" ? t("On hold") : project.status === "completed" ? t("Completed") : t("Cancelled")}</Badge>}
+        </StripItem>
+        {strip.stage ? <StripItem icon={<Flag aria-hidden="true" size={13} />} label={t("Stage")}>{t("{stage} · {position} of {count}", { stage: t(strip.stage.name as never), position: strip.stage.position, count: strip.stage.count })}</StripItem> : null}
+        {strip.handover ? <StripItem icon={<CalendarClock aria-hidden="true" size={13} />} label={t("Handover")}>{format.short(strip.handover.date)}{until ? <>&nbsp;·&nbsp;<span className={until.late ? styles.late : styles.muted}>{until.text}</span></> : null}</StripItem> : null}
+        {strip.progress !== null ? <StripItem label={t("Progress")}>{t("{percent}% done", { percent: strip.progress })}</StripItem> : null}
+        {strip.work ? <StripItem icon={<ListChecks aria-hidden="true" size={13} />} label={t("Tasks")}>{t("{done}/{total} done", strip.work)}</StripItem> : null}
+        {strip.budgetUsed !== null ? <StripItem icon={<Wallet aria-hidden="true" size={13} />} label={t("Budget used")}><span className={strip.budgetUsed > 100 ? styles.late : undefined}>{t("{percent}%", { percent: strip.budgetUsed })}</span></StripItem>
+          : strip.paid !== null ? <StripItem icon={<Wallet aria-hidden="true" size={13} />} label={t("Paid")}>{t("{percent}%", { percent: strip.paid })}</StripItem> : null}
+      </RecordStrip>
+      <RecordColumns sideLabel={t("Project overview")} tabs={[
+        { id: "overview", label: t("Overview"), panel: overviewPanel },
+        { id: "details", label: t("Details"), panel: <RecordPanel>{details}</RecordPanel> },
+        { id: "files", label: t("Files"), panel: <RecordPanel><FileList label={t("Files")} items={files} /></RecordPanel> },
+      ]}
+        next={<>
+          <ProjectNextStep api={api} detail={detail} overview={overview} next={next} run={run} onTeam={onTeam} roleLabel={roleLabel} />
+          <SideSection title={t("Stages")}>
+            <RecordTimeline label={t("Stages")} steps={steps.map((step) => ({
+              id: step.id, label: t(step.name as never), state: step.state,
+              date: step.doneAt ? format.short(format.dayOf(step.doneAt)) : step.plannedStart ? (step.plannedEnd && step.plannedEnd !== step.plannedStart ? t("{from} – {to}", { from: format.short(step.plannedStart), to: format.short(step.plannedEnd) }) : format.short(step.plannedStart)) : null,
+              late: step.lateDays ? (step.lateDays === 1 ? t("1 day late") : t("{count} days late", { count: step.lateDays })) : null,
+              detail: !step.person && step.role && step.state !== "done" && step.state !== "skipped" ? t("{role} · not named", { role: roleLabel(step.role) }) : null,
+              people: step.person ? [step.person] : [],
+            }))} />
+          </SideSection>
+          {error && !overview ? <ErrorState description={error} onRetry={onRetry} /> : !overview ? <Skeleton lines={2} shape="rows" />
+            : running || project.status === "on_hold" ? <section className={styles.blockers} aria-label={t("Needs attention")}>
+              <h4>{t("Needs attention")}</h4>
+              {overview.blockers.length ? <ul>{overview.blockers.map((blocker) => <BlockerRow key={blocker.key} label={blockerLabel(blocker.key, blocker.count)}
+                blocker={blocker.key === "reports_missing" ? { ...blocker, items: blocker.items.map((day) => format.short(day)) } : blocker} />)}</ul>
+                : <p className={styles.clear}><CircleCheck aria-hidden="true" size={16} />{t("Nothing is holding the project up.")}</p>}
+            </section> : null}
+        </>}
+        activity={overview && (overview.siteReports?.length || overview.activity.length) ? <>
+          {overview.siteReports?.length ? <SideSection title={t("Site updates")} action={<Link className={styles.sideLink} href={`/workspace/projects/${projectId}/site`}>{t("Open")}<ArrowRight aria-hidden="true" size={13} data-directional="true" /></Link>}>
+            <ActivityList label={t("Site updates")} items={overview.siteReports.map((report) => ({ id: report.id, text: report.text || t("Site report"), meta: report.byName, at: format.short(report.date) }))} />
+          </SideSection> : null}
+          {overview.activity.length ? <section className={styles.activity} aria-label={t("Recent activity")}>
+            <h4>{t("Recent activity")}</h4>
+            <ol>{overview.activity.slice(0, 6).map((row) => <li key={row.id}><ActivityText row={row} /><time dateTime={row.at}>{format.when(row.at)}</time></li>)}</ol>
+          </section> : null}
+        </> : null} />
+    </RecordFrame>
   </div>;
+}
+
+/**
+ * The next step as the action card: what the current stage needs now, its stage and lateness, who does it and
+ * the one action; under it every check of the stage (ticked, or read from the records with where to fix it).
+ */
+function ProjectNextStep({ api, detail, overview, next, run, onTeam, roleLabel }: {
+  api: ProjectApi; detail: ProjectDetail; overview: Overview | null; next: NextAction | null; run: Run; onTeam: () => void; roleLabel: (key: string | null) => string;
+}) {
+  const t = useT();
+  const format = useProjectFormat();
+  const [reason, setReason] = useState<"skip_stage" | "reopen_stage" | null>(null);
+  const { project } = detail;
+  const running = project.status === "active";
+  const current = detail.stages.find((stage) => stage.status === "current");
+  // The card's title already names the check, so its button says only "Confirm" (its accessible name stays whole).
+  const short = next && detail.next?.kind === "confirm" && current?.canWork ? { label: t("Confirm"), ariaLabel: next.ariaLabel ?? next.label } : null;
+  const action = next ? next.href
+    ? <Link className="wd-button" data-variant="primary" data-size="compact" href={next.href} aria-label={next.ariaLabel}>{next.label}</Link>
+    : <Button size="compact" variant="primary" aria-label={short?.ariaLabel ?? next.ariaLabel} onPress={() => next.press?.()}>{short?.label ?? next.label}</Button> : null;
+
+  if (project.status === "on_hold") return <NextStepCard title={t("On hold")} why={project.holdReason} status="attention"
+    meta={<>{project.holdReviewOn ? <Badge tone="warning">{t("Review on {date}", { date: format.short(project.holdReviewOn) })}</Badge> : null}{action}</>} />;
+  if (project.status === "completed" || project.status === "cancelled") return <NextStepCard status="done"
+    title={project.status === "completed" ? t("Project completed") : t("Project cancelled")}
+    why={[project.status === "cancelled" ? project.cancelReason : null, project.closedAt ? format.when(project.closedAt) : null, project.closedByName].filter(Boolean).join(" · ") || null} />;
+  if (!current || !detail.next) return <EmptyState illustration={null} title={t("Nothing to do on the stages")} />;
+
+  const late = stageLateDays(current, overview?.stagePlan, overview?.today);
+  const who = detail.next.owner ?? (detail.next.role ? t("{role} · not named", { role: roleLabel(detail.next.role) }) : detail.next.kind === "payment_verified" ? t("Finance") : null);
+  const missing = current.checks.filter((check) => !check.passed).length;
+  const last = detail.stages.at(-1);
+  return <>
+    <NextStepCard tour="project-next" status={late ? "attention" : undefined}
+      title={t(detail.next.text as never)}
+      why={[t("{stage} · {position} of {count}", { stage: t(current.name as never), position: current.position + 1, count: detail.stages.length }),
+        missing ? (missing === 1 ? t("1 still needed") : t("{count} still needed", { count: missing })) : t("Ready to finish")].join(" · ")}
+      meta={<>
+        {who ? detail.next.owner ? <PersonChip id={current.owner?.membershipId ?? `owner-${who}`} name={who} /> : <span className={styles.muted}>{who}</span> : null}
+        {late ? <Badge tone="danger">{late === 1 ? t("1 day past its plan") : t("{count} days past its plan", { count: late })}</Badge> : null}
+        {action}
+        {detail.canManage && running ? <IconMenuButton ariaLabel={t("Stage actions")} onAction={(id) => setReason(id as "skip_stage" | "reopen_stage")}
+          items={[{ id: "skip_stage", label: t("Skip this stage") }, ...(current.position > 0 ? [{ id: "reopen_stage", label: t("Go back a stage") }] : [])]} /> : null}
+      </>}>
+      {/* The stage's checks; a single open one is the card's own title and button. */}
+      {current.checks.length > 1 || current.checks.some((check) => check.passed) ? <ul className={`${coreStyles.checks} ${styles.cardChecks}`} aria-label={t("What {stage} needs", { stage: current.name })}>
+        {current.checks.map((check) => <CheckRow key={check.key} check={check} stage={current} run={run} projectId={project.id} onTeam={onTeam} roleLabel={(key) => detail.roles.find((role) => role.key === key)?.label ?? ""} running={running} />)}
+      </ul> : null}
+      {current === last && detail.canClose ? <CloseOutList api={api} projectId={project.id} /> : null}
+    </NextStepCard>
+    {reason ? <ReasonDialog title={reason === "skip_stage" ? t("Skip {stage}", { stage: current.name }) : t("Go back a stage")}
+      label={reason === "skip_stage" ? t("Why doesn't it apply") : t("Why")}
+      onClose={() => setReason(null)}
+      onSave={async (text) => { await run(reason, { stageId: current.id, reason: text }, { inDialog: true }); setReason(null); }} /> : null}
+  </>;
 }
 
 function BlockerRow({ blocker, label }: { blocker: Blocker; label: string }) {
   return <li data-key={blocker.key}>
     <Link href={blocker.href} aria-label={[`${blocker.count} ${label}`, ...blocker.items].join(" · ")}>
       <span className={styles.blockerHead}><span className={styles.blockerCount}>{blocker.count}</span><span className={styles.blockerLabel}>{label}</span>
-        <ArrowRight aria-hidden="true" size={14} className={styles.blockerGo} /></span>
+        <ArrowRight aria-hidden="true" size={14} className={styles.blockerGo} data-directional="true" /></span>
       {blocker.items.length ? <span className={styles.blockerItems}>{blocker.items.join(" · ")}</span> : null}
     </Link>
   </li>;
@@ -163,3 +294,4 @@ function ActivityText({ row }: { row: ActivityRow }) {
   })();
   return <span className={styles.activityText}>{text}</span>;
 }
+

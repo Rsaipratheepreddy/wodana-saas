@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, DateField, FileUploader, InlineNotice, InspectorSheet, SelectField, Skeleton, Switch, TextInput } from "@/design-system";
+import { LocateFixed } from "lucide-react";
+import { Button, DateField, FileUploader, InlineNotice, InspectorSheet, NumericInput, SelectField, Skeleton, Switch, TextInput } from "@/design-system";
+import { OpenInMaps } from "@/components/ui/site-location";
+import { parseMapLink, validCoordinates } from "@/lib/geo/map-link";
+import { useCurrentPosition } from "@/lib/geo/use-current-position";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, translateKnown, type MessageKey } from "@/lib/i18n/keys";
 import { crmRequest } from "@/lib/crm/client";
@@ -12,7 +16,9 @@ import { useRequirementNotes } from "./requirement-notes";
 import styles from "./opportunity-discovery.module.css";
 
 type AreaUnit = "sqft" | "sqm";
-type Facts = { area: string | null; areaUnit: AreaUnit | null; spaces: number | null; propertyLocation: string | null; clientEmail: string | null; floorPlanAssetId: string | null; designPackageId: string | null };
+type Facts = { area: string | null; areaUnit: AreaUnit | null; spaces: number | null; propertyLocation: string | null; clientEmail: string | null; floorPlanAssetId: string | null; designPackageId: string | null;
+  /** The property's position (WGS 84 degrees): both or neither. */
+  latitude: number | null; longitude: number | null };
 type Question = { key: string; label: string; required: boolean; dataType?: string; options?: Array<{ id: string; label: string }> };
 type FileItem = { id: string; name: string; mimeType: string };
 export type DiscoveryView = {
@@ -20,7 +26,8 @@ export type DiscoveryView = {
   enquiryType: string | null; clientType: string | null; questions: Question[]; answers: Record<string, unknown>;
   files: FileItem[]; missing: Array<{ key: string; label: string }>; version: number;
 };
-type Draft = { area: string; areaUnit: AreaUnit; spaces: string; propertyLocation: string; clientEmail: string; floorPlanAssetId: string; designPackageId: string; answers: Record<string, unknown> };
+/** Latitude and longitude are NaN while empty (the number field's empty value). */
+type Draft = { area: string; areaUnit: AreaUnit; spaces: string; propertyLocation: string; latitude: number; longitude: number; clientEmail: string; floorPlanAssetId: string; designPackageId: string; answers: Record<string, unknown> };
 /** The parts of discovery a side sheet edits. */
 export type DiscoveryGroup = "property" | "package" | "questions";
 
@@ -35,7 +42,7 @@ function draftOf(view: DiscoveryView, fallbackUnit: AreaUnit): Draft {
   const facts = view.facts;
   return {
     area: facts.area ? String(Number(facts.area)) : "", areaUnit: facts.areaUnit ?? fallbackUnit, spaces: facts.spaces ? String(facts.spaces) : "",
-    propertyLocation: facts.propertyLocation ?? "", clientEmail: facts.clientEmail ?? "", floorPlanAssetId: facts.floorPlanAssetId ?? "",
+    propertyLocation: facts.propertyLocation ?? "", latitude: facts.latitude ?? Number.NaN, longitude: facts.longitude ?? Number.NaN, clientEmail: facts.clientEmail ?? "", floorPlanAssetId: facts.floorPlanAssetId ?? "",
     designPackageId: facts.designPackageId ?? "", answers: { ...view.answers },
   };
 }
@@ -96,12 +103,20 @@ export function DiscoverySheet({ workspaceId, opportunityId, leadId, group, disc
   const [uploading, setUploading] = useState(false);
   const [failure, setFailure] = useState("");
   const notes = useRequirementNotes({ workspaceId, leadId: leadId ?? undefined }, false);
+  const position = useCurrentPosition();
+  const [mapLink, setMapLink] = useState("");
   useEffect(() => { if (view && !draft) setDraft(draftOf(view, fallbackUnit)); }, [view, draft, fallbackUnit]);
   const fee = useFeePreview(workspaceId, packages.find((item) => item.id === draft?.designPackageId), draft);
   const offered = useMemo(() => packages.filter((pkg) => pkg.status === "active" || pkg.id === view?.facts?.designPackageId), [packages, view?.facts?.designPackageId]);
   const dirty = Boolean(view && draft && JSON.stringify(draft) !== JSON.stringify(draftOf(view, fallbackUnit)));
 
   const set = <K extends keyof Draft>(key: K) => (value: Draft[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
+  // A pasted map link fills the coordinates and clears itself; one without coordinates stays, marked.
+  const pasteLink = (value: string) => {
+    const found = parseMapLink(value);
+    if (found) { setDraft((current) => current ? { ...current, ...found } : current); setMapLink(""); } else setMapLink(value);
+  };
+  const locate = () => position.locate((fix) => setDraft((current) => current ? { ...current, ...fix } : current));
   const answer = (key: string) => (value: unknown) => setDraft((current) => current ? { ...current, answers: { ...current.answers, [key]: value } } : current);
 
   // The floor plan goes into the enquiry's files as its own note, then is chosen here.
@@ -119,13 +134,18 @@ export function DiscoverySheet({ workspaceId, opportunityId, leadId, group, disc
     finally { setUploading(false); }
   };
 
+  const hasLatitude = Number.isFinite(draft?.latitude), hasLongitude = Number.isFinite(draft?.longitude);
+  const located = Boolean(draft && validCoordinates(draft.latitude, draft.longitude));
+  // Both or neither: a half-entered position blocks the save.
+  const positionValid = located || (!hasLatitude && !hasLongitude);
   const save = async () => {
-    if (!view || !draft) return;
+    if (!view || !draft || !positionValid) return;
     setSaving(true); setFailure("");
     try {
       await crmRequest(workspaceId, `opportunities/${opportunityId}/discovery`, "PUT", {
         version: view.version, area: draft.area || null, areaUnit: draft.area ? draft.areaUnit : null, spaces: draft.spaces ? Number(draft.spaces) : null,
-        propertyLocation: draft.propertyLocation.trim() || null, clientEmail: draft.clientEmail.trim() || null,
+        propertyLocation: draft.propertyLocation.trim() || null,
+        latitude: located ? draft.latitude : null, longitude: located ? draft.longitude : null, clientEmail: draft.clientEmail.trim() || null,
         floorPlanAssetId: draft.floorPlanAssetId || null, designPackageId: draft.designPackageId || null, answers: draft.answers,
       });
       discovery.refresh();
@@ -142,7 +162,7 @@ export function DiscoverySheet({ workspaceId, opportunityId, leadId, group, disc
   const files = [...(view?.files ?? []), ...added.filter((file) => !view?.files.some((item) => item.id === file.id))];
   const footer = <div className="wd-dialog-actions">
     <Button variant="quiet" onPress={onClose}>{t("Cancel")}</Button>
-    <Button isDisabled={!dirty || uploading} isLoading={saving} variant="primary" onPress={() => void save()}>{t("Save")}</Button>
+    <Button isDisabled={!dirty || uploading || !positionValid} isLoading={saving} variant="primary" onPress={() => void save()}>{t("Save")}</Button>
   </div>;
   return <InspectorSheet isOpen isDirty={dirty && !saving} size="sm" title={t(DISCOVERY_TITLES[group])} onOpenChange={(open) => { if (!open) onClose(); }} footer={footer}>
     {failure ? <InlineNotice message={failure} tone="error" /> : null}
@@ -161,6 +181,19 @@ export function DiscoverySheet({ workspaceId, opportunityId, leadId, group, disc
           </div>
           {!pkg || pkg.pricingMethod === "per_space" || draft.spaces ? <TextInput autoFocus={first("spaces")} inputMode="numeric" label={t("Spaces")} onChange={(value) => set("spaces")(whole(value))} value={draft.spaces} /> : null}
           <TextInput autoFocus={first("propertyLocation")} label={t("Property location")} maxLength={240} onChange={set("propertyLocation")} value={draft.propertyLocation} />
+          <div className={styles.coordinates}>
+            <NumericInput label={t("Latitude")} minValue={-90} maxValue={90} formatOptions={{ maximumFractionDigits: 7 }} value={draft.latitude} onChange={set("latitude")}
+              isInvalid={!hasLatitude && hasLongitude} errorMessage={t("Enter both latitude and longitude")} />
+            <NumericInput label={t("Longitude")} minValue={-180} maxValue={180} formatOptions={{ maximumFractionDigits: 7 }} value={draft.longitude} onChange={set("longitude")}
+              isInvalid={hasLatitude && !hasLongitude} errorMessage={t("Enter both latitude and longitude")} />
+          </div>
+          <TextInput label={t("Paste a Google Maps link")} inputType="url" value={mapLink} onChange={pasteLink}
+            isInvalid={Boolean(mapLink.trim())} errorMessage={t("No coordinates in this link")} />
+          <div className={styles.locate}>
+            <Button size="compact" isLoading={position.locating} onPress={locate}><LocateFixed aria-hidden="true" size={14} />{t("Use my current location")}</Button>
+            {located ? <OpenInMaps latitude={draft.latitude} longitude={draft.longitude} /> : null}
+          </div>
+          {position.failed ? <InlineNotice tone="error" message={t("Location unavailable")} /> : null}
           <TextInput autoFocus={first("clientEmail")} inputType="email" label={t("Client email")} maxLength={254} onChange={set("clientEmail")} value={draft.clientEmail} />
         </> : null}
         {group === "package" ? <>

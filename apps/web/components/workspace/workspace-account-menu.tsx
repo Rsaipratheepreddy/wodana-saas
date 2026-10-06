@@ -9,6 +9,7 @@ import { Avatar, ControlledModalDialog, DesignSystemProvider, useDesignSystem } 
 import { LanguageSelect } from "@/components/i18n/language-select";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkspaceUser } from "./workspace-navigation";
+import { sharedRequest } from "@/lib/workspace/shared-request";
 import { useWorkspaceSetupSteps, WorkspaceSetupChecklist, type ReadinessData } from "./workspace-readiness";
 import styles from "./workspace.module.css";
 
@@ -29,14 +30,19 @@ export function WorkspaceAccountMenu({ user, setup }: { user: WorkspaceUser; set
   const pending = Boolean(setup && readiness) && completed < total;
   const workspaceId = setup?.workspaceId;
 
+  // One read per page (shared, reused for a minute); opening the menu reads it again. An unmount only ignores
+  // the answer, so React's double effects do not abort and repeat the request.
   useEffect(() => {
     if (!workspaceId) return;
-    const controller = new AbortController();
-    fetch(`/api/workspace/setup-readiness?workspaceId=${encodeURIComponent(workspaceId)}`, { signal: controller.signal, cache: "no-store" })
-      .then(async (response) => (response.ok ? await response.json() as ReadinessData : null))
-      .then((data) => { if (data && !controller.signal.aborted) setReadiness(data); })
+    let active = true;
+    sharedRequest(`setup-readiness:${workspaceId}`, async () => {
+      const response = await fetch(`/api/workspace/setup-readiness?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Setup progress unavailable");
+      return await response.json() as ReadinessData;
+    }, { maxAgeMs: 60_000, force: readinessReload > 0 })
+      .then((data) => { if (active && data) setReadiness(data); })
       .catch(() => {});
-    return () => controller.abort();
+    return () => { active = false; };
   }, [workspaceId, readinessReload]);
 
   const signOut = async (close: () => void) => {

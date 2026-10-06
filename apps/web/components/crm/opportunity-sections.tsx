@@ -10,6 +10,7 @@ import { activityTitle } from "@/lib/crm/contact";
 import { FURNITURE_PATHS, type OpportunityFlowView } from "@/lib/crm/opportunity-flow";
 import type { FactGroup } from "@/lib/crm/now-step";
 import { formatPhoneForDisplay, phoneCountry, whatsappUrl } from "@/lib/phone";
+import { SiteLocation } from "@/components/ui/site-location";
 import { ResourceState, useCrmResource } from "./crm-workbench";
 import { answered, formatMoney, type Discovery, type DiscoveryGroup } from "./opportunity-discovery";
 import { OpportunityIntro, type Intro } from "./opportunity-intro";
@@ -86,7 +87,7 @@ export function OpportunityCards(props: CardsProps) {
         <FactRow label={t("Floor plan")}>{floorPlan ? floorPlan.name : <Missing />}</FactRow>
         <FactRow label={t("Area")}>{area ?? <Missing />}</FactRow>
         {facts.spaces ? <FactRow label={t("Spaces")}>{String(facts.spaces)}</FactRow> : null}
-        <FactRow label={t("Property location")}>{facts.propertyLocation || <Missing />}</FactRow>
+        <FactRow label={t("Property location")}><SiteLocation address={facts.propertyLocation} latitude={facts.latitude} longitude={facts.longitude} fallback={<Missing />} /></FactRow>
         <FactRow label={t("Client email")}>{facts.clientEmail || <Missing />}</FactRow>
       </EditableFieldList> : discovery.failure ? <p className={styles.missing}>{discovery.failure}</p> : loading}
     </FactCard>

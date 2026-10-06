@@ -50,10 +50,16 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const [error, setError] = useState("");
   const { workspaceId, caseId } = data;
 
-  const loadJourney = useCallback(async () => {
-    try { setJourney(await caseRequest<JourneyView>(workspaceId, caseId, "design-journey")); setJourneyError(""); }
-    catch (cause) { setJourneyError(cause instanceof Error ? cause.message : t("Could not load the design stages.")); }
+  // An answer without the stages is a failed load (error and Retry), never a reason to keep the skeleton up.
+  const readJourney = useCallback(async () => {
+    const value = await caseRequest<JourneyView | null>(workspaceId, caseId, "design-journey");
+    if (!value || typeof value !== "object" || !Array.isArray(value.stages)) throw new Error(t("Could not load the design stages."));
+    return value;
   }, [workspaceId, caseId, t]);
+  const loadJourney = useCallback(async () => {
+    try { setJourney(await readJourney()); setJourneyError(""); }
+    catch (cause) { setJourneyError(cause instanceof Error && cause.message ? cause.message : t("Could not load the design stages.")); }
+  }, [readJourney, t]);
   const loadDesigns = useCallback(async () => {
     const listing = await caseRequest<Listing>(workspaceId, caseId, "designs");
     setDesigns((current) => mergeDesigns(current, listing.items));
@@ -61,11 +67,11 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   }, [workspaceId, caseId]);
   useEffect(() => {
     let alive = true;
-    caseRequest<JourneyView>(workspaceId, caseId, "design-journey")
+    readJourney()
       .then((value) => { if (alive) { setJourney(value); setJourneyError(""); } })
-      .catch((cause: Error) => { if (alive) setJourneyError(cause.message); });
+      .catch((cause: unknown) => { if (alive) setJourneyError(cause instanceof Error && cause.message ? cause.message : t("Could not load the design stages.")); });
     return () => { alive = false; };
-  }, [workspaceId, caseId]);
+  }, [readJourney, t]);
   useEffect(() => {
     // Other people review and upload too: refresh on return to the tab and every 20 seconds.
     const refresh = () => { if (!document.hidden) void loadDesigns().catch(() => undefined); };

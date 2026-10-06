@@ -20,6 +20,7 @@ import styles from "./site-workspace.module.css";
 const paths = { visit: "visits", measurement: "measurements", observation: "observations" } as const;
 const NO_ROOM = "no-room";
 type Area = { id: string; roomId: string | null; name: string };
+const MEASURE_ORDER = ["incomplete", "recheck", "measured", "verified"];
 type Photo = { entry: ScopeEntry; asset: CaseAsset };
 type DetailTab = "details" | "photos" | "notes";
 
@@ -84,8 +85,23 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
   const shown = areas.filter((area) => roomFilter === "all" || area.id === roomFilter);
   const photosIn = (area: Area): Photo[] => files.filter((entry) => (entry.roomId ?? null) === area.roomId).flatMap((entry) => entry.assets.slice(0, 1).map((asset) => ({ entry, asset })));
   const roomMeasurement = (area: Area) => site.items.find((record) => record.kind === "measurement" && !record.entryId && (record.roomId ?? null) === area.roomId);
+  // Items measured in the room (a wall opening, a niche) count for it too, so a room is never shown unmeasured beside a verified item.
+  const itemMeasurements = (area: Area) => area.roomId ? site.items.filter((record) => record.kind === "measurement" && record.entryId && record.roomId === area.roomId) : [];
+  /** The room's measurement state: its own set, else its item sets, led by the least advanced one. */
+  const roomState = (area: Area) => roomMeasurement(area) ?? [...itemMeasurements(area)].sort((a, b) => MEASURE_ORDER.indexOf(a.status) - MEASURE_ORDER.indexOf(b.status))[0];
+  /** Photos filed to the room plus the evidence attached to its measurements. */
+  const photoCount = (area: Area) => photosIn(area).length + [roomMeasurement(area), ...itemMeasurements(area)].reduce((sum, record) => sum + (record?.assetIds.length ?? 0), 0);
   const issuesIn = (area: Area) => site.items.filter((record) => record.kind === "observation" && (record.roomId ?? null) === area.roomId);
   const visits = site.items.filter((record) => record.kind === "visit").sort((a, b) => (a.scheduledAt ?? "").localeCompare(b.scheduledAt ?? ""));
+  // PLM-128: a recorded visit says "Done" only when every room it captured is measured with a photo; otherwise it says what is missing.
+  const capturedRooms = areas.filter((area) => area.roomId);
+  const unmeasured = capturedRooms.filter((area) => !["measured", "verified"].includes(roomState(area)?.status ?? "")).length;
+  const unphotographed = capturedRooms.filter((area) => !photoCount(area)).length;
+  const visitBadge = (visit: SiteRecord): { tone: StatusTone; label: string } => visit.status === "cancelled" ? { tone: "neutral", label: t("Cancelled") }
+    : visit.status !== "completed" ? { tone: "info", label: t("Planned") }
+    : unmeasured ? { tone: "warning", label: unmeasured === 1 ? t("Visit recorded · 1 room not measured") : t("Visit recorded · {count} rooms not measured", { count: unmeasured }) }
+    : unphotographed ? { tone: "warning", label: unphotographed === 1 ? t("Visit recorded · 1 room without photos") : t("Visit recorded · {count} rooms without photos", { count: unphotographed }) }
+    : { tone: "success", label: t("Done") };
 
   const upsertRecord = (saved: SiteRecord) => setSite((current) => ({ ...current, items: [saved, ...current.items.filter((record) => record.id !== saved.id)] }));
   const saveEntry = async (entry: ScopeEntry) => {
@@ -177,14 +193,15 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
       {visits.map((visit) => <button type="button" key={visit.id} className={styles.visit} data-status={visit.status} onClick={() => setEditing(visit)}>
         <strong>{visit.title || t("Site visit")}</strong>
         <span>{when(visit.scheduledAt, visit.timezone)}{visit.assigneeName ? ` · ${visit.assigneeName}` : ""}</span>
-        <Badge tone={visit.status === "completed" ? "success" : visit.status === "cancelled" ? "neutral" : "info"}>{visit.status === "completed" ? t("Done") : visit.status === "cancelled" ? t("Cancelled") : t("Planned")}</Badge>
+        {(() => { const badge = visitBadge(visit); return <Badge tone={badge.tone}>{badge.label}</Badge>; })()}
       </button>)}
     </section> : null}
 
     {shown.length ? <ul className={styles.rooms} aria-label={t("Rooms")}>{shown.map((area) => {
-      const photos = photosIn(area); const measurement = roomMeasurement(area); const issues = issuesIn(area); const dims = dimensionText(measurement);
+      const photos = photosIn(area); const measurement = roomMeasurement(area); const issues = issuesIn(area);
+      const dims = measurement ? dimensionText(measurement) : itemMeasurements(area).flatMap((record) => dimensionText(record));
       const open = issues.filter((issue) => issue.status !== "resolved").length;
-      const chip = area.roomId ? measureChip(measurement) : null;
+      const chip = area.roomId ? measureChip(roomState(area)) : null;
       return <li key={area.id}><article className={styles.room} id={`site-room-${area.id}`} aria-label={area.name}>
         <header className={styles.roomHead}>
           <button type="button" className={styles.roomName} onClick={() => setDetail({ areaId: area.id, tab: "details" })}><DoorOpen aria-hidden="true" size={16} /><span>{area.name}</span></button>
@@ -197,7 +214,7 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
         {chip ? <span className={styles.roomState}><Badge tone={chip.tone}>{chip.label}</Badge></span> : null}
         <dl className={styles.facts}>
           {area.roomId ? <div><dt>{t("Dimensions")}</dt><dd>{dims.length ? <>{dims.slice(0, 3).join(" · ")}{dims.length > 3 ? ` · ${t("+{count} more", { count: dims.length - 3 })}` : ""}</> : <span className={styles.none}>{t("None yet")}</span>}</dd></div> : null}
-          <div><dt>{t("Photos")}</dt><dd>{photos.length}</dd></div>
+          <div><dt>{t("Photos")}</dt><dd>{photoCount(area)}</dd></div>
           <div><dt>{t("Issues")}</dt><dd>{issues.length ? <span data-warn={open > 0 || undefined}>{open ? t("{count} open", { count: open }) : t("All resolved")}</span> : 0}</dd></div>
           {measurement?.note ? <div><dt>{t("Notes")}</dt><dd className={styles.clamp}>{measurement.note}</dd></div> : null}
         </dl>
@@ -221,7 +238,7 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
       <FitCheckList workspaceId={workspaceId} caseId={caseId} itemIds={fitItems} unit={access?.unit} canOverride={canEdit} context="approval" refreshKey={fitRefresh} />
     </Card> : null}
     {detailArea ? <RoomDetail area={detailArea} tab={detail!.tab} onTab={(tab) => setDetail({ areaId: detailArea.id, tab })} onClose={() => setDetail(null)} canEdit={canEdit}
-      chip={detailArea.roomId ? measureChip(roomMeasurement(detailArea)) : null} measurement={roomMeasurement(detailArea)} photos={photosIn(detailArea)} issues={issuesIn(detailArea)} assetUrl={assetUrl}
+      chip={detailArea.roomId ? measureChip(roomState(detailArea)) : null} measurement={roomMeasurement(detailArea)} photos={photosIn(detailArea)} issues={issuesIn(detailArea)} assetUrl={assetUrl}
       onMeasure={() => fromDetail(() => measure(detailArea))} onAddPhotos={() => fromDetail(() => pickFiles(detailArea))} onAddIssue={() => fromDetail(() => addIssue(detailArea))}
       onIssue={(issue) => fromDetail(() => setEditing(issue))} onDraw={(photo) => fromDetail(() => { setQueue([]); setMarking(photo); })} /> : null}
     {picking ? <RoomPicker data={data} exclude={areas.map((area) => area.id)} onClose={() => setPicking(false)} onPick={startRoom} /> : null}

@@ -11,7 +11,7 @@ import type { OpportunityFlowView, FlowLineStep } from "./opportunity-flow";
 /** Where a requirement is resolved. */
 export type RequirementTarget = "proof" | "furniture" | "intro" | "discovery" | "quote" | "enquiry" | "edit" | "siteVisit" | "materials";
 /** What the Now card's one primary button does. */
-export type NowTarget = RequirementTarget | "advance" | "win" | "planning" | "reopen";
+export type NowTarget = RequirementTarget | "advance" | "win" | "planning" | "project" | "reopen";
 export type PlanningSection = "overview" | "designs" | "quotations" | "approvals";
 
 export type FunnelStep = { key: "enquiry" | "discovery" | "intro" | "design" | "quote" | "deal"; state: "done" | "current" | "active" | "upcoming"; detail: string | null; at: string | null };
@@ -100,8 +100,12 @@ function moveStep(stage: string): NowStep {
   return { id: "advance", title: tKey("Move to {stage}"), short: tKey("Move to {stage}"), target: "advance", keys: [], fields: [], values: { stage } };
 }
 
-/** After Won the work continues in Planning: the first funnel step that is not done. */
-function wonPlan(flow: OpportunityFlowView | null, funnel: FunnelStep[], caseId: string | null): NowPlan {
+/** After Won the work continues in Planning: the first funnel step that is not done; once the project runs, the project. */
+function wonPlan(flow: OpportunityFlowView | null, funnel: FunnelStep[], caseId: string | null, project: { id: string; reference: string | null } | null): NowPlan {
+  if (project) {
+    return { status: "won", column: null, more: [], then: [], why: project.reference ? { key: tKey("Won. The work continues in project {reference}."), values: { reference: project.reference } } : { key: tKey("Won. The work continues in the project.") },
+      now: { id: "project", title: tKey("Open the project"), short: tKey("Open project"), target: "project", keys: [], fields: [] } };
+  }
   const order = (flow?.flow === "furniture" || flow?.flow === "basic" ? ["quote", "deal"] : ["design", "quote", "deal"]) as Array<keyof typeof FUNNEL_STEPS>;
   const done = (key: string) => funnel.find((step) => step.key === key)?.state === "done";
   const open = order.filter((key) => !done(key)).map((key) => ({ ...FUNNEL_STEPS[key], keys: [], fields: [] }));
@@ -113,10 +117,10 @@ function wonPlan(flow: OpportunityFlowView | null, funnel: FunnelStep[], caseId:
   return { status: "won", column: null, more: [], then: open.slice(1, 3), now, why: { key: tKey("Won. The work continues in Planning.") } };
 }
 
-export function nowPlan(input: { flow: OpportunityFlowView | null; status: string; funnel?: FunnelStep[] | null; caseId?: string | null }): NowPlan {
+export function nowPlan(input: { flow: OpportunityFlowView | null; status: string; funnel?: FunnelStep[] | null; caseId?: string | null; project?: { id: string; reference: string | null } | null }): NowPlan {
   const { flow, status } = input;
   const funnel = Array.isArray(input.funnel) ? input.funnel : [];
-  if (status === "won") return wonPlan(flow, funnel, input.caseId ?? null);
+  if (status === "won") return wonPlan(flow, funnel, input.caseId ?? null, input.project ?? null);
   if (status !== "open") {
     return { status: "lost", column: null, more: [], then: [], why: { key: tKey("This opportunity was lost.") },
       now: { id: "reopen", title: tKey("Reopen the opportunity"), short: tKey("Reopen"), target: "reopen", keys: [], fields: [] } };

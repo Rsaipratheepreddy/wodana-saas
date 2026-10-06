@@ -72,3 +72,32 @@ describe("site, a card per room", () => {
     expect(new Set(roomDimensions().map((d) => d.id)).size).toBe(5);
   });
 });
+
+describe("site visit state tells the truth (D10, PLM-128)", () => {
+  const visit = { id: "v1", version: 1, kind: "visit", title: "Site visit", note: "", status: "completed", roomId: null, entryId: null, visitId: null, assetIds: [], assets: [], scheduledAt: "2026-09-20T08:00:00Z", timezone: "UTC", outcome: "Measured" };
+  const living = { id: "r9", name: "Living room", version: 1 };
+  const mountSite = (items: unknown[], entries: unknown[] = []) => render(<DesignSystemProvider><SiteWorkspace initialData={{ ...data, rooms: [living], entries } as unknown as CaseContent} initialSite={{ ...site, items } as unknown as SiteData} /></DesignSystemProvider>);
+
+  it("counts an item measured in a room for that room: verified, with its evidence photo, so the visit is done", () => {
+    mountSite([visit, { id: "m1", version: 2, kind: "measurement", title: "Media wall opening", note: "", status: "verified", roomId: "r9", entryId: "e1", visitId: null, assetIds: ["a1"], assets: [img("a1")], dimensions: [dim("Opening width", 2.4)], updatedAt: "2026-09-20T09:00:00Z", verifiedAt: "2026-09-20T09:00:00Z" }]);
+    const room = screen.getByRole("article", { name: "Living room" });
+    expect(room).toHaveTextContent("Verified");
+    expect(room).not.toHaveTextContent("Not measured");
+    expect(room).toHaveTextContent("Opening width 2.4 m");
+    expect(room).toHaveTextContent("Photos1");
+    expect(within(screen.getByRole("region", { name: "Visits" })).getByText("Done")).toBeInTheDocument();
+  });
+
+  it("says what is missing instead of Done when a captured room is not measured", () => {
+    mountSite([visit, { id: "o1", version: 1, kind: "observation", title: "Crack", note: "", status: "open", roomId: "r9", entryId: null, visitId: null, assetIds: [], assets: [] }]);
+    expect(screen.getByRole("article", { name: "Living room" })).toHaveTextContent("Not measured");
+    const visits = within(screen.getByRole("region", { name: "Visits" }));
+    expect(visits.getByText("Visit recorded · 1 room not measured")).toBeInTheDocument();
+    expect(visits.queryByText("Done")).not.toBeInTheDocument();
+  });
+
+  it("says when a measured room has no photo", () => {
+    mountSite([visit, { id: "m2", version: 1, kind: "measurement", title: "Living room", note: "", status: "measured", roomId: "r9", entryId: null, visitId: null, assetIds: [], assets: [], dimensions: [dim("Wall A", 4)] }]);
+    expect(within(screen.getByRole("region", { name: "Visits" })).getByText("Visit recorded · 1 room without photos")).toBeInTheDocument();
+  });
+});

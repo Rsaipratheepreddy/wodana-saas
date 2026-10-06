@@ -69,6 +69,22 @@ describe("Planning list", () => {
     expect(screen.getByRole("button", { name: "Qualified lead" })).toBeEnabled();
   });
 
+  it("opens the case with one click on its name: the link navigates and the row does not open it a second time (D7)", async () => {
+    render(<PlanningList projects={[]} planning={list([planning])} />);
+    const link = screen.getByRole("link", { name: "Villa interiors" });
+    let prevented: boolean | null = null;
+    const watch = (event: MouseEvent) => { prevented = event.defaultPrevented; event.preventDefault(); };
+    document.addEventListener("click", watch);
+    try { await userEvent.click(link); } finally { document.removeEventListener("click", watch); }
+    // Nothing in the grid cancels the link's own navigation, and the row action is not fired as well.
+    expect(prevented).toBe(false);
+    expect(push).not.toHaveBeenCalled();
+    // Anywhere else on the row opens the same case, once.
+    await userEvent.click(screen.getByText("Present the design"));
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith("/workspace/pre-projects/cases/case-1/requirements");
+  });
+
   it("filters by planning stage and status, and says when nothing matches", async () => {
     const paid = { ...project, id: "project-2", caseId: "case-2", workflow: { templateCode: "design_build_deal_first", currentStageKey: "concept", currentStageName: "Concept" } };
     render(<PlanningList projects={[paid]} planning={list([planning, { ...planning, id: "case-3", title: "Paused office", status: "on_hold" } as PreProjectListItem])} workflow={workflow} servicePathEnabled />);

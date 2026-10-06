@@ -577,7 +577,7 @@ export class ProjectCoreService {
       seal,
       roles: settings.roles,
       team: settings.roles.map((role) => ({ role: role.key, label: role.label, member: team.find((member) => member.roles.includes(role.key)) ?? null }))
-        .map(({ member, ...role }) => ({ ...role, member: member ? { membershipId: member.membershipId, name: member.name } : null })),
+        .map(({ member, ...role }) => ({ ...role, member: member ? { membershipId: member.membershipId, name: member.name, email: member.email ?? null } : null })),
       stages: stages.map((stage) => ({ ...stage, canWork: stage.status === "current" && project.status === "active"
         && (manager || Boolean(stage.ownerRole && team.some((member) => member.membershipId === membershipId && member.roles.includes(stage.ownerRole!)))) })),
       next: current ? nextStep(current, settings.roles) : null,

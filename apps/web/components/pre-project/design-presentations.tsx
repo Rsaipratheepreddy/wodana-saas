@@ -31,8 +31,11 @@ export function DesignPresentations({ workspaceId, caseId, stage, designs, canEd
   const [creating, setCreating] = useState(false);
   const [deciding, setDeciding] = useState<Presentation | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const load = useCallback(() => caseRequest<PresentationsView>(workspaceId, caseId, "design-presentations").then((next) => { setView(next); setFailure(""); })
-    .catch((error: Error) => setFailure(error.message)), [workspaceId, caseId]);
+  // An empty answer is a failed load (error and Retry), never a reason to keep the skeleton up.
+  const load = useCallback(() => caseRequest<PresentationsView | null>(workspaceId, caseId, "design-presentations").then((next) => {
+    if (!next || typeof next !== "object") throw new Error(t("Presentations didn't load"));
+    setView(next); setFailure("");
+  }).catch((error: unknown) => setFailure(error instanceof Error && error.message ? error.message : t("Presentations didn't load"))), [workspaceId, caseId, t]);
   useEffect(() => { void load(); }, [load]);
   if (failure && !view) return <ErrorState title={t("Presentations didn't load")} description={failure} onRetry={() => void load()} />;
   if (!view) return <Skeleton lines={3} shape="rows" />;

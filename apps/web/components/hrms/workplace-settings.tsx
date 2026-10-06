@@ -7,6 +7,7 @@ import {
   Badge, Button, DataGrid, EmptyState, ErrorState, FormSection, InlineNotice, InspectorSheet, NumericInput, SegmentedControl, SelectField, Switch, TextAreaField, TextInput, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { useCurrentPosition } from "@/lib/geo/use-current-position";
 import type { HrmsApi } from "@/lib/hrms/api";
 import { useHrmsFormat } from "./hrms-format";
 import { Facts } from "./hrms-controls";
@@ -62,21 +63,15 @@ function WorkplaceSheet({ api, location, contexts, onClose, onSaved }: { api: Hr
   const [form, setForm] = useState(initial);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [locating, setLocating] = useState(false);
+  const position = useCurrentPosition();
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm((current) => ({ ...current, [key]: value }));
   const context = contexts.find((item) => item.id === form.contextId) ?? null;
   const coordinates = Number.isFinite(form.latitude) && Math.abs(form.latitude) <= 90 && Number.isFinite(form.longitude) && Math.abs(form.longitude) <= 180;
   const radius = Number.isInteger(form.radiusM) && form.radiusM >= 25 && form.radiusM <= 2000;
   const valid = Boolean(form.name.trim()) && coordinates && radius && (form.kind === "office" || Boolean(context));
   const dirty = JSON.stringify(form) !== JSON.stringify(initial);
-  const locate = () => {
-    if (!navigator.geolocation) { setError(t("Location unavailable")); return; }
-    setLocating(true); setError("");
-    navigator.geolocation.getCurrentPosition((fix) => {
-      setForm((current) => ({ ...current, latitude: Number(fix.coords.latitude.toFixed(6)), longitude: Number(fix.coords.longitude.toFixed(6)) }));
-      setLocating(false);
-    }, () => { setError(t("Location unavailable")); setLocating(false); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
-  };
+  const locate = () => { setError(""); position.locate((fix) => setForm((current) => ({ ...current, ...fix }))); };
+  const problem = error || (position.failed ? t("Location unavailable") : "");
   const save = async () => {
     setBusy(true); setError("");
     try {
@@ -90,7 +85,7 @@ function WorkplaceSheet({ api, location, contexts, onClose, onSaved }: { api: Hr
     footer={<div className="wd-dialog-actions"><span className={styles.spacer} />
       <Button variant="primary" isLoading={busy} isDisabled={!dirty || !valid} onPress={() => void save()}>{t("Save")}</Button></div>}>
     <div className={styles.sheet}>
-      {error ? <InlineNotice tone="error" message={error} /> : null}
+      {problem ? <InlineNotice tone="error" message={problem} /> : null}
       <FormSection>
         {location ? <Facts items={[[t("Kind"), location.kind === "office" ? t("Office") : t("Site")], location.kind === "site" ? [t("Project"), context?.name ?? ""] : null]} /> : <>
           <SegmentedControl label={t("Kind")} value={form.kind} onChange={(value) => set("kind", value as WorkLocation["kind"])} options={[{ id: "office", label: t("Office") }, { id: "site", label: t("Site") }]} />
@@ -104,7 +99,7 @@ function WorkplaceSheet({ api, location, contexts, onClose, onSaved }: { api: Hr
         <TextAreaField label={t("Address")} value={form.address} onChange={(value) => set("address", value)} maxLength={500} />
         <NumericInput label={t("Latitude")} isRequired minValue={-90} maxValue={90} formatOptions={{ maximumFractionDigits: 7 }} value={form.latitude} onChange={(value) => set("latitude", value)} />
         <NumericInput label={t("Longitude")} isRequired minValue={-180} maxValue={180} formatOptions={{ maximumFractionDigits: 7 }} value={form.longitude} onChange={(value) => set("longitude", value)} />
-        <div><Button size="compact" isLoading={locating} onPress={locate}><LocateFixed aria-hidden="true" size={14} />{t("Use my location")}</Button></div>
+        <div><Button size="compact" isLoading={position.locating} onPress={locate}><LocateFixed aria-hidden="true" size={14} />{t("Use my location")}</Button></div>
         <NumericInput label={t("Radius")} isRequired suffix={format.unit("meter")} minValue={25} maxValue={2000} step={1} value={form.radiusM} onChange={(value) => set("radiusM", value)} />
       </FormSection>
     </div>

@@ -3,9 +3,23 @@ import { Dec } from "../../catalog-core/decimal";
 export type DiscoveryFacts = {
   area: string | null; areaUnit: "sqft" | "sqm" | null; spaces: number | null; propertyLocation: string | null;
   clientEmail: string | null; floorPlanAssetId: string | null; designPackageId: string | null;
+  /** The property's position (WGS 84 degrees): both or neither. */
+  latitude: number | null; longitude: number | null;
 };
 export type DiscoveryQuestion = { key: string; label: string; required: boolean; dataType?: string; options?: Array<{ id: string; label: string }> };
 export type MissingItem = { key: string; label: string };
+
+/** Why a property position can't be saved: both or neither, latitude within ±90 and longitude within ±180. */
+export function coordinatesProblem(latitude: number | null, longitude: number | null): string | null {
+  if ((latitude === null) !== (longitude === null)) return "Enter both latitude and longitude";
+  if (latitude === null || longitude === null) return null;
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) return "Enter a latitude between -90 and 90";
+  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) return "Enter a longitude between -180 and 180";
+  return null;
+}
+
+/** Seven decimals: about a centimetre, as precise as a phone's GPS can be. */
+export const roundCoordinate = (value: number) => Math.round(value * 1e7) / 1e7;
 
 const SQM_PER_SQFT = "0.09290304";
 

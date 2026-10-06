@@ -7,6 +7,7 @@ import { useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { Translate } from "@/lib/i18n/keys";
 import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
+import { sharedRequest } from "@/lib/workspace/shared-request";
 import { playFeedback } from "@/lib/feedback/sounds";
 import { DAY_GROUP_LABELS, NOTIFICATION_MODULES, dayGroup, notificationModule, type DayGroup, type NotificationModule } from "@/lib/workspace/notification-modules";
 import styles from "./workspace-notifications.module.css";
@@ -35,13 +36,17 @@ export function useWorkspaceNotices(workspaceId: string, { announce = false }: {
   const [loaded, setLoaded] = useState(false);
   const [failure, setFailure] = useState(false);
   const [marking, setMarking] = useState(false);
-  const load = useCallback(async () => {
+  // Every reader of the list (the bell, the Notifications page, React's double effects) shares one request; an
+  // explicit refresh (live change, poll, the bell opening, Retry) asks again, still joining a read in flight.
+  const load = useCallback(async (fresh = true) => {
     if (!UUID.test(workspaceId)) return;
     try {
-      const response = await fetch(`/api/workspace/crm/data/notifications?workspaceId=${workspaceId}`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Notifications unavailable");
-      const data: unknown = await response.json();
-      const rows = Array.isArray(data) ? data as WorkspaceNotice[] : [];
+      const rows = await sharedRequest(`notifications:${workspaceId}`, async () => {
+        const response = await fetch(`/api/workspace/crm/data/notifications?workspaceId=${workspaceId}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("Notifications unavailable");
+        const data: unknown = await response.json();
+        return Array.isArray(data) ? data as WorkspaceNotice[] : [];
+      }, { maxAgeMs: 5_000, force: fresh });
       if (announce && seen.current && rows.some((row) => !row.readAt && !seen.current!.has(row.id))) playFeedback("notice");
       seen.current = new Set(rows.map((row) => row.id));
       setItems(rows);
@@ -53,8 +58,9 @@ export function useWorkspaceNotices(workspaceId: string, { announce = false }: {
   // A new notice arrives with the change that caused it, so any workspace change re-reads the list; polling
   // stays as a fallback (every 30 seconds without the live stream, every minute with it).
   const live = useLiveInvalidate(workspaceId, LIVE_SCOPES, () => void load(), 2_000);
+  // The first read happens once; the stream going live only changes the polling pace, it does not read again.
+  useEffect(() => { void load(false); }, [load]);
   useEffect(() => {
-    void load();
     const timer = window.setInterval(() => { if (!document.hidden) void load(); }, pollEvery(live, 30_000));
     const refresh = () => { if (!document.hidden) void load(); };
     document.addEventListener("visibilitychange", refresh);

@@ -426,7 +426,13 @@ export class DesignJourneyService {
       `SELECT discovery.design_package_id IS NOT NULL AS packaged FROM pre_project_cases pre_case
          LEFT JOIN crm_opportunity_discovery discovery ON discovery.workspace_id = pre_case.workspace_id AND discovery.opportunity_id = pre_case.opportunity_id
         WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0]?.packaged ? "design" : "site_and_materials";
+    // Where the site is, for the visit's header: the property's address and position from the opportunity.
+    const site = (await client.query<{ address: string | null; latitude: number | null; longitude: number | null }>(
+      `SELECT discovery.property_location AS address, discovery.latitude::float8 AS latitude, discovery.longitude::float8 AS longitude FROM pre_project_cases pre_case
+         JOIN crm_opportunity_discovery discovery ON discovery.workspace_id = pre_case.workspace_id AND discovery.opportunity_id = pre_case.opportunity_id
+        WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0] ?? null;
     return {
+      site: site && (site.address || site.latitude !== null) ? site : null,
       journey: journey ? { ...journeyView, kind: journey.packageId || journey.packageName ? "design" : "site_and_materials" } : null, startsAs,
       stages: stages.map((stage) => ({ ...stage, progress: progress.find((item) => item.stage === stage.stage) ?? null })),
       measurements, siteEvidenceProblem: journey ? siteEvidenceProblem(measurements) : null,

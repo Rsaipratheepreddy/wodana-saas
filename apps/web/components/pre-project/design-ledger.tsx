@@ -41,8 +41,11 @@ export function DesignLedger({ workspaceId, caseId, rooms, clientName }: { works
   const [dialog, setDialog] = useState<Dialog>(null);
   const [open, setOpen] = useState<LedgerEntry | null>(null);
   const [approving, setApproving] = useState(false);
-  const load = useCallback(() => caseRequest<LedgerView>(workspaceId, caseId, "design-ledger").then((next) => { setView(next); setFailure(""); })
-    .catch((error: Error) => setFailure(error.message)), [workspaceId, caseId]);
+  // An empty answer is a failed load (error and Retry), never a reason to keep the skeleton up.
+  const load = useCallback(() => caseRequest<LedgerView | null>(workspaceId, caseId, "design-ledger").then((next) => {
+    if (!next || typeof next !== "object") throw new Error(t("The list didn't load"));
+    setView(next); setFailure("");
+  }).catch((error: unknown) => setFailure(error instanceof Error && error.message ? error.message : t("The list didn't load"))), [workspaceId, caseId, t]);
   useEffect(() => { void load(); }, [load]);
   // E5-6: a choice tied to a catalog item shows whether it gets through the site's measured access. A warning here;
   // ordering is where a failing item is blocked.

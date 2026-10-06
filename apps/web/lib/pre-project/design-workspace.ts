@@ -40,6 +40,8 @@ export type JourneyView = {
   showroomBooking?: boolean;
   /** After the sign-off: the Proposal 2 estimate it handed off to, or why not yet. */
   handoff?: { quoteId: string | null; problem: string | null };
+  /** Where the site is: the property's address and position from the opportunity. */
+  site?: { address: string | null; latitude: number | null; longitude: number | null } | null;
 };
 
 /** The document type a new file in a stage starts with; the designer can change it. */

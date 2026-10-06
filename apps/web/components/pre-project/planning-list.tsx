@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import {
@@ -73,6 +73,13 @@ export function planningRows(projects: PortfolioRow[], planning: PreProjectListI
   return [...caseRows, ...projectRows];
 }
 
+/** The case name inside its link: it reads "Opening…" while the case loads, so a single click visibly lands. */
+function CaseLinkLabel({ title }: { title: string }) {
+  const t = useT();
+  const { pending } = useLinkStatus();
+  return <span aria-busy={pending || undefined}>{pending ? t("Opening…") : title}</span>;
+}
+
 type Status = "all" | "active" | "hold";
 
 /** Planning (D-31): one list of the cases in planning with their stage, owner, value and next step. */
@@ -116,7 +123,7 @@ export function PlanningList({ projects, planning, workflow = {}, projectError, 
 
   const columns = useMemo<DataGridColumn<PlanningRow>[]>(() => [
     { id: "case", header: t("Case"), accessorFn: (row) => `${row.title} ${row.reference ?? ""} ${row.customer}`, size: 320, meta: { primary: true, interactive: true, renderCell: (row) => <span title={row.description}>
-      <RecordName detail={[row.customer, row.reference].filter(Boolean).join(" · ")} title={row.href ? <Link className={styles.open} data-tour="case-open" href={row.href}>{projectDisplayName(row.title)}</Link>
+      <RecordName detail={[row.customer, row.reference].filter(Boolean).join(" · ")} title={row.href ? <Link className={styles.open} data-tour="case-open" href={row.href}><CaseLinkLabel title={projectDisplayName(row.title)} /></Link>
         : <button type="button" className={styles.open} disabled={Boolean(busy) || !(row.source?.opportunityId ? planning.canCreate : planning.canStartLead)}
             onClick={(event) => { event.stopPropagation(); void open(row); }}>{busy === row.id ? t("Opening…") : projectDisplayName(row.title)}</button>} />
     </span> } },

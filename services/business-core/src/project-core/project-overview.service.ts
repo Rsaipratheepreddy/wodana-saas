@@ -6,7 +6,8 @@ import { currencyDecimals } from "../purchasing/orders";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { moneyAccess, projectViewer } from "./project-access";
 import { projectBalance, readMilestones } from "./project-milestones";
-import { readProjectCommitted, readProjectCosts, readProjectIncome } from "./project-money";
+import { readBudgets, readProjectCommitted, readProjectCosts, readProjectIncome } from "./project-money";
+import { deliveryHealth } from "./project-health";
 import { readSignals } from "./project-signals";
 
 type Db = PoolClient;
@@ -38,7 +39,7 @@ export class ProjectOverviewService {
       const signals = await readSignals(client, workspaceId, viewer.project);
       const blockers = [...signals.blockers];
       let money: null | { currency: string; agreed: string; invoiced: string; received: string; due: string; toInvoice: number; next: { title: string; amount: string; dueDate: string | null; state: string } | null;
-        spent: string | null; committed: string | null; available: string | null; costCurrency: string | null } = null;
+        spent: string | null; committed: string | null; available: string | null; costCurrency: string | null; budget?: string | null } = null;
       if (rights.client) {
         const income = await readProjectIncome(client, workspaceId, viewer.project);
         const balance = await projectBalance(client, workspaceId, viewer.project);
@@ -49,7 +50,10 @@ export class ProjectOverviewService {
         if (rights.costs) {
           const costs = await readProjectCosts(client, workspaceId, projectId);
           const committed = await readProjectCommitted(client, workspaceId, projectId);
-          money = { ...money, spent: costs.total, committed: committed.total, costCurrency: costs.currency };
+          // The cost budget, when the packages have one (the sum of every budget set on the project).
+          const budgets = await readBudgets(client, workspaceId, projectId);
+          const budget = budgets.length ? budgets.reduce((sum, item) => sum.add(item.amount), Dec.ZERO).toFixed(4) : null;
+          money = { ...money, spent: costs.total, committed: committed.total, costCurrency: costs.currency, budget };
           if (costs.currency === income.currency) {
             const available = Dec.of(income.received).sub(costs.total).sub(committed.total);
             money.available = available.toFixed(4);
@@ -60,7 +64,55 @@ export class ProjectOverviewService {
       }
       const site = (await client.query<{ started: string | null; finished: string | null }>(
         `SELECT site_started_on::text AS started, site_finished_on::text AS finished FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId])).rows[0];
+      // Where the work is: the project's check-in site, else the property on the opportunity it came from.
+      const place = (await client.query<{ address: string | null; latitude: number | null; longitude: number | null }>(
+        `SELECT address, latitude, longitude FROM (
+           SELECT 1 AS rank, nullif(location.address, '') AS address, location.latitude, location.longitude FROM work_locations location
+            WHERE location.workspace_id = $1 AND location.project_id = $2 AND location.kind = 'site' AND location.active
+           UNION ALL
+           SELECT 2, discovery.property_location, discovery.latitude::float8, discovery.longitude::float8 FROM delivery_projects project
+             JOIN pre_project_cases pre_case ON pre_case.workspace_id = project.workspace_id AND pre_case.id = project.case_id
+             JOIN crm_opportunity_discovery discovery ON discovery.workspace_id = pre_case.workspace_id AND discovery.opportunity_id = pre_case.opportunity_id
+            WHERE project.workspace_id = $1 AND project.id = $2) places
+         WHERE address IS NOT NULL OR latitude IS NOT NULL ORDER BY rank LIMIT 1`, [workspaceId, projectId])).rows[0] ?? null;
+      // Who to call: the client and the sales person on the opportunity the project came from.
+      const people = (await client.query<{ clientPhone: string | null; clientEmail: string | null; salesName: string | null; salesEmail: string | null }>(
+        `SELECT (SELECT point.raw_value FROM crm_contact_points point WHERE point.workspace_id = party.workspace_id AND point.party_id = party.id AND point.type = 'phone' AND point.status = 'active'
+                  ORDER BY point.is_primary DESC, point.created_at LIMIT 1) AS "clientPhone",
+                (SELECT point.raw_value FROM crm_contact_points point WHERE point.workspace_id = party.workspace_id AND point.party_id = party.id AND point.type = 'email' AND point.status = 'active'
+                  ORDER BY point.is_primary DESC, point.created_at LIMIT 1) AS "clientEmail",
+                seller.display_name AS "salesName", seller.primary_email AS "salesEmail"
+           FROM delivery_projects project
+           JOIN pre_project_cases pre_case ON pre_case.workspace_id = project.workspace_id AND pre_case.id = project.case_id
+           JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+           JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+           LEFT JOIN workspace_memberships seat ON seat.workspace_id = opportunity.workspace_id AND seat.id = opportunity.owner_membership_id
+           LEFT JOIN users seller ON seller.id = seat.user_id
+          WHERE project.workspace_id = $1 AND project.id = $2`, [workspaceId, projectId])).rows[0];
+      // The crew on site in the latest report sent for review, by trade.
+      const crew = (await client.query<{ date: string; trade: string; people: number }>(
+        `SELECT report.report_date::text AS date, workforce.trade, workforce.people::int AS people
+           FROM site_report_workforce workforce
+           JOIN site_reports report ON report.workspace_id = workforce.workspace_id AND report.id = workforce.report_id
+          WHERE report.workspace_id = $1 AND report.project_id = $2
+            AND report.report_date = (SELECT max(latest.report_date) FROM site_reports latest WHERE latest.workspace_id = $1 AND latest.project_id = $2 AND latest.status IN ('submitted', 'approved'))
+            AND report.status IN ('submitted', 'approved')
+          ORDER BY workforce.people DESC, workforce.trade`, [workspaceId, projectId])).rows;
+      // The latest site reports: what happened on site, in the supervisor's words.
+      const reports = (await client.query<{ id: string; date: string; status: string; byName: string; text: string }>(
+        `SELECT report.id, report.report_date::text AS date, report.status, author.display_name AS "byName",
+                coalesce(nullif(btrim(report.notes), ''), nullif(btrim(report.client_summary), ''), nullif(btrim(report.no_work_reason), ''), '') AS text
+           FROM site_reports report JOIN users author ON author.id = report.author_id
+          WHERE report.workspace_id = $1 AND report.project_id = $2 AND report.status IN ('submitted', 'approved')
+          ORDER BY report.report_date DESC, report.created_at DESC LIMIT 3`, [workspaceId, projectId])).rows;
+      const health = deliveryHealth({ stated: viewer.project.health, status: viewer.project.status, today: signals.today, promise: viewer.project.promiseDate,
+        planEnd: signals.planEnd, lateWork: signals.work.late, lateOrders: signals.lateOrders.length, criticalSnags: signals.work.criticalSnags });
       return {
+        health,
+        contacts: { client: { phone: people?.clientPhone ?? null, email: people?.clientEmail ?? null }, sales: people?.salesName ? { name: people.salesName, email: people.salesEmail } : null },
+        workforce: crew.length ? { date: crew[0].date, people: crew.reduce((sum, row) => sum + row.people, 0), trades: crew.map(({ trade, people }) => ({ trade, people })) } : null,
+        siteReports: reports,
+        site: place,
         today: signals.today, work: signals.work, blockers, decisions: signals.decisions, stagePlan: signals.stagePlan,
         dates: { start: viewer.project.startDate, promise: viewer.project.promiseDate, planEnd: signals.planEnd, siteStarted: site?.started ?? null, siteFinished: site?.finished ?? null },
         money, activity: await readProjectActivity(client, workspaceId, projectId),

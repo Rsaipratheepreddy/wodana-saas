@@ -5,7 +5,8 @@ import { recordAudit } from "../../audit/record-audit";
 import { designFee, type PricingMethod } from "../../design/design-packages.domain";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { REQUIREMENT_ASSET_PREFIX } from "../leads/requirement-notes.service";
-import { areaIn, discoveryMissing, type DiscoveryFacts, type DiscoveryQuestion } from "./discovery.domain";
+import { areaIn, coordinatesProblem, discoveryMissing, roundCoordinate, type DiscoveryFacts, type DiscoveryQuestion } from "./discovery.domain";
+import { ensureSiteLocation } from "./site-location";
 
 export type SaveDiscoveryInput = Partial<DiscoveryFacts> & { version?: number; answers?: Record<string, unknown> };
 type Context = { leadId: string | null; enquiryType: string | null; clientType: string | null; partyEmail: string | null };
@@ -33,7 +34,12 @@ export class OpportunityDiscoveryService {
         clientEmail: input.clientEmail !== undefined ? input.clientEmail?.trim().toLowerCase() || null : before?.clientEmail ?? null,
         floorPlanAssetId: input.floorPlanAssetId !== undefined ? input.floorPlanAssetId : before?.floorPlanAssetId ?? null,
         designPackageId: input.designPackageId !== undefined ? input.designPackageId : before?.designPackageId ?? null,
+        latitude: input.latitude !== undefined ? input.latitude : before?.latitude ?? null,
+        longitude: input.longitude !== undefined ? input.longitude : before?.longitude ?? null,
       };
+      const position = coordinatesProblem(merged.latitude, merged.longitude);
+      if (position) throw new UnprocessableEntityException(position);
+      if (merged.latitude !== null && merged.longitude !== null) { merged.latitude = roundCoordinate(merged.latitude); merged.longitude = roundCoordinate(merged.longitude); }
       if (merged.area && (!/^\d{1,8}(\.\d{1,2})?$/.test(merged.area) || Number(merged.area) <= 0)) throw new UnprocessableEntityException("Enter the area as a number, e.g. 1500");
       if (merged.area && !merged.areaUnit) throw new UnprocessableEntityException("Choose square feet or square metres");
       if (!merged.area) merged.areaUnit = null;
@@ -46,14 +52,18 @@ export class OpportunityDiscoveryService {
       if (merged.designPackageId && (!pkg || (pkg.status !== "active" && pkg.id !== before?.designPackageId))) throw new UnprocessableEntityException("Choose a design package that is offered");
       const fee = pkg ? this.fee(pkg, merged) : null;
       await client.query(
-        `INSERT INTO crm_opportunity_discovery (workspace_id, opportunity_id, area, area_unit, spaces, property_location, client_email, floor_plan_asset_id, design_package_id, design_fee, design_fee_currency, updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        `INSERT INTO crm_opportunity_discovery (workspace_id, opportunity_id, area, area_unit, spaces, property_location, client_email, floor_plan_asset_id, design_package_id, design_fee, design_fee_currency, updated_by, latitude, longitude)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          ON CONFLICT (workspace_id, opportunity_id) DO UPDATE SET area=excluded.area, area_unit=excluded.area_unit, spaces=excluded.spaces,
            property_location=excluded.property_location, client_email=excluded.client_email, floor_plan_asset_id=excluded.floor_plan_asset_id,
            design_package_id=excluded.design_package_id, design_fee=excluded.design_fee, design_fee_currency=excluded.design_fee_currency,
-           updated_by=excluded.updated_by, updated_at=now(), version=crm_opportunity_discovery.version+1`,
+           latitude=excluded.latitude, longitude=excluded.longitude, updated_by=excluded.updated_by, updated_at=now(), version=crm_opportunity_discovery.version+1`,
         [workspaceId, opportunityId, merged.area, merged.areaUnit, merged.spaces, merged.propertyLocation, merged.clientEmail, merged.floorPlanAssetId,
-          merged.designPackageId, fee?.fee ?? null, fee?.currency ?? null, user.userId]);
+          merged.designPackageId, fee?.fee ?? null, fee?.currency ?? null, user.userId, merged.latitude, merged.longitude]);
+      // A planning case already open for this job gets its site for check-in from the position.
+      if (merged.latitude !== before?.latitude || merged.longitude !== before?.longitude)
+        await ensureSiteLocation(client, { workspaceId, opportunityId, actorUserId: user.userId,
+          previous: before?.latitude != null && before?.longitude != null ? { latitude: before.latitude, longitude: before.longitude } : null });
       const questions = await this.questions(client, workspaceId, context.enquiryType);
       const changedAnswers: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(input.answers ?? {})) {
@@ -87,7 +97,7 @@ export class OpportunityDiscoveryService {
     const answers = await this.answers(client, workspaceId, opportunityId);
     const pkg = facts?.designPackageId ? await this.package(client, workspaceId, facts.designPackageId) : null;
     return {
-      facts: facts ?? { area: null, areaUnit: null, spaces: null, propertyLocation: null, clientEmail: context.partyEmail, floorPlanAssetId: null, designPackageId: null },
+      facts: facts ?? { area: null, areaUnit: null, spaces: null, propertyLocation: null, clientEmail: context.partyEmail, floorPlanAssetId: null, designPackageId: null, latitude: null, longitude: null },
       designFee: facts?.designFee ? { amount: facts.designFee, currency: facts.designFeeCurrency } : null,
       package: pkg ? { id: pkg.id, name: pkg.name, pricingMethod: pkg.pricingMethod, areaUnit: pkg.areaUnit } : null,
       enquiryType: context.enquiryType, clientType: context.clientType,
@@ -121,7 +131,7 @@ export class OpportunityDiscoveryService {
     return (await client.query<DiscoveryFacts & { version: number; designFee: string | null; designFeeCurrency: string | null }>(
       `SELECT area::text AS area, area_unit AS "areaUnit", spaces, property_location AS "propertyLocation", client_email AS "clientEmail",
               floor_plan_asset_id AS "floorPlanAssetId", design_package_id AS "designPackageId", design_fee::text AS "designFee",
-              design_fee_currency AS "designFeeCurrency", version
+              design_fee_currency AS "designFeeCurrency", latitude::float8 AS latitude, longitude::float8 AS longitude, version
        FROM crm_opportunity_discovery WHERE workspace_id = $1 AND opportunity_id = $2 ${lock ? "FOR UPDATE" : ""}`, [workspaceId, opportunityId])).rows[0] ?? null;
   }
 

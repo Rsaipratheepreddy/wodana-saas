@@ -1,5 +1,7 @@
 /** Product sourcing (plan §6.7a batch 3): the product clipper, link cards (Canva) and the fit check. */
 
+import { readWithin } from "./read-within";
+
 export const CLIP_FIELDS = ["name", "brand", "sku", "description", "price", "currency", "width", "depth", "height", "diagonal_depth", "dimension_unit", "finish", "material", "colour", "lead_time_days"] as const;
 export type ClipField = (typeof CLIP_FIELDS)[number];
 export type ClipSource = "structured_data" | "open_graph" | "page_text" | "ai" | "person";
@@ -39,12 +41,16 @@ export function sourcingUrl(workspaceId: string, path: string, query: Record<str
 }
 
 export async function sourcingApi<T>(workspaceId: string, path: string, init?: { method?: string; body?: unknown }): Promise<T> {
-  const response = await fetch(sourcingUrl(workspaceId, path), init?.body === undefined ? { method: init?.method ?? "GET" } : {
-    method: init?.method ?? "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(init.body),
-  });
-  const payload = await response.json().catch(() => null) as { message?: string | string[] } | null;
-  if (!response.ok) throw new SourcingRequestError(Array.isArray(payload?.message) ? payload.message.join(". ") : payload?.message ?? "Something went wrong. Try again.", response.status);
-  return payload as T;
+  const run = async () => {
+    const response = await fetch(sourcingUrl(workspaceId, path), init?.body === undefined ? { method: init?.method ?? "GET" } : {
+      method: init?.method ?? "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(init.body),
+    });
+    const payload = await response.json().catch(() => null) as { message?: string | string[] } | null;
+    if (!response.ok) throw new SourcingRequestError(Array.isArray(payload?.message) ? payload.message.join(". ") : payload?.message ?? "Something went wrong. Try again.", response.status);
+    return payload as T;
+  };
+  // A read that never answers fails in time, so the panel shows its error and Retry rather than a skeleton forever.
+  return init?.body === undefined && (init?.method ?? "GET") === "GET" ? readWithin(run()) : run();
 }
 
 export const clipImageUrl = (workspaceId: string, clipId: string, imageId: string) => sourcingUrl(workspaceId, `clips/${clipId}/images/${imageId}`, { preview: "1" });

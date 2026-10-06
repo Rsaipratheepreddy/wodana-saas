@@ -104,11 +104,11 @@ export async function readProjects(db: Db, workspaceId: string, membershipId: st
     [workspaceId, all, membershipId])).rows;
 }
 
-export type TeamMember = { membershipId: string; name: string; roles: string[]; lead: boolean };
+export type TeamMember = { membershipId: string; name: string; roles: string[]; lead: boolean; email?: string | null };
 
 export async function readTeam(db: Db, workspaceId: string, projectIds: string[]) {
   const rows = (await db.query<TeamMember & { projectId: string }>(
-    `SELECT assignment.project_id AS "projectId", assignment.membership_id AS "membershipId", coalesce(person.display_name, person.primary_email) AS name,
+    `SELECT assignment.project_id AS "projectId", assignment.membership_id AS "membershipId", coalesce(person.display_name, person.primary_email) AS name, person.primary_email AS email,
             assignment.role_keys AS roles, assignment.is_manager AS lead
        FROM project_assignments assignment
        JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id

@@ -62,9 +62,14 @@ export function AccessPointsEditor({ workspaceId, caseId, canEdit, onChanged, on
   const [editing, setEditing] = useState<PointDraft | null>(null);
   const loaded = useRef(onLoaded);
   useEffect(() => { loaded.current = onLoaded; }, [onLoaded]);
-  const load = useCallback(() => sourcingApi<{ points: AccessPoint[]; defaultUnit: string }>(workspaceId, `cases/${caseId}/access-points`)
-    .then((next) => { setPoints(next.points); setDefaultUnit(next.defaultUnit); setError(""); loaded.current?.(next.points, next.defaultUnit); })
-    .catch((reason) => setError(reason instanceof Error ? reason.message : "")), [workspaceId, caseId]);
+  // An answer without the list is a failed load (error and Retry), never a reason to keep the skeleton up.
+  const load = useCallback(() => sourcingApi<{ points?: AccessPoint[]; defaultUnit?: string } | null>(workspaceId, `cases/${caseId}/access-points`)
+    .then((next) => {
+      if (!Array.isArray(next?.points)) throw new Error(t("The access points could not be loaded."));
+      const unit = next.defaultUnit || "cm";
+      setPoints(next.points); setDefaultUnit(unit); setError(""); loaded.current?.(next.points, unit);
+    })
+    .catch((reason) => setError(reason instanceof Error && reason.message ? reason.message : t("The access points could not be loaded."))), [workspaceId, caseId, t]);
   useEffect(() => { void load(); }, [load, refreshKey]);
   if (error && !points) return <ErrorState description={error} onRetry={() => void load()} />;
   if (!points) return <Skeleton lines={3} />;

@@ -51,7 +51,7 @@
 
 @media (max-width:1000px) { .salesBoard { grid-template-columns:repeat(var(--stage-count),minmax(13rem,1fr)); } }
 @media (max-width:600px) { .toolbarActions { margin-inline-start:0; } .salesBoard { grid-template-columns:repeat(var(--stage-count),minmax(calc(100vw - 4rem),1fr)); scroll-snap-type:inline mandatory; } .boardColumn { scroll-snap-align:start; } }
-.opportunityModal { block-size: min(43rem, calc(100dvh - 2rem)); }
+.opportunityModal { block-size: min(56rem, calc(100dvh - 4rem)); }
 .opportunityModal :global(.wd-dialog) { position: relative; block-size: 100%; }
 .opportunityModal :global(.wd-dialog-minimal-header) { position: absolute; z-index: 1; inset-block-start: .4rem; inset-inline-end: .4rem; padding: 0; }
 .opportunityModal :global(.wd-dialog-body) { flex: 1; scrollbar-gutter: stable; }

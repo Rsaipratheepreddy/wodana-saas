@@ -1,5 +1,6 @@
 import type { NoteDocument } from '../crm/note-document';
 import { tKey, type MessageKey, type Translate } from '../i18n/keys';
+import { readWithin } from '../workspace/read-within';
 export type CatalogChoice={links?:Array<{role:string;recordId:string;snapshot:CatalogChoice}>;id:string;name:string;code:string;kind:string;version:number;catalogId:string;catalogName?:string;description?:string;attributes?:Array<{name:string;value:string}>;configuration?:Record<string,string|number>;commerce?:{pricingMode:'unpriced'|'fixed'|'on_request'};primaryAsset?:{id:string;recordId:string;name:string;mimeType:string;hasPreview:boolean}};
 export type ScopeLink={role:string;recordId:string;snapshot:CatalogChoice};
 export type CaseRoom={id:string;name:string;version:number;catalogRecordId?:string|null;catalogSnapshot?:CatalogChoice|null};
@@ -56,8 +57,12 @@ export function designPayload(d:CaseDesign) {return {id:d.id,version:d.version,t
 export function designRoundLabel(used:number,included:number|null|undefined) {if(included==null)return 'Not configured';return `${used} of ${included} used${used>included?' · over allowance':''}`;}
 export function caseApi(workspaceId:string,caseId:string,path:string) {return `/api/workspace/pre-projects/${caseId}/${path}${path.includes('?')?'&':'?'}workspaceId=${workspaceId}`;}
 export async function caseRequest<T>(workspaceId:string,caseId:string,path:string,method='GET',input?:unknown):Promise<T> {
- const response=await fetch(caseApi(workspaceId,caseId,path),{method,headers:input instanceof FormData?undefined:{'content-type':'application/json'},body:input===undefined?undefined:input instanceof FormData?input:JSON.stringify(input)});
- const payload=await response.json().catch(()=>null);if(!response.ok)throw new Error(Array.isArray(payload?.message)?payload.message.join('. '):payload?.message??tKey('Could not save. Your changes are still available.'));return payload;
+ const run=async()=>{
+  const response=await fetch(caseApi(workspaceId,caseId,path),{method,headers:input instanceof FormData?undefined:{'content-type':'application/json'},body:input===undefined?undefined:input instanceof FormData?input:JSON.stringify(input)});
+  const payload=await response.json().catch(()=>null);if(!response.ok)throw new Error(Array.isArray(payload?.message)?payload.message.join('. '):payload?.message??tKey('Could not save. Your changes are still available.'));return payload;
+ };
+ // A read that never answers fails in time, so the screen shows its error and Retry rather than a skeleton forever.
+ return method==='GET'?readWithin(run()):run();
 }
 export function formatCaseMoney(value:string|null|undefined,currency:string,locale:string,t:Translate) {if(value==null||value==='')return t('Not set');const n=Number(value);if(!Number.isFinite(n))return t('Not set');try{return new Intl.NumberFormat(locale,{style:'currency',currency,currencyDisplay:'code'}).format(n);}catch{return `${currency} ${value}`;}}
 export function parseScopePaste(text:string,roomId:string|null):ScopeEntry[] {

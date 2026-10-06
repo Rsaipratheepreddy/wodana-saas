@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf } from "class-validator";
+import { IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf } from "class-validator";
 
 export class SaveDiscoveryDto {
   @IsOptional() @IsInt() @Min(0) version?: number;
@@ -6,6 +6,8 @@ export class SaveDiscoveryDto {
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsIn(["sqft", "sqm"]) areaUnit?: "sqft" | "sqm" | null;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsInt() @Min(1) @Max(500) spaces?: number | null;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(240) propertyLocation?: string | null;
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(-90) @Max(90) latitude?: number | null;
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(-180) @Max(180) longitude?: number | null;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(254) clientEmail?: string | null;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsUUID() floorPlanAssetId?: string | null;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsUUID() designPackageId?: string | null;

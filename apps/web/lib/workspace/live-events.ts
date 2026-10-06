@@ -9,12 +9,17 @@ import { useEffect, useRef, useState } from "react";
  * them re-reads its own rows. Without the stream (an older core, no Redis, a test) screens keep polling.
  */
 type Listener = { scopes: ReadonlySet<string>; fire: () => void };
-type Channel = { source: EventSource | null; listeners: Set<Listener>; live: boolean; watchers: Set<(live: boolean) => void>; retry?: number };
+type Channel = { source: EventSource | null; listeners: Set<Listener>; live: boolean; watchers: Set<(live: boolean) => void>; retry?: number; closing?: number };
 
 const channels = new Map<string, Channel>();
 /** A refused stream (signed out, no access, no live updates) is not asked again before this, whoever mounts. */
 const refusedUntil = new Map<string, number>();
 const RETRY_MS = 30_000;
+/**
+ * The stream stays open this long after its last listener leaves, so React's double effects and a page handing
+ * over to the next one keep the same connection instead of aborting it and opening another.
+ */
+export const RELEASE_GRACE_MS = 1_000;
 
 function connect(workspaceId: string, channel: Channel) {
   if (typeof EventSource === "undefined" || channel.source) return;
@@ -52,9 +57,14 @@ function channelFor(workspaceId: string) {
 
 function release(workspaceId: string, channel: Channel) {
   if (channel.listeners.size) return;
-  window.clearTimeout(channel.retry);
-  channel.source?.close();
-  channels.delete(workspaceId);
+  window.clearTimeout(channel.closing);
+  channel.closing = window.setTimeout(() => {
+    channel.closing = undefined;
+    if (channel.listeners.size) return;
+    window.clearTimeout(channel.retry);
+    channel.source?.close();
+    if (channels.get(workspaceId) === channel) channels.delete(workspaceId);
+  }, RELEASE_GRACE_MS);
 }
 
 /**
@@ -69,6 +79,8 @@ export function useLiveInvalidate(workspaceId: string, scopes: readonly string[]
   useEffect(() => {
     if (!workspaceId || typeof EventSource === "undefined") return;
     const channel = channelFor(workspaceId);
+    window.clearTimeout(channel.closing);
+    channel.closing = undefined;
     let timer: number | undefined;
     const listener: Listener = { scopes: new Set(key.split("|").filter(Boolean)), fire: () => { window.clearTimeout(timer); timer = window.setTimeout(() => { if (!document.hidden) latest.current(); }, debounceMs); } };
     const watch = (value: boolean) => setLive(value);

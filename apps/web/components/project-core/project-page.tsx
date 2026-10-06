@@ -7,7 +7,7 @@ import { useWorkspaceBreadcrumb } from "@/components/workspace/workspace-breadcr
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { ProjectSection } from "@/lib/project-core/sections";
-import type { ProjectDetail } from "@/lib/project-core/types";
+import type { ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CancelProjectDialog, ReopenProjectDialog } from "./project-close";
 import { DatesDialog, HoldDialog, ResumeDialog } from "./project-dialogs";
@@ -62,6 +62,8 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
   const [notice, setNotice] = useState("");
   const [dialog, setDialog] = useState<ProjectDialog | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [overviewError, setOverviewError] = useState("");
   const panel = useDetailsPanel();
   useWorkspaceBreadcrumb(detail ? detail.project.name : undefined);
 
@@ -70,6 +72,11 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
     catch (cause) { setError(cause instanceof Error ? cause.message : t("The project didn't load.")); }
   }, [api, projectId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  // The Overview's read (blockers, plan per stage, health from the records, money, people): after every change too.
+  const loadOverview = useCallback(async () => {
+    try { setOverview(await api.overview(projectId)); setOverviewError(""); } catch (cause) { setOverviewError(cause instanceof Error ? cause.message : t("The overview didn't load.")); }
+  }, [api, projectId, t]);
+  useEffect(() => { if (refresh) queueMicrotask(() => void loadOverview()); }, [loadOverview, refresh]);
   // Someone else's change on this project (a stage, a report, a decision in the portal) shows without a reload.
   useLiveInvalidate(workspaceId, [`project:${projectId}`], () => { if (!dialog) void load(); });
 
@@ -105,14 +112,19 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
   const rights = detail.money ?? { costs: detail.canSeeMoney, margin: detail.canSeeMoney, client: detail.canSeeMoney };
   const go = (value: ProjectSection) => move(value, `/workspace/projects/${projectId}${value === "overview" ? "" : `/${value}`}`);
   const details = <ProjectDetails detail={detail} save={save} onReload={() => void load()} onDialog={setDialog} />;
+  // On the Overview the record's sidebar holds the details; elsewhere they stay one click away.
+  const onOverview = section === "overview";
+  const health = overview?.health?.health;
 
-  return <div className={styles.page} data-details={panel.open && panel.inline ? "open" : undefined}>
-    <ProjectHeader detail={detail} next={next} detailsOpen={panel.open && panel.inline} onToggleDetails={panel.toggle} onDialog={setDialog} onRename={(name) => save("rename", { name })} onReload={() => void load()} />
+  return <div className={styles.page} data-details={!onOverview && panel.open && panel.inline ? "open" : undefined}>
+    <ProjectHeader detail={detail} next={onOverview ? null : next} detailsOpen={panel.open && panel.inline} onToggleDetails={panel.toggle} onDialog={setDialog} onRename={(name) => save("rename", { name })} onReload={() => void load()}
+      health={health} record={onOverview} />
     <div className={styles.layout}>
       <div className={styles.work}>
         {notice ? <InlineNotice tone="error" message={notice} /> : null}
         <Tabs tour="project-tab" selectedKey={section} onSelectionChange={(key) => go(key as ProjectSection)} items={[
-          { id: "overview", label: t("Overview"), panel: <ProjectOverview api={api} detail={detail} run={run} onTeam={() => setDialog("team")} refreshKey={refresh} /> },
+          { id: "overview", label: t("Overview"), panel: <ProjectOverview api={api} detail={detail} overview={overview} error={overviewError} onRetry={() => void loadOverview()} run={run} onTeam={() => setDialog("team")} next={next}
+            details={<ProjectDetails detail={detail} save={save} onReload={() => void load()} onDialog={setDialog} compact />} /> },
           { id: "scope", label: t("Scope"), panel: <ProjectScope workspaceId={workspaceId} projectId={projectId} version={project.version} run={run} /> },
           { id: "plan", label: t("Plan"), panel: <ProjectPlan workspaceId={workspaceId} projectId={projectId} /> },
           { id: "money", label: t("Money"), panel: <ProjectMoneyTab workspaceId={workspaceId} projectId={projectId} rights={rights} /> },
@@ -121,9 +133,9 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
           { id: "updates", label: t("Updates"), panel: <ProjectUpdates detail={detail} run={run} workspaceId={workspaceId} projectId={projectId} /> },
         ]} />
       </div>
-      {panel.inline && panel.open ? <aside className={styles.details} aria-label={t("Details")}>{details}</aside> : null}
+      {!onOverview && panel.inline && panel.open ? <aside className={styles.details} aria-label={t("Details")}>{details}</aside> : null}
     </div>
-    {!panel.inline ? <InspectorSheet isOpen={panel.open} title={t("Details")} size="sm" onOpenChange={(open) => { if (!open) panel.close(); }}>{details}</InspectorSheet> : null}
+    {!panel.inline && !onOverview ? <InspectorSheet isOpen={panel.open} title={t("Details")} size="sm" onOpenChange={(open) => { if (!open) panel.close(); }}>{details}</InspectorSheet> : null}
 
     {dialog === "finish_stage" && current ? <FinishStageDialog detail={detail} stage={current} run={run} onClose={() => setDialog(null)} /> : null}
     {dialog === "confirm_check" && current && pendingCheck ? <ConfirmCheckDialog stage={current} checkKey={pendingCheck.key} label={t(pendingCheck.label as never)} run={run} onClose={() => setDialog(null)} /> : null}
