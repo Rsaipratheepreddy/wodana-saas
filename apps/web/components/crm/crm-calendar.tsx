@@ -21,7 +21,7 @@ import { CrmDateTimeField } from "./crm-date-time-field";
 function safeGoogleLink(value: unknown) { try { const url = new URL(String(value)); return url.protocol === "https:" && ["calendar.google.com", "www.google.com"].includes(url.hostname) ? url.href : undefined; } catch { return undefined; } }
 
 const subscribeToHydration = () => () => {};
-export function CrmCalendar(props: { workspaceId: string; currentUserId?: string; canView?: boolean; revision?: number }) {
+export function CrmCalendar(props: { workspaceId: string; currentUserId?: string; canView?: boolean; canManageBooking?: boolean; revision?: number }) {
   const t = useT();
   const settings = useDesignSystem();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
@@ -31,7 +31,7 @@ export function CrmCalendar(props: { workspaceId: string; currentUserId?: string
   return <DesignSystemProvider {...settings} className={`${styles.provider} ${workspaceColors.theme}`} portalContainer={portal} ref={setPortal}>{props.canView === false ? <NoAccessState area={t("Calendar")} /> : ready ? <LocalCrmCalendar {...props} /> : <p role="status">{t("Loading your local calendar…")}</p>}</DesignSystemProvider>;
 }
 
-function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { workspaceId: string; currentUserId?: string; revision?: number }) {
+function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canManageBooking = false }: { workspaceId: string; currentUserId?: string; revision?: number; canManageBooking?: boolean }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   // Days, hours and "today" are the workspace's wall clock (CAL-2): a Dubai meeting stays at 10:00 in India.
@@ -160,7 +160,7 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
   const whose = scope === "member" ? memberId : scope;
   const whoseItems = [{ id: "organization", label: t("Everyone") }, ...(!membersDenied ? [{ id: "personal", label: t("Only me") },
     ...members.filter(member => member.status !== "suspended" && member.userId !== currentUserId).map(member => ({ id: member.id, label: member.displayName }))] : [])];
-  const menu = [{ id: "schedule", label: t("Schedule a CRM meeting") }, ...(!connectionsDenied ? [{ id: "google", label: googleConnected ? t("Manage Google") : t("Connect Google") }] : []), { id: "refresh", label: t("Refresh") }];
+  const menu = [{ id: "schedule", label: t("Schedule a CRM meeting") }, ...(!connectionsDenied ? [{ id: "google", label: googleConnected ? t("Manage Google") : t("Connect Google") }] : []), ...(canManageBooking ? [{ id: "booking", label: t("Booking pages") }] : []), { id: "refresh", label: t("Refresh") }];
   const notice = memberError ? memberError : scope === "personal" && members.length > 0 && !currentMember ? t("Your workspace membership could not be identified.") : connectionError
     ? `${connectionError} ${t("Workspace events are still available.")}` : project?.key === key && project.error ? project.error
     : connectionIds.length && google?.key === googleKey && google.error ? google.error : "";
@@ -183,6 +183,7 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
         <IconMenuButton ariaLabel={t("Calendar options")} items={menu} onAction={(id) => {
           if (id === "schedule") setCreateOn(newEventDate());
           else if (id === "google") router.push("/workspace/integrations?connect=google_workspace");
+          else if (id === "booking") router.push("/workspace/crm/booking-types");
           else { setRefresh(n => n + 1); setConnectionError(""); }
         }} />
       </div>

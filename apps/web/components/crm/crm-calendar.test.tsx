@@ -56,6 +56,19 @@ describe("CRM calendar", () => {
     expect(push).toHaveBeenCalledWith("/workspace/integrations?connect=google_workspace");
   });
 
+  it("opens the booking pages from the ⋯ menu, only for someone who manages them", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<CrmCalendar workspaceId={workspaceId} currentUserId={userId} />);
+    await user.click(within(await screen.findByRole("toolbar", { name: "Calendar controls" })).getByRole("button", { name: "Calendar options" }));
+    expect(await screen.findByRole("menuitem", { name: "Refresh" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Booking pages" })).toBeNull();
+    unmount();
+    render(<CrmCalendar workspaceId={workspaceId} currentUserId={userId} canManageBooking />);
+    await user.click(within(await screen.findByRole("toolbar", { name: "Calendar controls" })).getByRole("button", { name: "Calendar options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Booking pages" }));
+    expect(push).toHaveBeenCalledWith("/workspace/crm/booking-types");
+  });
+
   it("shows real activities, excludes cancellations and supports the day/search view", async () => {
     const user = userEvent.setup(); render(<CrmCalendar workspaceId={workspaceId} />);
     expect(await screen.findByRole("button", { name: /CRM Design consultation/ })).toBeInTheDocument();

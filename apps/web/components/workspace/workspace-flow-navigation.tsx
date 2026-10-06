@@ -65,10 +65,10 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
   }
 
   const activityActive = pathname === "/workspace/crm/calendar" || (pathname === "/workspace/crm/follow-ups" && ["activity", "schedule"].includes(searchParams.get("view") ?? ""));
-  if (activityActive || pathname === "/workspace/crm/conversations" || pathname.startsWith("/workspace/crm/customers") || pathname.startsWith("/workspace/crm/organizations")) return null;
+  if (activityActive || pathname === "/workspace/crm/booking-types" || pathname === "/workspace/crm/conversations" || pathname.startsWith("/workspace/crm/customers") || pathname.startsWith("/workspace/crm/organizations")) return null;
   if (String(module.id) === "crm") {
     const allowed = new Set(module.navigation.flatMap(group => group.items).map(item => item.id));
-    const settings = ["assignment", "sla", "options", "automations"].includes(section ?? "") || pathname === "/workspace/crm/booking-types";
+    const settings = ["assignment", "sla", "options", "automations"].includes(section ?? "");
     const tabs = [
       { id: "leads", icon: "enquiries", label: tKey("Enquiries"), href: "/workspace/crm/leads", active: !section && (pathname === "/workspace/crm" || pathname.endsWith("/leads")) },
       { id: "opportunities", icon: "deals", label: tKey("Pipeline"), href: "/workspace/crm/opportunities", active: pathname.includes("/opportunities") },
@@ -78,7 +78,7 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
       { id: allowed.has("crm-settings") ? "crm-settings" : "automations", icon: "settings", label: tKey("Settings"), href: allowed.has("crm-settings") ? "/workspace/crm/leads?section=assignment" : "/workspace/crm/leads?section=automations", active: settings },
     ].filter(tab => allowed.has(tab.id));
     const settingsTabs = [
-      ...(allowed.has("crm-settings") ? [{ key: "assignment", label: t("Assignment") }, { key: "sla", label: t("Response targets") }, { key: "options", label: t("Fields") }, { key: "booking", label: t("Booking pages"), href: "/workspace/crm/booking-types" }] : []),
+      ...(allowed.has("crm-settings") ? [{ key: "assignment", label: t("Assignment") }, { key: "sla", label: t("Response targets") }, { key: "options", label: t("Fields") }] : []),
       ...(allowed.has("automations") ? [{ key: "automations", label: t("Automations") }] : []),
     ];
     // A single tab says nothing the page doesn't: each bar shows only when there is a choice.

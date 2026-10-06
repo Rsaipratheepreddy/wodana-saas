@@ -66,7 +66,9 @@ export async function getCrmScreenPageData(id: CrmScreenId): Promise<CrmScreenPa
   const token = (await cookies()).get(ACCESS_COOKIE)?.value;
   if (!token) redirect("/login");
   const page = base(id, membership.workspaceId);
-  if (id === "calendar" || id === "follow-ups") page.supporting = { currentUserId: authProfile.id };
+  if (id === "calendar" || id === "follow-ups") page.supporting = { currentUserId: authProfile.id,
+    // Booking pages are managed with the Sales settings permission (the service checks it too).
+    canManageBooking: membership.roles.some((role) => role === "owner" || role === "administrator") || Boolean(membership.allowedPermissions?.includes("crm.settings.manage")) };
 
   if (id === "crm-overview") {
     const today = await backend(token, membership.workspaceId, "today");

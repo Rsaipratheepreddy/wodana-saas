@@ -79,6 +79,8 @@ function routeTable() {
     { id: "sales-tasks", label: "Follow-ups", href: "/workspace/crm/follow-ups?view=activity", parent: "home", homeTab: true, paths: ["/workspace/crm/follow-ups"], query: { view: ["activity"] } },
     { id: "calendar", label: "Calendar", href: "/workspace/crm/follow-ups?view=schedule", nav: "daily-follow-ups", paths: ["/workspace/crm/follow-ups"], query: { view: ["schedule", "calendar"] } },
     { id: "calendar-legacy", label: "Calendar", href: "/workspace/crm/follow-ups?view=schedule", nav: "daily-follow-ups", paths: ["/workspace/crm/calendar"] },
+    // The pages people book time on (Calendly-style) belong to the calendar: Calendar › Booking pages.
+    { id: "booking-pages", label: "Booking pages", href: "/workspace/crm/booking-types", parent: "calendar", paths: ["/workspace/crm/booking-types"] },
     { id: "inbox", label: "Inbox", href: "/workspace/crm/conversations", nav: "inbox", paths: ["/workspace/crm/conversations"] },
     // Every notice, opened from the bell.
     { id: "notifications", label: "Notifications", href: "/workspace/notifications", parent: "home", paths: ["/workspace/notifications"] },

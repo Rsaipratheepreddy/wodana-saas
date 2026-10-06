@@ -18,7 +18,7 @@ import styles from "./booking.module.css";
 type Tab = "types" | "bookings" | "availability";
 
 /**
- * Sales › Settings › Booking pages: the types people can book (each with its share sheet), the bookings
+ * Calendar › Booking pages: the types people can book (each with its share sheet), the bookings
  * themselves (confirm, decline, complete, no-show) and each person's extra or blocked hours.
  */
 export function BookingTypesPage({ workspaceId, initialData }: { workspaceId: string; initialData?: BookingTypesData }) {

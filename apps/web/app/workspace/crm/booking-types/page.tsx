@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { BookingTypesPage } from "@/components/booking/booking-types-page";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 
-/** Sales › Settings › Booking pages (plan §6.5b). The service checks the Sales settings permission. */
+/** Calendar › Booking pages (plan §6.5b), opened from the calendar's menu. The service checks the Sales settings permission. */
 export default async function BookingTypesRoute() {
   const profile = await getAuthenticatedProfile();
   const membership = profile.memberships[0];
