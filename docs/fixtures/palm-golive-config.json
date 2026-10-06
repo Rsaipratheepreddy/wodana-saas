@@ -1,18 +1,50 @@
 {
   "description": "Palm Living go-live configuration (plan §0.5 items 12-13; deploy checklist 6 Oct). Apply with: node dist/ops/ops-cli.js configure --workspace <slug> --as <member> --profile palm-golive-config.json [--apply]. Values marked TBC by Palm are left out or null.",
   "enquiryTypes": {
-    "archive": ["concepts_early_ideas"]
+    "archive": [
+      "concepts_early_ideas"
+    ]
   },
   "vehicles": [
-    { "name": "Peugeot Partner", "plate": "Z18436" },
-    { "name": "HiAce Van", "plate": "S/79121", "type": "Van" },
-    { "name": "Peugeot Boxer", "plate": "CC98435" },
-    { "name": "Jetour T2", "plate": "CC96859" },
-    { "name": "Defender", "plate": "BB85164" },
-    { "name": "Chevrolet", "plate": "N 97453" },
-    { "name": "New Bus", "plate": "DD70969", "type": "Bus" },
-    { "name": "Ashok Partner (Pick up)", "plate": "69912 Private G", "type": "Pick-up" },
-    { "name": "Ford Ranger Raptor", "plate": "EE55362" }
+    {
+      "name": "Peugeot Partner",
+      "plate": "Z18436"
+    },
+    {
+      "name": "HiAce Van",
+      "plate": "S/79121",
+      "type": "Van"
+    },
+    {
+      "name": "Peugeot Boxer",
+      "plate": "CC98435"
+    },
+    {
+      "name": "Jetour T2",
+      "plate": "CC96859"
+    },
+    {
+      "name": "Defender",
+      "plate": "BB85164"
+    },
+    {
+      "name": "Chevrolet",
+      "plate": "N 97453"
+    },
+    {
+      "name": "New Bus",
+      "plate": "DD70969",
+      "type": "Bus"
+    },
+    {
+      "name": "Ashok Partner (Pick up)",
+      "plate": "69912 Private G",
+      "type": "Pick-up"
+    },
+    {
+      "name": "Ford Ranger Raptor",
+      "plate": "EE55362"
+    }
   ],
   "routes": [
     {
@@ -23,18 +55,45 @@
           "key": "permit",
           "ownerRole": "installation_lead",
           "before": "Delivery and installation",
-          "checks": ["permit_collected"]
+          "checks": [
+            "permit_collected"
+          ]
         }
       ],
       "addChecks": [
-        { "stage": "Technical drawings", "checks": ["drawings_uploaded", "drawings_site_checked", "drawings_client_approved", "factory_slot_booked"] },
-        { "stage": "Delivery and installation", "checks": ["installation_scheduled", "goods_delivered", "installation_done"] },
-        { "stage": "Production", "checks": ["everything_made"] }
+        {
+          "stage": "Technical drawings",
+          "checks": [
+            "drawings_uploaded",
+            "drawings_site_checked",
+            "drawings_client_approved",
+            "factory_slot_booked"
+          ]
+        },
+        {
+          "stage": "Delivery and installation",
+          "checks": [
+            "installation_scheduled",
+            "goods_delivered",
+            "installation_done"
+          ]
+        },
+        {
+          "stage": "Production",
+          "checks": [
+            "everything_made"
+          ]
+        }
       ]
     }
   ],
   "factory": {
-    "productionSteps": ["Scheduled", "In Production", "Quality Check", "Ready"],
+    "productionSteps": [
+      "Scheduled",
+      "In Production",
+      "Quality Check",
+      "Ready"
+    ],
     "clientPaymentReminderDays": 7,
     "permits": {
       "requiredForDeliveriesAndInstallations": true,
@@ -47,30 +106,115 @@
     "validityDays": 7,
     "qsReview": true,
     "qsPrices": "rules",
-    "qsWorkPackages": ["Joinery", "Bespoke furniture"]
+    "qsWorkPackages": [
+      "Joinery",
+      "Bespoke furniture"
+    ]
   },
   "firstResponse": {
     "minutes": 60,
-    "workingCalendar": { "days": ["mon", "tue", "wed", "thu", "fri"], "start": "09:00", "end": "18:00" }
+    "workingCalendar": {
+      "days": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+      ],
+      "start": "09:00",
+      "end": "18:00"
+    }
   },
   "financeRequests": {
     "inbox": "accounts@palmlivingae.com",
     "paymentMethods": [
-      { "name": "Bank transfer / card", "refundDays": null },
-      { "name": "Stripe", "refundDays": null },
-      { "name": "Tabby", "refundDays": null }
+      {
+        "name": "Bank transfer / card",
+        "refundDays": null
+      },
+      {
+        "name": "Stripe",
+        "refundDays": null
+      },
+      {
+        "name": "Tabby",
+        "refundDays": null
+      }
     ]
   },
   "approvals": {
-    "payableRequest": { "firstApproverRole": "finance", "secondApproverRole": null, "thresholdAmount": null }
+    "payableRequest": {
+      "firstApproverRole": "finance",
+      "secondApproverRole": null,
+      "thresholdAmount": null
+    }
   },
   "rolePermissions": [
-    { "roles": ["administrator", "team_ops_admin"], "permissions": ["reports.management.view", "reports.management.targets"] }
+    {
+      "roles": [
+        "administrator",
+        "team_ops_admin"
+      ],
+      "permissions": [
+        "reports.management.view",
+        "reports.management.targets"
+      ]
+    }
   ],
   "design": {
     "renderInternalDays": 35,
     "renderClientDays": 56,
     "revisionsIncluded": 2
   },
-  "clientUpdates": { "mode": "call", "frequency": "weekly" }
+  "clientUpdates": {
+    "mode": "call",
+    "frequency": "weekly"
+  },
+  "orderPaths": [
+    {
+      "enquiryType": "interior_design_furniture",
+      "path": null,
+      "boqRequired": true
+    },
+    {
+      "enquiryType": "full_fit_out",
+      "path": null,
+      "boqRequired": true
+    },
+    {
+      "enquiryType": "renovation_fit_out",
+      "path": null,
+      "boqRequired": true
+    },
+    {
+      "enquiryType": "interior_design",
+      "path": null,
+      "boqRequired": true
+    },
+    {
+      "enquiryType": "furniture_only",
+      "path": "take_home_now",
+      "boqRequired": false
+    },
+    {
+      "enquiryType": "furniture_only",
+      "path": "in_stock_delivery",
+      "boqRequired": false
+    },
+    {
+      "enquiryType": "furniture_only",
+      "path": "supplier_order",
+      "boqRequired": false
+    },
+    {
+      "enquiryType": "furniture_only",
+      "path": "core_collection_factory",
+      "boqRequired": false
+    },
+    {
+      "enquiryType": "furniture_only",
+      "path": "bespoke",
+      "boqRequired": true
+    }
+  ]
 }
