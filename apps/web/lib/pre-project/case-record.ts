@@ -291,6 +291,8 @@ export function caseTeam({ record, commercial, journey, project }: CaseRecordInp
   }
   const lead = project?.team.find((role) => role.role === "project_manager")?.member;
   if (lead) add(lead.membershipId, lead.name, tKey("Project manager"), lead.email ?? byId(lead.membershipId)?.email);
+  // PLM-100: the team tagged on the enquiry and the opportunity, in the firm's own role names.
+  for (const role of record.team ?? []) if (role.member) add(role.member.membershipId, role.member.name, role.label as MessageKey, role.member.email ?? byId(role.member.membershipId)?.email);
   const client = record.customerName ? { id: `client-${record.customerId}`, name: record.customerName, roles: [tKey("Client")], email: commercial?.customerEmail || null, phone: commercial?.customerPhone || null } : null;
   return { client, team: [...people.values()] };
 }

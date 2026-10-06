@@ -337,3 +337,10 @@ a.jobChip:hover { text-decoration: underline; text-underline-offset: 2px; }
 .listHeaderTop :global(.wd-list-tabs) { gap: var(--wd-space-0-5); }
 .threadHeading .headingLabels .jobChip { max-inline-size: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 48rem) { .threadHeading .headingLabels :global(.wd-label-chip) { display: none; } }
+
+/* Email conversations (PLM-025): the channel mark and subject in the list, the subject in the heading, every file of an email. */
+.channelMark { flex-shrink: 0; color: var(--wd-color-text-tertiary); }
+.previewSubject { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); margin-inline-end: var(--wd-space-1); }
+.headingChannel { display: inline-flex; align-items: center; gap: var(--wd-space-1); min-inline-size: 0; overflow-wrap: anywhere; }
+.emailFiles { display: grid; gap: var(--wd-space-1); margin-block-start: var(--wd-space-2); }
+.fullEmail { margin-block-start: var(--wd-space-2); padding-block-start: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-border); color: var(--wd-color-text-secondary); }

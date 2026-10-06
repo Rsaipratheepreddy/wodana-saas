@@ -88,10 +88,10 @@ describe("finance", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByRole("heading", { level: 1, name: "Finance" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Enter invoice" })).toHaveLength(1);
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Supplier invoices1", "Payments", "Payment runs", "Petty cash", "Client invoices", "More"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Supplier invoices1", "Payments", "Payment runs", "Client invoices", "Requests", "More"]);
     await userEvent.click(screen.getByRole("tab", { name: "More" }));
     expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/finance/suppliers");
-    expect(within(screen.getByRole("group", { name: "More" })).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Owed to suppliers", "Accounting"]);
+    expect(within(screen.getByRole("group", { name: "More" })).getAllByRole("button").map((tab) => tab.textContent)).toEqual(["Owed to suppliers", "Petty cash", "Accounting"]);
   });
 
   it("lists the invoices still to act on with where each stands, and shows why one is held", async () => {

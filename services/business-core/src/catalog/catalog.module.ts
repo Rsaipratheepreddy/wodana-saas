@@ -52,5 +52,5 @@ export class CatalogController {
     return new StreamableFile(file.body,{type:file.contentType,disposition:`${file.preview||(view==="1"&&file.contentType==="application/pdf")?"inline":"attachment"}; filename*=UTF-8''${encodeURIComponent(file.name)}`});
   }
 }
-@Module({imports:[WorkspacesModule],controllers:[CatalogController,CatalogV2Controller,CatalogItemImagesController],providers:[CatalogService,CatalogAssetsService,BrandAssetStorageService,CatalogV2Service,CatalogItemImagesService]})
+@Module({imports:[WorkspacesModule],controllers:[CatalogController,CatalogV2Controller,CatalogItemImagesController],providers:[CatalogService,CatalogAssetsService,BrandAssetStorageService,CatalogV2Service,CatalogItemImagesService],exports:[CatalogV2Service]})
 export class CatalogModule {}

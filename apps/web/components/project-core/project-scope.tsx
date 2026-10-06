@@ -13,13 +13,16 @@ import { projectApi } from "@/lib/project-core/client";
 import { createVariation } from "@/lib/project-core/variations";
 import type { LineHistoryEntry, LiveScope, ScopeLine, ScopePackage, Supply } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
+import { factoryApi } from "@/lib/factory/client";
+import { SampleRequests } from "../factory/samples";
 import { ProjectMaterials } from "./project-materials";
+import { ProjectDrawings } from "./project-drawings";
 import { SealedDocument } from "./sealed-document";
 import styles from "./project-core.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>, options?: { inDialog?: boolean }) => Promise<boolean>;
-type View = "items" | "materials" | "changes" | "sealed";
-const VIEWS: View[] = ["items", "materials", "changes", "sealed"];
+type View = "items" | "materials" | "drawings" | "changes" | "sealed";
+const VIEWS: View[] = ["items", "materials", "drawings", "changes", "sealed"];
 type Group = "package" | "area";
 const SUPPLIES: Supply[] = ["make", "buy", "ready_made", "subcontract", "client", "site_work"];
 const NONE = "__none";
@@ -49,7 +52,9 @@ export function addAmounts(values: string[]) {
  * package or by area. A line opens its history; a package opens to be named, owned and dated.
  * The sealed documents it all comes from are one tap away.
  */
-export function ProjectScope({ workspaceId, projectId, version, run }: { workspaceId: string; projectId: string; version: number; run: Run }) {
+export function ProjectScope({ workspaceId, projectId, version, run, onChanged }: { workspaceId: string; projectId: string; version: number; run: Run;
+  /** A change made here outside the project's command (a drawing uploaded): the project reloads. */
+  onChanged?: () => void }) {
   const t = useT();
   const format = useProjectFormat();
   const supplies = useSupplyLabels();
@@ -103,7 +108,7 @@ export function ProjectScope({ workspaceId, projectId, version, run }: { workspa
 
   return <div className={styles.scopeView}>
     <PillTabs ariaLabel={t("Scope")} selectedKey={view} onSelectionChange={(key) => { setView(key as View); setSeal(null); }}
-      items={[{ id: "items", label: t("Items") }, { id: "materials", label: t("Materials") }, { id: "changes", label: t("Changes") }, { id: "sealed", label: t("Sealed") }]} />
+      items={[{ id: "items", label: t("Items") }, { id: "materials", label: t("Materials") }, { id: "drawings", label: t("Drawings") }, { id: "changes", label: t("Changes") }, { id: "sealed", label: t("Sealed") }]} />
 
     {view === "items" ? <>
       <div className={styles.scopeToolbar}>
@@ -125,7 +130,12 @@ export function ProjectScope({ workspaceId, projectId, version, run }: { workspa
         onSectionAction={group === "package" && scope.canManage ? (id) => { const found = scope.packages.find((item) => item.id === id); if (found) setEditing(found); } : undefined} />
         : <EmptyState illustration={null} title={t("No items")} />}
       <p className={styles.agreedLine}><span>{t("Agreed value")}</span><strong>{money(agreed)}</strong></p>
-    </> : view === "materials" ? <ProjectMaterials workspaceId={workspaceId} projectId={projectId} version={version} run={run} lines={scope.lines} />
+    </> : view === "materials" ? <>
+      <ProjectMaterials workspaceId={workspaceId} projectId={projectId} version={version} run={run} lines={scope.lines} />
+      {/* PLM-061: the samples the design team asked the factory for. */}
+      <SampleRequests api={factoryApi(workspaceId)} caseId={scope.caseId} />
+    </>
+    : view === "drawings" ? <ProjectDrawings workspaceId={workspaceId} projectId={projectId} version={version} onChanged={onChanged} />
     : view === "changes" ? <Changes workspaceId={workspaceId} projectId={projectId} scope={scope} />
     : seal ? <SealedDocument workspaceId={workspaceId} projectId={projectId} sealId={seal} onBack={() => setSeal(null)} />
       : <ul className={styles.sealList} aria-label={t("Sealed documents")}>

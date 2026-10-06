@@ -12,6 +12,7 @@
 
 .sideLink { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-decoration: none; }
 .sideLink:hover { color: var(--wd-color-text); }
+.sideActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); margin-block-start: var(--wd-space-2); }
 
 /* The crew on site, under the team. */
 .crew { display: grid; gap: var(--wd-space-0-5); padding-block: var(--wd-space-1); padding-inline-start: calc(var(--wd-space-6) + var(--wd-space-2)); font-size: var(--wd-text-sm); }

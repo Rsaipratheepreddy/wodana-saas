@@ -16,7 +16,8 @@ const PROJECTS_VIEW = ["projects.view", "projects.manage"];
 export const PURCHASING_VIEW = ["purchasing.view", "purchasing.manage", "vendors.view", "vendors.manage"];
 export const STOCK_VIEW = ["stock.view", "stock.manage", "stock.adjust", "stock.receive"];
 export const FACTORY_VIEW = ["factory.view", "factory.manage", "factory.report", "factory.approve"];
-export const FINANCE_VIEW = ["payables.view", "receivables.view", "accounting.manage"];
+// Whoever asks Finance for something (finance_requests.raise) opens Finance for its Requests tab only.
+export const FINANCE_VIEW = ["payables.view", "receivables.view", "accounting.manage", "finance_requests.raise", "finance_requests.manage"];
 
 /** Navigation item id → what its page needs (see `workspaceModules`). Items not listed are open to every member. */
 export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
@@ -30,6 +31,7 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "project-settings": [PROJECTS_VIEW],
   "purchasing-settings": [["purchasing.view", "workspace.settings.manage"]],
   "inventory-settings": [[...STOCK_VIEW, "purchasing.view", "workspace.settings.manage"]],
+  "fulfilment-settings": [["crm.settings.manage"]],
   "factory-settings": [[...FACTORY_VIEW, "workspace.settings.manage"]],
   "accounting-settings": [["accounting.manage"]],
   "attendance-settings": [["hrms.manage"]],
@@ -39,6 +41,9 @@ export const NAVIGATION_ACCESS: Record<string, AccessRule> = {
   "audit-log": [["audit.view"]],
   integrations: [ORGANIZATION_READ, ["module.integrations.read", "integrations.view"]],
   "client-portal-settings": [["portal.manage", "pre_projects.view", "projects.view"]],
+  // Management dashboards (PLM-134): the System Owner (owner/admin) for now; managers are given them later.
+  "management-reports": [["reports.management.view"]],
+  "report-targets": [["reports.management.targets"]],
   "reminder-settings": [["crm.automations.view"]],
   "inbox-settings": [["crm.communications.view", "crm.settings.manage"]],
   "delivery-health": [["workspace.settings.manage", "integrations.manage"]],
@@ -94,12 +99,14 @@ export const FINANCE_TAB_ACCESS: Record<string, AccessRule> = {
   suppliers: [["payables.view"]],
   "petty-cash": [["payables.view"]],
   "client-invoices": [["receivables.view"]],
+  requests: [["finance_requests.raise", "finance_requests.manage"]],
   accounting: [["accounting.manage"]],
 };
 
 /** Workspace areas reached by address (not only from navigation) → what opening them needs. */
 const PATH_ACCESS: Array<[string, AccessRule]> = [
   ["/workspace/finance", [FINANCE_VIEW]],
+  ["/workspace/reports", [["reports.management.view"]]],
   ["/workspace/purchasing", [PURCHASING_VIEW]],
   ["/workspace/inventory", [STOCK_VIEW]],
   ["/workspace/factory", [FACTORY_VIEW]],

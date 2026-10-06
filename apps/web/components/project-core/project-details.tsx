@@ -33,7 +33,7 @@ export function ProjectDetails({ detail, save, onReload, onDialog, planEnd, comp
     entry.roles.push(t(role.label as never));
     return people.set(role.member!.membershipId, entry);
   }, new Map<string, { name: string; roles: string[] }>())];
-  const missing = detail.team.filter((role) => !role.member);
+  const missing = detail.team.filter((role) => !role.member && !role.notApplicable);
   const late = planEnd && project.promiseDate && planEnd > project.promiseDate;
   // The plan's measure, never below the stages already behind the project.
   const percent = projectPercent(detail);
@@ -60,6 +60,12 @@ export function ProjectDetails({ detail, save, onReload, onDialog, planEnd, comp
         : <span className={styles.muted}>{t("Not started")}</span>}</dd></div>}
       <EditableField canEdit={manage} items={(["normal", "high", "critical"] as const).map((id) => ({ id, label: priorityLabel[id] }))} kind="select" label={t("Priority")}
         onReload={onReload} onSave={(priority) => save("set_priority", { priority })} value={project.priority} />
+      {/* PLM-068: the factory slot, when the route asks for one or a slot is booked. */}
+      {detail.drawings?.factorySlot || detail.factorySlot ? <div><dt>{t("Factory slot")}</dt><dd>
+        {detail.factorySlot ? format.short(detail.factorySlot.date) : <span className={styles.muted}>{t("Not booked")}</span>}
+        {detail.factorySlot?.note ? <small>{detail.factorySlot.note}</small> : null}
+        {detail.canBookSlot ? <button type="button" className={styles.panelAction} onClick={() => onDialog("factory_slot")}>{detail.factorySlot ? t("Change") : t("Book the factory slot")}</button> : null}
+      </dd></div> : null}
       {project.templateName ? <div><dt>{t("Route")}</dt><dd>{project.templateName}</dd></div> : null}
       <div><dt>{t("Planning")}</dt><dd><Link className={styles.detailLink} href={`/workspace/pre-projects/cases/${project.caseId}/overview`}>{project.opportunityReference ?? t("Open")}</Link></dd></div>
     </dl>

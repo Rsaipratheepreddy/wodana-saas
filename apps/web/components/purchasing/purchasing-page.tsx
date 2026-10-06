@@ -72,7 +72,7 @@ export function PurchasingPage({ workspaceId, section: initialSection }: { works
       { id: "deliveries", label: t("Deliveries"), panel: <Deliveries api={api} refreshKey={refresh} openId={receiptId} returnId={returnId} unmatchedId={unmatchedId} onOpen={(id) => go("deliveries", id)}
         onOpenReturn={(id) => go("deliveries", id, "return")} onOpenUnmatched={(id) => go("deliveries", id, "unmatched")} onOpenOrder={(id) => go("orders", id)}
         projectId={projectId} onProject={setProjectId} /> },
-      { id: "suppliers", label: t("Suppliers"), panel: <Suppliers api={api} adding={addingSupplier} onAddingChange={setAddingSupplier} /> },
+      { id: "suppliers", label: t("Suppliers"), panel: <Suppliers api={api} adding={addingSupplier} onAddingChange={setAddingSupplier} importLinkId={params.get("import")} /> },
     ] });
   return <PageShell title={t("Purchasing")} action={action} tabs={tabs}>
     {content}

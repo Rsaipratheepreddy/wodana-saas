@@ -213,7 +213,8 @@ integration("projects core (plan §6.10)", () => {
       expect(Number(detail.project.total)).toBe(total);
       expect(detail.team.find((role) => role.role === "project_manager")?.member?.name).toBe("Omar Manager");
       expect(detail.team.find((role) => role.role === "account_manager")?.member?.name).toBe("Dana Designer");
-      expect(detail.stages).toHaveLength(8);
+      // The generic route, with Permit collection before delivery for new workspaces (PLM-136).
+      expect(detail.stages).toHaveLength(9);
       expect(detail.stages[0]).toMatchObject({ key: "kickoff", status: "current" });
       expect(detail.next).toMatchObject({ text: "Kickoff meeting held with the client", owner: "Omar Manager" });
 

@@ -5,10 +5,13 @@ import type { CrmEventsService } from "../crm/shared/crm-events.service";
 import type { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
 import type { RequestActor } from "../auth/actor";
 import { ensureJobForSource } from "../jobs/job-identity.store";
+import { carryTeamToCase } from "../project-core/project-team";
 
 vi.mock("../jobs/job-identity.store", () => ({
   ensureJobForSource: vi.fn().mockResolvedValue({ id: "job-1", reference: "J-000001", workspaceId: "workspace-1" }),
 }));
+// The team carried from the opportunity (PLM-100) is covered by its own specs and the integration test.
+vi.mock("../project-core/project-team", () => ({ carryTeamToCase: vi.fn().mockResolvedValue([]), readCaseTeam: vi.fn().mockResolvedValue([]) }));
 
 const actor = { subject: "test", email: "test@example.com", displayName: "Test", provider: "development" } as RequestActor;
 function setup(status = "open", existing = false) {
@@ -50,6 +53,8 @@ describe("pre-project case boundary", () => {
     expect(ensureJobForSource).toHaveBeenCalledWith(
       expect.anything(), "workspace-1", { type: "case", id: "case-1" }, "user-1",
     );
+    // PLM-100: the opportunity's team joins the new case.
+    expect(carryTeamToCase).toHaveBeenCalledWith(expect.anything(), "workspace-1", "case-1", "user-1");
     expect(events.record).toHaveBeenCalledOnce();
   });
   it.each(["lost", "paused", "cancelled"])("does not start a new case for %s opportunity", async (status) => {

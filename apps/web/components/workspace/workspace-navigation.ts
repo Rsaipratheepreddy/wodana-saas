@@ -130,6 +130,8 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/audit-logs", icon: "audit", id: "audit-log", label: tKey("Audit history") },
           { href: "/workspace/organizations", icon: "companies", id: "organizations-account", label: tKey("Manage workspaces"), showInSidebar: false },
           { href: "/workspace/gallery", icon: "designs", id: "gallery", label: tKey("Gallery"), showInSidebar: false },
+          // Management dashboards (PLM-134): their own sidebar entry under Business, not a Settings page.
+          { href: "/workspace/reports", icon: "reports", id: "management-reports", label: tKey("Reports"), showInSidebar: false },
         ],
       },
       {
@@ -143,12 +145,14 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/purchasing", icon: "procurement", id: "purchasing-settings", label: tKey("Purchasing") },
           { href: "/workspace/settings/inventory", icon: "materialPlan", id: "inventory-settings", label: tKey("Stock places") },
           { href: "/workspace/settings/factory", icon: "production", id: "factory-settings", label: tKey("Factory") },
+          { href: "/workspace/settings/fulfilment", icon: "procurement", id: "fulfilment-settings", label: tKey("Orders by path") },
           { href: "/workspace/settings/accounting", icon: "integrations", id: "accounting-settings", label: tKey("Accounting") },
           { href: "/workspace/settings/attendance", icon: "calendar", id: "attendance-settings", label: tKey("Attendance & leave") },
           { href: "/workspace/settings/inbox", icon: "conversations", id: "inbox-settings", label: tKey("Inbox") },
           { href: "/workspace/settings/reminders", icon: "settings", id: "reminder-settings", label: tKey("Reminders") },
           { href: "/workspace/settings/approvals", icon: "settings", id: "approval-settings", label: tKey("Approvals") },
           { href: "/workspace/settings/client-portal", icon: "settings", id: "client-portal-settings", label: tKey("Client portal") },
+          { href: "/workspace/settings/report-targets", icon: "reports", id: "report-targets", label: tKey("Report targets") },
         ],
       },
       {
@@ -386,11 +390,14 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
       ...(allowed.has("pre-projects") ? [{ id: "planning", label: tKey("Planning"), href: "/workspace/pre-projects", icon: "preProjects" as const }] : []),
       ...(allowed.has("projects-overview") ? [{ id: "projects", label: tKey("Projects"), href: "/workspace/projects", icon: "projects" as const }] : []),
       ...(allowed.has("global-finance") ? [{ id: "finance", label: tKey("Finance"), href: "/workspace/finance", icon: "commercial" as const }] : []),
+      ...(reachable.has("management-reports") ? [{ id: "reports", label: tKey("Reports"), href: "/workspace/reports", icon: "reports" as const }] : []),
     ] },
     { id: "operations", label: tKey("Operations"), items: [
       ...(allowed.has("global-purchasing") ? [{ id: "purchasing", label: tKey("Purchasing"), href: "/workspace/purchasing", icon: "procurement" as const }] : []),
       ...(allowed.has("global-inventory") ? [{ id: "inventory", label: tKey("Inventory"), href: "/workspace/inventory", icon: "materialPlan" as const }] : []),
       ...(allowed.has("global-factory") ? [{ id: "factory", label: tKey("Factory"), href: "/workspace/factory", icon: "production" as const }] : []),
+      // Palm, 6 Oct: the factory and logistics calendar is the main booking point for deliveries, installations, permits and production.
+      ...(allowed.has("global-factory") ? [{ id: "logistics-calendar", label: tKey("Logistics calendar"), href: "/workspace/factory/calendar", icon: "calendar" as const }] : []),
     ] },
     { id: "utilities", label: tKey("Company"), items: [
       ...(peopleTabs(modules).slice(0, 1).map(tab => ({ id: "team", label: tKey("People"), description: tKey("Team, attendance and leave"), href: tab.href, icon: "members" as const }))),

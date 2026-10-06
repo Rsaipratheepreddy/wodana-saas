@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Upload } from "lucide-react";
 import { Badge, Button, DataGrid, EmptyState, ErrorState, NoAccessState, NoResultsState, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { formatPhoneForDisplay } from "@/lib/phone";
 import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { Approval, Supplier, SupplierState } from "@/lib/purchasing/types";
 import { APPROVAL_TONE, useSupplierLabels } from "./supplier-labels";
-import { SupplierImport } from "./supplier-import";
+import { LinkedImportDialog } from "../linked-imports/linked-import-dialog";
 import { SupplierSheet } from "./supplier-sheet";
 import styles from "./purchasing.module.css";
 
@@ -16,9 +15,12 @@ type Show = "active" | "archived";
 
 /**
  * The supplier register: who supplies what, whether they're approved, on what terms, and who to call.
- * A row opens the supplier; suppliers already kept in a spreadsheet can be imported.
+ * A row opens the supplier. Supplier lists already kept in spreadsheets are imported, each as its own source
+ * (an uploaded file, or a Google Sheet linked once and refreshed), through the same import as stock and the catalog.
  */
-export function Suppliers({ api, adding, onAddingChange }: { api: PurchasingApi; adding: boolean; onAddingChange: (adding: boolean) => void }) {
+export function Suppliers({ api, adding, onAddingChange, importLinkId = null }: {
+  api: PurchasingApi; adding: boolean; onAddingChange: (adding: boolean) => void; importLinkId?: string | null;
+}) {
   const t = useT();
   const labels = useSupplierLabels();
   const [state, setState] = useState<SupplierState | null>(null);
@@ -31,6 +33,8 @@ export function Suppliers({ api, adding, onAddingChange }: { api: PurchasingApi;
   const [company, setCompany] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  // A notice about a linked supplier sheet's refresh opens it here (?import=<link>).
+  useEffect(() => { if (importLinkId) queueMicrotask(() => setImporting(true)); }, [importLinkId]);
 
   const load = useCallback(async () => {
     try { setState(await api.suppliers()); setError(""); } catch (cause) { setDenied(isDenied(cause)); setError(cause instanceof Error ? cause.message : t("The suppliers didn't load.")); }
@@ -79,7 +83,7 @@ export function Suppliers({ api, adding, onAddingChange }: { api: PurchasingApi;
         ...((state?.entities.length ?? 0) > 1 ? [{ id: "company", label: t("Company"), options: (state?.entities ?? []).map((entity) => ({ id: entity.id, label: entity.name })), value: company ?? undefined,
           onChange: (value: string | undefined) => setCompany(value ?? null) }] : []),
       ]}
-      toolbarActions={state?.canManage ? <Button size="compact" onPress={() => setImporting(true)}><Upload aria-hidden="true" size={14} />{t("Import")}</Button> : null}
+      menuActions={state?.canManage ? [{ id: "import", label: t("Import") }] : undefined} onMenuAction={(id) => { if (id === "import") setImporting(true); }}
       emptyContent={search.trim() || filtered ? <NoResultsState onClear={() => { setSearch(""); setCategory(null); setApproval(null); setCompany(null); }} />
         : <EmptyState title={show === "archived" ? t("No archived suppliers") : t("No suppliers yet")}
             description={show === "archived" ? undefined : t("Add the suppliers you buy from, or import the list you already keep.")}
@@ -90,6 +94,6 @@ export function Suppliers({ api, adding, onAddingChange }: { api: PurchasingApi;
     />
     {state && (current || (adding && state.canManage)) ? <SupplierSheet api={api} state={state} supplier={adding ? null : current} onState={setState}
       onClose={() => { setOpen(null); onAddingChange(false); }} /> : null}
-    {importing && state ? <SupplierImport api={api} state={state} onClose={() => setImporting(false)} onImported={(next) => { setState(next); setImporting(false); }} /> : null}
+    <LinkedImportDialog isOpen={importing} onClose={() => setImporting(false)} onImported={() => void load()} openLinkId={importLinkId} target="suppliers" workspaceId={api.workspaceId} />
   </>;
 }

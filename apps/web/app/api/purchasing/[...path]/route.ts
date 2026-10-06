@@ -17,6 +17,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "needs") return method === "GET";
   if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
   if (path.length === 1 && (path[0] === "orders" || path[0] === "price-requests")) return ["GET", "POST"].includes(method);
+  if (path.length === 2 && path[0] === "orders" && path[1] === "bulk") return method === "POST";
   if (path.length === 2 && (path[0] === "orders" || path[0] === "price-requests") && UUID.test(path[1])) return ["GET", "POST"].includes(method);
   if (path.length === 1 && path[0] === "deliveries") return method === "GET";
   if (path.length === 1 && path[0] === "arrivals") return method === "GET";

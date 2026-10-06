@@ -34,11 +34,13 @@ function answer(...values: unknown[]) {
   const queue = [...values];
   caseRequest.mockImplementation(async (_w: string, _c: string, path: string, _m?: string, body?: unknown) => {
     if (path === "design-journey") return journey;
+    // The client update calls (PLM-046) answer by themselves too: none on this case.
+    if (path === "client-calls") return { caseId: "case-1", frequency: "off", started: false, startedFrom: null, version: 0, ownerName: null, hasOwner: false, next: null };
     commands.push(body);
     return queue.shift();
   });
 }
-const commandsSent = () => caseRequest.mock.calls.filter(([, , path]) => path !== "design-journey");
+const commandsSent = () => caseRequest.mock.calls.filter(([, , path]) => path !== "design-journey" && path !== "client-calls");
 afterEach(() => { caseRequest.mockReset(); commands.length = 0; });
 
 describe("planning case overview", () => {

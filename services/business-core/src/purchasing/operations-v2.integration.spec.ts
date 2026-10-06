@@ -533,4 +533,46 @@ integration("operations v2 (plan §6.14–6.16, D-8, D-11, D-20, D-26, D-38, D-4
       expect((await statuses())["Oak veneer"]).toBe("installed");
     });
   });
+
+  it("orders for a project only once the client's payment for its order is in, and drafts one order per supplier in one go (PLM-071)", async () => {
+    await world(async (w) => {
+      const { projectId, vendor, buyer, manager, company } = await started(w);
+      let detail = await w.core.get(actor, w.workspaceId, projectId);
+      detail = await w.core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "20", unit: "sheets", clientChoice: false, version: detail.project.version });
+      detail = await w.core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Brass handles", quantity: "12", unit: "pcs", clientChoice: false, version: detail.project.version });
+      await w.client.query("UPDATE workspace_purchasing_settings SET require_client_payment = true WHERE workspace_id = $1", [w.workspaceId]);
+      const mine = async () => (await buyer.orders.needs(actor, w.workspaceId)).needs.filter((need) => need.projectId === projectId && need.source === "material");
+      // The quotation's release payment is verified: nothing waits.
+      expect((await mine()).map((need) => need.blocked)).toEqual([null, null]);
+      const pay = async (status: "pending" | "verified") => {
+        const loaded = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!;
+        const data = { ...(loaded.content as CommercialData), revision: loaded.revision + 1 };
+        data.payments = data.payments.map((payment) => ({ ...payment, status }));
+        await commercialRepository.save(w.client, w.workspaceId, w.caseId, data);
+      };
+      await pay("pending");
+      const needs = await mine();
+      expect(needs.map((need) => need.blocked)).toEqual(["client_payment", "client_payment"]);
+      // Two suppliers, one draft each, in one go; the same batch again changes nothing.
+      const other = randomUUID();
+      const saved = await buyer.suppliers.save(actor, w.workspaceId, { id: other, version: 0, name: "Brass Co", entityIds: [company], email: "sales@brass.example" });
+      await manager.suppliers.approve(actor, w.workspaceId, other, { version: saved.suppliers.find((row: { id: string }) => row.id === other)!.version, approval: "approved" });
+      const [oak, brass] = [needs.find((need) => need.title === "Oak veneer")!, needs.find((need) => need.title === "Brass handles")!];
+      const batch = { orders: [
+        { id: randomUUID(), vendorId: vendor, lines: [{ source: "material", materialItemId: oak.sourceId, quantity: "20", unitPrice: "90" }] },
+        { id: randomUUID(), vendorId: other, lines: [{ source: "material", materialItemId: brass.sourceId, quantity: "12", unitPrice: "15" }] },
+      ] };
+      const created = await buyer.orders.createMany(actor, w.workspaceId, batch);
+      expect(created.orders.map((order) => [order.supplierName, order.lines])).toEqual([["Nile Timber", 1], ["Brass Co", 1]]);
+      expect((await buyer.orders.createMany(actor, w.workspaceId, batch)).orders.map((order) => order.id)).toEqual(created.orders.map((order) => order.id));
+      expect((await buyer.orders.list(actor, w.workspaceId)).orders).toHaveLength(2);
+      await expect(buyer.orders.createMany(actor, w.workspaceId, { orders: [{ ...batch.orders[0], id: randomUUID() }, { ...batch.orders[0], id: randomUUID() }] })).rejects.toThrow(/One order per supplier/);
+      // Placing waits for the payment; once Finance verifies it, the order goes out.
+      const draft = await buyer.orders.get(actor, w.workspaceId, created.orders[0].id);
+      await expect(buyer.orders.command(actor, w.workspaceId, draft.order.id, { action: "submit", version: draft.order.version })).rejects.toThrow(/client's payment for PRJ-0001 isn't in yet/);
+      await pay("verified");
+      const placed = await buyer.orders.command(actor, w.workspaceId, draft.order.id, { action: "submit", version: draft.order.version });
+      expect(placed.order.status).toBe("approved");
+    });
+  });
 });

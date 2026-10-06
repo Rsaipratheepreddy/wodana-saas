@@ -44,3 +44,35 @@ export function DatesDialog({ startDate, promiseDate, onClose, onSave }: { start
     </FormRow>
   </FormDialog>;
 }
+
+/** PLM-068: the day the factory has the project, with a short note (a line, a shift). */
+export function FactorySlotDialog({ slot, onClose, onSave }: { slot: { date: string; note: string } | null; onClose: () => void; onSave: (date: string, note: string) => Promise<void> }) {
+  const t = useT();
+  const [date, setDate] = useState(slot?.date ?? "");
+  const [note, setNote] = useState(slot?.note ?? "");
+  return <FormDialog size="md" title={t("Factory slot")} onClose={onClose} isDirty={date !== (slot?.date ?? "") || note !== (slot?.note ?? "")} isSubmitDisabled={!date}
+    submitLabel={t("Save")} onSubmit={() => onSave(date, note.trim())}>
+    <DateField label={t("Slot date")} isRequired value={date ? parseDate(date) : null} onChange={(value) => setDate(value ? value.toString() : "")} />
+    <TextAreaField label={t("Note")} maxLength={500} value={note} onChange={setNote} />
+  </FormDialog>;
+}
+
+/** PLM-069: the delivery day booked and the installation day, with a short note (the crane, the access, the crew). */
+export function InstallationDialog({ current, onClose, onSave }: { current: { deliveryOn: string | null; installationOn: string | null; note: string } | null; onClose: () => void;
+  onSave: (deliveryOn: string | null, installationOn: string, note: string) => Promise<void> }) {
+  const t = useT();
+  const [delivery, setDelivery] = useState(current?.deliveryOn ?? null);
+  const [installation, setInstallation] = useState(current?.installationOn ?? "");
+  const [note, setNote] = useState(current?.note ?? "");
+  const valid = !delivery || !installation || delivery <= installation;
+  return <FormDialog size="md" title={t("Delivery and installation")} onClose={onClose}
+    isDirty={delivery !== (current?.deliveryOn ?? null) || installation !== (current?.installationOn ?? "") || note !== (current?.note ?? "")}
+    isSubmitDisabled={!installation || !valid} submitLabel={t("Save")} onSubmit={() => onSave(delivery, installation, note.trim())}>
+    <FormRow>
+      <DateField label={t("Delivery day")} maxValue={installation ? parseDate(installation) : undefined} value={delivery ? parseDate(delivery) : null}
+        onChange={(value) => setDelivery(value ? value.toString() : null)} isInvalid={!valid} errorMessage={valid ? undefined : t("Delivery can't be after the installation day.")} />
+      <DateField label={t("Installation day")} isRequired value={installation ? parseDate(installation) : null} onChange={(value) => setInstallation(value ? value.toString() : "")} />
+    </FormRow>
+    <TextAreaField label={t("Note")} maxLength={500} value={note} onChange={setNote} />
+  </FormDialog>;
+}

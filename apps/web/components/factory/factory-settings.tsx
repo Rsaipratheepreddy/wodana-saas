@@ -5,10 +5,13 @@ import { parseDate } from "@internationalized/date";
 import { Button, DateField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState, FormDialog, MoneyField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { factoryApi } from "@/lib/factory/client";
-import type { FactorySettings, FactorySettingsState, Workcenter, WorkcenterRate } from "@/lib/factory/types";
+import type { FactorySettings, FactorySettingsState, ProductionStep, Workcenter, WorkcenterRate } from "@/lib/factory/types";
+import { PRODUCTION_STEP_KINDS } from "@/lib/factory/production";
 import { addExact } from "@/lib/purchasing/amounts";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
+import { LogisticsSettingsSections } from "../logistics/vehicles-settings";
+import { useProductionStepLabel } from "./factory-labels";
 import styles from "./factory.module.css";
 
 type Flag = "requireDrawing" | "requirePayment" | "requireMaterials" | "requireCheck";
@@ -18,7 +21,7 @@ type Draft = { id: string; name: string; hours: string; active: boolean; isNew: 
 const ratesOf = (rates: WorkcenterRate[], workcenterId: string) => rates.filter((rate) => rate.workcenterId === workcenterId);
 const rateOn = (rates: WorkcenterRate[], day: string) => rates.filter((rate) => rate.from <= day).at(-1) ?? null;
 
-/** Settings → Factory: what a work order needs before it's released, whether output is checked, and the workcenters with their hourly rates. */
+/** Settings → Factory: what a work order needs before it's released, whether output is checked, the workcenters with their hourly rates, the delivery vehicles and the permit warning. */
 export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
   const t = useT();
   const format = useProjectFormat();
@@ -26,6 +29,8 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
   const [data, setData] = useState<FactorySettingsState | null>(null);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [editingSteps, setEditingSteps] = useState(false);
+  const stepLabel = useProductionStepLabel();
   const load = useCallback(async () => {
     try { setData(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [api, t]);
@@ -56,6 +61,17 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
     <SettingsSection id="output" title={t("Output")}>
       {row("requireCheck", t("Check quality"), t("Approved output is checked before it's ready. Off: approving it makes it ready."))}
     </SettingsSection>
+    <SettingsSection id="production" title={t("Production status")}>
+      <SettingsRow label={t("Steps")} hint={t("Read from the work orders as the factory works them.")}>
+        <span className={styles.filters}>
+          <span>{(data.settings.productionSteps ?? []).map(stepLabel).join(" → ")}</span>
+          {data.canManage ? <Button size="compact" variant="quiet" aria-label={t("Edit production status")} onPress={() => setEditingSteps(true)}>{t("Edit")}</Button> : null}
+        </span>
+      </SettingsRow>
+      <SettingsRow label={t("Production target")} hint={t("Projects over it are flagged on the schedule.")}>
+        <span>{data.settings.productionWeeks ? t("{count} weeks", { count: data.settings.productionWeeks }) : t("Not set")}</span>
+      </SettingsRow>
+    </SettingsSection>
     <SettingsSection id="workcenters" title={t("Workcenters")}>
       {!data.workcenters.length ? <EmptyState illustration={null} title={t("No workcenters yet")} description={t("Add where work is made, such as joinery or paint.")} />
         : <ul className={styles.places}>{data.workcenters.map((center) => {
@@ -73,6 +89,10 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
       {data.canManage ? <div className={styles.actions}><Button size="compact" onPress={() => setDraft({ id: crypto.randomUUID(), name: "", hours: "", active: true, isNew: true, rate: "", rateFrom: data.today })}>
         {t("Add workcenter")}</Button></div> : null}
     </SettingsSection>
+    {/* Palm, 6 Oct: deliveries record the vehicle; a missing building permit is raised ahead of the delivery. */}
+    <LogisticsSettingsSections workspaceId={workspaceId} />
+    {editingSteps ? <ProductionStepsDialog steps={data.settings.productionSteps ?? []} weeks={data.settings.productionWeeks ?? null} onClose={() => setEditingSteps(false)}
+      onSave={async (productionSteps, productionWeeks) => { setData(await api.saveSettings({ version: data.settings.version, productionSteps, productionWeeks })); setEditingSteps(false); }} /> : null}
     {draft ? <WorkcenterDialog draft={draft} currency={data.currency} current={rateOn(ratesOf(data.rates, draft.id), data.today)} onClose={() => setDraft(null)} onSave={async (next) => {
       // A rate saved from a date that already has one corrects it, checked against that rate's version.
       const rateVersion = ratesOf(data.rates, next.id).find((rate) => rate.from === next.rateFrom)?.version ?? 0;
@@ -97,5 +117,35 @@ function WorkcenterDialog({ draft, currency, current, onClose, onSave }: { draft
       <MoneyField label={t("Hourly rate")} currency={currency} value={value.rate} onChange={(rate) => setValue({ ...value, rate })} />
       {changed ? <DateField label={t("From")} isRequired value={value.rateFrom ? parseDate(value.rateFrom) : null} onChange={(day) => setValue({ ...value, rateFrom: day ? day.toString() : null })} /> : null}
       {!draft.isNew ? <Switch isSelected={value.active} onChange={(active) => setValue({ ...value, active })}>{t("In use")}</Switch> : null}
+  </FormDialog>;
+}
+
+/** PLM-063: which production steps the firm keeps (Ready always) and its own word for each, and its internal target in weeks. */
+function ProductionStepsDialog({ steps, weeks, onClose, onSave }: { steps: ProductionStep[]; weeks: number | null; onClose: () => void;
+  onSave: (steps: ProductionStep[], weeks: number | null) => Promise<void> }) {
+  const t = useT();
+  const standard = useProductionStepLabel();
+  const [rows, setRows] = useState(() => PRODUCTION_STEP_KINDS.map((kind) => {
+    const kept = steps.find((step) => step.kind === kind);
+    return { kind, on: Boolean(kept), label: kept?.label ?? "" };
+  }));
+  const [target, setTarget] = useState(weeks ? String(weeks) : "");
+  const [error, setError] = useState("");
+  const kept = rows.filter((row) => row.on);
+  const weeksValid = !target || (/^\d{1,2}$/.test(target) && Number(target) >= 1 && Number(target) <= 52);
+  return <FormDialog size="md" title={t("Production status")} onClose={onClose} error={error || undefined} isSubmitDisabled={kept.length < 2 || !weeksValid} submitLabel={t("Save")}
+    onSubmit={async () => {
+      setError("");
+      try { await onSave(kept.map(({ kind, label }) => ({ kind, label: label.trim() })), target ? Number(target) : null); }
+      catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    }}>
+    {rows.map((row, index) => <div key={row.kind} className={styles.filters}>
+      <Switch isSelected={row.on} isDisabled={row.kind === "ready"} onChange={(on) => setRows(rows.map((item, at) => (at === index ? { ...item, on } : item)))}>
+        {standard({ kind: row.kind, label: "" })}</Switch>
+      <TextInput label={t("Name it")} placeholder={standard({ kind: row.kind, label: "" })} maxLength={40} isDisabled={!row.on} value={row.label}
+        onChange={(label) => setRows(rows.map((item, at) => (at === index ? { ...item, label } : item)))} />
+    </div>)}
+    <TextInput label={t("Production target in weeks")} inputMode="numeric" value={target} onChange={(value) => setTarget(value.replace(/[^\d]/g, ""))}
+      isInvalid={!weeksValid} errorMessage={weeksValid ? undefined : t("From 1 to 52 weeks.")} />
   </FormDialog>;
 }

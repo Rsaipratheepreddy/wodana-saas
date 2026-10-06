@@ -16,7 +16,8 @@ export type BrandedEmail = {
   brand: EmailBrand;
   /** Hidden inbox preview line. */
   preheader: string;
-  heading: string;
+  /** The message's title; a conversation reply has none and reads as a letter. */
+  heading?: string;
   paragraphs: string[];
   action?: { label: string; url: string };
   /** Small print under the action (expiry, "ignore if unexpected"). */
@@ -54,7 +55,7 @@ export function renderBrandedEmail(email: BrandedEmail): { html: string; text: s
     ? `<img src="${escapeHtml(email.brand.logoUrl)}" alt="${name}" height="40" style="display:block;height:40px;max-width:200px;border:0;">`
     : `<p style="margin:0;font-size:16px;font-weight:700;">${name}</p>`;
   const paragraphs = email.paragraphs
-    .map((paragraph) => `<p style="margin:0 0 16px;font-size:16px;line-height:1.6;">${escapeHtml(paragraph)}</p>`)
+    .map((paragraph) => `<p style="margin:0 0 16px;font-size:16px;line-height:1.6;white-space:pre-line;">${escapeHtml(paragraph)}</p>`)
     .join("");
   const action = email.action
     ? `<p style="margin:8px 0 24px;"><a href="${escapeHtml(email.action.url)}" style="display:inline-block;border-radius:8px;background:${accent};color:${onAccent(accent)};padding:12px 20px;text-decoration:none;font-size:15px;font-weight:700;">${escapeHtml(email.action.label)}</a></p>`
@@ -71,7 +72,7 @@ export function renderBrandedEmail(email: BrandedEmail): { html: string; text: s
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e2e5e2;border-radius:12px;text-align:${align};">
           <tr><td style="padding:32px;">
             <div style="margin:0 0 24px;">${identity}</div>
-            <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;">${escapeHtml(email.heading)}</h1>
+            ${email.heading ? `<h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;">${escapeHtml(email.heading)}</h1>` : ""}
             ${paragraphs}${action}${footnote}
           </td></tr>
         </table>
@@ -83,8 +84,7 @@ export function renderBrandedEmail(email: BrandedEmail): { html: string; text: s
   const text = [
     email.brand.name,
     "",
-    email.heading,
-    "",
+    ...(email.heading ? [email.heading, ""] : []),
     ...email.paragraphs,
     ...(email.action ? ["", `${email.action.label}: ${email.action.url}`] : []),
     ...(email.footnote ? ["", email.footnote] : []),

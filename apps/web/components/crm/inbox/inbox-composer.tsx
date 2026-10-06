@@ -154,7 +154,8 @@ export function InboxComposer({ workspaceId, thread, lookups, variables, draft, 
       {mode === "reply" && isWhatsApp ? <Button size="compact" variant="quiet" isDisabled={Boolean(replyBlocked)} onPress={() => setPicking(true)}><FileText aria-hidden="true" size={15} />{t("Templates")}</Button> : null}
       {mode === "reply" && !needsTemplate ? <IconButton aria-label={t("Quick replies")} size="compact" isDisabled={Boolean(replyBlocked)} onPress={() => { onDraftChange("/"); input.current?.focus(); }}><Zap size={15} /></IconButton> : null}
     </div>
-    {replyBlocked ? <p className={styles.composerNotice}>{replyBlocked}{isWhatsApp && thread.whatsappConnected === false && lookups.canManage ? <> <Link href="/workspace/integrations">{t("Connect WhatsApp")}</Link></> : null}</p> : null}
+    {replyBlocked ? <p className={styles.composerNotice}>{replyBlocked}{isWhatsApp && thread.whatsappConnected === false && lookups.canManage ? <> <Link href="/workspace/integrations">{t("Connect WhatsApp")}</Link></> : null}
+      {thread.channel === "email" && !(thread.email as { via?: string | null } | null)?.via && lookups.canManage ? <> <Link href="/workspace/settings/inbox#inbox-email">{t("Set up email")}</Link></> : null}</p> : null}
     {needsTemplate && !replyBlocked ? <div className={styles.windowClosed}><p>{t("More than 24 hours since the client's last message. Choose a template to restart the chat.")}</p><Button size="compact" variant="primary" onPress={() => setPicking(true)}>{t("Choose template")}</Button></div> : null}
     {file && !needsTemplate ? <div className={styles.attachmentChip}>
       <FileText aria-hidden="true" size={16} /><span>{file.name}</span><small>{fileSizeText(file.size, locale)}</small>

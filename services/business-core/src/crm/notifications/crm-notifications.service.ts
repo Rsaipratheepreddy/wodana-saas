@@ -18,12 +18,14 @@ import { resolveTemplateSources } from "../conversations/inbox/template-variable
 import { DeviceTokenStoreService } from "./device-token-store.service";
 import { approvalPush, approvalVersion } from "../../approvals/approval-push";
 import { contactEmailSql } from "../../client-portal/contact-email";
+import { BrandAssetStorageService } from "../../workspaces/brand-asset-storage.service";
+import { CHAT_EMAIL_SQL, dispatchChatEmails } from "./chat-email-dispatch";
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
 @Injectable()
 export class CrmNotificationsService {
   private readonly logger = new Logger(CrmNotificationsService.name);
-  constructor(private readonly database: DatabaseService, private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService, private readonly receipts: CrmMessageReceiptService = new CrmMessageReceiptService(), @Optional() private readonly deviceTokens?: DeviceTokenStoreService, @Optional() private readonly mailer?: TransactionalEmailService, @Optional() private readonly config?: ConfigService) {}
+  constructor(private readonly database: DatabaseService, private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService, private readonly receipts: CrmMessageReceiptService = new CrmMessageReceiptService(), @Optional() private readonly deviceTokens?: DeviceTokenStoreService, @Optional() private readonly mailer?: TransactionalEmailService, @Optional() private readonly config?: ConfigService, @Optional() private readonly storage?: BrandAssetStorageService) {}
   /** Local and UAT: external deliveries only to DELIVERY_ALLOWLIST recipients (webhooks go to systems, not people). */
   private async allowlisted(client: PoolClient, row: Row, destination: Row | null) {
     const allowlist = deliveryAllowlist(this.config ?? { get: (key: string) => process.env[key] });
@@ -263,12 +265,15 @@ export class CrmNotificationsService {
     const claimed = await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
       const result = await client.query<{ id: string; subject: string | null; body: string; deepLink: string | null; email: string | null; eventType: string; recipientType: string }>(
         `WITH due AS (
-           SELECT notification.id, CASE WHEN notification.recipient_type='user' THEN person.primary_email ELSE ${contactEmailSql("contact")} END AS email
+           SELECT notification.id, CASE WHEN notification.recipient_type='user' THEN person.primary_email
+                  WHEN notification.recipient_type='finance_inbox' THEN inbox.finance_inbox ELSE ${contactEmailSql("contact")} END AS email
            FROM notifications notification
            LEFT JOIN users person ON notification.recipient_type='user' AND person.id=notification.recipient_id
            LEFT JOIN client_portal_grants contact ON notification.recipient_type='portal_contact' AND contact.workspace_id=notification.workspace_id
                                                 AND contact.id=notification.recipient_id AND contact.active
-           WHERE notification.workspace_id=$1 AND notification.recipient_type IN ('user','portal_contact') AND notification.channel='email'
+           -- The workspace's finance inbox (finance requests): an address Finance set, not a person.
+           LEFT JOIN finance_request_settings inbox ON notification.recipient_type='finance_inbox' AND inbox.workspace_id=notification.workspace_id
+           WHERE notification.workspace_id=$1 AND notification.recipient_type IN ('user','portal_contact','finance_inbox') AND notification.channel='email'
              AND ((notification.status IN ('pending','scheduled') AND notification.scheduled_for<=now())
                OR (notification.status='processing' AND notification.processing_started_at<now()-interval '5 minutes'))
            ORDER BY notification.scheduled_for FOR UPDATE OF notification SKIP LOCKED LIMIT $2)
@@ -304,7 +309,10 @@ export class CrmNotificationsService {
           [input.workspaceId, row.id, outcome.provider ?? "mailgun", status === "delivered" ? "delivered" : "permanent_failure", outcome.messageId, status === "delivered" ? null : outcome.errorCode ?? "EMAIL_SEND_FAILED"]);
       });
     }
-    return { claimed: claimed.length, delivered };
+    // Replies in email conversations go out the same way, with the inbound address as Reply-To (PLM-025).
+    const chat = await dispatchChatEmails({ database: this.database, mailer: this.mailer, storage: this.storage, receipts: this.receipts,
+      inboundDomain: this.config?.get<string>("INBOUND_EMAIL_DOMAIN") ?? process.env.INBOUND_EMAIL_DOMAIN ?? null }, input.workspaceId, input.limit ?? 50);
+    return { claimed: claimed.length + chat.claimed, delivered: delivered + chat.delivered };
   }
 
   claimInternal(input: ClaimNotificationJobsDto) {
@@ -315,7 +323,8 @@ export class CrmNotificationsService {
         FROM notifications notification
         WHERE notification.workspace_id=$1
           AND notification.channel<>'in_app'
-          AND NOT (notification.recipient_type IN ('user','portal_contact') AND notification.channel='email')
+          AND NOT (notification.recipient_type IN ('user','portal_contact','finance_inbox') AND notification.channel='email')
+          AND NOT ${CHAT_EMAIL_SQL}
           AND ((notification.status IN ('pending','scheduled') AND notification.scheduled_for<=now())
             OR (notification.status='processing' AND notification.processing_started_at<now()-interval '5 minutes'))
         ORDER BY notification.scheduled_for

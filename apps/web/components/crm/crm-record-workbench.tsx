@@ -24,6 +24,7 @@ import { Avatar, Badge, Button, Callout, ControlledModalDialog, EditableField, E
 import { useAiReady } from "@/lib/workspace/ai-settings";
 import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
 import { ContactMatchNotice } from "./contact-match-notice";
+import { RaiseFinanceRequest, useCanRaiseFinanceRequest } from "../finance-requests/raise-request";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { CrmScreenId } from "@/lib/crm/screens";
 import { CrmRequestError, crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
@@ -179,6 +180,8 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const [tab, setTab] = useState("overview");
   const [editing, setEditing] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [askingFinance, setAskingFinance] = useState(false);
+  const canAskFinance = useCanRaiseFinanceRequest(workspaceId);
   const [bookIntro, setBookIntro] = useState(false);
   const [sheet, setSheet] = useState<{ group: DiscoveryGroup; focus?: string } | null>(null);
   const [folded, setFolded] = useState<Partial<Record<FactGroup, boolean>>>({});
@@ -245,9 +248,10 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const menu = [
     ...(!closed ? [{ id: "lost", label: t("Mark as lost"), tone: "danger" as const }] : [{ id: "reopen", label: t("Reopen") }]),
     ...(!closed && earlierStages.length ? [{ id: "stage", label: t("Change stage") }] : []),
+    ...(canAskFinance ? [{ id: "finance", label: t("Request from Finance") }] : []),
     { id: "history", label: t("History") },
   ];
-  const onMenu = (id: string) => { if (id === "lost") startOutcome("lost"); else if (id === "history") setHistoryOpen(true); else startStageChange(); };
+  const onMenu = (id: string) => { if (id === "lost") startOutcome("lost"); else if (id === "history") setHistoryOpen(true); else if (id === "finance") setAskingFinance(true); else startStageChange(); };
   const pathChoice = FURNITURE_PATHS.find((item) => item.id === flow?.furniture?.path);
   const proof = flow?.proofs?.[0];
   const shortDay = (at: string) => dateText(at, { locale, timeZone });
@@ -325,6 +329,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
         secondaryAction={caseId ? <Link className="wd-button" data-variant="quiet" href={caseLink("designs")}>{t("Choose the materials")}</Link> : undefined} />;
     })() : null}
     {blocked ? <StageBlockedSheet stageName={blocked.stage} items={blocked.items} onAction={act} onClose={() => setBlocked(null)} /> : null}
+    {askingFinance ? <RaiseFinanceRequest workspaceId={workspaceId} origin={{ opportunityId: row.id }} onClose={() => setAskingFinance(false)} /> : null}
     {historyOpen ? <ControlledModalDialog isOpen size="md" title={t("History")} onOpenChange={setHistoryOpen}>
       {stageHistory.length ? <ol className={screen.history}>{stageHistory.map((entry, index) => <li key={entry.id ?? index}>
         <strong>{entry.fromStageName ?? t("Start")}<ArrowRight aria-hidden="true" size={12} />{entry.toStatus === "won" ? t("Won") : entry.toStatus === "lost" ? t("Lost") : entry.toStageName ?? t("Not set")}</strong>

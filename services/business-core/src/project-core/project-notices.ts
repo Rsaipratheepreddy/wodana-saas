@@ -10,7 +10,12 @@ export type ProjectNotice =
   | { code: "project.stage_done"; stage: string; previous: string; memberships: string[] }
   | { code: "project.on_hold" | "project.resumed" | "project.off_track" | "project.cancelled" | "project.completed" | "project.finished_automatically" | "project.reopened"; note: string; memberships: string[] }
   | { code: "project.variation_applied"; variation: string; amount: string; memberships: string[] }
-  | { code: "project.materials_signed_off" | "project.materials_changes"; revision: string; note: string; memberships: string[] };
+  | { code: "project.materials_signed_off" | "project.materials_changes"; revision: string; note: string; memberships: string[] }
+  | { code: "project.drawings_changes"; revision: string; note: string; memberships: string[] }
+  | { code: "project.drawings_approved"; revision: string; date: string; memberships: string[] }
+  | { code: "project.factory_slot_booked"; date: string; memberships: string[] }
+  | { code: "project.drawings_started" | "project.production_started" | "project.installation_scheduled"; date: string; note: string; memberships: string[] }
+  | { code: "project.material_details"; item: string; note: string; memberships: string[] };
 
 /**
  * Who hears about a project: the team when it starts, a person when they're named for a role, the
@@ -18,7 +23,7 @@ export type ProjectNotice =
  * off track, and when it's cancelled (also by email), completed or reopened. The person who acted is never
  * told about their own step.
  */
-export async function noticeProject(db: Db, input: { workspaceId: string; projectId: string; key: string; actorUserId: string | null; notice: ProjectNotice }) {
+export async function noticeProject(db: Db, input: { workspaceId: string; projectId: string; key: string; actorUserId: string | null; notice: ProjectNotice; deepLink?: string }) {
   const facts = (await db.query<{ title: string; clientName: string }>(
     `SELECT project.reference || ' · ' || project.name AS title, coalesce(party.display_name, opportunity.title) AS "clientName"
        FROM delivery_projects project
@@ -28,7 +33,7 @@ export async function noticeProject(db: Db, input: { workspaceId: string; projec
       WHERE project.workspace_id = $1 AND project.id = $2`, [input.workspaceId, input.projectId])).rows[0];
   if (!facts) return;
   const actor = (await db.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [input.actorUserId])).rows[0]?.name ?? "Someone";
-  const deepLink = `/workspace/projects/${input.projectId}`;
+  const deepLink = input.deepLink ?? `/workspace/projects/${input.projectId}`;
   const users = async (membershipIds: string[]) => (await db.query<{ membershipId: string; userId: string }>(
     `SELECT id AS "membershipId", user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND status = 'active'`,
     [input.workspaceId, [...new Set(membershipIds)]])).rows.filter((row) => row.userId !== input.actorUserId);
@@ -53,6 +58,19 @@ export async function noticeProject(db: Db, input: { workspaceId: string; projec
     for (const person of await users(notice.memberships)) await tell(person.userId, { revision: notice.revision, note: notice.note }, false);
   } else if (notice.code === "project.variation_applied") {
     for (const person of await users(notice.memberships)) await tell(person.userId, { variation: notice.variation, amount: notice.amount }, false);
+  } else if (notice.code === "project.drawings_changes") {
+    for (const person of await users(notice.memberships)) await tell(person.userId, { revision: notice.revision, note: notice.note, date: "" }, false);
+  } else if (notice.code === "project.drawings_approved" || notice.code === "project.factory_slot_booked") {
+    // Days read the way the workspace writes them. The approval also goes by email: the factory acts on it.
+    const date = await workspaceDay(db, input.workspaceId, notice.date);
+    const revision = notice.code === "project.drawings_approved" ? notice.revision : "";
+    for (const person of await users(notice.memberships)) await tell(person.userId, { revision, note: "", date }, notice.code === "project.drawings_approved");
+  } else if (notice.code === "project.drawings_started" || notice.code === "project.production_started" || notice.code === "project.installation_scheduled") {
+    // PLM-055 / PLM-069: the key moments, in the app and by email.
+    const date = notice.date ? await workspaceDay(db, input.workspaceId, notice.date) : "";
+    for (const person of await users(notice.memberships)) await tell(person.userId, { date, note: notice.note }, true);
+  } else if (notice.code === "project.material_details") {
+    for (const person of await users(notice.memberships)) await tell(person.userId, { item: notice.item, note: notice.note }, false);
   } else {
     for (const person of await users(notice.memberships)) await tell(person.userId, { note: notice.note }, notice.code === "project.cancelled");
   }
@@ -100,4 +118,10 @@ export async function noticeWork(db: Db, input: { workspaceId: string; projectId
     await notifyUserInApp(db, { ...message, idempotencyKey: `${notice.code}:${input.key}:${person.userId}` });
     if (notice.code === "work.assigned") await queueUserEmail(db, { ...message, idempotencyKey: `${notice.code}:${input.key}:${person.userId}:email` });
   }
+}
+
+/** A day (YYYY-MM-DD) the way the workspace writes it ("5 Oct 2026"); the ISO day when the locale can't. */
+export async function workspaceDay(db: Db, workspaceId: string, day: string) {
+  const locale = (await db.query<{ locale: string | null }>(`SELECT default_locale AS locale FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.locale ?? "en";
+  try { return new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${day}T00:00:00Z`)); } catch { return day; }
 }

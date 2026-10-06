@@ -611,6 +611,8 @@ export class CrmPartiesService {
       const replacement = `Erased customer ${partyId.slice(0, 8)}`;
 
       await client.query(`DELETE FROM crm_message_attachments attachment USING crm_messages message, crm_conversations conversation WHERE attachment.workspace_id = $1 AND attachment.message_id = message.id AND message.conversation_id = conversation.id AND conversation.workspace_id = $1 AND conversation.party_id = $2`, [workspaceId, partyId]);
+      // Their emails' facts (addresses, subjects, whole text) go too (PLM-025).
+      await client.query(`DELETE FROM crm_email_messages email USING crm_conversations conversation WHERE email.workspace_id = $1 AND conversation.workspace_id = $1 AND email.conversation_id = conversation.id AND conversation.party_id = $2`, [workspaceId, partyId]);
       await client.query(`UPDATE crm_messages message SET provider_message_id = NULL, body_text = NULL, body_html = NULL, failure_code = NULL, metadata = '{}'::jsonb, version = message.version + 1, updated_at = now() FROM crm_conversations conversation WHERE message.workspace_id = $1 AND conversation.workspace_id = $1 AND message.conversation_id = conversation.id AND conversation.party_id = $2`, [workspaceId, partyId]);
       await client.query(`UPDATE crm_conversations SET provider_thread_id = NULL, subject = 'Erased conversation', version = version + 1, updated_at = now() WHERE workspace_id = $1 AND party_id = $2`, [workspaceId, partyId]);
       await client.query(`UPDATE crm_activities SET title = 'Erased activity', description = NULL, completion_outcome = NULL, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND party_id = $2`, [workspaceId, partyId]);

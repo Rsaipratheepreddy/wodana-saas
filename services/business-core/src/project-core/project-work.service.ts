@@ -10,6 +10,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { activeMembers, ensureSettings, membershipOf, readProject, readTeam, type ProjectRow } from "./project-core.store";
 import { noticeWork, type WorkNotice } from "./project-notices";
 import { noticeStageReady } from "./project-stage-watch";
+import { stageTaskLinks } from "./project-stage-tasks";
 import {
   ensureProjectAccess, OPEN, readActivity, readInsights, readItem, readItems, readLinks, readOpenWork, readProgress, readProjectLinks, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
   type WorkItem, type WorkStatus,
@@ -410,6 +411,9 @@ export class ProjectWorkService {
     }
     if (body.status !== undefined && body.status !== item.status) {
       const status = oneOf(body.status, WORK_STATUSES, "Status");
+      // A task a stage check opened (the drawings, the site check, the client's approval, the factory slot) is done when its record is in.
+      if (status === "done" && (await client.query(`SELECT 1 FROM work_items WHERE workspace_id = $1 AND id = $2 AND stage_check IS NOT NULL`, [workspaceId, itemId])).rowCount)
+        throw new ConflictException("This task finishes by itself once its record is in the project.");
       // A subtask reopens only under an open parent.
       if (item.parentId && OPEN(status) && !OPEN(item.status)) {
         const parent = await this.own(client, workspaceId, projectId, item.parentId);
@@ -533,7 +537,14 @@ export class ProjectWorkService {
       `SELECT photo.id, photo.kind, photo.original_name AS name, person.display_name AS "byName", photo.created_at AS at
          FROM work_item_photos photo JOIN users person ON person.id = photo.created_by WHERE photo.workspace_id = $1 AND photo.work_item_id = $2 ORDER BY photo.created_at`,
       [workspaceId, itemId])).rows;
-    return { ...item, ...extra.rows[0], subtaskIds: subtasks.rows.map((row) => row.id), before: links.before, after: links.after, activity, photos };
+    // A task a stage check opened links to what its work needs (PLM-057): measurements, designs, the material list, the drawings.
+    const check = (await client.query<{ kind: string | null; caseId: string }>(
+      `SELECT (SELECT entry->>'kind' FROM project_stages stage, jsonb_array_elements(stage.checks) entry
+                WHERE stage.workspace_id = item.workspace_id AND stage.id = item.stage_id AND entry->>'key' = item.stage_check LIMIT 1) AS kind, project.case_id AS "caseId"
+         FROM work_items item JOIN delivery_projects project ON project.workspace_id = item.workspace_id AND project.id = item.project_id
+        WHERE item.workspace_id = $1 AND item.id = $2 AND item.stage_check IS NOT NULL`, [workspaceId, itemId])).rows[0];
+    return { ...item, ...extra.rows[0], subtaskIds: subtasks.rows.map((row) => row.id), before: links.before, after: links.after, activity, photos,
+      links: check ? stageTaskLinks(check.kind, { id: projectId, caseId: check.caseId }) : [] };
   }
 
   private async context(client: Db, workspaceId: string, projectId: string, user: ActorUser): Promise<Context> {

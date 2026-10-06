@@ -8,6 +8,7 @@ import { ensureStarterFlows } from "./flow-store";
 import { ensureEnquiryTypeFlows, flowCodeFor } from "./enquiry-type-flows";
 import { FLOW_TEMPLATES, flowTemplate } from "./flow-templates";
 import { copyClosingRules, inferClosing, seedClosingRules, TEMPLATE_CLOSING } from "./flow-closing";
+import { copyWonAreas } from "./flow-won-areas";
 import { STARTER_FLOWS } from "./starter-flows";
 import { UNRESOLVED_ENQUIRY_TYPE } from "../leads/lead-options";
 
@@ -123,6 +124,7 @@ export class CrmFlowsService {
         [workspaceId, flow.id, JSON.stringify(result.definition), checksum, user.userId])).rows[0];
       // PLM-102: the new flow closes deals the way its template, starter or source flow does.
       if (input.sourceFlowId) await copyClosingRules(client, workspaceId, input.sourceFlowId, flow.id, user.userId);
+      if (input.sourceFlowId) await copyWonAreas(client, workspaceId, input.sourceFlowId, flow.id, user.userId);
       else await seedClosingRules(client, workspaceId, flow.id, TEMPLATE_CLOSING[input.templateKey ?? input.starter ?? ""] ?? inferClosing(result.definition), user.userId);
       await recordAudit(client, {
         workspaceId, actorUserId: user.userId, action: "crm.flow.created.v1", entityType: "crm_flow", entityId: flow.id,

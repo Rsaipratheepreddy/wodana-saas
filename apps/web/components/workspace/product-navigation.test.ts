@@ -23,6 +23,7 @@ describe('product navigation route ownership', () => {
     ['/workspace/purchasing/orders', '', 'purchasing'],
     ['/workspace/inventory', '', 'inventory'],
     ['/workspace/factory/orders', 'order=w1', 'factory'],
+    ['/workspace/factory/calendar', '', 'logistics-calendar'],
     ['/workspace/finance', '', 'finance'],
     ['/workspace/finance/suppliers/vendor-1', '', 'finance'],
   ])('assigns %s to one destination', (path, query, expected) => {
@@ -41,9 +42,9 @@ describe('product navigation route ownership', () => {
     expect(work?.items.find(item => item.id === 'clients')?.href).toBe('/workspace/crm/customers');
     expect(company?.items.find(item => item.id === 'resources')).toMatchObject({label:'Catalog',href:'/workspace/catalogs'});
     expect(company?.items.find(item => item.id === 'resources')?.children).toBeUndefined();
-    // Operations lists the rebuilt modules only: Purchasing, Inventory and Factory so far.
+    // Operations lists the rebuilt modules only: Purchasing, Inventory and Factory so far, and the logistics calendar (the booking point).
     expect(sections.find(section => section.id === 'operations')?.items.map(item => [item.label, item.href])).toEqual([
-      ['Purchasing', '/workspace/purchasing'], ['Inventory', '/workspace/inventory'], ['Factory', '/workspace/factory']]);
+      ['Purchasing', '/workspace/purchasing'], ['Inventory', '/workspace/inventory'], ['Factory', '/workspace/factory'], ['Logistics calendar', '/workspace/factory/calendar']]);
     expect(sections.find(section => section.id === 'main')?.items.map(item => item.label)).toEqual(['Home', 'Calendar', 'Inbox']);
   });
   it('uses an authorized settings destination when company access is absent', () => {

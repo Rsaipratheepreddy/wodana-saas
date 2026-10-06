@@ -43,6 +43,15 @@ export async function POST(request: Request, context: Context) {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ ...body.payload, workspaceId, connectionId, idempotencyKey: body.idempotencyKey }),
   });
+  // A team calendar's push (PLM-090/091) moves or cancels the events it created, by their id and etag.
+  if (action === "calendar.update" || action === "calendar.cancel") {
+    const eventId = typeof body.eventId === "string" ? body.eventId : "";
+    if (!/^[a-zA-Z0-9_-]{1,1024}$/.test(eventId)) return invalidRequest(t("Choose an event."));
+    return providerResponse(`/integrations/google/events/${encodeURIComponent(eventId)}${action === "calendar.cancel" ? "/cancel" : ""}`, {
+      method: action === "calendar.cancel" ? "POST" : "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...body.payload, workspaceId, connectionId }),
+    });
+  }
   if (action === "inbox.sync") return providerResponse(`/integrations/providers/workspaces/${workspaceId}/connections/${connectionId}/inbox/sync`, { method: "POST" });
   return providerResponse(`/integrations/providers/workspaces/${workspaceId}/connections/${connectionId}/operations`, {
     method: "POST", headers: { "content-type": "application/json" },

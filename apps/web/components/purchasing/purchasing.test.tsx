@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import type {
-  DeliveriesState, Need, OrdersState, OrderState, PriceRequestState, ReceiptState, ReceivingForm, Supplier, SupplierControlsState, SupplierImportPlan, SupplierReturnState, SupplierState, UnmatchedState,
+  DeliveriesState, Need, OrdersState, OrderState, PriceRequestState, ReceiptState, ReceivingForm, Supplier, SupplierControlsState, SupplierReturnState, SupplierState, UnmatchedState,
 } from "@/lib/purchasing/types";
 import { PurchasingPage, type PurchasingSection } from "./purchasing-page";
 
@@ -231,32 +231,15 @@ describe("suppliers", () => {
     expect(await within(sheet).findByText(/Wood glue: .*25\.00 \/ pcs · packs of 6/)).toBeInTheDocument();
   });
 
-  it("imports a supplier list: reads the columns, shows what will be added, then imports", async () => {
-    const plan: SupplierImportPlan = { canApprove: false, plan: [
-      { name: "SIOM Marble", rows: ["list.csv:2"], existingId: null, action: "create", categories: ["Marble"], approval: "pending", preferredFor: [], approvalSkipped: true,
-        paymentTerms: "upfront", advancePercent: null, creditDays: null, deal: "on_request", dealPercent: null, entityIds: ["f"] },
-      { name: "Nile Marble & Granite", rows: ["list.csv:3"], existingId: "s1", action: "merge", categories: ["Marble"], approval: "pending", preferredFor: [], approvalSkipped: false,
-        paymentTerms: "statement", advancePercent: null, creditDays: null, deal: "none", dealPercent: null, entityIds: ["f"] }] };
-    const fetcher = mount((url, body) => (url.includes("/suppliers/import") ? (body?.commit ? state({ imported: { created: 1, merged: 1 } }) : plan) : state()));
+  it("imports supplier lists from the table's options through the linked sheet import", async () => {
+    const fetcher = mount((url) => (url.includes("/api/linked-imports/picker") ? { configured: false, apiKey: "", appId: "" }
+      : url.includes("/api/linked-imports") ? { links: [], canManage: true, connections: [], locations: [], currency: "AED", entities: [{ id: "f", name: "Studio Furniture Manufacturing" }] } : state()));
     page();
+    await userEvent.click(await screen.findByRole("button", { name: "Table options" }));
     await userEvent.click(await screen.findByRole("button", { name: "Import" }));
-    const dialog = await screen.findByRole("dialog", { name: "Import suppliers" });
-    const csv = "Supplier Type,Company Name,Directors Approved,Discount / Commission,Payment Terms,Contact Person / Number\nMarble,SIOM Marble,APPROVED MARBLE SUPPLIER,Discount as requested,Payment Upfront,Ramiz - +971 52 846 6806\nMarble,Nile Marble & Granite,,,SOA end of month,Mohamed\n";
-    // jsdom's File has no text(); browsers do.
-    const file = Object.defineProperty(new File([csv], "list.csv", { type: "text/csv" }), "text", { value: async () => csv });
-    await userEvent.upload(within(dialog).getByLabelText("Choose an Excel or CSV file"), file);
-    expect(await screen.findByText("list.csv")).toBeInTheDocument();
-    const current = () => screen.getByRole("dialog", { name: "Import suppliers" });
-    expect(current()).toHaveTextContent("2 rows");
-    await userEvent.click(within(current()).getByRole("button", { name: /Company for list.csv/ }));
-    await userEvent.click(await screen.findByRole("option", { name: "Studio Furniture Manufacturing" }));
-    await userEvent.click(within(current()).getByRole("button", { name: "Review" }));
-    expect(await screen.findByText("1 new, 1 already in the register (they gain the new companies and categories).")).toBeInTheDocument();
-    expect(current()).toHaveTextContent("1 approvals in the file need someone who approves suppliers");
-    await userEvent.click(within(current()).getByRole("button", { name: "Import 2 suppliers" }));
-    await waitFor(() => expect(posts(fetcher).at(-1)!.body.commit).toBe(true));
-    const rows = posts(fetcher).at(-1)!.body.rows;
-    expect(rows[0]).toMatchObject({ name: "SIOM Marble", categories: "Marble", approval: "APPROVED MARBLE SUPPLIER", terms: "Payment Upfront", contactName: "Ramiz", phone: "+971 52 846 6806", entityId: "f" });
+    const dialog = await screen.findByRole("dialog", { name: "Import" });
+    expect(within(dialog).getByLabelText("Upload a spreadsheet")).toBeInTheDocument();
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).startsWith("/api/linked-imports?") && String(url).includes("target=suppliers"))).toBe(true));
   });
 });
 
@@ -322,6 +305,39 @@ describe("ordering", () => {
     expect(posts(fetcher).at(-1)!.body).toMatchObject({ vendorId: "s1", legalEntityId: "f", lines: [
       { source: "material", materialItemId: "m1", quantity: "12", unitPrice: "350" }, { source: "line", boqLineId: "l1", quantity: "1" }] });
     expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/purchasing/orders?order=o1");
+  });
+
+  it("keeps lines waiting for the client's payment apart, and drafts one order per supplier in one go (PLM-071)", async () => {
+    const fetcher = mount((url, body) => (url.includes("/needs") ? { ...needs, needs: [
+      need({ clientChoice: false, supplierId: "s1" }),
+      need({ key: "material:m2", sourceId: "m2", title: "Brass handles", unit: "pcs", required: "12.0000", remaining: "12.0000", clientChoice: false, supplierHint: "", supplierId: "s2" }),
+      need({ key: "material:m9", sourceId: "m9", projectId: "p2", projectReference: "PRJ-0008", projectName: "Marina", title: "Oak veneer", clientChoice: false, blocked: "client_payment" }),
+    ] } : url.includes("/suppliers") ? state() : url.includes("/orders/bulk") ? { orders: [{ id: "o1", number: "FAC-PO-1", supplierName: "Nile", lines: 1 }, { id: "o2", number: "INT-PO-1", supplierName: "Ritver", lines: 1 }] }
+      : body ? orderState() : ordersList));
+    page("to-order");
+    const grid = () => screen.findByRole("grid", { name: "To order" }).catch(() => screen.findByRole("table", { name: "To order" }));
+    expect(await grid()).not.toHaveTextContent("Oak veneer");
+    await userEvent.click(screen.getByRole("button", { name: /^Client payment\s*1$/ }));
+    const waiting = await grid();
+    expect(waiting).toHaveTextContent("Waiting for the client's payment");
+    expect(within(waiting).getByRole("link", { name: "Open payments" })).toHaveAttribute("href", "/workspace/projects/p2/money");
+    await userEvent.click(screen.getByRole("button", { name: /^To order\s*2$/ }));
+    await userEvent.click(within(await grid()).getByRole("checkbox", { name: "Select PRJ-0007 Calacatta slab" }));
+    await userEvent.click(within(await grid()).getByRole("checkbox", { name: "Select PRJ-0007 Brass handles" }));
+    await userEvent.click(screen.getByRole("button", { name: "Orders by supplier" }));
+    const dialog = await screen.findByRole("dialog", { name: "Orders by supplier" });
+    // Each line comes with the catalog's supplier; two suppliers, two orders. Ritver supplies two companies, so the batch names the buyer.
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: /Supplier for Brass handles/ })).toHaveTextContent("Ritver Paints"));
+    await userEvent.click(within(dialog).getByRole("button", { name: /Buying company/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Studio Interiors Trading" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create 2 orders" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.url).toContain("/api/purchasing/orders/bulk?"));
+    const sent = posts(fetcher).at(-1)!.body.orders as Array<Record<string, unknown>>;
+    expect(sent.map((order) => [order.vendorId, order.legalEntityId ?? null, order.lines])).toEqual([
+      ["s1", null, [{ source: "material", materialItemId: "m1", quantity: "12" }]],
+      ["s2", "i", [{ source: "material", materialItemId: "m2", quantity: "12" }]],
+    ]);
+    expect(sent.every((order) => typeof order.id === "string")).toBe(true);
   });
 
   it("keeps a project on hold apart: ordering it asks why, and the reason goes with the order (D-8)", async () => {

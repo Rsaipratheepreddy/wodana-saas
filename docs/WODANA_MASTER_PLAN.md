@@ -1641,6 +1641,56 @@ Edge cases: provider down (queue and retry, visible status); token revoked (conn
 - **Search (`⌘K`):** customers, enquiries, deals, projects, quotes, POs, WOs, items, people; permission-filtered.
 - **Reports** (each reconciles to its list): lead source/channel/owner/SLA; funnel conversion and time per stage; pipeline value; quote win rate; receivables ageing; project portfolio (stage, promise risk, margin); purchasing (open POs, late deliveries, vendor scorecard); factory (throughput, QC rejects); site (reports compliance, snags). All can be exported to CSV.
 
+### 6.27a Management dashboards (PLM-134; PLM-105, PLM-104, PLM-129, PLM-130)
+- **Where:** sidebar → Reports (`/workspace/reports`), tabs Owner overview · Sales and pipeline · Lead response · Design projects. Owner/administrator only for now (`reports.management.view`); managers get it later, per dashboard and team. Targets: Settings → Report targets (`reports.management.targets`).
+- **How:** one read endpoint per dashboard (`GET /workspaces/:id/reports/management/:dashboard`) computes every KPI server-side in the member's tenant transaction (forced RLS) from the business tables; nothing is copied. A KPI reads *facts* (one row per record behind it) and the figure, its graph and its drill-down (`…/:dashboard/records?kpi=&bucket=`) all come from the same facts, so a bar always reconciles with the records it opens. Export: each figure's records to Excel (CSV); the page to PDF through print.
+- **Filter bar (every dashboard, kept in the address):** period (local days in the workspace time zone; default this month to date), Account Manager, Enquiry type, package, client type, source, channel, region (the region pack's administrative area, e.g. Emirate), entity. A filter applies through the record's opportunity, else its enquiry; a record that can't carry a filtered attribute never matches it. Lead-response KPIs apply the Account Manager filter to whoever held the clock or lost the lead.
+- **Money:** base currency of the workspace only (other currencies are counted and noted, never converted); net of tax by the quotation's tax share (the sealed pricing once a project started, else the quotation's rate); a value with no quotation is kept as entered and noted. Outstanding balances include tax (what clients owe) and say so. Won = payment proof received; revenue = payments Finance verified; Design Fee (Proposal 1) and Proposal 2 apart.
+- **Targets:** per KPI per month, for the company or one Account Manager (where the KPI is per person). Counts and money prorate by the days of each month the period covers; a %, hours or days is the day-weighted level. A month without one = "No target set". Actual, Target, % achieved (actual ÷ target; target ÷ actual when lower is better), gap; green ≥ 100 %, amber 80–99 %, red < 80 %. Targets aren't compared while a filter other than period and Account Manager is on.
+- **No misleading zeros:** a rate or average with nothing to measure shows "Not enough data yet".
+
+**1 · Owner overview**
+| KPI | Definition |
+| --- | --- |
+| Sales Won | Proposals whose payment proof was attached in the period (each of Design Fee and Proposal 2 once, on its Won date); value net of tax; a deal won before proposals existed counts as Proposal 2. Monthly bar, Design Fee vs Proposal 2 stacked. Targets: value and count. |
+| Revenue collected | Client receipts with status Finance verified, dated when verified (else reported), net of tax by their payment stage's quotation; receipt's entity. Line with invoiced (issued tax invoices' net, by issue date). |
+| Outstanding balances | Live jobs: each payment stage's amount less Finance-verified, non-reversed allocations (≥ 0); incl. tax; ageing by due date (not due, 1–30, 31–60, 60+ overdue, no due date). |
+| Deals waiting for approval | Deal File approval requests still pending (submitted or Finance-verified, not approved). Live. |
+| Active projects by stage | Won jobs: Design (design journey not approved), Estimate (no open design, no project started, not collected/delivered or cancelled), then started projects by current stage — install/delivery/permit → Delivery, snag/handover → Snagging, the rest → Production. Live. |
+| Delayed items | Design stages open past their internal due time, estimates not linked by their due time, projects past the promised date, projects with open tasks past due (one item each). Live. |
+| Deals Closed / Completed | Won deals whose Enquiry Type closing rule (PLM-102) is met, read-only from the records, dated by the last required record; cancelled deals never close; value = won proposals net. By Enquiry Type. |
+| Profit margin | Projects started in the period: Σ(sealed agreed net incl. variations − QS cost of the same quotations) ÷ Σ agreed net; projects without a QS cost for every sealed quotation are left out and counted. |
+
+**2 · Sales and pipeline**
+| KPI | Definition |
+| --- | --- |
+| New leads | Enquiries created in the period, spam and duplicates left out; 12-month stacked bar by source (top five + Other). |
+| Conversion funnel | Leads created in the period → became an opportunity → reached Qualified (stage code `qualification`) or later → reached Proposal or later → Won; % of the step before; Lead → Won % is the target. |
+| Pipeline value | Open opportunities now, by current stage: count and value (net by the latest live quotation, else as entered). |
+| Won by Account Manager | The period's Sales Won by opportunity owner: count, value, average deal size; each against that person's Won value target. |
+| Lost | Opportunities marked Lost in the period: count, value, by recorded reason. |
+| Duplicates / Returning customers | Enquiries in the period the duplicate rule marked Duplicate (PLM-093) / recorded as a returning customer (PLM-037). |
+| Follow-ups due / overdue | Open enquiries whose last contact was "come back later" (their come-back date) and open opportunities' pending next follow-up (not meetings). Overdue when the date has passed. |
+| Quotes expiring | Quotations sent and awaiting the client whose validity ends between today and the workspace's expiry-warning window. |
+
+**3 · Lead response** (the first-response clock, first cycle; target and working calendar from the workspace's first-response policy)
+| KPI | Definition |
+| --- | --- |
+| Response rate | Of clocks started in the period with an outcome: met (response logged within the target in working minutes) ÷ (met + missed); missed = late response or target passed with none; clocks closed before their target without needing one are left out. Gauge + 12-week line. |
+| Average first response | Mean elapsed working hours of the period's responded clocks; by Account Manager (lower is better). |
+| Reassignments | Takeovers that moved an enquiry because no call or note was logged by the ownership deadline (PLM-095), by the Account Manager it moved from. |
+| Unassigned leads | Open enquiries with no owner. Live. |
+
+**4 · Design projects** (design journeys with a package; open until Design approval is done)
+| KPI | Definition |
+| --- | --- |
+| Projects by design stage | Open projects by the active stage: Inspiration, Site visit, Development (concepts, space planning), Materials, Renders, Approval. |
+| Package mix | Design projects started in the period by package: count and value (Design Fee proposal net, else the discovery design fee). |
+| Overdue | Inspiration open past its days, site visit past its hours, concepts / space planning / renders past their internal deadline. Live. |
+| Chargeable revisions | Open projects with a presentation round beyond the package's included revisions. |
+| Designer / Visualiser workload | Open projects per dedicated designer, and per owner of the renders stage while renders aren't done. |
+| Design approval → Proposal 2 | Designs approved in the period: average calendar days to the first main quotation sent on or after approval; and % whose Proposal 2 is Won (moved on to furniture / joinery). |
+
 ### 6.28 HRMS (kept, narrow)
 Attendance, leave and calendars stay. People appear in planning only as **availability** (leave blocks assignment and bookings). Private personnel data never enters project views.
 

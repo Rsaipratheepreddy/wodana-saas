@@ -67,7 +67,10 @@ projects[].decisions.quotes[].inclusions projects[].decisions.quotes[].hash proj
 projects[].decisions.quotes[].cover projects[].decisions.quotes[].presentation projects[].decisions.quotes[].brand projects[].decisions.quotes[].brand.name
 projects[].decisions.quotes[].brand.logo projects[].decisions.quotes[].brand.primaryColor projects[].decisions.quotes[].brand.accentColor
 projects[].decisions.quotes[].brand.welcomeTitle projects[].decisions.quotes[].brand.welcomeText projects[].decisions.quotes[].brand.supportPhone
-projects[].decisions.quotes[].brand.layout projects[].decisions.quotes[].rooms projects[].decisions.quotes[].rooms[] projects[].decisions.quotes[].rooms[].id
+projects[].decisions.quotes[].brand.layout projects[].decisions.quotes[].letterhead projects[].decisions.quotes[].letterhead.legalName projects[].decisions.quotes[].letterhead.taxLabel
+projects[].decisions.quotes[].letterhead.taxNumber projects[].decisions.quotes[].letterhead.licenceNumber projects[].decisions.quotes[].letterhead.address
+projects[].decisions.quotes[].letterhead.phone projects[].decisions.quotes[].letterhead.email projects[].decisions.quotes[].letterhead.footer
+projects[].decisions.quotes[].letterhead.logoUrl projects[].decisions.quotes[].letterhead.headerUrl projects[].decisions.quotes[].rooms projects[].decisions.quotes[].rooms[] projects[].decisions.quotes[].rooms[].id
 projects[].decisions.quotes[].rooms[].name projects[].decisions.quotes[].paymentTerms projects[].decisions.quotes[].paymentTerms[]
 projects[].decisions.quotes[].paymentTerms[].id projects[].decisions.quotes[].paymentTerms[].title projects[].decisions.quotes[].paymentTerms[].percent
 projects[].decisions.quotes[].paymentTerms[].trigger projects[].decisions.quotes[].lines projects[].decisions.quotes[].lines[]
@@ -126,6 +129,10 @@ projects[].decisions.handovers[].decidedOn projects[].decisions.handovers[].deci
 projects[].decisions.handovers[].documents projects[].decisions.handovers[].documents[] projects[].decisions.handovers[].documents[].id
 projects[].decisions.handovers[].documents[].kind projects[].decisions.handovers[].documents[].title projects[].decisions.handovers[].documents[].mimeType
 projects[].decisions.handovers[].canDecide
+projects[].decisions.drawings projects[].decisions.drawings.id projects[].decisions.drawings.number projects[].decisions.drawings.status
+projects[].decisions.drawings.sentAt projects[].decisions.drawings.decidedOn projects[].decisions.drawings.decidedBy projects[].decisions.drawings.note
+projects[].decisions.drawings.files projects[].decisions.drawings.files[] projects[].decisions.drawings.files[].id projects[].decisions.drawings.files[].name
+projects[].decisions.drawings.files[].mimeType projects[].decisions.drawings.canDecide
 projects[].payments projects[].payments.currency projects[].payments.showAmounts
 projects[].documents projects[].documents[] projects[].documents[].id projects[].documents[].kind projects[].documents[].title projects[].documents[].group
 projects[].documents[].date projects[].documents[].mimeType
@@ -927,6 +934,33 @@ integration("client portal (plan §6.22)", () => {
         .toEqual([{ decision_source: "client_portal", client_grant_id: approver.id }]);
       // Approved, it moves to Documents.
       expect((await w.portal.view(w.slug, token)).projects[0].documents).toEqual([expect.objectContaining({ id: version, kind: "design", title: "Living render", version: 1, changed: false })]);
+    });
+  });
+
+  it("approves the technical drawings sent to the client, with a code, and only the drawings sent (PLM-059)", async () => {
+    await world(async (w) => {
+      await open(w);
+      const { projectId } = await started(w);
+      const revision = randomUUID(), drawing = randomUUID(), signed = randomUUID();
+      await w.client.query(`INSERT INTO project_drawing_revisions (id, workspace_id, project_id, number, status, site_check, site_checked_by, site_checked_at, sent_by, sent_at, created_by)
+        VALUES ($1, $2, $3, 1, 'sent', 'ok', $4, now(), $4, now(), $4)`, [revision, w.workspaceId, projectId, w.designer]);
+      await w.client.query(`INSERT INTO project_drawing_files (id, workspace_id, project_id, revision_id, kind, original_name, mime_type, byte_size, object_key, sha256, created_by)
+        VALUES ($1, $2, $3, $4, 'drawing', 'kitchen.pdf', 'application/pdf', 10, 'k', repeat('a', 64), $5), ($6, $2, $3, $4, 'approval', 'signed.pdf', 'application/pdf', 10, 's', repeat('b', 64), $5)`,
+        [drawing, w.workspaceId, projectId, revision, w.designer, signed]);
+      const token = await signIn(w, APPROVER);
+      let drawings = (await w.portal.view(w.slug, token)).projects[0].decisions!.drawings!;
+      // The drawings only: never the team's own files.
+      expect(drawings).toMatchObject({ id: revision, number: 1, status: "sent", canDecide: true, files: [{ id: drawing, name: "kitchen.pdf", mimeType: "application/pdf" }] });
+      const proof = await decisionCode(w, token, `drawings:${w.caseId}:${revision}:accept`);
+      await expect(w.portal.command(w.slug, token, { commandId: randomUUID(), action: "drawings_decision", caseId: w.caseId, revisionId: revision, decision: "changes", ...proof }))
+        .rejects.toThrow();
+      const again = await decisionCode(w, token, `drawings:${w.caseId}:${revision}:accept`);
+      await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "drawings_decision", caseId: w.caseId, revisionId: revision, decision: "accept", ...again });
+      drawings = (await w.portal.view(w.slug, token)).projects[0].decisions!.drawings!;
+      expect(drawings).toMatchObject({ status: "approved", decidedBy: "Maya", canDecide: false });
+      expect((await w.client.query("SELECT decision_via, decision_recorded_by, decision_grant_id IS NOT NULL AS by_client FROM project_drawing_revisions WHERE id = $1", [revision])).rows)
+        .toEqual([{ decision_via: "portal", decision_recorded_by: null, by_client: true }]);
+      await expect(w.portal.challenge(w.slug, { purpose: `drawings:${w.caseId}:${revision}:accept` }, token, "203.0.113.7")).rejects.toThrow(/aren't waiting/);
     });
   });
 

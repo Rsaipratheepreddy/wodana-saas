@@ -10,7 +10,7 @@ import type { ProjectSection } from "@/lib/project-core/sections";
 import type { ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
 import { CancelProjectDialog, ReopenProjectDialog } from "./project-close";
-import { DatesDialog, HoldDialog, ResumeDialog } from "./project-dialogs";
+import { DatesDialog, FactorySlotDialog, HoldDialog, InstallationDialog, ResumeDialog } from "./project-dialogs";
 import { ProjectDetails } from "./project-details";
 import { ProjectHeader, useNextAction, type ProjectDialog } from "./project-header";
 import { ProjectOverview } from "./project-overview";
@@ -21,6 +21,8 @@ import { ProjectHandoverTab, ProjectMoneyTab } from "./project-tab-views";
 import { ProjectTeam } from "./project-team";
 import { ProjectUpdates } from "./project-updates";
 import { ProjectSite } from "../site/project-site";
+import { LogisticsBookingDialog } from "../logistics/booking-dialog";
+import { RecordPermitDialog } from "../logistics/permit-dialog";
 import styles from "./project-core.module.css";
 
 const PANEL_KEY = "wodana.project.details";
@@ -115,6 +117,8 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
   // On the Overview the record's sidebar holds the details; elsewhere they stay one click away.
   const onOverview = section === "overview";
   const health = overview?.health?.health;
+  const areas = detail.areas ?? { planning: true, production: true, supply: true, delivery: true };
+  const shownSection: ProjectSection = section === "plan" && !areas.planning ? "overview" : section;
 
   return <div className={styles.page} data-details={!onOverview && panel.open && panel.inline ? "open" : undefined}>
     <ProjectHeader detail={detail} next={onOverview ? null : next} detailsOpen={panel.open && panel.inline} onToggleDetails={panel.toggle} onDialog={setDialog} onRename={(name) => save("rename", { name })} onReload={() => void load()}
@@ -122,13 +126,15 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
     <div className={styles.layout}>
       <div className={styles.work}>
         {notice ? <InlineNotice tone="error" message={notice} /> : null}
-        <Tabs tour="project-tab" selectedKey={section} onSelectionChange={(key) => go(key as ProjectSection)} items={[
-          { id: "overview", label: t("Overview"), panel: <ProjectOverview api={api} detail={detail} overview={overview} error={overviewError} onRetry={() => void loadOverview()} run={run} onTeam={() => setDialog("team")} next={next}
+        <Tabs tour="project-tab" selectedKey={shownSection} onSelectionChange={(key) => go(key as ProjectSection)} items={[
+          { id: "overview", label: t("Overview"), panel: <ProjectOverview api={api} detail={detail} overview={overview} error={overviewError} onRetry={() => void loadOverview()} run={run} onTeam={() => setDialog("team")} onInstallation={() => setDialog("installation")}
+            onCrew={(kind) => setDialog(kind === "delivery" ? "delivery_crew" : "installation_crew")} onPermit={() => setDialog("permit")} next={next}
             details={<ProjectDetails detail={detail} save={save} onReload={() => void load()} onDialog={setDialog} compact />} /> },
-          { id: "scope", label: t("Scope"), panel: <ProjectScope workspaceId={workspaceId} projectId={projectId} version={project.version} run={run} /> },
-          { id: "plan", label: t("Plan"), panel: <ProjectPlan workspaceId={workspaceId} projectId={projectId} /> },
+          { id: "scope", label: t("Scope"), panel: <ProjectScope workspaceId={workspaceId} projectId={projectId} version={project.version} run={run} onChanged={() => void load()} /> },
+          // PLM-098: the plan shows when the job's path uses Planning (or it already holds work).
+          ...(areas.planning ? [{ id: "plan", label: t("Plan"), panel: <ProjectPlan workspaceId={workspaceId} projectId={projectId} /> }] : []),
           { id: "money", label: t("Money"), panel: <ProjectMoneyTab workspaceId={workspaceId} projectId={projectId} rights={rights} /> },
-          { id: "site", label: t("Site"), panel: <ProjectSite workspaceId={workspaceId} projectId={projectId} projectName={[project.reference, project.name].filter(Boolean).join(" · ")} /> },
+          { id: "site", label: t("Site"), panel: <ProjectSite workspaceId={workspaceId} projectId={projectId} projectName={[project.reference, project.name].filter(Boolean).join(" · ")} showDeliveries={areas.supply} /> },
           { id: "handover", label: t("Handover"), panel: <ProjectHandoverTab workspaceId={workspaceId} projectId={projectId} detail={detail} /> },
           { id: "updates", label: t("Updates"), panel: <ProjectUpdates detail={detail} run={run} workspaceId={workspaceId} projectId={projectId} /> },
         ]} />
@@ -144,6 +150,14 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
     {dialog === "resume" ? <ResumeDialog hold={detail.hold ?? null} onClose={() => setDialog(null)} onSave={async (shiftDates) => { await save("resume", { shiftDates }); setDialog(null); }} /> : null}
     {dialog === "dates" ? <DatesDialog startDate={project.startDate} promiseDate={project.promiseDate} onClose={() => setDialog(null)}
       onSave={async (startDate, promiseDate) => { await save("set_dates", { startDate, promiseDate }); setDialog(null); }} /> : null}
+    {dialog === "factory_slot" ? <FactorySlotDialog slot={detail.factorySlot ?? null} onClose={() => setDialog(null)}
+      onSave={async (date, note) => { await save("book_factory_slot", { date, note }); setDialog(null); }} /> : null}
+    {dialog === "installation" ? <InstallationDialog current={detail.installation ?? null} onClose={() => setDialog(null)}
+      onSave={async (deliveryOn, installationOn, note) => { await save("schedule_installation", { deliveryOn, installationOn, note }); setDialog(null); }} /> : null}
+    {dialog === "delivery_crew" || dialog === "installation_crew" ? <LogisticsBookingDialog workspaceId={workspaceId} fixedProject
+      initial={{ kind: dialog === "delivery_crew" ? "delivery" : "installation", projectId }} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); void load(); }} /> : null}
+    {dialog === "permit" ? <RecordPermitDialog workspaceId={workspaceId} owner={{ projectId }} permitId={detail.installation?.permit?.plannedId} onClose={() => setDialog(null)}
+      onSaved={() => { setDialog(null); void load(); }} /> : null}
     {dialog === "cancel" ? <CancelProjectDialog api={api} projectId={projectId} onClose={() => setDialog(null)}
       onSave={async (reason) => { await save("cancel", { reason }); setDialog(null); }} /> : null}
     {dialog === "reopen" ? <ReopenProjectDialog onClose={() => setDialog(null)} onSave={async (reason) => { await save("reopen", { reason }); setDialog(null); }} /> : null}

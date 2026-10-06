@@ -54,6 +54,12 @@ export function ProjectLinks({ projects }: { projects: ProjectRef[] }) {
     title={project.name ?? undefined} onClick={(event) => event.stopPropagation()}>{project.reference}</Link>)}</span>;
 }
 
+/** The won deals a row is for (an order bought for a client's furniture), each linking to its deal. */
+export function DealLinks({ deals }: { deals: Array<{ id: string; reference: string }> }) {
+  return <span className={styles.projects}>{deals.map((deal) => <Link key={deal.id} className={styles.projectLink} href={`/workspace/crm/opportunities?record=${deal.id}`}
+    onClick={(event) => event.stopPropagation()}>{deal.reference}</Link>)}</span>;
+}
+
 /** A date and how far it is from today; late in the danger tone (with the words, never colour alone). */
 export function DueText({ date, done = false, prefix }: { date: string | null; done?: boolean; prefix?: string }) {
   const format = useProjectFormat();

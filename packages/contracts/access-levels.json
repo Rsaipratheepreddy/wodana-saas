@@ -57,21 +57,21 @@
       "view": ["stock.view", "catalog.view"],
       "edit": ["stock.receive", "stock.manage", "catalog.manage"],
       "manage": ["stock.adjust", "stock.inspect"],
-      "advanced": []
+      "advanced": ["stock.alerts", "fulfilment.deliver"]
     },
     {
       "id": "factory",
       "view": ["factory.view"],
-      "edit": ["factory.report", "factory.manage"],
+      "edit": ["factory.report", "factory.manage", "logistics.manage"],
       "manage": ["factory.approve"],
       "advanced": []
     },
     {
       "id": "finance",
       "view": ["payables.view", "receivables.view"],
-      "edit": ["payables.manage", "receivables.manage", "accounting.manage", "commercial.finance.verify"],
+      "edit": ["payables.manage", "receivables.manage", "accounting.manage", "commercial.finance.verify", "finance_requests.manage"],
       "manage": ["payables.approve", "finance.settings.manage"],
-      "advanced": []
+      "advanced": ["finance_requests.raise"]
     },
     {
       "id": "people",
@@ -85,7 +85,8 @@
       "view": ["module.organization.read", "module.roles.read", "module.integrations.read", "legal_entities.view", "integrations.view", "audit.view"],
       "edit": ["module.organization.write", "module.organization.edit", "module.integrations.write", "module.integrations.edit", "legal_entities.manage", "integrations.manage"],
       "manage": ["module.organization.delete", "module.integrations.delete", "module.roles.write", "module.roles.edit", "module.roles.delete", "workspace.roles.manage", "workspace.settings.manage", "workspace.view_as"],
-      "advanced": []
+      "$comment": "Management dashboards (PLM-134) are given one by one: owners and administrators hold them; managers get them later, per dashboard and team.",
+      "advanced": ["reports.management.view", "reports.management.targets"]
     },
     {
       "id": "woddy",

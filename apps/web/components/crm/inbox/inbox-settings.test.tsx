@@ -31,6 +31,7 @@ function setup(canManage = true) {
       ],
       defaults: { workingDays: [1, 2, 3, 4, 5], start: "09:00", end: "18:00", timeZone: "Europe/London" },
     },
+    "inbox/email-address": { available: true, address: canManage ? "palm-abcdefghij@in.example" : null, version: canManage ? 1 : 0, canManage },
     "inbox/starter-pack": { languages: ["en", "ar"], defaultLanguages: ["en"], items: [
       { key: "enquiry_welcome", event: "crm.enquiry.created", name: "wd_enquiry_welcome", language: "en", body: "Hello {{1}}…", status: "rejected" },
       { key: "quote_ready", event: "portal.quote_issued", name: "wd_quote_ready", language: "en", body: "Hello {{1}}…", status: null },
@@ -164,3 +165,31 @@ describe("Settings → Inbox", () => {
     expect(screen.getByRole("button", { name: "Add quick reply" })).toBeInTheDocument();
   });
 });
+
+describe("Settings → Inbox → Email (PLM-025)", () => {
+  it("shows the inbound address with copy, the forwarding steps, and makes a new one only after saying the old one stops", async () => {
+    const user = userEvent.setup(), { sent } = setup();
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(<InboxSettingsPage workspaceId={WORKSPACE} />);
+    const section = await screen.findByRole("region", { name: "Email" });
+    expect(await within(section).findByText("palm-abcdefghij@in.example")).toBeInTheDocument();
+    expect(within(section).getByText("Google Workspace")).toBeInTheDocument();
+    expect(within(section).getByText("Microsoft 365")).toBeInTheDocument();
+    await user.click(within(section).getByRole("button", { name: "Copy" }));
+    expect(writeText).toHaveBeenCalledWith("palm-abcdefghij@in.example");
+    await user.click(within(section).getByRole("button", { name: "New address" }));
+    expect(await screen.findByText("The current address stops working at once.")).toBeInTheDocument();
+    expect(sent("inbox/email-address", "POST")).toEqual([]);
+    await user.click(screen.getByRole("button", { name: "Make new address" }));
+    await waitFor(() => expect(sent("inbox/email-address", "POST")).toEqual([{ version: 1, commandId: expect.any(String) }]));
+  });
+
+  it("lets someone who can't manage the inbox see that no address is set up, without a way to make one", async () => {
+    setup(false); render(<InboxSettingsPage workspaceId={WORKSPACE} />);
+    const section = await screen.findByRole("region", { name: "Email" });
+    expect(await within(section).findByText("Not set up")).toBeInTheDocument();
+    expect(within(section).queryByRole("button", { name: "Create address" })).not.toBeInTheDocument();
+  });
+});
+

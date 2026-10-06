@@ -12,7 +12,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
   const t = useT();
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const [data, setData] = useState<{ settings: PurchasingSettings; canManage: boolean; currency: string | null } | null>(null);
-  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean; adjustLimit: string; ahead: string; invoiceTolerance: string; guard: "off" | "warn" | "strict"; runs: boolean } | null>(null);
+  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; paid: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean; adjustLimit: string; ahead: string; invoiceTolerance: string; guard: "off" | "warn" | "strict"; runs: boolean } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   // The form as last loaded or saved, to tell unsaved changes apart and to discard them.
@@ -22,7 +22,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     setData(next);
     const value = next.settings.approvalThreshold;
     const loaded = ({ approval: value !== null, always: value !== null && Number(value) === 0, threshold: value && Number(value) ? value.replace(/\.?0+$/, "") : "",
-      signoff: next.settings.requireMaterialSignoff, approved: next.settings.requireApprovedSupplier, inspection: next.settings.requireInspection,
+      signoff: next.settings.requireMaterialSignoff, paid: Boolean(next.settings.requireClientPayment), approved: next.settings.requireApprovedSupplier, inspection: next.settings.requireInspection,
       tolerance: quantityText(next.settings.receiveTolerancePercent) || "0", sitePhoto: next.settings.requireSitePhoto,
       adjustLimit: next.settings.stockAdjustApprovalValue ? quantityText(next.settings.stockAdjustApprovalValue) : "", ahead: String(next.settings.orderAheadDays),
       invoiceTolerance: quantityText(next.settings.invoiceTolerancePercent) || "0", guard: next.settings.spendingGuard, runs: next.settings.paymentRunsRequired });
@@ -39,7 +39,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
   const save = async () => {
     setBusy(true); setError("");
     try {
-      const settings = await api.saveSettings({ version: data.settings.version, approvalThreshold: threshold, requireMaterialSignoff: form.signoff, requireApprovedSupplier: form.approved,
+      const settings = await api.saveSettings({ version: data.settings.version, approvalThreshold: threshold, requireMaterialSignoff: form.signoff, requireClientPayment: form.paid, requireApprovedSupplier: form.approved,
         requireInspection: form.inspection, receiveTolerancePercent: form.tolerance || "0", requireSitePhoto: form.sitePhoto,
         stockAdjustApprovalValue: form.adjustLimit || null, orderAheadDays: Number(form.ahead || "0"), invoiceTolerancePercent: form.invoiceTolerance || "0", spendingGuard: form.guard,
         paymentRunsRequired: form.runs });
@@ -64,6 +64,9 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     <SettingsSection id="before" title={t("Before an order is placed")}>
       <SettingsRow label={t("Client signed off the material list")} hint={t("Nothing for a project is ordered until its client signs off the materials.")}>
         <Switch aria-label={t("Client signed off the material list")} isDisabled={readOnly} isSelected={form.signoff} onChange={(signoff) => setForm({ ...form, signoff })} />
+      </SettingsRow>
+      <SettingsRow label={t("Client paid for the order")} hint={t("Nothing is ordered until Finance has verified the client's payment for that order.")}>
+        <Switch aria-label={t("Client paid for the order")} isDisabled={readOnly} isSelected={form.paid} onChange={(paid) => setForm({ ...form, paid })} />
       </SettingsRow>
       <SettingsRow label={t("Supplier approved")} hint={t("Orders go only to approved suppliers.")}>
         <Switch aria-label={t("Supplier approved")} isDisabled={readOnly} isSelected={form.approved} onChange={(approved) => setForm({ ...form, approved })} />

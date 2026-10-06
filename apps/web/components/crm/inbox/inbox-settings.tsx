@@ -11,6 +11,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { AutoRepliesSection } from "./auto-replies-settings";
 import { ClientMessagesSection } from "./client-messages-settings";
+import { InboundEmailSection } from "./inbound-email-settings";
 import { LabelChip, useInboxLookups } from "./inbox-parts";
 import styles from "./inbox-parts.module.css";
 
@@ -98,6 +99,7 @@ export function InboxSettingsPage({ workspaceId }: { workspaceId: string }) {
           <Switch isDisabled={!canManage || !draft} isSelected={Boolean(draft?.signatureEnabled)} onChange={(value) => setDraft((current) => current && { ...current, signatureEnabled: value })}>{t("Sign replies")}</Switch>
         </SettingsRow>
       </SettingsSection>
+      <InboundEmailSection workspaceId={workspaceId} />
       <SettingsSection id="inbox-assignment" title={t("New chats")}
         actions={canManage ? <Button size="compact" variant="primary" isDisabled={!changed} isLoading={saving} onPress={async () => {
           if (!draft) return; setSaving(true);

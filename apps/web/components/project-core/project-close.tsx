@@ -29,7 +29,9 @@ export function CancelProjectDialog({ api, projectId, onClose, onSave }: { api: 
   }, [api, projectId, t, attempt]);
   const draftLabel = (draft: CloseOutDraft) => (draft.kind === "order" ? draft.number : t("Price request {number}", { number: draft.number }));
   const blocked = Boolean(closeOut?.blockers.length);
-  const automatic = closeOut ? closeOut.drafts.length + closeOut.heldStock.length + (closeOut.openWork ? 1 : 0) : 0;
+  // Open work and open snags are cancelled with the project.
+  const openWork = closeOut ? closeOut.openWork + (closeOut.openSnags?.length ?? 0) : 0;
+  const automatic = closeOut ? closeOut.drafts.length + closeOut.heldStock.length + (openWork ? 1 : 0) : 0;
 
   return <FormDialog size="md" title={t("Cancel the project")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())}
     isSubmitDisabled={!closeOut || blocked || !reason.trim()} submitLabel={t("Cancel the project")} submitVariant="danger" onSubmit={() => onSave(reason.trim())}>
@@ -52,7 +54,7 @@ export function CancelProjectDialog({ api, projectId, onClose, onSave }: { api: 
         <h3>{t("Cancelling also")}</h3>
         <ul className={styles.closeList}>
           {closeOut.drafts.map((draft) => <li key={draft.id}><span>{draftLabel(draft)}</span><small>{t("Cancelled; it was never sent")}</small></li>)}
-          {closeOut.openWork ? <li><span>{t("Open work")}</span><small>{t("{count} cancelled", { count: closeOut.openWork })}</small></li> : null}
+          {openWork ? <li><span>{t("Open work")}</span><small>{t("{count} cancelled", { count: openWork })}</small></li> : null}
           {closeOut.heldStock.map((row) => <li key={`${row.itemId}:${row.locationId}`}><span>{row.itemName}</span>
             <small>{t("{quantity} at {place} becomes free stock", { quantity: `${quantityText(row.quantity)} ${row.unit}`.trim(), place: row.locationName })}</small></li>)}
         </ul>

@@ -8,6 +8,7 @@ import styles from "../commercial/quotation-print.module.css";
 import { isolate, usePortalFormat } from "./portal-format";
 import { StateLabel } from "./portal-labels";
 import own from "./portal-document-print.module.css";
+import { LetterheadFooter, LetterheadHeader } from "../documents/document-letterhead";
 
 type Document = { kind: "invoice"; invoice: PortalInvoiceDocument } | { kind: "receipt"; receipt: PortalReceiptDocument };
 
@@ -28,18 +29,19 @@ function Cell({ label, children }: { label: string; children: ReactNode }) {
 export function PortalDocumentPrint({ site, document }: { site: PortalSite; document: Document }) {
   const t = useT();
   const format = usePortalFormat(site.region);
-  const brand = <div className={own.brand}>
+  // The issuing business's letterhead (PLM-112), else the tenant's brand.
+  const brand = (letterhead: PortalInvoiceDocument["letterhead"]) => <LetterheadHeader letterhead={letterhead} fallback={<div className={own.brand}>
     {site.brand.logoUrl
       // eslint-disable-next-line @next/next/no-img-element -- the tenant's own logo
       ? <img alt={site.brand.name} className={own.logo} src={site.brand.logoUrl} /> : <strong>{site.brand.name}</strong>}
-  </div>;
+  </div>} />;
   const toolbar = <div className={own.toolbar}><Button variant="primary" onPress={() => window.print()}>{t("Print or save as PDF")}</Button></div>;
   if (document.kind === "receipt") {
     const receipt = document.receipt;
     return <main className={styles.page}>
       {toolbar}
       <article className={own.sheet}>
-        <header className={own.header}>{brand}<div className={own.heading}><h1 className={own.title}>{t("Payment receipt")}</h1></div></header>
+        <header className={own.header}>{brand(receipt.letterhead)}<div className={own.heading}><h1 className={own.title}>{t("Payment receipt")}</h1></div></header>
         <dl className={own.cells} data-columns="2">
           <Cell label={t("From")}><span dir="auto">{receipt.company}</span></Cell>
           <Cell label={t("Received from")}><span dir="auto">{receipt.customer || "—"}</span></Cell>
@@ -52,6 +54,7 @@ export function PortalDocumentPrint({ site, document }: { site: PortalSite; docu
         <dl className={own.totals}>
           <div data-emphasis="due"><dt>{t("Amount received")}</dt><dd>{format.money(receipt.amount, receipt.currency)}</dd></div>
         </dl>
+        <LetterheadFooter letterhead={receipt.letterhead} />
       </article>
     </main>;
   }
@@ -66,7 +69,7 @@ export function PortalDocumentPrint({ site, document }: { site: PortalSite; docu
     {toolbar}
     <article className={own.sheet}>
       <header className={own.header}>
-        {brand}
+        {brand(invoice.letterhead)}
         <div className={own.heading}>
           <h1 className={own.title}>{t("Tax invoice")}</h1>
           <span className={own.number}>{isolate(invoice.number)}</span>
@@ -104,6 +107,7 @@ export function PortalDocumentPrint({ site, document }: { site: PortalSite; docu
         {invoice.credit ? <p>{t("Credited by {note} on {date}", { note: isolate(invoice.credit.number), date: format.date(invoice.credit.on) })}</p> : null}
         {invoice.note ? <p dir="auto">{invoice.note}</p> : null}
       </footer> : null}
+      <LetterheadFooter letterhead={invoice.letterhead} />
     </article>
   </main>;
 }

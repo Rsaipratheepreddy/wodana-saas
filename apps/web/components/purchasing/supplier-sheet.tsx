@@ -106,6 +106,8 @@ function SupplierRecord({ api, state, supplier, onState, onClose }: SheetProps &
         <EditableField canEdit={edit} label={state.taxNumber?.label ?? t("Tax number")} maxLength={120} onReload={reload} onSave={(taxRegistrationNumber) => save({ taxRegistrationNumber })} placeholder={t("Not set")}
           validate={taxNumber} value={supplier.taxRegistrationNumber ?? ""} />
         <EditableField canEdit={edit} kind="multiline" label={t("Notes")} maxLength={10000} onReload={reload} onSave={(notes) => save({ notes })} placeholder={t("Not set")} value={supplier.notes} />
+        {/* Columns of the firm's own supplier list, kept as they were written there. */}
+        {(supplier.attributes ?? []).map((attribute) => <FactRow key={attribute.name} label={attribute.name}><span dir="auto">{attribute.value}</span></FactRow>)}
       </EditableFieldList>
       <section className={styles.part} aria-label={t("Documents, bank details and performance")}>
         <SupplierControls api={api} supplierId={supplier.id} onChanged={reload} />

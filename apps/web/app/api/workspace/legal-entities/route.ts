@@ -39,6 +39,9 @@ export async function POST(request: Request) {
       taxRegistrationNumber: typeof body.taxRegistrationNumber === "string" ? body.taxRegistrationNumber.trim() : undefined,
       registrationNumber: typeof body.registrationNumber === "string" ? body.registrationNumber.trim() : undefined,
       address: body.address && typeof body.address === "object" && !Array.isArray(body.address) ? body.address : undefined,
+      phone: typeof body.phone === "string" ? body.phone.trim() : undefined,
+      email: typeof body.email === "string" ? body.email.trim() : undefined,
+      letterheadFooter: typeof body.letterheadFooter === "string" ? body.letterheadFooter.trim() : undefined,
     }),
   }, t("The legal entity could not be created."));
 }

@@ -7,7 +7,12 @@ import { everythingMade } from "../factory/factory";
 import { projectHandedOver } from "../site/handover";
 import { everythingOrdered } from "../purchasing/orders";
 import { materialsSignedOff } from "./project-materials";
-import { checkPasses, DEFAULT_ROLES, DEFAULT_STAGES, LEAD_ROLE, type ProjectRole, type StageCheck, type TemplateStage } from "./project-checks";
+import { readDrawingFacts } from "./project-drawings";
+import { checkPasses, DEFAULT_ROLES, DEFAULT_STAGES, DRAWING_CHECKS, INSTALLATION_CHECKS, LEAD_ROLE, type ProjectRole, type StageCheck, type TemplateStage } from "./project-checks";
+import { readInstallationFacts } from "./project-installation";
+import { normaliseKeepInformed, type KeepInformed } from "./project-keep-informed";
+import { boqRequiredForProject } from "../fulfilment/fulfilment-rules";
+import { readPermitCollected } from "../logistics/permits";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -23,18 +28,22 @@ export type ProjectSettings = {
   autoSendPendingReports: boolean;
   /** The week's sent days go to the client as one digest on the last working day (instead of the weekly draft). */
   weeklyRollup: boolean;
+  /** PLM-055: the roles told at the project's key moments (technical drawings started, production started, installation scheduled). */
+  keepInformed: KeepInformed;
 };
 
 /** The workspace's project settings, created with the defaults the first time they're read. */
 export async function ensureSettings(db: Db, workspaceId: string): Promise<ProjectSettings> {
   await db.query(`INSERT INTO workspace_project_settings (workspace_id, roles) VALUES ($1, $2::jsonb) ON CONFLICT (workspace_id) DO NOTHING`,
     [workspaceId, JSON.stringify(DEFAULT_ROLES)]);
-  return (await db.query<ProjectSettings>(
+  const row = (await db.query<ProjectSettings>(
     `SELECT require_agreement AS "requireAgreement", require_payment AS "requirePayment", require_approval AS "requireApproval",
             require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version, auto_finish AS "autoFinish",
             client_update_auto_send_hours AS "clientUpdateAutoSendHours", to_char(report_due_time, 'HH24:MI') AS "reportDueTime",
-            auto_send_pending_reports AS "autoSendPendingReports", weekly_rollup AS "weeklyRollup"
+            auto_send_pending_reports AS "autoSendPendingReports", weekly_rollup AS "weeklyRollup", keep_informed AS "keepInformed"
        FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+  // Roles removed since drop out of who is kept informed.
+  return { ...row, keepInformed: normaliseKeepInformed(row.keepInformed, row.roles) };
 }
 
 export type TemplateRow = { id: string; name: string; isDefault: boolean; version: number; stages: TemplateStage[] };
@@ -161,20 +170,38 @@ export async function evaluateStages(db: Db, workspaceId: string, project: Pick<
   const needsPayment = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "payment_verified"));
   const paid = needsPayment ? await productionPaid(db, workspaceId, project.caseId, project.quoteId) : false;
   const needsMaterials = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "material_list_signed_off"));
-  const materialsDone = needsMaterials ? await materialsSignedOff(db, workspaceId, project.id) : false;
+  // PLM-083: an order that needs no BOQ has no material sign-off gate.
+  const materialsDone = needsMaterials ? await materialsSignedOff(db, workspaceId, project.id) || !(await boqRequiredForProject(db, workspaceId, project.id, true)) : false;
   const needsOrders = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "everything_ordered"));
   const ordered = needsOrders ? await everythingOrdered(db, workspaceId, project.id) : false;
   const needsMade = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "everything_made"));
   const made = needsMade ? await everythingMade(db, workspaceId, project.id) : false;
   const needsHandover = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "handover_accepted"));
   const handover = needsHandover ? await projectHandedOver(db, workspaceId, project) : false;
+  // The latest drawing revision (PLM-057 … 059) and the factory slot (PLM-068), read only when a current stage asks.
+  const needsDrawings = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => DRAWING_CHECKS.includes(check.kind)));
+  const drawings = needsDrawings ? await readDrawingFacts(db, workspaceId, project.id) : undefined;
+  // A role marked "not applicable" on this project (PLM-100) is settled: its "role named" check passes.
+  const needsRoles = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "role_assigned"));
+  const notApplicableRoles = new Set(needsRoles ? (await db.query<{ role: string }>(
+    `SELECT role_key AS role FROM project_team_not_applicable WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, project.id])).rows.map((row) => row.role) : []);
+  // Delivery and installation (PLM-069), read only when a current stage asks.
+  const needsInstallation = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => INSTALLATION_CHECKS.includes(check.kind)));
+  const installation = needsInstallation ? await readInstallationFacts(db, workspaceId, project.id) : undefined;
+  const needsSlot = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "factory_slot_booked"));
+  const factorySlotBooked = needsSlot ? Boolean((await db.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 AND factory_slot_on IS NOT NULL`,
+    [workspaceId, project.id])).rowCount) : false;
+  // The building permit for the delivery day (Palm, 6 Oct), read only when a current stage asks.
+  const needsPermit = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "permit_collected"));
+  const permitCollected = needsPermit ? await readPermitCollected(db, workspaceId, project.id) : false;
   const snags = (await db.query<{ open: number; critical: number }>(
     `SELECT count(*)::int AS open, count(*) FILTER (WHERE severity = 'critical')::int AS critical FROM work_items
       WHERE workspace_id = $1 AND project_id = $2 AND type = 'snag' AND status NOT IN ('done', 'cancelled')`, [workspaceId, project.id])).rows[0];
   return stages.map((stage) => {
     const mine = confirmations.filter((confirmation) => confirmation.stageId === stage.id);
     const facts = { filledRoles, confirmed: new Set(mine.map((confirmation) => confirmation.checkKey)), productionPaid: paid, materialsSignedOff: materialsDone, everythingOrdered: ordered,
-      everythingMade: made, openSnags: snags.open, openCriticalSnags: snags.critical, handedOver: handover };
+      everythingMade: made, openSnags: snags.open, openCriticalSnags: snags.critical, handedOver: handover, drawings, factorySlotBooked, notApplicableRoles, installation,
+      permitCollected };
     const checks = stage.checks.map((check) => {
       const confirmation = mine.find((item) => item.checkKey === check.key);
       return { ...check, passed: stage.status === "done" ? true : checkPasses(check, facts), confirmedBy: confirmation?.byName ?? null, confirmedAt: confirmation?.at ?? null, note: confirmation?.note ?? "" };

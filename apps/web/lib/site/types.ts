@@ -54,6 +54,15 @@ export type SiteState = {
   crew?: Array<{ trade: string; people: number; hours?: string | null }>;
   /** Worked days (the last two weeks) that ended without a submitted report. */
   missing?: string[];
+  /** PLM-065: what the client still owes before installation is signed off (finishing site work), while site work runs. */
+  installationOwed?: InstallationOwed | null;
+  /** Whoever manages projects may sign installation off while it's owed, with why. */
+  canSignOffOwed?: boolean;
+};
+
+export type InstallationOwed = {
+  stages: Array<{ id: string; title: string; amount: string; currency: string; state: "to_invoice" | "invoiced" | "reported" | "verified" }>;
+  totals: Array<{ currency: string; amount: string }>;
 };
 
 /** A photo on the client's card: where it was taken, and the before/after it pairs with. */

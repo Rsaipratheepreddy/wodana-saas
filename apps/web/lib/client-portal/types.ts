@@ -1,4 +1,5 @@
 import type { ClientPresentation } from "@/lib/proposals/client";
+import type { DocumentLetterhead } from "../brand/letterhead";
 /** The client portal as the business core returns it (services/business-core/src/client-portal). */
 
 export const PORTAL_SECTIONS = ["progress", "moodboard", "decisions", "payments", "documents", "warranty", "messages"] as const;
@@ -27,7 +28,7 @@ export type PortalQuoteLine = {
 export type PortalQuote = {
   id: string; number: number; kind: "quotation" | "variation"; direction: "addition" | "deduction" | null; status: string; title: string; currency: string; validUntil: string;
   issuedAt: string | null; total: number; discount: number; taxRate: number; terms: string; exclusions: string; inclusions: string; hash: string | null; expired: boolean;
-  canDecide: boolean; cover: Record<string, string | boolean | null> | null; presentation: unknown; brand: Record<string, string> | null;
+  canDecide: boolean; cover: Record<string, string | boolean | null> | null; presentation: unknown; brand: Record<string, string> | null; letterhead?: DocumentLetterhead | null;
   rooms: Array<{ id: string; name: string }>; paymentTerms: Array<{ id: string; title: string; percent: number; trigger: string }>; lines: PortalQuoteLine[];
   decision: null | { decision: "accept" | "changes" | "decline"; quoteHash: string; selectedOptionLineIds: string[]; baseTotal: number; optionsTotal: number;
     acceptedTotal: number | null; decidedAt: string; decidedBy: string; note: string };
@@ -62,6 +63,12 @@ export type PortalHandover = {
   note: string; documents: Array<{ id: string; kind: string; title: string; mimeType: string }>; canDecide: boolean;
   /** Money still due on the project while the pack waits for the client's decision. */
   balance?: { currency: string; due: string } | null;
+};
+
+/** The technical drawings sent to the client (PLM-059): the drawing files, and their decision. */
+export type PortalDrawings = {
+  id: string; number: number; status: "sent" | "approved" | "changes_requested"; sentAt: string; decidedOn: string | null; decidedBy: string | null; note: string;
+  files: Array<{ id: string; name: string; mimeType: string }>; canDecide: boolean;
 };
 
 export type PortalQuestion = {
@@ -150,7 +157,7 @@ export type PortalDayCard = {
   stage?: { number: number; total: number; name: string | null } | null; percent?: number | null;
 };
 
-export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
+export type PortalStep = { kind: "quote" | "design" | "definition" | "materials" | "drawings" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
   due: string | null };
 
 /** Someone the client deals with: their project manager, designer or sales contact (one person may be two). */
@@ -189,7 +196,7 @@ export type PortalProject = {
     siteAccess: PortalSiteAccess[];
   };
   moodboard: PortalMoodboard | null;
-  decisions: null | { quotes: PortalQuote[]; designs: PortalDesign[]; requests: PortalQuestion[]; definition: PortalDefinition | null; materials: PortalMaterials | null; handovers: PortalHandover[] };
+  decisions: null | { quotes: PortalQuote[]; designs: PortalDesign[]; requests: PortalQuestion[]; definition: PortalDefinition | null; materials: PortalMaterials | null; handovers: PortalHandover[]; drawings?: PortalDrawings | null };
   payments: null | { currency: string | null; showAmounts: boolean; milestones: PortalMilestone[];
     /** Paid and still to pay across the plan (exact decimals), when the tenant shows amounts. */
     totals?: { paid: string; left: string } | null };
@@ -221,8 +228,11 @@ export type PortalInvoiceDocument = {
   lines: Array<{ description: string; taxRate: string; net: string; tax: string; total: string }>;
   net: string; tax: string; total: string; paid: string; balance: string; note: string; status: "credited" | "paid" | "overdue" | "due";
   credit: { number: string | null; on: string | null } | null;
+  /** The issuing business's letterhead (PLM-112). */
+  letterhead?: DocumentLetterhead | null;
 };
-export type PortalReceiptDocument = { id: string; milestone: string; amount: string; currency: string; receivedOn: string | null; invoiceNumber: string | null; company: string; customer: string | null };
+export type PortalReceiptDocument = { id: string; milestone: string; amount: string; currency: string; receivedOn: string | null; invoiceNumber: string | null; company: string; customer: string | null;
+  letterhead?: DocumentLetterhead | null };
 
 export type PortalView = { contact: { name: string; nameConfirmed: boolean; phone: string }; today: string; projects: PortalProject[] };
 

@@ -1,4 +1,5 @@
 import { PDFDocument, PageSizes, rgb, type PDFPage } from "pdf-lib";
+import { drawLetterheadFooter, drawLetterheadTop, type PdfLetterhead } from "../proposals/pdf-letterhead";
 import { PdfText, type TextWeight } from "../proposals/pdf-text";
 import { moneyText } from "../proposals/proposal-pdf";
 
@@ -9,6 +10,8 @@ import { moneyText } from "../proposals/proposal-pdf";
  */
 export type ChangeDocument = {
   brandName: string;
+  /** The issuing business's letterhead (PLM-112); without one the brand's name heads the page. */
+  letterhead?: PdfLetterhead | null;
   reference: string;
   title: string;
   description: string;
@@ -35,18 +38,21 @@ export async function composeChangeDocument(data: ChangeDocument): Promise<Uint8
   document.setTitle(`${data.reference} ${data.title}`);
   document.setProducer(data.brandName);
   const t = await PdfText.embed(document);
-  let page: PDFPage = document.addPage(A4);
-  let y = A4[1] - MARGIN;
   const width = A4[0] - MARGIN * 2;
+  const letterhead = data.letterhead ?? null;
+  let page: PDFPage = document.addPage(A4);
+  drawLetterheadFooter(page, t, letterhead, { x: MARGIN, width });
+  let y = A4[1] - MARGIN;
   const draw = (value: string, x: number, size = 10, weight: TextWeight = "regular", color = INK, box?: number) => t.draw(page, value, { x, y, size, weight, color, width: box });
   const end = (value: string, x: number, size = 10, weight: TextWeight = "regular") => t.draw(page, value, { x, y, size, weight, color: INK, align: "end" });
   const money = (amount: string) => moneyText(amount, data.currency, data.decimals);
-  const space = (needed: number) => { if (y - needed < MARGIN) { page = document.addPage(A4); y = A4[1] - MARGIN; } };
+  const space = (needed: number) => { if (y - needed < MARGIN) { page = document.addPage(A4); drawLetterheadFooter(page, t, letterhead, { x: MARGIN, width }); y = A4[1] - MARGIN; } };
   const paragraph = (value: string, size = 10, color = MUTED) => {
     for (const line of wrap(t, value, width, size)) { space(size + 4); draw(line, MARGIN, size, "regular", color, width); y -= size + 4; }
   };
 
-  draw(data.brandName, MARGIN, 11, "bold");
+  if (letterhead) { y = await drawLetterheadTop(document, page, t, letterhead, { x: MARGIN, y, width, accent: INK }); y -= 8; }
+  else draw(data.brandName, MARGIN, 11, "bold");
   end(data.reference, MARGIN + width, 11, "bold");
   y -= 28;
   draw(data.title, MARGIN, 18, "bold", INK, width);

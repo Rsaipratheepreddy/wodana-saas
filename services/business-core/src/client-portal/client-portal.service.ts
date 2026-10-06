@@ -12,7 +12,7 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { DeviceTokenStoreService } from "../crm/notifications/device-token-store.service";
 import { confirmName, mobileNumber, openSession, portalCodes, sendCode, signIn, signOut, useCode, type Channel, type Delivery, type PortalContact, type PortalCodes } from "./portal-auth";
 import {
-  answerRequest, assertDecisionOpen, claimWarranty, decideDefinition, decideDesign, decideHandover, decideMaterials, decideQuote, grantFor,
+  answerRequest, assertDecisionOpen, claimWarranty, decideDefinition, decideDesign, decideDrawingsInPortal, decideHandover, decideMaterials, decideQuote, grantFor,
   type DecisionContext,
 } from "./portal-decisions";
 import { designComment, designReply, designResolve } from "./portal-design";
@@ -43,7 +43,7 @@ type Handler = (ctx: DecisionContext, body: Record<string, unknown>) => Promise<
 /** Every client command, with the portal section it belongs to (a hidden section can't be acted on). */
 const COMMANDS: Record<string, [Handler, Section]> = {
   quote_decision: [decideQuote, "decisions"], design_decision: [decideDesign, "decisions"], definition_decision: [decideDefinition, "decisions"],
-  request_answer: [answerRequest, "decisions"], materials_decision: [decideMaterials, "decisions"], handover_decision: [decideHandover, "decisions"],
+  request_answer: [answerRequest, "decisions"], materials_decision: [decideMaterials, "decisions"], drawings_decision: [decideDrawingsInPortal, "decisions"], handover_decision: [decideHandover, "decisions"],
   warranty_claim: [claimWarranty, "warranty"], request: [raiseRequest, "messages"], comment: [comment, "messages"], read_thread: [readThread, "messages"],
   react: [react, "moodboard"], board_comment: [boardComment, "moodboard"], add_inspiration: [addInspiration, "moodboard"], remove_inspiration: [removeInspiration, "moodboard"],
   report_payment: [reportPayment, "payments"], report_issue: [reportIssue, "progress"], site_access: [siteAccess, "progress"],
@@ -312,6 +312,16 @@ export class ClientPortalService {
           WHERE photo.workspace_id = $1 AND photo.id = $2 AND photo.shared_at IS NOT NULL`, [workspaceId, id])).rows[0];
       const settings = await readPortalSettings(client, workspaceId);
       return row && settings.progress.photos ? { ...row, sections: ["progress" as const] } : null;
+    }
+    if (kind === "drawing") {
+      // A drawing of the technical drawings sent to the client (PLM-059), never one still with the team.
+      const row = (await client.query<Omit<Found, "sections">>(
+        `SELECT project.case_id AS "caseId", file.object_key AS "objectKey", file.preview_key AS "previewKey", file.mime_type AS "mimeType", file.original_name AS name
+           FROM project_drawing_files file
+           JOIN project_drawing_revisions revision ON revision.workspace_id = file.workspace_id AND revision.id = file.revision_id AND revision.sent_at IS NOT NULL
+           JOIN delivery_projects project ON project.workspace_id = file.workspace_id AND project.id = file.project_id
+          WHERE file.workspace_id = $1 AND file.id = $2 AND file.kind = 'drawing'`, [workspaceId, id])).rows[0];
+      return row ? { ...row, sections: ["decisions" as const] } : null;
     }
     if (kind === "handover") {
       const row = (await client.query<Omit<Found, "sections">>(

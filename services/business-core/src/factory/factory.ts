@@ -7,7 +7,11 @@ type Db = Pick<PoolClient, "query">;
 export const WORK_ORDER_STATUSES = ["planned", "released", "in_production", "ready", "on_hold", "cancelled", "short_closed"] as const;
 export type WorkOrderStatus = (typeof WORK_ORDER_STATUSES)[number];
 
-export type FactorySettings = { requireDrawing: boolean; requirePayment: boolean; requireMaterials: boolean; requireCheck: boolean; version: number };
+export type FactorySettings = {
+  requireDrawing: boolean; requirePayment: boolean; requireMaterials: boolean; requireCheck: boolean; version: number;
+  /** PLM-063: the production steps the firm keeps (stored as configuration; read leniently by production-status), and its internal target in weeks. */
+  productionSteps: unknown; productionWeeks: number | null;
+};
 export type Workcenter = { id: string; name: string; hoursPerDay: string | null; active: boolean };
 
 /** A scope line made in our factory: how much of it is on work orders and what's left to plan. */
@@ -37,7 +41,7 @@ export type WorkOrderRow = {
   plannedHours: string | null; batchId: string | null; batchNumber: number | null; batchName: string | null;
 };
 
-const TOTALS = `
+export const ORDER_TOTALS = `
   LEFT JOIN LATERAL (SELECT coalesce(sum(report.good) FILTER (WHERE report.status = 'approved'), 0) AS made,
                             coalesce(sum(report.good) FILTER (WHERE report.status = 'pending'), 0) AS pending,
                             coalesce(sum(report.scrap) FILTER (WHERE report.status = 'approved'), 0) AS scrapped
@@ -75,7 +79,7 @@ const ORDER_SELECT = `SELECT wo.id, wo.number, wo.project_id AS "projectId", pro
   JOIN delivery_projects project ON project.workspace_id = wo.workspace_id AND project.id = wo.project_id
   LEFT JOIN project_packages package ON package.workspace_id = wo.workspace_id AND package.id = wo.package_id
   LEFT JOIN workcenters center ON center.workspace_id = wo.workspace_id AND center.id = wo.workcenter_id
-  ${TOTALS}`;
+  ${ORDER_TOTALS}`;
 
 export async function readWorkOrders(db: Db, workspaceId: string, filter: { id?: string; lineId?: string } = {}): Promise<WorkOrderRow[]> {
   const values: unknown[] = [workspaceId];
@@ -100,7 +104,7 @@ export async function readToMake(db: Db, workspaceId: string, lineId: string | n
        JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
        JOIN project_packages package ON package.workspace_id = line.workspace_id AND package.id = line.package_id
        LEFT JOIN LATERAL (SELECT sum(CASE WHEN wo.status = 'short_closed' THEN quality.passed - reworked.quantity ELSE wo.quantity END) AS quantity
-                            FROM work_orders wo ${TOTALS}
+                            FROM work_orders wo ${ORDER_TOTALS}
                            WHERE wo.workspace_id = line.workspace_id AND wo.boq_line_id = line.id AND wo.status <> 'cancelled') planned ON true
        LEFT JOIN LATERAL (SELECT coalesce(work.start_date, work.due_date) AS start, coalesce(work.due_date, work.start_date) AS due
                             FROM work_items work
@@ -115,7 +119,8 @@ export async function readToMake(db: Db, workspaceId: string, lineId: string | n
 export async function ensureFactorySettings(db: Db, workspaceId: string): Promise<FactorySettings> {
   await db.query(`INSERT INTO workspace_factory_settings (workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId]);
   return (await db.query<FactorySettings>(
-    `SELECT require_drawing AS "requireDrawing", require_payment AS "requirePayment", require_materials AS "requireMaterials", require_check AS "requireCheck", version
+    `SELECT require_drawing AS "requireDrawing", require_payment AS "requirePayment", require_materials AS "requireMaterials", require_check AS "requireCheck", version,
+            production_steps AS "productionSteps", production_weeks AS "productionWeeks"
        FROM workspace_factory_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 

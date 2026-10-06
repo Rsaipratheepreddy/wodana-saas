@@ -7,7 +7,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const profile = await getAuthenticatedProfile();
   const membership = profile.memberships[0];
   if (!membership) redirect("/login");
-  const health = (await searchParams).health;
+  const query = await searchParams;
+  const health = query.health;
   const initialHealth = health === "late" || health === "at-risk" || health === "on-track" ? health : undefined;
-  return <ProjectsPage workspaceId={membership.workspaceId} initialHealth={initialHealth} />;
+  // "Ready to start" (PLM-056) opens the start of that case's project.
+  const start = typeof query.start === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(query.start) ? query.start : undefined;
+  return <ProjectsPage workspaceId={membership.workspaceId} initialHealth={initialHealth} initialStart={start} />;
 }

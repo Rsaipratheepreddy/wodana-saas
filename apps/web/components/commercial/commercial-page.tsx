@@ -459,7 +459,7 @@ export function CommercialPage({
               />
               <QuotationsReadonlyNote quote={draft} />
               </>}
-              {reviewOnly ? <><Link className={s.button} href={quoteHref(draft.id)}>{t("Open quotation editor →")}</Link><QuotationBuilderPreview fitWidth initialPageId="scope" quote={draft} brand={state.portalBrand} customerName={record.customerName}/></> : <fieldset
+              {reviewOnly ? <><Link className={s.button} href={quoteHref(draft.id)}>{t("Open quotation editor →")}</Link><QuotationBuilderPreview fitWidth initialPageId="scope" quote={{ ...draft, letterhead: draft.letterhead ?? state.portalLetterhead ?? null }} brand={state.portalBrand} customerName={record.customerName}/></> : <fieldset
                 disabled={busy}
                 style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
               >

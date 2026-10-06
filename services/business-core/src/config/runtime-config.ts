@@ -96,6 +96,11 @@ export function validateRuntimeConfig(
     }
   }
 
+  const inboundDomain = String(config.INBOUND_EMAIL_DOMAIN ?? "").trim();
+  if (inboundDomain && !/^(?=.{3,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(inboundDomain.replace(/^@/, ""))) {
+    throw new Error("INBOUND_EMAIL_DOMAIN must be a domain name, e.g. in.example.com");
+  }
+
   const sesFrom = String(config.SES_FROM ?? "");
   if (/\r|\n/.test(sesFrom)) {
     throw new Error("SES_FROM cannot contain line breaks");

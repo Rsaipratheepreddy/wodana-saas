@@ -18,7 +18,7 @@ type Open = (target: PortalTarget) => void;
 export function useStepText(format: PortalFormat) {
   const t = useT();
   const kinds: Record<PortalStep["kind"], string> = {
-    quote: t("Quotation to decide"), design: t("Design to review"), definition: t("Requirements to confirm"), materials: t("Material list to sign off"),
+    quote: t("Quotation to decide"), design: t("Design to review"), definition: t("Requirements to confirm"), materials: t("Material list to sign off"), drawings: t("Drawings to approve"),
     handover: t("Handover to accept"), request: t("Question to answer"), invoice: t("Invoice to pay"), site_access: t("Confirm site access"),
     change: t("Change to approve"), presentation: t("Concepts to choose from"), choice: t("Choice to make"),
   };

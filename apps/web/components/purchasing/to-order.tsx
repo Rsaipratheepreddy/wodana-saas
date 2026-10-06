@@ -12,11 +12,12 @@ import type { Need, NeedsState } from "@/lib/purchasing/types";
 import { Cell, DueText, ProjectFilterChip, projectHref } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { AskPricesDialog } from "./ask-prices-dialog";
+import { BulkOrderDialog } from "./bulk-order-dialog";
 import { CreateOrderDialog } from "./create-order-dialog";
 import { LineStatusLabel, quantityText } from "./order-labels";
 import styles from "./purchasing.module.css";
 
-export type ToOrderView = "order" | "late" | "signoff" | "hold" | "over" | "restock" | "all";
+export type ToOrderView = "order" | "late" | "signoff" | "payment" | "hold" | "over" | "restock" | "all";
 
 const running = (need: Need) => (need.projectStatus ?? "active") === "active";
 /** What the buyer can order now: signed off (or no client choice), its project running, and something still open. */
@@ -33,8 +34,8 @@ const projectRef = (needs: Need[], id: string, fallback: string) => {
 /**
  * What running projects still need to order, by project: materials from signed-off material lists and bought
  * or subcontracted scope lines, and stock that ran low. Queues say what needs the buyer (late to order, waiting
- * for the client, on hold, ordered past the need); each line has its one next step. Lines from several
- * projects can go on one order to one supplier.
+ * for the client's sign-off or payment, on hold, ordered past the need); each line has its one next step. Lines from
+ * several projects can go on one order to one supplier, or on one order per supplier at once (PLM-071).
  */
 export function ToOrder({ api, workspaceId, projectId = null, onProject = () => undefined, onCreated, onAsked, onOrders = () => undefined, initialView = "order", refreshKey = 0 }: {
   api: PurchasingApi; workspaceId: string; projectId?: string | null; onProject?: (projectId: string | null) => void; onCreated: (orderId: string) => void;
@@ -50,6 +51,7 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [ordering, setOrdering] = useState<{ needs: Need[]; restock: ReorderPoint[] } | null>(null);
+  const [bulk, setBulk] = useState(false);
   const [asking, setAsking] = useState(false);
   const stock = useMemo(() => inventoryApi(workspaceId), [workspaceId]);
   const load = useCallback(async () => {
@@ -64,7 +66,8 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   const scoped = useMemo(() => (state?.needs ?? []).filter((need) => (!projectId || need.projectId === projectId)
     && (!needle || `${need.title} ${need.detail} ${need.projectReference} ${need.projectName} ${need.packageName ?? ""}`.toLocaleLowerCase().includes(needle))), [state, projectId, needle]);
   const queues: Record<Exclude<ToOrderView, "restock">, (need: Need) => boolean> = {
-    order: orderable, late: (need) => orderable(need) && Boolean(need.orderBy && need.orderBy < today), signoff: (need) => Boolean(need.blocked) && running(need), hold: onHold, over,
+    order: orderable, late: (need) => orderable(need) && Boolean(need.orderBy && need.orderBy < today), signoff: (need) => need.blocked === "material_signoff" && running(need),
+    payment: (need) => need.blocked === "client_payment" && running(need), hold: onHold, over,
     all: () => true,
   };
   const count = (key: Exclude<ToOrderView, "restock">) => scoped.filter(queues[key]).length;
@@ -76,6 +79,7 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   const openOrder = (needs: Need[]) => setOrdering({ needs, restock: [] });
   const next = (need: Need) => {
     if (!canBuy) return null;
+    if (need.blocked === "client_payment") return <Link className={styles.rowLink} href={projectHref(need.projectId, "money")}>{t("Open payments")}</Link>;
     if (need.blocked) return <Link className={styles.rowLink} href={projectHref(need.projectId, "scope")}>{t("Get sign-off")}</Link>;
     if (over(need)) return <Button size="compact" variant="quiet" onPress={onOrders}>{t("Open orders")}</Button>;
     if (onHold(need)) return <Button size="compact" variant="quiet" aria-label={t("Order {name} anyway", { name: need.title })} onPress={() => openOrder([need])}>{t("Order anyway")}</Button>;
@@ -92,7 +96,8 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
     { id: "left", label: t("Left"), width: "12rem", align: "end", render: (need) => {
       const parts = [Number(need.placed) ? t("{quantity} ordered", { quantity: unit(need.placed, need.unit) }) : "", Number(need.drafted) ? t("{quantity} in draft", { quantity: unit(need.drafted, need.unit) }) : "",
         Number(need.fromStock) ? t("{quantity} from stock", { quantity: unit(need.fromStock, need.unit) }) : ""].filter(Boolean).join(" · ");
-      const main = need.blocked ? <span className={styles.muted}>{t("Waiting for the client's sign-off")}</span>
+      const main = need.blocked === "client_payment" ? <span className={styles.muted}>{t("Waiting for the client's payment")}</span>
+        : need.blocked ? <span className={styles.muted}>{t("Waiting for the client's sign-off")}</span>
         : need.remaining === null ? <span className={styles.muted}>{t("Quantity to confirm")}</span>
         : Number(need.remaining) > 0 ? <strong className={styles.money}>{unit(need.remaining, need.unit)}</strong>
         : Number(need.remaining) < 0 ? <span className={styles.lateText}>{t("Ordered {quantity} more than needed", { quantity: unit(need.remaining.replace("-", ""), need.unit) })}</span>
@@ -124,7 +129,7 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
   const filtered = Boolean(needle || projectId);
   const empty = {
     order: [t("Nothing left to order"), t("Materials appear here from each project's material list, and bought items from its scope.")],
-    late: [t("Nothing is late to order"), null], signoff: [t("Nothing waits for the client"), null], hold: [t("No project is on hold"), null],
+    late: [t("Nothing is late to order"), null], signoff: [t("Nothing waits for the client"), null], payment: [t("Nothing waits for a payment"), null], hold: [t("No project is on hold"), null],
     over: [t("Nothing is over-ordered"), null], restock: [t("No stock is low"), t("Set a reorder point on an item in Inventory to be told when it runs low.")], all: [t("Nothing to order yet"), null],
   }[view];
 
@@ -134,6 +139,7 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
         { id: "order", label: t("To order"), count: count("order") },
         { id: "late", label: t("Late to order"), count: count("late") },
         { id: "signoff", label: t("Client sign-off"), count: count("signoff") },
+        ...(count("payment") ? [{ id: "payment" as const, label: t("Client payment"), count: count("payment") }] : []),
         ...(count("hold") ? [{ id: "hold" as const, label: t("On hold"), count: count("hold") }] : []),
         ...(count("over") ? [{ id: "over" as const, label: t("Over-ordered"), count: count("over") }] : []),
         ...(restock.length ? [{ id: "restock" as const, label: t("Low stock"), count: restock.length }] : []),
@@ -158,10 +164,12 @@ export function ToOrder({ api, workspaceId, projectId = null, onProject = () => 
       <Button size="compact" variant="quiet" onPress={() => setSelected(new Set())}>{t("Clear")}</Button>
       <span className={styles.selectionActions}>
         <Button size="compact" onPress={() => setAsking(true)}>{t("Ask for prices")}</Button>
+        <Button size="compact" onPress={() => setBulk(true)}>{t("Orders by supplier")}</Button>
         <Button size="compact" variant="primary" onPress={() => openOrder(chosen)}>{t("Create order")}</Button>
       </span>
     </div> : null}
     {asking ? <AskPricesDialog api={api} needs={chosen} onClose={() => setAsking(false)} onCreated={(requestId) => { setAsking(false); setSelected(new Set()); onAsked(requestId); }} /> : null}
+    {bulk ? <BulkOrderDialog api={api} needs={chosen} onClose={() => setBulk(false)} onCreated={() => { setBulk(false); setSelected(new Set()); onOrders(); }} /> : null}
     {ordering ? <CreateOrderDialog api={api} needs={ordering.needs} restock={ordering.restock} onClose={() => setOrdering(null)}
       onCreated={(orderId) => { setOrdering(null); setSelected(new Set()); onCreated(orderId); }} /> : null}
   </div>;

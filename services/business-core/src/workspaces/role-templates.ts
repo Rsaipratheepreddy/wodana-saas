@@ -29,20 +29,22 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     description: "Handles enquiries, follow-ups, the pipeline, planning cases and quotes, and sends quotes to the client; never sees internal costs",
     // Sends its own quotes: names the client's decision-maker on the case (portal.contacts.manage), not the portal.
     // Records a client's decision given outside the portal, with the file it came in (commercial.record_decision, Q-24).
-    permissions: [...CRM_DAY_TO_DAY, "pre_projects.view", "pre_projects.create", "pre_projects.edit", "catalog.view", "portal.contacts.manage", "commercial.record_decision"],
+    // Asks Finance for invoices and refunds from the client, deal or project (finance_requests.raise, PLM-107).
+    permissions: [...CRM_DAY_TO_DAY, "pre_projects.view", "pre_projects.create", "pre_projects.edit", "catalog.view", "portal.contacts.manage", "commercial.record_decision",
+      "finance_requests.raise"],
   },
   {
     code: "quantity_surveyor",
     name: "Quantity Surveyor",
     description: "Estimator: reviews quotation costs and approves the estimate before the client receives a proposal",
-    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.costs.view", "commercial.estimate"],
+    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.costs.view", "commercial.estimate", "finance_requests.raise"],
   },
   {
     code: "finance_reviewer",
     name: "Finance reviewer",
     description: "Verifies deal payment evidence and confirms final commissions before operations approval",
     // Reads Finance (supplier bills and client invoices) to verify what came in and what is owed.
-    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.finance.verify", "payables.view", "receivables.view"],
+    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.finance.verify", "payables.view", "receivables.view", "finance_requests.raise"],
   },
   {
     code: "operations_approver",
@@ -58,7 +60,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "projects.view", "projects.manage", "projects.report", "projects.review", "projects.costs.view",
       "projects.schedule.view", "projects.schedule.manage", "jobs.stage.manage",
       "pre_projects.view", "crm.opportunities.view", "catalog.view",
-      "purchasing.view", "stock.view", "vendors.view", "hrms.team",
+      "purchasing.view", "stock.view", "vendors.view", "hrms.team", "finance_requests.raise",
     ],
   },
   {
@@ -78,7 +80,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     code: "buyer",
     name: "Buyer",
     description: "Buys what projects need: price requests, orders to suppliers, confirmations and chasing late deliveries",
-    permissions: ["projects.view", "purchasing.view", "purchasing.manage", "vendors.view", "vendors.manage", "stock.view", "stock.receive", "catalog.view"],
+    permissions: ["projects.view", "purchasing.view", "purchasing.manage", "vendors.view", "vendors.manage", "stock.view", "stock.receive", "catalog.view", "finance_requests.raise"],
   },
   {
     code: "purchasing_approver",
@@ -111,6 +113,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     permissions: [
       "pre_projects.view", "crm.opportunities.view", "commercial.finance.verify", "commercial.costs.view",
       "payables.view", "payables.manage", "receivables.view", "receivables.manage", "accounting.manage", "purchasing.view", "projects.view",
+      // Works the Finance requests board (PLM-107).
+      "finance_requests.raise", "finance_requests.manage",
     ],
   },
   {

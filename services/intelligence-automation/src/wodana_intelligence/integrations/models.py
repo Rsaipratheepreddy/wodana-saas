@@ -32,6 +32,25 @@ class OAuthStartRequest(ApiModel):
     return_origin: str = Field(default="", max_length=200)
 
 
+class PickerTokenRequest(ApiModel):
+    workspace_id: UUID
+    connection_id: UUID
+
+
+class PickerTokenResponse(ApiModel):
+    access_token: str
+    expires_in: int
+    account_email: str
+
+
+class SheetReadRequest(ApiModel):
+    workspace_id: UUID
+    connection_id: UUID
+    spreadsheet_id: str = Field(pattern=r"^[A-Za-z0-9_-]{10,200}$")
+    sheet_name: Optional[str] = Field(default=None, max_length=200)
+    preview_rows: Optional[int] = Field(default=None, ge=1, le=5000)
+
+
 class OAuthStartResponse(ApiModel):
     authorization_url: str
     expires_in_seconds: int

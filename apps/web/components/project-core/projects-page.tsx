@@ -18,7 +18,9 @@ export type HealthFilter = "on-track" | "at-risk" | "late";
 const STATUS_TONE: Record<string, StatusTone> = { ok: "success", risk: "warning", off: "danger", hold: "neutral", done: "info" };
 
 /** Every project the person can see, one row each: where it is, what's next and when it's due. */
-export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: string; initialHealth?: HealthFilter }) {
+export function ProjectsPage({ workspaceId, initialHealth, initialStart }: { workspaceId: string; initialHealth?: HealthFilter;
+  /** A case whose project is ready to start (from the "Ready to start" notice): its start opens at once. */
+  initialStart?: string }) {
   const t = useT();
   const router = useRouter();
   const format = useProjectFormat();
@@ -31,7 +33,7 @@ export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: stri
   const [filter, setFilter] = useState<Filter>("open");
   const [health, setHealth] = useState<HealthFilter | null>(initialHealth ?? null);
   const [picking, setPicking] = useState(false);
-  const [starting, setStarting] = useState<string | null>(null);
+  const [starting, setStarting] = useState<string | null>(initialStart ?? null);
 
   const load = useCallback(async () => {
     try { const next = await api.list(); setRows(next.projects); setCanStart(next.canStart); setError(""); }

@@ -48,6 +48,7 @@ export function InventoryPage({ workspaceId, section: initialSection }: { worksp
   const { tabs, content } = moduleTabs<InventorySection>({ t, value: section, onChange: (key) => go(key), items: [
       { id: "stock", label: t("Stock"), count: (state?.reorderPoints ?? []).filter((point) => point.short).length || undefined,
         panel: <Stock api={api} workspaceId={workspaceId} state={state} error={error} onReload={() => void load()} onChanged={(next) => { setState(next); setRefresh((value) => value + 1); }}
+          importLinkId={params.get("import")}
           onMoved={(next) => { changed(); go("moves", { move: next.transfer.id }); }} onHistory={(id) => go("history", { item: id })} projectId={projectId} onProject={setProjectId} initialView={view} /> },
       { id: "moves", label: t("Moves"), count: state?.inTransit || undefined,
         panel: <Moves api={api} refreshKey={refresh} openId={moveId} onOpen={(id) => go("moves", id ? { move: id } : undefined)} onChanged={changed} projectId={projectId} onProject={setProjectId} /> },

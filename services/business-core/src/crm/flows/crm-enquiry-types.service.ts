@@ -9,6 +9,7 @@ import { ensureEnquiryTypeFlows, flowCodeFor, freeFlowCode } from "./enquiry-typ
 import { flowChecksum, validateFlowDefinition } from "./flow-definition";
 import { flowTemplate } from "./flow-templates";
 import { copyClosingRules, inferClosing, seedClosingRules, TEMPLATE_CLOSING } from "./flow-closing";
+import { copyWonAreas } from "./flow-won-areas";
 import { STARTER_FLOWS } from "./starter-flows";
 
 const PERMISSION = "crm.settings.manage";
@@ -137,6 +138,7 @@ export class CrmEnquiryTypesService {
       // PLM-102: the type closes deals the way its template or the type it was copied from does.
       const sourceFlowId = typeof from.flowId === "string" ? from.flowId : null;
       if (sourceFlowId) await copyClosingRules(client, workspaceId, sourceFlowId, flow.id, user.userId);
+      if (sourceFlowId) await copyWonAreas(client, workspaceId, sourceFlowId, flow.id, user.userId);
       else await seedClosingRules(client, workspaceId, flow.id, (input.templateKey ? TEMPLATE_CLOSING[input.templateKey] : undefined) ?? inferClosing(result.definition), user.userId);
       await client.query(`UPDATE crm_taxonomies SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, taxonomy.id]);
       await recordAudit(client, {

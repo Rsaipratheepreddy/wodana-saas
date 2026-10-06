@@ -17,6 +17,8 @@ export function allowedCasePath(path:string[],method:string) {
   // Plan §6.20: change requests (raise, assess, send for approval, decide, send to sign, withdraw).
   if(path[1]==='change-requests')return (path.length===2&&['GET','POST'].includes(method))||(path.length===3&&UUID.test(path[2])&&method==='PUT')
     ||(path.length===4&&UUID.test(path[2])&&method==='POST'&&['submit','decide','send','withdraw'].includes(path[3]));
+  // PLM-046: the job's recurring client update call.
+  if(path[1]==='client-calls')return path.length===2&&['GET','PUT'].includes(method);
   if(path[1]==='site')return (path.length===2&&method==='GET')||(path.length===3&&['visits','measurements','observations'].includes(path[2])&&method==='PUT')||(path.length===4&&UUID.test(path[2])&&((path[3]==='history'&&method==='GET')||(path[3]==='review'&&method==='POST')));
   if(path.length===2)return (method==='GET'&&['requirement-notes','brief','catalog-options','designs','readiness','definition-baselines'].includes(path[1]))||(method==='PUT'&&['requirement-notes','brief','rooms','entries','designs','design-folders'].includes(path[1]))||(method==='POST'&&['definition-baselines','lifecycle'].includes(path[1]))||(method==='PATCH'&&path[1]==='profile');
   if(path.length===3&&path[1]==='moodboard'&&path[2]==='layout')return method==='PUT';

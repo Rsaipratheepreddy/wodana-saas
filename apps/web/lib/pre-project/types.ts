@@ -22,7 +22,11 @@ export type PreProjectCase = {
   siteAddress?: string | null; siteLatitude?: number | null; siteLongitude?: number | null;
   /** The opportunity's number (D-0001), its sales owner and its enquiry type's name. */
   reference?: string | null; salesMembershipId?: string | null; enquiryTypeName?: string | null;
+  /** PLM-100: the case's team by role (a person or "not applicable"), as tagged on the enquiry and the opportunity. */
+  team?: CaseTeamRole[];
 };
+/** One of the workspace's roles on the case: the person holding it, or "not applicable" for this job. */
+export type CaseTeamRole = { role: string; label: string; member: { membershipId: string; name: string; email: string | null } | null; notApplicable: boolean };
 export type PreProjectListItem = Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt"> & {
   status: PreProjectCase["status"] | "qualified"; opportunityId: string | null; qualifiedLead?: boolean; leadVersion?: number;
   ownerMembershipId?: string | null; phase?: PreProjectCase["phase"]; targetDate?: string | null; priority?: PreProjectCase["priority"]; riskLevel?: PreProjectCase["riskLevel"];

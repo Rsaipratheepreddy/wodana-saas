@@ -19,6 +19,7 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3"
+GOOGLE_SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets"
 
 
 class GoogleApiError(RuntimeError):
@@ -103,17 +104,20 @@ class GoogleCalendarClient:
                 "oauth_exchange_failed", "Google returned an incomplete token response"
             ) from error
 
-    async def refresh_token(self, refresh_token: str) -> GoogleTokenResponse:
+    async def refresh_token(
+        self, refresh_token: str, scopes: Optional[Sequence[str]] = None
+    ) -> GoogleTokenResponse:
+        """A new access token; with `scopes`, one narrowed to those granted scopes only."""
         client_id, client_secret, _ = await self.app()
-        response = await self._client.post(
-            GOOGLE_TOKEN_URL,
-            data={
-                "refresh_token": refresh_token,
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "grant_type": "refresh_token",
-            },
-        )
+        data = {
+            "refresh_token": refresh_token,
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "grant_type": "refresh_token",
+        }
+        if scopes:
+            data["scope"] = " ".join(scopes)
+        response = await self._client.post(GOOGLE_TOKEN_URL, data=data)
         payload = self._json(response, "oauth_refresh_failed")
         try:
             return GoogleTokenResponse.model_validate(payload)
@@ -289,6 +293,34 @@ class GoogleCalendarClient:
             )
         if response.status_code not in {204, 410}:
             self._json(response, "event_cancel_failed")
+
+    async def spreadsheet(self, access_token: str, spreadsheet_id: str) -> dict[str, Any]:
+        """A spreadsheet's title and its tabs (drive.file: only a file picked for Wodana)."""
+        response = await self._client.get(
+            f"{GOOGLE_SHEETS_API}/{quote(spreadsheet_id, safe='')}",
+            params={"fields": "properties.title,sheets.properties(title,sheetType)"},
+            headers=self._authorization(access_token),
+        )
+        return self._json(response, "sheet_read_failed")
+
+    async def sheet_values(
+        self, access_token: str, spreadsheet_id: str, ranges: Sequence[str]
+    ) -> list[list[list[Any]]]:
+        """The cells of each range as the sheet shows them (formatted), row by row."""
+        response = await self._client.get(
+            f"{GOOGLE_SHEETS_API}/{quote(spreadsheet_id, safe='')}/values:batchGet",
+            params=[
+                *(("ranges", value) for value in ranges),
+                ("valueRenderOption", "FORMATTED_VALUE"),
+                ("majorDimension", "ROWS"),
+            ],
+            headers=self._authorization(access_token),
+        )
+        payload = self._json(response, "sheet_read_failed")
+        return [
+            value_range.get("values", []) if isinstance(value_range, dict) else []
+            for value_range in payload.get("valueRanges", [])
+        ]
 
     async def revoke(self, token: str) -> None:
         response = await self._client.post(

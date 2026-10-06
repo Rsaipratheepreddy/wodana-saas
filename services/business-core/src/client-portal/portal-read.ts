@@ -347,6 +347,27 @@ async function readDecisions(db: Db, workspaceId: string, grant: Grant, row: Cas
     definition: await readDefinition(db, workspaceId, grant, row, definitions),
     materials: row.projectId ? await readMaterials(db, workspaceId, row.projectId, approver, row.projectStatus!) : null,
     handovers: row.projectId ? await readHandovers(db, workspaceId, row.projectId, approver, row.projectStatus!) : [],
+    drawings: row.projectId ? await readDrawings(db, workspaceId, row.projectId, approver, row.projectStatus!) : null,
+  };
+}
+
+/**
+ * The technical drawings sent to the client (PLM-059): the latest revision they were sent, its drawing files, and
+ * their decision. Never the site check, the team's notes or the signed file the team recorded.
+ */
+async function readDrawings(db: Db, workspaceId: string, projectId: string, approver: boolean, projectStatus: string) {
+  const revision = (await db.query<{ id: string; number: number; status: string; sentAt: string; decidedOn: string | null; decidedBy: string | null; note: string }>(
+    `SELECT id, number, status, sent_at AS "sentAt", decided_on::text AS "decidedOn", decided_by_name AS "decidedBy", decision_note AS note
+       FROM project_drawing_revisions WHERE workspace_id = $1 AND project_id = $2 AND sent_at IS NOT NULL ORDER BY number DESC LIMIT 1`, [workspaceId, projectId])).rows[0];
+  if (!revision) return null;
+  const files = (await db.query<{ id: string; name: string; mimeType: string }>(
+    `SELECT id, original_name AS name, mime_type AS "mimeType" FROM project_drawing_files WHERE workspace_id = $1 AND revision_id = $2 AND kind = 'drawing'
+      ORDER BY created_at, original_name, id`, [workspaceId, revision.id])).rows;
+  const status = revision.status === "approved" || revision.status === "changes_requested" ? revision.status : "sent";
+  return {
+    id: revision.id, number: revision.number, status: status as "sent" | "approved" | "changes_requested", sentAt: new Date(revision.sentAt).toISOString(),
+    decidedOn: revision.decidedOn, decidedBy: revision.decidedBy, note: status === "sent" ? "" : revision.note, files,
+    canDecide: approver && revision.status === "sent" && ["active", "on_hold"].includes(projectStatus),
   };
 }
 
@@ -534,7 +555,7 @@ type Changes = Awaited<ReturnType<typeof readPortalChanges>>;
  * pay, then deliveries to confirm site access for — each with its due date when it has one.
  */
 function nextSteps(decisions: Decisions | null, payments: Payments | null, progress: Progress | null, choices: Choices | null = null, changes: Changes | null = null) {
-  const steps: Array<{ kind: "quote" | "design" | "definition" | "materials" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
+  const steps: Array<{ kind: "quote" | "design" | "definition" | "materials" | "drawings" | "handover" | "request" | "invoice" | "site_access" | "change" | "presentation" | "choice"; id: string; title: string;
     due: string | null }> = [];
   if (decisions) {
     for (const quote of decisions.quotes.filter((item) => item.canDecide))
@@ -542,6 +563,7 @@ function nextSteps(decisions: Decisions | null, payments: Payments | null, progr
     if (decisions.definition?.canDecide) steps.push({ kind: "definition", id: decisions.definition.id, title: `R${decisions.definition.number}`, due: null });
     for (const design of decisions.designs.filter((item) => item.canDecide)) steps.push({ kind: "design", id: design.id, title: `${design.title} · V${design.number}`, due: design.dueAt });
     if (decisions.materials?.canDecide) steps.push({ kind: "materials", id: decisions.materials.id, title: `R${decisions.materials.number}`, due: null });
+    if (decisions.drawings?.canDecide) steps.push({ kind: "drawings", id: decisions.drawings.id, title: `R${decisions.drawings.number}`, due: null });
     for (const pack of decisions.handovers.filter((item) => item.canDecide)) steps.push({ kind: "handover", id: pack.id, title: `${pack.title} · R${pack.revision}`, due: null });
     for (const request of decisions.requests.filter((item) => item.canDecide)) steps.push({ kind: "request", id: request.id, title: request.title, due: request.dueDate });
   }

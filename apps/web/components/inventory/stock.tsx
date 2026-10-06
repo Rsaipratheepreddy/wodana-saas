@@ -10,6 +10,7 @@ import type { PendingAdjustment, ReorderPoint, StockRow, StockState, TransferSta
 import { Cell, ProjectFilterChip, ProjectLinks } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
+import { LinkedImportDialog } from "../linked-imports/linked-import-dialog";
 import { MoveDialog } from "./move-dialog";
 import { ReorderPointDialog } from "./reorder-point-dialog";
 import { StockChangeDialog, type ChangeMode } from "./stock-change-dialog";
@@ -24,9 +25,11 @@ const unit = (value: string, of: string) => `${quantityText(value)} ${of}`.trim(
  * actions issue it, reserve or release it, move it, count it or set its reorder point; stock that isn't
  * in the system yet is added with its origin.
  */
-export function Stock({ api, workspaceId, state, error, onReload, onChanged, onMoved, onHistory, projectId = null, onProject = () => undefined, initialView = "all" }: {
+export function Stock({ api, workspaceId, state, error, onReload, onChanged, onMoved, onHistory, projectId = null, onProject = () => undefined, initialView = "all", importLinkId = null }: {
   api: InventoryApi; workspaceId: string; state: StockState | null; error: string; onReload: () => void; onChanged: (next: StockState) => void; onMoved: (next: TransferState) => void;
   onHistory: (itemId: string) => void; projectId?: string | null; onProject?: (projectId: string | null) => void; initialView?: StockView;
+  /** A linked stock sheet to open (a notice about its refresh links here). */
+  importLinkId?: string | null;
 }) {
   const t = useT();
   const format = useProjectFormat();
@@ -39,6 +42,9 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
   const [moving, setMoving] = useState<{ row: StockRow | null } | null>(null);
   const [reorder, setReorder] = useState<{ item: { itemId: string; itemName: string; unit: string; locationId: string | null }; point: ReorderPoint | null } | null>(null);
   const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }> | null>(null);
+  // The stock list kept in a spreadsheet: imported, or linked and refreshed (PLM-073).
+  const [importing, setImporting] = useState(false);
+  useEffect(() => { if (importLinkId) queueMicrotask(() => setImporting(true)); }, [importLinkId]);
   // The suppliers a reorder point can name (only for someone who can see them).
   useEffect(() => {
     if (!reorder || suppliers) return;
@@ -133,9 +139,11 @@ export function Stock({ api, workspaceId, state, error, onReload, onChanged, onM
     : <DataGrid<StockRow> gridKey="inventory.stock" ariaLabel={t("Stock")} columns={columns} data={rows} getRowId={(row) => `${row.itemId}:${row.locationId}:${row.projectId ?? ""}`} isLoading={!state}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search stock")} rowNumbers={false} selectable={false} wrapText toolbarLeading={toolbar} filters={placeFilter}
       toolbarActions={state?.canAdjust ? <Button size="compact" onPress={() => setChange({ mode: "add", row: null })}>{t("Add stock")}</Button> : null}
+      menuActions={state?.canAdjust ? [{ id: "import", label: t("Import") }] : undefined} onMenuAction={(id) => { if (id === "import") setImporting(true); }}
       emptyContent={needle || place || view !== "all" || projectId ? <NoResultsState onClear={() => { setSearch(""); setPlace(null); setView("all"); onProject(null); }} />
         : <EmptyState title={t("Nothing in stock")} description={t("Deliveries add stock where they arrive.")} />} />}
     {change && state ? <StockChangeDialog api={api} state={state} mode={change.mode} row={change.row} onClose={() => setChange(null)} onDone={(next) => { setChange(null); onChanged(next); }} /> : null}
+    <LinkedImportDialog isOpen={importing} onClose={() => setImporting(false)} onImported={onReload} openLinkId={importLinkId} target="stock" workspaceId={workspaceId} />
     {refusing ? <RefuseDialog onClose={() => setRefusing(null)} onSave={async (note) => { if (await decide(refusing, "reject", note)) setRefusing(null); }} /> : null}
     {moving && state ? <MoveDialog api={api} state={state} row={moving.row} onClose={() => setMoving(null)} onSent={(next) => { setMoving(null); onMoved(next); }} /> : null}
     {reorder && state ? <ReorderPointDialog api={api} state={state} item={reorder.item} point={reorder.point} suppliers={suppliers} onClose={() => setReorder(null)}

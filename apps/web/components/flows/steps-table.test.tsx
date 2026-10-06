@@ -79,6 +79,16 @@ describe("Steps in CeCe's words (plan §6.9a)", () => {
     expect(screen.getByRole("group", { name: "View" })).toBeInTheDocument();
   });
 
+  it("shows the areas each path uses after Won (PLM-098), every area until the firm sets them", async () => {
+    const areas = { flowId, areas: ["planning", "production", "supply", "delivery"], furniturePaths: ["take_home_now"],
+      rules: [{ furniturePath: null, areas: ["supply", "delivery"], version: 1 }, { furniturePath: "take_home_now", areas: [], version: 1 }] };
+    show(furniture(), (path, init) => path === `flows/${flowId}/won-areas` ? { body: areas } : base(path, init));
+    const table = screen.getByRole("table", { name: "Steps" });
+    expect(within(table).getByRole("button", { name: "Areas after Won" })).toBeInTheDocument();
+    expect(await within(table).findAllByText("None")).toHaveLength(1);
+    expect(within(table).getAllByText("Supply, Delivery")).toHaveLength(4);
+  });
+
   it("edits a cell (Auto-passed on A) and publishes the same flow definition as a new version", async () => {
     const fetcher = show(furniture(), (path, init) => base(path, init)
       ?? (path === "flows/validate" ? { body: { valid: true, errors: [] } } : path === `flows/${flowId}/versions` ? { body: { version: 3, created: true } } : undefined));

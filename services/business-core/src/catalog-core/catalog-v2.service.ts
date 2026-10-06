@@ -23,6 +23,8 @@ type Actor = { userId: string };
 export type ItemInput = {
   version?: number; code: string; name: string; itemType: (typeof ITEM_TYPES)[number]; unitCode: string; categoryId?: string | null;
   description?: string | null; wastePercent?: string | null; purchaseRoundTo?: string | null; values?: Record<string, unknown>;
+  /** Working days to make one (a product's production time); left out keeps what the item has. */
+  productionDays?: number | null;
 };
 export type PriceEntryInput = {
   variantId?: string | null; method: PriceMethod["method"];
@@ -69,39 +71,45 @@ export class CatalogV2Service {
   }
 
   createCategory(actor: RequestActor, workspaceId: string, catalogId: string, input: { name: string; parentId?: string | null }) {
-    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => {
-      await this.catalog(client, workspaceId, catalogId);
-      if (!input.name?.trim()) throw new UnprocessableEntityException("Give the category a name");
-      if (input.parentId) await this.category(client, workspaceId, catalogId, input.parentId);
-      const created = await this.unique(() => client.query<{ id: string }>(
-        `INSERT INTO catalog_categories (workspace_id, catalog_id, parent_id, code, name,
-           sort_order) VALUES ($1, $2, $3, $4, $5, (SELECT coalesce(max(sort_order), 0) + 1 FROM catalog_categories WHERE catalog_id = $2)) RETURNING id`,
-        [workspaceId, catalogId, input.parentId ?? null, slug(input.name).replace(/_/g, "-") || "category", input.name.trim()]), "A category with this name already exists");
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "catalog.category_created", entityType: "catalog", entityId: catalogId, after: input });
-      return { id: created.rows[0].id };
-    });
+    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => this.insertCategory(client, workspaceId, catalogId, input, user.userId));
+  }
+
+  /** The create-category command inside a caller's transaction (a linked sheet adds the categories it names). */
+  async insertCategory(client: PoolClient, workspaceId: string, catalogId: string, input: { name: string; parentId?: string | null }, userId: string) {
+    await this.catalog(client, workspaceId, catalogId);
+    if (!input.name?.trim()) throw new UnprocessableEntityException("Give the category a name");
+    if (input.parentId) await this.category(client, workspaceId, catalogId, input.parentId);
+    const created = await this.unique(() => client.query<{ id: string }>(
+      `INSERT INTO catalog_categories (workspace_id, catalog_id, parent_id, code, name,
+         sort_order) VALUES ($1, $2, $3, $4, $5, (SELECT coalesce(max(sort_order), 0) + 1 FROM catalog_categories WHERE catalog_id = $2)) RETURNING id`,
+      [workspaceId, catalogId, input.parentId ?? null, slug(input.name).replace(/_/g, "-") || "category", input.name.trim()]), "A category with this name already exists");
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.category_created", entityType: "catalog", entityId: catalogId, after: input });
+    return { id: created.rows[0].id };
   }
 
   createAttribute(actor: RequestActor, workspaceId: string, catalogId: string, input: { label: string; code?: string; categoryId?: string | null; valueType: AttributeType; unitCode?: string | null; required?: boolean; choices?: string[] }) {
-    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => {
-      await this.catalog(client, workspaceId, catalogId);
-      if (input.categoryId) await this.category(client, workspaceId, catalogId, input.categoryId);
-      const code = slug(input.code ?? input.label);
-      if (!code || !/^[a-z]/.test(code)) throw new UnprocessableEntityException("Start the attribute name with a letter");
-      const choices = [...new Set((input.choices ?? []).map((choice) => choice.trim()).filter(Boolean))].map((label) => ({ value: slug(label) || label, label }));
-      if ((input.valueType === "choice" || input.valueType === "multi_choice") && !choices.length) throw new UnprocessableEntityException("Add at least one option");
-      if (input.valueType === "dimension") {
-        if (!input.unitCode) throw new UnprocessableEntityException("Choose the unit for this dimension");
-        await this.unit(client, workspaceId, input.unitCode);
-      }
-      const created = await this.unique(() => client.query<{ id: string }>(
-        `INSERT INTO catalog_attributes (workspace_id, catalog_id, category_id, code, label, value_type, unit_code, required, choices)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb) RETURNING id`,
-        [workspaceId, catalogId, input.categoryId ?? null, code, input.label.trim(), input.valueType, input.unitCode ?? null, Boolean(input.required), JSON.stringify(choices)]),
-        "An attribute with this name already exists here");
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "catalog.attribute_created", entityType: "catalog", entityId: catalogId, after: { ...input, code } });
-      return { id: created.rows[0].id };
-    });
+    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => this.insertAttribute(client, workspaceId, catalogId, input, user.userId));
+  }
+
+  /** The create-attribute command inside a caller's transaction (a linked sheet's extra columns). */
+  async insertAttribute(client: PoolClient, workspaceId: string, catalogId: string, input: { label: string; code?: string; categoryId?: string | null; valueType: AttributeType; unitCode?: string | null; required?: boolean; choices?: string[] }, userId: string) {
+    await this.catalog(client, workspaceId, catalogId);
+    if (input.categoryId) await this.category(client, workspaceId, catalogId, input.categoryId);
+    const code = slug(input.code ?? input.label);
+    if (!code || !/^[a-z]/.test(code)) throw new UnprocessableEntityException("Start the attribute name with a letter");
+    const choices = [...new Set((input.choices ?? []).map((choice) => choice.trim()).filter(Boolean))].map((label) => ({ value: slug(label) || label, label }));
+    if ((input.valueType === "choice" || input.valueType === "multi_choice") && !choices.length) throw new UnprocessableEntityException("Add at least one option");
+    if (input.valueType === "dimension") {
+      if (!input.unitCode) throw new UnprocessableEntityException("Choose the unit for this dimension");
+      await this.unit(client, workspaceId, input.unitCode);
+    }
+    const created = await this.unique(() => client.query<{ id: string }>(
+      `INSERT INTO catalog_attributes (workspace_id, catalog_id, category_id, code, label, value_type, unit_code, required, choices)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb) RETURNING id`,
+      [workspaceId, catalogId, input.categoryId ?? null, code, input.label.trim(), input.valueType, input.unitCode ?? null, Boolean(input.required), JSON.stringify(choices)]),
+      "An attribute with this name already exists here");
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.attribute_created", entityType: "catalog", entityId: catalogId, after: { ...input, code } });
+    return { id: created.rows[0].id };
   }
 
   // ---------- items ----------
@@ -158,9 +166,9 @@ export class CatalogV2Service {
     await this.catalog(client, workspaceId, catalogId);
     const clean = await this.cleanItem(client, workspaceId, catalogId, input);
     const created = await this.unique(() => client.query<{ id: string }>(
-      `INSERT INTO catalog_items (workspace_id, catalog_id, category_id, code, name, item_type, unit_code, description, waste_percent, purchase_round_to, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11, $11) RETURNING id`,
-      [workspaceId, catalogId, clean.categoryId, clean.code, clean.name, clean.itemType, clean.unitCode, clean.description, clean.wastePercent, clean.purchaseRoundTo, userId]),
+      `INSERT INTO catalog_items (workspace_id, catalog_id, category_id, code, name, item_type, unit_code, description, waste_percent, purchase_round_to, created_by, updated_by, production_days)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11, $11, $12) RETURNING id`,
+      [workspaceId, catalogId, clean.categoryId, clean.code, clean.name, clean.itemType, clean.unitCode, clean.description, clean.wastePercent, clean.purchaseRoundTo, userId, clean.productionDays ?? null]),
       `Code ${clean.code} is already used in this catalog`);
     const itemId = created.rows[0].id;
     await this.writeValues(client, workspaceId, itemId, clean.values);
@@ -170,19 +178,26 @@ export class CatalogV2Service {
 
   updateItem(actor: RequestActor, workspaceId: string, catalogId: string, itemId: string, input: ItemInput) {
     return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => {
-      const before = await this.lockItem(client, workspaceId, catalogId, itemId);
-      if (input.version !== before.version) throw new ConflictException("This item changed; reload and try again");
-      const clean = await this.cleanItem(client, workspaceId, catalogId, input);
-      await this.unique(() => client.query(
-        `UPDATE catalog_items SET category_id = $3, code = $4, name = $5, item_type = $6, unit_code = $7, description = $8, waste_percent = $9::numeric,
-           purchase_round_to = $10::numeric, updated_by = $11, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
-        [workspaceId, itemId, clean.categoryId, clean.code, clean.name, clean.itemType, clean.unitCode, clean.description, clean.wastePercent, clean.purchaseRoundTo, user.userId]),
-        `Code ${clean.code} is already used in this catalog`);
-      await client.query(`DELETE FROM catalog_item_values WHERE workspace_id = $1 AND item_id = $2`, [workspaceId, itemId]);
-      await this.writeValues(client, workspaceId, itemId, clean.values);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "catalog.item_updated", entityType: "catalog_item", entityId: itemId, before, after: clean });
+      await this.reviseItem(client, workspaceId, catalogId, itemId, input, user.userId);
       return this.itemDetail(client, workspaceId, catalogId, itemId, await this.canViewCosts(actor, workspaceId));
     });
+  }
+
+  /** The update-item command inside a caller's transaction (version-checked; a linked sheet revises through it). */
+  async reviseItem(client: PoolClient, workspaceId: string, catalogId: string, itemId: string, input: ItemInput, userId: string) {
+    const before = await this.lockItem(client, workspaceId, catalogId, itemId);
+    if (input.version !== before.version) throw new ConflictException("This item changed; reload and try again");
+    const clean = await this.cleanItem(client, workspaceId, catalogId, input);
+    await this.unique(() => client.query(
+      `UPDATE catalog_items SET category_id = $3, code = $4, name = $5, item_type = $6, unit_code = $7, description = $8, waste_percent = $9::numeric,
+         purchase_round_to = $10::numeric, updated_by = $11, version = version + 1, updated_at = now(),
+         production_days = CASE WHEN $12::boolean THEN $13::integer ELSE production_days END WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, itemId, clean.categoryId, clean.code, clean.name, clean.itemType, clean.unitCode, clean.description, clean.wastePercent, clean.purchaseRoundTo, userId,
+        clean.productionDays !== undefined, clean.productionDays ?? null]),
+      `Code ${clean.code} is already used in this catalog`);
+    await client.query(`DELETE FROM catalog_item_values WHERE workspace_id = $1 AND item_id = $2`, [workspaceId, itemId]);
+    await this.writeValues(client, workspaceId, itemId, clean.values);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.item_updated", entityType: "catalog_item", entityId: itemId, before, after: clean });
   }
 
   archiveItem(actor: RequestActor, workspaceId: string, catalogId: string, itemId: string, version: number) {
@@ -238,20 +253,23 @@ export class CatalogV2Service {
 
   // ---------- prices ----------
   createPriceBook(actor: RequestActor, workspaceId: string, catalogId: string, input: { name: string; currency: string; legalEntityId?: string | null; segment?: string | null; effectiveFrom?: string; effectiveTo?: string | null }) {
-    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => {
-      await this.catalog(client, workspaceId, catalogId);
-      if (!/^[A-Z]{3}$/.test(input.currency ?? "")) throw new UnprocessableEntityException("Choose a currency");
-      if (input.legalEntityId) {
-        const entity = await client.query<{ currency: string }>(`SELECT base_currency AS currency FROM legal_entities WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.legalEntityId]);
-        if (!entity.rowCount) throw new NotFoundException("Business not found");
-      }
-      const created = await client.query<{ id: string }>(
-        `INSERT INTO price_books (workspace_id, catalog_id, name, currency, legal_entity_id, segment, effective_from, effective_to)
-         VALUES ($1, $2, $3, $4, $5, $6, coalesce($7::date, current_date), $8::date) RETURNING id`,
-        [workspaceId, catalogId, input.name?.trim() || `${input.currency} prices`, input.currency, input.legalEntityId ?? null, input.segment ?? null, input.effectiveFrom ?? null, input.effectiveTo ?? null]);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "catalog.price_book_created", entityType: "catalog", entityId: catalogId, after: input });
-      return { id: created.rows[0].id };
-    });
+    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => this.insertPriceBook(client, workspaceId, catalogId, input, user.userId));
+  }
+
+  /** The create-price-book command inside a caller's transaction. */
+  async insertPriceBook(client: PoolClient, workspaceId: string, catalogId: string, input: { name: string; currency: string; legalEntityId?: string | null; segment?: string | null; effectiveFrom?: string; effectiveTo?: string | null }, userId: string) {
+    await this.catalog(client, workspaceId, catalogId);
+    if (!/^[A-Z]{3}$/.test(input.currency ?? "")) throw new UnprocessableEntityException("Choose a currency");
+    if (input.legalEntityId) {
+      const entity = await client.query<{ currency: string }>(`SELECT base_currency AS currency FROM legal_entities WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.legalEntityId]);
+      if (!entity.rowCount) throw new NotFoundException("Business not found");
+    }
+    const created = await client.query<{ id: string }>(
+      `INSERT INTO price_books (workspace_id, catalog_id, name, currency, legal_entity_id, segment, effective_from, effective_to)
+       VALUES ($1, $2, $3, $4, $5, $6, coalesce($7::date, current_date), $8::date) RETURNING id`,
+      [workspaceId, catalogId, input.name?.trim() || `${input.currency} prices`, input.currency, input.legalEntityId ?? null, input.segment ?? null, input.effectiveFrom ?? null, input.effectiveTo ?? null]);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.price_book_created", entityType: "catalog", entityId: catalogId, after: input });
+    return { id: created.rows[0].id };
   }
 
   listPriceBooks(actor: RequestActor, workspaceId: string, catalogId: string) {
@@ -273,45 +291,48 @@ export class CatalogV2Service {
 
   /** Draft or replace the price of an item in a book. A change goes back to draft until reviewed. */
   savePrice(actor: RequestActor, workspaceId: string, bookId: string, itemId: string, input: PriceEntryInput) {
-    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => {
-      const book = await client.query<{ catalogId: string; status: string }>(`SELECT catalog_id AS "catalogId", status FROM price_books WHERE workspace_id = $1 AND id = $2`, [workspaceId, bookId]);
-      if (!book.rowCount) throw new NotFoundException("Price book not found");
-      if (book.rows[0].status === "expired") throw new UnprocessableEntityException("This price book has expired");
-      const item = await this.lockItem(client, workspaceId, book.rows[0].catalogId, itemId);
-      const numbers = this.priceNumbers(input);
-      const surcharges = await this.resolveSurcharges(client, workspaceId, book.rows[0].catalogId, input.surcharges ?? []);
-      if (input.method === "tiered" && !(input.tiers ?? []).length) throw new UnprocessableEntityException("Add at least one quantity tier");
-      if (input.method === "assembly_rollup" && item.itemType !== "assembly") throw new UnprocessableEntityException("Only assemblies can roll up their components");
-      if (input.variantId) {
-        const variant = await client.query(`SELECT 1 FROM catalog_variants WHERE workspace_id = $1 AND id = $2 AND item_id = $3`, [workspaceId, input.variantId, itemId]);
-        if (!variant.rowCount) throw new NotFoundException("Variant not found");
-      }
-      // Close the current entry (kept as history) and open a new draft.
-      await client.query(
-        `UPDATE price_entries SET status = 'expired', updated_at = now() WHERE workspace_id = $1 AND price_book_id = $2 AND item_id = $3
-           AND variant_id IS NOT DISTINCT FROM $4 AND status <> 'expired'`, [workspaceId, bookId, itemId, input.variantId ?? null]);
-      let entryId: string;
-      try {
-        const created = await client.query<{ id: string }>(
-          `INSERT INTO price_entries (workspace_id, price_book_id, item_id, variant_id, method, price, cost, markup_percent, rate, minimum_charge, labour, margin_percent, created_by, updated_by)
-           VALUES ($1, $2, $3, $4, $5, $6::numeric, $7::numeric, $8::numeric, $9::numeric, $10::numeric, $11::numeric, $12::numeric, $13, $13) RETURNING id`,
-          [workspaceId, bookId, itemId, input.variantId ?? null, input.method, numbers.price, numbers.cost, numbers.markupPercent, numbers.rate, numbers.minimumCharge, numbers.labour, numbers.marginPercent, user.userId]);
-        entryId = created.rows[0].id;
-      } catch (error) {
-        if ((error as { code?: string }).code === "23514") throw new UnprocessableEntityException("Fill in the values this price method needs");
-        throw error;
-      }
-      for (const tier of input.tiers ?? []) {
-        await client.query(`INSERT INTO price_entry_tiers (workspace_id, price_entry_id, from_quantity, price) VALUES ($1, $2, $3::numeric, $4::numeric)`,
-          [workspaceId, entryId, this.decimal(tier.fromQuantity, "Tier quantity"), this.decimal(tier.price, "Tier price")]);
-      }
-      for (const surcharge of surcharges) {
-        await client.query(`INSERT INTO price_entry_surcharges (workspace_id, price_entry_id, attribute_id, value, percent, amount, label) VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7)`,
-          [workspaceId, entryId, surcharge.attributeId, surcharge.value, surcharge.percent, surcharge.amount, surcharge.label]);
-      }
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "catalog.price_drafted", entityType: "catalog_item", entityId: itemId, after: { bookId, ...input } });
-      return { id: entryId, status: "draft" };
-    });
+    return this.access.withPermission(actor, workspaceId, MANAGE, async (client, user) => this.draftPrice(client, workspaceId, bookId, itemId, input, user.userId));
+  }
+
+  /** The save-price command inside a caller's transaction: the price goes back to draft until reviewed. */
+  async draftPrice(client: PoolClient, workspaceId: string, bookId: string, itemId: string, input: PriceEntryInput, userId: string) {
+    const book = await client.query<{ catalogId: string; status: string }>(`SELECT catalog_id AS "catalogId", status FROM price_books WHERE workspace_id = $1 AND id = $2`, [workspaceId, bookId]);
+    if (!book.rowCount) throw new NotFoundException("Price book not found");
+    if (book.rows[0].status === "expired") throw new UnprocessableEntityException("This price book has expired");
+    const item = await this.lockItem(client, workspaceId, book.rows[0].catalogId, itemId);
+    const numbers = this.priceNumbers(input);
+    const surcharges = await this.resolveSurcharges(client, workspaceId, book.rows[0].catalogId, input.surcharges ?? []);
+    if (input.method === "tiered" && !(input.tiers ?? []).length) throw new UnprocessableEntityException("Add at least one quantity tier");
+    if (input.method === "assembly_rollup" && item.itemType !== "assembly") throw new UnprocessableEntityException("Only assemblies can roll up their components");
+    if (input.variantId) {
+      const variant = await client.query(`SELECT 1 FROM catalog_variants WHERE workspace_id = $1 AND id = $2 AND item_id = $3`, [workspaceId, input.variantId, itemId]);
+      if (!variant.rowCount) throw new NotFoundException("Variant not found");
+    }
+    // Close the current entry (kept as history) and open a new draft.
+    await client.query(
+      `UPDATE price_entries SET status = 'expired', updated_at = now() WHERE workspace_id = $1 AND price_book_id = $2 AND item_id = $3
+         AND variant_id IS NOT DISTINCT FROM $4 AND status <> 'expired'`, [workspaceId, bookId, itemId, input.variantId ?? null]);
+    let entryId: string;
+    try {
+      const created = await client.query<{ id: string }>(
+        `INSERT INTO price_entries (workspace_id, price_book_id, item_id, variant_id, method, price, cost, markup_percent, rate, minimum_charge, labour, margin_percent, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6::numeric, $7::numeric, $8::numeric, $9::numeric, $10::numeric, $11::numeric, $12::numeric, $13, $13) RETURNING id`,
+        [workspaceId, bookId, itemId, input.variantId ?? null, input.method, numbers.price, numbers.cost, numbers.markupPercent, numbers.rate, numbers.minimumCharge, numbers.labour, numbers.marginPercent, userId]);
+      entryId = created.rows[0].id;
+    } catch (error) {
+      if ((error as { code?: string }).code === "23514") throw new UnprocessableEntityException("Fill in the values this price method needs");
+      throw error;
+    }
+    for (const tier of input.tiers ?? []) {
+      await client.query(`INSERT INTO price_entry_tiers (workspace_id, price_entry_id, from_quantity, price) VALUES ($1, $2, $3::numeric, $4::numeric)`,
+        [workspaceId, entryId, this.decimal(tier.fromQuantity, "Tier quantity"), this.decimal(tier.price, "Tier price")]);
+    }
+    for (const surcharge of surcharges) {
+      await client.query(`INSERT INTO price_entry_surcharges (workspace_id, price_entry_id, attribute_id, value, percent, amount, label) VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7)`,
+        [workspaceId, entryId, surcharge.attributeId, surcharge.value, surcharge.percent, surcharge.amount, surcharge.label]);
+    }
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "catalog.price_drafted", entityType: "catalog_item", entityId: itemId, after: { bookId, ...input } });
+    return { id: entryId, status: "draft" as const };
   }
 
   /** QS review then activation; the person who drafted a price cannot review it. */
@@ -476,9 +497,9 @@ export class CatalogV2Service {
 
   // ---------- helpers ----------
   private async itemDetail(client: PoolClient, workspaceId: string, catalogId: string, itemId: string, canViewCosts: boolean) {
-    const item = await client.query<{ id: string; code: string; name: string; itemType: string; unitCode: string; categoryId: string | null; description: string | null; wastePercent: string | null; purchaseRoundTo: string | null; status: string; version: number }>(
+    const item = await client.query<{ id: string; code: string; name: string; itemType: string; unitCode: string; categoryId: string | null; description: string | null; wastePercent: string | null; purchaseRoundTo: string | null; productionDays: number | null; status: string; version: number }>(
       `SELECT id, code, name, item_type AS "itemType", unit_code AS "unitCode", category_id AS "categoryId", description,
-              waste_percent::text AS "wastePercent", purchase_round_to::text AS "purchaseRoundTo", status, version
+              waste_percent::text AS "wastePercent", purchase_round_to::text AS "purchaseRoundTo", production_days AS "productionDays", status, version
        FROM catalog_items WHERE workspace_id = $1 AND catalog_id = $2 AND id = $3`, [workspaceId, catalogId, itemId]);
     if (!item.rowCount) throw new NotFoundException("Item not found");
     const row = item.rows[0];
@@ -559,8 +580,15 @@ export class CatalogV2Service {
       code, name, itemType: input.itemType, unitCode: input.unitCode, categoryId: input.categoryId ?? null, description: input.description?.trim() || null,
       wastePercent: input.wastePercent ? this.decimal(input.wastePercent, "Waste") : null,
       purchaseRoundTo: input.purchaseRoundTo ? this.decimal(input.purchaseRoundTo, "Buy in multiples of") : null,
+      productionDays: this.productionDays(input.productionDays),
       values,
     };
+  }
+
+  private productionDays(value: number | null | undefined) {
+    if (value === undefined || value === null) return value;
+    if (!Number.isInteger(value) || value < 0 || value > 3650) throw new UnprocessableEntityException("Production time is whole days, up to 3650");
+    return value;
   }
 
   private async writeValues(client: PoolClient, workspaceId: string, itemId: string, values: Array<{ attributeId: string; value: string }>) {
@@ -570,7 +598,7 @@ export class CatalogV2Service {
   }
 
   /** Attributes that apply to a category: catalog-wide ones plus those on the category and its ancestors. */
-  private async attributes(client: PoolClient, workspaceId: string, catalogId: string, categoryId: string | null, all: boolean): Promise<Array<AttributeDefinition & { categoryId: string | null }>> {
+  async attributes(client: PoolClient, workspaceId: string, catalogId: string, categoryId: string | null, all: boolean): Promise<Array<AttributeDefinition & { categoryId: string | null }>> {
     const rows = await client.query<AttributeDefinition & { categoryId: string | null }>(
       `WITH RECURSIVE ancestors AS (SELECT id, parent_id FROM catalog_categories WHERE id = $3
          UNION ALL SELECT parent.id, parent.parent_id FROM catalog_categories parent JOIN ancestors ON ancestors.parent_id = parent.id)
@@ -581,7 +609,7 @@ export class CatalogV2Service {
     return rows.rows;
   }
 
-  private async units(client: PoolClient, workspaceId: string): Promise<Unit[]> {
+  async units(client: PoolClient, workspaceId: string): Promise<Unit[]> {
     const custom = await client.query<Unit>(`SELECT code, label, kind, to_base::text AS "toBase" FROM catalog_units WHERE workspace_id = $1`, [workspaceId]);
     return [...STANDARD_UNITS, ...custom.rows.filter((unit) => !STANDARD_UNITS.some((standard) => standard.code === unit.code))];
   }

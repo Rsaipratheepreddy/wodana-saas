@@ -60,7 +60,7 @@ set_var core.env BRAND_ASSET_STORAGE_DIR /app/.data/workspace-assets
 # Email: Mailgun when thirdparty.env carries its key and domain (works before SES production access), else SES.
 if [ -n "$(third MAILGUN_API_KEY)" ] && [ -n "$(third MAILGUN_DOMAIN)" ]; then
   set_var core.env EMAIL_PROVIDER mailgun
-  for k in MAILGUN_API_KEY MAILGUN_DOMAIN MAILGUN_BASE_URL MAILGUN_FROM; do v=$(third $k); [ -n "$v" ] && set_var core.env $k "$v"; done
+  for k in MAILGUN_API_KEY MAILGUN_DOMAIN MAILGUN_BASE_URL MAILGUN_FROM MAILGUN_WEBHOOK_SIGNING_KEY INBOUND_EMAIL_DOMAIN; do v=$(third $k); [ -n "$v" ] && set_var core.env $k "$v"; done
 else
   set_var core.env EMAIL_PROVIDER ses
 fi

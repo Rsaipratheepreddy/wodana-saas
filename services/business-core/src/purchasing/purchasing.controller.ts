@@ -102,6 +102,12 @@ export class PurchasingController {
   @Post("orders")
   createOrder(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.orders.create(actor, workspaceId, input ?? {}); }
 
+  /** PLM-071: several draft orders at once, one per supplier, from the lines chosen in "To order". */
+  @Post("orders/bulk")
+  createOrders(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) {
+    return this.orders.createMany(actor, workspaceId, input ?? {});
+  }
+
   @Get("orders/:orderId")
   order(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("orderId", ParseUUIDPipe) orderId: string) { return this.orders.get(actor, workspaceId, orderId); }
 

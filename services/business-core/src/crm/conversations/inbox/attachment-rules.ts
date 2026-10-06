@@ -107,3 +107,16 @@ export function servedAs(mimeType: string | null | undefined) {
 export function fetchRetryDelayMinutes(attempts: number): number | null {
   return [1, 5, 15, 60][attempts - 1] ?? null;
 }
+
+/**
+ * The media type of a file that came with a client's email, read from its bytes: what a chat can send, plus GIF
+ * and WebP images and CSV text. Null for anything else (archives, programs, unknown formats), which isn't kept.
+ */
+export function sniffEmailAttachment(body: Buffer, fileName: string): { mimeType: string; kind: SendableKind } | null {
+  const sendable = sniffSendable(body, fileName);
+  if (sendable) return sendable;
+  if (body.length >= 6 && ["GIF87a", "GIF89a"].includes(body.subarray(0, 6).toString("latin1"))) return { mimeType: "image/gif", kind: "image" };
+  if (body.length >= 12 && body.toString("latin1", 0, 4) === "RIFF" && body.toString("latin1", 8, 12) === "WEBP") return { mimeType: "image/webp", kind: "image" };
+  if (extensionOf(fileName) === "csv" && !body.includes(0) && isUtf8(body)) return { mimeType: "text/csv", kind: "document" };
+  return null;
+}

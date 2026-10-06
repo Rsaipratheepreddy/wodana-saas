@@ -9,6 +9,7 @@ import {
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { MaterialItem, MaterialsState, ScopeLine } from "@/lib/project-core/types";
+import { LineStatusLabel } from "../purchasing/order-labels";
 import { useProjectFormat } from "./format";
 import styles from "./project-core.module.css";
 
@@ -61,13 +62,17 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
     } catch { /* The list reloads with the project version. */ }
   };
   const columns: GroupedTableColumn<MaterialItem>[] = [
-    { id: "name", label: t("Material"), width: "30%", render: (item) => <span className={styles.lineCell}><span>{item.name}</span>{item.code || item.supplier ? <small>{[item.code, item.supplier].filter(Boolean).join(" · ")}</small> : null}</span> },
-    { id: "spec", label: t("Finish"), width: "24%", mobileHidden: true, render: (item) => <span className={styles.muted}>{item.specification}</span> },
-    { id: "used", label: t("For"), width: "26%", mobileHidden: true, render: (item) => <span className={styles.muted}>{item.usedIn.map((line) => line.title).join(", ")}</span> },
-    { id: "decision", label: t("Client"), width: "20%", render: (item) => !item.clientChoice ? <span className={styles.muted}>{t("No client choice")}</span> : item.decision
+    { id: "name", label: t("Material"), width: "26%", render: (item) => <span className={styles.lineCell}><span>{item.name}</span>{item.code || item.supplier ? <small>{[item.code, item.supplier].filter(Boolean).join(" · ")}</small> : null}
+      {/* PLM-055: product details for the technical team. */}
+      {item.teamNote ? <small>{t("For the technical team: {details}", { details: item.teamNote })}</small> : null}</span> },
+    { id: "spec", label: t("Finish"), width: "20%", mobileHidden: true, render: (item) => <span className={styles.muted}>{item.specification}</span> },
+    { id: "used", label: t("For"), width: "22%", mobileHidden: true, render: (item) => <span className={styles.muted}>{item.usedIn.map((line) => line.title).join(", ")}</span> },
+    { id: "decision", label: t("Client"), width: "18%", render: (item) => !item.clientChoice ? <span className={styles.muted}>{t("No client choice")}</span> : item.decision
       ? <span className={styles.lineCell}><span className={styles.status} data-tone={item.decision.decision === "approved" ? "ok" : "off"}>{item.decision.decision === "approved" ? t("Approved") : t("Rejected")}</span>
           {item.decision.note ? <small>{item.decision.note}</small> : null}</span>
       : <span className={styles.muted}>{locked ? t("Waiting") : "—"}</span> },
+    // PLM-072: where each material has got to, as Purchasing works it out from orders, deliveries and site reports.
+    { id: "status", label: t("Status"), width: "14%", render: (item) => item.status ? <LineStatusLabel status={item.status} /> : <span className={styles.muted}>—</span> },
   ];
 
   return <div className={styles.changes}>
@@ -89,52 +94,68 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
     {data.items.length
       ? <GroupedTable<MaterialItem> ariaLabel={t("Material list")} columns={columns} selectable={false} getRowId={(item) => item.id} getRowLabel={(item) => item.name}
           sections={[{ id: "all", label: t("{count} materials", { count: data.items.length }), rows: data.items, emptyMessage: "" }]}
-          onRowAction={data.canEdit && !locked ? setEditing : undefined} />
+          onRowAction={data.canEdit ? setEditing : undefined} />
       : <EmptyState illustration={null} title={t("No materials yet")} description={t("List every material and finish the client signs off before ordering.")} />}
-    {editing ? <MaterialSheet item={editing === "new" ? null : editing} lines={lines} run={run} onClose={() => setEditing(null)} /> : null}
+    {editing ? <MaterialSheet item={editing === "new" ? null : editing} lines={lines} run={run} locked={locked} onClose={() => setEditing(null)} /> : null}
     {deciding ? <DecisionDialog data={data} run={run} onClose={() => setDeciding(false)} /> : null}
   </div>;
 }
 
-function MaterialSheet({ item, lines, run, onClose }: { item: MaterialItem | null; lines: ScopeLine[]; run: Run; onClose: () => void }) {
+/**
+ * A material: what it is, who supplies it, what it's for. While the list is with the client it reads only; the team's
+ * product details for the technical team (PLM-055) can be added at any time and never undo a sign-off.
+ */
+function MaterialSheet({ item, lines, run, locked, onClose }: { item: MaterialItem | null; lines: ScopeLine[]; run: Run; locked: boolean; onClose: () => void }) {
   const t = useT();
+  const format = useProjectFormat();
   const [form, setForm] = useState({ name: item?.name ?? "", code: item?.code ?? "", specification: item?.specification ?? "", supplier: item?.supplier ?? "",
     quantity: item?.quantity ? String(Number(item.quantity)) : "", unit: item?.unit ?? "", note: item?.note ?? "" });
   const [clientChoice, setClientChoice] = useState(item?.clientChoice ?? true);
   const [used, setUsed] = useState<Set<string>>(new Set(item?.boqLineIds ?? []));
+  const [details, setDetails] = useState(item?.teamNote ?? "");
   const [busy, setBusy] = useState(false);
   const set = (key: keyof typeof form) => (value: string) => setForm({ ...form, [key]: value });
+  const original = { name: item?.name ?? "", code: item?.code ?? "", specification: item?.specification ?? "", supplier: item?.supplier ?? "",
+    quantity: item?.quantity ? String(Number(item.quantity)) : "", unit: item?.unit ?? "", note: item?.note ?? "" };
+  const changed = !item || JSON.stringify(form) !== JSON.stringify(original) || clientChoice !== item.clientChoice
+    || JSON.stringify([...used].sort()) !== JSON.stringify([...item.boqLineIds].sort());
   const save = async () => {
     setBusy(true);
-    if (await run("save_material", { id: item?.id, ...form, quantity: form.quantity || null, boqLineIds: [...used], clientChoice })) onClose();
+    let saved = locked || !changed || await run("save_material", { id: item?.id, ...form, quantity: form.quantity || null, boqLineIds: [...used], clientChoice });
+    if (saved && item && details.trim() !== (item.teamNote ?? "")) saved = await run("set_material_details", { itemId: item.id, note: details.trim() });
+    if (saved) onClose();
     setBusy(false);
   };
   return <InspectorSheet isOpen size="md" title={item ? item.name : t("New material")} onOpenChange={(open) => { if (!open) onClose(); }}
     footer={<div className="wd-dialog-actions">
-      {item ? <Button variant="quiet" onPress={async () => { if (await run("delete_material", { itemId: item.id })) onClose(); }}>{t("Delete")}</Button> : null}
+      {item && !locked ? <Button variant="quiet" onPress={async () => { if (await run("delete_material", { itemId: item.id })) onClose(); }}>{t("Delete")}</Button> : null}
       <span className={styles.spacer} />
       <Button onPress={onClose}>{t("Cancel")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!form.name.trim()} onPress={() => void save()}>{t("Save")}</Button>
     </div>}>
     <div className={styles.sheetBody}>
       <FormSection>
-        <TextInput label={t("Name")} isRequired value={form.name} onChange={set("name")} />
-        <TextInput label={t("Finish or specification")} value={form.specification} onChange={set("specification")} />
-        <TextInput label={t("Code")} value={form.code} onChange={set("code")} />
+        <TextInput label={t("Name")} isRequired isReadOnly={locked} value={form.name} onChange={set("name")} />
+        <TextInput label={t("Finish or specification")} isReadOnly={locked} value={form.specification} onChange={set("specification")} />
+        <TextInput label={t("Code")} isReadOnly={locked} value={form.code} onChange={set("code")} />
       </FormSection>
       <FormSection title={t("Supply")}>
-        <TextInput label={t("Supplier")} value={form.supplier} onChange={set("supplier")} />
+        <TextInput label={t("Supplier")} isReadOnly={locked} value={form.supplier} onChange={set("supplier")} />
         <div className={styles.quantityUnit}>
-          <TextInput label={t("Quantity")} inputMode="decimal" value={form.quantity} onChange={(value) => set("quantity")(value.replace(/[^\d.]/g, ""))} />
-          <TextInput label={t("Unit")} value={form.unit} onChange={set("unit")} />
+          <TextInput label={t("Quantity")} inputMode="decimal" isReadOnly={locked} value={form.quantity} onChange={(value) => set("quantity")(value.replace(/[^\d.]/g, ""))} />
+          <TextInput label={t("Unit")} isReadOnly={locked} value={form.unit} onChange={set("unit")} />
         </div>
       </FormSection>
       <FormSection title={t("Usage")}>
-        <MultiSelectField label={t("For")} selectedKeys={used} onSelectionChange={(keys) => setUsed(new Set([...keys].map(String)))}
+        <MultiSelectField label={t("For")} isDisabled={locked} selectedKeys={used} onSelectionChange={(keys) => setUsed(new Set([...keys].map(String)))}
           items={lines.filter((line) => line.status === "active").map((line) => ({ id: line.id, label: line.areaName ? `${line.title} · ${line.areaName}` : line.title }))} />
-        <Switch isSelected={clientChoice} onChange={setClientChoice}>{t("The client chooses it (needs their sign-off)")}</Switch>
-        <TextAreaField label={t("Note")} value={form.note} onChange={set("note")} />
+        <Switch isSelected={clientChoice} isDisabled={locked} onChange={setClientChoice}>{t("The client chooses it (needs their sign-off)")}</Switch>
+        <TextAreaField label={t("Note")} isReadOnly={locked} value={form.note} onChange={set("note")} />
       </FormSection>
+      {item ? <FormSection title={t("For the technical team")}>
+        <TextAreaField label={t("Product details")} maxLength={2000} value={details} onChange={setDetails}
+          description={item.teamNoteByName && item.teamNoteAt ? t("{name} · {date}", { name: item.teamNoteByName, date: format.when(item.teamNoteAt) }) : undefined} />
+      </FormSection> : null}
     </div>
   </InspectorSheet>;
 }

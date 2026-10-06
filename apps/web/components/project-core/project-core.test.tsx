@@ -116,6 +116,24 @@ describe("projects", () => {
     expect(posts(fetcher)[0]).toMatchObject({ stageId: "s0", checkKey: "meeting" });
   });
 
+  it("shows the areas the job's enquiry-type path uses after Won: Plan and delivery hide when the path skips them (PLM-098)", async () => {
+    const installation = { deliveryOn: null, installationOn: null, note: "", setByName: null, setAt: null, delivery: "not_booked", installation: "not_started", siteStartedOn: null,
+      siteFinishedOn: null, inRoute: true, late: false } as ProjectDetail["installation"];
+    mount((_url, body) => body ? detail() : { ...detail(), installation, areas: { planning: false, production: true, supply: true, delivery: false } });
+    const { unmount } = render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="plan" /></DesignSystemProvider>);
+    const tabs = (await screen.findByRole("tab", { name: "Scope" })).closest("[role=tablist]") as HTMLElement;
+    expect(within(tabs).queryByRole("tab", { name: "Plan" })).toBeNull();
+    // An address to the hidden tab opens the Overview.
+    expect(within(tabs).getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByText("Delivery and installation")).toBeNull();
+    unmount();
+    // Nothing configured: every area, as before.
+    mount((_url, body) => body ? detail() : { ...detail(), installation });
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
+    expect(await screen.findByRole("tab", { name: "Plan" })).toBeInTheDocument();
+    expect(await screen.findByText("Delivery and installation")).toBeInTheDocument();
+  });
+
   it("renames the project from its title and edits the priority in place, with the project's version", async () => {
     let current = detail();
     const fetcher = mount((url, body) => {

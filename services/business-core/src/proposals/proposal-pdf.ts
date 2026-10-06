@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { PDFDocument, PageSizes, StandardFonts, rgb, type PDFPage, type RGB } from "pdf-lib";
 import type { ClientPresentation, ClientSummaryRow } from "./markup-disclosure";
 import { PdfText, cleanText, type TextWeight } from "./pdf-text";
+import { drawLetterheadFooter, drawLetterheadTop, type PdfLetterhead } from "./pdf-letterhead";
 
 /**
  * The client proposal as one PDF (PLM-085): the firm's own designed pages 1–3, page 4 = the live quotation,
@@ -13,6 +14,8 @@ export type TemplatePage = { slot: 1 | 2 | 3 | 5; mimeType: string; bytes: Uint8
 
 export type QuotationPage = {
   brand: { name: string; accent: string | null };
+  /** The issuing business's letterhead (PLM-112); without one the brand's name heads the page. */
+  letterhead?: PdfLetterhead | null;
   title: string;
   /** The quotation number, as allocated or as the firm's own. */
   reference: string;
@@ -111,6 +114,7 @@ async function drawQuotation(document: PDFDocument, data: QuotationPage) {
   const byId = new Map(data.presentation.lines.map((line) => [line.id, line]));
 
   let page: PDFPage = document.addPage(A4);
+  drawLetterheadFooter(page, t, data.letterhead ?? null, { x: MARGIN, width });
   let y = A4[1] - MARGIN;
   // `box` is the width a right-to-left value aligns within (to its end); without one, text starts at x.
   const text = (value: string, x: number, at: number, size = 9, weight: TextWeight = "regular", color = INK, box?: number) => t.draw(page, value, { x, y: at, size, weight, color, width: box });
@@ -124,6 +128,7 @@ async function drawQuotation(document: PDFDocument, data: QuotationPage) {
   };
   const fresh = () => {
     page = document.addPage(A4);
+    drawLetterheadFooter(page, t, data.letterhead ?? null, { x: MARGIN, width });
     y = A4[1] - MARGIN;
     text(`${data.reference} · ${data.title} (continued)`, MARGIN, y, 9, "bold", MUTED);
     y -= 22;
@@ -131,8 +136,11 @@ async function drawQuotation(document: PDFDocument, data: QuotationPage) {
   };
   const room = (needed: number) => { if (y - needed < MARGIN + 24) fresh(); };
 
-  // Header: brand, document, number and dates; the client on the other side.
-  text(data.brand.name, MARGIN, y, 16, "bold", accent);
+  // Header: the issuing business's letterhead (or the brand), document, number and dates; the client on the other side.
+  if (data.letterhead) {
+    y = await drawLetterheadTop(document, page, t, data.letterhead, { x: MARGIN, y, width, accent });
+    y -= 10;
+  } else text(data.brand.name, MARGIN, y, 16, "bold", accent);
   right("QUOTATION", A4[0] - MARGIN, y, 16, "bold", INK);
   y -= 22;
   right(`${data.reference} · R${data.revision}`, A4[0] - MARGIN, y, 10, "bold");

@@ -14,6 +14,8 @@ export type MilestoneState = "to_invoice" | "invoiced" | "reported" | "verified"
 export type Milestone = {
   id: string; title: string; trigger: string; amount: string; currency: string; dueDate: string | null; quoteId: string | null;
   requiredForProduction: boolean; state: MilestoneState; reference: string;
+  /** Due before the work is released (the advance): flagged on the payment terms, never read from their words. */
+  requiredForRelease?: boolean;
   invoice: { id: string; number: string; total: string; dueDate: string } | null;
   receipt: { status: string; reportedBy: string; reportedAt: string; verifiedBy: string | null; verifiedAt: string | null } | null;
 };
@@ -41,6 +43,7 @@ export async function readMilestones(db: Db, workspaceId: string, project: { id:
     return {
       id: payment.id, title: payment.title, trigger: payment.trigger ?? "", amount: Dec.of(payment.amount).round(places).toFixed(places), currency: payment.currency ?? project.currency,
       dueDate: payment.dueDate || null, quoteId: payment.sourceQuoteId ?? null, requiredForProduction: payment.requiredForProduction === true, state, reference: payment.reference ?? "",
+      requiredForRelease: payment.requiredForRelease === true,
       invoice: invoice ? { id: invoice.id, number: invoice.number, total: invoice.total, dueDate: invoice.dueDate } : null,
       receipt: receipt ? { status: receipt.status, reportedBy: receipt.reportedBy, reportedAt: receipt.reportedAt, verifiedBy: receipt.verifiedBy ?? null, verifiedAt: receipt.verifiedAt ?? null } : null,
     };

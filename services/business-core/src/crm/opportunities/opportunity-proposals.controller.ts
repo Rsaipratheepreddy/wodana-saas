@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Min } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Min } from "class-validator";
 import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
 import { OpportunityProposalsService } from "./opportunity-proposals.service";
@@ -27,6 +27,10 @@ export class RecordFulfilmentDto {
 export class SaveClosingRulesDto {
   @IsArray() rules!: Array<{ furniturePath: string | null; closingEvent: string }>;
   @IsOptional() @IsString() versions?: string;
+}
+export class SaveWonAreasDto {
+  @IsArray() @ArrayMaxSize(6) rules!: Array<{ furniturePath: string | null; areas: string[] }>;
+  @IsString() versions!: string;
 }
 
 /** PLM-101 / PLM-103 / PLM-102: an opportunity's proposals, value approvals (E3), fulfilment and Deal Closed. */
@@ -68,5 +72,16 @@ export class OpportunityProposalsController {
   saveClosing(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("flowId", ParseUUIDPipe) flowId: string,
     @Body() input: SaveClosingRulesDto) {
     return this.proposals.saveClosingRules(actor, workspaceId, flowId, input);
+  }
+
+  @Get("flows/:flowId/won-areas")
+  wonAreas(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("flowId", ParseUUIDPipe) flowId: string) {
+    return this.proposals.wonAreas(actor, workspaceId, flowId);
+  }
+
+  @Put("flows/:flowId/won-areas")
+  saveWonAreas(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("flowId", ParseUUIDPipe) flowId: string,
+    @Body() input: SaveWonAreasDto) {
+    return this.proposals.saveWonAreas(actor, workspaceId, flowId, input);
   }
 }

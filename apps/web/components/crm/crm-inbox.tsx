@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Filter, FolderInput, MessageCircle, Plus, X } from "lucide-react";
+import { Filter, FolderInput, Mail, MessageCircle, Plus, X } from "lucide-react";
 import { MessagingMark } from "@/components/brand/messaging-mark";
 import { Avatar, Button, Callout, Checkbox, ControlledModalDialog, EmptyState, FormDialog, IconButton, IconMenuButton, ListTabs, MenuButton, SelectField, Skeleton, TextAreaField, TextInput, SearchInput, ToggleButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -241,7 +241,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
                 <span className={styles.threadCopy}>
                   <span className={styles.threadTop}><strong>{name}</strong><time dateTime={String(item.lastMessageAt ?? "")} title={item.lastMessageAt ? time(item.lastMessageAt) : t("New conversation")}>{inboxDate(item.lastMessageAt, locale, timeZone, t("New"))}</time></span>
                   <span className={styles.threadBottom}>
-                    <span className={styles.preview}>{item.lastMessageDirection === "outbound" ? <DeliveryState status={String(item.lastMessageStatus)} compact /> : null}<span className={styles.previewText}>{String(item.lastMessageText ?? item.subject ?? t("No messages yet"))}</span></span>
+                    <span className={styles.preview}>{item.channel === "email" ? <Mail className={styles.channelMark} role="img" aria-label={t("Email")} size={12} /> : null}{item.lastMessageDirection === "outbound" ? <DeliveryState status={String(item.lastMessageStatus)} compact /> : null}<span className={styles.previewText}>{item.channel === "email" && item.subject ? <span className={styles.previewSubject}>{String(item.subject)}</span> : null}{String(item.lastMessageText ?? item.subject ?? t("No messages yet"))}</span></span>
                     {unread > 0 ? <span className={styles.unread} role="img" aria-label={t("{count} unread messages", { count: unread })} /> : null}
                   </span>
                   <span className={styles.threadMeta}>

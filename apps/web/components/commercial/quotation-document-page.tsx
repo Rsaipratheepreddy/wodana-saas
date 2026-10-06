@@ -5,6 +5,7 @@ import { acceptedQuoteTotals, money, quoteTotals, paymentMilestoneAmounts } from
 import { quotationDescription } from "@/lib/commercial/presentation";
 import { QuotationCover } from "./quotation-cover";
 import { BrandLogo } from "./brand-logo";
+import { LetterheadFooter, LetterheadHeader } from "../documents/document-letterhead";
 import d from "./quotation-studio.module.css";
 import {isReferenceLayout,referenceItemGroups} from '@/lib/commercial/quotation-reference-template';
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -92,7 +93,8 @@ export function QuotationDocumentPage({
       aria-label={t("{title} document page", { title: page.title })}
     >
       <header className={d.documentHeader}>
-        {brand ? <BrandLogo brand={brand} /> : <strong>{t("Quotation")}</strong>}
+        {/* The issuing business's letterhead (PLM-112), else the brand. */}
+        <LetterheadHeader letterhead={quote.letterhead} fallback={brand ? <BrandLogo brand={brand} /> : <strong>{t("Quotation")}</strong>} />
         <span>
           {t("QUOTATION")}<strong>{t("Q-{number}", { number: quote.number })}</strong>
           <small>{t("Version {number}", { number: quote.number })}</small>
@@ -383,13 +385,14 @@ export function QuotationDocumentPage({
       </div>
       <footer className={d.documentFooter}>
         <span>
-          {brand?.name} · {quote.cover?.preparedFor || customerName}
+          {quote.letterhead?.legalName ?? brand?.name} · {quote.cover?.preparedFor || customerName}
         </span>
         <span>
           {String(pageIndex + 1).padStart(2, "0")} /{" "}
           {String(pageCount).padStart(2, "0")}
         </span>
       </footer>
+      <LetterheadFooter letterhead={quote.letterhead} />
     </article>
   );
 }

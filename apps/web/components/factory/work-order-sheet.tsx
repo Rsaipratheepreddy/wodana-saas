@@ -110,6 +110,7 @@ export function WorkOrderSheet({ api, orderId, intent = null, onChanged, onClose
       case "schedule": return state.canManage ? <Button size="compact" variant="quiet" onPress={() => setDialog("schedule")}>{t("Set where and when")}</Button> : null;
       case "payment": return <Link className={ops.projectLink} href={projectHref(order.projectId, "money")}>{t("Open the project's money")}</Link>;
       case "scope": return <Link className={ops.projectLink} href={projectHref(order.projectId, "scope")}>{t("Open the scope")}</Link>;
+      case "client_drawings": return <Link className={ops.projectLink} href={`/workspace/projects/${order.projectId}/scope?view=drawings`}>{t("Open the drawings")}</Link>;
       case "running": return <Link className={ops.projectLink} href={projectHref(order.projectId)}>{t("Open the project")}</Link>;
       default: return null;
     }

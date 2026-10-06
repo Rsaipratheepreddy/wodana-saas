@@ -238,7 +238,7 @@ export function QuotationBuilderShell({ backHref, initial, quoteId, embedded }: 
     </div></details>}
    </div>}
   {error && <p role="alert" className={styles.error}>{translateKnown(t, error)}</p>}
-  {preview ? <QuotationBuilderPreview initialPageId={active} allPages fitWidth quote={draft} brand={initial.portalBrand} customerName={initial.customerName}/> : <div id="builder-panel" className={styles.canvas}>
+  {preview ? <QuotationBuilderPreview initialPageId={active} allPages fitWidth quote={{ ...draft, letterhead: draft.letterhead ?? initial.portalLetterhead ?? null }} brand={initial.portalBrand} customerName={initial.customerName}/> : <div id="builder-panel" className={styles.canvas}>
    {active === 'payments' && <div className={styles.scopeControls}><button type="button" onClick={() => (embedded ? embedded.onPayments() : setPaymentEditor(true))}>{t(readOnly ? 'View payment schedule' : 'Edit payment schedule')}</button><span>{t("{count} milestones · {percent}% allocated", { count: draft.paymentTerms.length, percent: draft.paymentTerms.reduce((sum, term) => sum + term.percent, 0).toFixed(2) })}</span></div>}
    {scopeView && !readOnly && <div className={styles.scopeControls}><button type="button" disabled={busy} onClick={async () => { if (await save())
             setScopeImport(true); }}>{t("Import requirements")}</button></div>}
@@ -252,7 +252,7 @@ export function QuotationBuilderShell({ backHref, initial, quoteId, embedded }: 
    <div className={styles.templateForm}>{templateCreated ? <><p role="status">{t("Template created. It is available in Quotation Templates.")}</p><Link href="/workspace/pre-projects/quotation-templates">{t("Open quotation templates")}</Link></> : <><p>{t("Save the rooms, items, rates, payment schedule and page designs as a reusable template. Your original quotation stays available.")}</p><label>{t("Template name")}<input maxLength={160} value={templateName} disabled={converting} onChange={event => setTemplateName(event.target.value)}/></label>{!draft.lines.length && <p>{t("Add at least one quotation item before converting.")}</p>}{templateError && <p role="alert">{translateKnown(t, templateError)}</p>}<button type="button" disabled={converting || !templateName.trim() || !draft.lines.length} onClick={() => void convertTemplate()}>{t(converting ? 'Converting…' : 'Create template')}</button></>}</div>
   </ControlledModalDialog>
   <ControlledModalDialog title={t("Payment schedule")} isOpen={paymentEditor} onOpenChange={setPaymentEditor} size="lg" footer={<button type="button" onClick={() => setPaymentEditor(false)}>{t("Done")}</button>}><QuotationPaymentEditor quote={draft} onChange={change} readOnly={readOnly || busy}/></ControlledModalDialog>
-  {exporting && <QuotationPdfExport quote={draft} brand={initial.portalBrand} customerName={initial.customerName} onDone={() => setExporting(false)} onError={message => { setError(message); setExporting(false); }}/>}
+  {exporting && <QuotationPdfExport quote={{ ...draft, letterhead: draft.letterhead ?? initial.portalLetterhead ?? null }} brand={initial.portalBrand} customerName={initial.customerName} onDone={() => setExporting(false)} onError={message => { setError(message); setExporting(false); }}/>}
 
  {confirmationDialog}
  </section>

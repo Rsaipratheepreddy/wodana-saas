@@ -424,4 +424,40 @@ describe("CRM inbox", () => {
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("Hi Noura, our studio is on Beach Road.");
     expect(fetcher.mock.calls.filter(([url, init]) => String(url).endsWith("/messages") && init?.method === "POST")).toHaveLength(0);
   });
+  it("shows an email conversation with its subject and files, and replies by email without WhatsApp (PLM-025)", async () => {
+    const user = userEvent.setup();
+    const now = new Date().toISOString();
+    const pdf = { id: "f1", kind: "document", mimeType: "application/pdf", fileName: "plan.pdf", byteSize: 2048, status: "stored", failureCode: null };
+    const exe = { id: "f2", kind: "document", mimeType: "application/octet-stream", fileName: "setup.exe", byteSize: 10, status: "failed", failureCode: "type_not_allowed" };
+    const { data, record, posted } = setup({
+      channel: "email", subject: "Villa kitchen", whatsappConnected: false, replyingAs: { businessName: "Palm Studio", number: null }, labels: [],
+      email: { address: "plm-abcdefghij@in.example", via: "inbound" },
+      messages: [{ id: "mail-1", direction: "inbound", status: "delivered", bodyText: "Can you visit on Thursday?", createdAt: now,
+        email: { subject: "Villa kitchen", from: "noura@example.com", fromName: "Noura", to: ["info@palm.example"], cc: [], fullText: "Can you visit on Thursday?\n\nOn Mon, Palm wrote:\n> Hello", attachments: [pdf, exe] } }],
+    }, { payloads: { "inbox/templates": [] } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    expect(await screen.findByText("Can you visit on Thursday?")).toBeInTheDocument();
+    expect(screen.getByText("Email · Villa kitchen")).toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: "Email" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Villa kitchen").length).toBeGreaterThan(0);
+    const files = screen.getByRole("group", { name: "Files" });
+    expect(within(files).getByRole("link", { name: /plan\.pdf/ })).toHaveAttribute("href", expect.stringContaining("/attachments/"));
+    expect(within(files).getByText("This file couldn't be kept.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show full email" }));
+    expect(screen.getByText(/> Hello/)).toBeInTheDocument();
+    expect(screen.queryByText(/Connect WhatsApp/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Templates" })).not.toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Thursday at 4 works.");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByText("Message queued")).toBeInTheDocument();
+    expect(posted("/messages")).toEqual([{ direction: "outbound", purpose: "service", bodyText: "Thursday at 4 works.", clientMessageId: expect.any(String) }]);
+  });
+
+  it("says how to set up email replies when the workspace has no inbox address", async () => {
+    const { data, record } = setup({ channel: "email", subject: "Villa", whatsappConnected: false, email: { address: null, via: null } }, { payloads: { "inbox/templates": [] } });
+    render(<CrmInbox initialData={data} initialRecordId={record.id} />);
+    expect(await screen.findByText(/Set up the inbox email address in Settings → Inbox to reply by email/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Set up email" })).toHaveAttribute("href", "/workspace/settings/inbox#inbox-email");
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+  });
 });

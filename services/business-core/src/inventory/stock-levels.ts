@@ -23,9 +23,13 @@ export async function readReorderPoints(db: Db, workspaceId: string, itemIds: st
   const rows = (await db.query<Omit<ReorderPoint, "low" | "short">>(
     `SELECT point.id, point.item_id AS "itemId", item.name AS "itemName", item.code AS "itemCode", item.unit, point.location_id AS "locationId", location.name AS "locationName",
             point.reorder_at::text AS "reorderAt", point.reorder_quantity::text AS "reorderQuantity", point.vendor_id AS "vendorId", vendor.display_name AS "vendorName",
-            coalesce((SELECT sum(balance.on_hand) FROM stock_balances balance
+            (coalesce((SELECT sum(balance.on_hand) FROM stock_balances balance
                        WHERE balance.workspace_id = point.workspace_id AND balance.item_id = point.item_id AND balance.project_id IS NULL
-                         AND (point.location_id IS NULL OR balance.location_id = point.location_id)), 0)::numeric(18, 4)::text AS free,
+                         AND (point.location_id IS NULL OR balance.location_id = point.location_id)), 0)
+              -- Free stock a deal holds (PLM-125) isn't free to sell again.
+              - coalesce((SELECT sum(held.quantity) FROM stock_reservations held
+                           WHERE held.workspace_id = point.workspace_id AND held.item_id = point.item_id AND held.status = 'reserved' AND held.project_id IS NULL
+                             AND (point.location_id IS NULL OR held.location_id = point.location_id)), 0))::numeric(18, 4)::text AS free,
             coalesce((SELECT sum(greatest(line.quantity - line.cancelled_quantity - coalesce(back.credited, 0) - (coalesce(received.accepted, 0) - coalesce(back."returnedAccepted", 0))
                                           - coalesce(received.pending, 0), 0))
                         FROM purchase_order_lines line JOIN purchase_orders purchase ON purchase.workspace_id = line.workspace_id AND purchase.id = line.order_id
@@ -48,7 +52,7 @@ export function stockLevel(free: string, onOrder: string, reorderAt: string) {
 }
 
 /**
- * Tells the people who keep and buy stock when an item goes short (low, with nothing coming to lift it),
+ * Tells the people who keep and buy stock (and those set to hear it: the showroom, stock.alerts) when an item goes short (low, with nothing coming to lift it),
  * once each time it goes short — in the app and by email — and forgets it once it's back above. Runs in the
  * daily purchasing run and right after a change that takes free stock out (only those items).
  */
@@ -69,7 +73,7 @@ export async function processStockLevels(db: Db, workspaceId: string, itemIds: s
       `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership
          JOIN effective_member_roles effective_role ON effective_role.membership_id = membership.id
          JOIN role_permissions granted ON granted.role_id = effective_role.role_id
-         JOIN permissions permission ON permission.id = granted.permission_id AND permission.code IN ('stock.manage', 'purchasing.manage')
+         JOIN permissions permission ON permission.id = granted.permission_id AND permission.code IN ('stock.manage', 'purchasing.manage', 'stock.alerts')
         WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows.map((row) => row.userId);
     const unit = (value: string) => `${Dec.of(value).toString()} ${point.unit}`.trim();
     const place = point.locationName ?? "all places";

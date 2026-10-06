@@ -109,5 +109,5 @@ export function projectPeople(detail: ProjectDetail) {
     entry.roles.push(role.label);
     people.set(role.member.membershipId, entry);
   }
-  return { named: [...people.values()], missing: detail.team.filter((role) => !role.member).map((role) => role.label) };
+  return { named: [...people.values()], missing: detail.team.filter((role) => !role.member && !role.notApplicable).map((role) => role.label) };
 }

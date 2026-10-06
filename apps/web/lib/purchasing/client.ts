@@ -52,6 +52,9 @@ export function purchasingApi(workspaceId: string) {
     orders: () => request<OrdersState>(at("orders")),
     order: (id: string) => request<OrderState>(at(`orders/${id}`)),
     createOrder: (input: Record<string, unknown>) => request<OrderState>(at("orders"), "POST", input),
+    /** Several draft orders at once, one per supplier (each by its own id, so a retry creates nothing twice). */
+    createOrders: (orders: Array<Record<string, unknown>>) =>
+      request<{ orders: Array<{ id: string; number: string; supplierName: string; lines: number }> }>(at("orders/bulk"), "POST", { orders }),
     /** One change to an order, version-checked; returns the order as it is now. */
     orderCommand: (id: string, version: number, action: string, input: Record<string, unknown> = {}) =>
       request<OrderState>(at(`orders/${id}`), "POST", { ...input, action, version, commandId: crypto.randomUUID() }),

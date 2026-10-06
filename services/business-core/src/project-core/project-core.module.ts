@@ -4,9 +4,10 @@ import { WorkspacesModule } from "../workspaces/workspaces.module";
 import { LabourRatesService } from "./labour-rates.service";
 import { ProjectCoreController } from "./project-core.controller";
 import { ProjectCoreService } from "./project-core.service";
+import { ProjectDrawingsService } from "./project-drawings.service";
 import { ProjectMoneyService } from "./project-money.service";
 import { ProjectOverviewService } from "./project-overview.service";
 import { ProjectWorkService } from "./project-work.service";
 
-@Module({ imports: [WorkspacesModule], controllers: [ProjectCoreController], providers: [ProjectCoreService, ProjectWorkService, ProjectMoneyService, ProjectOverviewService, LabourRatesService, BrandAssetStorageService], exports: [ProjectWorkService] })
+@Module({ imports: [WorkspacesModule], controllers: [ProjectCoreController], providers: [ProjectCoreService, ProjectDrawingsService, ProjectWorkService, ProjectMoneyService, ProjectOverviewService, LabourRatesService, BrandAssetStorageService], exports: [ProjectWorkService] })
 export class ProjectCoreModule {}

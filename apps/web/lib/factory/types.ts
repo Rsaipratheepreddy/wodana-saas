@@ -1,7 +1,25 @@
 import type { StockLocation } from "@/lib/purchasing/types";
+import type { ProductionStep } from "./production";
 
 export type WorkOrderStatus = "planned" | "released" | "in_production" | "ready" | "on_hold" | "cancelled" | "short_closed";
-export type FactorySettings = { requireDrawing: boolean; requirePayment: boolean; requireMaterials: boolean; requireCheck: boolean; version: number };
+export type FactorySettings = {
+  requireDrawing: boolean; requirePayment: boolean; requireMaterials: boolean; requireCheck: boolean; version: number;
+  /** PLM-063: the production steps the firm keeps (in their order) with its own words, and its internal production target in weeks. */
+  productionSteps?: ProductionStep[]; productionWeeks?: number | null;
+};
+
+export type { ProductionRow, ProductionState, ProductionStep, ProductionStepKind, ProductionSummary, ProductionWindow } from "./production";
+
+/** PLM-061: a sample the design team asked the factory for, needed by a day (before the material selection appointment when one is booked). */
+export type SampleRequest = {
+  id: string; number: number; caseId: string; caseReference: string | null; clientName: string; projectId: string | null; projectReference: string | null;
+  title: string; note: string; dueOn: string; status: "requested" | "ready" | "cancelled"; requestedBy: string; requestedByName: string; requestedAt: string;
+  readyNote: string; readyByName: string | null; readyAt: string | null; cancelReason: string; version: number; appointmentOn: string | null;
+};
+export type SamplesState = {
+  samples: SampleRequest[]; today: string; appointmentOn: string | null; suggestedDueOn: string; me: string;
+  canRequest: boolean; canMake: boolean; canWithdrawAny: boolean;
+};
 export type Workcenter = { id: string; name: string; hoursPerDay: string | null; active: boolean };
 /** A workcenter's hourly rate from a date: hours reported on a day cost the rate set from the latest date on or before it. */
 export type WorkcenterRate = { id: string; workcenterId: string; from: string; rate: string; currency: string; version: number };
@@ -46,7 +64,7 @@ export type ScheduleState = {
   conflicts: Array<{ workcenterId: string; workcenterName: string; date: string; hours: number; capacity: number; orders: string[] }>;
 };
 
-export type ReleaseCheck = { key: "running" | "scope" | "drawing" | "payment" | "materials" | "schedule"; passed: boolean; missing: string; detail?: string[] };
+export type ReleaseCheck = { key: "running" | "scope" | "client_drawings" | "drawing" | "payment" | "materials" | "schedule"; passed: boolean; missing: string; detail?: string[] };
 export type OutputReport = {
   id: string; good: string; scrap: string; scrapReason: string; note: string; status: "pending" | "approved" | "refused"; reportedBy: string; reportedByName: string; reportedAt: string;
   decidedByName: string | null; decisionNote: string;

@@ -21,6 +21,7 @@ import {
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
 import { CLOSING_EVENT_LABEL, DealClosingDialog } from "./deal-closing-dialog";
+import { areasFor, areasText, WonAreasDialog, type WonAreasView } from "./won-areas-dialog";
 import { TypeDot } from "./enquiry-type-colors";
 import { FlowMigrationDialog } from "./flow-migration-dialog";
 import { answerLabel, deadlineText, doneWhen } from "./flow-text";
@@ -67,6 +68,8 @@ function Editor({ answerOptions, columnNames, flow, roles, workspaceId }: StepsT
   const [leaving, setLeaving] = useState<string | null>(null);
   const [closingOpen, setClosingOpen] = useState(false);
   const [closing, setClosing] = useState<Closing | null>(null);
+  const [areasOpen, setAreasOpen] = useState(false);
+  const [wonAreas, setWonAreas] = useState<WonAreasView | null>(null);
   const [migrating, setMigrating] = useState(false);
   const [olderJobs, setOlderJobs] = useState(0);
   const table = history?.present ?? null;
@@ -78,6 +81,13 @@ function Editor({ answerOptions, columnNames, flow, roles, workspaceId }: StepsT
     return () => controller.abort();
   }, [workspaceId, flow.id]);
   useEffect(() => loadClosing(), [loadClosing]);
+  // PLM-098: the areas each path shows after Won.
+  const loadAreas = useCallback(() => {
+    const controller = new AbortController();
+    crmRequest<WonAreasView>(workspaceId, `flows/${flow.id}/won-areas`, "GET", undefined, controller.signal).then(setWonAreas).catch(() => undefined);
+    return () => controller.abort();
+  }, [workspaceId, flow.id]);
+  useEffect(() => loadAreas(), [loadAreas]);
   const loadOlder = useCallback(() => {
     const controller = new AbortController();
     crmRequest<{ jobs: unknown[] }>(workspaceId, `flows/${flow.id}/migration`, "GET", undefined, controller.signal).then((preview) => setOlderJobs(preview.jobs.length)).catch(() => undefined);
@@ -193,6 +203,7 @@ function Editor({ answerOptions, columnNames, flow, roles, workspaceId }: StepsT
     const event = (own ?? closing.rules.find((rule) => rule.furniturePath === null))?.closingEvent;
     return event ? t(CLOSING_EVENT_LABEL[event] ?? event) : t("Not set");
   };
+  const areasOn = (path: string) => wonAreas ? areasText(areasFor(wonAreas.rules, table.question === "subPath" && path !== ALL_PATHS ? path : null), t) : null;
 
   return <PageShell aria-label={t("Steps")} kind="record" title={<span className={styles.title}><TypeDot code={type.code} color={type.color} />{type.label}</span>}
     tabs={tabs} toolbar={toolbar}
@@ -201,10 +212,11 @@ function Editor({ answerOptions, columnNames, flow, roles, workspaceId }: StepsT
       problems={problems.map((problem) => ({ key: problem.key, label: problem.text }))}
       actions={addMaterial && problemKeys.has("material") ? <Button size="compact" onPress={addMaterial}>{t("Add material selection")}</Button> : undefined} /> : null}
     <div className={styles.matrix}>
-      <GroupedTable<Line> ariaLabel={t("Steps")} collapsible={false} selectable={false} getRowId={(line) => line.kind === "closing" ? "closing" : line.row.key}
+      <GroupedTable<Line> ariaLabel={t("Steps")} collapsible={false} selectable={false} getRowId={(line) => line.kind === "step" ? line.row.key : line.kind}
         columns={[
           { id: "step", label: t("Step"), width: "16rem", mobileWidth: "10rem", render: (line) => line.kind === "closing"
             ? <button className={styles.rowButton} onClick={() => setClosingOpen(true)} type="button"><strong>{t("Deal closed when")}</strong></button>
+            : line.kind === "areas" ? <button className={styles.rowButton} onClick={() => setAreasOpen(true)} type="button"><strong>{t("Areas after Won")}</strong></button>
             : <StepName flagged={showProblems ? problemKeys : NONE} onMenu={(action) => {
                 if (action === "edit") setEditing({ kind: "row", row: line.row.key });
                 else if (action === "up" || action === "down") commit(moveRow(table, line.row.key, action === "up" ? -1 : 1));
@@ -213,11 +225,12 @@ function Editor({ answerOptions, columnNames, flow, roles, workspaceId }: StepsT
               }} onRow={() => setEditing({ kind: "row", row: line.row.key })} row={line.row} table={table} /> },
           ...table.paths.map((path) => ({ id: `path:${path}`, label: pathName(path), render: (line: Line) => line.kind === "closing"
             ? <button className={styles.cellButton} onClick={() => setClosingOpen(true)} type="button">{closingFor(path) ?? "…"}</button>
+            : line.kind === "areas" ? <button className={styles.cellButton} onClick={() => setAreasOpen(true)} type="button">{areasOn(path) ?? "…"}</button>
             : <Cell flagged={showProblems ? problemKeys : NONE} onCell={() => setEditing({ kind: "cell", row: line.row.key, path })} path={path} pathName={pathName} roles={roles} row={line.row} /> })),
         ]}
         sections={[
           ...rowsByStage(table).map((group, index) => ({ id: `${group.column}-${index}`, label: columnLabel(group.column, columnNames), emptyMessage: "", rows: group.rows.map((row): Line => ({ kind: "step", row })) })),
-          { id: "closing", label: t("Deal closed"), emptyMessage: "", rows: [{ kind: "closing" } as Line] },
+          { id: "closing", label: t("Deal closed"), emptyMessage: "", rows: [{ kind: "closing" } as Line, { kind: "areas" } as Line] },
         ]} />
     </div>
     {editing?.kind === "cell" ? <CellDialog answerOptions={answerOptions} onClose={() => setEditing(null)} path={editing.path} roles={roles} row={table.rows.find((row) => row.key === editing.row)!} table={table}
@@ -227,6 +240,7 @@ function Editor({ answerOptions, columnNames, flow, roles, workspaceId }: StepsT
     {editing?.kind === "add" ? <AddDialog columns={columns} columnNames={columnNames} onClose={() => setEditing(null)}
       after={editing.after ? table.rows.find((row) => row.key === editing.after) ?? null : null}
       onSave={(input) => { commit(addRow(table, { ...input, afterKey: editing.after }).table); setEditing(null); }} /> : null}
+    {areasOpen ? <WonAreasDialog workspaceId={workspaceId} flowId={flow.id} typeName={type.label} onClose={() => { setAreasOpen(false); loadAreas(); }} /> : null}
     {closingOpen ? <DealClosingDialog workspaceId={workspaceId} flowId={flow.id} typeName={type.label} onClose={() => { setClosingOpen(false); loadClosing(); }} /> : null}
     {migrating ? <FlowMigrationDialog workspaceId={workspaceId} flowId={flow.id} typeName={type.label} onClose={() => setMigrating(false)} onMoved={() => { setMigrating(false); loadOlder(); }} /> : null}
     {leaving ? <ConfirmationDialog body={t("Your changes are not published. Leave and lose them?")} confirmLabel={t("Leave")} isOpen
@@ -236,7 +250,7 @@ function Editor({ answerOptions, columnNames, flow, roles, workspaceId }: StepsT
 }
 
 const NONE = new Set<string>();
-type Line = { kind: "step"; row: StepRow } | { kind: "closing" };
+type Line = { kind: "step"; row: StepRow } | { kind: "closing" } | { kind: "areas" };
 
 function StepName({ flagged, onMenu, onRow, row, table }: { flagged: Set<string>; onMenu: (action: string) => void; onRow: () => void; row: StepRow; table: StepsTable }) {
   const t = useT();

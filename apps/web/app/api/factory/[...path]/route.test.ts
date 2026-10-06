@@ -33,3 +33,20 @@ describe("factory proxy: quality check photos", () => {
     expect([response.status, response.headers.get("content-type")]).toEqual([200, "image/webp"]);
   });
 });
+
+describe("factory proxy: production and sample requests", () => {
+  beforeEach(() => { forward.mockReset(); backend.mockReset(); });
+
+  it("reads the production schedule and one case's samples, and passes sample commands on", async () => {
+    forward.mockResolvedValue(new Response("{}"));
+    await GET(new Request(`http://localhost/api/factory/production?workspaceId=${w}`), params("production"));
+    expect(forward).toHaveBeenLastCalledWith(`/workspaces/${w}/factory/production`, expect.objectContaining({ method: "GET" }), expect.any(String));
+    await GET(new Request(`http://localhost/api/factory/samples?workspaceId=${w}&caseId=${c}`), params("samples"));
+    expect(forward).toHaveBeenLastCalledWith(`/workspaces/${w}/factory/samples?caseId=${c}`, expect.objectContaining({ method: "GET" }), expect.any(String));
+    await POST(new Request(`http://localhost/api/factory/samples/${o}?workspaceId=${w}`, { method: "POST", body: JSON.stringify({ action: "ready", version: 1 }) }), params("samples", o));
+    expect(forward).toHaveBeenLastCalledWith(`/workspaces/${w}/factory/samples/${o}`, expect.objectContaining({ method: "POST", body: JSON.stringify({ action: "ready", version: 1 }) }), expect.any(String));
+    // The schedule is read only; a sample is addressed by its id.
+    expect((await POST(new Request(`http://localhost/api/factory/production?workspaceId=${w}`, { method: "POST", body: "{}" }), params("production"))).status).toBe(400);
+    expect((await POST(new Request(`http://localhost/api/factory/samples/nope?workspaceId=${w}`, { method: "POST", body: "{}" }), params("samples", "nope"))).status).toBe(400);
+  });
+});

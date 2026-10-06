@@ -22,6 +22,9 @@ const CHECK_LABEL: Record<string, string> = {
   lead_assigned: key('Project lead assigned'), role_assigned: key('Role assigned'), payment_verified: key('Payment verified'),
   material_list_signed_off: key('Materials signed off'), everything_ordered: key('Everything ordered'), everything_made: key('Everything made'),
   snags_closed: key('All snags closed'), no_critical_snags: key('No critical snag open'), handover_accepted: key('Client accepted the handover'),
+  drawings_uploaded: key('Technical drawings uploaded'), drawings_site_checked: key('Technical site check passed'), drawings_client_approved: key('Client approved the drawings'),
+  factory_slot_booked: key('Factory slot booked'),
+  installation_scheduled: key('Installation scheduled'), goods_delivered: key('Everything delivered'), installation_done: key('Installation signed off'),
 };
 
 /**

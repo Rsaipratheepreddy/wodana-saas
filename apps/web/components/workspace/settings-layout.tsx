@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { Bell, BellRing, Bot, Building2, Calculator, CalendarClock, CreditCard, Factory, FileText, FolderKanban, Globe, History, KeyRound, Landmark, Languages, MessagesSquare, Network, Palette, Plug, Send, ShieldCheck, ShoppingCart, Sparkles, UserRound, Users, Warehouse, type LucideIcon } from "lucide-react";
+import { Bell, BellRing, Bot, Building2, Calculator, CalendarClock, CreditCard, Factory, FileText, FolderKanban, Globe, History, KeyRound, Landmark, Languages, MessagesSquare, Network, Palette, Plug, Send, ShieldCheck, ShoppingCart, Sparkles, Truck, UserRound, Users, Warehouse, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { SearchInput, SelectField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -13,7 +13,7 @@ const ICONS: Record<string, LucideIcon> = {
   profile: UserRound, security: ShieldCheck, company: Building2, "workspace-language": Languages, members: Users, roles: KeyRound,
   "business-records": Landmark, billing: CreditCard, "audit-log": History, integrations: Plug, "client-portal-settings": Globe, "design-packages": Palette, "reminder-settings": BellRing,
   "attendance-settings": CalendarClock, teams: Network, "project-settings": FolderKanban, "purchasing-settings": ShoppingCart, "inventory-settings": Warehouse,
-  "factory-settings": Factory, "accounting-settings": Calculator, "inbox-settings": MessagesSquare, "delivery-health": Send, "notification-settings": Bell,
+  "factory-settings": Factory, "fulfilment-settings": Truck, "accounting-settings": Calculator, "inbox-settings": MessagesSquare, "delivery-health": Send, "notification-settings": Bell,
   "ai-credits": Sparkles, "ai-apps": Bot,
 };
 

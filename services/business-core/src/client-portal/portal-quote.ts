@@ -41,6 +41,12 @@ export function portalQuote(quote: Quote, grantId: string, role: "approver" | "v
       name: quote.brand.name, logo: quote.brand.logo, primaryColor: quote.brand.primaryColor, accentColor: quote.brand.accentColor,
       welcomeTitle: quote.brand.welcomeTitle, welcomeText: quote.brand.welcomeText, supportPhone: quote.brand.supportPhone, layout: quote.brand.layout,
     } : null,
+    // The issuing business's letterhead, as frozen when the quote was issued (PLM-112).
+    letterhead: quote.letterhead ? {
+      legalName: quote.letterhead.legalName, taxLabel: quote.letterhead.taxLabel, taxNumber: quote.letterhead.taxNumber, licenceNumber: quote.letterhead.licenceNumber,
+      address: quote.letterhead.address, phone: quote.letterhead.phone, email: quote.letterhead.email, footer: quote.letterhead.footer,
+      logoUrl: quote.letterhead.logoUrl, headerUrl: quote.letterhead.headerUrl,
+    } : null,
     rooms: (quote.rooms ?? []).map((room) => ({ id: room.id, name: room.name })),
     paymentTerms: (quote.paymentTerms ?? []).map((term) => ({ id: term.id, title: term.title, percent: term.percent, trigger: term.trigger })),
     lines: quote.lines.map((line) => portalQuoteLine(line, line.optional ? optionPrice(quote, line.id) : null)),

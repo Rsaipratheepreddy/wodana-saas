@@ -7,6 +7,7 @@ import { grantFor, type DecisionContext } from "./portal-decisions";
 import { attach, ownUploads, readAttachments, type ClientFile } from "./portal-files";
 import { caseTeam, caseTitle, tellClients, tellStaff } from "./portal-notices";
 import type { PortalSettings } from "./portal-settings";
+import { readLetterhead } from "../workspaces/entity-letterhead";
 
 type Db = Pick<PoolClient, "query">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -148,6 +149,8 @@ export async function invoiceDocument(db: Db, workspaceId: string, row: CaseRow,
   return {
     number: invoice.number, issueDate: invoice.issueDate, dueDate: invoice.dueDate, currency: invoice.currency, milestone: invoice.milestoneTitle, reference: invoice.projectReference,
     company: { name: invoice.companyName, address: invoice.companyAddress, taxNumber: invoice.companyTaxNumber },
+    // The issuing business's letterhead (PLM-112); the name, address and tax number above stay as issued.
+    letterhead: await readLetterhead(db, workspaceId, invoice.legalEntityId),
     customer: { name: invoice.customerName, address: invoice.customerAddress, taxNumber: invoice.customerTaxNumber },
     lines: (await readInvoiceLines(db, workspaceId, invoice.id)).map((line) => ({ description: line.description, taxRate: line.taxRate, net: line.net, tax: line.tax, total: line.total })),
     net: invoice.net, tax: invoice.tax, total: invoice.total, paid: invoice.paid, balance: invoice.balance, note: invoice.note,
@@ -158,8 +161,8 @@ export async function invoiceDocument(db: Db, workspaceId: string, row: CaseRow,
 
 /** A receipt as the client may print it: a payment finance verified on one of their milestones. */
 export async function receiptDocument(db: Db, workspaceId: string, row: CaseRow, receiptId: string) {
-  const receipt = (await db.query<{ id: string; paymentId: string; title: string; amount: string; currency: string; receivedOn: string | null }>(
-    `SELECT receipt.id, receipt.payment_id AS "paymentId", payment.title, allocation.amount::text AS amount, receipt.currency,
+  const receipt = (await db.query<{ id: string; paymentId: string; title: string; amount: string; currency: string; receivedOn: string | null; entityId: string | null }>(
+    `SELECT receipt.id, receipt.payment_id AS "paymentId", payment.title, nullif(receipt.legal_entity_id, '') AS "entityId", allocation.amount::text AS amount, receipt.currency,
             left(coalesce(receipt.detail->>'verifiedAt', receipt.detail->>'reportedAt', ''), 10) AS "receivedOn"
        FROM commercial_receipts receipt
        JOIN commercial_allocations allocation ON allocation.workspace_id = receipt.workspace_id AND allocation.case_id = receipt.case_id AND allocation.receipt_id = receipt.id
@@ -173,7 +176,8 @@ export async function receiptDocument(db: Db, workspaceId: string, row: CaseRow,
     `SELECT coalesce(branding.display_name, workspace.name) AS name FROM workspaces workspace LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id
       WHERE workspace.id = $1`, [workspaceId])).rows[0]?.name ?? "";
   return { id: receipt.id, milestone: receipt.title, amount: receipt.amount, currency: receipt.currency, receivedOn: receipt.receivedOn || null,
-    invoiceNumber: invoice?.number ?? null, company: invoice?.companyName || company, customer: invoice?.customerName ?? null };
+    invoiceNumber: invoice?.number ?? null, company: invoice?.companyName || company, customer: invoice?.customerName ?? null,
+    letterhead: await readLetterhead(db, workspaceId, invoice?.legalEntityId ?? receipt.entityId) };
 }
 
 // ---------- the team's side ----------

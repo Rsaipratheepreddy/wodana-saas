@@ -35,3 +35,8 @@
 .weekdays > div { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); }
 .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
 @media (max-width: 640px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+
+/* Settings → Inbox → Email: the inbound address and the forwarding steps. */
+.address { padding: var(--wd-space-1) var(--wd-space-2); border-radius: var(--wd-radius-2xs); background: var(--wd-color-surface-muted); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--wd-space-4); font-size: var(--wd-text-sm); }
+.steps ol { margin: var(--wd-space-1) 0 0; padding-inline-start: var(--wd-space-5); display: grid; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); }

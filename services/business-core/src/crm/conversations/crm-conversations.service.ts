@@ -19,6 +19,7 @@ import { inboundSummary, normalizeTemplateParameter, renderTemplate, stageFilter
 import { resolveTemplateSources } from "./inbox/template-variables";
 import { sendAutoReply } from "./inbox/auto-replies";
 import { kindOf, safeFileName, sendableProblem, WHATSAPP_MEDIA, type SendableKind } from "./inbox/attachment-rules";
+import { inboundDomain } from "./email/mailgun-inbound";
 import { conversationVisible, findJob, INBOX_MANAGE, INBOX_READ, JOB_SQL, loadInboxViewer, viewSql, visibleSql, type InboxViewer, type JobKind } from "./inbox/inbox-visibility";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
@@ -27,7 +28,19 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export const MESSAGE_ATTACHMENT_SQL = `CASE WHEN message.hidden_at IS NULL THEN (SELECT jsonb_build_object('id', attachment.id, 'kind', attachment.kind,
     'mimeType', attachment.content_type, 'fileName', attachment.file_name, 'byteSize', attachment.byte_size, 'status', attachment.status,
     'failureCode', attachment.failure_code)
-   FROM crm_message_attachments attachment WHERE attachment.workspace_id = message.workspace_id AND attachment.message_id = message.id) END`;
+   FROM crm_message_attachments attachment WHERE attachment.workspace_id = message.workspace_id AND attachment.message_id = message.id
+   ORDER BY attachment.position LIMIT 1) END`;
+/**
+ * An email message's own facts (subject, sender, recipients, every file, and the whole text when the chat shows it
+ * without its quoted history); null for any other message. A hidden message hides them too.
+ */
+export const MESSAGE_EMAIL_SQL = `CASE WHEN message.hidden_at IS NULL THEN (SELECT jsonb_build_object('subject', email.subject, 'from', email.from_address, 'fromName', email.from_name,
+    'to', to_jsonb(email.to_addresses), 'cc', to_jsonb(email.cc_addresses),
+    'fullText', CASE WHEN email.full_text IS DISTINCT FROM message.body_text THEN email.full_text END,
+    'attachments', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', attachment.id, 'kind', attachment.kind, 'mimeType', attachment.content_type, 'fileName', attachment.file_name,
+        'byteSize', attachment.byte_size, 'status', attachment.status, 'failureCode', attachment.failure_code) ORDER BY attachment.position)
+      FROM crm_message_attachments attachment WHERE attachment.workspace_id = message.workspace_id AND attachment.message_id = message.id), '[]'::jsonb))
+   FROM crm_email_messages email WHERE email.workspace_id = message.workspace_id AND email.message_id = message.id) END`;
 /** The chat's number when it is still connected, else the workspace's default connected WhatsApp number. */
 const CHAT_NUMBER_SQL = `SELECT id AS "connectionId", configuration->>'displayPhoneNumber' AS number, configuration->>'accountName' AS "accountName", configuration->'health' AS health
    FROM integration_connections WHERE workspace_id = $1 AND provider = 'whatsapp' AND status = 'connected'
@@ -126,7 +139,7 @@ export class CrmConversationsService {
                 message.read_at AS "readAt", message.failure_code AS "failureCode",
                 CASE WHEN message.hidden_at IS NULL THEN message.metadata ELSE jsonb_strip_nulls(jsonb_build_object('automatic', message.metadata->'automatic')) END AS metadata, message.version,
                 message.hidden_at AS "hiddenAt", ${MEMBER_NAME("hider")} AS "hiddenByName", ${MESSAGE_ATTACHMENT_SQL} AS attachment,
-                message.created_at AS "createdAt", message.updated_at AS "updatedAt"
+                ${MESSAGE_EMAIL_SQL} AS email, message.created_at AS "createdAt", message.updated_at AS "updatedAt"
          FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id LEFT JOIN users hider ON hider.id = message.hidden_by
          WHERE message.workspace_id = $1 AND message.conversation_id = $2
          ORDER BY message.created_at DESC, message.id DESC LIMIT 101`, [workspaceId, conversationId],
@@ -140,7 +153,7 @@ export class CrmConversationsService {
            FROM crm_scheduled_messages scheduled LEFT JOIN users author ON author.id = scheduled.created_by
           WHERE scheduled.workspace_id = $1 AND scheduled.conversation_id = $2 AND scheduled.status IN ('scheduled', 'failed')
           ORDER BY scheduled.send_at, scheduled.id LIMIT 50`, [workspaceId, conversationId]);
-      const facts = await client.query<{ partyName: string | null; ownerName: string | null; leadReference: string | null; businessName: string; signatureEnabled: boolean | null; blockedAt: Date | null; spamAt: Date | null }>(
+      const facts = await client.query<{ partyName: string | null; ownerName: string | null; leadReference: string | null; businessName: string; signatureEnabled: boolean | null; blockedAt: Date | null; spamAt: Date | null; emailLocalPart: string | null; googleConnected: boolean }>(
         `SELECT (SELECT display_name FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "partyName",
                 (SELECT ${MEMBER_NAME("account")} FROM workspace_memberships membership JOIN users account ON account.id = membership.user_id
                   WHERE membership.workspace_id = $1 AND membership.id = $3) AS "ownerName",
@@ -150,7 +163,9 @@ export class CrmConversationsService {
                    LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id WHERE workspace.id = $1) AS "businessName",
                 (SELECT signature_enabled FROM crm_inbox_settings WHERE workspace_id = $1) AS "signatureEnabled",
                 (SELECT blocked_at FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "blockedAt",
-                (SELECT spam_at FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "spamAt"`,
+                (SELECT spam_at FROM crm_parties WHERE workspace_id = $1 AND id = $2) AS "spamAt",
+                (SELECT local_part FROM crm_inbound_email_addresses WHERE workspace_id = $1 AND status = 'active') AS "emailLocalPart",
+                EXISTS (SELECT 1 FROM integration_connections WHERE workspace_id = $1 AND provider = 'google_workspace' AND status = 'connected') AS "googleConnected"`,
         [workspaceId, conversation.party_id ?? null, conversation.owner_membership_id ?? null, conversation.lead_id ?? null],
       );
       const canSend = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.communications.send");
@@ -189,6 +204,8 @@ export class CrmConversationsService {
         numberHealth: (connection.rows[0]?.health?.state as string | undefined) ?? null,
         signatureEnabled: fact?.signatureEnabled === true, canManage, job,
         blockedAt: fact?.blockedAt ?? null, spamAt: fact?.spamAt ?? null,
+        // An email chat: the address replies come back to, and how replies leave (the inbound address, else Google).
+        email: conversation.channel === "email" ? this.emailReplying(fact?.emailLocalPart ?? null, fact?.googleConnected === true) : null,
         windowClosesAt: lastInbound ? new Date(lastInbound.getTime() + 86_400_000).toISOString() : null,
         messages: page.reverse(),
         nextMessagesCursor: hasOlder && oldest ? encodeCursor({ value: new Date(oldest.createdAt).toISOString(), id: oldest.id }) : null,
@@ -203,7 +220,7 @@ export class CrmConversationsService {
       if (query.cursor && (!cursor || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(cursor.id) || !Number.isFinite(Date.parse(cursor.value)))) throw new BadRequestException("Invalid message cursor");
       // Internal notes are part of the team's thread (never sent to the client).
       const result = await client.query(`SELECT message.id,message.direction,message.status,message.authorship,message.sender_type AS "senderType",message.sender_id AS "senderId",
-          coalesce(nullif(btrim(sender.display_name), ''), sender.primary_email) AS "senderName",CASE WHEN message.hidden_at IS NULL THEN message.body_text END AS "bodyText",CASE WHEN message.hidden_at IS NULL THEN message.metadata ELSE jsonb_strip_nulls(jsonb_build_object('automatic', message.metadata->'automatic')) END AS metadata,message.hidden_at AS "hiddenAt",coalesce(nullif(btrim(hider.display_name), ''), hider.primary_email) AS "hiddenByName",${MESSAGE_ATTACHMENT_SQL} AS attachment,message.created_at AS "createdAt",message.failure_code AS "failureCode"
+          coalesce(nullif(btrim(sender.display_name), ''), sender.primary_email) AS "senderName",CASE WHEN message.hidden_at IS NULL THEN message.body_text END AS "bodyText",CASE WHEN message.hidden_at IS NULL THEN message.metadata ELSE jsonb_strip_nulls(jsonb_build_object('automatic', message.metadata->'automatic')) END AS metadata,message.hidden_at AS "hiddenAt",coalesce(nullif(btrim(hider.display_name), ''), hider.primary_email) AS "hiddenByName",${MESSAGE_ATTACHMENT_SQL} AS attachment,${MESSAGE_EMAIL_SQL} AS email,message.created_at AS "createdAt",message.failure_code AS "failureCode"
         FROM crm_messages message LEFT JOIN users sender ON sender.id = message.sender_id LEFT JOIN users hider ON hider.id = message.hidden_by
         WHERE message.workspace_id=$1 AND message.conversation_id=$2 AND ($3::timestamptz IS NULL OR (message.created_at,message.id)<($3::timestamptz,$4::uuid))
         ORDER BY message.created_at DESC,message.id DESC LIMIT $5`, [workspaceId, conversationId, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1]);
@@ -229,6 +246,10 @@ export class CrmConversationsService {
         if (existing.rowCount) return mapConversation(existing.rows[0]);
         const phone = await client.query(`SELECT 1 FROM crm_contact_points WHERE workspace_id=$1 AND party_id=$2 AND type='phone' AND status='active' LIMIT 1`, [workspaceId, input.partyId]);
         if (!phone.rowCount) throw new UnprocessableEntityException("Add a phone number to this contact before opening WhatsApp");
+      }
+      if (input.channel === "email" && input.partyId) {
+        const email = await client.query(`SELECT 1 FROM crm_contact_points WHERE workspace_id=$1 AND party_id=$2 AND type='email' AND status='active' LIMIT 1`, [workspaceId, input.partyId]);
+        if (!email.rowCount) throw new UnprocessableEntityException("Add an email address to this contact before starting an email conversation");
       }
       if (input.ownerMembershipId) await this.requireMembership(client, workspaceId, input.ownerMembershipId);
       // Someone who sees only their own chats owns the chat they start, so it never leaves their reach (plan §5b).
@@ -337,46 +358,65 @@ export class CrmConversationsService {
   }
 
   ingestProviderMessage(input: ProviderInboundMessageDto) {
-    return this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
-      const normalized = input.channel === "email" ? normalizeEmail(input.contact) : normalizeLoosePhone(input.contact);
-      if (!normalized) throw new UnprocessableEntityException("Provider contact is invalid");
-      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`provider-contact:${input.workspaceId}:${input.channel}:${normalized}`]);
-      const type = input.channel === "email" ? "email" : "phone";
-      const existing = await client.query<{ party_id: string }>(`SELECT party_id FROM crm_contact_points WHERE workspace_id=$1 AND type=$2 AND normalized_value=$3 AND status='active' ORDER BY is_verified DESC,is_primary DESC,created_at LIMIT 1`, [input.workspaceId, type, normalized]);
-      let partyId = existing.rows[0]?.party_id;
-      if (!partyId) {
-        partyId = randomUUID();
-        const displayName = input.displayName?.trim() || (input.channel === "whatsapp" ? `WhatsApp ${input.contact}` : input.contact);
-        await client.query(`INSERT INTO crm_parties (id,workspace_id,type,display_name,normalized_name,created_by) VALUES($1,$2,'person',$3,$4,NULL)`, [partyId, input.workspaceId, displayName, normalizeName(displayName)]);
-        await client.query(`INSERT INTO crm_person_profiles (party_id,workspace_id) VALUES($1,$2)`, [partyId, input.workspaceId]);
-        await client.query(`INSERT INTO crm_contact_points (workspace_id,party_id,type,raw_value,normalized_value,is_primary,is_verified,verified_at) VALUES($1,$2,$3,$4,$5,true,true,now())`, [input.workspaceId, partyId, type, input.contact, normalized]);
+    return this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, (client) => this.ingestWithClient(client, input));
+  }
+
+  /**
+   * An inbound email inside the caller's tenant transaction: the sender matched to a client by email (or a new
+   * contact), the conversation `thread` finds for it (else a new one), then the same intake as any client message:
+   * owner chosen and told, the job's owner told, the wait started.
+   */
+  ingestEmailWithClient(client: PoolClient, input: ProviderInboundMessageDto, thread: (partyId: string) => Promise<string | null>) {
+    if (input.channel !== "email") throw new UnprocessableEntityException("Only email is threaded this way");
+    return this.ingestWithClient(client, input, thread);
+  }
+
+  /** How an email chat is answered: from the inbound address (Reply-To) when the workspace has one, else Google. */
+  private emailReplying(localPart: string | null, googleConnected: boolean) {
+    const domain = inboundDomain(this.config?.get<string>("INBOUND_EMAIL_DOMAIN") ?? process.env.INBOUND_EMAIL_DOMAIN);
+    const address = localPart && domain ? `${localPart}@${domain}` : null;
+    return { address, via: address ? "inbound" : googleConnected ? "google" : null };
+  }
+
+  private async ingestWithClient(client: PoolClient, input: ProviderInboundMessageDto, thread?: (partyId: string) => Promise<string | null>) {
+    const normalized = input.channel === "email" ? normalizeEmail(input.contact) : normalizeLoosePhone(input.contact);
+    if (!normalized) throw new UnprocessableEntityException("Provider contact is invalid");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`provider-contact:${input.workspaceId}:${input.channel}:${normalized}`]);
+    const type = input.channel === "email" ? "email" : "phone";
+    const existing = await client.query<{ party_id: string }>(`SELECT party_id FROM crm_contact_points WHERE workspace_id=$1 AND type=$2 AND normalized_value=$3 AND status='active' ORDER BY is_verified DESC,is_primary DESC,created_at LIMIT 1`, [input.workspaceId, type, normalized]);
+    let partyId = existing.rows[0]?.party_id;
+    if (!partyId) {
+      partyId = randomUUID();
+      const displayName = input.displayName?.trim() || (input.channel === "whatsapp" ? `WhatsApp ${input.contact}` : input.contact);
+      await client.query(`INSERT INTO crm_parties (id,workspace_id,type,display_name,normalized_name,created_by) VALUES($1,$2,'person',$3,$4,NULL)`, [partyId, input.workspaceId, displayName, normalizeName(displayName)]);
+      await client.query(`INSERT INTO crm_person_profiles (party_id,workspace_id) VALUES($1,$2)`, [partyId, input.workspaceId]);
+      await client.query(`INSERT INTO crm_contact_points (workspace_id,party_id,type,raw_value,normalized_value,is_primary,is_verified,verified_at) VALUES($1,$2,$3,$4,$5,true,true,now())`, [input.workspaceId, partyId, type, input.contact, normalized]);
+    }
+    const consent = await client.query<{ id: string }>(`SELECT id FROM crm_consents WHERE workspace_id=$1 AND party_id=$2 AND legal_entity_id IS NULL AND purpose='service' AND channel=$3 ORDER BY captured_at DESC LIMIT 1`, [input.workspaceId, partyId, input.channel]);
+    const evidence = { method: "provider_inbound", providerMessageId: input.providerMessageId };
+    if (consent.rowCount) await client.query(`UPDATE crm_consents SET status='granted',evidence=$1,captured_at=now(),withdrawn_at=NULL,version=version+1,updated_at=now() WHERE id=$2 AND workspace_id=$3`, [evidence, consent.rows[0].id, input.workspaceId]);
+    else await client.query(`INSERT INTO crm_consents (workspace_id,party_id,purpose,channel,status,evidence) VALUES($1,$2,'service',$3,'granted',$4)`, [input.workspaceId, partyId, input.channel, evidence]);
+    if (input.channel === "whatsapp") await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`whatsapp-chat:${input.workspaceId}:${partyId}`]);
+    const found = await client.query<{ id: string }>(`SELECT id FROM crm_conversations WHERE workspace_id=$1 AND channel=$2 AND provider_thread_id=$3`, [input.workspaceId, input.channel, input.providerThreadId]);
+    let conversationId = found.rows[0]?.id ?? (thread ? await thread(partyId) ?? undefined : undefined);
+    if (!conversationId && input.channel === "whatsapp") {
+      const manual = await client.query<{ id: string }>(`SELECT id FROM crm_conversations WHERE workspace_id=$1 AND party_id=$2 AND channel='whatsapp' AND provider_thread_id IS NULL ORDER BY last_message_at DESC NULLS LAST, id LIMIT 1 FOR UPDATE`, [input.workspaceId, partyId]);
+      if (manual.rowCount) {
+        conversationId = manual.rows[0].id;
+        await client.query(`UPDATE crm_conversations SET provider_thread_id=$3 WHERE workspace_id=$1 AND id=$2`, [input.workspaceId, conversationId, input.providerThreadId]);
       }
-      const consent = await client.query<{ id: string }>(`SELECT id FROM crm_consents WHERE workspace_id=$1 AND party_id=$2 AND legal_entity_id IS NULL AND purpose='service' AND channel=$3 ORDER BY captured_at DESC LIMIT 1`, [input.workspaceId, partyId, input.channel]);
-      const evidence = { method: "provider_inbound", providerMessageId: input.providerMessageId };
-      if (consent.rowCount) await client.query(`UPDATE crm_consents SET status='granted',evidence=$1,captured_at=now(),withdrawn_at=NULL,version=version+1,updated_at=now() WHERE id=$2 AND workspace_id=$3`, [evidence, consent.rows[0].id, input.workspaceId]);
-      else await client.query(`INSERT INTO crm_consents (workspace_id,party_id,purpose,channel,status,evidence) VALUES($1,$2,'service',$3,'granted',$4)`, [input.workspaceId, partyId, input.channel, evidence]);
-      if (input.channel === "whatsapp") await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`whatsapp-chat:${input.workspaceId}:${partyId}`]);
-      const found = await client.query<{ id: string }>(`SELECT id FROM crm_conversations WHERE workspace_id=$1 AND channel=$2 AND provider_thread_id=$3`, [input.workspaceId, input.channel, input.providerThreadId]);
-      let conversationId = found.rows[0]?.id;
-      if (!conversationId && input.channel === "whatsapp") {
-        const manual = await client.query<{ id: string }>(`SELECT id FROM crm_conversations WHERE workspace_id=$1 AND party_id=$2 AND channel='whatsapp' AND provider_thread_id IS NULL ORDER BY last_message_at DESC NULLS LAST, id LIMIT 1 FOR UPDATE`, [input.workspaceId, partyId]);
-        if (manual.rowCount) {
-          conversationId = manual.rows[0].id;
-          await client.query(`UPDATE crm_conversations SET provider_thread_id=$3 WHERE workspace_id=$1 AND id=$2`, [input.workspaceId, conversationId, input.providerThreadId]);
-        }
-      }
-      // The number the client wrote to: replies to this chat go from it from now on.
-      const number = input.channel === "whatsapp" ? await this.writtenNumber(client, input.workspaceId, input.metadata) : null;
-      if (!conversationId) {
-        conversationId = randomUUID();
-        await client.query(`INSERT INTO crm_conversations (id,workspace_id,party_id,channel,provider_thread_id,subject,connection_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, [conversationId, input.workspaceId, partyId, input.channel, input.providerThreadId, input.subject?.trim() || (input.channel === "whatsapp" ? "WhatsApp conversation" : "Email conversation"), number]);
-        await client.query(`INSERT INTO crm_conversation_participants (workspace_id,conversation_id,participant_type,participant_id) VALUES($1,$2,'party',$3) ON CONFLICT DO NOTHING`, [input.workspaceId, conversationId, partyId]);
-      } else if (number) {
-        await client.query(`UPDATE crm_conversations SET connection_id = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND connection_id IS DISTINCT FROM $3`, [input.workspaceId, conversationId, number]);
-      }
-      const message = await this.insertMessage(client, input.workspaceId, conversationId, { direction: "inbound", bodyText: input.bodyText, bodyHtml: input.bodyHtml, providerMessageId: input.providerMessageId, metadata: input.metadata }, null, "integration");
-      return { conversationId, partyId, message };
-    });
+    }
+    // The number the client wrote to: replies to this chat go from it from now on.
+    const number = input.channel === "whatsapp" ? await this.writtenNumber(client, input.workspaceId, input.metadata) : null;
+    if (!conversationId) {
+      conversationId = randomUUID();
+      await client.query(`INSERT INTO crm_conversations (id,workspace_id,party_id,channel,provider_thread_id,subject,connection_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, [conversationId, input.workspaceId, partyId, input.channel, input.providerThreadId, input.subject?.trim() || (input.channel === "whatsapp" ? "WhatsApp conversation" : "Email conversation"), number]);
+      await client.query(`INSERT INTO crm_conversation_participants (workspace_id,conversation_id,participant_type,participant_id) VALUES($1,$2,'party',$3) ON CONFLICT DO NOTHING`, [input.workspaceId, conversationId, partyId]);
+    } else if (number) {
+      await client.query(`UPDATE crm_conversations SET connection_id = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2 AND connection_id IS DISTINCT FROM $3`, [input.workspaceId, conversationId, number]);
+    }
+    const message = await this.insertMessage(client, input.workspaceId, conversationId, { direction: "inbound", bodyText: input.bodyText, bodyHtml: input.bodyHtml, providerMessageId: input.providerMessageId, metadata: input.metadata }, null, "integration");
+    return { conversationId, partyId, message };
   }
 
   /**

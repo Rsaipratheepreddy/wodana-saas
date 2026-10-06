@@ -36,6 +36,8 @@ const order = (patch: Partial<WorkOrderState["order"]> = {}, extra: Partial<Work
 });
 const mount = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    // The delivery vehicles and the permit warning under Settings → Factory (none set up here).
+    if (url.startsWith("/api/logistics/vehicles")) return { ok: true, status: 200, json: async () => ({ vehicles: [], permitWarningDays: 3, settingsVersion: 0, canManage: true }) };
     const value = respond(url, typeof init?.body === "string" ? JSON.parse(init.body) : undefined);
     return value instanceof Error ? { ok: false, status: 409, json: async () => ({ message: value.message }) } : { ok: true, status: 200, json: async () => value };
   });
@@ -57,7 +59,7 @@ describe("factory", () => {
     expect(table).toHaveTextContent("PRJ-0007 · Villa 12");
     expect(table).toHaveTextContent("1.5 m");
     expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Factory"]);
-    expect(screen.getAllByRole("tab").map((tab) => tab.getAttribute("data-tour"))).toEqual(["factory-tab-to-make", "factory-tab-orders", "factory-tab-schedule", "factory-tab-batches"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.getAttribute("data-tour"))).toEqual(["factory-tab-to-make", "factory-tab-orders", "factory-tab-schedule", "factory-tab-calendar", "factory-tab-batches", "factory-tab-samples"]);
     await userEvent.click(within(table).getByText("Kitchen cabinets"));
     const dialog = await screen.findByRole("dialog", { name: "Plan work order" });
     const quantity = within(dialog).getByRole("textbox", { name: "Quantity" });
@@ -370,6 +372,8 @@ describe("factory", () => {
       orders: [busy, other], load: { c1: { "2099-10-05": 8, "2099-10-06": 16, "2099-10-07": 8 } },
       conflicts: [{ workcenterId: "c1", workcenterName: "Joinery", date: "2099-10-06", hours: 16, capacity: 8, orders: ["w1", "w2"] }] } : factory()));
     page("schedule");
+    // The schedule opens by project (PLM-063); the workcenters' weeks are the other view.
+    await userEvent.click(await screen.findByRole("radio", { name: "Workcenters" }));
     const over = await screen.findByRole("region", { name: "Over capacity" });
     expect(within(over).getByText("Joinery · Oct 6, 2099")).toBeInTheDocument();
     expect(within(over).getByText("WO-0007, WO-0008")).toBeInTheDocument();
@@ -378,6 +382,48 @@ describe("factory", () => {
     expect(within(schedule).getByRole("region", { name: "Joinery · 8 h a day" })).toBeInTheDocument();
     await userEvent.click(within(schedule).getByRole("button", { name: "WO-0008 Wardrobes, on a day over capacity" }));
     expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/factory/orders?order=w2");
+  });
+
+  it("shows production project by project, planned against actual, and opens a project's work orders (PLM-063)", async () => {
+    const steps = [{ kind: "scheduled", label: "" }, { kind: "in_production", label: "" }, { kind: "quality_check", label: "" }, { kind: "ready", label: "" }];
+    mount((url) => (url.includes("/production") ? { steps, targetWeeks: 8, today: "2099-10-10", projects: [
+      { projectId: "p1", reference: "PRJ-0007", name: "Villa 12", clientName: "Maya Client", projectStatus: "active", step: { kind: "quality_check", label: "" },
+        planned: { start: "2099-10-01", end: "2099-10-08", days: 8 }, actual: { start: "2099-10-02", end: null, days: 9 }, late: true, overTarget: false, orders: 2, ready: 1, held: false },
+      { projectId: "p2", reference: "PRJ-0008", name: "Marina", clientName: "Omar Client", projectStatus: "active", step: null,
+        planned: { start: "2099-11-01", end: null, days: null }, actual: { start: null, end: null, days: null }, late: false, overTarget: false, orders: 0, ready: 0, held: false },
+    ] } : factory()));
+    page("schedule");
+    const grid = await screen.findByRole("grid", { name: "Production by project" }).catch(() => screen.findByRole("table", { name: "Production by project" }));
+    expect(await within(grid).findByText("Quality check")).toBeInTheDocument();
+    expect(grid).toHaveTextContent("1 of 2 work orders ready");
+    expect(grid).toHaveTextContent("9 days · Late");
+    expect(grid).toHaveTextContent("Not scheduled");
+    expect(grid).toHaveTextContent("No work orders yet");
+    await userEvent.click(within(grid).getByText("PRJ-0007 · Villa 12"));
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/factory/orders?project=p1");
+  });
+
+  it("lists the samples the design team asked for and marks one ready with a note (PLM-061)", async () => {
+    const sample = { id: "s1", number: 1, caseId: "c1", caseReference: "O-12", clientName: "Maya Client", projectId: null, projectReference: null, title: "Veneer control sample · Walnut",
+      note: "Two panels", dueOn: "2099-10-13", status: "requested", requestedBy: "u2", requestedByName: "Dana Designer", requestedAt: "2099-10-01T09:00:00Z", readyNote: "", readyByName: null as string | null,
+      readyAt: null as string | null, cancelReason: "", version: 1, appointmentOn: "2099-10-14" };
+    let state = { samples: [sample], today: "2099-10-10", appointmentOn: null, suggestedDueOn: "2099-10-17", me: "u1", canRequest: false, canMake: true, canWithdrawAny: true };
+    const fetcher = mount((url, body) => {
+      if (!url.includes("/samples")) return factory();
+      if (body) state = { ...state, samples: [{ ...sample, status: "ready", readyNote: String(body.note), readyByName: "Faris Factory", readyAt: "2099-10-10T09:00:00Z", version: 2 }] };
+      return state;
+    });
+    page("samples");
+    const grid = await screen.findByRole("grid", { name: "Samples" }).catch(() => screen.findByRole("table", { name: "Samples" }));
+    expect(await within(grid).findByText("Veneer control sample · Walnut")).toBeInTheDocument();
+    expect(grid).toHaveTextContent("Material selection Oct 14");
+    expect(within(grid).getByRole("link", { name: "O-12" })).toHaveAttribute("href", "/workspace/pre-projects/cases/c1/overview");
+    await userEvent.click(within(grid).getByRole("button", { name: "Mark ready SR-0001" }));
+    const dialog = await screen.findByRole("dialog", { name: "Mark SR-0001 ready" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Note" }), "At the showroom desk");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Mark ready" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ url: expect.stringContaining("/api/factory/samples/s1"), body: { action: "ready", note: "At the showroom desk", version: 1 } }));
+    expect(await screen.findByText("No samples to make")).toBeInTheDocument();
   });
 
   it("runs work orders from several projects together as a batch and starts it", async () => {
@@ -485,5 +531,23 @@ describe("factory", () => {
     expect(rate).toHaveValue("45.5");
     await userEvent.clear(rate);
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("keeps the production steps the firm uses, in its own words, and its target (PLM-063)", async () => {
+    const steps = [{ kind: "scheduled", label: "" }, { kind: "in_production", label: "" }, { kind: "quality_check", label: "" }, { kind: "ready", label: "" }];
+    const data: FactorySettingsState = { settings: { ...settings, productionSteps: steps as never, productionWeeks: null }, workcenters: [joinery], canManage: true, canSeeRates: false,
+      currency: "AED", today: "2026-09-27", rates: [] };
+    const fetcher = mount(() => data);
+    render(<DesignSystemProvider><FactorySettingsPage workspaceId="w" /></DesignSystemProvider>);
+    expect(await screen.findByText("Scheduled → In production → Quality check → Ready")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Edit production status" }));
+    const dialog = await screen.findByRole("dialog", { name: "Production status" });
+    expect(within(dialog).getByRole("switch", { name: "Ready" })).toBeDisabled();
+    await userEvent.click(within(dialog).getByRole("switch", { name: "Quality check" }));
+    await userEvent.type(within(dialog).getAllByRole("textbox", { name: "Name it" })[1], "Making");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Production target in weeks" }), "8");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ version: 1, productionWeeks: 8,
+      productionSteps: [{ kind: "scheduled", label: "" }, { kind: "in_production", label: "Making" }, { kind: "ready", label: "" }] }));
   });
 });

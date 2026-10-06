@@ -3,10 +3,10 @@
 import Image from "next/image";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, FileX, FolderInput, ImageIcon, Info, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
+import { ArrowLeft, Ban, Check, CheckCheck, Clock3, EyeOff, FileText, FileX, FolderInput, ImageIcon, Info, Mail, MessageCircle, RefreshCw, Tag, Video } from "lucide-react";
 import { Avatar, Badge, Button, FormDialog, IconButton, IconMenuButton, InspectorSheet, MenuButton, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import { crmRequest, label, type RecordData } from "@/lib/crm/client";
-import { attachmentUrl, CLIENT_EVENT_LABELS, channelName, eventLine, fileSizeText, jobHref, jobName, snoozePresets, type ChatAttachment, type ChatContext, type ChatEvent, type ConversationJob, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
+import { attachmentUrl, CLIENT_EVENT_LABELS, channelName, eventLine, fileSizeText, jobHref, jobName, snoozePresets, type ChatAttachment, type ChatContext, type ChatEmail, type ChatEvent, type EmailReplying, type ConversationJob, type InboxLabel, type InboxOwner, type InboxSettings, type InboxTemplate, type QuickReply } from "@/lib/crm/inbox";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { pollEvery, useLiveInvalidate } from "@/lib/workspace/live-events";
@@ -115,13 +115,16 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
 
   if (!thread) return <section className={styles.empty}><IconButton aria-label={t("Back to chats")} onPress={onBack}><ArrowLeft size={18} /></IconButton>{loadFailure ? <><p role="alert">{loadFailure}</p><Button onPress={() => void refresh()}>{t("Retry")}</Button></> : <p role="status">{t("Loading chat…")}</p>}</section>;
   const isWhatsApp = thread.channel === "whatsapp";
+  const isEmail = thread.channel === "email";
+  const emailReplying = (thread.email ?? null) as EmailReplying | null;
   const status = String(thread.status);
   const chatLabels = (thread.labels ?? []) as InboxLabel[];
   const replyingAs = thread.replyingAs as { businessName: string | null; number: string | null } | undefined;
   const blocked = !thread.canSend ? t("You can view this conversation. Ask an administrator for permission to reply.")
     : status === "closed" ? t("This conversation is resolved. Reopen it to reply.")
     : isWhatsApp && !thread.whatsappConnected ? t("Connect WhatsApp in Connections to reply.")
-    : isWhatsApp && thread.numberHealth === "blocked" ? t("Meta has stopped sending from this number. Check it in Connections.") : "";
+    : isWhatsApp && thread.numberHealth === "blocked" ? t("Meta has stopped sending from this number. Check it in Connections.")
+    : isEmail && !emailReplying?.via ? t("Set up the inbox email address in Settings → Inbox to reply by email.") : "";
   const workday = lookups.settings?.workday;
   const presets = snoozePresets({ now: new Date(now), timeZone, dayStart: workday?.start, workingDays: workday?.days });
   const owners = lookups.owners;
@@ -146,7 +149,9 @@ export function ConversationThread({ workspaceId, id, draft, onDraftChange, onBa
       <Avatar name={String(thread.partyName ?? t("Customer"))} size="md" />
       <div className={styles.headingIdentity}>
         <h2>{String(thread.partyName ?? t("Customer"))}{thread.demo === true ? <> <Badge tone="warning">{t("Demo")}</Badge></> : null}</h2>
-        <span>{isWhatsApp && replyingAs?.number ? t("Replying as {business} · {number}", { business: replyingAs.businessName ?? "", number: replyingAs.number }) : channelName(thread.channel, t)}{isWhatsApp && (thread.numberHealth === "limited" || thread.numberHealth === "blocked") ? <> <Badge tone={thread.numberHealth === "blocked" ? "danger" : "warning"}>{thread.numberHealth === "blocked" ? t("Blocked by Meta") : t("Limited by Meta")}</Badge></> : null}</span>
+        <span>{isWhatsApp && replyingAs?.number ? t("Replying as {business} · {number}", { business: replyingAs.businessName ?? "", number: replyingAs.number })
+          : isEmail ? <span className={styles.headingChannel} title={emailReplying?.address ? t("Replies come back to {address}", { address: emailReplying.address }) : undefined}><Mail aria-hidden="true" size={12} />{thread.subject ? t("Email · {subject}", { subject: String(thread.subject) }) : t("Email")}</span>
+          : channelName(thread.channel, t)}{isWhatsApp && (thread.numberHealth === "limited" || thread.numberHealth === "blocked") ? <> <Badge tone={thread.numberHealth === "blocked" ? "danger" : "warning"}>{thread.numberHealth === "blocked" ? t("Blocked by Meta") : t("Limited by Meta")}</Badge></> : null}</span>
         {chatLabels.length || job ? <span className={styles.headingLabels}>
           {job ? <Link className={styles.jobChip} href={jobHref(job)}><FolderInput aria-hidden="true" size={11} />{t("Filed into {job}", { job: jobName(job) })}</Link> : null}
           {chatLabels.map((item) => <LabelChip key={item.id} label={item} />)}
@@ -368,8 +373,34 @@ export function DeliveryState({ status, compact = false }: { status: string; com
   return <span className={styles.delivery} data-status={status} aria-label={text} title={text}>{status === "read" || status === "delivered" ? <CheckCheck size={15} /> : status === "sent" ? <Check size={15} /> : status === "failed" ? <span aria-hidden="true">!</span> : <Clock3 size={13} />}{!compact && status === "failed" ? text : null}</span>;
 }
 
+/**
+ * An email (PLM-025): its new text (the quoted history behind "Show full email"), and every file it carried, each
+ * openable or saved to a project like a chat file.
+ */
+function EmailContent({ message, email, workspaceId, conversationId }: { message: RecordData; email: ChatEmail; workspaceId: string; conversationId: string }) {
+  const t = useT();
+  const [full, setFull] = useState(false);
+  const text = typeof message.bodyText === "string" ? message.bodyText : "";
+  const placeholder = text === "Email received" && email.attachments.length > 0;
+  return <>
+    {!placeholder ? <p>{text === "Email received" ? t("Email received") : text || t("This message has no plain-text preview.")}</p> : null}
+    {email.fullText ? <>
+      <Button size="compact" variant="quiet" aria-expanded={full} onPress={() => setFull((value) => !value)}>{full ? t("Hide full email") : t("Show full email")}</Button>
+      {full ? <p className={styles.fullEmail}>{email.fullText}</p> : null}
+    </> : null}
+    {email.attachments.length ? <div className={styles.emailFiles} role="group" aria-label={t("Files")}>{email.attachments.map((file) => {
+      const name = file.fileName ?? t("{kind} attachment", { kind: label(file.kind) });
+      const saveable = file.status === "stored" && String(message.direction) === "inbound" && ["image", "document"].includes(file.kind);
+      return <Fragment key={file.id}><ChatFile file={file} url={attachmentUrl(workspaceId, conversationId, file.id)} fallbackName={name} />
+        {saveable ? <SaveToProject workspaceId={workspaceId} conversationId={conversationId} attachmentId={file.id} name={name} /> : null}</Fragment>;
+    })}</div> : null}
+  </>;
+}
+
 function MessageContent({ message, workspaceId, conversationId }: { message: RecordData; workspaceId: string; conversationId: string }) {
   const t = useT();
+  const email = message.email && typeof message.email === "object" ? message.email as ChatEmail : null;
+  if (email) return <EmailContent message={message} email={email} workspaceId={workspaceId} conversationId={conversationId} />;
   const metadata = message.metadata && typeof message.metadata === "object" && !Array.isArray(message.metadata) ? message.metadata as Record<string, unknown> : {};
   const kind = String(metadata.messageType ?? "");
   const file = attachmentOf(message);

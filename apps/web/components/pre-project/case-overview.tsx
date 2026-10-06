@@ -25,6 +25,7 @@ import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, Re
 import { SiteLocation } from "@/components/ui/site-location";
 import { useProjectFormat } from "@/components/project-core/format";
 import { DesignJourney } from "./design-journey";
+import { ClientCallsSection } from "./client-calls";
 import { casePriorityLabel, caseRiskLabel, caseStatusLabel, caseStatusTone } from "./case-spine";
 
 type Action = "hold" | "resume" | "cancel" | "reopen" | "set_phase";
@@ -152,6 +153,7 @@ export function CaseOverview({ record: initial, workspaceId, members, commercial
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
     <CaseRecordView record={record} commercial={commercial} journey={journey ?? null} project={project ?? null} members={members} today={format.today()} loading={loading}
       busy={starting} onCommand={(id) => void command(id)} actions={<>{portal}{menu}</>} details={details} journeySlot={journeySlot}
+      callsSlot={<ClientCallsSection workspaceId={workspaceId} caseId={record.id} />}
       assetHref={(assetId) => caseApi(workspaceId, record.id, `assets/${assetId}`)} />
     <FormDialog isOpen={Boolean(action)} title={action ? t(actionLabel[action]) : t("Case action")} onClose={closeAction} isDirty={Boolean(reason.trim())}
       submitLabel={action ? t(actionLabel[action]) : t("Save")} submitVariant={action === "cancel" ? "danger" : "primary"} isSubmitDisabled={action === "set_phase" && phase === record.phase}
@@ -163,9 +165,11 @@ export function CaseOverview({ record: initial, workspaceId, members, commercial
 }
 
 /** The case record itself, from data only: header, strip, next step, stages, activity and the sidebar. */
-export function CaseRecordView({ record, commercial, journey, project, members, today, loading = false, busy = false, onCommand, actions, details, journeySlot, assetHref }: {
+export function CaseRecordView({ record, commercial, journey, project, members, today, loading = false, busy = false, onCommand, actions, details, journeySlot, callsSlot, assetHref }: {
   record: PreProjectCase; commercial?: CommercialState | null; journey: JourneyView | null; project: ProjectDetail | null; members: Member[]; today: string;
   loading?: boolean; busy?: boolean; onCommand?: (command: CaseCommand) => void; actions?: ReactNode; details?: ReactNode; journeySlot?: ReactNode;
+  /** The recurring client update call (PLM-046), in the sidebar. */
+  callsSlot?: ReactNode;
   assetHref: (assetId: string) => string;
 }) {
   const t = useT();
@@ -210,6 +214,8 @@ export function CaseRecordView({ record, commercial, journey, project, members, 
         {people.team.map((person) => <PersonRow key={person.id} id={person.id} name={person.name} role={person.roles.map((role) => t(role)).join(" · ")} email={person.email} />)}
       </PeopleList>
     </SideSection>
+    {/* PLM-046: the Account Manager's recurring client update call. */}
+    {callsSlot}
     {site ? <SideSection title={t("Site")}><SiteLocation address={site.siteAddress} latitude={site.siteLatitude} longitude={site.siteLongitude} /></SideSection> : null}
     {dates.some(Boolean) ? <SideSection title={t("Key dates")}><FactList facts={dates} /></SideSection> : null}
     {money ? <SideSection title={t("Money")}>

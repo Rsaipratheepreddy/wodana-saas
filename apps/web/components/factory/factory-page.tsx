@@ -11,7 +11,9 @@ import type { FactoryState } from "@/lib/factory/types";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
 import { moduleTabs } from "../operations/module-tabs";
 import { useProjectFilter, withProject } from "../operations/ops";
+import { LogisticsCalendar } from "../logistics/logistics-calendar";
 import { Batches } from "./batches";
+import { FactorySamples } from "./samples";
 import { Schedule } from "./schedule";
 import { ToMake } from "./to-make";
 import type { WorkOrderIntent } from "./work-order-sheet";
@@ -21,7 +23,7 @@ import { WorkOrders } from "./work-orders";
 const FACTORY_SCOPES = ["factory", "purchasing"] as const;
 const INTENTS: WorkOrderIntent[] = ["report", "check", "dispatch", "drawing"];
 
-/** Factory: what's left to make across running projects, the work orders (what waits for me first), the schedule and batches. A work order opens in place. */
+/** Factory: what's left to make across running projects, the work orders (what waits for me first), the schedule (by project and by workcenter), the factory and logistics calendar, batches and samples. A work order opens in place. */
 export function FactoryPage({ workspaceId, section: initialSection }: { workspaceId: string; section: FactorySection }) {
   const t = useT();
   const [section, move] = useSection(initialSection);
@@ -32,6 +34,7 @@ export function FactoryPage({ workspaceId, section: initialSection }: { workspac
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const openId = params.get("order");
+  const sampleId = params.get("sample");
   const batchId = params.get("batch");
   const asked = params.get("do");
   const intent = INTENTS.includes(asked as WorkOrderIntent) ? asked as WorkOrderIntent : null;
@@ -55,9 +58,14 @@ export function FactoryPage({ workspaceId, section: initialSection }: { workspac
       { id: "orders", label: t("Work orders"), count: mine || undefined,
         panel: <WorkOrders api={api} state={state} error={error} openId={openId} intent={intent} onReload={() => void load()} onOpen={(id, action) => go("orders", id, action ?? undefined)}
           onBatched={(id) => { void load(); go("batches", id); }} projectId={projectId} onProject={setProjectId} /> },
-      { id: "schedule", label: t("Schedule"), panel: <Schedule api={api} refreshKey={refresh} onOpen={(id) => go("orders", id)} /> },
+      { id: "schedule", label: t("Schedule"), panel: <Schedule api={api} refreshKey={refresh} onOpen={(id) => go("orders", id)}
+        onOpenProject={(id) => { setProjectId(id); move("orders", withProject("/workspace/factory/orders", id)); }} /> },
+      // Palm, 6 Oct: the factory and logistics calendar is where deliveries, installations, permits and production are booked.
+      { id: "calendar", label: t("Calendar"), panel: <LogisticsCalendar workspaceId={workspaceId} /> },
       { id: "batches", label: t("Batches"), panel: <Batches api={api} state={state} error={error} openId={batchId} onReload={() => void load()} onOpen={(id) => go("batches", id)}
         onOpenOrder={(id) => go("orders", id)} /> },
+      // PLM-061: the samples the design team asked for.
+      { id: "samples", label: t("Samples"), panel: <FactorySamples api={api} openId={sampleId} /> },
     ] });
   return <PageShell title={t("Factory")} tabs={tabs}>{content}</PageShell>;
 }

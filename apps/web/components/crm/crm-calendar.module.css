@@ -1,5 +1,5 @@
 /* Calendar (§5c D): one title, one toolbar row, one frame. Event colours come from semantic tokens only:
-   CRM meetings = info, calls = brand, project work = warning, Google = neutral. Days off follow the region's working week. */
+   CRM meetings = info, calls = brand, project work = warning, team work = success, overdue = danger, Google = neutral. Days off follow the region's working week. */
 .provider { display: block; min-inline-size: 0; }
 
 /* ── Toolbar: ‹ Today › and the period on the start side; search, whose calendar, Day · Week · Month and ⋯ at the end ── */
@@ -23,6 +23,9 @@
 :is(.event, .chip)[data-kind="call"] { --event-accent: var(--wd-color-action-primary); --event-tint: var(--wd-color-action-primary-subtle); }
 :is(.event, .chip)[data-provider="project"] { --event-accent: var(--wd-color-warning); --event-tint: var(--wd-color-warning-subtle); }
 :is(.event, .chip)[data-provider="google"] { --event-accent: var(--wd-color-text-tertiary); --event-tint: var(--wd-color-surface-muted); }
+/* Team calendars (PLM-090/091): the team's work in success; anything past its day in danger (the label says "Overdue" too). */
+:is(.event, .chip)[data-provider="team"] { --event-accent: var(--wd-color-success); --event-tint: var(--wd-color-success-subtle); }
+:is(.event, .chip)[data-overdue] { --event-accent: var(--wd-color-danger); --event-tint: var(--wd-color-danger-subtle); }
 :is(.event, .chip)[data-completed] { opacity: 0.6; }
 :is(.event, .chip)[data-completed] .eventTitle { text-decoration: line-through; }
 .eventTitle { min-inline-size: 0; overflow: hidden; color: var(--wd-color-text); font-weight: var(--wd-weight-medium); text-overflow: ellipsis; white-space: nowrap; }

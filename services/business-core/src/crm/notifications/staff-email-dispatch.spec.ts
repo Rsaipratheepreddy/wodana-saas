@@ -11,6 +11,8 @@ function service(rows: Array<{ id: string; email: string | null }>, mailer?: { s
     tenantTransaction: vi.fn(async (_ws: string, _actor: string, work: (client: { query: typeof query }) => unknown) => work({ query })),
   };
   const query = vi.fn(async (sql: string, values: unknown[]) => {
+    // The email-conversation replies' own claim (PLM-025): none due here.
+    if (sql.includes("crm_inbound_email_addresses")) return { rows: [] };
     if (first && sql.includes("WITH due")) { first = false; return { rows: rows.map((row) => ({ ...row, subject: "New enquiry E-1: Maya", body: "Reference: E-1", deepLink: "/workspace/crm/leads?lead=1", eventType: "crm.lead.assigned" })) }; }
     (sql.includes("notification_delivery_attempts") ? attempts : updates).push(values); return { rows: [] };
   });

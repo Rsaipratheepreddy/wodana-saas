@@ -7,8 +7,10 @@ import { isCurrencyCode } from "../../common/regional.validators";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CLOSING_EVENTS, ensureClosingRules, loadClosingRules, type ClosingEvent } from "../flows/flow-closing";
 import { latestFlowVersion } from "../flows/flow-store";
+import { loadWonAreas, parseWonAreas, WON_AREAS } from "../flows/flow-won-areas";
 import { FULFILMENT_EVENTS, loadDealClosing, loadFulfilment, type FulfilmentEvent } from "./deal-closing";
 import { FURNITURE_PATHS, type FurniturePath } from "./flow-gates";
+import { takeForDeal } from "../../fulfilment/stock-reservations";
 import {
   decideProposalValue, loadProposals, loadValueEvents, parseProposalAmount, parseProposalKind, setProposalValue, valueStatusFrom, VALUE_KIND,
 } from "./opportunity-proposals";
@@ -16,7 +18,7 @@ import {
 const VIEW = "crm.opportunities.view";
 const ENTER = ["crm.opportunities.manage", "commercial.finance.verify"];
 const SENSITIVE = "crm.opportunities.sensitive_values";
-const FULFIL = ["crm.opportunities.manage", "projects.manage"];
+const FULFIL = ["crm.opportunities.manage", "projects.manage", "fulfilment.deliver"];
 const SETTINGS = "crm.settings.manage";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -108,6 +110,8 @@ export class OpportunityProposalsService {
          ON CONFLICT (workspace_id, command_id) WHERE command_id IS NOT NULL DO NOTHING RETURNING id`,
         [workspaceId, opportunityId, event, receivedBy, note, commandId, user.userId])).rows[0];
       if (row) {
+        // PLM-125: collection or delivery takes the goods held for the deal out of stock where its path says so (Furniture C).
+        if (event !== "installed") await takeForDeal(client, workspaceId, { opportunityId, event: "fulfilled", actorUserId: user.userId });
         const closing = await loadDealClosing(client, workspaceId, opportunityId);
         await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "crm.deal.fulfilment_recorded.v1", entityType: "crm_opportunity", entityId: opportunityId,
           after: { event, receivedBy, note, fulfilmentId: row.id, dealClosed: closing?.closed ?? false, closingEvent: closing?.event ?? null } });
@@ -161,6 +165,46 @@ export class OpportunityProposalsService {
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "crm.flow.closing_changed.v1", entityType: "crm_flow", entityId: flowId,
         before: before.map(({ furniturePath, closingEvent }) => ({ furniturePath, closingEvent })), after: parsed });
       return this.rules(client, workspaceId, flowId);
+    });
+  }
+
+  /** PLM-098: the areas a job of this enquiry type uses after Won, per furniture path. No rules = every area. */
+  wonAreas(actor: RequestActor, workspaceId: string, flowId: string) {
+    return this.access.withPermission(actor, workspaceId, SETTINGS, (client) => this.areas(client, workspaceId, flowId));
+  }
+
+  private async areas(client: PoolClient, workspaceId: string, flowId: string) {
+    const flow = (await client.query<{ code: string }>(`SELECT code FROM crm_flows WHERE workspace_id = $1 AND id = $2`, [workspaceId, flowId])).rows[0];
+    if (!flow) throw new NotFoundException("Flow not found");
+    const latest = await latestFlowVersion(client, workspaceId, flow.code);
+    const furniture = latest ? latest.definition.branches.some((branch) => branch.question === "subPath") : false;
+    return { flowId, areas: WON_AREAS, furniturePaths: furniture ? FURNITURE_PATHS : [], rules: await loadWonAreas(client, workspaceId, flowId) };
+  }
+
+  /** Saves a flow's areas as a whole (version-checked against the rows the editor saw; audited). Every area on every path clears the rules. */
+  saveWonAreas(actor: RequestActor, workspaceId: string, flowId: string, input: { rules?: unknown; versions?: unknown }) {
+    const parsed = parseWonAreas(input.rules ?? []);
+    if (typeof parsed === "string") throw new UnprocessableEntityException(parsed);
+    const seen = typeof input.versions === "string" ? input.versions : "";
+    return this.access.withPermission(actor, workspaceId, SETTINGS, async (client, user) => {
+      await client.query(`SELECT 1 FROM crm_flows WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, flowId]);
+      const before = (await this.areas(client, workspaceId, flowId)).rules;
+      const fingerprint = before.map((rule) => `${rule.furniturePath ?? ""}:${rule.version}`).join(",");
+      if (seen !== fingerprint) throw new ConflictException("Someone changed the areas of this type. Reload to see them.");
+      const same = before.length === parsed.length && parsed.every((rule) => before.some((row) => row.furniturePath === rule.furniturePath && row.areas.join() === rule.areas.join()));
+      if (same) return this.areas(client, workspaceId, flowId);
+      for (const rule of parsed) {
+        await client.query(
+          `INSERT INTO crm_flow_won_areas (workspace_id, flow_id, furniture_path, areas, updated_by) VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (workspace_id, flow_id, coalesce(furniture_path, '')) DO UPDATE SET areas = EXCLUDED.areas, updated_by = EXCLUDED.updated_by, updated_at = now(),
+             version = crm_flow_won_areas.version + CASE WHEN crm_flow_won_areas.areas = EXCLUDED.areas THEN 0 ELSE 1 END`,
+          [workspaceId, flowId, rule.furniturePath, rule.areas, user.userId]);
+      }
+      await client.query(`DELETE FROM crm_flow_won_areas WHERE workspace_id = $1 AND flow_id = $2 AND NOT (coalesce(furniture_path, '') = ANY($3::text[]))`,
+        [workspaceId, flowId, parsed.map((rule) => rule.furniturePath ?? "")]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "crm.flow.won_areas_changed.v1", entityType: "crm_flow", entityId: flowId,
+        before: before.map(({ furniturePath, areas }) => ({ furniturePath, areas })), after: parsed });
+      return this.areas(client, workspaceId, flowId);
     });
   }
 

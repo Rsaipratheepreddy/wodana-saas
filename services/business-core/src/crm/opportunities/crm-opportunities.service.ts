@@ -19,6 +19,7 @@ import { markProposalWon } from "./opportunity-proposals";
 import { tellDealOutcome } from "../leads/sales-attention";
 import { ELIGIBLE_SALES_OWNERS_SQL, SALES_OWNER_PERMISSIONS } from "../leads/crm-leads.service";
 import { loadDealClosing } from "./deal-closing";
+import { takeForDeal } from "../../fulfilment/stock-reservations";
 import {
   AddStakeholderDto,
   CreateOpportunityDto,
@@ -429,6 +430,8 @@ export class CrmOpportunitiesService {
     if (targetStatus === "won") await markProposalWon(client, { workspaceId, opportunityId, actorUserId: actorUser.userId });
     // A won deal: the client is thanked on WhatsApp and told what happens next (once per opportunity).
     if (targetStatus === "won") await thankForDeal(client, workspaceId, opportunityId, { actorUserId: actorUser.userId });
+    // PLM-125: Won takes the deal's goods out of stock where its path says so (Furniture A and B).
+    if (targetStatus === "won") await takeForDeal(client, workspaceId, { opportunityId, event: "won", actorUserId: actorUser.userId });
     // The Sales admin and the Owners hear a deal closed, with why (S-23).
     if (targetStatus === "won" || targetStatus === "lost") await tellDealOutcome(client, workspaceId, { opportunityId, outcome: targetStatus, reason: input.reason ?? null, actorUserId: actorUser.userId });
     const canViewSensitiveValues = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.sensitive_values");

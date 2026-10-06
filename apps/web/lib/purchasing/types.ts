@@ -11,6 +11,8 @@ export type Supplier = {
   deal: Deal; dealPercent: string | null; dealNote: string;
   contactName: string | null; phone: string | null; email: string | null; locality: string | null;
   entityIds: string[]; taxRegistrationNumber: string | null; currency: string | null; notes: string;
+  /** A supplier list's extra columns, kept with the supplier by their heading. */
+  attributes?: Array<{ name: string; value: string }>;
   status: "draft" | "active" | "archived"; archivedReason: string | null; version: number;
 };
 /** One of the firm's companies (legal entities) that buys. */
@@ -40,7 +42,9 @@ export type SupplierImportPlan = {
 export type OrderStatus = "draft" | "pending_approval" | "approved" | "sent" | "confirmed" | "partly_received" | "received" | "closed" | "cancelled";
 export type DeliverTo = "site" | "factory" | "warehouse" | "pickup" | "other";
 export type PurchasingSettings = {
-  approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string;
+  approvalThreshold: string | null; requireMaterialSignoff: boolean;
+  /** Orders go out only once the client's payment for that order is in (PLM-071). */
+  requireClientPayment?: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string;
   requireSitePhoto: boolean; stockAdjustApprovalValue: string | null; orderAheadDays: number; invoiceTolerancePercent: string; spendingGuard: "off" | "warn" | "strict";
   /** Invoices are paid only through an approved payment run; advances on orders are still recorded directly. */
   paymentRunsRequired: boolean; version: number;
@@ -50,7 +54,11 @@ export type PurchasingSettings = {
 export type Need = {
   key: string; source: "material" | "line"; sourceId: string; projectId: string; projectReference: string; projectName: string;
   title: string; detail: string; unit: string; required: string | null; placed: string; drafted: string; received: string; remaining: string | null;
-  catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null; clientChoice: boolean; blocked: "material_signoff" | null;
+  catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null; clientChoice: boolean;
+  /** Why it can't be ordered yet: the client's material sign-off, or the client's payment for the order. */
+  blocked: "material_signoff" | "client_payment" | null;
+  /** The supplier the catalog prefers for it. */
+  supplierId?: string | null;
   /** When the work that uses it starts; ordered its lead time (in days) before that. */
   neededBy: string | null; leadDays: number; orderBy: string | null;
   /** Given from free stock (reserved for the project or issued to it); counted before orders. */
@@ -71,6 +79,8 @@ export type ShipmentStatus = "booked" | "in_transit" | "delayed" | "arrived" | "
 export type OrderRow = {
   id: string; number: string; status: OrderStatus; vendorId: string; supplierName: string; legalEntityId: string; companyCode: string; currency: string;
   total: string; expectedDate: string | null; promisedDate: string | null; createdAt: string; createdByName: string; projects: Array<{ id: string; reference: string; status?: string }>; lines: number;
+  /** The won deals its lines are bought for (Furniture C). */
+  deals?: Array<{ id: string; reference: string }>;
   revision: number; version: number;
   /** Who raised and submitted it (nobody approves their own order). */
   createdBy?: string; submittedBy?: string | null;

@@ -7,7 +7,9 @@ import type { FurniturePath } from "../crm/opportunities/flow-gates";
 import type { ServicePathScope } from "../projects/service-path-route";
 import { acceptedQuoteTotals, acceptedQuoteValue } from "./commercial.domain";
 import { qsEstimateCurrent } from "./qs-estimate";
+import type { TeamRoleView } from "../project-core/team-types";
 import type { CommercialData, Quote } from "./commercial.types";
+import { permitRequired, readPermitFacts } from "../logistics/permits";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -37,6 +39,8 @@ export type DealInsight = DealMoney & {
   sections: DealSection[];
   closing: DealClosing | null;
   proposals: Array<{ kind: ProposalKind; valueStatus: ValueStatus; wonAt: string | null }>;
+  /** PLM-100: who works on the deal, role by role (a person or "not applicable"), as tagged on the enquiry and the opportunity. */
+  team?: TeamRoleView[];
 };
 
 const text = (value: Dec, currency: string) => value.toFixed(currency ? currencyDecimals(currency) : 2);
@@ -100,6 +104,8 @@ export type DealLive = {
   supplierOrders: { total: number; arrived: number };
   fulfilment: { collected: number; delivered: number; installed: number };
   proposals: Array<{ kind: ProposalKind; valueStatus: ValueStatus; wonAt: string | null }>;
+  /** PLM-136: the building permit, recorded on the project or the deal: whether it's required, collected, or its collection planned. */
+  permit?: { required: boolean; collected: boolean; planned: boolean };
 };
 
 const DESIGN_SECTIONS: Array<[string, string]> = [
@@ -146,6 +152,8 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
     if (path === "supplier_order")
       sections.push({ key: "supplier_orders", group: "furniture", state: state(live.supplierOrders.total > 0 && live.supplierOrders.arrived === live.supplierOrders.total, live.supplierOrders.total > 0),
         count: live.supplierOrders.total, href: "/workspace/purchasing/orders" });
+    if (path !== "take_home_now" && (live.permit?.required || live.permit?.collected) && !live.projectId)
+      sections.push({ key: "building_permit", group: "furniture", state: state(Boolean(live.permit?.collected), Boolean(live.permit?.planned)), href: opportunityHref });
     if (path !== "take_home_now") sections.push({ key: "proof_of_delivery", group: "furniture", state: state(live.fulfilment.delivered > 0, true), href: opportunityHref });
   }
   if (design) {
@@ -167,6 +175,8 @@ export function dealSections(data: CommercialData, live: DealLive, scope: Servic
       count: live.workOrders.drawingsApproved, href: projectHref() });
     sections.push({ key: "production", group: "production", state: state(live.workOrders.total > 0 && live.workOrders.ready === live.workOrders.total, live.workOrders.total > 0),
       count: live.workOrders.total, href: projectHref() });
+    if (live.permit?.required || live.permit?.collected)
+      sections.push({ key: "building_permit", group: "production", state: state(Boolean(live.permit?.collected), Boolean(live.permit?.planned)), href: projectHref() ?? opportunityHref });
     sections.push({ key: "delivery_installation", group: "production", state: state(live.fulfilment.delivered > 0 && live.fulfilment.installed > 0, live.fulfilment.delivered > 0), href: opportunityHref });
     if (!furniture) sections.push({ key: "proof_of_delivery", group: "production", state: state(live.fulfilment.delivered > 0, true), href: opportunityHref });
   }
@@ -188,9 +198,9 @@ async function dealLive(db: Db, workspaceId: string, caseId: string, opportunity
             (SELECT count(*) FILTER (WHERE work.status IN ('ready', 'short_closed'))::int FROM work_orders work WHERE work.workspace_id = $1 AND work.project_id = project.id) AS "workReady",
             (SELECT count(*) FILTER (WHERE work.drawing_approved_at IS NOT NULL AND work.status <> 'cancelled')::int FROM work_orders work WHERE work.workspace_id = $1 AND work.project_id = project.id) AS drawings,
             (SELECT count(DISTINCT line.order_id)::int FROM purchase_order_lines line JOIN purchase_orders purchase ON purchase.workspace_id = line.workspace_id AND purchase.id = line.order_id
-              WHERE line.workspace_id = $1 AND line.project_id = project.id AND purchase.status NOT IN ('draft', 'cancelled')) AS "ordersTotal",
+              WHERE line.workspace_id = $1 AND (line.project_id = project.id OR line.opportunity_id = opportunity.id) AND purchase.status NOT IN ('draft', 'cancelled')) AS "ordersTotal",
             (SELECT count(DISTINCT shipment.order_id)::int FROM purchase_order_shipments shipment JOIN purchase_order_lines line ON line.workspace_id = shipment.workspace_id AND line.order_id = shipment.order_id
-              WHERE shipment.workspace_id = $1 AND line.project_id = project.id AND shipment.status = 'arrived') AS "ordersArrived",
+              WHERE shipment.workspace_id = $1 AND (line.project_id = project.id OR line.opportunity_id = opportunity.id) AND shipment.status = 'arrived') AS "ordersArrived",
             (SELECT count(*)::int FROM crm_deal_fulfilment_events event WHERE event.workspace_id = $1 AND event.opportunity_id = opportunity.id AND event.event = 'collected') AS collected,
             (SELECT count(*)::int FROM crm_deal_fulfilment_events event WHERE event.workspace_id = $1 AND event.opportunity_id = opportunity.id AND event.event = 'delivered') AS delivered,
             (SELECT count(*)::int FROM crm_deal_fulfilment_events event WHERE event.workspace_id = $1 AND event.opportunity_id = opportunity.id AND event.event = 'installed') AS installed
@@ -209,11 +219,20 @@ async function dealLive(db: Db, workspaceId: string, caseId: string, opportunity
     supplierOrders: { total: row?.ordersTotal ?? 0, arrived: row?.ordersArrived ?? 0 },
     fulfilment: { collected: row?.collected ?? 0, delivered: row?.delivered ?? 0, installed: row?.installed ?? 0 },
     proposals: opportunityId ? (await loadProposals(db, workspaceId, opportunityId)).map((proposal) => ({ kind: proposal.kind, valueStatus: proposal.valueStatus, wonAt: proposal.wonAt })) : [],
+    permit: await dealPermit(db, workspaceId, row?.projectId ?? null, opportunityId),
   };
 }
 
+/** PLM-136: the order's building permit, on its project or its deal (the same permit shows on both). */
+async function dealPermit(db: Db, workspaceId: string, projectId: string | null, opportunityId: string | null) {
+  const owner = projectId ? { projectId } : opportunityId ? { opportunityId } : null;
+  if (!owner) return undefined;
+  const facts = await readPermitFacts(db, workspaceId, owner);
+  return { required: await permitRequired(db, workspaceId, owner), collected: facts.some((fact) => fact.status === "collected"), planned: facts.some((fact) => fact.status === "planned") };
+}
+
 /** The Deal File insight for the case screen; null until a Deal File is submitted or approved. */
-export async function dealInsightFor(db: Db, workspaceId: string, input: { caseId: string; opportunityId: string | null; data: CommercialData; canViewCosts: boolean }): Promise<DealInsight | null> {
+export async function dealInsightFor(db: Db, workspaceId: string, input: { caseId: string; opportunityId: string | null; data: CommercialData; canViewCosts: boolean; team?: TeamRoleView[] }): Promise<DealInsight | null> {
   const { data } = input;
   if (!data.dealFile && !data.ownerReview) return null;
   const live = await dealLive(db, workspaceId, input.caseId, input.opportunityId);
@@ -227,5 +246,6 @@ export async function dealInsightFor(db: Db, workspaceId: string, input: { caseI
     sections: dealSections(data, live, data.servicePath?.scope ?? null),
     closing: input.opportunityId ? await loadDealClosing(db, workspaceId, input.opportunityId) : null,
     proposals: live.proposals,
+    team: input.team ?? [],
   };
 }

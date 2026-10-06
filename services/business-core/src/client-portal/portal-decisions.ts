@@ -11,6 +11,8 @@ import { validateDeduction } from "../commercial/variation-controls";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { noticeProject } from "../project-core/project-notices";
 import { recordMaterialDecision } from "../project-core/project-materials";
+import { decideDrawings } from "../project-core/project-drawing-decisions";
+import { readLatestRevision } from "../project-core/project-drawings";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { stageOwners } from "../change-requests/change-request-notices";
 import { decideHandoverPack } from "../site/handover";
@@ -85,7 +87,7 @@ async function code(ctx: DecisionContext, purpose: string, body: Record<string, 
 export async function assertDecisionOpen(ctx: DecisionContext, purpose: string) {
   const [kind, caseId, recordId, decision, ...rest] = purpose.split(":");
   const allowed: Record<string, string[]> = { quote: ["accept", "changes", "decline"], design: ["accept", "changes", "decline"], definition: ["accept", "changes"],
-    materials: ["submit"], handover: ["accept", "refuse"], change: ["accept"] };
+    materials: ["submit"], drawings: ["accept", "changes"], handover: ["accept", "refuse"], change: ["accept"] };
   if (rest.length || !allowed[kind]?.includes(decision)) throw new BadRequestException("This decision isn't valid.");
   const { grant, row } = await grantFor(ctx, caseId, "decisions");
   decider(grant);
@@ -105,6 +107,9 @@ export async function assertDecisionOpen(ctx: DecisionContext, purpose: string) 
     const revision = row.projectId ? (await ctx.db.query<{ id: string; status: string }>(
       `SELECT id, status FROM project_material_revisions WHERE workspace_id = $1 AND project_id = $2 ORDER BY number DESC LIMIT 1`, [ctx.workspaceId, row.projectId])).rows[0] : undefined;
     if (!revision || revision.id !== recordId || revision.status !== "sent") throw new ConflictException("This material list isn't waiting for your decision any more. Reload to see the latest.");
+  } else if (kind === "drawings") {
+    const revision = row.projectId ? await readLatestRevision(ctx.db, ctx.workspaceId, row.projectId) : null;
+    if (!revision || revision.id !== recordId || revision.status !== "sent") throw new ConflictException("These drawings aren't waiting for your decision any more. Reload to see the latest.");
   } else {
     const pack = row.projectId ? (await ctx.db.query<{ status: string }>(`SELECT status FROM handover_packs WHERE workspace_id = $1 AND project_id = $2 AND id = $3`,
       [ctx.workspaceId, row.projectId, recordId])).rows[0] : undefined;
@@ -297,6 +302,33 @@ export async function decideMaterials(ctx: DecisionContext, body: Record<string,
     ? { code: "project.materials_signed_off", revision: `R${result.number}`, note: "", memberships: team }
     : { code: "project.materials_changes", revision: `R${result.number}`, note: result.note, memberships: team } });
   return { ok: true, entity: { type: "project", id: row.projectId }, audit: { revisionId, number: result.number, signedOff: result.signedOff } };
+}
+
+// ---------- technical drawings ----------
+
+/**
+ * The client approves the technical drawings they were sent, or says what to change (PLM-059). Approval is the
+ * production release: the factory hears, and the stage waiting for it moves the project on.
+ */
+export async function decideDrawingsInPortal(ctx: DecisionContext, body: Record<string, unknown>) {
+  const { grant, row } = await grantFor(ctx, body.caseId, "decisions");
+  decider(grant);
+  if (!row.projectId || !["active", "on_hold"].includes(row.projectStatus ?? "")) throw new ConflictException("This project is closed.");
+  const revisionId = uuid(body.revisionId, "Drawings");
+  const decision = body.decision === "accept" ? "accept" as const : body.decision === "changes" ? "changes" as const : null;
+  if (!decision) throw new BadRequestException("Approve the drawings, or say what to change.");
+  await ctx.db.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [ctx.workspaceId, row.projectId]);
+  const latest = await readLatestRevision(ctx.db, ctx.workspaceId, row.projectId, true);
+  if (!latest || latest.id !== revisionId) throw new ConflictException("These drawings changed. Reload to see the latest.");
+  if (latest.status !== "sent") throw new ConflictException("These drawings were already decided. Reload to see them.");
+  const note = words(body.note, 1000, "Say what you'd like changed.", decision === "changes");
+  const files = await ownUploads(ctx.db, ctx.workspaceId, ctx.contact, row.caseId, body.uploadIds);
+  await code(ctx, `drawings:${row.caseId}:${revisionId}:${decision}`, body);
+  const decided = await decideDrawings(ctx.db, { workspaceId: ctx.workspaceId, projectId: row.projectId, revisionId, decision: decision === "accept" ? "approve" : "changes",
+    decidedOn: ctx.today, decidedBy: grant.name, note, via: "portal", userId: null, grantId: grant.id });
+  await attach(ctx.db, ctx.workspaceId, { caseId: row.caseId, grantId: grant.id, kind: "decision", targetId: `drawings:${revisionId}`, files });
+  await ctx.db.query(`UPDATE delivery_projects SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [ctx.workspaceId, row.projectId]);
+  return { ok: true, entity: { type: "project", id: row.projectId }, audit: { revisionId, number: latest.number, decision, advanced: decided.advanced } };
 }
 
 // ---------- handover ----------

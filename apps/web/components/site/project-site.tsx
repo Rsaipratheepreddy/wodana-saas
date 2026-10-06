@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Download, Plus } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, EmptyState, ErrorState, InlineNotice, SegmentedControl, Skeleton, TextAreaField, type StatusTone } from "@/design-system";
+import Link from "next/link";
+import { Badge, Button, ControlledModalDialog, EmptyState, ErrorState, FormDialog, InlineNotice, SegmentedControl, Skeleton, TextAreaField, type StatusTone } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { siteApi } from "@/lib/site/client";
 import { useLiveInvalidate } from "@/lib/workspace/live-events";
-import type { SiteReport, SiteState } from "@/lib/site/types";
+import type { InstallationOwed, SiteReport, SiteState } from "@/lib/site/types";
 import { ProjectCrewDays } from "../hrms/crew-days";
 import { ProjectSiteAccess } from "../hrms/site-access";
 import { useProjectFormat } from "../project-core/format";
@@ -25,12 +26,14 @@ type SiteView = "reports" | "crew-days" | "deliveries" | "access" | "issues";
  * manager's review first (a notice's `?report=` link opens one). Beside it, each crew's day (`?crewDay=`), what's
  * arriving, site access, and the issues the client reported in the portal (`?issue=`).
  */
-export function ProjectSite({ workspaceId, projectId, projectName = "" }: { workspaceId: string; projectId: string; projectName?: string }) {
+export function ProjectSite({ workspaceId, projectId, projectName = "", showDeliveries = true }: { workspaceId: string; projectId: string; projectName?: string;
+  /** PLM-098: what's arriving shows when the job's path uses Supply (or it already has purchases). */
+  showDeliveries?: boolean }) {
   const t = useT();
   const params = useSearchParams();
   const linkedDay = params?.get("crewDay") ?? null;
   const linkedIssue = params?.get("issue") ?? null;
-  const [view, setView] = useState<SiteView>(linkedDay ? "crew-days" : linkedIssue ? "issues" : params?.get("view") === "deliveries" ? "deliveries" : "reports");
+  const [view, setView] = useState<SiteView>(linkedDay ? "crew-days" : linkedIssue ? "issues" : params?.get("view") === "deliveries" && showDeliveries ? "deliveries" : "reports");
   const issues = useClientIssues(workspaceId, projectId);
   const format = useProjectFormat();
   const api = useMemo(() => siteApi(workspaceId, projectId), [workspaceId, projectId]);
@@ -42,6 +45,8 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
   // A notice or Approvals opens the day it's about (`?report=`).
   const [reviewing, setReviewing] = useState<string | null>(() => params?.get("report") ?? null);
   const [rejecting, setRejecting] = useState<{ report: SiteReport; lineId: string; title: string } | null>(null);
+  // PLM-065: finishing site work signs the installation off; with money owed before installation it asks first.
+  const [finishing, setFinishing] = useState(false);
   const load = useCallback(async () => {
     try { setState(await api.state()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The site didn't load.")); }
   }, [api, t]);
@@ -63,7 +68,7 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
   const switcher = <SegmentedControl label={t("Show")} value={view} onChange={(value) => setView(value as SiteView)}
     options={[{ id: "reports", label: t("Daily progress") }, { id: "crew-days", label: t("Crew days") },
       // What's on its way to site, received where it arrives.
-      ...(onTeam ? [{ id: "deliveries", label: t("Deliveries") }] : []),
+      ...(onTeam && showDeliveries ? [{ id: "deliveries", label: t("Deliveries") }] : []),
       // Who may be on site: only for whoever can see that list (the project's managers and site supervisors, and HR).
       ...(onTeam && state.canSeeSiteAccess !== false ? [{ id: "access", label: t("Access") }] : []),
       // Only once the client has reported something (or a notice links here).
@@ -136,7 +141,8 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
       <span className={styles.muted}>{running ? t("Site work since {date}", { date: format.day(state.site.startedOn) })
         : state.site.finishedOn ? t("Site work {from} – {to}", { from: format.day(state.site.startedOn), to: format.day(state.site.finishedOn) }) : t("Site work hasn't started")}</span>
       <span className={styles.spacer} />
-      {state.canManage ? <Button size="compact" onPress={() => void run(running ? "finish_site" : "start_site", { on: state.today })}>{running ? t("Finish site work") : t("Start site work")}</Button> : null}
+      {state.canManage ? <Button size="compact" onPress={() => running && state.installationOwed?.stages.length ? setFinishing(true)
+        : void run(running ? "finish_site" : "start_site", { on: state.today })}>{running ? t("Finish site work") : t("Start site work")}</Button> : null}
       {state.canReport ? <Button size="compact" variant="primary" onPress={() => setEditing(state.reports.find((report) => report.authorId === state.me && report.reportDate === state.today
         && ["draft", "returned"].includes(report.status)) ?? "new")}><Plus aria-hidden="true" size={14} />{t("Today's report")}</Button> : null}
     </div>
@@ -152,6 +158,8 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
       onState={setState} onClose={() => { setEditing(null); void load(); }} /> : null}
     {reviewing ? <ReportReview api={api} state={state} reportId={reviewing} onState={setState} onClose={() => setReviewing(null)}
       onReject={(report, lineId, title) => setRejecting({ report, lineId, title })} /> : null}
+    {finishing && state.installationOwed ? <FinishSiteDialog owed={state.installationOwed} canSignOff={Boolean(state.canSignOffOwed)} paymentsHref={`/workspace/projects/${projectId}/money?view=client`}
+      onClose={() => setFinishing(false)} onSubmit={async (owedReason) => { setState(await api.command("finish_site", { on: state.today, owedReason })); setFinishing(false); }} /> : null}
     {rejecting ? <ReasonDialog title={t("{item} not accepted", { item: rejecting.title })} label={t("What isn't right")} action={t("Raise a snag")} onClose={() => setRejecting(null)}
       onSave={async (reason) => { if (await run("reject_installation", { reportId: rejecting.report.id, lineId: rejecting.lineId, reason })) setRejecting(null); }} /> : null}
   </div>;
@@ -167,4 +175,27 @@ function ReasonDialog({ title, label, action, onClose, onSave }: { title: string
       <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{action}</Button></div>}>
     <TextAreaField label={label} isRequired value={reason} onChange={setReason} autoFocus />
   </ControlledModalDialog>;
+}
+
+/**
+ * PLM-065: installation is signed off (site work finished) only once the payment due before installation is in.
+ * The dialog lists what is owed; someone who manages projects can still sign it off, saying why.
+ */
+function FinishSiteDialog({ owed, canSignOff, paymentsHref, onClose, onSubmit }: {
+  owed: InstallationOwed; canSignOff: boolean; paymentsHref: string; onClose: () => void; onSubmit: (reason: string) => Promise<void>;
+}) {
+  const t = useT();
+  const format = useProjectFormat();
+  const [reason, setReason] = useState("");
+  const states: Record<InstallationOwed["stages"][number]["state"], string> = { to_invoice: t("To invoice"), invoiced: t("Invoiced"), reported: t("Waiting for Finance"), verified: t("Received") };
+  const total = owed.totals.map((row) => format.money(row.amount, row.currency)).join(" · ");
+  return <FormDialog size="md" title={t("Finish site work")} onClose={onClose} cancelLabel={t("Back")} isDirty={Boolean(reason.trim())} hideSubmit={!canSignOff}
+    isSubmitDisabled={!reason.trim()} submitLabel={t("Finish site work")} onSubmit={() => onSubmit(reason.trim())}>
+    <InlineNotice tone="info" message={t("{amount} is still owed before installation", { amount: total })} />
+    <ul className={styles.owed} aria-label={t("Owed before installation")}>
+      {owed.stages.map((stage) => <li key={stage.id}><span>{stage.title}</span><span>{format.money(stage.amount, stage.currency)}</span><small>{states[stage.state]}</small></li>)}
+    </ul>
+    <Link href={paymentsHref}>{t("Open payments")}</Link>
+    {canSignOff ? <TextAreaField label={t("Why it's signed off before it's paid")} isRequired value={reason} onChange={setReason} maxLength={500} /> : null}
+  </FormDialog>;
 }

@@ -18,6 +18,8 @@ import {
 } from "./orders";
 import { readBills } from "./payables";
 import { closeSettledBlockers, readLineBlockers } from "./purchasing-blockers";
+import { dealPaymentIn, orderPaymentIn } from "./client-payment";
+import { boqRequiredForProject } from "../fulfilment/fulfilment-rules";
 import { askSiteAccess, closeSiteAccess } from "../site/site-access";
 import { outstanding, readReceipts, settleOrder } from "./receiving";
 import { describeShort, fundsShort, type FundsShort } from "./spending-guard";
@@ -34,6 +36,8 @@ const NO_VENDOR = "00000000-0000-4000-8000-000000000000";
 
 type LineInput = {
   id: string; source: "material" | "line" | "free"; materialItemId: string | null; boqLineId: string | null; projectId: string | null;
+  /** The won deal a free line is bought for (Furniture C, PLM-126); its goods are held for the deal when they arrive. */
+  opportunityId: string | null;
   description: string; specification: string; quantity: string; unit: string; unitPrice: string; discountPercent: string; taxRate: string;
   /** A line on another order this one replaces (that supplier didn't deliver it). */
   replacesLineId: string | null;
@@ -56,7 +60,7 @@ export class OrdersService {
   needs(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "purchasing.view", async (client, user) => {
       const settings = await ensurePurchasingSettings(client, workspaceId);
-      return { needs: await readNeeds(client, workspaceId, settings.requireMaterialSignoff), settings, ...(await this.rights(client, workspaceId, user.userId)) };
+      return { needs: await readNeeds(client, workspaceId, settings.requireMaterialSignoff, null, settings.requireClientPayment), settings, ...(await this.rights(client, workspaceId, user.userId)) };
     });
   }
 
@@ -88,7 +92,7 @@ export class OrdersService {
       const threshold = body.approvalThreshold === undefined ? current.approvalThreshold
         : body.approvalThreshold === null || body.approvalThreshold === "" ? null : String(body.approvalThreshold);
       if (threshold !== null && !NUMBER.test(threshold)) throw new BadRequestException("Enter the amount from which orders need approval, or leave it empty.");
-      const flag = (key: "requireMaterialSignoff" | "requireApprovedSupplier" | "requireInspection" | "requireSitePhoto" | "paymentRunsRequired") => (body[key] === undefined ? current[key] : body[key] === true);
+      const flag = (key: "requireMaterialSignoff" | "requireClientPayment" | "requireApprovedSupplier" | "requireInspection" | "requireSitePhoto" | "paymentRunsRequired") => (body[key] === undefined ? current[key] : body[key] === true);
       const tolerance = body.receiveTolerancePercent === undefined ? current.receiveTolerancePercent : String(body.receiveTolerancePercent || "0");
       if (!NUMBER.test(tolerance) || Dec.of(tolerance).cmp(50) > 0) throw new BadRequestException("Over-delivery is a percentage from 0 to 50.");
       const adjustLimit = body.stockAdjustApprovalValue === undefined ? current.stockAdjustApprovalValue
@@ -102,10 +106,10 @@ export class OrdersService {
       if (!["off", "warn", "strict"].includes(guard)) throw new BadRequestException("Choose how orders beyond a project's money are handled.");
       await client.query(`UPDATE workspace_purchasing_settings SET approval_threshold = $2, require_material_signoff = $3, require_approved_supplier = $4, require_inspection = $5,
         receive_tolerance_percent = $6, require_site_photo = $8, stock_adjust_approval_value = $9, order_ahead_days = $10, invoice_tolerance_percent = $11, spending_guard = $12,
-        payment_runs_required = $13, version = version + 1, updated_by = $7, updated_at = now()
+        payment_runs_required = $13, require_client_payment = $14, version = version + 1, updated_by = $7, updated_at = now()
         WHERE workspace_id = $1`,
         [workspaceId, threshold, flag("requireMaterialSignoff"), flag("requireApprovedSupplier"), flag("requireInspection"), tolerance, user.userId, flag("requireSitePhoto"), adjustLimit, ahead,
-          invoiceTolerance, guard, flag("paymentRunsRequired")]);
+          invoiceTolerance, guard, flag("paymentRunsRequired"), flag("requireClientPayment")]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "purchasing.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return ensurePurchasingSettings(client, workspaceId);
     });
@@ -121,6 +125,35 @@ export class OrdersService {
       const currency = supplier.currency ?? (await client.query<{ currency: string }>(`SELECT base_currency AS currency FROM legal_entities WHERE workspace_id = $1 AND id = $2`, [workspaceId, legalEntityId])).rows[0].currency;
       await this.createDraft(client, workspaceId, user.userId, { id, supplier, legalEntityId, currency, lines: body.lines, header: this.header(body) });
       return this.detail(client, workspaceId, id, user.userId);
+    });
+  }
+
+  /**
+   * PLM-071: one draft order per supplier from the lines chosen in "To order", in one go (each line keeps what it's
+   * for). Each order is created once by its own id, so sending the same batch again changes nothing. Placing each
+   * order still goes through its approval, supplier, sign-off and client-payment checks.
+   */
+  createMany(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
+    return this.access.withPermission(actor, workspaceId, "purchasing.manage", async (client, user) => {
+      if (!Array.isArray(body.orders) || !body.orders.length) throw new BadRequestException("Choose what to order.");
+      if (body.orders.length > 30) throw new BadRequestException("Create up to 30 orders at once.");
+      const groups = (body.orders as Array<Record<string, unknown>>).map((group): Record<string, unknown> & { id: string } => ({ ...(group ?? {}), id: uuid(group?.id, "Order") }));
+      if (new Set(groups.map((group) => group.id)).size !== groups.length) throw new BadRequestException("Two orders have the same id.");
+      const vendors = groups.map((group) => String(group.vendorId ?? ""));
+      if (new Set(vendors).size !== vendors.length) throw new BadRequestException("One order per supplier.");
+      const created: Array<{ id: string; number: string; supplierName: string; lines: number }> = [];
+      for (const group of groups) {
+        if (await firstTime(client, workspaceId, group.id, group.id, "create_order", user.userId)) {
+          const supplier = await this.supplier(client, workspaceId, group.vendorId);
+          const legalEntityId = await this.company(client, workspaceId, supplier, group.legalEntityId);
+          const currency = supplier.currency ?? (await client.query<{ currency: string }>(`SELECT base_currency AS currency FROM legal_entities WHERE workspace_id = $1 AND id = $2`,
+            [workspaceId, legalEntityId])).rows[0].currency;
+          await this.createDraft(client, workspaceId, user.userId, { id: group.id, supplier, legalEntityId, currency, lines: group.lines, header: this.header(group), from: { bulk: true } });
+        }
+        const order = await readOrder(client, workspaceId, group.id);
+        if (order) created.push({ id: order.id, number: order.number, supplierName: order.supplierName, lines: order.lines });
+      }
+      return { orders: created };
     });
   }
 
@@ -609,6 +642,14 @@ export class OrdersService {
         if (!(await client.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 AND status IN ('active', 'on_hold')`, [workspaceId, projectId])).rowCount)
           throw new BadRequestException(`Line ${index + 1}: choose a running project.`);
       }
+      // Bought for a won deal (Furniture C): a free line for no project.
+      let opportunityId: string | null = null;
+      if (source === "free" && input.opportunityId) {
+        if (projectId) throw new BadRequestException(`Line ${index + 1}: a line is for a project or a deal, not both.`);
+        opportunityId = uuid(input.opportunityId, "Deal");
+        if (!(await client.query(`SELECT 1 FROM crm_opportunities WHERE workspace_id = $1 AND id = $2 AND status = 'won'`, [workspaceId, opportunityId])).rowCount)
+          throw new BadRequestException(`Line ${index + 1}: choose a won deal.`);
+      }
       // Restocking free stock: the line names the stock item it refills, in that item's name and unit.
       let stockItemId: string | null = null;
       if (source === "free" && input.stockItemId) {
@@ -638,7 +679,7 @@ export class OrdersService {
       out.push({ id, source, materialItemId: source === "material" ? input.materialItemId as string : null, boqLineId: source === "line" ? input.boqLineId as string : null, projectId,
         description, specification: text(input.specification, 1000, "Specification") || (input.specification === undefined ? origin?.detail ?? "" : ""),
         quantity, unit: this.unit(text(input.unit, 40, "Unit"), origin, index), unitPrice: unitPrice ?? "0", discountPercent, taxRate,
-        replacesLineId: typeof input.replacesLineId === "string" && UUID.test(input.replacesLineId) ? input.replacesLineId : null, stockItemId });
+        replacesLineId: typeof input.replacesLineId === "string" && UUID.test(input.replacesLineId) ? input.replacesLineId : null, stockItemId, opportunityId });
     }
     return out;
   }
@@ -734,19 +775,21 @@ export class OrdersService {
       // A restock line keeps the stock item it refills while it stays a free line for no project, in that item's unit.
       const stockItemId = line.source === "free" && !line.projectId ? line.stockItemId ?? (before?.unit.toLocaleLowerCase() === line.unit.toLocaleLowerCase() ? before?.stockItemId ?? null : null) : null;
       const values = [line.id, workspaceId, orderId, position, line.projectId, line.source, line.materialItemId, line.boqLineId, line.description, line.specification, line.quantity, line.unit,
-        line.unitPrice, line.discountPercent, line.taxRate, amounts.net, amounts.tax, amounts.total, line.replacesLineId ?? before?.replacesLineId ?? null, stockItemId];
+        line.unitPrice, line.discountPercent, line.taxRate, amounts.net, amounts.tax, amounts.total, line.replacesLineId ?? before?.replacesLineId ?? null, stockItemId,
+        line.source === "free" && !line.projectId ? line.opportunityId ?? before?.opportunityId ?? null : null];
       // A new line never takes an id already used elsewhere.
       if (!before && (await client.query(`SELECT 1 FROM purchase_order_lines WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id])).rowCount) values[0] = randomUUID();
       if (before)
         await client.query(
           `UPDATE purchase_order_lines SET position = $4, project_id = $5, source = $6, material_item_id = $7, boq_line_id = $8, description = $9, specification = $10, quantity = $11,
-                  unit = $12, unit_price = $13, discount_percent = $14, tax_rate = $15, net = $16, tax = $17, total = $18, replaces_line_id = $19, stock_item_id = $20
+                  unit = $12, unit_price = $13, discount_percent = $14, tax_rate = $15, net = $16, tax = $17, total = $18, replaces_line_id = $19, stock_item_id = $20,
+                  opportunity_id = $21
             WHERE id = $1 AND workspace_id = $2 AND order_id = $3`, values);
       else
         await client.query(
           `INSERT INTO purchase_order_lines (id, workspace_id, order_id, position, project_id, source, material_item_id, boq_line_id, description, specification, quantity, unit, unit_price,
-                                             discount_percent, tax_rate, net, tax, total, replaces_line_id, stock_item_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`, values);
+                                             discount_percent, tax_rate, net, tax, total, replaces_line_id, stock_item_id, opportunity_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`, values);
     }
     const totals = orderTotals(priced.map((item) => item.amounts), decimals);
     await client.query(`UPDATE purchase_orders SET subtotal = $3, discount_total = $4, tax_total = $5, total = $6 WHERE workspace_id = $1 AND id = $2`,
@@ -771,10 +814,25 @@ export class OrdersService {
            JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
           WHERE line.workspace_id = $1 AND line.order_id = $2 AND item.client_choice`, [workspaceId, order.id])).rows;
       for (const { projectId, reference } of chosen) {
+        // PLM-083: an order that needs no BOQ has no material sign-off gate.
+        if (!(await boqRequiredForProject(client, workspaceId, projectId, true))) continue;
         if (!(await clientChoicesSignedOff(client, workspaceId, projectId))) throw new ConflictException(`The client hasn't signed off ${reference}'s material list yet.`);
         // PLM-054: the design's materials and decisions list must be locked (signed off) before anything is ordered.
         const ledger = await ledgerProcurementProblem(client, workspaceId, projectId);
         if (ledger) throw new ConflictException(ledger);
+      }
+    }
+    // PLM-071: nothing goes out for a project or a deal before the client's payment for that order is in.
+    if (settings.requireClientPayment) {
+      const owners = (await client.query<{ projectId: string | null; opportunityId: string | null; reference: string }>(
+        `SELECT DISTINCT line.project_id AS "projectId", line.opportunity_id AS "opportunityId", coalesce(project.reference, opportunity.reference) AS reference
+           FROM purchase_order_lines line
+           LEFT JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
+           LEFT JOIN crm_opportunities opportunity ON opportunity.workspace_id = line.workspace_id AND opportunity.id = line.opportunity_id
+          WHERE line.workspace_id = $1 AND line.order_id = $2 AND (line.project_id IS NOT NULL OR line.opportunity_id IS NOT NULL)`, [workspaceId, order.id])).rows;
+      for (const owner of owners) {
+        const paid = owner.projectId ? await orderPaymentIn(client, workspaceId, owner.projectId) : await dealPaymentIn(client, workspaceId, owner.opportunityId!);
+        if (!paid) throw new ConflictException(`The client's payment for ${owner.reference} isn't in yet. Order once Finance has verified it.`);
       }
     }
     // E5-6: an item that doesn't fit through the site's measured access waits for an override with a reason.

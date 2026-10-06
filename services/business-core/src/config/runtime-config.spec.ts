@@ -125,4 +125,8 @@ describe("validateRuntimeConfig", () => {
     })).toThrow("HTTPS MAILGUN_BASE_URL");
   });
 
+  it("accepts an inbound email domain and refuses one that isn't a domain name", () => {
+    expect(validateRuntimeConfig({ DATABASE_URL: "postgresql://local", AUTH_MODE: "development", INBOUND_EMAIL_DOMAIN: "in.wodana.ai" })).toMatchObject({ INBOUND_EMAIL_DOMAIN: "in.wodana.ai" });
+    expect(() => validateRuntimeConfig({ DATABASE_URL: "postgresql://local", AUTH_MODE: "development", INBOUND_EMAIL_DOMAIN: "in wodana" })).toThrow("INBOUND_EMAIL_DOMAIN");
+  });
 });

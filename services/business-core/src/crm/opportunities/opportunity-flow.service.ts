@@ -10,6 +10,7 @@ import { OpportunityDiscoveryService } from "./discovery.service";
 import { flowAsks } from "../flows/flow-interpreter";
 import { loadFlowFacts } from "./flow-facts";
 import { FURNITURE_PATHS, PAYMENT_PROOF_KINDS, type FurniturePath, type PaymentProofKind } from "./flow-gates";
+import { releaseForDeal, reserveForDeal } from "../../fulfilment/stock-reservations";
 import { AiGatewayService } from "../../ai-gateway/ai-gateway.service";
 import { permissionHolders } from "../../commercial/commercial-notices";
 import { tell } from "../leads/sales-attention";
@@ -71,6 +72,9 @@ export class OpportunityFlowService {
       const after = result.rows[0];
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.opportunity.flow_updated.v1", entityType: "crm_opportunity", entityId: opportunityId,
         before: this.flowFields(before), after: this.flowFields(after) });
+      // PLM-125: the client approving the quotation holds its stocked items for the deal (when its path does); taking it back lets them go.
+      if (input.clientApproved === true && !before.client_approved_at) await reserveForDeal(client, workspaceId, { opportunityId, actorUserId: user.userId });
+      if (input.clientApproved === false && before.client_approved_at) await releaseForDeal(client, workspaceId, { opportunityId, reason: "Client approval withdrawn", actorUserId: user.userId });
       return { version: after.version, ...this.flowFields(after) };
     });
   }

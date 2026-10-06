@@ -16,7 +16,12 @@ import { CalendarTimeGrid } from "./calendar-time-grid";
 import styles from "./crm-calendar.module.css";
 import workspaceColors from "./crm-workspace-colors.module.css";
 import { FollowUpSheet } from "./follow-up-editor";
+import { BookDesignTimeDialog, TeamCalendarSettingsDialog, TeamEntrySheet } from "./team-calendar";
+import { pushTeamCalendar, TEAM_LABEL, TEAMS, teamCalendarEvents, teamRequest, type Team, type TeamCalendarView, type TeamSettings } from "@/lib/crm/team-calendar";
 import { CrmDateTimeField } from "./crm-date-time-field";
+import { LogisticsBookingDialog } from "../logistics/booking-dialog";
+import { BookingSheet } from "../logistics/logistics-calendar";
+import type { BookingSubject } from "@/lib/logistics/types";
 
 function safeGoogleLink(value: unknown) { try { const url = new URL(String(value)); return url.protocol === "https:" && ["calendar.google.com", "www.google.com"].includes(url.hostname) ? url.href : undefined; } catch { return undefined; } }
 
@@ -51,7 +56,16 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
   // Sources the person's role can't read are left out quietly: the calendar shows what they can use.
   const [membersDenied, setMembersDenied] = useState(false);
   const [connectionsDenied, setConnectionsDenied] = useState(false);
-  const [scope, setScope] = useState<"organization" | "personal" | "member">("organization");
+  const [scope, setScope] = useState<"organization" | "personal" | "member" | "team">("organization");
+  // PLM-090/091: a team's calendar (the design team, the factory and logistics) across every job.
+  const [team, setTeam] = useState<Team>("design");
+  const [teamView, setTeamView] = useState<{ key: string; view?: TeamCalendarView; error?: string } | null>(null);
+  const [teamSettings, setTeamSettings] = useState<TeamSettings | null>(null);
+  const [booking, setBooking] = useState<string | null>(null);
+  // The factory and logistics team books deliveries, installations, permits and production here too (Palm, 6 Oct).
+  const [logisticsBooking, setLogisticsBooking] = useState<{ day?: string; subject?: BookingSubject } | null>(null);
+  const [settingsFor, setSettingsFor] = useState<Team | null>(null);
+  const [teamNotice, setTeamNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [memberId, setMemberId] = useState("");
   const [googleSelection, setGoogleSelection] = useState("all");
   const [connectionError, setConnectionError] = useState("");
@@ -63,7 +77,7 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
   const currentMember = members.find(member => member.userId === currentUserId);
   const scopedMember = scope === "personal" ? currentMember : scope === "member" ? members.find(member => member.id === memberId) : undefined;
   const ownerId = scope === "organization" ? "" : scopedMember?.id ?? "";
-  const key = `${workspaceId}/${from}/${to}/${scope}/${ownerId}/${refresh}/${revision}`;
+  const key = `${workspaceId}/${from}/${to}/${scope}/${scope === "team" ? team : ownerId}/${refresh}/${revision}`;
   const eligibleConnections = connectedGoogleForMember(connections, scopedMember);
   const selectedConnections = (scope !== "organization" && !scopedMember ? [] : eligibleConnections).filter(connection => googleSelection === "all" || googleSelection === connection.id).slice(0, 10);
   const connectionIds = selectedConnections.map(connection => connection.id);
@@ -85,7 +99,7 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
       const items: RecordData[] = [];
       let cursor: string | null = null;
       try {
-        if (scope !== "organization" && !ownerId) { setCrm({ key, events: [] }); return; }
+        if (scope === "team" || (scope !== "organization" && !ownerId)) { setCrm({ key, events: [] }); return; }
         for (let page = 0; page < 30; page += 1) {
           const payload: { data: RecordData[]; nextCursor: string | null } = await crmRequest(workspaceId, `activities?limit=100&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${ownerId ? `&ownerMembershipId=${encodeURIComponent(ownerId)}` : ""}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, "GET", undefined, controller.signal);
           items.push(...payload.data); cursor = payload.nextCursor;
@@ -104,7 +118,7 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
       const items: RecordData[] = [];
       let cursor = "";
       try {
-        if (scope !== "organization" && !ownerId) { setProject({ key, events: [] }); return; }
+        if (scope === "team" || (scope !== "organization" && !ownerId)) { setProject({ key, events: [] }); return; }
         const startDay = calendarDayKey(range.start), endDay = calendarDayKey(range.end);
         for (let page = 0; page < 30; page += 1) {
           const query = new URLSearchParams({ workspaceId, view: "all", from: startDay, to: endDay, ...(ownerId ? { ownerId } : {}), ...(cursor ? { cursor } : {}) });
@@ -120,6 +134,19 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
     })();
     return () => controller.abort();
   }, [workspaceId, key, ownerId, scope, range.start, range.end, t]);
+  useEffect(() => {
+    const controller = new AbortController();
+    teamRequest<TeamSettings>(workspaceId, "settings", "GET", undefined, controller.signal).then((next) => { if (!controller.signal.aborted) setTeamSettings(next); }).catch(() => undefined);
+    return () => controller.abort();
+  }, [workspaceId, refresh]);
+  useEffect(() => {
+    if (scope !== "team") return;
+    const controller = new AbortController();
+    teamRequest<TeamCalendarView>(workspaceId, `${team}?from=${calendarDayKey(range.start)}&to=${calendarDayKey(range.end)}`, "GET", undefined, controller.signal)
+      .then((view) => { if (!controller.signal.aborted) setTeamView({ key, view }); })
+      .catch((error: Error) => { if (!controller.signal.aborted) setTeamView({ key, error: error.message }); });
+    return () => controller.abort();
+  }, [workspaceId, scope, team, key, range.start, range.end]);
   useEffect(() => {
     if (!connectionIdKey) return;
     const connectionIds = connectionIdKey.split(",");
@@ -139,7 +166,9 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
     })();
     return () => controller.abort();
   }, [workspaceId, connectionIdKey, from, to, timeZone, googleKey, t]);
-  const events = [...(crm?.key === key ? crm.events : []), ...(project?.key === key ? project.events : []), ...(connectionIds.length && google?.key === googleKey ? google.events : [])].filter((event) => event.title.toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.start.getTime() - b.start.getTime());
+  const teamLoaded = scope === "team" && teamView?.key === key ? teamView : null;
+  const events = (scope === "team" ? teamCalendarEvents(teamLoaded?.view?.entries ?? [], t, timeZone)
+    : [...(crm?.key === key ? crm.events : []), ...(project?.key === key ? project.events : []), ...(connectionIds.length && google?.key === googleKey ? google.events : [])]).filter((event) => event.title.toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.start.getTime() - b.start.getTime());
   const today = calendarDayKey(wallNow());
   // A new event starts at the next working half-hour (today while the working day is open, else the next working
   // day's start), or at the start of the working day on another day being viewed.
@@ -157,14 +186,33 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
     : new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).formatRange(range.days[0], range.days.at(-1) ?? range.days[0]);
   const googleConnected = connections.some(item => ["connected", "degraded"].includes(item.status));
   const addEvent = () => googleConnected ? setGoogleCreateOn(newEventDate()) : setCreateOn(newEventDate());
-  const whose = scope === "member" ? memberId : scope;
-  const whoseItems = [{ id: "organization", label: t("Everyone") }, ...(!membersDenied ? [{ id: "personal", label: t("Only me") },
+  const canBook = scope === "team" && team === "design" && Boolean(teamLoaded?.view?.canBook);
+  const canBookLogistics = scope === "team" && team === "logistics" && Boolean(teamLoaded?.view?.canBook);
+  const canManageTeam = scope === "team" && Boolean(teamSettings?.canManage?.[team]);
+  const teamGoogle = scope === "team" && Boolean(teamLoaded?.view?.google) && canManageTeam;
+  // A team's work goes to its Google calendar after a change there, when the person may send it (best effort).
+  const sendToGoogle = async (quiet = false) => {
+    try {
+      const result = await pushTeamCalendar(workspaceId, team, t, typeof window === "undefined" ? "" : window.location.origin);
+      if (!quiet || result.failed) setTeamNotice(result.failed ? { tone: "error", message: t("{count} entries could not be sent to Google. Try again.", { count: result.failed }) }
+        : { tone: "success", message: t("Google calendar is up to date.") });
+    } catch (error) { setTeamNotice({ tone: "error", message: (error as Error).message }); }
+  };
+  const schedule = (date: Date) => { if (scope !== "team") setCreateOn(date); else if (canBook) setBooking(calendarDayKey(date)); else if (canBookLogistics) setLogisticsBooking({ day: calendarDayKey(date) }); };
+  const whose = scope === "member" ? memberId : scope === "team" ? `team:${team}` : scope;
+  const whoseItems = [{ id: "organization", label: t("Everyone") }, ...TEAMS.filter((item) => teamSettings?.canRead?.[item]).map((item) => ({ id: `team:${item}`, label: t(TEAM_LABEL[item]) })),
+    ...(!membersDenied ? [{ id: "personal", label: t("Only me") },
     ...members.filter(member => member.status !== "suspended" && member.userId !== currentUserId).map(member => ({ id: member.id, label: member.displayName }))] : [])];
-  const menu = [{ id: "schedule", label: t("Schedule a CRM meeting") }, ...(!connectionsDenied ? [{ id: "google", label: googleConnected ? t("Manage Google") : t("Connect Google") }] : []), ...(canManageBooking ? [{ id: "booking", label: t("Booking pages") }] : []), { id: "refresh", label: t("Refresh") }];
+  const menu = scope === "team" ? [...(canManageTeam ? [{ id: "team-settings", label: t("Calendar settings") }] : []), ...(teamGoogle ? [{ id: "team-google", label: t("Send to Google calendar") }] : []),
+    { id: "refresh", label: t("Refresh") }] : [{ id: "schedule", label: t("Schedule a CRM meeting") }, ...(!connectionsDenied ? [{ id: "google", label: googleConnected ? t("Manage Google") : t("Connect Google") }] : []), ...(canManageBooking ? [{ id: "booking", label: t("Booking pages") }] : []), { id: "refresh", label: t("Refresh") }];
   const notice = memberError ? memberError : scope === "personal" && members.length > 0 && !currentMember ? t("Your workspace membership could not be identified.") : connectionError
     ? `${connectionError} ${t("Workspace events are still available.")}` : project?.key === key && project.error ? project.error
     : connectionIds.length && google?.key === googleKey && google.error ? google.error : "";
-  return <PageShell title={t("Calendar")} kind="dashboard" action={<Button variant="primary" onPress={addEvent}><Plus size={16} aria-hidden="true" />{t("New event")}</Button>}>
+  const frameLoading = scope === "team" ? !teamLoaded : crm?.key !== key;
+  const frameError = scope === "team" ? teamLoaded?.error : crm?.error;
+  return <PageShell title={t("Calendar")} kind="dashboard" action={canBook ? <Button variant="primary" onPress={() => setBooking(calendarDayKey(newEventDate()))}><Plus size={16} aria-hidden="true" />{t("Book render or 2D time")}</Button>
+    : canBookLogistics ? <Button variant="primary" onPress={() => setLogisticsBooking({ day: calendarDayKey(newEventDate()) })}><Plus size={16} aria-hidden="true" />{t("Book")}</Button>
+    : scope === "team" ? null : <Button variant="primary" onPress={addEvent}><Plus size={16} aria-hidden="true" />{t("New event")}</Button>}>
     <div className={styles.toolbar} role="toolbar" aria-label={t("Calendar controls")}>
       <div className={styles.period}>
         <div className={styles.stepper}><IconButton aria-label={t("Previous calendar period")} onPress={() => setAnchor(moveCalendar(anchor, mode, -1))}><ChevronLeft size={16} /></IconButton>
@@ -175,13 +223,16 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
       <div className={styles.controls}>
         <ToolbarSearch label={t("Search calendar")} value={search} onChange={setSearch} />
         {whoseItems.length > 1 ? <div className={styles.whose}><SelectField label={<span className="wd-visually-hidden">{t("Whose calendar")}</span>} aria-label={t("Whose calendar")} selectedKey={whose}
-          items={whoseItems} onSelectionChange={value => { const id = String(value ?? "organization"); setGoogleSelection("all");
-            if (id === "organization" || id === "personal") { setScope(id); setMemberId(""); } else { setMemberId(id); setScope("member"); } }} /></div> : null}
+          items={whoseItems} onSelectionChange={value => { const id = String(value ?? "organization"); setGoogleSelection("all"); setTeamNotice(null);
+            if (id.startsWith("team:")) { setTeam(id.slice(5) as Team); setScope("team"); setMemberId(""); }
+            else if (id === "organization" || id === "personal") { setScope(id); setMemberId(""); } else { setMemberId(id); setScope("member"); } }} /></div> : null}
         {eligibleConnections.length > 1 ? <div className={styles.whose}><SelectField label={<span className="wd-visually-hidden">{t("Google calendars")}</span>} aria-label={t("Google calendars")} selectedKey={googleSelection}
           items={[{ id: "all", label: t("All Google calendars") }, ...eligibleConnections.map(connection => ({ id: connection.id, label: connection.displayName }))]} onSelectionChange={value => setGoogleSelection(String(value ?? "all"))} /></div> : null}
         <ListTabs label={t("Calendar view")} items={[{ id: "day", label: t("Day") }, { id: "week", label: t("Week") }, { id: "month", label: t("Month") }]} value={mode} onChange={setMode} />
         <IconMenuButton ariaLabel={t("Calendar options")} items={menu} onAction={(id) => {
           if (id === "schedule") setCreateOn(newEventDate());
+          else if (id === "team-settings") setSettingsFor(team);
+          else if (id === "team-google") void sendToGoogle();
           else if (id === "google") router.push("/workspace/integrations?connect=google_workspace");
           else if (id === "booking") router.push("/workspace/crm/booking-types");
           else { setRefresh(n => n + 1); setConnectionError(""); }
@@ -189,16 +240,17 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
       </div>
     </div>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
-    <section className={styles.frame} aria-label={t("Calendar schedule")} aria-busy={crm?.key !== key || (connectionIds.length > 0 && google?.key !== googleKey) || undefined}>
-      {crm?.key !== key ? <div className={styles.loading}><Skeleton lines={8} shape="rows" /></div>
-      : crm.error ? <ErrorState title={t("Calendar could not load")} description={crm.error} onRetry={() => setRefresh(n => n + 1)} />
-      : mode !== "month" ? <CalendarTimeGrid days={range.days} today={today} events={events} onSelect={setSelected} onSchedule={setCreateOn} />
+    {scope === "team" && teamNotice ? <InlineNotice tone={teamNotice.tone} message={teamNotice.message} /> : null}
+    <section className={styles.frame} aria-label={t("Calendar schedule")} aria-busy={frameLoading || (connectionIds.length > 0 && google?.key !== googleKey) || undefined}>
+      {frameLoading ? <div className={styles.loading}><Skeleton lines={8} shape="rows" /></div>
+      : frameError ? <ErrorState title={t("Calendar could not load")} description={frameError} onRetry={() => setRefresh(n => n + 1)} />
+      : mode !== "month" ? <CalendarTimeGrid days={range.days} today={today} events={events} onSelect={setSelected} onSchedule={schedule} />
       : <div className={styles.monthScroll}><div className={styles.month} role="group" aria-label={t("Month calendar")}>
         {range.days.slice(0, 7).map(day => <div className={styles.weekday} key={day.toISOString()}>{day.toLocaleDateString(locale, { weekday: "short" })}</div>)}
         {range.days.map(day => { const nextDay = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1); const dayEvents = events.filter(event => event.start < nextDay && (event.end && event.end > event.start ? event.end > day : event.start >= day));
           return <section key={day.toISOString()} className={styles.day} data-outside={day.getMonth() !== anchor.getMonth() || undefined} data-off={!workingCalendar.isWorkingDay(new CalendarDate(day.getFullYear(), day.getMonth() + 1, day.getDate())) || undefined} aria-label={day.toLocaleDateString(locale, { dateStyle: "full" })}>
-            <button className={styles.date} aria-current={calendarDayKey(day) === today ? "date" : undefined} data-today={calendarDayKey(day) === today || undefined} type="button" aria-label={t("Schedule on {date}", { date: day.toLocaleDateString(locale) })} onClick={() => setCreateOn(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10))}>{day.getDate()}</button>
-            {dayEvents.slice(0, 3).map(event => <button type="button" className={styles.chip} data-kind={event.kind} data-provider={event.provider} data-completed={event.status === "completed" || undefined} key={event.id} aria-label={`${event.provider} ${event.title}`} onClick={() => setSelected(event)}>
+            <button className={styles.date} aria-current={calendarDayKey(day) === today ? "date" : undefined} data-today={calendarDayKey(day) === today || undefined} type="button" aria-label={t("Schedule on {date}", { date: day.toLocaleDateString(locale) })} onClick={() => schedule(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10))}>{day.getDate()}</button>
+            {dayEvents.slice(0, 3).map(event => <button type="button" className={styles.chip} data-kind={event.kind} data-provider={event.provider} data-overdue={event.overdue || undefined} data-completed={["completed", "done"].includes(event.status ?? "") || undefined} key={event.id} aria-label={`${event.overdue ? `${t("Overdue")} · ` : ""}${event.provider === "team" ? "" : `${event.provider} `}${event.title}`} onClick={() => setSelected(event)}>
               {!event.allDay ? <small>{event.start.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}</small> : null}<span className={styles.eventTitle}>{event.title}</span></button>)}
             {dayEvents.length > 3 ? <button type="button" className={styles.more} onClick={() => { setAnchor(day); setMode("day"); }}>{t("+{count} more", { count: dayEvents.length - 3 })}</button> : null}
           </section>; })}
@@ -206,7 +258,19 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0, canMa
     </section>
     {createOn ? <ScheduleMeeting workspaceId={workspaceId} date={createOn} onClose={() => setCreateOn(null)} onSaved={() => { setCreateOn(null); setRefresh(n => n + 1); }} /> : null}
     {googleCreateOn ? <GoogleEventDialog workspaceId={workspaceId} connections={eligibleConnections} date={googleCreateOn} onClose={() => setGoogleCreateOn(null)} onSaved={() => { setGoogleCreateOn(null); setRefresh(n => n + 1); }} /> : null}
-    {selected?.provider === "crm" ? <FollowUpSheet key={selected.id} workspaceId={workspaceId} recordId={selected.id} onClose={() => setSelected(null)} onSaved={() => setRefresh(n => n + 1)} /> : selected ? <InspectorSheet isOpen title={selected.title} onOpenChange={open => { if (!open) setSelected(null); }}><CalendarDetails workspaceId={workspaceId} event={selected} onChanged={() => setRefresh(n => n + 1)} /></InspectorSheet> : null}
+    {booking ? <BookDesignTimeDialog workspaceId={workspaceId} date={booking} onClose={() => setBooking(null)} onSaved={() => { setBooking(null); setRefresh(n => n + 1); if (teamGoogle) void sendToGoogle(true); }} /> : null}
+    {settingsFor && teamSettings ? <TeamCalendarSettingsDialog workspaceId={workspaceId} team={settingsFor} settings={teamSettings} connections={connections} onClose={() => setSettingsFor(null)}
+      onSaved={(next) => { setTeamSettings(next); setSettingsFor(null); setRefresh(n => n + 1); }} /> : null}
+    {logisticsBooking ? <LogisticsBookingDialog workspaceId={workspaceId} initial={{ ...logisticsBooking.subject, day: logisticsBooking.day ?? null }} onClose={() => setLogisticsBooking(null)}
+      onSaved={() => { setLogisticsBooking(null); setRefresh(n => n + 1); if (teamGoogle) void sendToGoogle(true); }} /> : null}
+    {selected?.provider === "team" && selected.team && team === "logistics" ? <BookingSheet key={selected.id} workspaceId={workspaceId} entry={selected.team} canBook={canBookLogistics}
+      today={teamLoaded?.view?.today ?? today} onClose={() => setSelected(null)} onEdit={(subject) => { setSelected(null); setLogisticsBooking({ subject }); }}
+      onChanged={() => { setSelected(null); setRefresh(n => n + 1); if (teamGoogle) void sendToGoogle(true); }}
+      onMove={(entry, day) => { setSelected(null); if (entry.projectId || entry.opportunityId) setLogisticsBooking({ day, subject: { kind: entry.kind as BookingSubject["kind"],
+        ...(entry.projectId ? { projectId: entry.projectId } : { opportunityId: entry.opportunityId }), workOrderId: entry.workOrderId, permitId: entry.permitId } }); }} />
+    : selected?.provider === "team" && selected.team ? <TeamEntrySheet key={selected.id} workspaceId={workspaceId} entry={selected.team} canBook={canBook} onClose={() => setSelected(null)}
+      onChanged={() => { setRefresh(n => n + 1); if (teamGoogle) void sendToGoogle(true); }} />
+    : selected?.provider === "crm" ? <FollowUpSheet key={selected.id} workspaceId={workspaceId} recordId={selected.id} onClose={() => setSelected(null)} onSaved={() => setRefresh(n => n + 1)} /> : selected ? <InspectorSheet isOpen title={selected.title} onOpenChange={open => { if (!open) setSelected(null); }}><CalendarDetails workspaceId={workspaceId} event={selected} onChanged={() => setRefresh(n => n + 1)} /></InspectorSheet> : null}
   </PageShell>;
 }
 

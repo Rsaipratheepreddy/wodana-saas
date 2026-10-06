@@ -49,3 +49,7 @@
 .entryActions { display: flex; align-items: center; gap: var(--wd-space-1); }
 .entryReturned { font-size: var(--wd-text-xs); color: var(--wd-color-danger); }
 @media (max-width: 640px) { .entry { grid-template-columns: minmax(0, 1fr) auto; } .entryDate { grid-column: 1 / -1; } }
+/* PLM-065: what is owed before installation, one stage per row. */
+.owed { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-sm); }
+.owed li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--wd-space-3); align-items: baseline; }
+.owed small { color: var(--wd-color-text-tertiary); }

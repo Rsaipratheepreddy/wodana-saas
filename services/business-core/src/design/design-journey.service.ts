@@ -12,6 +12,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { APPROVAL_METHODS, approvalProblem, normaliseSiteQuestions, siteChecklistProblem, siteEvidenceProblem, STAGE_LABELS, stageRevisions, type JourneyStage, type SiteQuestion } from "./design-journey.domain";
 import { caseFacts, completeStage, event, formatDay, formatDue, journeyTimings, membersWithRole, recordProjectSiteVisit, salesAdminMembership, startJourney, workspaceToday } from "./design-journey.store";
 import { lockLedger, readLedger } from "./design-ledger.store";
+import { startClientCalls } from "../client-calls/client-calls.store";
 import { presentedRounds } from "./design-presentations.store";
 import { isDeliverableStage, stageProgress, syncDesignStages } from "./design-stage-sync";
 
@@ -330,6 +331,8 @@ export class DesignJourneyService {
       }
       await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.signed_off.v1", entityType: "pre_project_case", entityId: caseId,
         after: { note: input.note?.trim() || null, approvedOn: input.approvedOn, signer: input.signer!.trim(), method, assetId: input.assetId, estimateDueAt: journey.estimateDueAt, ledgerLock: lockNumber } });
+      // PLM-046: from the design approval the Account Manager's weekly client update call is booked (changed or declined on the case).
+      await startClientCalls(client, workspaceId, caseId, "design_approval", userId);
       return this.view(client, workspaceId, caseId);
     });
     const handoff = await this.handOff(actor, workspaceId, caseId).catch((error: unknown) => ({ quoteId: null, problem: error instanceof Error ? error.message : "The estimate could not be prepared." }));

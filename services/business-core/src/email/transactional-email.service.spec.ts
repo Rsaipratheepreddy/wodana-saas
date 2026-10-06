@@ -211,4 +211,49 @@ describe("TransactionalEmailService", () => {
       expect(sender).not.toHaveBeenCalled();
     });
   });
+  describe("conversation replies (PLM-025)", () => {
+    const reply = {
+      workspaceId: "11111111-1111-4111-8111-111111111111", to: "noura@example.com", subject: "Re: Villa", body: "Thursday works.\nSee you then.",
+      replyTo: "plm-abcdefghij@in.wodana.ai", headers: { "Message-Id": "<m.1@in.wodana.ai>", "In-Reply-To": "<n1@example.com>", References: "<a@x> <n1@example.com>" },
+    };
+
+    it("sends through Mailgun with Reply-To on the inbound address and the threading headers", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "<m.1@in.wodana.ai>" }) });
+      vi.stubGlobal("fetch", fetchMock);
+      const service = new TransactionalEmailService(new ConfigService({ MAILGUN_API_KEY: "k", MAILGUN_DOMAIN: "mg.example.com", MAILGUN_FROM: "Wodana <hello@mg.example.com>" }));
+      vi.spyOn(service, "brand").mockResolvedValue({ name: "Palm Living", logoUrl: null, accentColor: "#123456", loginSlug: "plm" });
+
+      await expect(service.sendConversationReply(reply)).resolves.toMatchObject({ status: "sent", messageId: "<m.1@in.wodana.ai>" });
+      const form = fetchMock.mock.calls[0][1].body as FormData;
+      expect(form.get("from")).toBe("Palm Living <hello@mg.example.com>");
+      expect(form.get("to")).toBe("noura@example.com");
+      expect(form.get("subject")).toBe("Re: Villa");
+      expect(form.get("h:Reply-To")).toBe("Palm Living <plm-abcdefghij@in.wodana.ai>");
+      expect(form.get("h:Message-Id")).toBe("<m.1@in.wodana.ai>");
+      expect(form.get("h:In-Reply-To")).toBe("<n1@example.com>");
+      expect(form.get("h:References")).toBe("<a@x> <n1@example.com>");
+      expect(String(form.get("text"))).toContain("Thursday works.\nSee you then.");
+      expect(String(form.get("html"))).toContain("Powered by Wodana");
+      expect(String(form.get("html"))).not.toContain("<h1");
+    });
+
+    it("never lets a header value carry a line break", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "x" }) });
+      vi.stubGlobal("fetch", fetchMock);
+      const service = new TransactionalEmailService(new ConfigService({ MAILGUN_API_KEY: "k", MAILGUN_DOMAIN: "mg.example.com" }));
+      await service.send({ to: "a@b.co", subject: "s", text: "t", html: "h", replyTo: "x@y.co\r\nBcc: evil@z.co", headers: { "In-Reply-To": "<a@b>\r\nBcc: evil@z.co" } });
+      const form = fetchMock.mock.calls[0][1].body as FormData;
+      expect(form.get("h:Reply-To")).toBe("x@y.co Bcc: evil@z.co");
+      expect(form.get("h:In-Reply-To")).toBe("<a@b> Bcc: evil@z.co");
+      expect(form.get("h:Bcc")).toBeNull();
+    });
+
+    it("passes Reply-To and the headers to SES", async () => {
+      const sender = vi.fn().mockResolvedValue("ses-id");
+      const service = new TransactionalEmailService(new ConfigService({ SES_FROM: "no-reply@mail.example" }), undefined, sender);
+      vi.spyOn(service, "brand").mockResolvedValue({ name: "Palm Living", logoUrl: null, accentColor: "#123456", loginSlug: "plm" });
+      await service.sendConversationReply(reply);
+      expect(sender).toHaveBeenCalledWith(expect.objectContaining({ replyTo: "Palm Living <plm-abcdefghij@in.wodana.ai>", headers: reply.headers }));
+    });
+  });
 });

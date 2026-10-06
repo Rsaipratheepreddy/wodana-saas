@@ -10,6 +10,8 @@ import styles from "../operations/print.module.css";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText, useOrderLabels } from "./order-labels";
 import { useDocumentTitle } from "@/lib/document-title";
+import { fetchLetterhead, type DocumentLetterhead } from "@/lib/brand/letterhead";
+import { LetterheadFooter, LetterheadHeader } from "../documents/document-letterhead";
 
 /**
  * A purchase order on its own page, to print or save as PDF (D-46): the supplier, where it goes, the lines and totals,
@@ -22,10 +24,16 @@ export function OrderPrint({ workspaceId, orderId }: { workspaceId: string; orde
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const [state, setState] = useState<OrderState | null>(null);
   const [error, setError] = useState<{ message: string; denied: boolean } | null>(null);
+  // The ordering business's letterhead (PLM-112); without one the order shows the business's name.
+  const [letterhead, setLetterhead] = useState<DocumentLetterhead | null>(null);
   const load = useCallback(async () => {
-    try { setState(await api.order(orderId)); setError(null); }
+    try {
+      const next = await api.order(orderId);
+      setLetterhead(next.order.legalEntityId ? await fetchLetterhead(workspaceId, next.order.legalEntityId) : null);
+      setState(next); setError(null);
+    }
     catch (cause) { setError({ message: cause instanceof Error ? cause.message : t("The order didn't load."), denied: isDenied(cause) }); }
-  }, [api, orderId, t]);
+  }, [api, orderId, t, workspaceId]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   useDocumentTitle(state ? [state.order.number, state.order.companyName] : null);
   if (error && !state) return <main className={styles.page}>{error.denied ? <NoAccessState /> : <ErrorState description={error.message} onRetry={() => void load()} />}</main>;
@@ -38,7 +46,7 @@ export function OrderPrint({ workspaceId, orderId }: { workspaceId: string; orde
     <article className={styles.document} aria-label={t("Purchase order {number}", { number: order.number })}>
       <header className={styles.head}>
         <div>
-          <p className={styles.company}>{order.companyName}</p>
+          <LetterheadHeader letterhead={letterhead} fallback={<p className={styles.company}>{order.companyName}</p>} />
           <h1 className={styles.title}>{t("Purchase order")}</h1>
           <p className={styles.number} dir="ltr">{order.number}</p>
         </div>
@@ -64,6 +72,7 @@ export function OrderPrint({ workspaceId, orderId }: { workspaceId: string; orde
         { key: "total", label: t("Total"), value: money(order.total), emphasis: true },
       ]} />
       {order.notes ? <p className={styles.note} dir="auto">{order.notes}</p> : null}
+      <LetterheadFooter letterhead={letterhead} />
     </article>
   </main>;
 }

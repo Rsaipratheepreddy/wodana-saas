@@ -2,6 +2,8 @@ import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
 import { clientChoicesSignedOff } from "../project-core/project-materials";
 import { ledgerProcurementProblem } from "../design/design-ledger.store";
+import { boqRequiredForProject } from "../fulfilment/fulfilment-rules";
+import { orderPaymentIn } from "./client-payment";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -62,8 +64,10 @@ export type Need = {
   catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null;
   /** A material the client chooses (it waits for their sign-off); scope lines never do. */
   clientChoice: boolean;
-  /** Why it can't be ordered yet, if it can't. */
-  blocked: "material_signoff" | null;
+  /** Why it can't be ordered yet, if it can't: the client's material sign-off, or the client's payment for the order (PLM-071). */
+  blocked: "material_signoff" | "client_payment" | null;
+  /** The supplier the catalog prefers for it, when it knows one. */
+  supplierId: string | null;
   /**
    * When it must be there: the earliest start of open work in its package that needs the materials (for
    * a material used nowhere in particular, the project's earliest). Ordered its lead time before that:
@@ -102,7 +106,7 @@ export async function linesNeededBy(db: Db, workspaceId: string, lines: Array<{ 
  * and the scope lines of packages that are bought (ready-made, bought materials) or subcontracted. For
  * each, how much is needed, how much is on placed orders and in draft, and what's left.
  */
-export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boolean, projectId: string | null = null): Promise<Need[]> {
+export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boolean, projectId: string | null = null, requirePayment = false): Promise<Need[]> {
   const rows = (await db.query<Omit<Need, "blocked" | "remaining" | "orderBy" | "fromStock" | "status"> & { remaining: string | null; scopeInstalled: boolean; siteFinished: boolean }>(
     `WITH projects AS (
        SELECT project.id, project.reference, project.name, project.status, project.site_finished_on FROM delivery_projects project
@@ -184,6 +188,9 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
                        WHERE line.workspace_id = $1 AND line.id = ANY(needs.scope_line_ids) AND line.status = 'active'), false) AS "scopeInstalled",
             -- A material used nowhere in particular counts as installed once the project's site work is finished.
             (cardinality(needs.scope_line_ids) = 0 AND (SELECT site_finished_on IS NOT NULL FROM projects WHERE projects.id = needs."projectId")) AS "siteFinished",
+            (SELECT link.vendor_id FROM catalog_supplier_links link JOIN workspace_vendors vendor ON vendor.workspace_id = link.workspace_id AND vendor.id = link.vendor_id
+              WHERE link.workspace_id = $1 AND link.item_id = needs."catalogItemId" AND vendor.status <> 'archived'
+              ORDER BY link.preferred DESC, link.updated_at DESC LIMIT 1) AS "supplierId",
             -- The supplier's lead time when the catalog knows it (the preferred supplier's, else the longest), else the workspace's.
             coalesce((SELECT link.lead_time_days FROM catalog_supplier_links link WHERE link.workspace_id = $1 AND link.item_id = needs."catalogItemId" AND link.lead_time_days IS NOT NULL
                        ORDER BY link.preferred DESC, link.lead_time_days DESC LIMIT 1),
@@ -193,14 +200,20 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
   // Only materials the client chooses wait for their sign-off; bought scope lines were agreed in the quotation.
   const signed = new Map<string, boolean>();
   // PLM-054: a project whose design kept a materials and decisions ledger also waits for that list's lock (the design sign-off).
+  // PLM-083: an order that needs no BOQ has no material sign-off gate.
   if (requireSignoff) for (const projectId of new Set(rows.filter((row) => row.clientChoice).map((row) => row.projectId)))
-    signed.set(projectId, await clientChoicesSignedOff(db, workspaceId, projectId) && !(await ledgerProcurementProblem(db, workspaceId, projectId)));
+    signed.set(projectId, !(await boqRequiredForProject(db, workspaceId, projectId, true))
+      || (await clientChoicesSignedOff(db, workspaceId, projectId) && !(await ledgerProcurementProblem(db, workspaceId, projectId))));
+  // PLM-071: nothing is ordered for a project before the client's payment for its order is in.
+  const paid = new Map<string, boolean>();
+  if (requirePayment) for (const projectId of new Set(rows.map((row) => row.projectId))) paid.set(projectId, await orderPaymentIn(db, workspaceId, projectId));
   const fromStock = await givenFromStock(db, workspaceId, rows);
   const orderBy = (neededBy: string | null, days: number) => (neededBy ? new Date(Date.parse(`${neededBy}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10) : null);
   return rows.map(({ scopeInstalled, siteFinished, ...row }) => {
     const stock = fromStock.get(row.key) ?? Dec.ZERO;
     return { ...row, fromStock: stock.toString(), remaining: row.remaining === null ? null : Dec.of(row.remaining).sub(stock).toFixed(4), orderBy: orderBy(row.neededBy, row.leadDays),
-      blocked: requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const : null,
+      blocked: requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const
+        : requirePayment && !paid.get(row.projectId) ? "client_payment" as const : null,
       status: lineStatus({ required: row.required, placed: row.placed, received: row.received, fromStock: stock.toString(), scopeInstalled, siteFinished }) };
   });
 }
@@ -255,6 +268,8 @@ export type OrderRow = {
   total: string; expectedDate: string | null; promisedDate: string | null; createdAt: string; createdByName: string;
   /** The projects its lines are for, and whether each is running or on hold. */
   projects: Array<{ id: string; reference: string; status: string }>; lines: number;
+  /** The won deals its lines are bought for (Furniture C). */
+  deals: Array<{ id: string; reference: string }>;
   revision: number; version: number; createdBy: string; submittedBy: string | null;
   /**
    * What's still to come, as the order counts it (ordered less cancelled, credited, accepted and waiting for
@@ -286,6 +301,9 @@ const ORDER_SELECT = `SELECT purchase.id, purchase.number, purchase.status, purc
   coalesce((SELECT jsonb_agg(DISTINCT jsonb_build_object('id', project.id, 'reference', project.reference, 'status', project.status)) FROM purchase_order_lines line
              JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
             WHERE line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id), '[]'::jsonb) AS projects,
+  coalesce((SELECT jsonb_agg(DISTINCT jsonb_build_object('id', deal.id, 'reference', deal.reference)) FROM purchase_order_lines line
+             JOIN crm_opportunities deal ON deal.workspace_id = line.workspace_id AND deal.id = line.opportunity_id
+            WHERE line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id), '[]'::jsonb) AS deals,
   (SELECT count(*)::int FROM purchase_order_lines line WHERE line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id) AS lines,
   coalesce(progress."linesLeft", 0) AS "linesLeft", progress.due::text AS due, coalesce(progress.inspecting, false) AS inspecting,
   CASE WHEN shipment.status IS NULL THEN NULL ELSE jsonb_build_object('status', shipment.status, 'eta', shipment.eta::text, 'carrier', shipment.carrier) END AS shipment
@@ -328,6 +346,8 @@ export type OrderLine = {
   alternateNote: string; alternateOfferedBy: string | null; originalDescription: string | null; originalSpecification: string | null;
   /** The stock item a restock line refills (free lines for no project only). */
   stockItemId: string | null;
+  /** The won deal a free line is bought for (Furniture C), and its reference. */
+  opportunityId: string | null; opportunityReference: string | null;
 };
 
 export type OrderDetail = OrderRow & {
@@ -378,8 +398,10 @@ export async function readOrderLines(db: Db, workspaceId: string, orderId: strin
             line.cancelled_quantity::text AS cancelled, line.cancel_reason AS "cancelReason", line.replaces_line_id AS "replacesLineId", replaced.number AS "replacesOrderNumber",
             line.alternate_status AS "alternateStatus", line.alternate_description AS "alternateDescription", line.alternate_specification AS "alternateSpecification",
             line.alternate_unit_price::text AS "alternateUnitPrice", line.alternate_note AS "alternateNote", line.alternate_offered_by AS "alternateOfferedBy",
-            line.original_description AS "originalDescription", line.original_specification AS "originalSpecification", line.stock_item_id AS "stockItemId"
+            line.original_description AS "originalDescription", line.original_specification AS "originalSpecification", line.stock_item_id AS "stockItemId",
+            line.opportunity_id AS "opportunityId", deal.reference AS "opportunityReference"
        FROM purchase_order_lines line
+       LEFT JOIN crm_opportunities deal ON deal.workspace_id = line.workspace_id AND deal.id = line.opportunity_id
        JOIN purchase_orders purchase ON purchase.workspace_id = line.workspace_id AND purchase.id = line.order_id
        LEFT JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
        LEFT JOIN purchase_order_lines previous ON previous.workspace_id = line.workspace_id AND previous.id = line.replaces_line_id
@@ -414,7 +436,9 @@ export async function readOrderEvents(db: Db, workspaceId: string, orderId: stri
 }
 
 export type PurchasingSettings = {
-  approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string;
+  approvalThreshold: string | null; requireMaterialSignoff: boolean;
+  /** Orders for a project or deal go out only once the client's payment for that order is in (PLM-071). */
+  requireClientPayment: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string;
   /** A delivery received at a project's site shows as missing its photo until one is added. */
   requireSitePhoto: boolean;
   /** Stock corrections worth more than this (in the workspace's currency) wait for a second person; none when empty. */
@@ -432,7 +456,8 @@ export type PurchasingSettings = {
 export async function ensurePurchasingSettings(db: Db, workspaceId: string): Promise<PurchasingSettings> {
   await db.query(`INSERT INTO workspace_purchasing_settings (workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId]);
   return (await db.query<PurchasingSettings>(
-    `SELECT approval_threshold::text AS "approvalThreshold", require_material_signoff AS "requireMaterialSignoff", require_approved_supplier AS "requireApprovedSupplier",
+    `SELECT approval_threshold::text AS "approvalThreshold", require_material_signoff AS "requireMaterialSignoff", require_client_payment AS "requireClientPayment",
+            require_approved_supplier AS "requireApprovedSupplier",
             require_inspection AS "requireInspection", receive_tolerance_percent::text AS "receiveTolerancePercent", require_site_photo AS "requireSitePhoto", stock_adjust_approval_value::text AS "stockAdjustApprovalValue",
             order_ahead_days AS "orderAheadDays", invoice_tolerance_percent::text AS "invoiceTolerancePercent", spending_guard AS "spendingGuard",
             payment_runs_required AS "paymentRunsRequired", version

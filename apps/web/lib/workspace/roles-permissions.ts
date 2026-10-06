@@ -116,6 +116,13 @@ const EXACT_LABELS: Record<string, MessageKey> = {
   "commercial.record_decision": tKey("Record a client's decision on a quote"),
   "workspace.view_as": tKey("View as a team member or role, read-only"),
   "projects.schedule.override": tKey("Override project schedule conflicts"),
+  "finance_requests.raise": tKey("Ask Finance for invoices, refunds and supplier payments"),
+  "finance_requests.manage": tKey("Work the Finance requests board"),
+  "stock.alerts": tKey("Hear when stock runs low"),
+  "fulfilment.deliver": tKey("Deliver won orders"),
+  "logistics.manage": tKey("Book deliveries, installations, permits and production"),
+  "reports.management.view": tKey("Open the management dashboards"),
+  "reports.management.targets": tKey("Enter the management dashboard targets"),
 };
 
 function words(value: string) {
@@ -264,6 +271,7 @@ const FIXTURE_PERMISSION_CODES = [
   "vendors.approve", "stock.view", "stock.manage", "stock.receive", "stock.adjust", "stock.inspect",
   "factory.view", "factory.manage", "factory.report", "factory.approve",
   "payables.view", "payables.manage", "payables.approve", "receivables.view", "receivables.manage", "accounting.manage",
+  "finance_requests.raise", "finance_requests.manage", "reports.management.view", "reports.management.targets",
 ] as const;
 
 export const workspacePermissionFixture: WorkspacePermissionDefinition[] = FIXTURE_PERMISSION_CODES.map((code) => ({

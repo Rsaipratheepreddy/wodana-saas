@@ -23,6 +23,7 @@ from wodana_intelligence.integrations.models import (
     OAuthStartRequest,
     OAuthStartResponse,
     OAuthState,
+    PickerTokenResponse,
     RuntimeConnection,
     StoredGoogleCredential,
     UpdateCalendarEventRequest,
@@ -40,6 +41,11 @@ FREE_BUSY_SCOPE = "https://www.googleapis.com/auth/calendar.events.freebusy"
 READ_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly"
 MANAGE_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 GMAIL_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+# A linked sheet is read up to these bounds (Wodana's importer refuses more).
+SHEET_TABS = 50
+SHEET_ROWS = 5000
+SHEET_COLUMNS = 100
 
 
 class IntegrationFlowError(RuntimeError):
@@ -589,6 +595,124 @@ class GoogleIntegrationService:
             {"calendarId": request.calendar_id},
         )
         return {"eventId": event_id, "status": "cancelled"}
+
+    async def picker_token(
+        self,
+        workspace_id: UUID,
+        connection_id: UUID,
+        actor_headers: Mapping[str, str],
+    ) -> PickerTokenResponse:
+        """
+        A short-lived token for the Google Picker, narrowed to drive.file: picking a sheet gives
+        Wodana that one file and nothing else. Refused when Google can't narrow it (never the
+        connection's full token).
+        """
+        await self._business_core.authorize_connection(
+            str(workspace_id), str(connection_id), actor_headers, write=True
+        )
+        public = await self._business_core.validate_connection(
+            str(workspace_id), str(connection_id), actor_headers
+        )
+        runtime = await self._active_runtime(workspace_id, connection_id, public)
+        if DRIVE_FILE_SCOPE not in runtime.granted_scopes:
+            raise IntegrationFlowError(
+                "drive_file_not_granted",
+                "Turn on Drive files for this Google connection in Connections, then reconnect it",
+                409,
+            )
+        credential = await self._vault.get(runtime.secret_reference or "")
+        try:
+            token = await self._google.refresh_token(credential.refresh_token, [DRIVE_FILE_SCOPE])
+        except GoogleApiError as error:
+            raise IntegrationFlowError(error.code, str(error), error.status_code) from error
+        if set(token.scope.split()) != {DRIVE_FILE_SCOPE}:
+            raise IntegrationFlowError(
+                "picker_scope_unavailable",
+                "Google couldn't give file-only access for picking a sheet; try again later",
+                409,
+            )
+        return PickerTokenResponse(
+            access_token=token.access_token,
+            expires_in=token.expires_in,
+            account_email=credential.account_email,
+        )
+
+    async def read_sheet(
+        self,
+        workspace_id: UUID,
+        connection_id: UUID,
+        spreadsheet_id: str,
+        sheet_name: Optional[str] = None,
+        preview_rows: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """
+        A linked sheet's cells as text (as the sheet shows them), one tab or every tab, for
+        Wodana's importer. Internal: the importer has already checked who asked; drive.file means
+        only a sheet someone picked for Wodana can be read.
+        """
+        public = await self._business_core.runtime_context(str(workspace_id), str(connection_id))
+        runtime = await self._active_runtime(workspace_id, connection_id, public)
+        if DRIVE_FILE_SCOPE not in runtime.granted_scopes:
+            raise IntegrationFlowError(
+                "drive_file_not_granted",
+                "Turn on Drive files for this Google connection in Connections, then reconnect it",
+                409,
+            )
+        credential = await self._access_credential(runtime)
+        try:
+            meta = await self._google.spreadsheet(credential.access_token, spreadsheet_id)
+            tabs = [
+                str(sheet["properties"]["title"])
+                for sheet in meta.get("sheets", [])
+                if isinstance(sheet, dict)
+                and isinstance(sheet.get("properties"), dict)
+                and sheet["properties"].get("title")
+                and sheet["properties"].get("sheetType", "GRID") == "GRID"
+            ]
+            if sheet_name is not None:
+                if sheet_name not in tabs:
+                    raise IntegrationFlowError(
+                        "sheet_tab_missing",
+                        f"The tab {sheet_name} isn't in the sheet any more",
+                        409,
+                    )
+                tabs = [sheet_name]
+            tabs = tabs[:SHEET_TABS]
+            last_row = min(preview_rows or SHEET_ROWS, SHEET_ROWS)
+            ranges = ["'" + tab.replace("'", "''") + f"'!A1:CV{last_row}" for tab in tabs]
+            values = (
+                await self._google.sheet_values(credential.access_token, spreadsheet_id, ranges)
+                if ranges
+                else []
+            )
+        except GoogleApiError as error:
+            if error.status_code in {403, 404}:
+                raise IntegrationFlowError(
+                    "sheet_unavailable",
+                    "Wodana can't open this sheet any more. Link it again from Google",
+                    409,
+                ) from error
+            raise IntegrationFlowError(error.code, str(error), error.status_code) from error
+        sheets = [
+            {
+                "name": tab,
+                "rows": [
+                    ["" if cell is None else str(cell) for cell in row[:SHEET_COLUMNS]]
+                    for row in rows
+                    if isinstance(row, list)
+                ],
+            }
+            for tab, rows in zip(tabs, values)
+        ]
+        with suppress(Exception):
+            await self._business_core.record_health(
+                str(connection_id), str(workspace_id), "google.sheets.read", True
+            )
+        return {
+            "title": str(meta.get("properties", {}).get("title") or "Sheet"),
+            "sheets": sheets,
+            "rowCounts": {sheet["name"]: len(sheet["rows"]) for sheet in sheets},
+        }
 
     async def _active_runtime(
         self,

@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/i18n/server", async () => { const { translator } = await import("@/lib/i18n/messages"); return { getServerT: async () => translator("en"), getServerLanguage: async () => "en" }; });
 vi.mock("server-only", () => ({}));
@@ -15,7 +15,8 @@ import { GET } from "./route";
 // Every literal path the web app sends through the CRM gateway must pass its allow-list; a missing segment
 // otherwise fails only in the browser ("Invalid CRM resource."), as the inbox insights and filing a chat did.
 const files = execSync("git ls-files 'components/**/*.tsx' 'lib/**/*.ts' 'app/**/*.tsx'", { encoding: "utf8" })
-  .split("\n").filter((file) => file && !/\.test\.tsx?$/.test(file));
+  // A tracked file removed in the working tree (not yet committed) has nothing to call.
+  .split("\n").filter((file) => file && !/\.test\.tsx?$/.test(file) && existsSync(file));
 const CALL = /crmRequest(?:<[^>]*>)?\(\s*[\w.]+,\s*[`"]([^`"]+)[`"]/g;
 const ID = "123e4567-e89b-42d3-a456-426614174000";
 const workspaceId = "d004d45c-7140-4b0c-a68d-e87d012c2390";

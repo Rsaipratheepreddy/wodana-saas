@@ -102,6 +102,14 @@ export function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, runn
     : check.kind === "snags_closed" ? t("All snags closed")
     : check.kind === "no_critical_snags" ? t("No critical snag open")
     : check.kind === "handover_accepted" ? t("The client accepted the handover")
+    : check.kind === "drawings_uploaded" ? t("Technical drawings uploaded")
+    : check.kind === "drawings_site_checked" ? t("Technical site check passed")
+    : check.kind === "drawings_client_approved" ? t("Client approved the drawings")
+    : check.kind === "factory_slot_booked" ? t("Factory slot booked")
+    : check.kind === "installation_scheduled" ? t("Installation scheduled")
+    : check.kind === "goods_delivered" ? t("Everything delivered")
+    : check.kind === "installation_done" ? t("Installation signed off")
+    : check.kind === "permit_collected" ? t("Building permit collected")
     : t("Production payment verified");
   // Each fix opens where it's done, filtered to this project.
   const fix = check.passed || !live ? null
@@ -111,6 +119,12 @@ export function CheckRow({ check, stage, run, projectId, onTeam, roleLabel, runn
     : check.kind === "everything_made" ? <Link href={`/workspace/factory?project=${projectId}`}>{t("Open the factory")}</Link>
     : check.kind === "snags_closed" || check.kind === "no_critical_snags" ? <Link href={`${projectHref}/plan?filter=snags`}>{t("Open snags")}</Link>
     : check.kind === "handover_accepted" ? <Link href={`${projectHref}/handover`}>{t("Open the handover")}</Link>
+    : check.kind === "drawings_uploaded" || check.kind === "drawings_site_checked" || check.kind === "drawings_client_approved"
+      ? <Link href={`${projectHref}/scope?view=drawings`}>{t("Open the drawings")}</Link>
+    // The slot and the installation are booked from the project's details (or its next step).
+    : check.kind === "factory_slot_booked" || check.kind === "installation_scheduled" || check.kind === "permit_collected" ? null
+    : check.kind === "goods_delivered" ? <Link href={`/workspace/inventory?project=${projectId}`}>{t("Open stock")}</Link>
+    : check.kind === "installation_done" ? <Link href={`${projectHref}/site`}>{t("Open the site")}</Link>
     : <button type="button" className={styles.linkButton} onClick={onTeam}>{t("Name someone")}</button>;
   return <li data-passed={check.passed || undefined} data-auto>
     <span className={styles.autoMark} aria-hidden="true">{check.passed ? <Check size={13} strokeWidth={2.5} /> : null}</span>
@@ -134,6 +148,8 @@ export function CloseOutList({ api, projectId }: { api: ProjectApi; projectId: s
     ...closeOut.inspections.map((row) => ({ key: `i${row.id}`, text: t("Delivery {number} waits for inspection", { number: row.number }), href: `/workspace/purchasing?project=${projectId}` })),
     ...closeOut.moves.map((row) => ({ key: `m${row.id}`, text: t("Move {number} is on its way", { number: row.number }), href: `/workspace/inventory?project=${projectId}` })),
     ...closeOut.siteStock.map((row, index) => ({ key: `s${index}`, text: t("{quantity} {unit} of {item} at {place}", { quantity: row.quantity, unit: row.unit, item: row.itemName, place: row.locationName }), href: `/workspace/inventory?project=${projectId}` })),
+    // PLM-070: the project can't be handed over as complete while a snag is open.
+    ...(closeOut.openSnags ?? []).map((snag) => ({ key: `n${snag.id}`, text: t("Snag #{number} · {title}", { number: snag.number, title: snag.title }), href: `/workspace/projects/${projectId}/plan?filter=snags` })),
     ...(closeOut.openWork ? [{ key: "work", text: t("{count} open tasks", { count: closeOut.openWork }), href: `/workspace/projects/${projectId}/plan` }] : []),
   ];
   if (!rows.length) return null;

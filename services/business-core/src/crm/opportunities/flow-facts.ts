@@ -8,6 +8,7 @@ import {
 } from "../flows/flow-interpreter";
 import { opportunityFlow, type ResolvedFlow } from "../flows/flow-store";
 import { loadStepSkips } from "../flows/step-skips";
+import { dealRule } from "../../fulfilment/fulfilment-rules";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -122,7 +123,8 @@ export async function loadFlowFacts(db: Db, workspaceId: string, opportunityId: 
     packageCode: row.packageCode,
     siteVisitRecorded: Boolean(row.siteVisitAt),
     quotationExists: row.quotationExists,
-    qsApproved: row.qsApproved,
+    // PLM-083: an order that needs no BOQ has no QS step: a quotation on the table is enough.
+    qsApproved: row.qsApproved || (row.quotationExists && (await dealRule(db, workspaceId, opportunityId))?.boqRequired === false),
     quoteSent: row.quoteSent,
     quoteAccepted: row.quoteAccepted,
     clientApprovedOnSpot,

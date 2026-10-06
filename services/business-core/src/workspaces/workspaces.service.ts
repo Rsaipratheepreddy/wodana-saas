@@ -15,6 +15,8 @@ import {
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { PoolClient } from "pg";
 import sharp from "sharp";
+import { checkTaxNumber, normaliseTaxNumber, readTaxNumberRuleFor } from "../purchasing/tax-registration";
+import { entityImageUrl } from "./entity-letterhead";
 import { ActorUser, RequestActor } from "../auth/actor";
 import { IdentityService } from "../auth/identity.service";
 import { DatabaseService } from "../database/database.service";
@@ -103,6 +105,11 @@ interface LegalEntityRow {
   tax_registration_number: string | null;
   registration_number: string | null;
   address: Record<string, unknown>;
+  phone: string | null;
+  email: string | null;
+  logo_asset_id: string | null;
+  letterhead_asset_id: string | null;
+  letterhead_footer: string | null;
   status: string;
   version: number;
   created_at: Date;
@@ -1820,7 +1827,7 @@ export class WorkspacesService {
 
         await client.query(
           `UPDATE workspace_brand_assets SET status = 'replaced'
-           WHERE workspace_id = $1 AND status = 'active' AND id <> $2`,
+           WHERE workspace_id = $1 AND status = 'active' AND id <> $2 AND purpose = 'workspace_logo'`,
           [workspaceId, assetId],
         );
         const activated = await client.query<BrandAssetRow>(
@@ -2048,6 +2055,7 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const entityId = randomUUID();
+        if (input.taxRegistrationNumber) input.taxRegistrationNumber = checkTaxNumber(input.taxRegistrationNumber, await readTaxNumberRuleFor(client, input.countryCode));
         try {
           const entity = await this.insertLegalEntity(client, workspaceId, entityId, input);
           await this.insertDefaultSequences(client, workspaceId, entityId, input.code);
@@ -2081,6 +2089,10 @@ export class WorkspacesService {
         await this.lockWorkspace(client, workspaceId);
         const before = await this.requireLegalEntity(client, workspaceId, entityId);
         await this.assertMoneyIdentityUnchanged(client, workspaceId, before, input);
+        // A new or changed tax number must have the format of the business's country (PLM-111/112).
+        if (input.taxRegistrationNumber && normaliseTaxNumber(input.taxRegistrationNumber) !== normaliseTaxNumber(before.tax_registration_number ?? "")) {
+          input.taxRegistrationNumber = checkTaxNumber(input.taxRegistrationNumber, await readTaxNumberRuleFor(client, input.countryCode ?? before.country_code));
+        }
         const values: unknown[] = [];
         const assignments: string[] = [];
         const add = (column: string, value: unknown) => {
@@ -2100,6 +2112,9 @@ export class WorkspacesService {
           add("registration_number", input.registrationNumber || null);
         }
         if (input.address !== undefined) add("address", input.address);
+        if (input.phone !== undefined) add("phone", input.phone || null);
+        if (input.email !== undefined) add("email", input.email || null);
+        if (input.letterheadFooter !== undefined) add("letterhead_footer", input.letterheadFooter || null);
         if (!assignments.length) return this.mapLegalEntity(before);
 
         values.push(entityId, workspaceId, input.version);
@@ -3802,7 +3817,7 @@ export class WorkspacesService {
   ): Promise<BrandAssetRow> {
     const result = await client.query<BrandAssetRow>(
       `SELECT * FROM workspace_brand_assets
-       WHERE id = $1 AND workspace_id = $2 AND status = 'pending'`,
+       WHERE id = $1 AND workspace_id = $2 AND status = 'pending' AND purpose = 'workspace_logo'`,
       [assetId, workspaceId],
     );
     if (!result.rowCount) throw new NotFoundException("Pending logo upload was not found");
@@ -4364,8 +4379,8 @@ export class WorkspacesService {
       `INSERT INTO legal_entities
         (id, workspace_id, code, display_name, registered_name, country_code,
          base_currency, locale, timezone, tax_registration_number,
-         registration_number, address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         registration_number, address, phone, email, letterhead_footer)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
         entityId,
@@ -4380,6 +4395,9 @@ export class WorkspacesService {
         input.taxRegistrationNumber ?? null,
         input.registrationNumber ?? null,
         input.address ?? {},
+        input.phone || null,
+        input.email || null,
+        input.letterheadFooter || null,
       ],
     );
     return result.rows[0];
@@ -4692,6 +4710,12 @@ export class WorkspacesService {
       taxRegistrationNumber: row.tax_registration_number,
       registrationNumber: row.registration_number,
       address: row.address,
+      // PLM-112: what the business's documents print.
+      phone: row.phone ?? null,
+      email: row.email ?? null,
+      letterheadFooter: row.letterhead_footer ?? null,
+      logoUrl: entityImageUrl(row.workspace_id, row.logo_asset_id ?? null),
+      letterheadUrl: entityImageUrl(row.workspace_id, row.letterhead_asset_id ?? null),
       status: row.status,
       version: row.version,
       createdAt: row.created_at,

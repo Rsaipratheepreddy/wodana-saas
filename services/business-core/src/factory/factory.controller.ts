@@ -6,6 +6,7 @@ import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { sendMedia } from "../gallery/gallery.controller";
 import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/reference-upload";
+import { FactorySamplesService } from "./factory-samples.service";
 import { FactoryService } from "./factory.service";
 
 /** The factory: what to make, work orders with their output and checks, and its settings. Bodies are validated in the service. */
@@ -13,7 +14,7 @@ import { FactoryService } from "./factory.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/factory")
 export class FactoryController {
-  constructor(private readonly factory: FactoryService) {}
+  constructor(private readonly factory: FactoryService, private readonly samples: FactorySamplesService) {}
 
   @Get("state")
   state(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.factory.state(actor, workspaceId); }
@@ -21,6 +22,27 @@ export class FactoryController {
   @Get("schedule")
   schedule(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query() query: Record<string, string>) {
     return this.factory.schedule(actor, workspaceId, query ?? {});
+  }
+
+  /** PLM-063: each project's production status and its planned against actual dates. */
+  @Get("production")
+  production(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.factory.production(actor, workspaceId); }
+
+  /** PLM-061: sample requests, every one (the factory) or one case's. */
+  @Get("samples")
+  sampleList(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query("caseId") caseId?: string) {
+    return this.samples.list(actor, workspaceId, caseId && /^[0-9a-f-]{36}$/i.test(caseId) ? caseId : null);
+  }
+
+  @Post("samples")
+  requestSample(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) {
+    return this.samples.request(actor, workspaceId, input ?? {});
+  }
+
+  @Post("samples/:sampleId")
+  sampleCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("sampleId", ParseUUIDPipe) sampleId: string,
+    @Body() input: Record<string, unknown>) {
+    return this.samples.command(actor, workspaceId, sampleId, input ?? {});
   }
 
   @Post("batches")

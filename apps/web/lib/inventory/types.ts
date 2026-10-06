@@ -24,7 +24,7 @@ export type StockState = {
   pendingAdjustments: PendingAdjustment[]; me: string; currency: string; reorderPoints?: ReorderPoint[];
 };
 
-export type MovementKind = "receive" | "issue" | "return" | "transfer_out" | "transfer_in" | "allocate" | "release" | "adjust" | "supplier_return" | "reverse" | "produce";
+export type MovementKind = "receive" | "issue" | "return" | "transfer_out" | "transfer_in" | "allocate" | "release" | "adjust" | "supplier_return" | "reverse" | "produce" | "sale" | "sale_return";
 export type MovementRow = {
   id: string; batchId: string; kind: MovementKind; quantity: string; itemId: string; itemName: string; unit: string; locationName: string; projectReference: string | null;
   forProjectReference: string | null; reason: string; movedOn: string; byName: string; at: string; receiptNumber: number | null; orderNumber: string | null; transferNumber: number | null; returnNumber: number | null;

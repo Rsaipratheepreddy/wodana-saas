@@ -10,6 +10,7 @@ import { ChangeSheet } from "./decisions/change-sheet";
 import { DefinitionSheet } from "./decisions/definition-sheet";
 import { DesignSheet } from "./decisions/design-sheet";
 import { HandoverSheet } from "./decisions/handover-sheet";
+import { DrawingsSheet } from "./decisions/drawings-sheet";
 import { MaterialsSheet } from "./decisions/materials-sheet";
 import { QuestionSheet } from "./decisions/question-sheet";
 import { QuoteSheet } from "./decisions/quote-sheet";
@@ -41,7 +42,7 @@ const SECTIONS = { overview: HomeSection, progress: ProgressSection, moodboard: 
   warranty: WarrantySection, messages: MessagesSection } as const;
 /** The order the client reads them in: where it stands, what to decide, the ideas, then money, papers, cover and talk. */
 const ORDER: PortalSection[] = ["progress", "decisions", "moodboard", "payments", "documents", "warranty", "messages"];
-const DECISION_STEPS = ["quote", "design", "definition", "materials", "handover", "request", "change", "presentation", "choice"];
+const DECISION_STEPS = ["quote", "design", "definition", "materials", "drawings", "handover", "request", "change", "presentation", "choice"];
 /** The side column opens from a small laptop up; below it the profile is a card above the sections. */
 const WIDE = "(min-width: 64rem)";
 
@@ -175,6 +176,8 @@ function dialogFor(target: PortalTarget, project: PortalProject, { site, custome
     return { title: t("Your requirements · R{number}", { number: decisions.definition.number }), body: <DefinitionSheet definition={decisions.definition} onDecided={decided} {...common} /> };
   if (target.kind === "materials" && decisions?.materials)
     return { title: t("Material list · R{number}", { number: decisions.materials.number }), body: <MaterialsSheet list={decisions.materials} onDecided={decided} {...common} /> };
+  if (target.kind === "drawings" && decisions?.drawings)
+    return { title: t("Drawings · R{number}", { number: decisions.drawings.number }), body: <DrawingsSheet drawings={decisions.drawings} onDecided={decided} {...common} /> };
   if (target.kind === "handover") {
     const pack = decisions?.handovers.find((item) => item.id === target.id);
     return pack ? { title: `${pack.title} · R${pack.revision}`, body: <HandoverSheet pack={pack} onDecided={decided} {...common} /> } : null;

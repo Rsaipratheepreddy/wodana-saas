@@ -11,6 +11,8 @@ export type MaterialItem = {
   quantity: string | null; unit: string; note: string; boqLineIds: string[]; version: number;
   /** False for materials the client doesn't choose (cement, screws): they don't wait for the client's sign-off. */
   clientChoice: boolean;
+  /** PLM-055: product details for the technical team, with who added them and when. Internal: not part of what the client signs. */
+  teamNote?: string; teamNoteByName?: string | null; teamNoteAt?: string | null;
 };
 type Revision = {
   id: string; number: number; status: "sent" | "signed_off" | "changes_requested"; contentHash: string; sentAt: string; sentByName: string | null;
@@ -21,9 +23,11 @@ const METHODS = ["signed_document", "email", "in_person", "phone", "message"] as
 
 async function readItems(db: Db, workspaceId: string, projectId: string): Promise<MaterialItem[]> {
   return (await db.query<MaterialItem>(
-    `SELECT id, position, catalog_item_id AS "catalogItemId", name, code, specification, supplier, quantity::text AS quantity, unit, note,
-            boq_line_ids AS "boqLineIds", version, client_choice AS "clientChoice"
-       FROM project_material_items WHERE workspace_id = $1 AND project_id = $2 ORDER BY position, lower(name)`, [workspaceId, projectId])).rows;
+    `SELECT item.id, item.position, item.catalog_item_id AS "catalogItemId", item.name, item.code, item.specification, item.supplier, item.quantity::text AS quantity, item.unit, item.note,
+            item.boq_line_ids AS "boqLineIds", item.version, item.client_choice AS "clientChoice",
+            item.team_note AS "teamNote", writer.display_name AS "teamNoteByName", item.team_note_at AS "teamNoteAt"
+       FROM project_material_items item LEFT JOIN users writer ON writer.id = item.team_note_by
+      WHERE item.workspace_id = $1 AND item.project_id = $2 ORDER BY item.position, lower(item.name)`, [workspaceId, projectId])).rows;
 }
 
 /** What the client signs: the materials they choose, in a stable shape (so its fingerprint only changes when the list does). */
@@ -208,6 +212,24 @@ export async function saveMaterial(db: Db, workspaceId: string, projectId: strin
     `INSERT INTO project_material_items (id, workspace_id, project_id, position, name, code, specification, supplier, quantity, unit, note, boq_line_ids, client_choice)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`, [id, workspaceId, projectId, position, ...fields, input.clientChoice !== false]);
   return id;
+}
+
+/**
+ * PLM-055: product details a material carries for the technical team (the designer's notes on hardware, edges,
+ * grain…). Internal to the team: it never changes what the client signed, so it can be added at any time.
+ * Returns the material's name and whether anything changed.
+ */
+export async function setMaterialDetails(db: Db, workspaceId: string, projectId: string, input: { itemId: unknown; note: unknown; userId: string }) {
+  const note = typeof input.note === "string" ? input.note.trim() : "";
+  if (note.length > 2000) throw new BadRequestException("Keep the details under 2000 characters.");
+  const item = (await db.query<{ name: string; note: string }>(`SELECT name, team_note AS note FROM project_material_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+    [workspaceId, projectId, typeof input.itemId === "string" && /^[0-9a-f-]{36}$/i.test(input.itemId) ? input.itemId : null])).rows[0];
+  if (!item) throw new NotFoundException("Material not found.");
+  if (item.note === note) return { name: item.name, changed: false, before: item.note, note };
+  await db.query(`UPDATE project_material_items SET team_note = $4::varchar, team_note_by = CASE WHEN $4::varchar = '' THEN NULL ELSE $5::uuid END,
+    team_note_at = CASE WHEN $4::varchar = '' THEN NULL ELSE now() END,
+    updated_at = now() WHERE workspace_id = $1 AND project_id = $2 AND id = $3`, [workspaceId, projectId, input.itemId, note, input.userId]);
+  return { name: item.name, changed: true, before: item.note, note };
 }
 
 /** The orders and price requests a material is on (not cancelled), by number. */

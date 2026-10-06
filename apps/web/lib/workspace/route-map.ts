@@ -58,8 +58,8 @@ function routeTable() {
   const settingsModule = workspaceModules.find((module) => module.id === "workspace");
   const settingsEntries: WorkspaceRouteEntry[] = (settingsModule?.navigation ?? [])
     .flatMap((group) => group.items)
-    // Gallery sits in the Company section of the sidebar, not in Settings; People, Teams and Roles live in People.
-    .filter((item) => !["gallery", ...PEOPLE_PAGES].includes(item.id))
+    // Gallery sits in the Company section of the sidebar and Reports under Business, not in Settings; People, Teams and Roles live in People.
+    .filter((item) => !["gallery", "management-reports", ...PEOPLE_PAGES].includes(item.id))
     .map((item) => ({ id: `settings:${item.id}`, label: item.label, href: item.href, parent: "settings", paths: [item.href], ...SETTINGS_NAV_OVERRIDES[item.id] }));
   const hrmsModule = workspaceModules.find((module) => module.id === "hrms");
   const hrmsEntries: WorkspaceRouteEntry[] = (hrmsModule?.navigation ?? [])
@@ -107,6 +107,7 @@ function routeTable() {
     { id: "projects", label: "Projects", href: "/workspace/projects", nav: "projects", paths: ["/workspace/projects"] },
     { id: "project", label: "Project", href: "/workspace/projects", parent: "projects", record: true, pattern: new RegExp(`^/workspace/projects/${UUID}(/|$)`, "i") },
     { id: "finance", label: "Finance", href: "/workspace/finance", nav: "finance", paths: ["/workspace/finance"] },
+    { id: "reports", label: "Reports", href: "/workspace/reports", nav: "reports", paths: ["/workspace/reports"] },
 
     // Operations
     { id: "purchasing", label: "Purchasing", href: "/workspace/purchasing", nav: "purchasing", paths: ["/workspace/purchasing"] },
@@ -114,6 +115,7 @@ function routeTable() {
     { id: "receive", label: "Receive", href: "/workspace/receive", parent: "purchasing", paths: ["/workspace/receive"] },
     { id: "inventory", label: "Inventory", href: "/workspace/inventory", nav: "inventory", paths: ["/workspace/inventory"] },
     { id: "factory", label: "Factory", href: "/workspace/factory", nav: "factory", paths: ["/workspace/factory"] },
+    { id: "logistics-calendar", label: "Logistics calendar", href: "/workspace/factory/calendar", nav: "logistics-calendar", paths: ["/workspace/factory/calendar"] },
 
     // Company: People opens on the directory; teams, roles, and attendance and leave are its other areas.
     { id: "people", label: "People", href: "/workspace/members", nav: "team", paths: ["/workspace/members"] },

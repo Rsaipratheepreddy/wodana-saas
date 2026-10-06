@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, InspectorSheet, Skeleton, Switch, TextInput, TimeField, isNoAccessError, NoAccessState } from "@/design-system";
+import { Badge, Button, EmptyState, IconButton, InlineNotice, MultiSelectField, PillTabs, SaveBar, SelectField, SettingsPage, SettingsRow, SettingsSection, InspectorSheet, Skeleton, Switch, TextInput, TimeField, isNoAccessError, NoAccessState } from "@/design-system";
 import { parseTime } from "@internationalized/date";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
-import type { CheckKind, ProjectRole, ProjectRoute, RouteStage, SettingsState, StageCheck, TemplateTask, WorkTemplate } from "@/lib/project-core/types";
+import type { CheckKind, KeepInformedEvent, ProjectRole, ProjectRoute, RouteStage, SettingsState, StageCheck, TemplateTask, WorkTemplate } from "@/lib/project-core/types";
 import { useSupplyLabels } from "./project-scope";
 import { WarrantySettingsSection } from "../site/project-warranty";
 import { LabourRatesSection } from "./labour-rates";
 import styles from "./project-settings.module.css";
 
-type Tab = "start" | "roles" | "routes" | "work" | "warranty" | "labour";
+type Tab = "start" | "roles" | "informed" | "routes" | "work" | "warranty" | "labour";
 const LEAD = "project_manager";
 
 /**
@@ -42,11 +42,12 @@ export function ProjectSettingsPage({ workspaceId }: { workspaceId: string }) {
   };
   return <SettingsPage title={t("Projects")}>
     <PillTabs ariaLabel={t("Project settings")} selectedKey={tab} onSelectionChange={(key) => setTab(key as Tab)}
-      items={[{ id: "start", label: t("Starting a project") }, { id: "roles", label: t("Team roles") }, { id: "routes", label: t("Routes") }, { id: "work", label: t("Standard tasks") },
+      items={[{ id: "start", label: t("Starting a project") }, { id: "roles", label: t("Team roles") }, { id: "informed", label: t("Keep informed") }, { id: "routes", label: t("Routes") }, { id: "work", label: t("Standard tasks") },
         { id: "warranty", label: t("Warranty") }, { id: "labour", label: t("Labour rates") }]} />
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {tab === "start" ? <StartRules key={data.settings.version} data={data} onSave={(input) => save(() => api.saveSettings(input))} /> : null}
     {tab === "roles" ? <Roles key={data.settings.version} data={data} onSave={(roles) => save(() => api.saveSettings({ version: data.settings.version, roles }))} /> : null}
+    {tab === "informed" ? <KeepInformed key={`informed-${data.settings.version}`} data={data} onSave={(keepInformed) => save(() => api.saveSettings({ version: data.settings.version, keepInformed }))} /> : null}
     {tab === "routes" ? <SettingsSection id="routes" title={t("Routes")} actions={data.canManage ? <Button size="compact" onPress={() => setEditing("new")}><Plus aria-hidden="true" size={14} />{t("New route")}</Button> : null}>
       <ul className={styles.routes}>{data.templates.map((route) => <li key={route.id}>
         <button type="button" onClick={() => setEditing(route)}>
@@ -156,7 +157,33 @@ function Roles({ data, onSave }: { data: SettingsState; onSave: (roles: ProjectR
 }
 
 const CHECK_KINDS: CheckKind[] = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off", "everything_ordered", "everything_made", "snags_closed",
-  "no_critical_snags", "handover_accepted"];
+  "no_critical_snags", "handover_accepted", "drawings_uploaded", "drawings_site_checked", "drawings_client_approved", "factory_slot_booked",
+  "installation_scheduled", "permit_collected", "goods_delivered", "installation_done"];
+
+const MOMENTS: KeepInformedEvent[] = ["drawings_started", "production_started", "installation_scheduled"];
+
+/** PLM-055: the roles told at a project's key moments (the designer, so the design is followed to handover). */
+function KeepInformed({ data, onSave }: { data: SettingsState; onSave: (keepInformed: Record<KeepInformedEvent, string[]>) => Promise<boolean> }) {
+  const t = useT();
+  const stored = data.settings.keepInformed ?? { drawings_started: [], production_started: [], installation_scheduled: [] };
+  const [value, setValue] = useState(stored);
+  const [busy, setBusy] = useState(false);
+  const readOnly = !data.canManage;
+  const dirty = JSON.stringify(value) !== JSON.stringify(stored);
+  const label: Record<KeepInformedEvent, string> = { drawings_started: t("Technical drawings started"), production_started: t("Production started"),
+    installation_scheduled: t("Installation scheduled") };
+  const items = data.settings.roles.map((role) => ({ id: role.key, label: t(role.label as never) }));
+  return <>
+    <SettingsSection id="keep-informed" title={t("Keep informed")}>
+      {MOMENTS.map((moment) => <SettingsRow key={moment} label={label[moment]}>
+        <MultiSelectField label={label[moment]} isDisabled={readOnly} items={items} selectedKeys={new Set(value[moment])}
+          onSelectionChange={(keys) => setValue({ ...value, [moment]: items.map((item) => item.id).filter((id) => keys.has(id)) })} />
+      </SettingsRow>)}
+    </SettingsSection>
+    {readOnly ? null : <SaveBar isDirty={dirty} isSaving={busy} onDiscard={() => setValue(stored)}
+      onSave={async () => { setBusy(true); await onSave(value); setBusy(false); }} />}
+  </>;
+}
 
 function RouteEditor({ route, roles, readOnly, onClose, onSave, onArchive }: {
   route: ProjectRoute | null; roles: ProjectRole[]; readOnly: boolean; onClose: () => void;
@@ -169,7 +196,10 @@ function RouteEditor({ route, roles, readOnly, onClose, onSave, onArchive }: {
   const [busy, setBusy] = useState(false);
   const kindLabel: Record<CheckKind, string> = { confirm: t("Someone confirms"), lead_assigned: t("Project manager named"), role_assigned: t("A role is named"), payment_verified: t("Production payment verified"), material_list_signed_off: t("Client signed off the material list"), everything_ordered: t("Everything is ordered"),
     everything_made: t("Everything is made and checked"), snags_closed: t("All snags closed"), no_critical_snags: t("No critical snag open"),
-    handover_accepted: t("The client accepted the handover") };
+    handover_accepted: t("The client accepted the handover"), drawings_uploaded: t("Technical drawings uploaded"), drawings_site_checked: t("Technical site check passed"),
+    drawings_client_approved: t("Client approved the drawings"), factory_slot_booked: t("Factory slot booked"),
+    installation_scheduled: t("Installation scheduled"), goods_delivered: t("Everything delivered"), installation_done: t("Installation signed off"),
+    permit_collected: t("Building permit collected") };
   const roleItems = roles.map((role) => ({ id: role.key, label: role.label }));
   const update = (index: number, patch: Partial<RouteStage>) => setStages(stages.map((stage, at) => (at === index ? { ...stage, ...patch } : stage)));
   const move = (index: number, step: number) => { const next = [...stages]; const [item] = next.splice(index, 1); next.splice(index + step, 0, item); setStages(next); };

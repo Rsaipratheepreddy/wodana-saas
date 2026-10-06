@@ -7,6 +7,7 @@ import { Dec } from "../catalog-core/decimal";
  */
 export const APPROVAL_SUBJECT_KINDS = [
   "deal_file", "opportunity_value", "quote_qs", "quote_send", "discount", "refund", "payable", "purchase_order", "change_request", "stock_correction", "ledger_change",
+  "payable_request",
 ] as const;
 export type ApprovalSubjectKind = (typeof APPROVAL_SUBJECT_KINDS)[number];
 
@@ -71,6 +72,8 @@ export const DEFAULT_APPROVAL_POLICIES: Record<ApprovalSubjectKind, { name: stri
   change_request: { name: "Change request", steps: [step("permission", "commercial.approve", "Change approver")] },
   stock_correction: { name: "Stock correction", steps: [step("permission", "stock.adjust", "Stock approver")] },
   ledger_change: { name: "Material change after sign-off", steps: [step("permission", "pre_projects.review_designs", "Design reviewer")] },
+  // A supplier payment asked of Finance (PLM-110). A firm sets its amount thresholds on this policy: a minimum lets smaller payables through.
+  payable_request: { name: "Payable request", steps: [step("permission", "payables.approve", "Payables approver")] },
 };
 
 /** Shape rules some kinds need because their module maps steps onto its own screens (Finance first, then approvers). */

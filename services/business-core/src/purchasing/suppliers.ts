@@ -20,6 +20,8 @@ export type Supplier = {
   contactName: string | null; phone: string | null; email: string | null; locality: string | null;
   entityIds: string[]; taxRegistrationNumber: string | null; currency: string | null; notes: string;
   status: "draft" | "active" | "archived"; archivedReason: string | null; version: number;
+  /** A supplier list's extra columns, kept with the supplier by their heading (PLM-111). */
+  attributes: Array<{ name: string; value: string }>;
 };
 
 const SELECT = `SELECT vendor.id, vendor.code, vendor.display_name AS name, vendor.legal_name AS "legalName", vendor.categories,
@@ -30,7 +32,9 @@ const SELECT = `SELECT vendor.id, vendor.code, vendor.display_name AS name, vend
   coalesce((SELECT array_agg(link.legal_entity_id ORDER BY link.created_at) FROM vendor_legal_entities link
              WHERE link.workspace_id = vendor.workspace_id AND link.vendor_id = vendor.id), '{}') AS "entityIds",
   vendor.tax_registration_number AS "taxRegistrationNumber", vendor.default_currency AS currency, vendor.notes, vendor.status,
-  vendor.archived_reason AS "archivedReason", vendor.version
+  vendor.archived_reason AS "archivedReason", vendor.version,
+  coalesce((SELECT jsonb_agg(jsonb_build_object('name', attribute.name, 'value', attribute.value) ORDER BY lower(attribute.name)) FROM supplier_attributes attribute
+             WHERE attribute.workspace_id = vendor.workspace_id AND attribute.vendor_id = vendor.id), '[]'::jsonb) AS attributes
   FROM workspace_vendors vendor
   LEFT JOIN users approver ON approver.id = vendor.approval_by
   LEFT JOIN LATERAL (SELECT contact_name, phone, email, locality FROM workspace_vendor_sites

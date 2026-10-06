@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarPlus, Check, CheckCircle2, Play, UserPlus } from "lucide-react";
 import { parseDate, parseTime } from "@internationalized/date";
@@ -12,6 +12,8 @@ import { caseRequest } from "@/lib/pre-project/content";
 import { revisionDetail } from "@/lib/pre-project/design-decisions";
 import type { JourneyStageView, JourneyView as JourneyData } from "@/lib/pre-project/design-workspace";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
+import { factoryApi } from "@/lib/factory/client";
+import { SampleRequests } from "../factory/samples";
 import styles from "./design-journey.module.css";
 
 export type JourneyStage = JourneyStageView;
@@ -29,6 +31,8 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
   const [notice, setNotice] = useState("");
   const [starting, setStarting] = useState(false);
   const load = useCallback(() => caseRequest<JourneyView>(workspaceId, caseId, "design-journey").then(setView).catch((error: Error) => setFailure(error.message)), [workspaceId, caseId]);
+  // PLM-061: samples asked of the factory for the material selection.
+  const samplesApi = useMemo(() => factoryApi(workspaceId), [workspaceId]);
   useEffect(() => { void load(); }, [load]);
 
   if (failure && !view) return <InlineNotice message={failure} tone="error" />;
@@ -114,6 +118,7 @@ export function DesignJourney({ workspaceId, caseId, locale, members = [] }: { w
                 {stage.stage === "approval" ? <Link className="wd-button" data-size="compact" data-variant="primary" href={designLink("approval")}>{t("Record the approval")}</Link> : null}
               </div>
             </> : null}
+            {stage.stage === "material_selection" && stage.status !== "locked" ? <SampleRequests api={samplesApi} caseId={caseId} /> : null}
           </div>
         </li>;
       })}

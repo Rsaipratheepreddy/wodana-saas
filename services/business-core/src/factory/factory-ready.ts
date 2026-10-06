@@ -143,14 +143,19 @@ export async function financeAndAccountManager(db: Db, workspaceId: string, proj
 }
 
 /**
- * Who takes the made goods from here: the project manager, the installation lead, and the owner of the
- * stage that follows the one waiting for everything to be made (the firm's own delivery stage).
+ * Who takes the made goods from here: the project manager, the installation lead, the owner of the stage that
+ * follows the one waiting for everything to be made (the firm's own delivery stage), and the installation team
+ * (PLM-069: the owner of a stage holding a delivery or installation check).
  */
 export async function deliveryTeam(db: Db, workspaceId: string, projectId: string) {
   const next = (await db.query<{ role: string }>(
     `SELECT DISTINCT following.owner_role AS role FROM project_stages made
        JOIN project_stages following ON following.workspace_id = made.workspace_id AND following.project_id = made.project_id AND following.position = made.position + 1
-      WHERE made.workspace_id = $1 AND made.project_id = $2 AND made.checks @> '[{"kind": "everything_made"}]'::jsonb AND following.owner_role IS NOT NULL`,
+      WHERE made.workspace_id = $1 AND made.project_id = $2 AND made.checks @> '[{"kind": "everything_made"}]'::jsonb AND following.owner_role IS NOT NULL
+     UNION
+     SELECT DISTINCT stage.owner_role FROM project_stages stage
+      WHERE stage.workspace_id = $1 AND stage.project_id = $2 AND stage.status <> 'skipped' AND stage.owner_role IS NOT NULL
+        AND EXISTS (SELECT 1 FROM jsonb_array_elements(stage.checks) item WHERE item->>'kind' IN ('installation_scheduled', 'goods_delivered', 'installation_done'))`,
     [workspaceId, projectId])).rows.map((row) => row.role);
   return inRoles(db, workspaceId, projectId, [...new Set(["project_manager", "installation_lead", ...next])], true);
 }

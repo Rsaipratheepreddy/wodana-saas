@@ -14,7 +14,7 @@ export type BlockerKey =
 export type Blocker = { key: BlockerKey; count: number; items: string[]; href: string };
 
 /** A decision the client still owes: the material list, a handover pack, a variation, or a request they raised. */
-export type ClientDecision = { kind: "materials" | "handover" | "variation"; label: string; since: string | null; href: string };
+export type ClientDecision = { kind: "materials" | "drawings" | "handover" | "variation"; label: string; since: string | null; href: string };
 
 export type ProjectSignals = {
   today: string;
@@ -130,13 +130,17 @@ export async function readSignals(db: Db, workspaceId: string, project: { id: st
   };
 }
 
-/** Decisions waiting on the client: the material list sent, handover packs issued, variations sent. */
+/** Decisions waiting on the client: the material list and the drawings sent, handover packs issued, variations sent. */
 async function readClientDecisions(db: Db, workspaceId: string, project: { id: string; caseId: string }, base: string): Promise<ClientDecision[]> {
   const decisions: ClientDecision[] = [];
   const materials = (await db.query<{ number: number; sentAt: string; status: string }>(
     `SELECT number, sent_at AS "sentAt", status FROM project_material_revisions WHERE workspace_id = $1 AND project_id = $2 ORDER BY number DESC LIMIT 1`, [workspaceId, project.id])).rows[0];
   if (materials?.status === "sent")
     decisions.push({ kind: "materials", label: `Material list R${materials.number}`, since: new Date(materials.sentAt).toISOString(), href: `${base}/scope?view=materials` });
+  const drawings = (await db.query<{ number: number; sentAt: string; status: string }>(
+    `SELECT number, sent_at AS "sentAt", status FROM project_drawing_revisions WHERE workspace_id = $1 AND project_id = $2 ORDER BY number DESC LIMIT 1`, [workspaceId, project.id])).rows[0];
+  if (drawings?.status === "sent")
+    decisions.push({ kind: "drawings", label: `Drawings R${drawings.number}`, since: new Date(drawings.sentAt).toISOString(), href: `${base}/scope?view=drawings` });
   const packs = (await db.query<{ revision: number; title: string; issuedAt: string }>(
     `SELECT revision, title, issued_at AS "issuedAt" FROM handover_packs WHERE workspace_id = $1 AND project_id = $2 AND status = 'issued' ORDER BY revision`, [workspaceId, project.id])).rows;
   for (const pack of packs) decisions.push({ kind: "handover", label: `${pack.title} (R${pack.revision})`, since: new Date(pack.issuedAt).toISOString(), href: `${base}/handover` });

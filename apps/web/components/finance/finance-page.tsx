@@ -18,17 +18,20 @@ import { PaymentRuns } from "./payment-runs";
 import { Payments } from "./payments";
 import { PettyCash } from "./petty-cash";
 import { SuppliersOwed } from "./suppliers-owed";
+import { FinanceRequests } from "../finance-requests/finance-requests";
 import { moduleTabs, type ModuleTab } from "../operations/module-tabs";
 
 const PAYABLES_SECTIONS = ["bills", "payments", "runs", "suppliers"] as const;
 
 /**
- * Over six tabs, the read-mostly views (what each supplier is owed, accounting postings) sit under "More";
- * the daily queues (invoices, payments, runs, petty cash, client invoices) stay one click away.
+ * Over six tabs, the read-mostly and periodic views (what each supplier is owed, petty cash to reimburse,
+ * accounting postings) sit under "More"; the daily queues (invoices, payments, runs, client invoices, requests)
+ * stay one click away.
  */
-const MORE: FinanceSection[] = ["suppliers", "accounting"];
+const MORE: FinanceSection[] = ["suppliers", "petty-cash", "accounting"];
 
-const OPEN_PARAM: Record<Exclude<FinanceSection, "suppliers" | "accounting">, string> = { bills: "bill", payments: "payment", runs: "run", "petty-cash": "claim", "client-invoices": "invoice" };
+const OPEN_PARAM: Record<Exclude<FinanceSection, "suppliers" | "accounting">, string> = { bills: "bill", payments: "payment", runs: "run", "petty-cash": "claim", "client-invoices": "invoice",
+  requests: "request" };
 
 /** Finance: suppliers' invoices to check and pay, payments and payment runs, what each supplier is owed, petty cash to reimburse, clients' tax invoices, and accounting postings. Records open in place. */
 export function FinancePage({ workspaceId, section: initialSection, sections = FINANCE_SECTIONS, supplierId: initialSupplier }: { workspaceId: string; section: FinanceSection; sections?: readonly FinanceSection[]; supplierId: string | null }) {
@@ -43,6 +46,7 @@ export function FinancePage({ workspaceId, section: initialSection, sections = F
   const [error, setError] = useState("");
   const [entering, setEntering] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  const [raising, setRaising] = useState(false);
   const load = useCallback(async () => {
     try { setState(await api.state()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Finance didn't load.")); }
   }, [api, t]);
@@ -57,7 +61,9 @@ export function FinancePage({ workspaceId, section: initialSection, sections = F
   const held = state?.bills.filter((bill) => bill.status === "held").length ?? 0;
   const toApprove = state?.canApprove ? state.runs.filter((run) => run.status === "submitted").length : 0;
   // One primary action, for the tab it belongs to: a run on Payment runs, a supplier's invoice on the supplier tabs.
-  const action = !state?.canManage || section === "petty-cash" || section === "client-invoices" || section === "accounting" ? undefined : section === "runs"
+  // Requests: whoever sees the tab may ask Finance for something.
+  const action = section === "requests" ? <Button variant="primary" onPress={() => setRaising(true)}>{t("New request")}</Button>
+    : !state?.canManage || section === "petty-cash" || section === "client-invoices" || section === "accounting" ? undefined : section === "runs"
     ? <Button variant="primary" onPress={() => setPreparing(true)}>{t("New run")}</Button>
     : <Button variant="primary" onPress={() => setEntering(true)}>{t("Enter invoice")}</Button>;
   const { tabs, content } = moduleTabs<FinanceSection>({ t, value: section, onChange: (key) => go(key), more: MORE, items: ([
@@ -74,6 +80,8 @@ export function FinancePage({ workspaceId, section: initialSection, sections = F
       { id: "petty-cash", label: t("Petty cash"), panel: <PettyCash workspaceId={workspaceId} openId={params.get("claim")} onOpen={(id) => go("petty-cash", id)} /> },
       { id: "client-invoices", label: t("Client invoices"),
         panel: <ClientInvoices api={receivables} openId={params.get("invoice")} onOpen={(id) => go("client-invoices", id)} /> },
+      { id: "requests", label: t("Requests"),
+        panel: <FinanceRequests workspaceId={workspaceId} openId={params.get("request")} onOpen={(id) => go("requests", id)} raising={raising} onRaised={() => setRaising(false)} /> },
       { id: "accounting", label: t("Accounting"), panel: <AccountingPostings api={accounting} /> },
     ] satisfies Array<ModuleTab<FinanceSection>>).filter((item) => sections.includes(item.id)) });
   return <PageShell title={t("Finance")} action={action} tabs={tabs}>

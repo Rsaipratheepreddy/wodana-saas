@@ -259,6 +259,9 @@ export async function readHomeMetrics(client: Db, workspaceId: string, membershi
          SELECT event.id, event.action, event.entity_type, event.entity_id, event.before, event.after, event.occurred_at, event.actor_user_id
          FROM audit_events event
          WHERE event.workspace_id=$1
+           -- A go-live reset cleared the records before it; their history stays in the audit log only.
+           AND event.occurred_at > coalesce((SELECT max(cleared.occurred_at) FROM audit_events cleared
+                 WHERE cleared.workspace_id=$1 AND cleared.action='workspace.records_cleared'), '-infinity'::timestamptz)
            AND event.action !~ '^(security|auth|mfa|operator|support|platform|session)[._]'
            AND event.entity_type NOT LIKE 'auth%' AND event.entity_type NOT LIKE 'mfa%'
          ORDER BY event.occurred_at DESC, event.id DESC LIMIT 200

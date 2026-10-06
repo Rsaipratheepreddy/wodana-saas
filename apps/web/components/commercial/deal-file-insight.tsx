@@ -17,7 +17,7 @@ const SECTION: Record<string, MessageKey> = {
   supplier_orders: tKey("Supplier orders"), proof_of_delivery: tKey("Proof of delivery"), design_fee_proposal: tKey("Proposal 1 · Design fee"), inspiration: tKey("Inspiration"),
   site_visit: tKey("Site visit"), concepts: tKey("Mood boards & concepts"), space_planning: tKey("Space planning"), material_list: tKey("Material list"), renders: tKey("Renders"),
   design_approval: tKey("Design approval"), main_quotation: tKey("Proposal 2 · Main quotation"), boq: tKey("BOQ"), technical_drawings: tKey("Technical drawings"),
-  production: tKey("Production"), delivery_installation: tKey("Delivery & installation"),
+  production: tKey("Production"), delivery_installation: tKey("Delivery & installation"), building_permit: tKey("Building permit"),
 };
 const GROUP: Record<DealSection["group"], MessageKey> = { common: tKey("Deal File"), furniture: tKey("Furniture"), design: tKey("Design"), production: tKey("Production") };
 const STATE: Record<DealSection["state"], { label: MessageKey; tone: "success" | "info" | "warning" }> = {
@@ -69,6 +69,13 @@ export function DealFileInsight({ insight }: { insight: DealInsight }) {
     <p className={s.risks} data-tone={risks.length ? "attention" : "calm"}>
       {risks.length ? t("Check: {items}", { items: risks.map((risk) => t(RISK[risk])).join(", ") }) : t("Nothing missing on this Deal File.")}
     </p>
+    {/* PLM-100: who works on the deal, as tagged on the enquiry and the opportunity. */}
+    {insight.team?.length ? <div className={s.group}>
+      <h3>{t("Team")}</h3>
+      <ul className={s.sections} aria-label={t("Team")}>{insight.team.map((role) => <li key={role.role}>
+        <span>{t(role.label as never)}</span><small>{role.member?.name ?? t("Not applicable")}</small>
+      </li>)}</ul>
+    </div> : null}
     {groups.map(([group, sections]) => <div key={group} className={s.group}>
       <h3>{t(GROUP[group])}</h3>
       <ul className={s.sections}>{sections.map((section) => <li key={section.key}>

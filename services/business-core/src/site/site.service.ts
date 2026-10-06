@@ -16,6 +16,8 @@ import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/refe
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { composeClientView, readSummaryFacts, readTodayPlan, readTomorrowPlan, SUMMARY_SYSTEM, templateSummary, validateSummary } from "./daily-progress";
 import { reworkInstallation } from "./installation-rework";
+import { owedText, readInstallationOwed } from "./installation-payments";
+import { financeAndAccountManager } from "../factory/factory-ready";
 import { arrangeSiteAccess } from "./site-access";
 import { publishReport, readProgressSettings } from "./progress-delivery";
 import { readSitesToday } from "./sites-today";
@@ -174,9 +176,26 @@ export class SiteService {
       } else {
         if (!dates.started || dates.finished) throw new ConflictException("Site work isn't running.");
         if (on < dates.started) throw new BadRequestException("Site work can't finish before it started.");
+        // PLM-065: finishing site work signs the installation off. While the payment due before installation is owed,
+        // only someone who manages projects signs it off, with why, and Finance and the account manager hear.
+        const owed = await readInstallationOwed(client, workspaceId, project);
+        let owedOverride: { owed: string; reason: string } | null = null;
+        if (owed.stages.length) {
+          const what = owedText(owed);
+          if (!(await this.access.hasPermission(client, workspaceId, userId, "projects.manage")))
+            throw new ConflictException(`The client still owes ${what} before installation. Finance verifies the payment first, or someone who manages projects signs it off with a reason.`);
+          const reason = text(body.owedReason, 500);
+          if (!reason) throw new ConflictException(`The client still owes ${what} before installation. Say why installation is signed off before it's paid.`);
+          owedOverride = { owed: what, reason };
+        }
         await client.query(`UPDATE delivery_projects SET site_finished_on = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, on]);
+        if (owedOverride) {
+          await this.tell(client, workspaceId, projectId, "site.installation_owed", await financeAndAccountManager(client, workspaceId, projectId, await this.owner(client, workspaceId, projectId)),
+            userId, `${owedOverride.owed} still owed. ${owedOverride.reason}`, `owed:${projectId}:${on}`, true);
+          audit = { on, owed: owedOverride.owed, owedReason: owedOverride.reason };
+        }
       }
-      audit = { on };
+      if (!Object.keys(audit).length) audit = { on };
     } else if (action === "save_report") {
       audit = await this.save(client, workspaceId, projectId, userId, who.onTeam, today, body);
     } else if (action === "submit") {
@@ -739,6 +758,9 @@ export class SiteService {
       missing: await this.missingDays(client, workspaceId, projectId, today, dates.started, dates.finished, dueTime),
       // Nothing new is reported while the project is on hold; reports already submitted can still be decided.
       me: userId, canReport: who.onTeam && who.project.status === "active", canApprove: who.manager, canManage: who.manager && who.project.status === "active",
+      // PLM-065: what the client still owes before installation is signed off (finishing site work), and who may sign it off anyway.
+      installationOwed: who.manager && dates.started && !dates.finished ? await readInstallationOwed(client, workspaceId, who.project) : null,
+      canSignOffOwed: who.manager && await this.access.hasPermission(client, workspaceId, userId, "projects.manage"),
       // Site access (HR's list of who may be on site) is for the project's managers and site supervisors, and HR.
       canSeeSiteAccess: await this.seesSiteAccess(client, workspaceId, projectId, userId, who.manager),
     };
@@ -899,6 +921,15 @@ export class SiteService {
          JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.user_id = $3
         WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND 'site_supervisor' = ANY(assignment.role_keys)`,
       [workspaceId, projectId, userId])).rowCount);
+  }
+
+  /** Who owns the opportunity the project came from (the account manager when the team names none). */
+  private async owner(client: Db, workspaceId: string, projectId: string) {
+    return (await client.query<{ ownerMembershipId: string | null }>(
+      `SELECT opportunity.owner_membership_id AS "ownerMembershipId" FROM delivery_projects project
+         JOIN pre_project_cases pre_case ON pre_case.workspace_id = project.workspace_id AND pre_case.id = project.case_id
+         JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+        WHERE project.workspace_id = $1 AND project.id = $2`, [workspaceId, projectId])).rows[0]?.ownerMembershipId ?? null;
   }
 
   private async leads(client: Db, workspaceId: string, projectId: string) {

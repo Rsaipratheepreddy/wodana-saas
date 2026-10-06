@@ -11,6 +11,8 @@ import { projectPeople, projectStrip, projectTimeline, stageLateDays } from "@/l
 import { NextStepCard, RecordColumns, RecordFrame, RecordPanel, RecordStrip, SideSection, StripItem } from "@/components/record/record-layout";
 import { ActivityList, FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
 import { SiteLocation } from "@/components/ui/site-location";
+import { PRODUCTION_TONE, useProductionStepLabel } from "../factory/factory-labels";
+import { useWindowText } from "../factory/production-schedule";
 import { useProjectFormat } from "./format";
 import type { NextAction } from "./project-header";
 import { CheckRow, CloseOutList, ReasonDialog } from "./project-stages";
@@ -26,6 +28,13 @@ export function useHealthLabel() {
 }
 
 /** Why the health is what it is, in words. */
+/** Who goes on a booking, the lead first, as one fact. */
+function crewFact(label: string, crew: { people: Array<{ name: string; lead: boolean }>; crew: { name: string } | null } | null | undefined) {
+  if (!crew || (!crew.people.length && !crew.crew)) return null;
+  const people = crew.people.map((person) => person.name);
+  return { label, value: <>{people.length ? people.join(", ") : crew.crew!.name}{crew.crew && people.length ? <small>{crew.crew.name}</small> : null}</> };
+}
+
 function useReasonText() {
   const t = useT();
   return (reason: HealthReason) => {
@@ -46,8 +55,14 @@ function useReasonText() {
  * timeline; what holds it up; the latest site reports and activity; and the sidebar's Overview (team with ways
  * to reach them, site, key dates, money) · Details · Files.
  */
-export function ProjectOverview({ api, detail, overview, error, onRetry, run, onTeam, next, details }: {
+export function ProjectOverview({ api, detail, overview, error, onRetry, run, onTeam, onInstallation, onCrew, onPermit, next, details }: {
   api: ProjectApi; detail: ProjectDetail; overview: Overview | null; error?: string; onRetry?: () => void; run: Run; onTeam: () => void;
+  /** Opens the delivery and installation days (PLM-069). */
+  onInstallation?: () => void;
+  /** Books who goes on the delivery or the installation: people by name, the vehicle and the driver (Palm, 6 Oct). */
+  onCrew?: (kind: "delivery" | "installation") => void;
+  /** Records the building permit the delivery needs. */
+  onPermit?: () => void;
   /** The one thing to do next for this person (the page's own next action). */
   next: NextAction | null;
   /** The Details tab: the project's editable details. */
@@ -68,6 +83,13 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
   const until = strip.handover && (running || project.status === "on_hold") ? format.until(strip.handover.date) : null;
   const money = overview?.money ?? null;
   const roleLabel = (key: string | null) => t((detail.roles.find((role) => role.key === key)?.label ?? key ?? "") as never);
+  const stepLabel = useProductionStepLabel();
+  const windowText = useWindowText();
+  const production = detail.production ?? null;
+  const installation = detail.installation ?? null;
+  const days = (count: number | null) => (count === null ? "" : count === 1 ? t("1 day") : t("{count} days", { count }));
+  const deliveryLabel = { not_booked: t("Not booked"), booked: t("Booked"), part_delivered: t("Part delivered"), delivered: t("Delivered") };
+  const installationLabel = { not_started: t("Not started"), in_progress: t("In progress"), done: t("Done") };
 
   const overviewPanel = <RecordPanel>
     <SideSection title={t("Team")} action={detail.canManage && (running || project.status === "on_hold") ? <Button size="compact" variant="quiet" onPress={onTeam}>{t("Edit")}</Button> : null}>
@@ -93,6 +115,38 @@ export function ProjectOverview({ api, detail, overview, error, onRetry, run, on
         overview.dates.siteStarted ? { label: t("Site work"), value: overview.dates.siteFinished ? t("{from} – {to}", { from: format.short(overview.dates.siteStarted), to: format.short(overview.dates.siteFinished) }) : t("Since {date}", { date: format.short(overview.dates.siteStarted) }) } : null,
         project.closedAt ? { label: project.status === "cancelled" ? t("Cancelled") : t("Completed"), value: format.short(format.dayOf(project.closedAt)) } : null,
       ]} />
+    </SideSection> : null}
+    {/* PLM-063: production as the factory works it, planned against actual. */}
+    {production ? <SideSection title={t("Production")} action={<Link className={styles.sideLink} href={`/workspace/factory/orders?project=${projectId}`}>{t("Open")}<ArrowRight aria-hidden="true" size={13} data-directional="true" /></Link>}>
+      <FactList facts={[
+        { label: t("Status"), value: production.step ? <Badge tone={PRODUCTION_TONE[production.step.kind]}>{stepLabel(production.step)}</Badge> : t("Not scheduled") },
+        production.planned.start ? { label: t("Planned"), value: <>{windowText(production.planned)}{production.planned.days ? <small>{days(production.planned.days)}</small> : null}</> } : null,
+        production.actual.start ? { label: t("Actual"), tone: production.late || production.overTarget ? "danger" : undefined,
+          value: <>{windowText(production.actual, production.step?.kind !== "ready")}<small>{[days(production.actual.days), production.late ? t("Late") : ""].filter(Boolean).join(" · ")}</small></> } : null,
+      ]} />
+    </SideSection> : null}
+    {/* PLM-069: delivery and installation, scheduled by the project manager or the installation team. */}
+    {installation && ((installation.inRoute && detail.areas?.delivery !== false) || installation.installationOn || installation.deliveryOn) ? <SideSection title={t("Delivery and installation")}
+      action={detail.canScheduleInstallation && onInstallation ? <Button size="compact" variant="quiet" onPress={onInstallation}>{installation.installationOn ? t("Change") : t("Schedule")}</Button> : null}>
+      <FactList facts={[
+        { label: t("Delivery"), value: <>{deliveryLabel[installation.delivery]}{installation.deliveryOn ? <small>{format.short(installation.deliveryOn)}</small> : null}</> },
+        { label: t("Installation"), tone: installation.late ? "danger" : undefined, value: <>{installationLabel[installation.installation]}
+          {installation.installationOn ? <small>{[format.short(installation.installationOn), installation.late ? t("Late") : ""].filter(Boolean).join(" · ")}</small> : null}</> },
+        installation.permit?.required || installation.permit?.collected ? { label: t("Building permit"), tone: installation.permit.valid ? undefined : "danger",
+          value: <>{installation.permit.valid ? t("Collected") : installation.permit.collected ? t("Doesn't cover the delivery day") : t("Missing")}
+            <small>{[installation.permit.validTo ? t("Valid until {date}", { date: format.short(installation.permit.validTo) }) : "",
+              installation.permit.collectOn && !installation.permit.valid ? t("Collection on {date}", { date: format.short(installation.permit.collectOn) }) : ""].filter(Boolean).join(" · ")}</small></> } : null,
+        crewFact(t("Delivery crew"), installation.deliveryCrew),
+        installation.deliveryCrew?.vehicle || installation.deliveryCrew?.driver ? { label: t("Vehicle"), value: <>{installation.deliveryCrew.vehicle?.name ?? t("Not set")}
+          {installation.deliveryCrew.driver ? <small>{t("Driver: {name}", { name: installation.deliveryCrew.driver.name })}</small> : null}</> } : null,
+        crewFact(t("Installation crew"), installation.installationCrew),
+        installation.note ? { label: t("Note"), value: installation.note } : null,
+      ]} />
+      {detail.canScheduleInstallation && (onCrew || onPermit) ? <div className={styles.sideActions}>
+        {onCrew && installation.deliveryOn ? <Button size="compact" variant="quiet" onPress={() => onCrew("delivery")}>{t("Delivery crew and vehicle")}</Button> : null}
+        {onCrew && installation.installationOn ? <Button size="compact" variant="quiet" onPress={() => onCrew("installation")}>{t("Installation crew")}</Button> : null}
+        {onPermit && (installation.permit?.required || installation.permit?.collected) ? <Button size="compact" variant="quiet" onPress={onPermit}>{t("Record the building permit")}</Button> : null}
+      </div> : null}
     </SideSection> : null}
     {money ? <SideSection title={t("Money")} action={detail.canSeeMoney ? <Link className={styles.sideLink} href={`/workspace/projects/${projectId}/money`}>{t("Open")}<ArrowRight aria-hidden="true" size={13} data-directional="true" /></Link> : null}>
       <FactList facts={[

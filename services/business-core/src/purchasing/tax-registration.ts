@@ -30,10 +30,23 @@ export function checkTaxNumber(value: string, rule: TaxNumberRule): string {
 
 /** The workspace's rule, from the latest region pack of its country. */
 export async function readTaxNumberRule(db: Db, workspaceId: string): Promise<TaxNumberRule> {
-  const row = (await db.query<{ tax: { registrationLabel?: unknown; registrationFormat?: { pattern?: unknown; example?: unknown } } | null }>(
+  const row = (await db.query<{ tax: TaxConfiguration | null }>(
     `SELECT profile.configuration->'tax' AS tax
        FROM workspaces workspace JOIN tenant_setup_profiles profile ON profile.kind = 'region' AND profile.code = upper(split_part(workspace.default_locale, '-', 2))
       WHERE workspace.id = $1 ORDER BY profile.version DESC LIMIT 1`, [workspaceId])).rows[0]?.tax;
+  return ruleOf(row);
+}
+
+/** One country's rule (a business registered in another country than the workspace's), from its region pack. */
+export async function readTaxNumberRuleFor(db: Db, countryCode: string): Promise<TaxNumberRule> {
+  const row = (await db.query<{ tax: TaxConfiguration | null }>(
+    `SELECT configuration->'tax' AS tax FROM tenant_setup_profiles WHERE kind = 'region' AND code = upper($1) ORDER BY version DESC LIMIT 1`, [countryCode])).rows[0]?.tax;
+  return ruleOf(row);
+}
+
+type TaxConfiguration = { registrationLabel?: unknown; registrationFormat?: { pattern?: unknown; example?: unknown } };
+
+function ruleOf(row: TaxConfiguration | null | undefined): TaxNumberRule {
   if (!row) return NO_RULE;
   const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
   return { label: text(row.registrationLabel), pattern: text(row.registrationFormat?.pattern), example: text(row.registrationFormat?.example) };

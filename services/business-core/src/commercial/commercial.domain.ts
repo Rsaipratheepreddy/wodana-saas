@@ -313,6 +313,8 @@ function snapshotFields(q: Quote) {
         validUntil: q.validUntil,
         total: q.total,
         brand: q.brand,
+        // Quotes issued before letterheads (PLM-112) keep their hash.
+        ...(q.letterhead === undefined ? {} : { letterhead: q.letterhead }),
         paymentTerms: q.paymentTerms,
         paymentTemplate: q.paymentTemplate,
       };

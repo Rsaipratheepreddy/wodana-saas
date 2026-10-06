@@ -6,4 +6,5 @@ import { CrmNotificationsController, InternalCrmNotificationsController } from "
 import { CrmNotificationsService } from "./crm-notifications.service";
 import { CrmMessageReceiptModule } from "../conversations/crm-message-receipt.module";
 import { DeviceTokenStoreService } from "./device-token-store.service";
-@Module({imports:[WorkspacesModule,CrmMessageReceiptModule,EmailModule],controllers:[CrmNotificationsController,InternalCrmNotificationsController],providers:[CrmNotificationsService,DeviceTokenStoreService,InternalServiceGuard],exports:[CrmNotificationsService]}) export class CrmNotificationsModule{}
+import { BrandAssetStorageService } from "../../workspaces/brand-asset-storage.service";
+@Module({imports:[WorkspacesModule,CrmMessageReceiptModule,EmailModule],controllers:[CrmNotificationsController,InternalCrmNotificationsController],providers:[CrmNotificationsService,DeviceTokenStoreService,InternalServiceGuard,BrandAssetStorageService],exports:[CrmNotificationsService]}) export class CrmNotificationsModule{}

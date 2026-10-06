@@ -54,6 +54,7 @@ export * from "./patterns/ai-suggestion";
 export * from "./patterns/fill-with-woddy";
 export * from "./patterns/analytics";
 export * from "./patterns/charts";
+export * from "./patterns/report-charts";
 export * from "./patterns/activity";
 export * from "./components/phone-field";
 export * from "./components/illustration";

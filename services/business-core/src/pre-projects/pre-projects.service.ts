@@ -1,4 +1,5 @@
 import { assignDesignerToCase } from "../crm/opportunities/dedicated-designer";
+import { carryTeamToCase, readCaseTeam } from "../project-core/project-team";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
@@ -162,10 +163,12 @@ export class PreProjectsService {
         RETURNING id`, [workspaceId, opportunityId, user.userId]);
       await ensureJobForSource(client, workspaceId, { type: "case", id: String(created.rows[0].id) }, user.userId);
       await assignDesignerToCase(client, workspaceId, String(created.rows[0].id));
+      // PLM-100: the team tagged on the enquiry and the opportunity joins the case, role by role.
+      const team = await carryTeamToCase(client, workspaceId, String(created.rows[0].id), user.userId);
       // Site check-in works for the job straight away when the property's position is known.
       await ensureSiteLocation(client, { workspaceId, opportunityId, actorUserId: user.userId });
       const result = await this.read(client, workspaceId, created.rows[0].id);
-      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId, leadId: lead.id } });
+      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId, leadId: lead.id, team } });
       return result;
     });
   }
@@ -173,6 +176,8 @@ export class PreProjectsService {
   get(actor: RequestActor, workspaceId: string, id: string) {
     return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => ({
       ...await this.read(client, workspaceId, id),
+      // PLM-100: the case's team by role (a person or "not applicable"), as tagged on the enquiry and the opportunity.
+      team: await readCaseTeam(client, workspaceId, id),
       canManageLifecycle: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.manage_lifecycle"),
       canEditDetails: await this.canEditDetails(client, workspaceId, id, user.userId),
     }));
@@ -206,10 +211,12 @@ export class PreProjectsService {
         RETURNING id`, [workspaceId, opportunityId, user.userId]);
       await ensureJobForSource(client, workspaceId, { type: "case", id: String(created.rows[0].id) }, user.userId);
       await assignDesignerToCase(client, workspaceId, String(created.rows[0].id));
+      // PLM-100: the team tagged on the enquiry and the opportunity joins the case, role by role.
+      const team = await carryTeamToCase(client, workspaceId, String(created.rows[0].id), user.userId);
       // Site check-in works for the job straight away when the property's position is known.
       await ensureSiteLocation(client, { workspaceId, opportunityId, actorUserId: user.userId });
       const result = await this.read(client, workspaceId, created.rows[0].id);
-      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId } });
+      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId, team } });
       return result;
     });
   }

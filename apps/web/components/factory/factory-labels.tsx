@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Badge } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { ReleaseCheck, WorkOrderNext, WorkOrderStatus } from "@/lib/factory/types";
+import type { ProductionStep, ProductionStepKind, ReleaseCheck, WorkOrderNext, WorkOrderStatus } from "@/lib/factory/types";
 
 /** "WO-0007". */
 export const orderNumber = (number: number) => `WO-${String(number).padStart(4, "0")}`;
@@ -25,12 +25,12 @@ export function useFactoryLabels() {
       send: t("Send to site"), resume: t("Resume"), decide_drawing: t("Go on with the new drawing"),
     } satisfies Record<Exclude<WorkOrderNext, null>, string>,
     check: {
-      running: t("Project running"), scope: t("Scope unchanged"), drawing: t("Drawing approved"), payment: t("Payment before production verified"), materials: t("Materials in"),
+      running: t("Project running"), scope: t("Scope unchanged"), client_drawings: t("Client approved the drawings"), drawing: t("Drawing approved"), payment: t("Payment before production verified"), materials: t("Materials in"),
       schedule: t("Workcenter and dates"),
     } satisfies Record<ReleaseCheck["key"], string>,
     /** What's missing, in a few words, for a list. */
     blocked: {
-      running: t("Project on hold"), scope: t("Scope changed"), drawing: t("Drawing not approved"), payment: t("Payment not in"), materials: t("Materials not in"),
+      running: t("Project on hold"), scope: t("Scope changed"), client_drawings: t("Client hasn't approved the drawings"), drawing: t("Drawing not approved"), payment: t("Payment not in"), materials: t("Materials not in"),
       schedule: t("No workcenter or dates"),
     } satisfies Record<ReleaseCheck["key"], string>,
   }), [t]);
@@ -41,3 +41,14 @@ export function WorkOrderStatusLabel({ status }: { status: WorkOrderStatus }) {
   const labels = useFactoryLabels();
   return <Badge tone={WORK_ORDER_TONE[status]}>{labels.status[status]}</Badge>;
 }
+
+/** PLM-063: a production step in the firm's own word, or the standard one; and its tone. */
+export function useProductionStepLabel() {
+  const t = useT();
+  return useMemo(() => {
+    const standard: Record<ProductionStepKind, string> = { scheduled: t("Scheduled"), in_production: t("In production"), quality_check: t("Quality check"), ready: t("Ready") };
+    return (step: ProductionStep) => step.label || standard[step.kind];
+  }, [t]);
+}
+
+export const PRODUCTION_TONE: Record<ProductionStepKind, "neutral" | "info" | "warning" | "success"> = { scheduled: "neutral", in_production: "info", quality_check: "warning", ready: "success" };

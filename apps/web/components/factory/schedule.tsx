@@ -7,6 +7,7 @@ import type { FactoryApi } from "@/lib/factory/client";
 import type { ScheduleState } from "@/lib/factory/types";
 import { useProjectFormat } from "../project-core/format";
 import { orderNumber } from "./factory-labels";
+import { ProductionSchedule } from "./production-schedule";
 import styles from "./factory.module.css";
 
 const DAY = 86_400_000;
@@ -14,10 +15,26 @@ const time = (date: string) => Date.parse(`${date}T00:00:00Z`);
 const iso = (value: number) => new Date(value).toISOString().slice(0, 10);
 
 /**
+ * The factory's schedule, two ways: project by project (PLM-063: each project's production status, planned against
+ * actual dates), or each workcenter's next weeks.
+ */
+export function Schedule({ api, refreshKey, onOpen, onOpenProject }: { api: FactoryApi; refreshKey: number; onOpen: (orderId: string) => void; onOpenProject: (projectId: string) => void }) {
+  const t = useT();
+  const [view, setView] = useState<"projects" | "workcenters">("projects");
+  return <div className={styles.stack}>
+    <div className={styles.filters}>
+      <SegmentedControl label={t("View")} value={view} onChange={(value) => setView(value as "projects" | "workcenters")}
+        options={[{ id: "projects", label: t("Projects") }, { id: "workcenters", label: t("Workcenters") }]} />
+    </div>
+    {view === "projects" ? <ProductionSchedule api={api} refreshKey={refreshKey} onOpenProject={onOpenProject} /> : <WorkcenterSchedule api={api} refreshKey={refreshKey} onOpen={onOpen} />}
+  </div>;
+}
+
+/**
  * The next weeks in the factory: each workcenter's work orders as bars, and first the days a workcenter
  * has more hours booked than it can do, with the work orders that fill them.
  */
-export function Schedule({ api, refreshKey, onOpen }: { api: FactoryApi; refreshKey: number; onOpen: (orderId: string) => void }) {
+function WorkcenterSchedule({ api, refreshKey, onOpen }: { api: FactoryApi; refreshKey: number; onOpen: (orderId: string) => void }) {
   const t = useT();
   const format = useProjectFormat();
   const { locale } = useDesignSystem();

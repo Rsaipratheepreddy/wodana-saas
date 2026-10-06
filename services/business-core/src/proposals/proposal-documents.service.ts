@@ -62,7 +62,7 @@ export async function issueProposalVersion(db: Db, store: ObjectStore, input: { 
     [input.workspaceId, input.caseId, input.quoteId])).rows[0];
   if (!quote) throw new NotFoundException("Quote not found.");
   if (quote.status !== "issued") throw new ConflictException("Send the quotation to the client first; the proposal is made from the sent quotation.");
-  const data = await quotationPageData(db, input.workspaceId, input.caseId, input.quoteId);
+  const data = await quotationPageData(db, input.workspaceId, input.caseId, input.quoteId, store);
   const template = await templatePages(db, store, input.workspaceId);
   let document = (await db.query<{ id: string }>(`SELECT id FROM quote_documents WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND kind = 'proposal' FOR UPDATE`,
     [input.workspaceId, input.caseId, input.quoteId])).rows[0];
@@ -175,7 +175,7 @@ export class ProposalDocumentsService {
   /** The proposal as it would print now (pages 1–3, this quote, page 5), without keeping it. */
   preview(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string) {
     return this.access.withPermission(actor, workspaceId, VIEW, async (client) => {
-      const data = await quotationPageData(client, workspaceId, caseId, quoteId);
+      const data = await quotationPageData(client, workspaceId, caseId, quoteId, this.storage);
       const template = await templatePages(client, this.storage, workspaceId);
       return { body: Buffer.from(await composeProposal(template.pages, data)), contentType: "application/pdf", name: `${data.reference} ${data.title}.pdf` };
     });

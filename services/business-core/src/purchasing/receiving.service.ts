@@ -6,6 +6,7 @@ import { recordAudit } from "../audit/record-audit";
 import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { move, readTransfers, stockFromReceipt } from "../inventory/stock";
+import { holdReceivedForDeals } from "../fulfilment/stock-reservations";
 import { closeSettledBlockers } from "./purchasing-blockers";
 import { tellMaterialsReady } from "./materials-ready";
 import { readSiteAccess } from "../site/site-access";
@@ -205,6 +206,8 @@ export class ReceivingService {
 
     await settleOrder(client, workspaceId, orderId);
     await stockFromReceipt(client, workspaceId, { receiptId: id, lines: lines.map((line) => ({ receiptLineId: line.id, accepted: line.accepted })), actorId: receiverId });
+    // PLM-125: goods ordered for a deal (Furniture C) are held for it.
+    await holdReceivedForDeals(client, workspaceId, { receiptId: id, actorUserId: receiverId });
     // Work that waited on these goods can start.
     await closeSettledBlockers(client, workspaceId, { orderId }, receiverId);
     await orderEvent(client, workspaceId, orderId, "received", { receipt: number, location: location.name, lines: lines.length, inspection: settings.requireInspection }, receiverId);
@@ -259,6 +262,7 @@ export class ReceivingService {
       if (done) await client.query(`UPDATE goods_receipts SET inspected_by = $3, inspected_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, receiptId, user.userId]);
       await settleOrder(client, workspaceId, order.id);
       await stockFromReceipt(client, workspaceId, { receiptId, lines: results.map((line) => ({ receiptLineId: line.id, accepted: line.take })), actorId: user.userId });
+      await holdReceivedForDeals(client, workspaceId, { receiptId, actorUserId: user.userId });
       await closeSettledBlockers(client, workspaceId, { orderId: order.id }, user.userId);
       const settled = results.map((line) => ({ orderLineId: line.orderLineId, description: line.description, accepted: line.take, rejected: line.refuse, rejectReason: line.reason, rejectKind: line.kind }));
       await orderEvent(client, workspaceId, order.id, "inspected", { receipt: receipt.number, done, accepted: settled.filter((line) => Dec.of(line.accepted).cmp(0) > 0).length,

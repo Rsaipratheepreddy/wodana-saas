@@ -24,8 +24,10 @@ export type CloseOut = {
   moves: Array<{ id: string; number: number }>;
   /** Anything still at the project's site. */
   siteStock: Array<{ itemName: string; unit: string; quantity: string; locationName: string }>;
-  /** Work not finished or cancelled. */
+  /** Work not finished or cancelled, snags aside. */
   openWork: number;
+  /** PLM-070: snags not closed. A project can't complete with one open; cancelling cancels them with the rest of its work. */
+  openSnags: Array<{ id: string; number: number; title: string; severity: string }>;
   /** Orders and price requests for this project only that were never sent. */
   drafts: Draft[];
   /** The project's stock kept elsewhere. */
@@ -83,11 +85,14 @@ export async function readCloseOut(db: Db, workspaceId: string, projectId: strin
       WHERE balance.workspace_id = $1 AND balance.on_hand > 0 AND (balance.project_id = $2 OR place.project_id = $2)
       ORDER BY item.name, place.name`, [workspaceId, projectId])).rows;
   const openWork = (await db.query<{ count: number }>(
-    `SELECT count(*)::int AS count FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND status NOT IN ('done', 'cancelled')`, [workspaceId, projectId])).rows[0].count;
+    `SELECT count(*)::int AS count FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND status NOT IN ('done', 'cancelled') AND type <> 'snag'`, [workspaceId, projectId])).rows[0].count;
+  const openSnags = (await db.query<{ id: string; number: number; title: string; severity: string }>(
+    `SELECT id, number, title, severity FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND type = 'snag' AND status NOT IN ('done', 'cancelled') ORDER BY number`,
+    [workspaceId, projectId])).rows;
   return {
     owedOrders, sharedDrafts: drafts(true), inspections, moves,
     siteStock: stock.filter((row) => row.atSite).map(({ itemName, unit, quantity, locationName }) => ({ itemName, unit, quantity, locationName })),
-    openWork, drafts: drafts(false),
+    openWork, openSnags, drafts: drafts(false),
     heldStock: stock.filter((row) => !row.atSite).map(({ atSite: _atSite, ...row }) => row),
   };
 }
@@ -101,9 +106,17 @@ export function closeOutBlockers(closeOut: CloseOut, completing: boolean) {
     ...closeOut.inspections.map((receipt) => `delivery ${receipt.number} (${receipt.orderNumber}) waits for inspection`),
     ...closeOut.moves.map((transfer) => `move ${transfer.number} is on its way`),
     ...(closeOut.siteStock.length ? [`${plural(closeOut.siteStock.length, "item is", "items are")} still at the site`] : []),
+    ...(completing && closeOut.openSnags.length ? [snagBlocker(closeOut.openSnags)] : []),
     ...(completing && closeOut.openWork ? [`${plural(closeOut.openWork, "piece of work is", "pieces of work are")} open`] : []),
     ...(completing ? closeOut.drafts.map((draft) => `${draft.kind === "order" ? draft.number : `Price request ${draft.number}`} was never sent`) : []),
   ];
+}
+
+/** PLM-070: the open snags, by number (the first five, then how many more), so the message says which to close. */
+export function snagBlocker(snags: CloseOut["openSnags"]) {
+  const named = snags.slice(0, 5).map((snag) => `#${snag.number} ${snag.title}`).join(", ");
+  const more = snags.length > 5 ? ` and ${snags.length - 5} more` : "";
+  return `${snags.length} ${snags.length === 1 ? "snag is" : "snags are"} still open (${named}${more})`;
 }
 
 /**

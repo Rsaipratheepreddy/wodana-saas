@@ -126,6 +126,12 @@ export type ChatAttachment = {
   id: string; kind: "image" | "document" | "audio" | "video" | "sticker"; mimeType: string | null; fileName: string | null;
   byteSize: number | null; status: "pending" | "stored" | "failed"; failureCode: string | null;
 };
+/** An email message's own facts (PLM-025): its subject, sender and recipients, every file, and the whole text when the chat shows less. */
+export type ChatEmail = { subject: string; from: string; fromName: string | null; to: string[]; cc: string[]; fullText: string | null; attachments: ChatAttachment[] };
+/** How an email chat is answered: from the workspace's inbound address, through Google, or not yet set up. */
+export type EmailReplying = { address: string | null; via: "inbound" | "google" | null };
+/** Settings → Inbox → Email: the workspace's inbound address (null until it is made) and whether this server offers one. */
+export type InboundEmailAddress = { available: boolean; address: string | null; version: number; canManage: boolean };
 /** Where a chat file is read from (our storage only, so it opens the same while viewing as a colleague). */
 export const attachmentUrl = (workspaceId: string, conversationId: string, attachmentId: string) =>
   `/api/workspace/crm/attachments/${conversationId}/${attachmentId}?workspaceId=${encodeURIComponent(workspaceId)}`;

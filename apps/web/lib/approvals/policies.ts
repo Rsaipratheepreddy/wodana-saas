@@ -33,6 +33,7 @@ export const KIND_TITLE: Record<string, MessageKey> = {
   change_request: tKey("Change request"),
   stock_correction: tKey("Stock correction"),
   ledger_change: tKey("Material change after sign-off"),
+  payable_request: tKey("Payable request"),
 };
 
 /** The approvers a firm picks from by permission: the people who hold it today, never a role's name. */

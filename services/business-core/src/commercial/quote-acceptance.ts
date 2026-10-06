@@ -1,8 +1,11 @@
 import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
+import { startClientCalls } from "../client-calls/client-calls.store";
 import { thankForDeal } from "../crm/conversations/inbox/client-followups";
 import { tellDealOutcome } from "../crm/leads/sales-attention";
 import { markProposalWon } from "../crm/opportunities/opportunity-proposals";
+import { noticeReadyToStart } from "../project-core/project-release";
+import { reserveForAcceptedQuote, takeForDeal } from "../fulfilment/stock-reservations";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -78,6 +81,9 @@ export async function winOpportunityOnAcceptance(db: Db, input: {
     // The Sales admin and the Owners hear the deal is won (S-23).
     await tellDealOutcome(db, input.workspaceId, { opportunityId: String(opportunity.id), outcome: "won", reason, actorUserId: input.actorUserId });
   }
+  // PLM-125: the accepted quotation holds its stocked items for the deal, and a win takes them out, where the path says so.
+  await reserveForAcceptedQuote(db, input.workspaceId, { caseId: input.caseId, actorUserId: input.actorUserId });
+  if (won) await takeForDeal(db, input.workspaceId, { opportunityId: String(opportunity.id), event: "won", actorUserId: input.actorUserId });
   let phase: string | null = null;
   if (input.round !== "design") {
     const moved = (await db.query<{ phase: string }>(
@@ -89,11 +95,19 @@ export async function winOpportunityOnAcceptance(db: Db, input: {
       await recordAudit(db, { workspaceId: input.workspaceId, actorUserId: input.actorUserId, source: input.source, action: "pre_project.phase_advanced.v1",
         entityType: "pre_project_case", entityId: input.caseId, after: { phase: "agree", reason: `Client accepted Q-${input.quoteNumber}`, ...by } });
     }
+    // PLM-046: a job without design starts the Account Manager's client update calls from its accepted estimate (a design
+    // job started them at the design approval). Idempotent.
+    const designed = (await db.query(`SELECT 1 FROM design_journeys WHERE workspace_id = $1 AND case_id = $2 AND (package_id IS NOT NULL OR package_name IS NOT NULL)`,
+      [input.workspaceId, input.caseId])).rowCount;
+    if (!designed) await startClientCalls(db, input.workspaceId, input.caseId, "estimate_accepted", input.actorUserId);
   }
   return { won, phase };
 }
 
-/** An approved main-round deal releases the case: the phase moves to Release (the project starts from it). */
+/**
+ * An approved main-round deal releases the case: the phase moves to Release (the project starts from it), and the
+ * people who start projects hear at once to name its project manager and start it (PLM-056).
+ */
 export async function releasePhaseOnDealApproval(db: Db, input: { workspaceId: string; caseId: string; actorUserId: string }) {
   const moved = (await db.query(
     `UPDATE pre_project_cases SET phase = 'release', version = version + 1, updated_at = now()
@@ -101,5 +115,6 @@ export async function releasePhaseOnDealApproval(db: Db, input: { workspaceId: s
     [input.workspaceId, input.caseId])).rowCount;
   if (moved) await recordAudit(db, { workspaceId: input.workspaceId, actorUserId: input.actorUserId, action: "pre_project.phase_advanced.v1",
     entityType: "pre_project_case", entityId: input.caseId, after: { phase: "release", reason: "Deal approved" } });
+  await noticeReadyToStart(db, input);
   return Boolean(moved);
 }

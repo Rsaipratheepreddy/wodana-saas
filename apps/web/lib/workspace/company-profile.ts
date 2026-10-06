@@ -34,6 +34,12 @@ export type LegalEntityRecord = {
   taxRegistrationNumber: string | null;
   registrationNumber: string | null;
   address: CompanyAddress;
+  /** What the business's documents print (PLM-112). */
+  phone?: string | null;
+  email?: string | null;
+  letterheadFooter?: string | null;
+  logoUrl?: string | null;
+  letterheadUrl?: string | null;
   status: string;
   version: number;
   createdAt: string;

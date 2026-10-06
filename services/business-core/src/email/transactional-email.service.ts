@@ -10,10 +10,10 @@ export type EmailDeliveryStatus = "sent" | "not_configured" | "failed";
 export type EmailProvider = "mailgun" | "ses";
 
 /** Sends one prepared message through Amazon SES; replaced in tests. */
-export type SesSender = (input: { region: string; from: string; to: string; subject: string; text: string; html: string; configurationSet?: string; attachments?: EmailAttachment[] }) => Promise<string | null>;
+export type SesSender = (input: { region: string; from: string; to: string; subject: string; text: string; html: string; configurationSet?: string; attachments?: EmailAttachment[]; replyTo?: string; headers?: Record<string, string> }) => Promise<string | null>;
 
-/** A small file sent with a message (e.g. a booking's .ics invitation). */
-export type EmailAttachment = { filename: string; contentType: string; content: string };
+/** A file sent with a message (a booking's .ics invitation as text, a chat reply's file as bytes). */
+export type EmailAttachment = { filename: string; contentType: string; content: string | Uint8Array };
 
 export interface EmailDeliveryResult {
   status: EmailDeliveryStatus;
@@ -33,6 +33,10 @@ interface TransactionalMessage {
   /** Sender display name, normally the tenant; the address stays the configured sending domain. */
   fromName?: string;
   attachments?: EmailAttachment[];
+  /** Where the recipient's reply goes (a chat's inbound address), as `Name <address>` or a bare address. */
+  replyTo?: string;
+  /** Threading headers for a conversation reply: Message-Id, In-Reply-To and References only. */
+  headers?: Partial<Record<"Message-Id" | "In-Reply-To" | "References", string>>;
 }
 
 interface WorkspaceInvitationMessage {
@@ -53,7 +57,7 @@ const DEFAULT_MAILGUN_BASE_URL = "https://api.mailgun.net";
 const sesClients = new Map<string, SESv2Client>();
 
 /** Credentials come from the default AWS chain (the server's instance role in production). */
-const sendThroughSes: SesSender = async ({ region, from, to, subject, text, html, configurationSet, attachments }) => {
+const sendThroughSes: SesSender = async ({ region, from, to, subject, text, html, configurationSet, attachments, replyTo, headers }) => {
   let client = sesClients.get(region);
   if (!client) {
     client = new SESv2Client({ region });
@@ -66,17 +70,30 @@ const sendThroughSes: SesSender = async ({ region, from, to, subject, text, html
       Simple: {
         Subject: { Data: subject, Charset: "UTF-8" },
         Body: { Text: { Data: text, Charset: "UTF-8" }, Html: { Data: html, Charset: "UTF-8" } },
-        ...(attachments?.length ? { Attachments: attachments.map((file) => ({ FileName: file.filename, ContentType: file.contentType, RawContent: Buffer.from(file.content, "utf8") })) } : {}),
+        ...(headers && Object.keys(headers).length ? { Headers: Object.entries(headers).map(([Name, Value]) => ({ Name, Value })) } : {}),
+        ...(attachments?.length ? { Attachments: attachments.map((file) => ({ FileName: file.filename, ContentType: file.contentType, RawContent: typeof file.content === "string" ? Buffer.from(file.content, "utf8") : Buffer.from(file.content) })) } : {}),
       },
     },
+    ...(replyTo ? { ReplyToAddresses: [replyTo] } : {}),
     ...(configurationSet ? { ConfigurationSetName: configurationSet } : {}),
   }), { abortSignal: AbortSignal.timeout(30_000) });
   return result.MessageId ?? null;
 };
 
 /** `Name <address>` with the name quoted only when RFC 5322 needs it. */
-function fromHeader(displayName: string, address: string) {
+export function fromHeader(displayName: string, address: string) {
   return /[(),.:;@[\]\\]/.test(displayName) ? `"${displayName}" <${address}>` : `${displayName} <${address}>`;
+}
+
+/** A header value without line breaks, so nothing can add a header of its own. */
+function headerValue(value: string) {
+  return value.replace(/[\r\n]+/g, " ").trim().slice(0, 1800);
+}
+
+/** Only the three threading headers a conversation reply sets, each cleaned of line breaks. */
+function threadingHeaders(headers: TransactionalMessage["headers"]): Record<string, string> {
+  const allowed = ["Message-Id", "In-Reply-To", "References"] as const;
+  return Object.fromEntries(allowed.flatMap((name) => headers?.[name] ? [[name, headerValue(headers[name]!)]] : []));
 }
 
 function readableRole(code: string): string {
@@ -322,6 +339,28 @@ export class TransactionalEmailService {
     return this.send({ to: input.to, subject: `Signed: ${input.reference} · ${brand.name}`, text, html, fromName: brand.name });
   }
 
+  /** The address the platform mailer sends from (MAILGUN_FROM or SES_FROM), or null when email is not set up. */
+  senderAddress(): string | null {
+    const provider = this.provider();
+    if (!provider) return null;
+    const configured = this.config.get<string>(provider === "ses" ? "SES_FROM" : "MAILGUN_FROM", "").trim();
+    const address = configured.match(/<([^>]+)>/)?.[1] ?? configured;
+    return (address || (provider === "mailgun" ? `postmaster@${this.config.get<string>("MAILGUN_DOMAIN", "").trim()}` : "")).toLowerCase() || null;
+  }
+
+  /**
+   * A team member's reply in an email conversation, in the tenant's brand: from the tenant's name on the platform
+   * sending address, with Reply-To on the workspace's inbound address and the threading headers, so the client's
+   * answer lands back in the same conversation.
+   */
+  async sendConversationReply(input: { workspaceId: string; to: string; subject: string; body: string; replyTo: string; headers: NonNullable<TransactionalMessage["headers"]>; attachments?: EmailAttachment[] }): Promise<EmailDeliveryResult> {
+    const brand = await this.brand({ workspaceId: input.workspaceId });
+    const paragraphs = input.body.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+    const { html, text } = renderBrandedEmail({ brand, preheader: paragraphs[0]?.slice(0, 140) ?? input.subject, paragraphs });
+    return this.send({ to: input.to, subject: input.subject, text, html, fromName: brand.name, replyTo: fromHeader(brand.name.replace(/["<>\r\n]/g, "").trim() || "Inbox", input.replyTo),
+      headers: input.headers, ...(input.attachments?.length ? { attachments: input.attachments } : {}) });
+  }
+
   async send(message: TransactionalMessage): Promise<EmailDeliveryResult> {
     // Local and UAT: nothing leaves for a recipient who isn't on DELIVERY_ALLOWLIST.
     if (!deliveryAllowlist(this.config).allowsEmail(message.to)) {
@@ -349,7 +388,9 @@ export class TransactionalEmailService {
     form.set("subject", message.subject);
     form.set("text", message.text);
     form.set("html", message.html);
-    for (const file of message.attachments ?? []) form.append("attachment", new Blob([file.content], { type: file.contentType }), file.filename);
+    for (const file of message.attachments ?? []) form.append("attachment", new Blob([typeof file.content === "string" ? file.content : Buffer.from(file.content)], { type: file.contentType }), file.filename);
+    if (message.replyTo) form.set("h:Reply-To", headerValue(message.replyTo));
+    for (const [name, value] of Object.entries(threadingHeaders(message.headers))) form.set(`h:${name}`, value);
 
     try {
       const response = await fetch(`${baseUrl}/v3/${encodeURIComponent(domain)}/messages`, {
@@ -394,6 +435,8 @@ export class TransactionalEmailService {
         html: message.html,
         configurationSet,
         ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+        ...(message.replyTo ? { replyTo: headerValue(message.replyTo) } : {}),
+        ...(message.headers ? { headers: threadingHeaders(message.headers) } : {}),
       });
       this.logger.log(`Transactional email accepted by SES${messageId ? ` (${messageId})` : ""}`);
       return { status: "sent", provider: "ses", messageId };

@@ -10,13 +10,31 @@ export type ProjectRole = { key: string; label: string };
  * person confirming something the system doesn't record yet (e.g. "Kickoff meeting held").
  */
 export const CHECK_KINDS = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off", "everything_ordered", "everything_made", "snags_closed", "no_critical_snags",
-  "handover_accepted"] as const;
+  "handover_accepted", "drawings_uploaded", "drawings_site_checked", "drawings_client_approved", "factory_slot_booked",
+  "installation_scheduled", "goods_delivered", "installation_done", "permit_collected"] as const;
 export type CheckKind = (typeof CHECK_KINDS)[number];
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };
 export type TemplateStage = { key: string; name: string; ownerRole: string | null; checks: StageCheck[] };
 
-/** Checks read from records can't be skipped past: a stage holding one can only be finished. */
-export const HARD_CHECKS: readonly CheckKind[] = ["payment_verified"];
+/** Checks that can't be skipped past (the production payment, the building permit): a stage holding one can only be finished. */
+export const HARD_CHECKS: readonly CheckKind[] = ["payment_verified", "permit_collected"];
+
+/**
+ * Checks whose record is someone's work (PLM-057, 058, 059, 068, 069): while their stage is current, the first one not
+ * yet passing opens a task for its person, and the record closes it. They run in the order the stage lists them, so the
+ * drawings come first, then the site check, then the client's approval; the installation team schedules the installation.
+ */
+export const TASK_CHECKS: readonly CheckKind[] = ["drawings_uploaded", "drawings_site_checked", "drawings_client_approved", "factory_slot_booked", "installation_scheduled", "permit_collected"];
+
+/** The drawing checks: a project whose route holds one keeps its drawings as revisions the client approves. */
+export const DRAWING_CHECKS: readonly CheckKind[] = ["drawings_uploaded", "drawings_site_checked", "drawings_client_approved"];
+
+/**
+ * The delivery and installation checks (PLM-069): the installation day scheduled, the building permit collected for
+ * the delivery day, everything delivered to site, and the installation signed off. The owner of a stage that holds
+ * one is the firm's installation team.
+ */
+export const INSTALLATION_CHECKS: readonly CheckKind[] = ["installation_scheduled", "permit_collected", "goods_delivered", "installation_done"];
 
 export const DEFAULT_ROLES: ProjectRole[] = [
   { key: "project_manager", label: "Project manager" },
@@ -49,8 +67,15 @@ export const DEFAULT_STAGES: TemplateStage[] = [
     { key: "payment", kind: "payment_verified" },
     { key: "done", kind: "everything_made" },
   ] },
+  // PLM-136: buildings can't be entered without a permit, so new workspaces collect it after production is ready and
+  // before delivery and installation (a stage that can't be skipped).
+  { key: "permit", name: "Permit collection", ownerRole: "installation_lead", checks: [
+    { key: "collected", kind: "permit_collected" },
+  ] },
   { key: "installation", name: "Delivery and installation", ownerRole: "installation_lead", checks: [
-    { key: "installed", kind: "confirm", label: "Everything delivered and installed" },
+    { key: "scheduled", kind: "installation_scheduled" },
+    { key: "delivered", kind: "goods_delivered" },
+    { key: "installed", kind: "installation_done" },
   ] },
   { key: "snagging", name: "Snagging", ownerRole: "project_manager", checks: [
     { key: "closed", kind: "snags_closed" },
@@ -138,6 +163,16 @@ export type CheckFacts = {
   openSnags: number; openCriticalSnags: number;
   /** Accepted handover packs cover the whole project. */
   handedOver: boolean;
+  /** The latest drawing revision: uploaded (and not sent back), passed its site check, approved by the client. */
+  drawings?: { uploaded: boolean; siteChecked: boolean; approved: boolean };
+  /** A factory slot date is recorded on the project. */
+  factorySlotBooked?: boolean;
+  /** Roles marked "not applicable" on this project (PLM-100): settled on purpose, so a "role named" check passes. */
+  notApplicableRoles?: Set<string>;
+  /** Delivery and installation (PLM-069): the installation day is set, everything is delivered, the installation is signed off. */
+  installation?: { scheduled: boolean; delivered: boolean; installed: boolean };
+  /** A collected building permit covers the delivery day (before one is booked: is still valid today). */
+  permitCollected?: boolean;
 };
 
 /** Whether a check passes, from the facts gathered for the stage. */
@@ -145,7 +180,7 @@ export function checkPasses(check: StageCheck, facts: CheckFacts) {
   switch (check.kind) {
     case "confirm": return facts.confirmed.has(check.key);
     case "lead_assigned": return facts.filledRoles.has(LEAD_ROLE);
-    case "role_assigned": return Boolean(check.role && facts.filledRoles.has(check.role));
+    case "role_assigned": return Boolean(check.role && (facts.filledRoles.has(check.role) || facts.notApplicableRoles?.has(check.role)));
     case "payment_verified": return facts.productionPaid;
     case "material_list_signed_off": return facts.materialsSignedOff;
     case "everything_ordered": return facts.everythingOrdered;
@@ -153,5 +188,13 @@ export function checkPasses(check: StageCheck, facts: CheckFacts) {
     case "snags_closed": return facts.openSnags === 0;
     case "no_critical_snags": return facts.openCriticalSnags === 0;
     case "handover_accepted": return facts.handedOver;
+    case "drawings_uploaded": return Boolean(facts.drawings?.uploaded);
+    case "drawings_site_checked": return Boolean(facts.drawings?.siteChecked);
+    case "drawings_client_approved": return Boolean(facts.drawings?.approved);
+    case "factory_slot_booked": return Boolean(facts.factorySlotBooked);
+    case "installation_scheduled": return Boolean(facts.installation?.scheduled);
+    case "goods_delivered": return Boolean(facts.installation?.delivered);
+    case "installation_done": return Boolean(facts.installation?.installed);
+    case "permit_collected": return Boolean(facts.permitCollected);
   }
 }

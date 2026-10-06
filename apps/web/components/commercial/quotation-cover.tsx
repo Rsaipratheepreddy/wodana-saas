@@ -19,6 +19,7 @@ type CoverQuote = Pick<
   | "createdAt"
   | "issuedAt"
   | "brand"
+  | "letterhead"
 >;
 
 /** The same document cover is used in the editor, client preview and printed quotation. */
@@ -62,7 +63,9 @@ export function QuotationCover({
       style={coverStyle}
     >
       <header className={s.top}>
-        {cover.logo ? <div className={s.customLogo}><img src={cover.logo} alt={brand?.name || t('Company logo')}/>{brand?.name && <strong>{brand.name}</strong>}</div> : brand ? (
+        {cover.logo ? <div className={s.customLogo}><img src={cover.logo} alt={brand?.name || t('Company logo')}/>{brand?.name && <strong>{brand.name}</strong>}</div>
+          // The issuing business's own logo and name (PLM-112), when it has a logo.
+          : quote.letterhead?.logoUrl ? <div className={s.customLogo}><img src={quote.letterhead.logoUrl} alt={quote.letterhead.legalName}/><strong>{quote.letterhead.legalName}</strong></div> : brand ? (
           <BrandLogo brand={brand} />
         ) : (
           <strong>{t("Interior design studio")}</strong>

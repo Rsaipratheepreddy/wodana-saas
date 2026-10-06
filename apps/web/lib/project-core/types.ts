@@ -1,8 +1,13 @@
+import type { LineStatus } from "../purchasing/types";
+import type { ProductionSummary } from "../factory/production";
+import type { Crew } from "../logistics/types";
+
 export type ProjectStatus = "active" | "on_hold" | "completed" | "cancelled" | "archived";
 export type Health = "on_track" | "at_risk" | "off_track";
 export type Priority = "normal" | "high" | "critical";
 export type CheckKind = "confirm" | "lead_assigned" | "role_assigned" | "payment_verified" | "material_list_signed_off" | "everything_ordered" | "everything_made"
-  | "snags_closed" | "no_critical_snags" | "handover_accepted";
+  | "snags_closed" | "no_critical_snags" | "handover_accepted" | "drawings_uploaded" | "drawings_site_checked" | "drawings_client_approved" | "factory_slot_booked"
+  | "installation_scheduled" | "goods_delivered" | "installation_done" | "permit_collected";
 
 export type ProjectRole = { key: string; label: string };
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };
@@ -21,6 +26,22 @@ export type ProjectSettings = {
   autoSendPendingReports?: boolean;
   /** The week's sent days go to the client as one digest on the last working day. */
   weeklyRollup?: boolean;
+  /** PLM-055: the roles told at the project's key moments. */
+  keepInformed?: Record<KeepInformedEvent, string[]>;
+};
+/** The project's key moments people can be kept informed about (PLM-055). */
+export type KeepInformedEvent = "drawings_started" | "production_started" | "installation_scheduled";
+
+/** PLM-069: delivery and installation, read from the records; the two days are set by the project manager or the installation team. */
+export type DeliveryStatus = "not_booked" | "booked" | "part_delivered" | "delivered";
+export type InstallationStatus = "not_started" | "in_progress" | "done";
+export type ProjectInstallation = {
+  deliveryOn: string | null; installationOn: string | null; note: string; setByName: string | null; setAt: string | null;
+  delivery: DeliveryStatus; installation: InstallationStatus; siteStartedOn: string | null; siteFinishedOn: string | null; inRoute: boolean; late: boolean;
+  /** Who goes on the delivery (with the vehicle and driver) and on the installation: people by name (Palm, 6 Oct). */
+  deliveryCrew?: (Crew & { assignmentId: string | null }) | null; installationCrew?: (Crew & { assignmentId: string | null }) | null;
+  /** The building permit the delivery needs on a route that checks it: covering the delivery day (or valid today), until when, the planned collection. */
+  permit?: { required: boolean; valid: boolean; validTo: string | null; collectOn: string | null; plannedId: string | null; collected: boolean };
 };
 export type SettingsState = { settings: ProjectSettings; templates: ProjectRoute[]; workTemplates: WorkTemplate[]; canManage: boolean };
 /** One step of a package's standard work: working days, the role that does it, its stage, and whether it runs with the step before. */
@@ -72,7 +93,10 @@ export type ProjectDetail = {
   money?: MoneyRights;
   seal: { revisionLabel: string; quoteNumber: number; acceptedAt: string; acceptedBy: string; method: string | null; contentHash: string; sealedAt: string } | null;
   roles: ProjectRole[];
-  team: Array<{ role: string; label: string; member: Member | null }>;
+  /** One person per role, or the role marked "not applicable" for this project (PLM-100). */
+  team: Array<{ role: string; label: string; member: Member | null; notApplicable?: boolean }>;
+  /** People outside Wodana who do the work (installers, subcontractors). */
+  teamNote?: string;
   stages: ProjectStage[];
   next: NextStep | null;
   updates: StatusUpdate[];
@@ -83,6 +107,36 @@ export type ProjectDetail = {
   canSeeMoney: boolean;
   /** Whole percent of the work done, packages weighed by value; null before any work is planned. */
   progress: number | null;
+  /** The factory slot booked for the project (PLM-068), and whether this person may book or move it. */
+  factorySlot?: { date: string; note: string; byName: string | null; at: string | null } | null;
+  canBookSlot?: boolean;
+  /** Whether the route keeps technical drawings (and asks for a site check or a factory slot), and the latest revision. */
+  drawings?: { inRoute: boolean; needsSiteCheck: boolean; factorySlot: boolean; latest: { id: string; number: number; status: DrawingStatus } | null };
+  /** PLM-063: the project's production from its work orders (none when the factory makes nothing for it). */
+  production?: ProductionSummary | null;
+  /** PLM-069: delivery and installation, and whether this person may schedule them. */
+  installation?: ProjectInstallation;
+  canScheduleInstallation?: boolean;
+  /** PLM-098: the areas this job's enquiry-type path uses after Won, plus any area already holding a record. Missing = every area. */
+  areas?: ProjectAreas;
+};
+
+export type ProjectArea = "planning" | "production" | "supply" | "delivery";
+export type ProjectAreas = Record<ProjectArea, boolean>;
+
+export type DrawingStatus = "uploaded" | "checked" | "changes_needed" | "sent" | "approved" | "changes_requested";
+export type DrawingFile = { id: string; kind: "drawing" | "approval"; name: string; mimeType: string; byteSize: number; hasPreview: boolean; byName: string; at: string };
+export type DrawingRevision = {
+  id: string; number: number; status: DrawingStatus; note: string; createdByName: string; createdAt: string;
+  siteCheck: "ok" | "changes" | null; siteCheckNote: string; siteCheckedByName: string | null; siteCheckedAt: string | null;
+  sentByName: string | null; sentAt: string | null;
+  decidedOn: string | null; decidedByName: string | null; decisionNote: string; decisionVia: "recorded" | "portal" | null; decisionRecordedByName: string | null;
+  files: DrawingFile[];
+};
+/** The project's technical drawings (PLM-057 … 060), newest revision first, with what this person may do next. */
+export type DrawingsState = {
+  revisions: DrawingRevision[]; version: number; caseId: string; inRoute: boolean; needsSiteCheck: boolean;
+  canUpload: boolean; canCheck: boolean; canSend: boolean; canDecide: boolean;
 };
 
 export type CostSource = "stock" | "service" | "price_difference" | "charge" | "labour" | "petty_cash";
@@ -115,6 +169,8 @@ export type CloseOut = {
   moves: Array<{ id: string; number: number }>;
   siteStock: Array<{ itemName: string; unit: string; quantity: string; locationName: string }>;
   openWork: number;
+  /** Snags not closed: the project can't complete while one is open (PLM-070). */
+  openSnags?: Array<{ id: string; number: number; title: string; severity: string }>;
   drafts: CloseOutDraft[];
   heldStock: Array<{ itemId: string; itemName: string; unit: string; quantity: string; locationId: string; locationName: string }>;
   blockers: string[];
@@ -178,6 +234,10 @@ export type MaterialItem = {
   /** False for materials the client doesn't choose; they don't wait for sign-off. */
   clientChoice: boolean;
   usedIn: Array<{ id: string; title: string; areaName: string | null }>; decision: MaterialDecision | null;
+  /** Where it has got to (PLM-072): required, ordered, received or installed, as Purchasing works it out. */
+  status?: LineStatus | null;
+  /** PLM-055: product details for the technical team (internal; not part of what the client signs), with who added them and when. */
+  teamNote?: string; teamNoteByName?: string | null; teamNoteAt?: string | null;
 };
 export type MaterialRevision = {
   id: string; number: number; status: "sent" | "signed_off" | "changes_requested"; sentAt: string; sentByName: string | null;
@@ -215,6 +275,8 @@ export type WorkDetail = WorkItem & {
   subtaskIds: string[]; before: WorkLink[]; after: WorkLink[]; activity: WorkActivity[];
   /** A snag's photos before and after it's fixed. */
   photos: Array<{ id: string; kind: "before" | "after"; name: string; byName: string; at: string }>;
+  /** A task a stage check opened links to what its work needs: the drawings, measurements, material list, designs or the factory slot. */
+  links?: Array<{ key: "drawings" | "measurements" | "materials" | "designs" | "factory_slot" | "installation" | "permit"; href: string }>;
 };
 export type WorkBoard = {
   items: WorkItem[]; packages: Array<{ id: string; name: string; supply: Supply; planned: boolean }>; stages: Array<{ id: string; name: string; status: string }>;
@@ -267,7 +329,7 @@ export type SprintDetail = {
 export type BlockerKey = "late_work" | "blocked_work" | "materials_not_in" | "late_to_order" | "late_orders" | "work_orders_waiting" | "reports_missing" | "client_decisions"
   | "critical_snags" | "funds_short";
 export type Blocker = { key: BlockerKey; count: number; items: string[]; href: string };
-export type ClientDecision = { kind: "materials" | "handover" | "variation"; label: string; since: string | null; href: string };
+export type ClientDecision = { kind: "materials" | "drawings" | "handover" | "variation"; label: string; since: string | null; href: string };
 export type ActivityRow = { id: string; at: string; action: string; source: string; actor: string; subject: string; detail: Record<string, string> };
 /** The project's Overview, read on the server. */
 export type HealthReason =

@@ -15,6 +15,8 @@ const kitMigration = readFileSync(resolve(migrationsDir, "0130_firm_kit_role_tem
 const operationsMigration = readFileSync(resolve(migrationsDir, "0152_operations_v2.sql"), "utf8");
 const DELIVERY_TEMPLATES = ["buyer", "purchasing_approver", "storekeeper", "factory_lead", "qc_inspector"];
 const FINANCE_TEMPLATES = ["finance", "finance_approver"];
+/** Granted after 0152 by a later migration (0266 finance requests: existing roles get them by what they already hold). */
+const ADDED_LATER = new Set(["finance_requests.raise", "finance_requests.manage"]);
 
 describe("firm kit role templates", () => {
   it("gives a firm the people it employs, each with a permission set the catalog knows", () => {
@@ -45,8 +47,9 @@ describe("firm kit role templates", () => {
   });
 
   it("keeps the estimator and finance reviewer as the seeded review roles", () => {
-    expect(roleTemplatesFor(["quantity_surveyor"])[0].permissions).toEqual(["pre_projects.view", "crm.opportunities.view", "commercial.costs.view", "commercial.estimate"]);
-    expect(roleTemplatesFor(["finance_reviewer"])[0].permissions).toEqual(["pre_projects.view", "crm.opportunities.view", "commercial.finance.verify", "payables.view", "receivables.view"]);
+    expect(roleTemplatesFor(["quantity_surveyor"])[0].permissions).toEqual(["pre_projects.view", "crm.opportunities.view", "commercial.costs.view", "commercial.estimate", "finance_requests.raise"]);
+    expect(roleTemplatesFor(["finance_reviewer"])[0].permissions).toEqual(["pre_projects.view", "crm.opportunities.view", "commercial.finance.verify", "payables.view", "receivables.view",
+      "finance_requests.raise"]);
     expect(roleTemplatesFor(["project_manager"])[0].permissions).toEqual(expect.arrayContaining(["projects.manage", "projects.review", "projects.schedule.manage"]));
     expect(roleTemplatesFor(["site_supervisor"])[0].permissions).toEqual(expect.arrayContaining(["projects.report", "stock.receive", "hrms.team"]));
     expect(roleTemplatesFor(["site_supervisor"])[0].permissions).not.toContain("projects.manage");
@@ -89,7 +92,7 @@ describe("firm kit role templates", () => {
       expect(start, code).toBeGreaterThan(-1);
       const row = operationsMigration.slice(start, operationsMigration.indexOf("])", start));
       expect(row.includes(", true,") || row.includes(", true\n"), code).toBe(DELIVERY_TEMPLATES.includes(code));
-      expect([...row.slice(row.indexOf("ARRAY[")).matchAll(/'([a-z_.]+)'/g)].map((match) => match[1]), code).toEqual([...template.permissions]);
+      expect([...row.slice(row.indexOf("ARRAY[")).matchAll(/'([a-z_.]+)'/g)].map((match) => match[1]), code).toEqual(template.permissions.filter((permission) => !ADDED_LATER.has(permission)));
     }
   });
 

@@ -1,0 +1,45 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DesignSystemProvider } from "@/design-system";
+import { ClientCallsSection, type ClientCallsView } from "./client-calls";
+
+const caseRequest = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/pre-project/content", () => ({ caseRequest }));
+afterEach(() => caseRequest.mockReset());
+
+const weekly: ClientCallsView = { caseId: "case-1", frequency: "weekly", started: true, startedFrom: "design_approval", version: 3, ownerName: "Amal Account", hasOwner: true,
+  next: { activityId: "a1", startsAt: "2026-10-13T09:00:00.000Z" } };
+const show = () => render(<DesignSystemProvider locale="en-GB" timeZone="UTC"><ClientCallsSection workspaceId="w1" caseId="case-1" /></DesignSystemProvider>);
+
+describe("client update calls on the case (PLM-046)", () => {
+  it("show how often, the next call and with whom; a change is sent with the version seen", async () => {
+    caseRequest.mockImplementation(async (_w: string, _c: string, _path: string, method = "GET") => method === "GET" ? weekly : { ...weekly, frequency: "fortnightly", version: 4 });
+    const user = userEvent.setup();
+    show();
+    expect(await screen.findByRole("heading", { name: "Client update calls" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /How often/ })).toHaveTextContent("Weekly");
+    expect(screen.getByText("Amal Account")).toBeInTheDocument();
+    expect(screen.getByText(/13 Oct/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /How often/ }));
+    await user.click(await screen.findByRole("option", { name: "Every two weeks" }));
+    await waitFor(() => expect(caseRequest).toHaveBeenCalledWith("w1", "case-1", "client-calls", "PUT", { frequency: "fortnightly", version: 3 }));
+    expect(await screen.findByRole("button", { name: /How often/ })).toHaveTextContent("Every two weeks");
+  });
+
+  it("can be declined (off), and stay hidden on a job with no Account Manager", async () => {
+    caseRequest.mockResolvedValueOnce({ ...weekly, started: false, hasOwner: false, frequency: "off", next: null, version: 0 });
+    const { unmount } = show();
+    await waitFor(() => expect(caseRequest).toHaveBeenCalled());
+    expect(screen.queryByRole("heading", { name: "Client update calls" })).toBeNull();
+    unmount();
+    caseRequest.mockReset();
+    caseRequest.mockImplementation(async (_w: string, _c: string, _path: string, method = "GET") => method === "GET" ? weekly : { ...weekly, frequency: "off", next: null, version: 4 });
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: /How often/ }));
+    await user.click(await screen.findByRole("option", { name: "Off" }));
+    await waitFor(() => expect(caseRequest).toHaveBeenCalledWith("w1", "case-1", "client-calls", "PUT", { frequency: "off", version: 3 }));
+    await waitFor(() => expect(screen.queryByText("Amal Account")).toBeNull());
+  });
+});

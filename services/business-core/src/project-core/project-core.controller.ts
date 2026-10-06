@@ -8,6 +8,7 @@ import { sendMedia } from "../gallery/gallery.controller";
 import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/reference-upload";
 import { LabourRatesService } from "./labour-rates.service";
 import { ProjectCoreService } from "./project-core.service";
+import { ProjectDrawingsService } from "./project-drawings.service";
 import { ProjectMoneyService } from "./project-money.service";
 import { ProjectOverviewService } from "./project-overview.service";
 import { ProjectWorkService } from "./project-work.service";
@@ -18,7 +19,7 @@ import { ProjectWorkService } from "./project-work.service";
 @Controller("workspaces/:workspaceId/project-core")
 export class ProjectCoreController {
   constructor(private readonly projects: ProjectCoreService, private readonly work: ProjectWorkService, private readonly money: ProjectMoneyService,
-    private readonly labourRates: LabourRatesService, private readonly overviews: ProjectOverviewService) {}
+    private readonly labourRates: LabourRatesService, private readonly overviews: ProjectOverviewService, private readonly drawingFiles: ProjectDrawingsService) {}
 
   @Get("settings")
   settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.projects.settings(actor, workspaceId); }
@@ -65,6 +66,27 @@ export class ProjectCoreController {
 
   @Get("projects/:projectId/materials")
   materials(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) { return this.projects.materials(actor, workspaceId, projectId); }
+
+  @Get("projects/:projectId/drawings")
+  drawings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
+    return this.drawingFiles.read(actor, workspaceId, projectId);
+  }
+
+  @Post("projects/:projectId/drawings/:revisionId/files/:fileId")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 1 } }))
+  drawingUpload(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("revisionId", ParseUUIDPipe) revisionId: string, @Param("fileId", ParseUUIDPipe) fileId: string, @Query("kind") kind: string, @UploadedFile() file: ReferenceUpload) {
+    return this.drawingFiles.upload(actor, workspaceId, projectId, revisionId, fileId, kind, file);
+  }
+
+  @Get("projects/:projectId/drawings/files/:fileId")
+  async drawingFile(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("fileId", ParseUUIDPipe) fileId: string, @Query("preview") preview: string, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const file = await this.drawingFiles.file(actor, workspaceId, projectId, fileId, preview === "1");
+    response.setHeader("Cache-Control", "private, max-age=300");
+    if (preview !== "1") response.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+    return sendMedia(file, request, response);
+  }
 
   @Get("projects/:projectId/money")
   projectMoney(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {

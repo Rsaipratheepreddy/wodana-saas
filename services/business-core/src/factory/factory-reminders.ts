@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { needsNotIn, readNeeds } from "../purchasing/orders";
 import { materialsShort, plain, readWorkOrderMaterials } from "./factory";
+import { remindSamplesDue } from "./factory-samples";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -15,7 +16,9 @@ export async function processFactoryDeadlines(db: Db, workspaceId: string) {
     `SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.today;
   if (!today) return { sent: 0 };
   const stale = await holdStaleDrawings(db, workspaceId);
-  return { sent: stale + await chaseMaterials(db, workspaceId, today) };
+  // PLM-061: a sample due today (or late) and not ready reminds the factory once.
+  const samples = await remindSamplesDue(db, workspaceId, today);
+  return { sent: stale + samples + await chaseMaterials(db, workspaceId, today) };
 }
 
 /**

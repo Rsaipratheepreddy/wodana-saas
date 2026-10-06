@@ -45,7 +45,7 @@ describe("Settings form dialogs", () => {
     render(<DesignSystemProvider><LegalEntitiesPanel canManage initialEntities={companyProfileFixture.legalEntities} onChange={vi.fn()} workspace={companyProfileFixture.workspace} /></DesignSystemProvider>);
     await userEvent.click(screen.getByRole("button", { name: "Add business" }));
     const dialog = await screen.findByRole("dialog", { name: "Add business" });
-    expect(sectionTitles(dialog)).toEqual(["Legal & tax", "Registered office", "Regional defaults"]);
+    expect(sectionTitles(dialog)).toEqual(["Legal & tax", "Registered office", "Contact", "Letterhead", "Regional defaults"]);
     expect(rows(dialog)).toBe(0);
     noDescription(dialog);
     saveAtTheEnd(dialog, "Add business");

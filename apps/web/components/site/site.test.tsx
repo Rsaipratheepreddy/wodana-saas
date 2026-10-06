@@ -169,4 +169,27 @@ describe("daily progress", () => {
     await userEvent.click(await screen.findByRole("option", { name: "Incident" }));
     expect(within(dialog).getByRole("textbox", { name: /What happened/ })).toBeInTheDocument();
   });
+
+  it("PLM-065: finishing site work with the balance before installation owed lists what's owed; only someone who manages projects signs it off, with why", async () => {
+    const owed = { stages: [{ id: "p2", title: "Balance before installation", amount: "25000.00", currency: "AED", state: "invoiced" as const }], totals: [{ currency: "AED", amount: "25000.00" }] };
+    let fetcher = mount(() => state({ installationOwed: owed, canSignOffOwed: false }));
+    const view = site();
+    await userEvent.click(await screen.findByRole("button", { name: "Finish site work" }));
+    let dialog = await screen.findByRole("dialog", { name: "Finish site work" });
+    expect(within(dialog).getByText("Balance before installation")).toBeInTheDocument();
+    expect(within(dialog).getByText("Invoiced")).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "Open payments" })).toHaveAttribute("href", `/workspace/projects/${PID}/money?view=client`);
+    expect(within(dialog).queryByRole("button", { name: "Finish site work" })).not.toBeInTheDocument();
+    expect(posts(fetcher)).toEqual([]);
+    view.unmount();
+
+    fetcher = mount((url, init) => init?.method === "POST" ? state({ site: { startedOn: "2026-09-21", finishedOn: "2026-09-27" }, installationOwed: null }) : state({ installationOwed: owed, canSignOffOwed: true }));
+    site();
+    await userEvent.click(await screen.findByRole("button", { name: "Finish site work" }));
+    dialog = await screen.findByRole("dialog", { name: "Finish site work" });
+    expect(within(dialog).getByRole("button", { name: "Finish site work" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it's signed off before it's paid/ }), "Owner agreed: paid on handover");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Finish site work" }));
+    await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "finish_site", on: "2026-09-27", owedReason: "Owner agreed: paid on handover" })]));
+  });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { parseDate } from "@internationalized/date";
 import { ArrowRight, Plus, X } from "lucide-react";
 import {
@@ -198,6 +199,12 @@ function WorkBody({ workspaceId, detail, board, run, notice, onOpenItem, preview
     {edit ? <TextAreaField label={t("Description")} value={description} onChange={setDescription}
         onBlur={() => { if (description.trim() !== detail.description) void update({ description }); }} />
       : detail.description ? <p className={styles.description}>{detail.description}</p> : null}
+    {/* A task a stage check opened: what its work needs, one tap away. */}
+    {detail.links?.length ? <ul className={styles.taskLinks} aria-label={t("What it needs")}>
+      {detail.links.map((link) => <li key={link.key}><Link href={link.href}>{({ drawings: t("Drawings"), measurements: t("Site measurements"), materials: t("Material list"),
+        designs: t("Designer's product details"), factory_slot: t("Factory slot"), installation: t("Delivery and installation"),
+        permit: t("Building permit") } as const)[link.key]}</Link></li>)}
+    </ul> : null}
 
     {!detail.parentId ? <Subtasks detail={detail} board={board} run={run} onOpenItem={onOpenItem} /> : null}
     <WaitsOn detail={detail} board={board} run={run} onOpenItem={onOpenItem} />

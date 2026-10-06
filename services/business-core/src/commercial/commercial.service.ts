@@ -5,6 +5,7 @@ import { noticeQuoteStep } from "../quotation/quote-notices";
 import { releasePhaseOnDealApproval, winOpportunityOnAcceptance } from "./quote-acceptance";
 import { dealAmount, dealApprovalView, decideDealStep, openDealApproval } from "./deal-file-approval";
 import { dealInsightFor } from "./deal-file-insight";
+import { readCaseTeam } from "../project-core/project-team";
 import { markProposalWon } from "../crm/opportunities/opportunity-proposals";
 import { decisionEvidenceFile, decisionRecorder } from "./quote-decision-access";
 import { extendQuoteValidity } from "./quote-expiry";
@@ -125,7 +126,8 @@ import { ConfigurationRevisionsService } from "../workspaces/configuration-revis
 import type { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-configuration-revision.dto";
 import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
 import { contactEmailSql } from "../client-portal/contact-email";
-import { beforeQuoteIssued } from "../proposals/quote-issue";
+import { beforeQuoteIssued, quotationEntityId, quotingEntity } from "../proposals/quote-issue";
+import { readLetterhead } from "../workspaces/entity-letterhead";
 
 /** Remove internal cost and margin truth without mutating the persisted commercial aggregate. */
 export function commercialDataForCostAccess(data: CommercialData, canViewCosts: boolean): CommercialData {
@@ -487,10 +489,13 @@ export class CommercialService {
           servicePathEnabled,
           data: commercialDataForCostAccess(data, canViewCosts),
           dealApproval,
-          dealInsight: await dealInsightFor(client, workspaceId, { caseId, opportunityId: record.opportunityId ? String(record.opportunityId) : null, data, canViewCosts }),
+          dealInsight: await dealInsightFor(client, workspaceId, { caseId, opportunityId: record.opportunityId ? String(record.opportunityId) : null, data, canViewCosts,
+            team: data.dealFile || data.ownerReview ? await readCaseTeam(client, workspaceId, caseId) : [] }),
           contacts,
           portalSlug: settings.rows[0]?.slug ?? null,
           portalBrand: await effectivePortalBrand(client, workspaceId),
+          // The business a new quotation is issued by: its letterhead heads the preview (PLM-112).
+          portalLetterhead: await readLetterhead(client, workspaceId, (await quotingEntity(client, workspaceId, caseId))?.id),
           portalEnabled: settings.rows[0]?.enabled ?? false,
           testMode: this.testMode,
           releaseReadiness,
@@ -2580,6 +2585,7 @@ export class CommercialService {
             q.issuedAt = now;
             q.approverId = grant.id;
             q.brand = await effectivePortalBrand(client, workspaceId);
+            q.letterhead = await readLetterhead(client, workspaceId, await quotationEntityId(client, workspaceId, caseId, q.familyId ?? q.id));
             // Brand is frozen only on issue. It changes the public snapshot,
             // not the QS-reviewed quantities, costs or selling prices.
             if (data.servicePath && q.kind === "quotation" && q.qsEstimate)

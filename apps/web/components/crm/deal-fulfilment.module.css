@@ -1,0 +1,15 @@
+.body { display: grid; gap: var(--wd-space-3); }
+.error { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
+.expected { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.steps { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.steps li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.steps li[data-state="done"] { color: var(--wd-color-success); }
+.steps li[data-state="current"] { color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
+.steps small { color: var(--wd-color-text-tertiary); }
+.list { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.list li { display: grid; gap: var(--wd-space-0-5); }
+.list li > :first-child { color: var(--wd-color-text); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.lines { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.lines li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 8rem) minmax(0, 9rem); align-items: center; gap: var(--wd-space-2); }
+@media (max-width: 40rem) { .lines li { grid-template-columns: minmax(0, 1fr); } }

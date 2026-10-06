@@ -24,6 +24,7 @@ import { CrmFlowsModule } from "./crm/flows/crm-flows.module";
 import { FlowStepsModule } from "./crm/flow-steps/flow-steps.module";
 import { CrmTodayModule } from "./crm/today/crm-today.module";
 import { CrmReportingModule } from "./crm/reporting/crm-reporting.module";
+import { ManagementReportsModule } from "./management-reports/management-reports.module";
 import { CrmSettingsModule } from "./crm/settings/crm-settings.module";
 import { CrmAutomationsModule } from "./crm/automations/crm-automations.module";
 import { CrmNotificationsModule } from "./crm/notifications/crm-notifications.module";
@@ -46,11 +47,17 @@ import { GalleryModule } from "./gallery/gallery.module";
 import { ProjectCoreModule } from "./project-core/project-core.module";
 import { PurchasingModule } from "./purchasing/purchasing.module";
 import { FactoryModule } from "./factory/factory.module";
+import { TeamCalendarsModule } from "./team-calendars/team-calendars.module";
+import { LogisticsModule } from "./logistics/logistics.module";
+import { ClientCallsModule } from "./client-calls/client-calls.module";
 import { SiteModule } from "./site/site.module";
 import { ReceivablesModule } from "./receivables/receivables.module";
 import { AccountingModule } from "./accounting/accounting.module";
 import { PettyCashModule } from "./petty-cash/petty-cash.module";
+import { FinanceRequestsModule } from "./finance-requests/finance-requests.module";
+import { FulfilmentModule } from "./fulfilment/fulfilment.module";
 import { InventoryModule } from "./inventory/inventory.module";
+import { LinkedImportsModule } from "./linked-imports/linked-imports.module";
 import { ApprovalsModule } from "./approvals/approvals.controller";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { BookingModule } from "./booking/booking.module";
@@ -85,6 +92,7 @@ import { GridSettingsModule } from "./grid-settings/grid-settings.module";
     FlowStepsModule,
     CrmTodayModule,
     CrmReportingModule,
+    ManagementReportsModule,
     CrmSettingsModule,
     CrmAutomationsModule,
     CrmNotificationsModule,
@@ -114,11 +122,17 @@ import { GridSettingsModule } from "./grid-settings/grid-settings.module";
     ProjectCoreModule,
     PurchasingModule,
     InventoryModule,
+    LinkedImportsModule,
     FactoryModule,
+    TeamCalendarsModule,
+    LogisticsModule,
+    ClientCallsModule,
     SiteModule,
     ReceivablesModule,
     AccountingModule,
     PettyCashModule,
+    FinanceRequestsModule,
+    FulfilmentModule,
     ApprovalsModule,
     HrmsModule,
     NotificationsModule,

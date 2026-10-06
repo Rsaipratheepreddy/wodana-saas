@@ -33,53 +33,64 @@ export class SuppliersService {
 
   save(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
     return this.access.withPermission(actor, workspaceId, "vendors.manage", async (client, user) => {
-      const id = uuid(body.id, "Supplier");
-      const current = await readSupplier(client, workspaceId, id, true);
-      if (current && body.version !== current.version) throw new ConflictException("Someone else changed this supplier. Reload to see their changes.");
-      const name = text(body.name, 240, "Name");
-      if (!name) throw new BadRequestException("Name the supplier.");
-      if ((await client.query(`SELECT 1 FROM workspace_vendors WHERE workspace_id = $1 AND id <> $2 AND status <> 'archived' AND lower(btrim(display_name)) = lower($3)`, [workspaceId, id, name])).rowCount)
-        throw new ConflictException("Another supplier has this name.");
-      const typed = text(body.taxRegistrationNumber, 120, "Tax number");
-      // A new or changed number is checked against the country's format (PLM-111); one kept as it was stays as it was.
-      const kept = Boolean(typed) && normaliseTaxNumber(typed) === normaliseTaxNumber(current?.taxRegistrationNumber ?? "");
-      const tax = (kept ? current!.taxRegistrationNumber : checkTaxNumber(typed, await readTaxNumberRule(client, workspaceId))) || null;
-      // The same number written with other spacing or dashes is still the same supplier.
-      if (tax && (await client.query(`SELECT 1 FROM workspace_vendors WHERE workspace_id = $1 AND id <> $2
-            AND upper(regexp_replace(tax_registration_number, '[[:space:]./-]+', '', 'g')) = $3`, [workspaceId, id, normaliseTaxNumber(tax)])).rowCount)
-        throw new ConflictException("Another supplier has this tax number.");
-      const categories = cleanCategories(body.categories, await this.knownCategories(client, workspaceId));
-      const terms = this.terms(body);
-      const deal = this.deal(body);
-      const currency = body.currency ? String(body.currency).toUpperCase() : null;
-      if (currency && !/^[A-Z]{3}$/.test(currency)) throw new BadRequestException("Choose a currency.");
-      const email = text(body.email, 320, "Email") || null;
-      if (email && !EMAIL.test(email)) throw new BadRequestException("Enter a valid email.");
-      const fields = { name, legalName: text(body.legalName, 240, "Legal name") || null, categories, ...terms, ...deal, tax, currency, notes: text(body.notes, 10000, "Notes") };
-      // Preferred categories stay only while the supplier still has them.
-      const preferred = (current?.preferredFor ?? []).filter((item) => categories.some((category) => category.toLocaleLowerCase() === item.toLocaleLowerCase()))
-        .map((item) => categories.find((category) => category.toLocaleLowerCase() === item.toLocaleLowerCase())!);
-      if (current) {
-        await client.query(
-          `UPDATE workspace_vendors SET display_name = $3, legal_name = $4, categories = $5, preferred_for = $6, payment_terms = $7, advance_percent = $8, credit_days = $9, terms_note = $10,
-                  deal = $11, deal_percent = $12, deal_note = $13, tax_registration_number = $14, default_currency = $15, notes = $16, updated_by = $17, retention_percent = $18,
-                  updated_at = now(), version = version + 1
-            WHERE workspace_id = $1 AND id = $2`,
-          [workspaceId, id, name, fields.legalName, categories, preferred, terms.paymentTerms, terms.advancePercent, terms.creditDays, terms.termsNote,
-            deal.deal, deal.dealPercent, deal.dealNote, tax, currency, fields.notes, user.userId, terms.retentionPercent]);
-      } else {
-        await client.query(
-          `INSERT INTO workspace_vendors (workspace_id, id, code, display_name, legal_name, capabilities, categories, payment_terms, advance_percent, credit_days, terms_note,
-                                          deal, deal_percent, deal_note, tax_registration_number, default_currency, notes, status, created_by, updated_by, retention_percent)
-           VALUES ($1, $2, $3, $4, $5, '{materials}', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'active', $17, $17, $18)`,
-          [workspaceId, id, await supplierCode(client, workspaceId, name), name, fields.legalName, categories, terms.paymentTerms, terms.advancePercent, terms.creditDays,
-            terms.termsNote, deal.deal, deal.dealPercent, deal.dealNote, tax, currency, fields.notes, user.userId, terms.retentionPercent]);
-      }
-      await this.contact(client, workspaceId, id, body, user.userId);
-      await this.entities(client, workspaceId, id, body.entityIds);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: current ? "supplier.changed" : "supplier.created", entityType: "supplier", entityId: id, before: current ?? null, after: fields });
+      const id = await this.saveWith(client, workspaceId, user.userId, body);
       return { ...(await this.state(client, workspaceId, user.userId)), supplierId: id };
     });
+  }
+
+  /**
+   * The save command inside the caller's transaction (a linked supplier sheet): the same checks (name, the
+   * country's tax number format, duplicate tax numbers and phones) and the same audit. A new supplier takes
+   * `code` when it's free. Returns the supplier's id.
+   */
+  async saveWith(client: Db, workspaceId: string, userId: string, body: Record<string, unknown>, options: { code?: string | null } = {}) {
+    const user = { userId };
+    const id = uuid(body.id, "Supplier");
+    const current = await readSupplier(client, workspaceId, id, true);
+    if (current && body.version !== current.version) throw new ConflictException("Someone else changed this supplier. Reload to see their changes.");
+    const name = text(body.name, 240, "Name");
+    if (!name) throw new BadRequestException("Name the supplier.");
+    if ((await client.query(`SELECT 1 FROM workspace_vendors WHERE workspace_id = $1 AND id <> $2 AND status <> 'archived' AND lower(btrim(display_name)) = lower($3)`, [workspaceId, id, name])).rowCount)
+      throw new ConflictException("Another supplier has this name.");
+    const typed = text(body.taxRegistrationNumber, 120, "Tax number");
+    // A new or changed number is checked against the country's format (PLM-111); one kept as it was stays as it was.
+    const kept = Boolean(typed) && normaliseTaxNumber(typed) === normaliseTaxNumber(current?.taxRegistrationNumber ?? "");
+    const tax = (kept ? current!.taxRegistrationNumber : checkTaxNumber(typed, await readTaxNumberRule(client, workspaceId))) || null;
+    // The same number written with other spacing or dashes is still the same supplier.
+    if (tax && (await client.query(`SELECT 1 FROM workspace_vendors WHERE workspace_id = $1 AND id <> $2
+          AND upper(regexp_replace(tax_registration_number, '[[:space:]./-]+', '', 'g')) = $3`, [workspaceId, id, normaliseTaxNumber(tax)])).rowCount)
+      throw new ConflictException("Another supplier has this tax number.");
+    const categories = cleanCategories(body.categories, await this.knownCategories(client, workspaceId));
+    const terms = this.terms(body);
+    const deal = this.deal(body);
+    const currency = body.currency ? String(body.currency).toUpperCase() : null;
+    if (currency && !/^[A-Z]{3}$/.test(currency)) throw new BadRequestException("Choose a currency.");
+    const email = text(body.email, 320, "Email") || null;
+    if (email && !EMAIL.test(email)) throw new BadRequestException("Enter a valid email.");
+    const fields = { name, legalName: text(body.legalName, 240, "Legal name") || null, categories, ...terms, ...deal, tax, currency, notes: text(body.notes, 10000, "Notes") };
+    // Preferred categories stay only while the supplier still has them.
+    const preferred = (current?.preferredFor ?? []).filter((item) => categories.some((category) => category.toLocaleLowerCase() === item.toLocaleLowerCase()))
+      .map((item) => categories.find((category) => category.toLocaleLowerCase() === item.toLocaleLowerCase())!);
+    if (current) {
+      await client.query(
+        `UPDATE workspace_vendors SET display_name = $3, legal_name = $4, categories = $5, preferred_for = $6, payment_terms = $7, advance_percent = $8, credit_days = $9, terms_note = $10,
+                deal = $11, deal_percent = $12, deal_note = $13, tax_registration_number = $14, default_currency = $15, notes = $16, updated_by = $17, retention_percent = $18,
+                updated_at = now(), version = version + 1
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, id, name, fields.legalName, categories, preferred, terms.paymentTerms, terms.advancePercent, terms.creditDays, terms.termsNote,
+          deal.deal, deal.dealPercent, deal.dealNote, tax, currency, fields.notes, user.userId, terms.retentionPercent]);
+    } else {
+      await client.query(
+        `INSERT INTO workspace_vendors (workspace_id, id, code, display_name, legal_name, capabilities, categories, payment_terms, advance_percent, credit_days, terms_note,
+                                        deal, deal_percent, deal_note, tax_registration_number, default_currency, notes, status, created_by, updated_by, retention_percent)
+         VALUES ($1, $2, $3, $4, $5, '{materials}', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'active', $17, $17, $18)`,
+        [workspaceId, id, await this.newCode(client, workspaceId, name, options.code), name, fields.legalName, categories, terms.paymentTerms, terms.advancePercent, terms.creditDays,
+          terms.termsNote, deal.deal, deal.dealPercent, deal.dealNote, tax, currency, fields.notes, user.userId, terms.retentionPercent]);
+    }
+    await this.contact(client, workspaceId, id, body, user.userId);
+    await this.entities(client, workspaceId, id, body.entityIds);
+    await recordAudit(client, { workspaceId, actorUserId: user.userId, action: current ? "supplier.changed" : "supplier.created", entityType: "supplier", entityId: id, before: current ?? null, after: fields });
+    return id;
   }
 
   /** Approve, refuse or hold a supplier, and name the categories it's the preferred supplier for. */
@@ -202,6 +213,13 @@ export class SuppliersService {
       /** How the country writes a tax registration number (name, format and an example), from its region pack. */
       taxNumber: await readTaxNumberRule(client, workspaceId),
     };
+  }
+
+  /** A new supplier's code: the one asked for when it's a valid, free code, else one made from its name. */
+  private async newCode(client: Db, workspaceId: string, name: string, wanted: string | null | undefined) {
+    if (wanted && /^[A-Z0-9][A-Z0-9_-]{0,79}$/.test(wanted)
+      && !(await client.query(`SELECT 1 FROM workspace_vendors WHERE workspace_id = $1 AND lower(code) = lower($2)`, [workspaceId, wanted])).rowCount) return wanted;
+    return supplierCode(client, workspaceId, name);
   }
 
   private async entitiesOf(client: Db, workspaceId: string) {

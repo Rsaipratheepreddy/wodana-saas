@@ -1,3 +1,4 @@
+import type { TeamEntry } from './team-calendar';
 export type CalendarMode = "day" | "week" | "month";
 export function calendarDayKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -19,7 +20,7 @@ export function localDateTime(value: unknown) {
   return `${calendarDayKey(date)}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
-export type CalendarEvent = { id: string; title: string; start: Date; end?: Date; allDay?: boolean; provider: 'crm' | 'google' | 'project'; kind?: string; status?: string; href?: string; calendarName?: string; ownerId?: string; ownerName?: string; connectionId?: string; description?: string; location?: string; attendees?: Array<{ email: string; displayName?: string; responseStatus?: string }> };
+export type CalendarEvent = { id: string; title: string; start: Date; end?: Date; allDay?: boolean; provider: 'crm' | 'google' | 'project' | 'team'; kind?: string; overdue?: boolean; team?: TeamEntry; status?: string; href?: string; calendarName?: string; ownerId?: string; ownerName?: string; connectionId?: string; description?: string; location?: string; attendees?: Array<{ email: string; displayName?: string; responseStatus?: string }> };
 export function eventsForDay(events: CalendarEvent[], day: Date) {
   const end = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
   return events.filter(event => event.start < end && (event.end && event.end > event.start ? event.end > day : event.start >= day));

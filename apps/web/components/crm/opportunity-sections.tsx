@@ -17,6 +17,7 @@ import { OpportunityIntro, type Intro } from "./opportunity-intro";
 import { SideSection } from "./record/record-layout";
 import styles from "./opportunity-sections.module.css";
 import { OpportunityClosing, OpportunityProposals } from "./opportunity-proposals";
+import { DealFulfilmentCard } from "./deal-fulfilment";
 
 /** A group of facts: its title, how complete it is, Edit, and the facts as label and value; folds away. */
 export function FactCard({ id, title, status, tone = "neutral", open, onToggle, action, children }: {
@@ -122,6 +123,9 @@ export function OpportunityCards(props: CardsProps) {
     <OpportunityProposals workspaceId={props.workspaceId} opportunityId={props.opportunityId} flow={flow} closed={closed && !props.won} won={Boolean(props.won)}
       open={isOpen("proposals")} onToggle={() => onToggle("proposals")} onChanged={props.onSaved} onSecondProof={props.onSecondProof} />
     {props.won ? <OpportunityClosing workspaceId={props.workspaceId} opportunityId={props.opportunityId} won open={isOpen("closing")} onToggle={() => onToggle("closing")} /> : null}
+    {/* PLM-083 / PLM-126: the order's BOQ choice, and how a won order reaches the client on its path. */}
+    {!closed || props.won ? <DealFulfilmentCard workspaceId={props.workspaceId} opportunityId={props.opportunityId} won={Boolean(props.won)} open={isOpen("fulfilment")}
+      onToggle={() => onToggle("fulfilment")} /> : null}
   </div>;
 }
 

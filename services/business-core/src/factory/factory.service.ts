@@ -21,7 +21,11 @@ import {
   capacity, defaultHours, ensureFactorySettings, materialsShort, plain, readBatches, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders, workOrderNext, type WorkOrderRow,
 } from "./factory";
 import { orderReady, readReadyReminder, remindForReady } from "./factory-ready";
+import { drawingsGate } from "../project-core/project-drawings";
 import { setWorkcenterRate, workspaceDay } from "./workcenter-rates";
+import { normaliseProductionSteps, parseProductionSteps, parseProductionWeeks, readProduction } from "./production-status";
+import { useForProduction } from "../fulfilment/stock-reservations";
+import { tellKeepInformed } from "../project-core/project-keep-informed";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -133,6 +137,9 @@ export class FactoryService {
           if (order.lineStatus === "omitted" || Dec.of(order.scopeOver).cmp(0) > 0) throw new ConflictException(`WO-${String(order.number).padStart(4, "0")}: its scope changed.`);
           await client.query(`UPDATE work_orders SET status = 'in_production', started_at = now(), version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id]);
           await this.event(client, workspaceId, order.id, "start", { batch: id }, user.userId);
+          await this.productionStarted(client, workspaceId, order.projectId, user.userId);
+          // PLM-125: starting takes the work order's materials out where its path says so (Furniture D and E).
+          await useForProduction(client, workspaceId, { workOrderId: order.id, actorUserId: user.userId });
         }
         await client.query(`UPDATE production_batches SET status = 'started' WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
       } else if (action === "close") {
@@ -271,6 +278,8 @@ export class FactoryService {
         await need("factory.manage", "You can't start work orders.");
         status("released");
         await set(`status = 'in_production', started_at = now()`);
+        await this.productionStarted(client, workspaceId, order.projectId, user.userId);
+        await useForProduction(client, workspaceId, { workOrderId: orderId, actorUserId: user.userId });
       } else if (action === "report") {
         await need("factory.report", "You can't report output.");
         status("in_production");
@@ -443,8 +452,12 @@ export class FactoryService {
       const current = await ensureFactorySettings(client, workspaceId);
       if (body.version !== current.version) throw new ConflictException("Someone else changed these settings. Reload to see their changes.");
       const flag = (key: "requireDrawing" | "requirePayment" | "requireMaterials" | "requireCheck") => (body[key] === undefined ? current[key] : body[key] === true);
-      await client.query(`UPDATE workspace_factory_settings SET require_drawing = $2, require_payment = $3, require_materials = $4, require_check = $5, version = version + 1, updated_by = $6,
-        updated_at = now() WHERE workspace_id = $1`, [workspaceId, flag("requireDrawing"), flag("requirePayment"), flag("requireMaterials"), flag("requireCheck"), user.userId]);
+      // PLM-063: the production steps the firm keeps, in its own words, and its internal production target.
+      const steps = body.productionSteps === undefined ? normaliseProductionSteps(current.productionSteps) : parseProductionSteps(body.productionSteps);
+      const weeks = body.productionWeeks === undefined ? current.productionWeeks : parseProductionWeeks(body.productionWeeks);
+      await client.query(`UPDATE workspace_factory_settings SET require_drawing = $2, require_payment = $3, require_materials = $4, require_check = $5, production_steps = $7::jsonb,
+        production_weeks = $8, version = version + 1, updated_by = $6, updated_at = now() WHERE workspace_id = $1`,
+        [workspaceId, flag("requireDrawing"), flag("requirePayment"), flag("requireMaterials"), flag("requireCheck"), user.userId, JSON.stringify(steps), weeks]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "factory.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return this.settingsView(client, workspaceId, user.userId);
     });
@@ -520,14 +533,33 @@ export class FactoryService {
     });
   }
 
+  /**
+   * PLM-063: the production schedule, project by project: its status read from its work orders, and its planned
+   * dates against the actual ones.
+   */
+  production(actor: RequestActor, workspaceId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client) => readProduction(client, workspaceId));
+  }
+
   // ---------- helpers ----------
+  /**
+   * PLM-055: the first work order of a project starting is its production starting; the people kept informed (the
+   * designer) hear it once. Work orders started in the same command count as one start.
+   */
+  private async productionStarted(client: Db, workspaceId: string, projectId: string, userId: string) {
+    const earlier = (await client.query(`SELECT 1 FROM work_orders WHERE workspace_id = $1 AND project_id = $2 AND started_at < now() LIMIT 1`, [workspaceId, projectId])).rowCount;
+    if (earlier) return;
+    await tellKeepInformed(client, { workspaceId, projectId, event: "production_started", key: "first", actorUserId: userId, date: (await workspaceDay(client, workspaceId)).today });
+  }
+
   /** Settings → Factory; the hourly rates only for people who set them or see costs. */
   private async settingsView(client: Db, workspaceId: string, userId: string) {
     const canManage = await this.access.hasPermission(client, workspaceId, userId, "workspace.settings.manage");
     const canSeeRates = canManage || await this.access.hasPermission(client, workspaceId, userId, "commercial.costs.view");
     const workspace = await workspaceDay(client, workspaceId);
+    const settings = await ensureFactorySettings(client, workspaceId);
     return {
-      settings: await ensureFactorySettings(client, workspaceId), workcenters: await readWorkcenters(client, workspaceId, true), canManage, canSeeRates,
+      settings: { ...settings, productionSteps: normaliseProductionSteps(settings.productionSteps) }, workcenters: await readWorkcenters(client, workspaceId, true), canManage, canSeeRates,
       rates: canSeeRates ? (await readWorkcenterRates(client, workspaceId)).map(({ key, ...rate }) => ({ ...rate, workcenterId: key })) : [],
       currency: workspace.currency, today: workspace.today,
     };
@@ -548,6 +580,9 @@ export class FactoryService {
       { key: "scope", passed: order.lineStatus === "active" && Dec.of(order.scopeOver).cmp(0) <= 0,
         missing: order.lineStatus === "omitted" ? "a variation removed its scope line" : `a variation reduced its scope line by ${plain(order.scopeOver)} ${order.unit}`.replace("  ", " ") },
     ];
+    // PLM-059: on a route that asks for the client's drawing approval, production waits for it (a skipped stage doesn't ask).
+    const clientDrawings = await drawingsGate(client, workspaceId, order.projectId);
+    if (clientDrawings.required) checks.push({ key: "client_drawings", passed: clientDrawings.approved, missing: "the client hasn't approved the technical drawings" });
     if (settings.requireDrawing) checks.push({ key: "drawing", passed: Boolean(drawing?.at) && !order.drawingNewer,
       missing: drawing?.at && order.drawingNewer ? `the drawing has a newer revision (R${order.drawingNewer})` : "the drawing isn't approved" });
     if (settings.requirePayment) checks.push({ key: "payment", passed: project ? await productionPaid(client, workspaceId, project.caseId, project.quoteId) : false, missing: "the payment before production isn't verified" });

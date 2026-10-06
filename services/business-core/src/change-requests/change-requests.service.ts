@@ -10,6 +10,8 @@ import { EsignService } from "../proposals/esign.service";
 import { addDocumentVersion } from "../proposals/proposal-documents.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { pdfLetterhead } from "../proposals/pdf-letterhead";
+import { quotingEntity } from "../proposals/quote-issue";
 import { composeChangeDocument } from "./change-request-pdf";
 import {
   applyChangeApproval, createChange, readChange, readChangeEvents, readChanges, readPoImpacts, recordSent, saveDraft, submitChange, withdrawChange,
@@ -136,7 +138,8 @@ export class ChangeRequestsService {
         WHERE pre_case.workspace_id = $1 AND pre_case.id = $2 LIMIT 1`, [workspaceId, change.caseId])).rows[0];
     const brand = await effectivePortalBrand(client, workspaceId);
     const bytes = Buffer.from(await composeChangeDocument({
-      brandName: brand.name, reference: change.reference, title: change.title, description: change.description, designImpact: change.designImpact,
+      brandName: brand.name, letterhead: await pdfLetterhead(client, this.storage, workspaceId, (await quotingEntity(client, workspaceId, change.caseId))?.id),
+      reference: change.reference, title: change.title, description: change.description, designImpact: change.designImpact,
       project: facts?.project ?? "", clientName: facts?.clientName ?? "", issuedOn: facts?.today ?? "", currency: change.currency, decimals: currencyDecimals(change.currency),
       lines: change.lines.map((line) => ({ action: line.action, title: line.title, room: line.roomName, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, amount: line.amount })),
       priceImpact: change.priceImpact, timeImpactDays: change.timeImpactDays, handoverBefore: change.handoverBefore, handoverAfter: change.handoverAfter,

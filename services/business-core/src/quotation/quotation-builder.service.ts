@@ -21,6 +21,7 @@ import { buildUp, checkFormula, lineQuantity } from "./quote-quantity";
 import { auditableKit, changeProposalKit, readProposalKit, writeProposalKit } from "./proposal-kit";
 import { MARKUP_DISCLOSURES, type MarkupDisclosure } from "../proposals/markup-disclosure";
 import { touchesQsFields } from "../proposals/qs-review.domain";
+import { boqRequiredForCase } from "../fulfilment/fulfilment-rules";
 
 type Db = PoolClient;
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit";
@@ -258,7 +259,9 @@ export class QuotationBuilderService {
       const canEditCosts = await this.access.hasPermission(client, workspaceId, user.userId, "commercial.costs.manage");
       const settings = await readSettings(client, workspaceId);
       // PLM-082: where the QS prices quotations, the price fields are theirs (a catalog pick still fills them).
-      const qsPrices = settings.qsReview && quote.kind === "quotation" && !(await this.access.hasPermission(client, workspaceId, user.userId, QS_PERMISSION));
+      // PLM-083: only where the order needs a BOQ (its choice, else its path's default, else the firm's setting); others read the QS's lines.
+      const qsPrices = quote.kind === "quotation" && await boqRequiredForCase(client, workspaceId, caseId, settings.qsReview)
+        && !(await this.access.hasPermission(client, workspaceId, user.userId, QS_PERMISSION));
       const decimals = currencyDecimals(quote.currency);
       const areas = new Map((await caseAreas(client, workspaceId, caseId)).map((area) => [area.id, area.name]));
       const trades = new Set((await workPackages(client, workspaceId, false)).map((trade) => trade.id));

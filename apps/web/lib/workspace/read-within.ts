@@ -1,4 +1,4 @@
-import { tKey } from "@/lib/i18n/keys";
+import { tKey } from "../i18n/keys";
 
 /** How long a screen's read may take before it shows its error and Retry instead of loading on. */
 export const READ_TIMEOUT_MS = 20_000;

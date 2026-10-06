@@ -16,7 +16,7 @@ import styles from "./inventory.module.css";
 const movementValue = (quantity: string, unitCost: string) => multiplyExact(quantity, unitCost);
 type Kind = "all" | "in" | "out" | "moves" | "reserved" | "corrections" | "made";
 const GROUPS: Record<Exclude<Kind, "all">, MovementKind[]> = {
-  in: ["receive", "return"], out: ["issue", "supplier_return", "reverse"], moves: ["transfer_out", "transfer_in"], reserved: ["allocate", "release"], corrections: ["adjust"], made: ["produce"],
+  in: ["receive", "return", "sale_return"], out: ["issue", "supplier_return", "reverse", "sale"], moves: ["transfer_out", "transfer_in"], reserved: ["allocate", "release"], corrections: ["adjust"], made: ["produce"],
 };
 
 /** The chip colour of each kind: in green, out amber, moves blue, reserved purple, corrections red, made teal. */
@@ -39,7 +39,8 @@ export function History({ api, itemId, onClearItem, refreshKey, projectId = null
   }, [api, itemId, projectId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load, refreshKey]);
   const kinds = useMemo(() => ({ receive: t("Delivered"), issue: t("Issued"), return: t("Taken back"), transfer_out: t("Moved out"), transfer_in: t("Moved in"),
-    allocate: t("Reserved"), release: t("Released"), adjust: t("Corrected"), supplier_return: t("Returned to supplier"), reverse: t("Delivery reversed"), produce: t("Made") } satisfies Record<MovementKind, string>), [t]);
+    allocate: t("Reserved"), release: t("Released"), adjust: t("Corrected"), supplier_return: t("Returned to supplier"), reverse: t("Delivery reversed"), produce: t("Made"), sale: t("Sold"),
+    sale_return: t("Back from a sale") } satisfies Record<MovementKind, string>), [t]);
   const source = useCallback((row: MovementRow) => [
     row.receiptNumber ? t("{order}, delivery {number}", { order: row.orderNumber ?? "", number: row.receiptNumber }) : row.orderNumber ?? "",
     row.transferNumber ? t("Move {number}", { number: row.transferNumber }) : "", row.returnNumber ? t("Return {number}", { number: row.returnNumber }) : "", row.workOrderNumber ? orderNumber(row.workOrderNumber) : "",

@@ -15,7 +15,10 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && (path[0] === "projects" || path[0] === "work")) return method === "GET";
   if (path.length === 2 && path[0] === "work" && path[1] === "insights") return method === "GET";
   if (path.length === 2 && path[0] === "projects" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
-  if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials", "close-out", "money", "overview"].includes(path[2])) return method === "GET";
+  if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials", "drawings", "close-out", "money", "overview"].includes(path[2])) return method === "GET";
+  // Technical drawings: a file uploaded to a revision, and a drawing file (or its preview) opened.
+  if (path.length === 6 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "drawings" && UUID.test(path[3]) && path[4] === "files" && UUID.test(path[5])) return method === "POST";
+  if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "drawings" && path[3] === "files" && UUID.test(path[4])) return method === "GET";
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "money" && path[3] === "budgets") return method === "PUT";
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "money" && path[3] === "milestones") return method === "GET";
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work") return ["GET", "POST"].includes(method);
@@ -34,16 +37,27 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   const search = new URL(request.url).searchParams;
   const workspaceId = search.get("workspaceId") ?? "";
   if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: t("Invalid project resource.") }, { status: 400 });
-  // Snag photos stream back as files.
-  if (path[2] === "photos") {
+  // Snag photos and drawing files stream back as files.
+  if (path[2] === "photos" || (path[2] === "drawings" && path[3] === "files")) {
     const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/project-core/${path.join("/")}${search.get("preview") === "1" ? "?preview=1" : ""}`, { cache: "no-store" });
     if (result.unauthenticated || !result.upstream || !result.upstream.ok) return NextResponse.json({ message: t("The photo could not be loaded.") }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
+    const disposition = result.upstream.headers.get("content-disposition");
     const response = new NextResponse(result.upstream.body, { status: 200, headers: { "content-type": result.upstream.headers.get("content-type") ?? "application/octet-stream",
-      "cache-control": "private, max-age=300", "x-content-type-options": "nosniff" } });
+      "cache-control": "private, max-age=300", "x-content-type-options": "nosniff", ...(disposition ? { "content-disposition": disposition } : {}) } });
     applyRotatedSession(response, result.rotatedSession);
     return response;
   }
   if (request.method !== "GET" && !isSameOrigin(request)) return NextResponse.json({ message: t("Use your workspace to make this change.") }, { status: 403 });
+  if (path[2] === "drawings" && path[4] === "files") {
+    if (Number(request.headers.get("content-length")) > 21 * 1024 * 1024) return NextResponse.json({ message: t("Choose a PDF or image up to 20 MB.") }, { status: 400 });
+    const input = await request.formData().catch(() => null);
+    const file = input?.get("file");
+    if (!(file instanceof File) || !file.size || file.size > 20 * 1024 * 1024 || !(file.type === "application/pdf" || file.type.startsWith("image/")))
+      return NextResponse.json({ message: t("Choose a PDF or image up to 20 MB.") }, { status: 400 });
+    const kind = search.get("kind") === "approval" ? "approval" : "drawing";
+    const body = new FormData(); body.set("file", file);
+    return workspaceJsonResponse(`/workspaces/${workspaceId}/project-core/${path.join("/")}?kind=${kind}`, { method: "POST", body }, t("The file could not be uploaded."));
+  }
   if (path[4] === "photos") {
     if (Number(request.headers.get("content-length")) > 21 * 1024 * 1024) return NextResponse.json({ message: t("Choose a photo up to 20 MB.") }, { status: 400 });
     const input = await request.formData().catch(() => null);

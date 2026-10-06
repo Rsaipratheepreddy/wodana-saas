@@ -6,7 +6,7 @@ import { convert, STANDARD_UNITS, type ItemConversion, type Unit } from "../cata
 
 type Db = Pick<PoolClient, "query">;
 
-export const MOVEMENT_KINDS = ["receive", "issue", "return", "transfer_out", "transfer_in", "allocate", "release", "adjust", "supplier_return", "reverse", "produce"] as const;
+export const MOVEMENT_KINDS = ["receive", "issue", "return", "transfer_out", "transfer_in", "allocate", "release", "adjust", "supplier_return", "reverse", "produce", "sale", "sale_return"] as const;
 export type MovementKind = (typeof MOVEMENT_KINDS)[number];
 
 /** Items without a catalog item are told apart by their name and unit. */
@@ -83,6 +83,8 @@ export type Movement = {
   batchId: string; itemId: string; locationId: string; projectId: string | null; kind: MovementKind; quantity: string; forProjectId?: string | null;
   unitCost?: string | null; currency?: string | null; receiptLineId?: string | null; transferId?: string | null; supplierReturnId?: string | null; reason?: string; movedOn: string; actorId: string;
   workOrderId?: string | null; workOrderMaterialId?: string | null; siteReportLineId?: string | null;
+  /** The deal's reservation a sale (or its return) is for (PLM-125). */
+  reservationId?: string | null;
 };
 
 /** Writes one movement; the database keeps the balance and refuses to go below zero. */
@@ -90,11 +92,12 @@ export async function move(db: Db, workspaceId: string, movement: Movement) {
   try {
     await db.query(
       `INSERT INTO stock_movements (id, workspace_id, batch_id, item_id, location_id, project_id, kind, quantity, for_project_id, unit_cost, currency, receipt_line_id, transfer_id,
-                                   supplier_return_id, reason, moved_on, actor_id, work_order_id, work_order_material_id, site_report_line_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+                                   supplier_return_id, reason, moved_on, actor_id, work_order_id, work_order_material_id, site_report_line_id, reservation_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
       [randomUUID(), workspaceId, movement.batchId, movement.itemId, movement.locationId, movement.projectId, movement.kind, movement.quantity, movement.forProjectId ?? null,
         movement.unitCost ?? null, movement.unitCost ? movement.currency ?? null : null, movement.receiptLineId ?? null, movement.transferId ?? null, movement.supplierReturnId ?? null,
-        movement.reason ?? "", movement.movedOn, movement.actorId, movement.workOrderId ?? null, movement.workOrderMaterialId ?? null, movement.siteReportLineId ?? null]);
+        movement.reason ?? "", movement.movedOn, movement.actorId, movement.workOrderId ?? null, movement.workOrderMaterialId ?? null, movement.siteReportLineId ?? null,
+        movement.reservationId ?? null]);
   } catch (error) {
     if ((error as { constraint?: string }).constraint === "stock_balances_not_negative") throw new ConflictException("There isn't that much in stock there.");
     throw error;

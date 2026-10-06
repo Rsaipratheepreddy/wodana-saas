@@ -14,7 +14,7 @@ export function documentQuote(quote: PortalQuote, fallbackBrand?: PortalBrand): 
     id: quote.id, number: quote.number, kind: quote.kind, direction: quote.direction ?? undefined, status: quote.status, title: quote.title, currency: quote.currency,
     validUntil: quote.validUntil, issuedAt: quote.issuedAt ?? undefined, createdAt: quote.issuedAt ?? "", total: quote.total, discount: quote.discount, taxRate: quote.taxRate,
     terms: quote.terms, exclusions: quote.exclusions, inclusions: quote.inclusions, hash: quote.hash ?? undefined, cover: quote.cover ?? undefined,
-    presentation: quote.presentation ?? undefined, brand: quote.brand ?? fallbackBrand, rooms: quote.rooms,
+    presentation: quote.presentation ?? undefined, brand: quote.brand ?? fallbackBrand, letterhead: quote.letterhead ?? null, rooms: quote.rooms,
     paymentTerms: quote.paymentTerms.map((term) => ({ ...term, requiredForRelease: false })),
     lines: quote.lines.map((line) => ({
       id: line.id, deductsLineId: line.deductsLineId ?? undefined, room: line.room, title: line.title, specification: line.specification, material: line.material,

@@ -11,6 +11,7 @@ import { pendingFollowUp } from "@/lib/crm/now-step";
 import { formatPhoneForDisplay } from "@/lib/phone";
 import { caseHref } from "@/lib/pre-project/types";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { RaiseFinanceRequest, useCanRaiseFinanceRequest } from "../finance-requests/raise-request";
 import { ActionDialog, ActivityPanel, ResourceState, activityQuery, addActivityAction, choice, completeActivityAction, options, rescheduleActivityAction, useCrmResource, type ActionSpec } from "./crm-workbench";
 import { FollowUpRow } from "./opportunity-now";
 import { RecordAttachments } from "./record-attachments";
@@ -42,6 +43,8 @@ export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId
   // One load of the client's activities: the next step reads the pending follow-up, the activity lists them all.
   const activities = useCrmResource<unknown>(workspaceId, `activities?${activityQuery({ partyId })}`);
   const [action, setAction] = useState<ActionSpec | null>(null);
+  const [askingFinance, setAskingFinance] = useState(false);
+  const canAskFinance = useCanRaiseFinanceRequest(workspaceId);
   const party = resource.data;
   const contacts = (party?.contacts ?? []) as RecordData[];
   const addresses = (party?.addresses ?? []) as RecordData[];
@@ -72,13 +75,15 @@ export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId
   const withLeads = rows(enquiries.data).filter((enquiry) => enquiry.leadId);
   // Merge, archive and erasure: the record's own controls, in its ⋯ menu.
   const menu: ActionItem[] = !party ? [] : [
+    ...(canAskFinance && party.status === "active" ? [{ id: "finance", label: t("Request from Finance") }] : []),
     { id: "merge", label: t("Merge duplicate"), isDisabled: party.status !== "active" || relatedParties.loading },
     { id: "archive", label: t("Archive record"), isDisabled: party.status !== "active" },
     { id: "erase", label: t("Privacy erasure"), tone: "danger", isDisabled: party.status !== "active" },
   ];
   const onMenu = (id: string) => {
     if (!party) return;
-    if (id === "merge") setAction({ title: t("Merge a duplicate into this record"), description: t("The selected duplicate will be marked as merged and its CRM history will move to this surviving record."), path: "parties/merge", initial: { survivorPartyId: partyId, fieldDecisions: { displayName: "survivor" } }, fields: [{ key: "mergedPartyId", label: t("Duplicate record"), options: options(others, "displayName"), required: true }, { key: "reason", label: t("Reason"), required: true }], submit: t("Merge duplicate") });
+    if (id === "finance") setAskingFinance(true);
+    else if (id === "merge") setAction({ title: t("Merge a duplicate into this record"), description: t("The selected duplicate will be marked as merged and its CRM history will move to this surviving record."), path: "parties/merge", initial: { survivorPartyId: partyId, fieldDecisions: { displayName: "survivor" } }, fields: [{ key: "mergedPartyId", label: t("Duplicate record"), options: options(others, "displayName"), required: true }, { key: "reason", label: t("Reason"), required: true }], submit: t("Merge duplicate") });
     else if (id === "archive") setAction({ title: t("Archive customer record"), description: t("Archived records remain available in CRM history and can be included in search and exports."), path: `parties/${partyId}/archive`, initial: { version: party.version }, fields: [{ key: "reason", label: t("Reason"), required: true }], submit: t("Archive record") });
     else setAction({ title: t("Erase private customer data"), description: t("This removes contact details and personal profile data while retaining the anonymous audit record."), path: `parties/${partyId}/privacy-erasure`, initial: { version: party.version }, fields: [{ key: "reason", label: t("Erasure reason"), required: true }, { key: "confirmation", label: t("Type ERASE to confirm"), required: true }], transform: ({ confirmation, ...values }) => { if (confirmation !== "ERASE") throw new Error(t("Type ERASE exactly to confirm privacy erasure.")); return values; }, submit: t("Erase private data"), submitVariant: "danger" });
   };
@@ -153,5 +158,6 @@ export function CustomerPanel({ workspaceId, partyId, onChanged }: { workspaceId
         { id: "files", label: t("Files"), panel: withLeads.length ? <RecordPanel>{withLeads.map((enquiry) => <SideSection key={String(enquiry.id)} title={String(enquiry.title ?? t("Enquiry"))}><RecordAttachments workspaceId={workspaceId} leadId={String(enquiry.leadId)} /></SideSection>)}</RecordPanel>
           : <EmptyState illustration="upload" title={t("No enquiry files")} description={t("Project files live in Planning.")} /> },
       ]} />
-  </> : null}{action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={saved} /> : null}</RecordFrame>;
+  </> : null}{action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={saved} /> : null}
+    {askingFinance ? <RaiseFinanceRequest workspaceId={workspaceId} origin={{ partyId }} onClose={() => setAskingFinance(false)} /> : null}</RecordFrame>;
 }

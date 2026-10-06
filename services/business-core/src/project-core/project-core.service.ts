@@ -19,11 +19,11 @@ import {
 } from "./project-core.store";
 import { tellScopeChanges } from "../factory/factory-changes";
 import { tellOverOrdered } from "../purchasing/purchasing-changes";
+import { readNeeds } from "../purchasing/orders";
 import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeout";
-import { completeProject } from "./project-finish";
 import { readProgress } from "./project-work";
 import { noticeProject, type ProjectNotice } from "./project-notices";
-import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, suggestMaterials } from "./project-materials";
+import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, setMaterialDetails, suggestMaterials } from "./project-materials";
 import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, SUPPLY, type Supply } from "./project-scope";
 import { ensureWorkTemplates, parseTemplateTasks } from "./work-templates";
 import { readReadyCases, readStartState, startProject } from "./project-start";
@@ -32,7 +32,16 @@ import { readAttention } from "./project-attention";
 import { decideClientUpdate } from "./client-updates";
 import { holdLength, shiftForHold } from "./project-hold";
 import { noticeStageReady } from "./project-stage-watch";
-import { partyOfCase, recordClientMessageSkipped, sendClientEvent } from "../crm/conversations/inbox/client-messages";
+import { markNotApplicable, notApplicableRoles } from "./project-team";
+import { assertDecidable, assertSendable, drawingRoute, productionReleased, readLatestRevision } from "./project-drawings";
+import { decideDrawings } from "./project-drawing-decisions";
+import { advanceStage } from "./project-advance";
+import { DRAWING_CHECKS } from "./project-checks";
+import { installationRoles, readInstallation, writeFactorySlot, writeInstallationDays } from "./project-installation";
+import { readInstallationCrew } from "../logistics/logistics.store";
+import { parseKeepInformed } from "./project-keep-informed";
+import { readProduction } from "../factory/production-status";
+import { projectAreas } from "./project-areas";
 
 type Db = PoolClient;
 const SETTINGS = ["workspace.settings.manage"];
@@ -102,12 +111,16 @@ export class ProjectCoreService {
       const dueTime = body.reportDueTime === undefined ? current.reportDueTime : String(body.reportDueTime);
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(dueTime)) throw new BadRequestException("Give the day's report a time, like 18:00.");
       const option = (key: "autoSendPendingReports" | "weeklyRollup") => (body[key] === undefined ? current[key] : body[key] === true);
+      // PLM-055: the roles told at the project's key moments (a role removed drops out).
+      const keepInformed = body.keepInformed === undefined
+        ? Object.fromEntries(Object.entries(current.keepInformed).map(([event, list]) => [event, list.filter((role) => roles.some((next) => next.key === role))]))
+        : parseKeepInformed(body.keepInformed, roles);
       await client.query(
         `UPDATE workspace_project_settings SET require_agreement = $2, require_payment = $3, require_approval = $4, reference_prefix = $5, roles = $6::jsonb,
                 require_variation_payment = $8, auto_finish = $9, client_update_auto_send_hours = $10, report_due_time = $11::time, auto_send_pending_reports = $12, weekly_rollup = $13,
-                version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
+                keep_informed = $14::jsonb, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
         [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment"), flag("autoFinish"), autoSend,
-          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup")]);
+          dueTime, option("autoSendPendingReports") && autoSend !== null, option("weeklyRollup"), JSON.stringify(keepInformed)]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.settings_changed", entityType: "workspace_project_settings", entityId: workspaceId, before: current, after: { ...body, roles } });
       const saved = await ensureSettings(client, workspaceId);
       return { settings: saved, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, saved.roles), canManage: true };
@@ -162,7 +175,12 @@ export class ProjectCoreService {
 
   /** Starts the project from the accepted quotation; starting twice returns the same project. */
   start(actor: RequestActor, workspaceId: string, caseId: string, body: Record<string, unknown>) {
-    return this.access.withPermission(actor, workspaceId, "projects.manage", (client, user) => startProject(client, this.access, workspaceId, caseId, body, user));
+    return this.access.withPermission(actor, workspaceId, "projects.manage", async (client, user) => {
+      const started = await startProject(client, this.access, workspaceId, caseId, body, user);
+      // The first stage's record-driven tasks open, and the factory hears to book its slot when the deposit is in.
+      if (!started.existing) await noticeStageReady(client, workspaceId, started.projectId, user.userId);
+      return started;
+    });
   }
 
   // ---------- read ----------
@@ -229,7 +247,11 @@ export class ProjectCoreService {
       const { project, all, membershipId } = await this.visible(client, workspaceId, projectId, user);
       const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
       const onTeam = all || team.some((member) => member.membershipId === membershipId);
-      return { ...(await readMaterials(client, workspaceId, projectId)), version: project.version, canEdit: onTeam && ["active", "on_hold"].includes(project.status) };
+      const materials = await readMaterials(client, workspaceId, projectId);
+      // PLM-072: where each material has got to (required, ordered, received, installed), as Purchasing works it out.
+      const status = new Map((await readNeeds(client, workspaceId, false, projectId)).filter((need) => need.source === "material").map((need) => [need.sourceId, need.status]));
+      return { ...materials, items: materials.items.map((item) => ({ ...item, status: status.get(item.id) ?? null })), version: project.version,
+        canEdit: onTeam && ["active", "on_hold"].includes(project.status) };
     });
   }
 
@@ -256,11 +278,13 @@ export class ProjectCoreService {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
       const project = await readProject(client, workspaceId, projectId, true);
       if (!project) throw new NotFoundException("Project not found.");
-      const { all } = await this.viewer(client, workspaceId, user);
+      // The people who run the factory book its slot on a project they aren't on (PLM-068).
+      const factoryHand = body.action === "book_factory_slot" && await this.any(client, workspaceId, user.userId, ["factory.manage"]);
+      const { all } = factoryHand ? { all: await this.any(client, workspaceId, user.userId, ["projects.manage"]) } : await this.viewer(client, workspaceId, user);
       const membershipId = await membershipOf(client, workspaceId, user.userId);
       const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
       const manager = all || team.some((member) => member.membershipId === membershipId && member.lead);
-      if (!manager && !team.some((member) => member.membershipId === membershipId)) throw new NotFoundException("Project not found.");
+      if (!manager && !factoryHand && !team.some((member) => member.membershipId === membershipId)) throw new NotFoundException("Project not found.");
       if (body.version !== project.version) throw new ConflictException("Someone else changed this project. Reload to see their changes.");
       const settings = await ensureSettings(client, workspaceId);
       const action = String(body.action ?? "");
@@ -294,14 +318,27 @@ export class ProjectCoreService {
         needManager(); open();
         const role = settings.roles.find((item) => item.key === body.role);
         if (!role) throw new BadRequestException("Choose a role.");
-        const next = body.membershipId === null || body.membershipId === "" ? null : String(body.membershipId);
+        // "Not applicable" (PLM-100): nobody holds the role on this project, on purpose.
+        const notApplicable = body.notApplicable === true;
+        const next = notApplicable || body.membershipId === null || body.membershipId === "" || body.membershipId === undefined ? null : String(body.membershipId);
         if (role.key === LEAD_ROLE && !next) throw new BadRequestException("A project always has a project manager.");
         if (next && !(await activeMembers(client, workspaceId)).some((member) => member.membershipId === next)) throw new BadRequestException("Choose someone from your team.");
         const holder = team.find((member) => member.roles.includes(role.key))?.membershipId ?? null;
-        if (holder === next) return this.detail(client, workspaceId, projectId, user);
+        const wasNotApplicable = (await notApplicableRoles(client, workspaceId, { projectId })).includes(role.key);
+        if (holder === next && wasNotApplicable === notApplicable) return this.detail(client, workspaceId, projectId, user);
         await setRole(client, workspaceId, projectId, role.key, next);
+        await markNotApplicable(client, workspaceId, { projectId }, role.key, notApplicable, user.userId);
         if (next) notices.push({ key: `role:${role.key}:${next}:${project.version}`, notice: { code: "project.team_added", membershipId: next, role: role.label } });
-        audit = { role: role.key, from: holder, to: next };
+        audit = { role: role.key, from: holder, to: next, ...(notApplicable || wasNotApplicable ? { notApplicable, wasNotApplicable } : {}) };
+      } else if (action === "set_team_note") {
+        // PLM-089: who outside Wodana does the work (installers, subcontractors), in a line or two.
+        needManager(); open();
+        const note = typeof body.note === "string" ? body.note.trim() : "";
+        if (note.length > 1000) throw new BadRequestException("Keep the note under 1000 characters.");
+        const before = await teamNote(client, workspaceId, projectId);
+        if (before === note) return this.detail(client, workspaceId, projectId, user);
+        await client.query(`UPDATE delivery_projects SET team_note = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, note]);
+        audit = { from: before, to: note };
       } else if (action === "post_update") {
         needManager(); open();
         const health = oneOf(body.health, HEALTH, "Status");
@@ -390,6 +427,35 @@ export class ProjectCoreService {
         else if (action === "save_package") audit = { packageId: await savePackage(client, workspaceId, projectId, body) };
         else if (action === "delete_package") { await deletePackage(client, workspaceId, projectId, String(body.packageId ?? "")); audit = { packageId: body.packageId }; }
         else audit = { moved: await assignLines(client, workspaceId, projectId, body.lineIds, body.packageId ?? null, user.userId), packageId: body.packageId ?? null };
+      } else if (action === "set_material_details") {
+        // PLM-055: the team (the designer) adds product details to a material for the technical team, at any time.
+        open();
+        const result = await setMaterialDetails(client, workspaceId, projectId, { itemId: body.itemId, note: body.note, userId: user.userId });
+        if (!result.changed) return this.detail(client, workspaceId, projectId, user);
+        if (result.note) {
+          // The technical team: whoever holds a role that owns a stage with drawing checks, or the technical designer.
+          const stages = await readStages(client, workspaceId, [projectId]);
+          const technical = new Set(["technical_designer", ...stages.filter((stage) => stage.ownerRole && stage.checks.some((check) => DRAWING_CHECKS.includes(check.kind))).map((stage) => stage.ownerRole!)]);
+          notices.push({ key: `details:${String(body.itemId)}:${project.version}`, notice: { code: "project.material_details", item: result.name, note: result.note,
+            memberships: team.filter((member) => member.roles.some((role) => technical.has(role))).map((member) => member.membershipId) } });
+        }
+        audit = { itemId: body.itemId, material: result.name, from: result.before, to: result.note };
+      } else if (action === "schedule_installation") {
+        // PLM-069: the delivery day booked and the installation day, by the project manager or the installation team.
+        open();
+        const stages = await readStages(client, workspaceId, [projectId]);
+        const installers = installationRoles(stages);
+        if (!manager && !team.some((member) => member.membershipId === membershipId && member.roles.some((role) => installers.includes(role))))
+          throw new ForbiddenException("Only the project manager or the installation team schedules delivery and installation.");
+        const deliveryOn = optionalDate(body.deliveryOn, "Delivery day");
+        const installationOn = optionalDate(body.installationOn, "Installation day");
+        const note = typeof body.note === "string" ? body.note.trim() : "";
+        // Clearing both days is the project manager's; otherwise the installation day is needed and delivery comes first.
+        // The installation team and the project manager hear the day, and the people kept informed (the designer).
+        const before = await writeInstallationDays(client, { workspaceId, projectId, days: { deliveryOn, installationOn, note }, actorUserId: user.userId, canClear: manager,
+          team: team.filter((member) => member.lead || member.roles.some((role) => installers.includes(role))).map((member) => member.membershipId) });
+        if (!before) return this.detail(client, workspaceId, projectId, user);
+        audit = { from: before, to: { deliveryOn, installationOn, note } };
       } else if (["suggest_materials", "save_material", "delete_material", "send_materials", "record_materials_decision", "remind_materials"].includes(action)) {
         // The team prepares the material list; the project manager sees every step in the audit.
         if (!["active", "on_hold"].includes(project.status)) throw new ConflictException("The project is closed.");
@@ -456,6 +522,68 @@ export class ProjectCoreService {
         await tellOverOrdered(client, workspaceId, projectId, user.userId, { id: sealId, label });
         notices.push({ key: `variation:${quote.id}`, notice: { code: "project.variation_applied", variation: label, amount: `${scope.quote.currency} ${scope.pricing.total}`, memberships: teamIds() } });
         audit = { quoteId: quote.id, label, total: scope.pricing.total };
+      } else if (["check_drawings", "send_drawings", "decide_drawings"].includes(action)) {
+        // The technical drawings (PLM-058 … 060): checked on site, sent to the client, and the client's decision recorded.
+        open();
+        const latest = await readLatestRevision(client, workspaceId, projectId, true);
+        if (!latest || latest.id !== body.revisionId) throw new ConflictException("These drawings changed. Reload to see the latest revision.");
+        const stages = await readStages(client, workspaceId, [projectId]);
+        const revision = `R${latest.number}`;
+        // The technical team: whoever holds the role that owns a stage with drawing checks; and whoever uploaded them.
+        const drawingRoles = new Set(stages.filter((stage) => stage.ownerRole && stage.checks.some((check) => DRAWING_CHECKS.includes(check.kind))).map((stage) => stage.ownerRole!));
+        const drawers = async () => {
+          const uploader = await membershipOf(client, workspaceId, latest.createdBy);
+          return [...team.filter((member) => member.roles.some((role) => drawingRoles.has(role))).map((member) => member.membershipId), ...(uploader ? [uploader] : [])];
+        };
+        if (action === "check_drawings") {
+          // The technical drawer or the project manager records the site check.
+          if (!manager && !team.some((member) => member.membershipId === membershipId && member.roles.some((role) => drawingRoles.has(role))))
+            throw new ForbiddenException("Only the project manager or the technical team can record the site check.");
+          if (latest.status !== "uploaded") throw new ConflictException(`Drawings ${revision} aren't waiting for a site check.`);
+          if (!latest.drawingFiles) throw new ConflictException("Upload the drawings first.");
+          const result = oneOf(body.result, ["ok", "changes"] as const, "Result");
+          const note = typeof body.note === "string" ? body.note.trim() : "";
+          if (note.length > 1000) throw new BadRequestException("Keep the note under 1000 characters.");
+          if (result === "changes" && !note) throw new BadRequestException("Say what needs changing.");
+          await client.query(`UPDATE project_drawing_revisions SET status = $3, site_check = $4, site_check_note = $5, site_checked_by = $6, site_checked_at = now(), version = version + 1
+            WHERE workspace_id = $1 AND id = $2`, [workspaceId, latest.id, result === "ok" ? "checked" : "changes_needed", result, note, user.userId]);
+          if (result === "changes") notices.push({ key: `drawings:check:${latest.id}`, notice: { code: "project.drawings_changes", revision, note, memberships: await drawers() } });
+          audit = { revisionId: latest.id, number: latest.number, siteCheck: result, note };
+        } else if (action === "send_drawings") {
+          needManager();
+          assertSendable(latest, (await drawingRoute(client, workspaceId, projectId)).needsSiteCheck);
+          await client.query(`UPDATE project_drawing_revisions SET status = 'sent', sent_by = $3, sent_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2`,
+            [workspaceId, latest.id, user.userId]);
+          // The client's decision-makers hear the drawings wait for them in the portal.
+          await tellClients(client, { workspaceId, caseId: project.caseId, event: "decision_waiting", recordId: `drawings:${projectId}:${latest.number}`, title: `Drawings ${revision}` });
+          audit = { revisionId: latest.id, number: latest.number };
+        } else {
+          // The project manager records the client's decision: the day, who decided, and (to approve) the signed file.
+          needManager();
+          const decision = oneOf(body.decision, ["approve", "changes"] as const, "Decision");
+          const decidedOn = optionalDate(body.decidedOn, "Decision date");
+          if (!decidedOn) throw new BadRequestException("Say on which day the client decided.");
+          assertDecidable(latest, decidedOn, await this.today(client, workspaceId));
+          const decidedBy = typeof body.decidedBy === "string" ? body.decidedBy.trim() : "";
+          if (!decidedBy || decidedBy.length > 200) throw new BadRequestException("Name who decided for the client.");
+          const note = typeof body.note === "string" ? body.note.trim() : "";
+          if (note.length > 1000) throw new BadRequestException("Keep the note under 1000 characters.");
+          if (decision === "changes" && !note) throw new BadRequestException("Say what the client wants changed.");
+          if (decision === "approve" && !latest.approvalFiles) throw new ConflictException("Attach the client's signed approval first.");
+          audit = { revisionId: latest.id, number: latest.number, decision, decidedOn, decidedBy, note,
+            ...(await decideDrawings(client, { workspaceId, projectId, revisionId: latest.id, decision, decidedOn, decidedBy, note, via: "recorded", userId: user.userId })) };
+        }
+      } else if (action === "book_factory_slot") {
+        // PLM-068: the factory slot's day on the project (changed when it moves, cleared by the project manager).
+        open();
+        if (!manager && !factoryHand && !team.some((member) => member.membershipId === membershipId && member.roles.includes("factory_lead")))
+          throw new ForbiddenException("Only the project manager or the factory can book the slot.");
+        const slot = optionalDate(body.date, "Slot date");
+        const note = typeof body.note === "string" ? body.note.trim() : "";
+        const before = await writeFactorySlot(client, { workspaceId, projectId, slot, note, actorUserId: user.userId, canClear: manager,
+          leads: team.filter((member) => member.lead).map((member) => member.membershipId) });
+        if (!before) return this.detail(client, workspaceId, projectId, user);
+        audit = { from: before.on, to: slot, note };
       } else if (["confirm_check", "unconfirm_check", "complete_stage", "skip_stage", "reopen_stage"].includes(action)) {
         running();
         const stages = await readStages(client, workspaceId, [projectId]);
@@ -478,7 +606,8 @@ export class ProjectCoreService {
           if (action === "skip_stage") {
             needManager();
             if (stage.status !== "current" && stage.status !== "upcoming") throw new ConflictException("This stage is already finished.");
-            if (stage.checks.some((check) => HARD_CHECKS.includes(check.kind))) throw new ConflictException("This stage checks a payment; it can't be skipped.");
+            const hard = stage.checks.find((check) => HARD_CHECKS.includes(check.kind));
+            if (hard) throw new ConflictException(hard.kind === "permit_collected" ? "The building permit is mandatory; this stage can't be skipped." : "This stage checks a payment; it can't be skipped.");
             const reason = typeof body.reason === "string" ? body.reason.trim() : "";
             if (!reason || reason.length > 500) throw new BadRequestException("Say why this stage doesn't apply.");
             await client.query(`UPDATE project_stages SET status = 'skipped', skip_reason = $3, completed_at = now(), completed_by = $4 WHERE workspace_id = $1 AND id = $2`,
@@ -526,21 +655,7 @@ export class ProjectCoreService {
   // ---------- helpers ----------
   /** Moves to the next stage that isn't skipped; after the last one the project is complete. */
   private async advance(client: Db, workspaceId: string, project: ProjectRow, stages: StageRow[], finished: StageRow, team: TeamMember[], userId: string, notices: Array<{ key: string; notice: ProjectNotice }>) {
-    const next = stages.find((stage) => stage.position > finished.position && stage.status === "upcoming");
-    if (next) {
-      await client.query(`UPDATE project_stages SET status = 'current', started_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.id]);
-      // The client hears on WhatsApp that the next stage started (when the firm has it on and the portal isn't paused).
-      const owner = await partyOfCase(client, workspaceId, project.caseId);
-      const toldClient = await sendClientEvent(client, { workspaceId, event: "project.stage_started", partyId: owner.partyId, leadId: owner.leadId, recordKey: `${project.id}:${next.id}`,
-        record: { projectId: project.id, stageName: next.name }, actorUserId: userId });
-      if (!toldClient.sent) await recordClientMessageSkipped(client, workspaceId, "project.stage_started", `${project.id}:${next.id}`, toldClient, false);
-      const told = team.filter((member) => member.lead || (next.ownerRole && member.roles.includes(next.ownerRole))).map((member) => member.membershipId);
-      notices.push({ key: `stage:${next.key}:${project.version}`, notice: { code: "project.stage_done", stage: next.name, previous: finished.name, memberships: told } });
-    } else if (!stages.some((stage) => stage.id !== finished.id && (stage.status === "current" || stage.status === "upcoming"))) {
-      // The last stage closes the project, once nothing is left open; leftover project stock becomes free stock.
-      await completeProject(client, { workspaceId, project, actorUserId: userId });
-      notices.push({ key: `completed:${project.version}`, notice: { code: "project.completed", note: "", memberships: team.map((member) => member.membershipId) } });
-    }
+    await advanceStage(client, workspaceId, project, stages, finished, team, userId, notices);
   }
 
   private async detail(client: Db, workspaceId: string, projectId: string, user: ActorUser) {
@@ -565,6 +680,7 @@ export class ProjectCoreService {
          FROM project_scope_seals WHERE workspace_id = $1 AND project_id = $2 AND kind = 'baseline'`, [workspaceId, projectId])).rows[0];
     const current = stages.find((stage) => stage.status === "current");
     const money = await moneyAccess(client, this.access, workspaceId, user.userId, { all, onTeam: team.some((member) => member.membershipId === membershipId) });
+    const notApplicable = await notApplicableRoles(client, workspaceId, { projectId });
     const site = (await client.query<{ startedOn: string | null; finishedOn: string | null }>(
       `SELECT site_started_on::text AS "startedOn", site_finished_on::text AS "finishedOn" FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId])).rows[0];
     return {
@@ -577,7 +693,10 @@ export class ProjectCoreService {
       seal,
       roles: settings.roles,
       team: settings.roles.map((role) => ({ role: role.key, label: role.label, member: team.find((member) => member.roles.includes(role.key)) ?? null }))
-        .map(({ member, ...role }) => ({ ...role, member: member ? { membershipId: member.membershipId, name: member.name, email: member.email ?? null } : null })),
+        .map(({ member, ...role }) => ({ ...role, member: member ? { membershipId: member.membershipId, name: member.name, email: member.email ?? null } : null,
+          notApplicable: !member && notApplicable.includes(role.role) })),
+      // PLM-089: people outside Wodana who do the work (installers, subcontractors).
+      teamNote: await teamNote(client, workspaceId, projectId),
       stages: stages.map((stage) => ({ ...stage, canWork: stage.status === "current" && project.status === "active"
         && (manager || Boolean(stage.ownerRole && team.some((member) => member.membershipId === membershipId && member.roles.includes(stage.ownerRole!)))) })),
       next: current ? nextStep(current, settings.roles) : null,
@@ -590,19 +709,47 @@ export class ProjectCoreService {
       money,
       canSeeMoney: money.costs,
       progress: (await readProgress(client, workspaceId, projectId)).project,
+      // PLM-068: the factory slot booked for the project; the project manager, its factory lead or the factory books it.
+      factorySlot: (await client.query<{ date: string; note: string; byName: string | null; at: string | null }>(
+        `SELECT project.factory_slot_on::text AS date, project.factory_slot_note AS note, booker.display_name AS "byName", project.factory_slot_at AS at
+           FROM delivery_projects project LEFT JOIN users booker ON booker.id = project.factory_slot_by
+          WHERE project.workspace_id = $1 AND project.id = $2 AND project.factory_slot_on IS NOT NULL`, [workspaceId, projectId])).rows[0] ?? null,
+      canBookSlot: ["active", "on_hold"].includes(project.status) && (manager || team.some((member) => member.membershipId === membershipId && member.roles.includes("factory_lead"))
+        || await this.any(client, workspaceId, user.userId, ["factory.manage"])),
+      // PLM-057 … 060: whether the route keeps drawings, and where the latest revision stands.
+      drawings: { ...(await drawingRoute(client, workspaceId, projectId)), latest: await readLatestRevision(client, workspaceId, projectId)
+        .then((latest) => (latest ? { id: latest.id, number: latest.number, status: latest.status } : null)) },
+      // PLM-063: the project's production, read from its work orders (none when the factory makes nothing for it).
+      production: (await readProduction(client, workspaceId, projectId)).projects[0] ?? null,
+      // PLM-069: delivery and installation; the project manager or the installation team schedules them.
+      // Who goes on the delivery and the installation (people by name, the vehicle and driver) and the building permit (Palm, 6 Oct).
+      installation: { ...await readInstallation(client, workspaceId, projectId), ...await readInstallationCrew(client, workspaceId, projectId) },
+      canScheduleInstallation: ["active", "on_hold"].includes(project.status) && (manager
+        || team.some((member) => member.membershipId === membershipId && member.roles.some((role) => installationRoles(stages).includes(role)))),
+      // PLM-098: the areas this job's enquiry-type path uses after Won (and any area that already holds a record).
+      areas: await projectAreas(client, workspaceId, projectId, project.caseId ?? null),
     };
   }
 
   private async visible(client: Db, workspaceId: string, projectId: string, user: ActorUser) {
     const project = await readProject(client, workspaceId, projectId);
     if (!project) throw new NotFoundException("Project not found.");
-    const { all } = await this.viewer(client, workspaceId, user);
     const membershipId = await membershipOf(client, workspaceId, user.userId);
+    // PLM-062: the factory reads a project its work comes from (read-only): once the client approved its drawings, or
+    // while its route asks the factory to book a slot.
+    const factoryReader = async () => await this.any(client, workspaceId, user.userId, ["factory.view", "factory.manage"])
+      && (await productionReleased(client, workspaceId, projectId) || (await drawingRoute(client, workspaceId, projectId)).factorySlot);
+    const projects = await this.any(client, workspaceId, user.userId, ["projects.manage", "projects.view"]);
+    if (!projects) {
+      if (await factoryReader()) return { project, all: false, membershipId, factory: true };
+      throw new ForbiddenException("You don't have access to projects.");
+    }
+    const { all } = await this.viewer(client, workspaceId, user);
     if (!all) {
       const assigned = (await client.query(`SELECT 1 FROM project_assignments WHERE workspace_id = $1 AND project_id = $2 AND membership_id = $3 AND active`, [workspaceId, projectId, membershipId])).rowCount;
-      if (!assigned) throw new NotFoundException("Project not found.");
+      if (!assigned && !(await factoryReader())) throw new NotFoundException("Project not found.");
     }
-    return { project, all, membershipId };
+    return { project, all, membershipId, factory: false };
   }
 
   private async today(client: Db, workspaceId: string) {
@@ -619,6 +766,10 @@ export class ProjectCoreService {
     for (const code of codes) if (await this.access.hasPermission(client, workspaceId, userId, code)) return true;
     return false;
   }
+}
+
+async function teamNote(client: Db, workspaceId: string, projectId: string) {
+  return (await client.query<{ note: string }>(`SELECT team_note AS note FROM delivery_projects WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId])).rows[0]?.note ?? "";
 }
 
 // ---------- pure helpers ----------
@@ -639,6 +790,14 @@ function checkLabel(check: Evaluated["checks"][number], roles: Array<{ key: stri
   if (check.kind === "snags_closed") return "All snags closed";
   if (check.kind === "no_critical_snags") return "No critical snag open";
   if (check.kind === "handover_accepted") return "The client accepted the handover";
+  if (check.kind === "drawings_uploaded") return "Technical drawings uploaded";
+  if (check.kind === "drawings_site_checked") return "Technical site check passed";
+  if (check.kind === "drawings_client_approved") return "Client approved the drawings";
+  if (check.kind === "factory_slot_booked") return "Factory slot booked";
+  if (check.kind === "installation_scheduled") return "Installation scheduled";
+  if (check.kind === "goods_delivered") return "Everything delivered";
+  if (check.kind === "installation_done") return "Installation signed off";
+  if (check.kind === "permit_collected") return "Building permit collected";
   return "Production payment verified";
 }
 

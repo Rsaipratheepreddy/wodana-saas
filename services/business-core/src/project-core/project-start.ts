@@ -16,6 +16,7 @@ import type { WorkspaceAccessService } from "../workspaces/workspace-access.serv
 import { LEAD_ROLE } from "./project-checks";
 import { activeMembers, ensureSettings, ensureTemplates, setRole } from "./project-core.store";
 import { noticeProject } from "./project-notices";
+import { carryTeamToProject } from "./project-team";
 import { proposePackages, seedBoq } from "./project-scope";
 
 type Db = PoolClient;
@@ -160,6 +161,10 @@ export async function startProject(client: Db, access: WorkspaceAccessService, w
   const designer = await caseDesigner(client, workspaceId, caseId);
   if (designer && roleKeys.has("designer")) named.push({ membershipId: designer, role: "designer" });
   for (const member of named) await setRole(client, workspaceId, projectId, member.role, member.membershipId);
+  // PLM-100 / PLM-089: every other role comes from the Planning case, else from what the opportunity tagged (a person or
+  // "not applicable"); the roles just named stay as chosen.
+  const carried = await carryTeamToProject(client, workspaceId, { projectId, caseId, opportunityId: facts.opportunityId, actorUserId: user.userId });
+  for (const entry of carried) if (entry.membershipId) named.push({ membershipId: entry.membershipId, role: entry.role });
 
   await client.query(
     `UPDATE pre_project_cases SET status = 'released', phase = 'release', released_at = now(), released_by = $3, version = version + 1, updated_at = now()
@@ -170,7 +175,7 @@ export async function startProject(client: Db, access: WorkspaceAccessService, w
     [workspaceId, facts.opportunityId, projectId]);
   await ensureJobForSource(client, workspaceId, { type: "project", id: projectId }, user.userId);
   await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.started", entityType: "project", entityId: projectId,
-    after: { reference, caseId, quoteId: quote.id, contentHash, template: template.name } });
+    after: { reference, caseId, quoteId: quote.id, contentHash, template: template.name, team: carried } });
   const labels = new Map(settings.roles.map((role) => [role.key, role.label]));
   await noticeProject(client, { workspaceId, projectId, key: "start", actorUserId: user.userId,
     notice: { code: "project.started", memberships: named.map((member) => ({ membershipId: member.membershipId, role: labels.get(member.role) ?? member.role })) } });

@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { applyChangeApproval } from "../change-requests/change-request.store";
 import { applyLedgerChangeOutcome } from "../change-requests/ledger-change-approval";
 import { applyValueDecision } from "../crm/opportunities/opportunity-proposals";
+import { applyFinanceRequestDecision } from "../finance-requests/finance-request-approval";
 import type { ApprovalDecision, ApprovalStatus } from "./approval-policy";
 
 type Db = Pick<PoolClient, "query">;
@@ -15,4 +16,6 @@ export const APPROVAL_OUTCOMES: Partial<Record<string, Outcome>> = {
   opportunity_value: applyValueDecision,
   change_request: applyChangeApproval,
   ledger_change: applyLedgerChangeOutcome,
+  refund: applyFinanceRequestDecision,
+  payable_request: applyFinanceRequestDecision,
 };

@@ -80,29 +80,8 @@ export class InventoryService {
         if (action === "count") {
           await need("stock.adjust", "You can't correct stock.");
           const counted = amount(body.counted, "Counted");
-          const difference = Dec.of(counted).sub(have);
-          let pending = false;
-          if (!difference.isZero()) {
-            if (!reason) throw new BadRequestException("Say why the count is different.");
-            // A correction worth more than the workspace's limit waits for someone else's approval.
-            const average = await averageCost(client, workspaceId, itemId, location.id, owner);
-            const worth = average ? difference.abs().mul(average.unitCost).round(4) : Dec.of(0);
-            const limit = (await client.query<{ limit: string | null }>(`SELECT stock_adjust_approval_value::text AS "limit" FROM workspace_purchasing_settings WHERE workspace_id = $1`,
-              [workspaceId])).rows[0]?.limit ?? null;
-            if (limit !== null && worth.cmp(limit) > 0) {
-              pending = true;
-              await client.query(
-                `INSERT INTO stock_adjustment_requests (id, workspace_id, item_id, location_id, project_id, counted, difference, value, reason, requested_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-                [batchId, workspaceId, itemId, location.id, owner, counted, difference.toString(), worth.toFixed(4), reason, user.userId]);
-              const item = (await client.query<{ name: string; unit: string }>(`SELECT name, unit FROM stock_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, itemId])).rows[0];
-              await this.tell(client, workspaceId, "stock.adjustment_needs_approval", await this.holders(client, workspaceId, ["stock.adjust"]), user.userId, `${batchId}:approval`,
-                { transfer: "", from: "", to: location.name, note: `${counted} ${item.unit} of ${item.name} (was ${have.toString()}): ${reason}` }, null);
-            } else {
-              await move(client, workspaceId, { ...base, itemId, projectId: owner, kind: "adjust", quantity: difference.toString(), forProjectId: owner, reason: `Count: ${reason}` });
-              await this.tellAdjusters(client, workspaceId, user.userId, batchId, location.name, `${difference.cmp(0) > 0 ? "+" : ""}${difference.toString()} · ${reason}`);
-            }
-          }
-          audit = { counted, was: have.toString(), difference: difference.toString(), owner, reason, pending };
+          const result = await this.countWith(client, workspaceId, user.userId, { batchId, itemId, location, owner, counted, reason, movedOn });
+          audit = { counted, was: result.was, difference: result.difference, owner, reason, pending: result.pending };
         } else {
           await need("stock.manage", "You can't move stock.");
           const quantity = amount(body.quantity, "Quantity");
@@ -156,6 +135,50 @@ export class InventoryService {
       return this.state(client, workspaceId, user.userId);
     });
   }
+
+  /**
+   * A count inside a command already running (the stock count, a linked stock sheet): what's there becomes
+   * the counted quantity by an adjustment with its reason, or waits for someone else's approval when the
+   * correction is worth more than the workspace's limit. Stock that comes in can carry its cost; stock that
+   * goes out leaves at its average cost when asked. The caller audits it.
+   */
+  async countWith(client: Db, workspaceId: string, userId: string, input: {
+    batchId: string; itemId: string; location: StockLocation; owner: string | null; counted: string; reason: string; movedOn: string;
+    /** The ledger's reason (a count says "Count: <reason>"). */
+    movementReason?: string; unitCost?: string | null; costOut?: boolean;
+  }) {
+    const { batchId, itemId, location, owner, counted, reason } = input;
+    const have = await onHand(client, workspaceId, itemId, location.id, owner);
+    const difference = Dec.of(counted).sub(have);
+    let pending = false;
+    if (!difference.isZero()) {
+      if (!reason) throw new BadRequestException("Say why the count is different.");
+      // A correction worth more than the workspace's limit waits for someone else's approval.
+      const average = await averageCost(client, workspaceId, itemId, location.id, owner);
+      const worth = average ? difference.abs().mul(average.unitCost).round(4) : Dec.of(0);
+      const limit = (await client.query<{ limit: string | null }>(`SELECT stock_adjust_approval_value::text AS "limit" FROM workspace_purchasing_settings WHERE workspace_id = $1`,
+        [workspaceId])).rows[0]?.limit ?? null;
+      if (limit !== null && worth.cmp(limit) > 0) {
+        pending = true;
+        await client.query(
+          `INSERT INTO stock_adjustment_requests (id, workspace_id, item_id, location_id, project_id, counted, difference, value, reason, requested_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [batchId, workspaceId, itemId, location.id, owner, counted, difference.toString(), worth.toFixed(4), reason, userId]);
+        const item = (await client.query<{ name: string; unit: string }>(`SELECT name, unit FROM stock_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, itemId])).rows[0];
+        await this.tell(client, workspaceId, "stock.adjustment_needs_approval", await this.holders(client, workspaceId, ["stock.adjust"]), userId, `${batchId}:approval`,
+          { transfer: "", from: "", to: location.name, note: `${counted} ${item.unit} of ${item.name} (was ${have.toString()}): ${reason}` }, null);
+      } else {
+        const incoming = difference.cmp(0) > 0;
+        const cost = incoming ? (input.unitCost ? { unitCost: input.unitCost, currency: await this.currency(client, workspaceId) } : null) : input.costOut ? average : null;
+        await move(client, workspaceId, { batchId, locationId: location.id, movedOn: input.movedOn, actorId: userId, itemId, projectId: owner, kind: "adjust", quantity: difference.toString(),
+          forProjectId: owner, reason: input.movementReason ?? `Count: ${reason}`, unitCost: cost?.currency ? cost.unitCost : null, currency: cost?.currency ?? null });
+        await this.tellAdjusters(client, workspaceId, userId, batchId, location.name, `${incoming ? "+" : ""}${difference.toString()} · ${reason}`);
+      }
+    }
+    return { was: have.toString(), difference: difference.toString(), pending };
+  }
+
+  /** Today in the workspace's time zone (a command already running). */
+  todayIn(client: Db, workspaceId: string) { return this.today(client, workspaceId); }
 
   transfers(actor: RequestActor, workspaceId: string) {
     return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client, user) => ({
@@ -470,6 +493,10 @@ export class InventoryService {
     const has = (code: string) => this.access.hasPermission(client, workspaceId, userId, code);
     const canManage = await has("stock.manage");
     return { canManage, canAdjust: await has("stock.adjust"), canReceive: canManage || (await has("stock.receive")) };
+  }
+
+  private async currency(client: Db, workspaceId: string) {
+    return (await client.query<{ currency: string | null }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? null;
   }
 
   private async today(client: Db, workspaceId: string) {

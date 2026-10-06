@@ -1,4 +1,4 @@
-import type { Batch, FactorySettingsState, FactoryState, ScheduleState, WorkOrderRow, WorkOrderState } from "./types";
+import type { Batch, FactorySettingsState, FactoryState, ProductionState, SamplesState, ScheduleState, WorkOrderRow, WorkOrderState } from "./types";
 
 export class FactoryRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -40,6 +40,14 @@ export function factoryApi(workspaceId: string) {
     settings: () => request<FactorySettingsState>(at("settings")),
     saveSettings: (input: Record<string, unknown>) => request<FactorySettingsState>(at("settings"), "PUT", input),
     saveWorkcenter: (input: Record<string, unknown>) => request<FactorySettingsState>(at("workcenters"), "POST", input),
+    /** PLM-063: each project's production status and its planned against actual dates. */
+    production: () => request<ProductionState>(at("production")),
+    /** PLM-061: sample requests: every one (the factory), or one case's. */
+    samples: (caseId?: string | null) => request<SamplesState>(at("samples", caseId ? { caseId } : {})),
+    /** Asks the factory for a sample; replayed safely by its id. */
+    requestSample: (input: { id: string; caseId: string; title: string; note: string; dueOn: string }) => request<SamplesState>(at("samples"), "POST", input),
+    /** Marks a sample ready, opens it again, or withdraws it (version-checked); `caseId` keeps the answer to that case. */
+    sampleCommand: (id: string, action: "ready" | "reopen" | "cancel", input: Record<string, unknown>) => request<SamplesState>(at(`samples/${id}`), "POST", { ...input, action }),
   };
 }
 export type FactoryApi = ReturnType<typeof factoryApi>;

@@ -1,4 +1,4 @@
-import type { CloseOut, LabourRates, LineHistoryEntry, Milestones, ProjectMoney, ProjectOverview, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
+import type { DrawingsState, CloseOut, LabourRates, LineHistoryEntry, Milestones, ProjectMoney, ProjectOverview, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -11,7 +11,7 @@ async function upload<T>(url: string, file: File): Promise<T> {
   form.set("file", file);
   const response = await fetch(url, { method: "POST", body: form, cache: "no-store" });
   const data = await response.json().catch(() => null);
-  if (!response.ok) throw new ProjectRequestError(typeof data?.message === "string" ? data.message : "The photo could not be uploaded.", response.status);
+  if (!response.ok) throw new ProjectRequestError(typeof data?.message === "string" ? data.message : "The file could not be uploaded.", response.status);
   return data as T;
 }
 
@@ -32,6 +32,12 @@ export function projectApi(workspaceId: string) {
     get: (projectId: string) => request<ProjectDetail>(path(`projects/${projectId}`)),
     scope: (projectId: string) => request<LiveScope>(path(`projects/${projectId}/scope`)),
     materials: (projectId: string) => request<MaterialsState>(path(`projects/${projectId}/materials`)),
+    /** The technical drawings: revisions, files, the site check and the client's decision. */
+    drawings: (projectId: string) => request<DrawingsState>(path(`projects/${projectId}/drawings`)),
+    /** A drawing (on the revision being prepared, or starting the next) or the client's signed approval; replayed safely by its id. */
+    uploadDrawing: (projectId: string, revisionId: string, fileId: string, kind: "drawing" | "approval", file: File) =>
+      upload<DrawingsState>(`${path(`projects/${projectId}/drawings/${revisionId}/files/${fileId}`)}&${new URLSearchParams({ kind })}`, file),
+    drawingUrl: (projectId: string, fileId: string, preview = false) => `${path(`projects/${projectId}/drawings/files/${fileId}`)}${preview ? "&preview=1" : ""}`,
     seal: (projectId: string, sealId: string) => request<SealedScope>(path(`projects/${projectId}/seals/${sealId}`)),
     /** What the project was agreed at and received, what it cost and still has committed, and its budgets. */
     money: (projectId: string) => request<ProjectMoney>(path(`projects/${projectId}/money`)),

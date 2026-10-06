@@ -24,8 +24,12 @@ import { TenantDomainsService } from "./tenant-domains.service";
 import { ConfigurationRevisionsService } from "./configuration-revisions.service";
 import { TenantOperationsService } from "./tenant-operations.service";
 import { TaxNumberingController } from "./tax-numbering.controller";
+import { EntityImagesController, EntityLetterheadController, PublicEntityImagesController } from "./entity-images.controller";
+import { EntityImagesService } from "./entity-images.service";
 import { TaxNumberingService } from "./tax-numbering.service";
 import { MemberOffboardingController, MemberOffboardingService } from "./member-offboarding.service";
+import { WorkspaceClearRecordsService } from "./workspace-clear-records.service";
+import { WorkspaceObjectCleanupService } from "./workspace-object-cleanup.service";
 
 @Module({
   imports: [EmailModule, ControlPlaneModule],
@@ -41,6 +45,9 @@ import { MemberOffboardingController, MemberOffboardingService } from "./member-
     PublicBrandingController,
     TaxNumberingController,
     MemberOffboardingController,
+    EntityImagesController,
+    EntityLetterheadController,
+    PublicEntityImagesController,
   ],
   providers: [
     MemberProfileService,
@@ -58,6 +65,9 @@ import { MemberOffboardingController, MemberOffboardingService } from "./member-
     TenantOperationsService,
     TaxNumberingService,
     MemberOffboardingService,
+    EntityImagesService,
+    WorkspaceClearRecordsService,
+    WorkspaceObjectCleanupService,
   ],
   exports: [WorkspaceAccessService, WorkspacesService, ConfigurationRevisionsService],
 })

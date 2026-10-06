@@ -2,8 +2,10 @@ import type { PoolClient } from "pg";
 import { effectivePortalBrand } from "../commercial/effective-brand";
 import { quotePricingSnapshot } from "../quotation/quotation-builder.service";
 import { markupDisclosure, presentForClient, type MarkupDisclosure } from "./markup-disclosure";
+import { pdfLetterhead } from "./pdf-letterhead";
+import type { ObjectStore } from "./proposal-files";
 import type { QuotationPage, TemplatePage } from "./proposal-pdf";
-import { quotationReference, quotingEntity } from "./quote-issue";
+import { quotationEntityId, quotationReference, quotingEntity } from "./quote-issue";
 
 type Db = PoolClient;
 
@@ -31,8 +33,8 @@ export async function clientPresentation(db: Db, workspaceId: string, caseId: st
   return { snapshot, presentation };
 }
 
-/** Page 4's content: the quote's own data, never the template's. */
-export async function quotationPageData(db: Db, workspaceId: string, caseId: string, quoteId: string): Promise<QuotationPage & { quoteHash: string | null }> {
+/** Page 4's content: the quote's own data, never the template's; with `store`, the issuing business's letterhead images too. */
+export async function quotationPageData(db: Db, workspaceId: string, caseId: string, quoteId: string, store?: ObjectStore): Promise<QuotationPage & { quoteHash: string | null }> {
   const { snapshot, presentation } = await clientPresentation(db, workspaceId, caseId, quoteId);
   const { quote } = snapshot;
   const brand = await effectivePortalBrand(db, workspaceId);
@@ -60,6 +62,7 @@ export async function quotationPageData(db: Db, workspaceId: string, caseId: str
   const ordered = [...groups.entries()].sort(([left], [right]) => Number(left === "General") - Number(right === "General"));
   return {
     brand: { name: brand.name, accent: brand.primaryColor ?? null },
+    letterhead: store ? await pdfLetterhead(db, store, workspaceId, await quotationEntityId(db, workspaceId, caseId, quote.familyId ?? quote.id)) : null,
     title: quote.title,
     reference: reference?.reference ?? `Q-${quote.number}`,
     revision: family,

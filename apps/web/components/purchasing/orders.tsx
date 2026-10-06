@@ -5,7 +5,7 @@ import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, ListTabs, NoAcc
 import { useT } from "@/lib/i18n/i18n-provider";
 import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { OrderRow, OrdersState } from "@/lib/purchasing/types";
-import { Cell, DueText, ProjectFilterChip, ProjectLinks } from "../operations/ops";
+import { Cell, DealLinks, DueText, ProjectFilterChip, ProjectLinks } from "../operations/ops";
 import { useProjectFormat } from "../project-core/format";
 import { OPEN_ORDERS, OrderStatusLabel, useOrderLabels } from "./order-labels";
 import { OrderSheet, type OrderIntent } from "./order-sheet";
@@ -61,7 +61,8 @@ export function Orders({ api, openId, intent = null, onOpen, onReceipt, refreshK
   const rights = { canBuy: Boolean(state?.canBuy), canApprove: Boolean(state?.canApprove), canReceive: Boolean(state?.canReceive ?? state?.canBuy), me: state?.me };
   const needle = search.trim().toLocaleLowerCase();
   const scoped = useMemo(() => (state?.orders ?? []).filter((order) => (!projectId || order.projects.some((project) => project.id === projectId))
-    && (!needle || `${order.number} ${order.supplierName} ${order.projects.map((project) => project.reference).join(" ")}`.toLocaleLowerCase().includes(needle))), [state, projectId, needle]);
+    && (!needle || `${order.number} ${order.supplierName} ${[...order.projects, ...(order.deals ?? [])].map((item) => item.reference).join(" ")}`.toLocaleLowerCase().includes(needle))),
+  [state, projectId, needle]);
   const queues: Record<View, (row: OrderRow) => boolean> = {
     mine: (row) => Boolean(orderNext(row, rights, today)?.mine), approval: (row) => row.status === "pending_approval", send: (row) => row.status === "approved",
     confirm: (row) => row.status === "sent" && !isLate(row, today), late: (row) => isLate(row, today), all: (row) => !openOnly || OPEN_ORDERS.includes(row.status),
@@ -110,7 +111,7 @@ export function Orders({ api, openId, intent = null, onOpen, onReceipt, refreshK
     { id: "number", header: t("Order"), accessorFn: (row) => `${row.number} ${row.supplierName}`, size: 240, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell} data-tour="order-row" data-tour-safe>
       <span>{row.number}{row.revision ? ` · ${t("change {number}", { number: row.revision })}` : ""}</span><small>{row.supplierName}</small></span> } },
     { id: "projects", header: t("For"), accessorFn: (row) => row.projects.map((project) => project.reference).join(", "), size: 130, meta: { mobileHidden: true,
-      renderCell: (row) => <ProjectLinks projects={row.projects} /> } },
+      renderCell: (row) => row.deals?.length && !row.projects.length ? <DealLinks deals={row.deals} /> : <ProjectLinks projects={row.projects} /> } },
     { id: "status", header: t("Status"), accessorFn: (row) => labels.status[row.status], size: 200, meta: { renderCell: (row) => {
       const detail = row.inspecting ? t("Delivery to inspect")
         : row.shipment && RECEIVABLE.includes(row.status) ? [labels.shipment[row.shipment.status], row.shipment.eta ? t("expected {date}", { date: format.short(row.shipment.eta) }) : ""].filter(Boolean).join(" · ")

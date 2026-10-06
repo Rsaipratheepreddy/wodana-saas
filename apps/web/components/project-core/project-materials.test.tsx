@@ -18,3 +18,12 @@ it("says what Suggest from the scope did, including when there was nothing to ad
   expect(await screen.findByText("1 material added from the scope.")).toBeInTheDocument();
   expect(run).toHaveBeenCalledWith("suggest_materials");
 });
+
+it("PLM-072: shows where each material has got to, in Purchasing's words", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ state: "draft", version: 1, canEdit: false, revisions: [],
+    items: [{ ...material, status: "ordered" }, { ...material, id: "m2", name: "Brass handles", status: "installed" }, { ...material, id: "m3", name: "Grout", status: null }] }) })));
+  render(<ProjectMaterials workspaceId="w" projectId="p" version={1} run={vi.fn()} lines={[]} />);
+  expect(await screen.findByText("Ordered")).toBeInTheDocument();
+  expect(screen.getByText("Installed")).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "Status" })).toBeInTheDocument();
+});

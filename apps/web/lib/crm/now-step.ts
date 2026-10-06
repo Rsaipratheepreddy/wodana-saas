@@ -147,7 +147,7 @@ export function nowPlan(input: { flow: OpportunityFlowView | null; status: strin
 /* ── The next column's checklist ───────────────────────────────────────────────────────────────────── */
 
 /** The groups an opportunity's facts are kept in: each has one card and, where it is edited here, one side sheet. */
-export type FactGroup = "client" | "property" | "package" | "questions" | "intro" | "supply" | "payment" | "planning" | "deal" | "proposals" | "closing";
+export type FactGroup = "client" | "property" | "package" | "questions" | "intro" | "supply" | "payment" | "planning" | "deal" | "proposals" | "closing" | "fulfilment";
 
 const GROUP_OF: Record<string, FactGroup> = {
   floorPlan: "property", area: "property", floorPlanOrArea: "property", spaces: "property", propertyLocation: "property", clientEmail: "property", budget: "client",

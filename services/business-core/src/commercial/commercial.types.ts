@@ -1,3 +1,4 @@
+import type { DocumentLetterhead } from "../workspaces/entity-letterhead";
 export type CatalogSelection = {
   role: string;
   recordId: string;
@@ -310,6 +311,8 @@ export type Quote = {
   hash?: string;
   total: number;
   brand?: PortalBrand;
+  /** The issuing business's letterhead, frozen with the brand when the quote is issued (PLM-112). */
+  letterhead?: DocumentLetterhead | null;
 };
 export type CommercialComment = {
   id: string;
@@ -774,6 +777,8 @@ export type CommercialState = {
   dealInsight?: import("./deal-file-insight").DealInsight | null;
   portalSlug: string | null;
   portalBrand?: PortalBrand;
+  /** The business a new quotation is issued by, for its letterhead in the preview (PLM-112). */
+  portalLetterhead?: DocumentLetterhead | null;
   /** The firm's proposal kit, when the proposal screen has loaded it. */
   proposalKit?: ProposalKit;
   portalEnabled?: boolean;

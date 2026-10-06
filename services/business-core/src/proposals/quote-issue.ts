@@ -4,6 +4,7 @@ import { recordAudit } from "../audit/record-audit";
 import { quotePricingSnapshot, readSettings } from "../quotation/quotation-builder.service";
 import { markupDisclosure } from "./markup-disclosure";
 import { pricingHash, qsStage } from "./qs-review.domain";
+import { boqRequiredForCase } from "../fulfilment/fulfilment-rules";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -18,6 +19,13 @@ export async function quotingEntity(db: Db, workspaceId: string, caseId: string)
             WHERE pre_case.workspace_id = $1 AND pre_case.id = $2),
           (SELECT first.id FROM legal_entities first WHERE first.workspace_id = $1 AND first.status = 'active' ORDER BY first.created_at LIMIT 1))`,
     [workspaceId, caseId])).rows[0] ?? null;
+}
+
+/** The business that issues a case's quotation (PLM-112): the one its number was allocated under, else the quoting entity. */
+export async function quotationEntityId(db: Db, workspaceId: string, caseId: string, familyId: string) {
+  const numbered = (await db.query<{ entityId: string | null }>(
+    `SELECT legal_entity_id AS "entityId" FROM quotation_references WHERE workspace_id = $1 AND case_id = $2 AND family_id = $3`, [workspaceId, caseId, familyId])).rows[0]?.entityId;
+  return numbered ?? (await quotingEntity(db, workspaceId, caseId))?.id ?? null;
 }
 
 /** The number a quote family carries (allocated or the firm's own), or null before it was first sent. */
@@ -74,7 +82,8 @@ export async function qsReviewFor(db: Db, workspaceId: string, caseId: string, q
  */
 export async function beforeQuoteIssued(db: Db, input: { workspaceId: string; caseId: string; quoteId: string; familyId: string | null; kind: string; actorUserId: string }) {
   const settings = await readSettings(db as PoolClient, input.workspaceId);
-  if (input.kind === "quotation" && settings.qsReview) {
+  // PLM-083: the QS prices the order (its BOQ) when the order needs one: its own choice, else its path's default, else the firm's setting.
+  if (input.kind === "quotation" && await boqRequiredForCase(db, input.workspaceId, input.caseId, settings.qsReview)) {
     const review = await qsReviewFor(db, input.workspaceId, input.caseId, input.quoteId);
     const snapshot = await quotePricingSnapshot(db as PoolClient, input.workspaceId, input.caseId, input.quoteId);
     const stage = qsStage(true, review, pricingHash(snapshot.lines));

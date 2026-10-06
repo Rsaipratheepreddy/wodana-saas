@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { DataGrid, EmptyState, ErrorState, FormDialog, InlineNotice, MenuButton, MoneyField, NoResultsState, Skeleton, TextInput, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, FormDialog, InlineNotice, MenuButton, MoneyField, NoResultsState, Skeleton, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { CostEntry, CostSource, PackageMoney, ProjectMoney as Money } from "@/lib/project-core/types";
 import { subtractExact } from "@/lib/purchasing/amounts";
 import { ProjectHours } from "../hrms/project-hours";
+import { RaiseFinanceRequest, useCanRaiseFinanceRequest } from "../finance-requests/raise-request";
 import { useProjectFormat } from "./format";
 import styles from "./project-money.module.css";
 
@@ -27,6 +28,8 @@ export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId
   const [view, setView] = useState<View>("packages");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<PackageMoney | null>(null);
+  const [askingFinance, setAskingFinance] = useState(false);
+  const canAskFinance = useCanRaiseFinanceRequest(workspaceId);
   const load = useCallback(async () => {
     try { setState(await api.money(projectId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Money didn't load.")); }
   }, [api, projectId, t]);
@@ -65,7 +68,8 @@ export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId
   const packages = state.packages.filter((row) => !needle || packageName(row.name).toLocaleLowerCase().includes(needle));
   const views: Record<View, string> = { packages: t("By package"), entries: t("Every cost"), hours: t("Hours") };
   const toolbar = <>{switcher}<MenuButton size="compact" label={views[view]} onAction={(value) => { setView(value as View); setSearch(""); }}
-    items={(["packages", "entries", "hours"] as const).map((id) => ({ id, label: views[id] }))} /></>;
+    items={(["packages", "entries", "hours"] as const).map((id) => ({ id, label: views[id] }))} />
+    {canAskFinance ? <Button size="compact" onPress={() => setAskingFinance(true)}>{t("Request from Finance")}</Button> : null}</>;
   return <div className={styles.money}>
     <dl className={styles.facts}>
       <div><dt>{t("Received")}</dt><dd>{money(income.received, income.currency)}<small>{t("{invoiced} invoiced of {requested} requested", { invoiced: money(income.invoiced, income.currency), requested: money(income.requested, income.currency) })}</small></dd></div>
@@ -90,6 +94,7 @@ export function ProjectMoney({ workspaceId, projectId, switcher }: { workspaceId
           emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No costs yet")} />} />}
     {editing ? <BudgetDialog row={editing} currency={state.currency} name={packageName(editing.name)} onClose={() => setEditing(null)}
       onSave={async (amount, note) => { setState(await api.saveBudget(projectId, { packageId: editing.id, amount, note, version: editing.budgetVersion })); setEditing(null); }} /> : null}
+    {askingFinance ? <RaiseFinanceRequest workspaceId={workspaceId} origin={{ projectId }} onClose={() => setAskingFinance(false)} /> : null}
   </div>;
 }
 

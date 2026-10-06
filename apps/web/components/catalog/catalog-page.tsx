@@ -11,7 +11,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { catalogApi, type CatalogItemRow, type CatalogStructure, type CatalogSummary } from "@/lib/workspace/catalog-v2";
 import { useAiReady } from "@/lib/workspace/ai-settings";
 import { fillWithWoddy, imageForWoddy } from "@/lib/woddy/form-fill";
-import { CatalogImportDialog } from "./catalog-import-dialog";
+import { LinkedImportDialog } from "../linked-imports/linked-import-dialog";
 import { CatalogItemInspector } from "./catalog-item-inspector";
 import { ProductClipDialog } from "./product-clip-dialog";
 import { catalogImageUrl } from "@/lib/quotation/client";
@@ -31,8 +31,16 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [dialog, setDialog] = useState<"import" | "item" | "catalog" | "clip" | null>(null);
+  // A linked product sheet to open (a notice about its refresh links here with ?import=<link>).
+  const [importLinkId, setImportLinkId] = useState<string | null>(null);
   // The browser button opens the catalog with ?clip=<supplier page>; the link waits in "Add from link".
   const [clipUrl, setClipUrl] = useState("");
+  useEffect(() => {
+    const linked = new URLSearchParams(window.location.search).get("import");
+    if (!linked || !canManage) return;
+    const url = new URL(window.location.href); url.searchParams.delete("import"); window.history.replaceState(null, "", url.toString());
+    queueMicrotask(() => { setImportLinkId(linked); setDialog("import"); });
+  }, [canManage]);
   useEffect(() => {
     const link = new URLSearchParams(window.location.search).get("clip");
     if (!link || !canManage) return;
@@ -91,7 +99,6 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
 
   return <div className={styles.page}>
     <PageHeader title={catalog?.name ?? t("Catalog")} actions={canManage ? <>
-      <Button onPress={() => setDialog("import")}><FileUp aria-hidden="true" size={15} />{t("Import")}</Button>
       <Button onPress={() => setDialog("clip")}><Link2 aria-hidden="true" size={15} />{t("Add from link")}</Button>
       <Button onPress={() => setDialog("item")} variant="primary"><Plus aria-hidden="true" size={15} />{t("Add item")}</Button>
     </> : null} />
@@ -115,6 +122,8 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
               getInspectorTitle={(row) => row.name}
               getRowId={(row) => row.id}
               isLoading={loading && !items.length}
+              menuActions={canManage ? [{ id: "import", label: t("Import") }] : undefined}
+              onMenuAction={(id) => { if (id === "import") setDialog("import"); }}
               onSearchChange={setSearch}
               renderInspector={(row) => <CatalogItemInspector canManage={canManage} canReview={canReview} catalogId={catalogId} currency={currency} itemId={row.id} locale={locale} onChanged={() => void loadItems()} structure={structure} workspaceId={workspaceId} />}
               searchLabel={t("Search items")}
@@ -125,7 +134,8 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
             />}
       </section>
     </div>
-    <CatalogImportDialog catalogId={catalogId} isOpen={dialog === "import"} onClose={() => setDialog(null)} onImported={() => { setDialog(null); void loadItems(); }} workspaceId={workspaceId} />
+    <LinkedImportDialog catalogId={catalogId} isOpen={dialog === "import"} onClose={() => { setDialog(null); setImportLinkId(null); }} onImported={() => void loadItems()} openLinkId={importLinkId}
+      target="catalog" workspaceId={workspaceId} />
     <ProductClipDialog catalogId={catalogId} initialUrl={clipUrl} isOpen={dialog === "clip"} onClose={() => { setDialog(null); setClipUrl(""); }} onSaved={() => { setDialog(null); setClipUrl(""); void loadItems(); }} structure={structure} workspaceId={workspaceId} />
     <NewItemDialog catalogId={catalogId} isOpen={dialog === "item"} onClose={() => setDialog(null)} onCreated={() => { setDialog(null); void loadItems(); }} structure={structure} workspaceId={workspaceId} />
   </div>;

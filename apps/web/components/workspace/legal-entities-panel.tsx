@@ -3,7 +3,9 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { Building2, CheckCircle2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Callout, ConfirmationDialog, SelectField, TextInput, useDesignSystem, FormDialog, FormSection } from "@/design-system";
+import { Badge, Button, Callout, ConfirmationDialog, PhoneField, SelectField, TextAreaField, TextInput, useDesignSystem, FormDialog, FormSection } from "@/design-system";
+import { joinPhone, splitPhone } from "@/lib/phone";
+import { EntityImageField } from "./entity-image-field";
 import { countryFromLocale } from "@/lib/workspace/region-labels";
 import { TaxNumberingSheet } from "./tax-numbering-sheet";
 import type { CompanyAddress, LegalEntityRecord, WorkspaceRecord } from "@/lib/workspace/company-profile";
@@ -25,6 +27,10 @@ type LegalEntityDraft = {
   city: string;
   region: string;
   postalCode: string;
+  phoneCountry: string;
+  phone: string;
+  email: string;
+  letterheadFooter: string;
 };
 
 function addressValue(address: CompanyAddress, key: keyof CompanyAddress) {
@@ -52,6 +58,9 @@ function createDraft(workspace: WorkspaceRecord, entity?: LegalEntityRecord, tem
     city: addressValue(entity.address, "city"),
     region: addressValue(entity.address, "region"),
     postalCode: addressValue(entity.address, "postalCode"),
+    ...phoneOf(entity.phone, entity.countryCode),
+    email: entity.email ?? "",
+    letterheadFooter: entity.letterheadFooter ?? "",
   };
   return {
     code: "",
@@ -68,7 +77,15 @@ function createDraft(workspace: WorkspaceRecord, entity?: LegalEntityRecord, tem
     city: "",
     region: "",
     postalCode: "",
+    ...phoneOf(null, template?.countryCode ?? countryFromLocale(workspace.defaultLocale) ?? ""),
+    email: "",
+    letterheadFooter: "",
   };
+}
+
+function phoneOf(phone: string | null | undefined, country: string) {
+  const split = splitPhone(phone ?? "", country);
+  return { phoneCountry: split.country, phone: split.national };
 }
 
 function optionalAddress(draft: LegalEntityDraft) {
@@ -172,6 +189,9 @@ export function LegalEntitiesPanel({
       registrationNumber: draft.registrationNumber.trim(),
       taxRegistrationNumber: draft.taxRegistrationNumber.trim(),
       address: optionalAddress(draft),
+      phone: draft.phone.trim() ? joinPhone(draft.phoneCountry, draft.phone) : "",
+      email: draft.email.trim(),
+      letterheadFooter: draft.letterheadFooter.trim(),
     };
     try {
       const response = await fetch(existing ? `/api/workspace/legal-entities/${existing.id}` : "/api/workspace/legal-entities", {
@@ -189,6 +209,13 @@ export function LegalEntitiesPanel({
     } finally {
       setSaving(false);
     }
+  };
+
+  // A new logo or letterhead saves at once and moves the business to its next version.
+  const updateImage = (entity: LegalEntityRecord, change: Partial<LegalEntityRecord>) => {
+    const next = { ...entity, ...change };
+    setEditing(next);
+    commit(entities.map((item) => item.id === next.id ? next : item));
   };
 
   const archive = async () => {
@@ -261,6 +288,19 @@ export function LegalEntitiesPanel({
           <TextInput label={t("City")} onChange={(city) => setDraft((current) => ({ ...current, city }))} value={draft.city} />
           <TextInput label={t("State / region")} onChange={(region) => setDraft((current) => ({ ...current, region }))} value={draft.region} />
           <TextInput label={t("Postal code")} onChange={(postalCode) => setDraft((current) => ({ ...current, postalCode }))} value={draft.postalCode} />
+        </FormSection>
+        <FormSection title={t("Contact")}>
+          <PhoneField label={t("Phone")} kind="any" value={draft.phone} onChange={(phone) => setDraft((current) => ({ ...current, phone }))} countryCode={draft.phoneCountry}
+            onCountryChange={(phoneCountry) => setDraft((current) => ({ ...current, phoneCountry }))} />
+          <TextInput inputType="email" label={t("Email")} maxLength={320} onChange={(email) => setDraft((current) => ({ ...current, email }))} value={draft.email} />
+        </FormSection>
+        <FormSection title={t("Letterhead")}>
+          {existing ? <>
+            <EntityImageField entityId={existing.id} kind="logo" label={t("Logo")} url={existing.logoUrl ?? null} workspaceId={workspace.id} onChange={(result) => updateImage(existing, { logoUrl: result.url, version: result.version })} />
+            <EntityImageField entityId={existing.id} kind="letterhead" label={t("Letterhead header")} url={existing.letterheadUrl ?? null} workspaceId={workspace.id}
+              onChange={(result) => updateImage(existing, { letterheadUrl: result.url, version: result.version })} />
+          </> : null}
+          <TextAreaField label={t("Letterhead footer")} maxLength={1000} onChange={(letterheadFooter) => setDraft((current) => ({ ...current, letterheadFooter }))} value={draft.letterheadFooter} />
         </FormSection>
         <FormSection title={t("Regional defaults")}>
           <SelectField isRequired items={currencies} label={t("Base currency")} onSelectionChange={(key) => key && setDraft((current) => ({ ...current, baseCurrency: String(key) }))} selectedKey={draft.baseCurrency} />

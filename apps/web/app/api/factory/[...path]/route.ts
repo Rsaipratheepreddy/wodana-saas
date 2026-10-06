@@ -5,7 +5,9 @@ import { getServerT } from "@/lib/i18n/server";
 
 /** The factory: what to make, work orders and their output, and its settings. */
 function allowed(path: string[], method: string) {
-  if (path.length === 1 && ["state", "schedule"].includes(path[0])) return method === "GET";
+  if (path.length === 1 && ["state", "schedule", "production"].includes(path[0])) return method === "GET";
+  if (path.length === 1 && path[0] === "samples") return ["GET", "POST"].includes(method);
+  if (path.length === 2 && path[0] === "samples" && UUID.test(path[1])) return method === "POST";
   if (path.length === 1 && path[0] === "batches") return method === "POST";
   if (path.length === 1 && path[0] === "orders") return method === "POST";
   if (path.length === 2 && path[0] === "orders" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
@@ -49,6 +51,9 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   const days = url.searchParams.get("days");
   if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) query.set("from", from);
   if (days && /^\d{1,3}$/.test(days)) query.set("days", days);
+  // One case's sample requests.
+  const caseId = url.searchParams.get("caseId");
+  if (caseId && UUID.test(caseId)) query.set("caseId", caseId);
   return workspaceJsonResponse(`/workspaces/${workspaceId}/factory/${path.join("/")}${query.size ? `?${query}` : ""}`,
     { method: request.method, headers: { "content-type": "application/json" }, body }, t("Could not save."));
 }

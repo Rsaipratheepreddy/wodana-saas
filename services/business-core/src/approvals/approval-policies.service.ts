@@ -10,7 +10,7 @@ import { APPROVAL_SUBJECT_KINDS, isSubjectKind, validatePolicyInput, type Approv
 
 const MANAGE = "workspace.settings.manage";
 /** The kinds a firm sees in Settings → Approvals: the ones a module requests today. */
-export const CONFIGURABLE_KINDS: ApprovalSubjectKind[] = ["deal_file", "opportunity_value", "quote_qs", "refund"];
+export const CONFIGURABLE_KINDS: ApprovalSubjectKind[] = ["deal_file", "opportunity_value", "quote_qs", "refund", "payable_request"];
 
 type PolicyRow = { id: string; kind: string; name: string; status: "active" | "archived"; currentVersion: number; version: number; isDefault: boolean; updatedAt: Date };
 
