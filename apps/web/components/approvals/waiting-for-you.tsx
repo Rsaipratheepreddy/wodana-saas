@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useId, useMemo, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, TypeChip, useDesignSystem, type DataGridColumn, FormDialog } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, InlineNotice, SegmentedControl, TextAreaField, TypeChip, useDesignSystem, usePageToolbarSlot, type DataGridColumn, FormDialog } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { APPROVAL_FILTERS, KIND_HUE, KIND_LABEL, OTHER_LABEL, approvalsApi, approveLabel, approvalTitle, filterRows, waitingSince, type ApprovalGroup, type ApprovalRow, type WaitingForYou } from "@/lib/approvals/approvals";
 import { playFeedback } from "@/lib/feedback/sounds";
@@ -26,6 +27,10 @@ const noClockOnServer = () => null;
 
 export function WaitingForYouList({ workspaceId, initial, initialError }: { workspaceId: string; initial: WaitingForYou | null; initialError?: string }) {
   const t = useT();
+  const pageSlot = usePageToolbarSlot();
+  const slotId = useId();
+  if (pageSlot && (pageSlot.owner.current === null || pageSlot.owner.current === slotId)) pageSlot.owner.current = slotId;
+  const slotElement = pageSlot && pageSlot.owner.current === slotId ? pageSlot.element : null;
   const router = useRouter();
   const { locale } = useDesignSystem();
   const api = useMemo(() => approvalsApi(workspaceId), [workspaceId]);
@@ -70,7 +75,7 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
   // A row whose title is a sentence (an AI app's change) reads in the person's language.
   const title = (row: ApprovalRow) => row.phrase?.key ? cardTitle(t, { title: row.phrase, summary: row.title }) : approvalTitle(row, locale);
   const columns: DataGridColumn<ApprovalRow>[] = [
-    { id: "what", header: t("Waiting"), size: 300, accessorFn: (row) => title(row), meta: { primary: true, renderCell: (row) => <span className={styles.what} data-preview={row.preview ? "" : undefined}>
+    { id: "what", header: t("Waiting"), size: 280, accessorFn: (row) => title(row), meta: { primary: true, renderCell: (row) => <span className={styles.what} data-preview={row.preview ? "" : undefined}>
       {/* A daily report shows its lead photo and the client's words, so it can be approved and sent from here. */}
       {row.preview?.photoId && row.parentId ? <img className={styles.thumb} src={siteApi(workspaceId, row.parentId).photoUrl(row.preview.photoId)} alt="" loading="lazy" /> : null}
       <span className={styles.whatText}>
@@ -83,12 +88,12 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
         {row.preview?.photos ? <span className={styles.muted}>{row.preview.photos === 1 ? t("1 photo") : t("{count} photos", { count: row.preview.photos })}</span> : null}
       </span>
     </span> } },
-    { id: "about", header: t("About"), size: 200, accessorFn: (row) => row.subject ?? "", meta: { mobileHidden: true } },
-    { id: "project", header: t("Project"), size: 180, accessorFn: (row) => row.project ? [row.project.reference, row.project.name].filter(Boolean).join(" · ") : "", meta: { mobileHidden: true } },
-    { id: "amount", header: t("Amount"), size: 140, accessorFn: (row) => money(row), meta: { align: "end" } },
-    { id: "since", header: t("Waiting for"), size: 120, accessorFn: (row) => row.since,
+    { id: "about", header: t("About"), size: 160, accessorFn: (row) => row.subject ?? "", meta: { mobileHidden: true } },
+    { id: "project", header: t("Project"), size: 170, accessorFn: (row) => row.project ? [row.project.reference, row.project.name].filter(Boolean).join(" · ") : "", meta: { mobileHidden: true } },
+    { id: "amount", header: t("Amount"), size: 110, accessorFn: (row) => money(row), meta: { align: "end" } },
+    { id: "since", header: t("Waiting for"), size: 100, accessorFn: (row) => row.since,
       meta: { renderCell: (row) => (now === null ? "" : waitingSince(row.since, new Date(now), locale)) } },
-    { id: "decide", header: t("Decide"), size: 240, accessorFn: () => "", enableSorting: false, meta: { renderCell: (row) => <span className={styles.actions} onClick={(event) => event.stopPropagation()}>
+    { id: "decide", header: t("Decide"), size: 220, accessorFn: () => "", enableSorting: false, meta: { align: "end", renderCell: (row) => <span className={styles.actions} onClick={(event) => event.stopPropagation()}>
       {!row.canDecide ? <span className={styles.muted}>{t("Someone else decides")}</span>
         : row.decide ? <>
           {row.decide.other ? <Button size="compact" isDisabled={Boolean(busy)} onPress={() => setPending({ row, decision: row.decide!.other! })}>{t(OTHER_LABEL[row.decide.other])}</Button> : null}
@@ -98,10 +103,12 @@ export function WaitingForYouList({ workspaceId, initial, initialError }: { work
     </span> } },
   ];
   const counts = state?.counts;
-  return <div className={styles.list}>
-    <SegmentedControl label={t("Show")} value={filter} onChange={(value) => setFilter(value as "all" | ApprovalGroup)}
+  // The filter sits at the end of the page's tabs row when there is one, so the page has a single navigation row.
+  const filterControl = <SegmentedControl label={t("Show")} value={filter} onChange={(value) => setFilter(value as "all" | ApprovalGroup)}
       options={APPROVAL_FILTERS.filter((item) => item.id === "all" || (state?.rows ?? []).some((row) => row.group === item.id))
-        .map((item) => ({ id: item.id, label: t(item.label), count: item.id === "all" ? state?.count ?? 0 : counts?.[item.id] ?? 0 }))} />
+        .map((item) => ({ id: item.id, label: t(item.label), count: item.id === "all" ? state?.count ?? 0 : counts?.[item.id] ?? 0 }))} />;
+  return <div className={styles.list}>
+    {slotElement ? createPortal(filterControl, slotElement) : filterControl}
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {done ? <InlineNotice tone="success" message={done} /> : null}
     {rows.length ? <DataGrid ariaLabel={t("Waiting for you")} wrapText columns={columns} data={rows} getRowId={(row) => `${row.kind}:${row.id}`}
