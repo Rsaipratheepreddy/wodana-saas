@@ -988,6 +988,37 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
 - **Screens:** Deal workspace (rounds timeline, each round's documents, money, approvals) · **Approvals inbox** (all pending decisions for me, one-click decide with evidence) · Finance queue.
 - **Tests:** H2 floor; separation of duties; exactly one project under concurrent approvals; webhook replay.
 
+### 6.9a P3 build spec: Opportunity → Won → Deal File (6 Oct)
+**Source:** Palm's tracker (PLM-009, 044, 066, 080–085, 099, 101–103, 106, 121–123) and CeCe's *Enquiry Types Flow* tab (Furniture Only A–E, Full ID's three packages, ID & Furniture; Architecture/ODG to follow).
+
+**The rule for every enquiry type (CeCe):**
+1. Won and Deal Created: attaching the payment proof creates the Deal File; a Deal File can't exist without a proof. *(Built in r39.)*
+2. Finance adds the values. *(Built.)*
+3. The Owner approves and locks the Deal File. *(Built.)*
+4. Deal Closed is set by the enquiry type's closing event.
+
+**Decisions per item:**
+
+| Item | Decision | What ships |
+| --- | --- | --- |
+| PLM-102 Deal Closed per type | **Build** | Each enquiry type (and Furniture path) names its closing event as configuration: same day at handover (A), on delivery (B/D/E), on collection or delivery (C), at design handover (Full ID), when everything is produced, delivered and installed (ID & Furniture, Fit-Out). Deal Closed is computed from those records, never typed. |
+| PLM-123 Deal File contents per type | **Build** | The Deal File shows the common part (enquiry ref, client, quotation, proofs, Finance values, commission, approval, history) plus the type's sections: Furniture (items, pick-up/delivery, drawing for D/E, Creative Director approval, PO tracking for C, proof of delivery); Full ID (design fee proposal, inspiration, site visit, mood boards, concepts, material list, renders, approval); ID & Furniture adds Proposal 2, BOQ, drawings, production and delivery. Sections are links to the live records (E1/E5), not copies. |
+| PLM-103 / PLM-009 Proposal 1 and 2 | **Build** (answered by the tab) | Two proposals in one job: Proposal 1 = design fee, Proposal 2 = main quotation. Each has its own proof, Won date, Deal File approval and lock. Reports show design and production revenue separately, and the opportunity is counted once in conversion. |
+| PLM-101 Opportunity value verify and lock | **Better** | On the E3 approval engine: value entered → Finance verifies (notice) → the Deal File approver locks it. A change after the lock is a new approval with the old and new values. |
+| E3 approval engine | **Build** | Policies per workspace: what (deal file, value lock, quote send, discount, refund, payable, PO, change request), amount ≥ X in the document currency, approvers in order (role or person), Owner for large amounts, escalation after N hours, separation of duties (the requester can't approve), delegation when away. One Approvals inbox. Edge cases E3-1…E3-6. |
+| PLM-082 / 084 QS before the client | **Build** | Quotation hand-off Sales Admin → QS (named status "With QS"), QS prices and confirms (an E3 decision with who and when), and sending to the client is blocked until QS has confirmed. Read-only for Sales on QS lines. |
+| PLM-085 5-page proposal | **Build** | A proposal template per firm: pages 1–3 and 5 locked (uploaded designed pages or Canva later), page 4 = the live quotation. One PDF; locked pages can't be edited from the quote. |
+| Quotation numbering (client 2, #13) | **Build** | Prefix, suffix and sequence per entity and document type, gap-free, from settings; uploading an external quotation keeps its own number. |
+| R8 e-sign | **Build** | Our own e-signature for proposals and change requests: typed or drawn, signer identity, time, IP, document hash, certificate page; the signed PDF goes to the decisions ledger (E5). |
+| R3 markup disclosure | **Configure** | Fee-based / disclosed markup / all-inclusive per firm, applied the same way to quote, invoice and portal. |
+| PLM-066 validity and outstanding | **Configure + build** | Quote validity is a setting (Palm: 7 days); the Deal File shows paid, outstanding and next due. |
+| PLM-099 O- prefix | **Configure** | The opportunity reference prefix is a numbering setting (Palm: O-). |
+| PLM-106 Intro deck | **Build** | A firm's intro deck link in Sales settings, shown on the opportunity; page 3 filled from the discovery answers as a PDF. |
+| PLM-044 / 080 / 081 site visit and materials steps | **Build** (steps) | The joinery path gets a site visit booked in the salesperson's and designer's calendars (the booking slot engine) with measurements and photos; material selection is always a step with "Not required for this order" (reason recorded). |
+| Steps editor in CeCe's words | **Build** | The enquiry-type editor shows CeCe's table: stages as rows, paths as columns, each cell = the step's rule (required / auto-passed / skipped / used if needed) and owner team, plus lead times and the closing event. Same data as today's flow definitions, edited in her shape. |
+
+**Exit (live):** each Furniture path A–E and Full ID end to end to an approved and closed Deal File; Proposal 2 as a second Won; QS block on sending; numbering; e-sign on a proposal; tracker rows re-verified.
+
 ### 6.10 Projects
 **Delivery spine (all modules hang off it).** One reference from Deal File to warranty; the accepted quotation becomes the **sealed scope**, then the live BOQ (baseline + approved variations). Every material, order, production order, delivery, installation, snag and warranty claim links to a BOQ line, so each line has a history ("line passport"): agreed → signed off → ordered/in production → received → delivered → installed → handed over → under warranty.
 
