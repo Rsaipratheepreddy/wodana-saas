@@ -241,7 +241,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
                 <span className={styles.threadCopy}>
                   <span className={styles.threadTop}><strong>{name}</strong><time dateTime={String(item.lastMessageAt ?? "")} title={item.lastMessageAt ? time(item.lastMessageAt) : t("New conversation")}>{inboxDate(item.lastMessageAt, locale, timeZone, t("New"))}</time></span>
                   <span className={styles.threadBottom}>
-                    <span className={styles.preview}>{item.lastMessageDirection === "outbound" ? <DeliveryState status={String(item.lastMessageStatus)} compact /> : null}{String(item.lastMessageText ?? item.subject ?? t("No messages yet"))}</span>
+                    <span className={styles.preview}>{item.lastMessageDirection === "outbound" ? <DeliveryState status={String(item.lastMessageStatus)} compact /> : null}<span className={styles.previewText}>{String(item.lastMessageText ?? item.subject ?? t("No messages yet"))}</span></span>
                     {unread > 0 ? <span className={styles.unread} role="img" aria-label={t("{count} unread messages", { count: unread })} /> : null}
                   </span>
                   <span className={styles.threadMeta}>

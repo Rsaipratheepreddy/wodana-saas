@@ -274,6 +274,7 @@
 .inbox .threadTop strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
 .threadItem[data-unread] .threadTop strong, .threadItem[data-unread] .preview { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); }
 .inbox .preview { font-size: var(--wd-text-xs); }
+.previewText { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inbox .unread { min-inline-size: var(--wd-space-2); inline-size: var(--wd-space-2); block-size: var(--wd-space-2); padding: 0; border-radius: var(--wd-radius-pill); background: var(--chat-accent); }
 .ownerAvatar { flex-shrink: 0; display: inline-grid; place-items: center; inline-size: var(--wd-space-6); block-size: var(--wd-space-6); margin-block-start: var(--wd-space-0-5); }
 .noOwner { inline-size: var(--wd-space-5); block-size: var(--wd-space-5); border-radius: var(--wd-radius-pill); border: 1px dashed var(--wd-color-border-strong); }
